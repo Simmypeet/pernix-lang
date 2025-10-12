@@ -590,7 +590,6 @@ impl<N: Normalizer> Builder<'_, N> {
                     .values()
                     .type_of(
                         &tuple_pack.tuple_address,
-                        self.context.current_site(),
                         self.context.environment(),
                     )
                     .await
@@ -845,7 +844,7 @@ impl<'a, N: Normalizer> Walker<'a, N> {
         self.context.environment().tracked_engine()
     }
 
-    pub fn current_site(&self) -> Global<pernixc_symbol::ID> {
+    pub const fn current_site(&self) -> Global<pernixc_symbol::ID> {
         self.context.current_site()
     }
 }
@@ -888,8 +887,8 @@ impl<'a, N: Normalizer> Walker<'a, N> {
                 match predicate {
                     Predicate::LifetimeOutlives(outlives) => {
                         let (Some(operand), Some(bound)) = (
-                            outlives.operand.try_into().ok(),
-                            outlives.bound.try_into().ok(),
+                            outlives.operand.clone().try_into().ok(),
+                            outlives.bound.clone().try_into().ok(),
                         ) else {
                             continue;
                         };
@@ -907,13 +906,15 @@ impl<'a, N: Normalizer> Walker<'a, N> {
                     }
 
                     Predicate::TypeOutlives(outlives) => {
-                        let Some(bound) = outlives.bound.try_into().ok() else {
+                        let Some(bound) =
+                            outlives.bound.clone().try_into().ok()
+                        else {
                             continue;
                         };
 
                         for operand in RecursiveIterator::new(&outlives.operand)
                             .filter_map(|x| x.0.into_lifetime().ok())
-                            .filter_map(|x| (*x).try_into().ok())
+                            .filter_map(|x| x.clone().try_into().ok())
                         {
                             adding_edges.insert((
                                 RegionAt::Universal(UniversalRegionAt {

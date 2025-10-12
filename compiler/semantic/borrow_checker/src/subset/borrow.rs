@@ -16,7 +16,8 @@ impl<N: Normalizer> Context<'_, N> {
         let region_in_addresss =
             self.get_regions_in_address(&borrow.address, *span, true).await?;
 
-        let borrow_local_region = borrow.lifetime.into_inference().unwrap();
+        let borrow_local_region =
+            borrow.lifetime.clone().into_inference().unwrap();
 
         Ok(Changes {
             subset_relations: {

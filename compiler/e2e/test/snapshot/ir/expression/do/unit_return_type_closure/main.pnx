@@ -1,0 +1,24 @@
+public effect Test:
+    op()
+
+
+public function main():
+    do:
+        # `do` closure block doesn't return anything, returns `unit`
+        pass
+
+    with Test:
+        op():
+            # `op` closure block returns `int32`, should be an error
+            return 32
+
+
+public function main2():
+    do:
+        # `do` closure block returns `int32`
+        return 32
+
+    with Test:
+        op():
+            # `op` closure block returns `unit`, should be an error
+            pass

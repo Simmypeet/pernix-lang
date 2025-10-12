@@ -1,6 +1,12 @@
 on:
     workflow_dispatch:
+
     push:
+        branches:
+            - main
+            - dev
+
+    pull_request:
         branches:
             - main
             - dev
@@ -70,6 +76,20 @@ jobs:
               uses: baptiste0928/cargo-install@v3.3.0
               with:
                   crate: cargo-nextest
+
+            - name: Install Rust Nightly with Fmt
+              run: |
+                  rustup toolchain install nightly --component rustfmt
+
+            - name: Install Rust Stable Clippy
+              run: |
+                  rustup component add clippy
+
+            - name: Check Code Formatting
+              run: cargo +nightly fmt --all -- --check
+
+            - name: Run Clippy
+              run: cargo clippy
 
             - name: Run cargo nextest
               run: cargo nextest run --verbose --release --no-fail-fast

@@ -95,7 +95,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     .build_store(store_address.address, basic_value_enum)
                     .unwrap();
             }
-            LlvmValue::TmpAggegate(dest_address) => {
+            LlvmValue::TmpAggregate(dest_address) => {
                 self.build_memcpy(
                     store_address.address,
                     dest_address.address,
@@ -121,7 +121,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
 
             self.build_memcpy(tmp.address, ptr.address, ptr.r#type);
 
-            Ok(Some(LlvmValue::TmpAggegate(LlvmAddress::new(
+            Ok(Some(LlvmValue::TmpAggregate(LlvmAddress::new(
                 tmp.address,
                 ptr.r#type,
             ))))
@@ -183,7 +183,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                         .build_store(pointer_value, basic_value_enum)
                         .unwrap();
                 }
-                LlvmValue::TmpAggegate(llvm_address) => {
+                LlvmValue::TmpAggregate(llvm_address) => {
                     self.build_memcpy(
                         pointer_value,
                         llvm_address.address,
@@ -193,7 +193,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             }
         }
 
-        Ok(Some(LlvmValue::TmpAggegate(LlvmAddress::new(
+        Ok(Some(LlvmValue::TmpAggregate(LlvmAddress::new(
             tmp.address,
             struct_ty,
         ))))
@@ -234,7 +234,9 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             LlvmValue::Scalar(basic_value_enum) => {
                 BasicMetadataValueEnum::from(basic_value_enum)
             }
-            LlvmValue::TmpAggegate(llvm_address) => llvm_address.address.into(),
+            LlvmValue::TmpAggregate(llvm_address) => {
+                llvm_address.address.into()
+            }
         }));
 
         let call = self
@@ -259,7 +261,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         for (mut index, arg) in args.iter().enumerate() {
             index += usize::from(sret.is_some());
 
-            if let LlvmValue::TmpAggegate(temp_arg) = arg {
+            if let LlvmValue::TmpAggregate(temp_arg) = arg {
                 call.add_attribute(
                     AttributeLoc::Param(index.try_into().unwrap()),
                     self.context
@@ -274,7 +276,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                 call.try_as_basic_value().left().unwrap(),
             ))),
             ReturnType::Sret(basic_type_enum) => {
-                Ok(Some(LlvmValue::TmpAggegate(LlvmAddress::new(
+                Ok(Some(LlvmValue::TmpAggregate(LlvmAddress::new(
                     sret.unwrap().address,
                     *basic_type_enum,
                 ))))
@@ -378,7 +380,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
 
                 // resolve for the trait impl
                 let resolution = self
-                    .environment
+                    .type_environment()
                     .query(&resolution::Resolve::new(
                         parent_trait_id,
                         trait_generic_args,
@@ -556,7 +558,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                         .build_store(pointer_value, basic_value_enum)
                         .unwrap();
                 }
-                LlvmValue::TmpAggegate(llvm_address) => {
+                LlvmValue::TmpAggregate(llvm_address) => {
                     self.build_memcpy(
                         pointer_value,
                         llvm_address.address,
@@ -566,7 +568,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             }
         }
 
-        Ok(Some(LlvmValue::TmpAggegate(tmp)))
+        Ok(Some(LlvmValue::TmpAggregate(tmp)))
     }
 
     #[allow(clippy::too_many_lines)]
@@ -1119,7 +1121,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         for (value, block) in incoming_values {
             let value = match value {
                 LlvmValue::Scalar(basic_value_enum) => basic_value_enum,
-                LlvmValue::TmpAggegate(llvm_address) => {
+                LlvmValue::TmpAggregate(llvm_address) => {
                     llvm_address.address.into()
                 }
             };
@@ -1127,7 +1129,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         }
 
         if ty.is_aggregate() {
-            Ok(Some(LlvmValue::TmpAggegate(LlvmAddress::new(
+            Ok(Some(LlvmValue::TmpAggregate(LlvmAddress::new(
                 phi.as_basic_value().into_pointer_value(),
                 ty,
             ))))
@@ -1149,7 +1151,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
 
             if element.is_unpacked {
                 // tuple is struct avlue
-                let tuple_address = value.into_tmp_aggegate().unwrap();
+                let tuple_address = value.into_tmp_aggregate().unwrap();
                 let tuple_as_struct = tuple_address.r#type.into_struct_type();
                 let count = tuple_as_struct.count_fields();
 
@@ -1168,7 +1170,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                         .unwrap();
 
                     values.push(if ty.is_aggregate() {
-                        LlvmValue::TmpAggegate(LlvmAddress::new(address, ty))
+                        LlvmValue::TmpAggregate(LlvmAddress::new(address, ty))
                     } else {
                         LlvmValue::Scalar(
                             self.inkwell_builder
@@ -1212,7 +1214,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                         .build_store(pointer_value, basic_value_enum)
                         .unwrap();
                 }
-                LlvmValue::TmpAggegate(llvm_address) => {
+                LlvmValue::TmpAggregate(llvm_address) => {
                     self.build_memcpy(
                         pointer_value,
                         llvm_address.address,
@@ -1222,7 +1224,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             }
         }
 
-        Ok(Some(LlvmValue::TmpAggegate(tmp)))
+        Ok(Some(LlvmValue::TmpAggregate(tmp)))
     }
 
     #[allow(clippy::too_many_lines)]
@@ -1338,7 +1340,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                             .unwrap();
                     }
 
-                    Some(Some(LlvmValue::TmpAggegate(value))) => {
+                    Some(Some(LlvmValue::TmpAggregate(value))) => {
                         let payload_pointer = self
                             .inkwell_builder
                             .build_struct_gep(
@@ -1359,7 +1361,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     Some(None) | None => {}
                 }
 
-                Ok(Some(LlvmValue::TmpAggegate(tmp)))
+                Ok(Some(LlvmValue::TmpAggregate(tmp)))
             }
         }
     }
@@ -2094,14 +2096,14 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                         // scalar values (primitives) never need to be dropped
                         Some(LlvmValue::Scalar(_)) => {}
 
-                        Some(LlvmValue::TmpAggegate(_)) | None => {
+                        Some(LlvmValue::TmpAggregate(_)) | None => {
                             let pnx_type =
                                 self.type_of_register_pnx(reg_dis.id).await;
 
                             let ptr_value = value.map_or_else(
                                 || self.build_non_null_dangling(),
                                 |x| {
-                                    x.into_tmp_aggegate()
+                                    x.into_tmp_aggregate()
                                         .map(|x| x.address)
                                         .unwrap()
                                 },
@@ -2162,7 +2164,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     }
                     ReturnType::Sret(_) => {
                         let aggregate =
-                            val.unwrap().into_tmp_aggegate().unwrap();
+                            val.unwrap().into_tmp_aggregate().unwrap();
 
                         self.build_memcpy(
                             self.llvm_function_signature

@@ -1,29 +1,26 @@
-//! Defines the query to get the declaration order of a variant in an enum.
+//! A query for retrieving the declaration order of a variant in the enum.
 
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 
-use crate::{get_table_of_symbol, ID};
+use crate::ID;
 
-#[pernixc_query::query(
-    key(Key),
-    id(Global<ID>),
-    value(usize),
-    executor(Executor),
-    extend(method(get_variant_declaration_order), no_cyclic)
+/// A query for retrieving the declaration order of a variant in the enum.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+    pernixc_query::Key,
 )]
-#[allow(clippy::unnecessary_wraps)]
-pub async fn executor(
-    id: Global<ID>,
-    engine: &TrackedEngine,
-) -> Result<usize, CyclicError> {
-    let table = engine.get_table_of_symbol(id).await;
-
-    Ok(table
-        .variant_declaration_orders
-        .get(&id.id)
-        .copied()
-        .unwrap_or_else(|| panic!("invalid symbol ID: {:?}", id.id)))
-}
-
-pernixc_register::register!(Key, Executor);
+#[value(usize)]
+#[extend(method(get_variant_declaration_order), no_cyclic)]
+pub struct Key(pub Global<ID>);

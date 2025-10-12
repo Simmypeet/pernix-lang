@@ -1,0 +1,22 @@
+public effect Test[T]:
+    test(a: T, b: (T, T))
+
+
+public struct Vector2:
+    public x: int32
+    public y: int32
+
+
+public function main():
+    do:
+        pass
+
+    with Test[Vector2]:
+        test({x: aX, y: aY}, ({x: bX, y: bY}, {x: cX, y: cY})):
+            pass
+
+
+    with Test[int32]:
+        # should error, int32 can't be destructured
+        test({x: aX, y: aY}, ({x: bX, y: bY}, {x: cX, y: cY})):
+            pass

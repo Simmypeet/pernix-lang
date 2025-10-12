@@ -1,23 +1,95 @@
 use std::collections::BTreeSet;
 
-use pernixc_hash::HashSet;
-use pernixc_ir::value::register::FunctionCall;
+use pernixc_arena::ID;
+use pernixc_hash::{HashMap, HashSet};
+use pernixc_ir::value::register::{CapabilityArgument, FunctionCall};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_semantic_element::{parameter::get_parameters, variance::Variance};
+use pernixc_semantic_element::{
+    capability::get_capabilities, parameter::get_parameters, variance::Variance,
+};
 use pernixc_symbol::{
     kind::{get_kind, Kind},
     parent::get_parent,
 };
 use pernixc_target::Global;
 use pernixc_term::{
+    effect,
     generic_parameters::get_generic_parameters,
+    instantiation::Instantiation,
     predicate::{PositiveTrait, Predicate},
 };
-use pernixc_type_system::{normalizer::Normalizer, UnrecoverableError};
+use pernixc_type_system::{
+    lifetime_constraint::LifetimeConstraint, normalizer::Normalizer,
+    UnrecoverableError,
+};
 
 use crate::{context::Context, subset::Changes, Region};
 
 impl<N: Normalizer> Context<'_, N> {
+    #[allow(clippy::too_many_lines)]
+    pub(super) async fn get_subset_of_effect_operations(
+        &self,
+        capability_arguments: &HashMap<ID<effect::Unit>, CapabilityArgument>,
+        instantiation: &Instantiation,
+        callled_id: Global<pernixc_symbol::ID>,
+        span: &RelativeSpan,
+        lifetime_constraints: &mut BTreeSet<LifetimeConstraint>,
+    ) -> Result<(), UnrecoverableError> {
+        let called_capabilities =
+            self.tracked_engine().get_capabilities(callled_id).await?;
+
+        let current_capabilities =
+            self.tracked_engine().get_capabilities(self.current_site()).await?;
+
+        for (required_id, argument) in capability_arguments {
+            let mut required_capability =
+                called_capabilities[*required_id].clone();
+
+            // instantiate the generic arguments of the required capability
+            required_capability.generic_arguments.instantiate(instantiation);
+
+            match argument {
+                CapabilityArgument::FromPassedCapability(capability_unit) => {
+                    // no need to instantiate, as the capability unit is
+                    // already instantiated from the call site
+                    let available_capability =
+                        &current_capabilities[*capability_unit];
+
+                    let subtypable = self
+                        .type_environment()
+                        .subtypes_generic_arguments(
+                            &required_capability.generic_arguments,
+                            &available_capability.generic_arguments,
+                        )
+                        .await
+                        .map_err(|x| {
+                            x.report_as_type_check_overflow(
+                                *span,
+                                &self.handler(),
+                            )
+                        })?;
+
+                    let subtypable =
+                        subtypable.expect("should've been checked");
+
+                    assert!(subtypable
+                        .result
+                        .forall_lifetime_errors
+                        .is_empty());
+
+                    lifetime_constraints
+                        .extend(subtypable.constraints.iter().cloned());
+                }
+
+                CapabilityArgument::Unhandled => {
+                    // error should've been reported
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     #[allow(clippy::too_many_lines)]
     pub(super) async fn get_changes_of_function_call(
         &self,
@@ -59,7 +131,7 @@ impl<N: Normalizer> Context<'_, N> {
         }
 
         lifetime_constraints.extend(
-            self.environment()
+            self.type_environment()
                 .wf_check(
                     function_call.callable_id,
                     *span,
@@ -99,7 +171,7 @@ impl<N: Normalizer> Context<'_, N> {
 
                 // check extra trait satisfiability
                 lifetime_constraints.extend(
-                    self.environment()
+                    self.type_environment()
                         .predicate_satisfied(
                             Predicate::PositiveTrait(PositiveTrait {
                                 trait_id: parent_trait_id,
@@ -125,7 +197,7 @@ impl<N: Normalizer> Context<'_, N> {
                 );
 
                 lifetime_constraints.extend(
-                    self.environment()
+                    self.type_environment()
                         .wf_check(
                             parent_implementation_id,
                             *span,
@@ -137,10 +209,37 @@ impl<N: Normalizer> Context<'_, N> {
                 );
             }
 
-            _ => {
-                panic!("Unexpected symbol kind encountered")
+            Kind::EffectOperation => {
+                lifetime_constraints.extend(
+                    self.type_environment()
+                        .wf_check(
+                            function_call.callable_id,
+                            *span,
+                            &function_call.instantiation,
+                            false,
+                            &self.handler(),
+                        )
+                        .await?,
+                );
             }
+
+            _ => unreachable!(
+                "function call to non-function kind: {}",
+                self.tracked_engine()
+                    .get_kind(function_call.callable_id)
+                    .await
+                    .kind_str()
+            ),
         }
+
+        self.get_subset_of_effect_operations(
+            &function_call.capability_arguments,
+            &function_call.instantiation,
+            function_call.callable_id,
+            span,
+            &mut lifetime_constraints,
+        )
+        .await?;
 
         Ok(Changes {
             subset_relations: lifetime_constraints

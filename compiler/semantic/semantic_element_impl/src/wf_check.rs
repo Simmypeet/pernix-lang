@@ -911,7 +911,7 @@ impl Checker<'_> {
             Type::Reference(reference) => {
                 let outlives = Outlives::new(
                     (*reference.pointee).clone(),
-                    reference.lifetime,
+                    reference.lifetime.clone(),
                 );
 
                 match self.environment.query(&outlives).await {

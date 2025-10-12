@@ -125,24 +125,6 @@ fn walk_iter(
     }
 }
 
-/// Checks if the given character is a valid first character of an
-/// identifier.
-fn is_first_identifier_character(character: char) -> bool {
-    character == '_'
-        || (!character.is_control()
-            && !character.is_whitespace()
-            && !character.is_ascii_punctuation()
-            && !character.is_ascii_digit())
-}
-
-/// Checks if the given character is a valid character of an identifier.
-fn is_identifier_character(character: char) -> bool {
-    character == '_'
-        || (!character.is_control()
-            && !character.is_whitespace()
-            && !character.is_ascii_punctuation())
-}
-
 /// A struct used for tokenizing the source code. The struct implements
 /// [`Iterator`] trait, which allows it to be used as an iterator that iterates
 /// over token sequences in the source code.
@@ -262,7 +244,7 @@ impl Tokenizer<'_, '_> {
         &mut self,
         start: ByteIndex,
     ) -> (kind::Kind, AbsoluteSpan) {
-        walk_iter(&mut self.iter, is_identifier_character);
+        walk_iter(&mut self.iter, kind::Identifier::is_identifier_character);
 
         let span = self.create_span(start);
         let word = &self.source[start..span.end];
@@ -454,7 +436,7 @@ impl Iterator for Tokenizer<'_, '_> {
             )
         }
         // Found identifier/keyword
-        else if is_first_identifier_character(character) {
+        else if kind::Identifier::is_first_identifier_character(character) {
             self.handle_identifier_and_keyword(start)
         }
         // Found numeric literal

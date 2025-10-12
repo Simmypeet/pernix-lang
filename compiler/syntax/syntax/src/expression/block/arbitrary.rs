@@ -1,6 +1,7 @@
-use std::fmt::Write;
+use std::fmt::{Display, Write};
 
 use enum_as_inner::EnumAsInner;
+use pernixc_lexical::kind::arbitrary::Identifier;
 use proptest::{
     prelude::{Arbitrary, BoxedStrategy, Just, Strategy},
     prop_oneof,
@@ -9,13 +10,13 @@ use proptest::{
 use crate::{
     arbitrary::{
         write_indent_line, write_indent_line_for_indent_display, IndentDisplay,
-        Label, Passable, QualifiedIdentifier,
+        IntoSeparated, Label, Passable, QualifiedIdentifier,
     },
     expression::{
         arbitrary::Expression, binary::arbitrary::Binary,
         terminator::arbitrary::Terminator,
     },
-    pattern::arbitrary::Refutable,
+    pattern::arbitrary::{Irrefutable, Refutable},
     r#type::arbitrary::Type,
     reference,
     statement::arbitrary::{Statement, Statements},
@@ -29,6 +30,7 @@ reference! {
         Loop(Loop),
         Match(Match),
         While(While),
+        Do(Do),
     }
 }
 
@@ -47,7 +49,8 @@ impl Arbitrary for Block {
             IfElse::arbitrary_with(args.clone()).prop_map(Self::IfElse),
             Loop::arbitrary_with(args.clone()).prop_map(Self::Loop),
             Match::arbitrary_with(args.clone()).prop_map(Self::Match),
-            While::arbitrary_with(args).prop_map(Self::While),
+            While::arbitrary_with(args.clone()).prop_map(Self::While),
+            Do::arbitrary_with(args).prop_map(Self::Do),
         ]
         .boxed()
     }
@@ -65,6 +68,7 @@ impl IndentDisplay for Block {
             Self::Loop(loop_) => loop_.indent_fmt(f, indent),
             Self::Match(match_) => match_.indent_fmt(f, indent),
             Self::While(while_) => while_.indent_fmt(f, indent),
+            Self::Do(do_) => do_.indent_fmt(f, indent),
         }
     }
 }
@@ -692,6 +696,227 @@ impl IndentDisplay for Match {
 
         for arm in &self.body.arms {
             write_indent_line_for_indent_display(f, arm, indent + 1)?;
+        }
+
+        Ok(())
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone)]
+    pub struct HandlerArguments for super::HandlerArguments {
+        pub irrefutable_patterns (Vec<Irrefutable>)
+    }
+}
+
+impl Arbitrary for HandlerArguments {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        proptest::collection::vec(Irrefutable::arbitrary(), 0..3)
+            .prop_map(|irrefutable_patterns| Self { irrefutable_patterns })
+            .boxed()
+    }
+}
+
+impl IndentDisplay for HandlerArguments {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        _indent: usize,
+    ) -> std::fmt::Result {
+        f.write_char('(')?;
+
+        self.irrefutable_patterns.into_separated(',').fmt(f)?;
+
+        f.write_char(')')
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone)]
+    pub struct Handler for super::Handler {
+        #{map_input_assert(identifier, &identifier.kind)}
+        pub identifier (Identifier),
+        pub arguments (HandlerArguments),
+        pub statements (Statements),
+    }
+}
+
+impl Arbitrary for Handler {
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Statement>>,
+    );
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        (
+            Identifier::arbitrary(),
+            HandlerArguments::arbitrary(),
+            Statements::arbitrary_with(args),
+        )
+            .prop_map(|(identifier, arguments, statements)| Self {
+                identifier,
+                arguments,
+                statements,
+            })
+            .boxed()
+    }
+}
+
+impl IndentDisplay for Handler {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        write!(f, "{} ", self.identifier)?;
+        self.arguments.indent_fmt(f, indent)?;
+        self.statements.indent_fmt(f, indent)
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone)]
+    pub struct WithBody for super::WithBody {
+        pub handlers (Vec<Passable<Handler>>)
+    }
+}
+
+impl Arbitrary for WithBody {
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Statement>>,
+    );
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        proptest::collection::vec(
+            prop_oneof![
+                8 => Handler::arbitrary_with(args)
+                    .prop_map(Passable::Line),
+                1 => Just(Passable::Pass)
+            ],
+            1..5,
+        )
+        .prop_map(|handlers| Self { handlers })
+        .boxed()
+    }
+}
+
+impl IndentDisplay for WithBody {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        writeln!(f, ":",)?;
+        for handler in &self.handlers {
+            write_indent_line_for_indent_display(f, handler, indent + 1)?;
+        }
+
+        Ok(())
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone)]
+    pub struct With for super::With {
+        pub effect (QualifiedIdentifier),
+        pub body (WithBody),
+    }
+}
+
+impl Arbitrary for With {
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Statement>>,
+    );
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        (
+            QualifiedIdentifier::arbitrary_with((
+                args.1.clone(),
+                args.0.clone(),
+            )),
+            WithBody::arbitrary_with(args),
+        )
+            .prop_map(|(effect, body)| Self { effect, body })
+            .boxed()
+    }
+}
+
+impl IndentDisplay for With {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        f.write_str("with ")?;
+
+        self.effect.indent_fmt(f, indent)?;
+        self.body.indent_fmt(f, indent)
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone)]
+    pub struct Do for super::Do {
+        pub label (Option<Label>),
+        pub statements (Statements),
+        pub with (Vec<With>),
+    }
+}
+
+impl Arbitrary for Do {
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Statement>>,
+    );
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        (
+            proptest::option::of(Label::arbitrary()),
+            Statements::arbitrary_with(args.clone()),
+            proptest::collection::vec(With::arbitrary_with(args), 0..3),
+        )
+            .prop_map(|(label, statements, with)| Self {
+                label,
+                statements,
+                with,
+            })
+            .boxed()
+    }
+}
+
+impl IndentDisplay for Do {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        f.write_str("do")?;
+
+        if let Some(label) = &self.label {
+            write!(f, " {label}")?;
+        }
+
+        self.statements.indent_fmt(f, indent)?;
+
+        for with in &self.with {
+            write_indent_line_for_indent_display(f, with, indent)?;
         }
 
         Ok(())

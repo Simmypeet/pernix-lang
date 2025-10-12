@@ -49,7 +49,7 @@ use crate::{
     binder::{
         type_check::Expected, Binder, BindingError, Error, UnrecoverableError,
     },
-    inference_context::constraint,
+    infer::constraint,
 };
 
 pub mod diagnostic;

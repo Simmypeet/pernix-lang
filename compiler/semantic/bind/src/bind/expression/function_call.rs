@@ -1,12 +1,16 @@
+use pernixc_arena::{OrderedArena, ID};
 use pernixc_handler::Handler;
+use pernixc_hash::HashMap;
 use pernixc_ir::value::{
-    register::{Assignment, FunctionCall, Load, Register, Variant},
+    register::{
+        Assignment, CapabilityArgument, FunctionCall, Load, Register, Variant,
+    },
     Value,
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_resolution::qualified_identifier::Resolution;
 use pernixc_semantic_element::{
-    elided_lifetime::get_elided_lifetimes,
+    capability::get_capabilities, elided_lifetime::get_elided_lifetimes,
     implements_arguments::get_implements_argument, parameter::get_parameters,
     variant::get_variant_associated_type,
 };
@@ -18,6 +22,7 @@ use pernixc_symbol::{
 };
 use pernixc_target::Global;
 use pernixc_term::{
+    effect,
     generic_parameters::get_generic_parameters,
     instantiation::{
         get_instantiation, get_instantiation_for_associated_symbol,
@@ -26,7 +31,7 @@ use pernixc_term::{
     lifetime::{ElidedLifetimeID, Lifetime},
     r#type::Qualifier,
 };
-use pernixc_type_system::deduction;
+use pernixc_type_system::{deduction, environment::Environment};
 
 use crate::{
     bind::{
@@ -38,7 +43,8 @@ use crate::{
         },
         LValue,
     },
-    binder::UnrecoverableError,
+    binder::{inference_context, UnrecoverableError},
+    diagnostic::UnhandledEffects,
 };
 
 pub mod diagnostic;
@@ -123,7 +129,7 @@ async fn get_function_instantiation(
         Resolution::MemberGeneric(member_generic)
             if {
                 let kind = binder.engine().get_kind(member_generic.id).await;
-                kind.has_function_signature()
+                kind.has_function_signature() || kind == Kind::EffectOperation
             } =>
         'result: {
             let kind = binder.engine().get_kind(member_generic.id).await;
@@ -452,7 +458,8 @@ impl Binder<'_> {
         )
         .await
     }
-    #[allow(clippy::too_many_arguments)]
+
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
     async fn bind_function_call_internal(
         &mut self,
         expected_types: &[pernixc_term::r#type::Type],
@@ -562,13 +569,155 @@ impl Binder<'_> {
             std::cmp::Ordering::Equal => {}
         }
 
-        Ok(self.create_register_assignment(
-            Assignment::FunctionCall(FunctionCall {
+        let capabilities =
+            self.engine().get_capabilities(self.current_site()).await?;
+
+        let capability_arguments = self
+            .effect_check(
                 callable_id,
-                arguments: argument_values,
-                instantiation,
-            }),
+                &instantiation,
+                whole_span,
+                &capabilities,
+                handler,
+            )
+            .await?;
+
+        let assignment = FunctionCall {
+            callable_id,
+            instantiation,
+            arguments: argument_values,
+            capability_arguments,
+        };
+
+        Ok(self.create_register_assignment(
+            Assignment::FunctionCall(assignment),
             whole_span,
         ))
+    }
+
+    async fn effect_compatible(
+        env: &Environment<'_, inference_context::InferenceContext>,
+        capability: &effect::Unit,
+        effect: &effect::Unit,
+        span: RelativeSpan,
+        handler: &dyn Handler<crate::diagnostic::Diagnostic>,
+    ) -> Result<bool, UnrecoverableError> {
+        if capability.id != effect.id {
+            return Ok(false);
+        }
+
+        let result = env
+            .subtypes_generic_arguments(
+                &effect.generic_arguments,
+                &capability.generic_arguments,
+            )
+            .await
+            .map_err(|x| {
+                x.report_as_type_calculating_overflow(span, &handler)
+            })?;
+
+        let Some(result) = result else {
+            return Ok(false);
+        };
+
+        Ok(result.result.forall_lifetime_errors.is_empty())
+    }
+
+    async fn effect_check(
+        &mut self,
+        callable_id: Global<pernixc_symbol::ID>,
+        instantiation: &Instantiation,
+        span: RelativeSpan,
+        available_capabilities: &OrderedArena<effect::Unit>,
+        handler: &dyn Handler<crate::diagnostic::Diagnostic>,
+    ) -> Result<HashMap<ID<effect::Unit>, CapabilityArgument>, UnrecoverableError>
+    {
+        let required_capabilities =
+            self.engine().get_capabilities(callable_id).await?;
+
+        self.check_effect_units(
+            available_capabilities,
+            &required_capabilities,
+            instantiation,
+            span,
+            callable_id,
+            handler,
+        )
+        .await
+    }
+
+    async fn check_effect_units(
+        &self,
+        available_capabilities: &OrderedArena<effect::Unit>,
+        required_capabilities: &OrderedArena<effect::Unit>,
+        instantiation: &Instantiation,
+        span: RelativeSpan,
+        callable_id: Global<pernixc_symbol::ID>,
+        handler: &dyn Handler<crate::diagnostic::Diagnostic>,
+    ) -> Result<HashMap<ID<effect::Unit>, CapabilityArgument>, UnrecoverableError>
+    {
+        let mut effect_arguments = HashMap::default();
+
+        let environment = self.create_environment();
+
+        'next: for (required_id, required) in required_capabilities.iter() {
+            let mut required = required.clone();
+            required.generic_arguments.instantiate(instantiation);
+
+            for (available_id, available) in available_capabilities.iter() {
+                if Self::effect_compatible(
+                    &environment,
+                    available,
+                    &required,
+                    span,
+                    handler,
+                )
+                .await?
+                {
+                    effect_arguments.insert(
+                        required_id,
+                        CapabilityArgument::FromPassedCapability(available_id),
+                    );
+                    continue 'next;
+                }
+            }
+
+            // cannot find a compatible capability
+            effect_arguments.insert(required_id, CapabilityArgument::Unhandled);
+        }
+
+        if effect_arguments
+            .iter()
+            .any(|x| x.1 == &CapabilityArgument::Unhandled)
+        {
+            handler.receive(crate::diagnostic::Diagnostic::UnhandledEffects(
+                UnhandledEffects {
+                    effects: effect_arguments
+                        .iter()
+                        .filter_map(|x| {
+                            if x.1 == &CapabilityArgument::Unhandled {
+                                let mut required =
+                                    required_capabilities[*x.0].clone();
+
+                                required
+                                    .generic_arguments
+                                    .instantiate(instantiation);
+
+                                Some(required)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect(),
+                    callable_id,
+                    span,
+                    type_inference_map: self.type_inference_rendering_map(),
+                    constant_inference_map: self
+                        .constant_inference_rendering_map(),
+                },
+            ));
+        }
+
+        Ok(effect_arguments)
     }
 }

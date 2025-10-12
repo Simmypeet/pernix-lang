@@ -22,7 +22,7 @@ use crate::{
         type_check::Expected, Binder, BindingError, Error, UnrecoverableError,
     },
     diagnostic::{Diagnostic, IfMissingElseBranch},
-    inference_context::constraint,
+    infer::constraint,
 };
 
 impl Binder<'_> {

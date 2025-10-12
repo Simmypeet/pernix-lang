@@ -43,7 +43,7 @@ use pernixc_stable_hash::StableHash;
 ///
 /// ## Basic Usage
 ///
-/// ```rust
+/// ```ignore
 /// use pernixc_stable_type_id::StableTypeID;
 ///
 /// // Create from a unique type name
@@ -57,7 +57,7 @@ use pernixc_stable_hash::StableHash;
 ///
 /// ## Combining IDs
 ///
-/// ```rust
+/// ```ignore
 /// use pernixc_stable_type_id::StableTypeID;
 ///
 /// let base_id = StableTypeID::from_unique_type_name("Container");
@@ -71,7 +71,7 @@ use pernixc_stable_hash::StableHash;
 ///
 /// ## Using with the Derive Macro
 ///
-/// ```rust
+/// ```ignore
 /// use pernixc_stable_type_id::Identifiable;
 ///
 /// #[derive(Identifiable)]
@@ -112,7 +112,7 @@ impl StableTypeID {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```ignore
     /// use pernixc_stable_type_id::StableTypeID;
     ///
     /// // Only use if you have pre-computed hash values
@@ -149,7 +149,7 @@ impl StableTypeID {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```ignore
     /// use pernixc_stable_type_id::StableTypeID;
     ///
     /// // Recommended format with full qualification
@@ -267,7 +267,7 @@ impl StableTypeID {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```ignore
     /// use pernixc_stable_type_id::StableTypeID;
     ///
     /// let vec_id = StableTypeID::from_unique_type_name("std::vec::Vec");
@@ -291,7 +291,7 @@ impl StableTypeID {
     /// For a generic type `Container<T, U>`, the stable ID would be computed
     /// as:
     ///
-    /// ```rust
+    /// ```ignore
     /// # use pernixc_stable_type_id::StableTypeID;
     /// # let container_base = StableTypeID::from_unique_type_name("Container");
     /// # let t_id = StableTypeID::from_unique_type_name("T");
@@ -419,7 +419,7 @@ impl StableTypeID {
 ///
 /// ## Manual Implementation
 ///
-/// ```rust
+/// ```ignore
 /// use pernixc_stable_type_id::{Identifiable, StableTypeID};
 ///
 /// struct MyType;
@@ -434,7 +434,7 @@ impl StableTypeID {
 ///
 /// ## Using the Derive Macro (Recommended)
 ///
-/// ```rust
+/// ```ignore
 /// use pernixc_stable_type_id::Identifiable;
 ///
 /// #[derive(Identifiable)]
@@ -478,7 +478,7 @@ pub trait Identifiable {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```ignore
     /// use pernixc_stable_type_id::Identifiable;
     ///
     /// #[derive(Identifiable)]

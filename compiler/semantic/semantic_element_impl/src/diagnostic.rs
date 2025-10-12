@@ -7,13 +7,13 @@ use pernixc_diagnostic::Report;
 use pernixc_ir::Key as IRKey;
 use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_semantic_element::{
-    fields::Key as FieldsKey, import::Key as ImportKey,
-    type_alias::Key as TypeAliasKey, variant::Key as VariantKey,
-    where_clause::Key as WhereClauseKey,
+    capability::Key as DoEffectKey, fields::Key as FieldsKey,
+    import::Key as ImportKey, type_alias::Key as TypeAliasKey,
+    variant::Key as VariantKey, where_clause::Key as WhereClauseKey,
 };
 use pernixc_source_file::ByteIndex;
 use pernixc_symbol::{
-    all_symbol_ids,
+    get_all_symbol_ids,
     kind::{get_kind, Kind},
 };
 use pernixc_target::{Global, TargetID};
@@ -119,6 +119,15 @@ pub async fn single_rendered_executor(
         }
     }
 
+    if kind.has_capabilities() {
+        let diags =
+            engine.query(&BuildDiagnosticKey::new(DoEffectKey(id))).await?;
+
+        for diag in diags.iter() {
+            final_diagnostics.push(diag.report(engine).await?);
+        }
+    }
+
     if kind.has_function_body() {
         let diags = engine.query(&BuildDiagnosticKey::new(IRKey(id))).await?;
 
@@ -154,7 +163,7 @@ pub async fn all_rendered_executor(
 > {
     scoped!(|handles| async move {
         let mut diagnostics = Vec::new();
-        let all_ids = engine.all_symbol_ids(id).await;
+        let all_ids = engine.get_all_symbol_ids(id).await;
 
         // SAFETY: the spawned tasks are independent and do not access shared
         // state therefore they can be safely parallelly re-verified.

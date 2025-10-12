@@ -1,0 +1,14 @@
+public effect Test['a]:
+    firstOperation(x: &'a int32)
+
+
+public effect Unhandled:
+    unhandledOperation()
+
+
+public function test['a](x: &'a int32) do Test['a]:
+    Test::firstOperation(x)
+
+
+public function doUnhandled():
+    Unhandled::unhandledOperation()

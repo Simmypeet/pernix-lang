@@ -16,7 +16,7 @@ use crate::{
         Diagnostic, ExpressExpectedAValue, ExpressOutsideScope,
         ScopeWithGivenLableNameNotFound,
     },
-    inference_context::constraint,
+    infer::constraint,
 };
 
 impl Bind<&pernixc_syntax::expression::terminator::Express> for Binder<'_> {

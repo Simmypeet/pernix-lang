@@ -3,6 +3,7 @@ use pernixc_handler::Handler;
 use pernixc_hash::HashSet;
 use pernixc_ir::{
     instruction::{Instruction, ScopePop},
+    value::Environment as ValueEnvironment,
     IR,
 };
 use pernixc_semantic_element::return_type::get_return_type;
@@ -84,10 +85,10 @@ impl Binder<'_> {
 
         // we're in the function, check if all paths return the value
         'out: {
-            let symbol_kind = self.engine.get_kind(self.current_site).await;
+            let symbol_kind = self.engine.get_kind(self.current_site()).await;
             if symbol_kind.has_function_body() {
                 let return_ty =
-                    self.engine.get_return_type(self.current_site).await?;
+                    self.engine.get_return_type(self.current_site()).await?;
 
                 // no checking need
                 if *return_ty
@@ -107,7 +108,7 @@ impl Binder<'_> {
                 {
                     handler.receive(
                         NotAllFlowPathsReturnAValue {
-                            callable_id: self.current_site,
+                            callable_id: self.current_site(),
                         }
                         .into(),
                     );
@@ -117,9 +118,14 @@ impl Binder<'_> {
 
         // transform inference types
         self.transform_inference(handler).await?;
-        let env = self.create_environment();
+        let ty_env = self.create_environment();
+        let value_env = ValueEnvironment::builder()
+            .type_environment(&ty_env)
+            .maybe_captures(self.captures)
+            .current_site(self.current_site())
+            .build();
 
-        check::check(&self.ir, self.current_site, &env, handler).await?;
+        check::check(&self.ir, &value_env, handler).await?;
 
         Ok(self.ir)
     }

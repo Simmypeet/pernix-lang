@@ -50,7 +50,7 @@ pub struct Subtype<T> {
 
 /// The forall lifetime is found on the `self` side and matched with the
 /// non-forall lifetime on the `target` side.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NotGeneralEnoughLifetimeError {
     /// The forall lifetime found on the `self` side.
     pub forall_lifetime: Forall,
@@ -61,7 +61,7 @@ pub struct NotGeneralEnoughLifetimeError {
 
 /// The forall lifetime on the `source` side can be matched with only exactly
 /// one forall lifetime on the `target` side (including normal lifetimes).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ForallLifetimeMatchedMoreThanOnceError {
     /// The forall lifetime found on the `target` side.
     pub forall_lifetime: Forall,
@@ -93,7 +93,7 @@ impl visitor::MutableRecursive<Lifetime>
         if let Some(instantiated) =
             self.instantiations.lifetimes_by_forall.get(term_forall)
         {
-            *term = *instantiated;
+            *term = instantiated.clone();
         }
 
         true
@@ -136,7 +136,7 @@ impl ForallLifetimeInstantiation {
 
 /// An enumeration of the possible errors related to forall lifetimes when
 /// determining the compatibility of two terms.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
 pub enum ForallLifetimeError {
     NotGeneralEnoughLifetime(NotGeneralEnoughLifetimeError),
@@ -190,7 +190,7 @@ impl Impl for Lifetime {
             return Ok(Some(Arc::new(Succeeded::new(Subtypable::default()))));
         }
 
-        match (subtype.target, subtype.source) {
+        match (subtype.target.clone(), subtype.source.clone()) {
             (self_lifetime, Self::Forall(forall_source)) => {
                 let mut subtypable = Subtypable::default();
 
@@ -227,27 +227,29 @@ impl Impl for Lifetime {
         }
 
         let constraints: BTreeSet<_> = match subtype.variance {
-            Variance::Covariant => {
-                std::iter::once(LifetimeConstraint::LifetimeOutlives(
-                    Outlives { operand: subtype.target, bound: subtype.source },
-                ))
-                .collect()
-            }
-            Variance::Contravariant => {
-                std::iter::once(LifetimeConstraint::LifetimeOutlives(
-                    Outlives { operand: subtype.source, bound: subtype.target },
-                ))
-                .collect()
-            }
+            Variance::Covariant => std::iter::once(
+                LifetimeConstraint::LifetimeOutlives(Outlives {
+                    operand: subtype.target.clone(),
+                    bound: subtype.source.clone(),
+                }),
+            )
+            .collect(),
+            Variance::Contravariant => std::iter::once(
+                LifetimeConstraint::LifetimeOutlives(Outlives {
+                    operand: subtype.source.clone(),
+                    bound: subtype.target.clone(),
+                }),
+            )
+            .collect(),
             Variance::Bivariant => BTreeSet::new(),
             Variance::Invariant => [
                 LifetimeConstraint::LifetimeOutlives(Outlives::new(
-                    subtype.target,
-                    subtype.source,
+                    subtype.target.clone(),
+                    subtype.source.clone(),
                 )),
                 LifetimeConstraint::LifetimeOutlives(Outlives::new(
-                    subtype.source,
-                    subtype.target,
+                    subtype.source.clone(),
+                    subtype.target.clone(),
                 )),
             ]
             .into_iter()
@@ -271,7 +273,7 @@ fn merge_result(
     current
         .result
         .forall_lifetime_errors
-        .extend(new.result.forall_lifetime_errors.iter().copied());
+        .extend(new.result.forall_lifetime_errors.iter().cloned());
 
     // try to compose a new forall lifetime instantiation
     for (from, to) in new
@@ -279,13 +281,13 @@ fn merge_result(
         .forall_lifetime_instantiations
         .lifetimes_by_forall
         .iter()
-        .map(|(from, to)| (*from, *to))
+        .map(|(from, to)| (from.clone(), to.clone()))
     {
         match current
             .result
             .forall_lifetime_instantiations
             .lifetimes_by_forall
-            .entry(from)
+            .entry(from.clone())
         {
             Entry::Vacant(vacant_entry) => {
                 vacant_entry.insert(to);
@@ -331,13 +333,13 @@ fn merge_result(
                     // constraints
                     current.constraints.insert(
                         LifetimeConstraint::LifetimeOutlives(Outlives::new(
-                            to,
-                            *occupied_entry.get(),
+                            to.clone(),
+                            occupied_entry.get().clone(),
                         )),
                     );
                     current.constraints.insert(
                         LifetimeConstraint::LifetimeOutlives(Outlives::new(
-                            *occupied_entry.get(),
+                            occupied_entry.get().clone(),
                             to,
                         )),
                     );
@@ -678,8 +680,8 @@ impl<N: Normalizer> Environment<'_, N> {
         {
             let Some(new_result) = self
                 .query(&Subtype::new(
-                    *source_lt,
-                    *target_lt,
+                    source_lt.clone(),
+                    target_lt.clone(),
                     Variance::Invariant,
                 ))
                 .await?

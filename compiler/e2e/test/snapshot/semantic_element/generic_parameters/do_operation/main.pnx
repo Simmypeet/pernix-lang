@@ -1,0 +1,4 @@
+public effect Test[T]:
+    doInner[A, const U: int32]():
+        where:
+            T: 'static

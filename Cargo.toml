@@ -1,5 +1,4 @@
 [workspace]
-resolver = "2"
 members = [
     # tidy-alphabetical-start
     "compiler/base/arena",
@@ -28,6 +27,7 @@ members = [
     "compiler/syntax/syntax",
 
     "compiler/semantic/symbol",
+    "compiler/semantic/symbol_impl",
     "compiler/semantic/term",
     "compiler/semantic/type_system",
     "compiler/semantic/resolution",
@@ -36,10 +36,13 @@ members = [
     "compiler/semantic/semantic_element_impl",
     "compiler/semantic/bind",
     "compiler/semantic/ir",
+    "compiler/semantic/cps",
     "compiler/semantic/memory_checker",
     "compiler/semantic/borrow_checker",
 
     "compiler/codegen/llvm",
+
+    "lsp/server",
 
     "compiler/driver",
     "compiler/main",
@@ -47,6 +50,7 @@ members = [
 
     # tidy-alphabetical-end
 ]
+resolver = "2"
 
 [workspace.dependencies]
 mimalloc = { version = "0.1.47" }
@@ -136,6 +140,7 @@ trait-variant = { version = "0.1.2" }
 fjall = { version = "2.11.2" }
 sled = { version = "0.34.7" }
 stacker = "0.1.21"
+serde_json = { version = "1.0.96" }
 
 [patch.crates-io]
 inkwell = { git = "https://github.com/Simmypeet/inkwell", rev = "4366f7b37b4e732b4c567494077f3d871e2a2a60" }

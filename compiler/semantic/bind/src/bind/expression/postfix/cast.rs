@@ -21,7 +21,7 @@ use crate::{
         Expression,
     },
     binder::{type_check::Expected, BindingError, Error},
-    inference_context::{self, constraint},
+    infer::{self, constraint},
 };
 
 pub mod diagnostic;
@@ -193,7 +193,7 @@ async fn type_can_pointer_cast(
                 .unwrap();
 
             match inference {
-                inference_context::table::Inference::Known(known) => {
+                infer::table::Inference::Known(known) => {
                     Box::pin(type_can_pointer_cast(
                         binder,
                         &known.clone(),
@@ -202,7 +202,7 @@ async fn type_can_pointer_cast(
                     ))
                     .await
                 }
-                inference_context::table::Inference::Inferring(id) => {
+                infer::table::Inference::Inferring(id) => {
                     let constraint = binder
                         .inference_context()
                         .type_table()

@@ -1,0 +1,11 @@
+public effect Test['x]:
+    doSomething(a: &'x int32)
+
+
+# `Test` uses forall lifetime
+public function test['x](a: &'x int32) do Test: 
+    takeSpecific(a)
+
+
+public function takeSpecific['x](a: &'x int32) do Test['x]:
+    Test::doSomething(a)

@@ -13,6 +13,7 @@ use crate::Passable;
 pub mod arbitrary;
 
 pub mod constant;
+pub mod effect;
 pub mod r#enum;
 pub mod r#extern;
 pub mod function;

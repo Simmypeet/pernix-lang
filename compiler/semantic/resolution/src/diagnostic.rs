@@ -735,3 +735,46 @@ impl Report for ExpectModule {
         })
     }
 }
+
+/// The higher-ranked lifetime with the same name already exists in the given
+/// scope.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+pub struct ForallLifetimeRedefinition {
+    /// The span of the redefinition.
+    pub redefinition_span: RelativeSpan,
+}
+
+impl Report for ForallLifetimeRedefinition {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
+    {
+        Ok(pernixc_diagnostic::Rendered {
+            primary_highlight: Some(Highlight::new(
+                engine.to_absolute_span(&self.redefinition_span).await,
+                Some(
+                    "forall lifetime with the same name already exists in \
+                     this scope"
+                        .to_string(),
+                ),
+            )),
+            message: "forall lifetime redefinition".to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        })
+    }
+}

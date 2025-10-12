@@ -628,9 +628,8 @@ async fn traverse_block_internal<T: Traverser>(
         }
     }
 
-    if let ControlFlow::Break(result) = traverser_state
-        .on_terminator(block_id, block.terminator().as_ref())
-        .await?
+    if let ControlFlow::Break(result) =
+        traverser_state.on_terminator(block_id, block.terminator()).await?
     {
         return Ok(result);
     }
@@ -816,6 +815,7 @@ impl<N: Normalizer> Traverser for LiveBorrowTraverser<'_, N> {
                     .unwrap()
                     .r#type
                     .clone(),
+
                 Memory::Alloca(id) => self
                     .context
                     .values()
@@ -824,6 +824,8 @@ impl<N: Normalizer> Traverser for LiveBorrowTraverser<'_, N> {
                     .unwrap()
                     .r#type
                     .clone(),
+
+                Memory::Capture(_) => todo!(),
             };
 
             let Some(assigned_state) =
@@ -865,7 +867,7 @@ impl<N: Normalizer> Traverser for LiveBorrowTraverser<'_, N> {
                         .set_assigned(
                             &address,
                             memory_root_ty,
-                            self.context.environment(),
+                            self.context.type_environment(),
                             write_span.unwrap(),
                             self.context.handler(),
                         )
@@ -894,6 +896,15 @@ impl<N: Normalizer> Traverser for LiveBorrowTraverser<'_, N> {
                             .context
                             .values()
                             .allocas
+                            .get(id)
+                            .unwrap()
+                            .span
+                            .unwrap(),
+                        Memory::Capture(id) => self
+                            .context
+                            .environment()
+                            .captures()
+                            .captures
                             .get(id)
                             .unwrap()
                             .span
@@ -1087,7 +1098,7 @@ impl<N: Normalizer> Traverser for LiveLenderTraverser<'_, N> {
                     .set_assigned(
                         &store.address,
                         self.root_type.clone(),
-                        self.context.environment(),
+                        self.context.type_environment(),
                         store.span.unwrap(),
                         self.context.handler(),
                     )
@@ -1117,6 +1128,8 @@ impl<N: Normalizer> Traverser for LiveLenderTraverser<'_, N> {
                             .unwrap()
                             .declared_in_scope_id
                     }
+
+                    Memory::Capture(_) => todo!(),
                 };
 
                 if scope_of_memory == scope_pop.0 {

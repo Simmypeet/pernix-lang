@@ -1,0 +1,22 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: trait member not implemented
+  ╭─ compiler/e2e/test/snapshot/crashes/0001/main.pnx:8:12
+  │
+8 │ implements Drop[LoudDrop]:
+  │            ^^^^^^^^^^^^^^ missing implementation for trait function: `core::Drop::drop`
+
+error: unsatisfied predicate
+  ╭─ compiler/e2e/test/snapshot/crashes/0001/main.pnx:8:12
+  │
+8 │ implements Drop[LoudDrop]:
+  │            ^^^^^^^^^^^^^^ the predicate `marker not core::Copy[main::LoudDrop]` is not satisfied
+
+error: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

@@ -21,11 +21,7 @@ impl<N: Normalizer> Context<'_, N> {
         for element in tuple.elements.iter().filter(|x| x.is_unpacked) {
             let Succeeded { result: ty, constraints } = self
                 .values()
-                .type_of(
-                    &element.value,
-                    self.current_site(),
-                    self.environment(),
-                )
+                .type_of(&element.value, self.environment())
                 .await
                 .map_err(|x| {
                     x.report_as_type_calculating_overflow(
@@ -38,7 +34,7 @@ impl<N: Normalizer> Context<'_, N> {
 
             let predicate = Predicate::TupleType(predicate::Tuple(ty));
             lifetime_constraints.extend(
-                self.environment()
+                self.type_environment()
                     .predicate_satisfied(
                         predicate,
                         *self.values().span_of_value(&element.value).unwrap(),

@@ -134,7 +134,8 @@ impl<N: Normalizer> Environment<'_, N> {
         let mut constraints = BTreeSet::new();
 
         for lifetime in &generic_arguments.lifetimes {
-            let Some(result) = self.query(&Definite::new(*lifetime)).await?
+            let Some(result) =
+                self.query(&Definite::new(lifetime.clone())).await?
             else {
                 return Ok(None);
             };

@@ -13,7 +13,10 @@ use super::{
     marker::Marker, r#enum::Enum, r#extern::Extern, r#struct::Struct,
     r#trait::Trait, r#type::Type,
 };
-use crate::{AccessModifier, Identifier, Keyword, Passable, SimplePath};
+use crate::{
+    item::effect::Effect, AccessModifier, Identifier, Keyword, Passable,
+    SimplePath,
+};
 
 #[cfg(any(test, feature = "arbitrary"))]
 pub mod arbitrary;
@@ -73,7 +76,8 @@ abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #{fragment = expect::Fragment::Delimited(DelimiterKind::Parenthesis)}
     pub struct ParenthesizedImportItems {
-        pub import_items: ImportItems = ast::<ImportItems>(),
+        pub items: #[multi] ImportItem
+            = ast::<ImportItem>().repeat_all_with_separator(','),
     }
 }
 
@@ -186,6 +190,7 @@ abstract_tree::abstract_tree! {
         Constant(Constant = ast::<Constant>()),
         Extern(Extern = ast::<Extern>()),
         Marker(Marker = ast::<Marker>()),
+        Effect(Effect = ast::<Effect>()),
     }
 }
 

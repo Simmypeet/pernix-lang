@@ -1,0 +1,15 @@
+public effect Test:
+    matched(one: int32, two: int32)
+    mismatched(one: int32)
+
+
+public function main():
+    do:
+        pass
+    
+    with Test:
+        matched(one, two):
+            pass
+        
+        mismatched(one, two): # arguments count mismatched
+            pass

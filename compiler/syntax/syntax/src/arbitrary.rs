@@ -950,6 +950,7 @@ impl Arbitrary for ReferenceOf {
 
 reference! {
     #[derive(Debug, Clone)]
+    #[allow(clippy::large_enum_variant)]
     pub enum ConstantArgument for super::ConstantArgument {
         Expression(Expression),
         Elided(Elided),

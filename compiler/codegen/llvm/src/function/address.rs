@@ -135,7 +135,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
 
                 let index_value = match self.get_value(&index.indexing_value)? {
                     Some(LlvmValue::Scalar(index)) => index,
-                    Some(LlvmValue::TmpAggegate(_)) => {
+                    Some(LlvmValue::TmpAggregate(_)) => {
                         unreachable!("indexing value is not an tmp aggregate")
                     }
 
@@ -153,8 +153,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                                     .values
                                     .type_of(
                                         &*index.array_address,
-                                        self.callable_id,
-                                        &self.environment,
+                                        &self.value_environment,
                                     )
                                     .await
                                     .unwrap()

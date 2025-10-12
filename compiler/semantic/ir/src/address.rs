@@ -20,14 +20,13 @@ use pernixc_term::{
     r#type::{Qualifier, Type},
     tuple,
 };
-use pernixc_type_system::{
-    environment::Environment, normalizer::Normalizer, Error, Succeeded,
-};
+use pernixc_type_system::{normalizer::Normalizer, Error, Succeeded};
 
 use crate::{
     alloca::Alloca,
+    capture::Capture,
     transform::Transformer,
-    value::{TypeOf, Value},
+    value::{Environment, TypeOf, Value},
     Values,
 };
 
@@ -227,6 +226,9 @@ pub struct Reference {
 pub enum Memory {
     Parameter(ID<Parameter>),
     Alloca(ID<Alloca>),
+
+    /// A captured variable from the parent closure/function.
+    Capture(ID<Capture>),
 }
 
 /// Represents an address to a particular location in memory.
@@ -379,6 +381,37 @@ impl Address {
             }
         }
     }
+
+    /// Replaces the sub-address of `self` that matches `cond` with `new`.
+    ///
+    /// Suppose `self` is `a.b.c.d`, `cond` is `a.b.c`, and `new` is `x.y`, then
+    /// after calling this function, `self` will be `x.y.d`.
+    ///
+    /// Suppose `self` is `a.b.c.d`, `cond` is `b.c`, and `new` is `x.y`,
+    /// then after calling this function, `self` will remain `a.b.c.d` since
+    /// `cond` has to match from the root of `self`.
+    ///
+    /// Returns `true` if a replacement was made, `false` otherwise.
+    pub fn replace_with(mut self: &mut Self, cond: &Self, new: Self) -> bool {
+        loop {
+            if self == cond {
+                *self = new;
+                return true;
+            }
+
+            match self {
+                Self::Memory(_) => return false,
+
+                Self::Field(field) => self = field.struct_address.as_mut(),
+                Self::Tuple(tuple) => self = tuple.tuple_address.as_mut(),
+                Self::Index(index) => self = index.array_address.as_mut(),
+                Self::Variant(variant) => self = variant.enum_address.as_mut(),
+                Self::Reference(reference) => {
+                    self = reference.reference_address.as_mut();
+                }
+            }
+        }
+    }
 }
 
 impl TypeOf<&Address> for Values {
@@ -386,26 +419,42 @@ impl TypeOf<&Address> for Values {
     async fn type_of<N: Normalizer>(
         &self,
         address: &Address,
-        current_site: Global<pernixc_symbol::ID>,
         environment: &Environment<'_, N>,
     ) -> Result<Succeeded<Type>, Error> {
         match address {
             Address::Memory(Memory::Parameter(parameter)) => {
                 let function_signature = environment
                     .tracked_engine()
-                    .get_parameters(current_site)
+                    .get_parameters(environment.current_site)
                     .await?;
 
                 let ty =
                     function_signature.parameters[*parameter].r#type.clone();
 
-                Ok(environment.simplify(ty).await?.deref().clone())
+                Ok(environment
+                    .type_environment
+                    .simplify(ty)
+                    .await?
+                    .deref()
+                    .clone())
+            }
+
+            Address::Memory(Memory::Capture(parameter)) => {
+                let capture = &environment.captures().captures[*parameter];
+
+                Ok(environment
+                    .type_environment
+                    .simplify(capture.address_type.clone())
+                    .await?
+                    .deref()
+                    .clone())
             }
 
             Address::Memory(Memory::Alloca(parameter)) => {
                 let alloca = &self.allocas[*parameter];
 
                 Ok(environment
+                    .type_environment
                     .simplify(alloca.r#type.clone())
                     .await?
                     .deref()
@@ -414,13 +463,10 @@ impl TypeOf<&Address> for Values {
 
             Address::Field(field_address) => {
                 // the type of address should've been simplified
-                let Succeeded { result, mut constraints } =
-                    Box::pin(self.type_of(
-                        &*field_address.struct_address,
-                        current_site,
-                        environment,
-                    ))
-                    .await?;
+                let Succeeded { result, mut constraints } = Box::pin(
+                    self.type_of(&*field_address.struct_address, environment),
+                )
+                .await?;
                 let Type::Symbol(Symbol { id: struct_id, generic_arguments }) =
                     result
                 else {
@@ -446,7 +492,8 @@ impl TypeOf<&Address> for Values {
                     fields.fields[field_address.id].r#type.clone();
 
                 instantiation.instantiate(&mut field_ty);
-                let simplification = environment.simplify(field_ty).await?;
+                let simplification =
+                    environment.type_environment.simplify(field_ty).await?;
                 constraints.extend(simplification.constraints.iter().cloned());
 
                 Ok(Succeeded {
@@ -456,73 +503,63 @@ impl TypeOf<&Address> for Values {
             }
 
             Address::Tuple(tuple) => {
-                Ok(Box::pin(self.type_of(
-                    &*tuple.tuple_address,
-                    current_site,
-                    environment,
-                ))
-                .await?
-                .map(|x| {
-                    // extract tuple type
-                    let Type::Tuple(mut tuple_ty) = x else {
-                        panic!("expected tuple type");
-                    };
+                Ok(Box::pin(self.type_of(&*tuple.tuple_address, environment))
+                    .await?
+                    .map(|x| {
+                        // extract tuple type
+                        let Type::Tuple(mut tuple_ty) = x else {
+                            panic!("expected tuple type");
+                        };
 
-                    match match tuple.offset {
-                        Offset::FromStart(id) => Some(id),
-                        Offset::FromEnd(id) => tuple_ty
-                            .elements
-                            .len()
-                            .checked_sub(1)
-                            .and_then(|x| x.checked_sub(id)),
-                        Offset::Unpacked => {
-                            let Some(unpacked_ty) = tuple_ty
+                        match match tuple.offset {
+                            Offset::FromStart(id) => Some(id),
+                            Offset::FromEnd(id) => tuple_ty
                                 .elements
-                                .iter()
-                                .find_map(|x| x.is_unpacked.then_some(&x.term))
-                            else {
-                                panic!("expected unpacked tuple element");
-                            };
+                                .len()
+                                .checked_sub(1)
+                                .and_then(|x| x.checked_sub(id)),
+                            Offset::Unpacked => {
+                                let Some(unpacked_ty) =
+                                    tuple_ty.elements.iter().find_map(|x| {
+                                        x.is_unpacked.then_some(&x.term)
+                                    })
+                                else {
+                                    panic!("expected unpacked tuple element");
+                                };
 
-                            return unpacked_ty.clone();
-                        }
-                    } {
-                        Some(id) if id < tuple_ty.elements.len() => {
-                            let element_ty = tuple_ty.elements.remove(id);
-
-                            if element_ty.is_unpacked {
-                                Type::Tuple(tuple::Tuple {
-                                    elements: vec![tuple::Element {
-                                        term: element_ty.term,
-                                        is_unpacked: true,
-                                    }],
-                                })
-                            } else {
-                                element_ty.term
+                                return unpacked_ty.clone();
                             }
-                        }
+                        } {
+                            Some(id) if id < tuple_ty.elements.len() => {
+                                let element_ty = tuple_ty.elements.remove(id);
 
-                        _ => panic!("invalid tuple offset"),
-                    }
-                }))
+                                if element_ty.is_unpacked {
+                                    Type::Tuple(tuple::Tuple {
+                                        elements: vec![tuple::Element {
+                                            term: element_ty.term,
+                                            is_unpacked: true,
+                                        }],
+                                    })
+                                } else {
+                                    element_ty.term
+                                }
+                            }
+
+                            _ => panic!("invalid tuple offset"),
+                        }
+                    }))
             }
 
-            Address::Index(index) => Ok(Box::pin(self.type_of(
-                &*index.array_address,
-                current_site,
-                environment,
-            ))
-            .await?
-            .map(|x| *x.into_array().unwrap().r#type)),
+            Address::Index(index) => {
+                Ok(Box::pin(self.type_of(&*index.array_address, environment))
+                    .await?
+                    .map(|x| *x.into_array().unwrap().r#type))
+            }
 
             Address::Variant(variant) => {
                 let Succeeded { result, mut constraints } =
-                    Box::pin(self.type_of(
-                        &*variant.enum_address,
-                        current_site,
-                        environment,
-                    ))
-                    .await?;
+                    Box::pin(self.type_of(&*variant.enum_address, environment))
+                        .await?;
 
                 let Type::Symbol(Symbol { id: enum_id, generic_arguments }) =
                     result
@@ -551,7 +588,8 @@ impl TypeOf<&Address> for Values {
 
                 instantiation.instantiate(&mut variant_ty);
 
-                let simplification = environment.simplify(variant_ty).await?;
+                let simplification =
+                    environment.type_environment.simplify(variant_ty).await?;
                 constraints.extend(simplification.constraints.iter().cloned());
 
                 Ok(Succeeded::with_constraints(
@@ -560,11 +598,9 @@ impl TypeOf<&Address> for Values {
                 ))
             }
 
-            Address::Reference(value) => Ok(Box::pin(self.type_of(
-                &*value.reference_address,
-                current_site,
-                environment,
-            ))
+            Address::Reference(value) => Ok(Box::pin(
+                self.type_of(&*value.reference_address, environment),
+            )
             .await?
             .map(|x| *x.into_reference().unwrap().pointee)),
         }

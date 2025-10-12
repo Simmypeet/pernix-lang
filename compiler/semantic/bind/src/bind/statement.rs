@@ -16,7 +16,7 @@ use crate::{
     bind::{Bind, Expression, Guidance},
     binder::{type_check::Expected, Binder, Error, UnrecoverableError},
     diagnostic::Diagnostic,
-    inference_context::constraint,
+    infer::constraint,
 };
 
 impl Binder<'_> {

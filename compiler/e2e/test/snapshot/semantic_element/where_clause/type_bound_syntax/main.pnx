@@ -1,0 +1,26 @@
+public trait Fizz[T]:
+    pass
+
+
+public type Test[T: Fizz] = T
+
+
+public type Inst[T] = Test[T]
+
+
+public trait Buzz['a, T]:
+    pass
+
+
+public type Test2[T: for['x] Buzz['x]] = T
+
+
+public type Inst2[T] = Test2[T]
+
+
+public type Test3[T] = T:
+    where:
+        T: for['x] target::Buzz['x]
+
+
+public type Inst3[T] = Test3[T]

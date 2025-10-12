@@ -13,7 +13,7 @@ use pernixc_ir::{
     instruction::{Drop, DropUnpackTuple, Instruction},
     value::{
         literal::{Literal, Unreachable},
-        TypeOf, Value,
+        Environment, TypeOf, Value,
     },
     Values,
 };
@@ -32,9 +32,7 @@ use pernixc_term::{
     predicate::{PositiveTrait, Predicate},
     r#type::{Primitive, Type},
 };
-use pernixc_type_system::{
-    environment::Environment, normalizer::Normalizer, UnrecoverableError,
-};
+use pernixc_type_system::{normalizer::Normalizer, UnrecoverableError};
 
 use crate::diagnostic::Diagnostic;
 
@@ -44,7 +42,6 @@ pub(super) async fn simplify_drops<
 >(
     drop_instructions: T,
     values: &Values,
-    current_site: Global<pernixc_symbol::ID>,
     environment: &Environment<'_, N>,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<Vec<Instruction>, UnrecoverableError> {
@@ -57,7 +54,6 @@ pub(super) async fn simplify_drops<
                     &drop,
                     values,
                     &mut HashSet::default(),
-                    current_site,
                     environment,
                     handler,
                 )
@@ -80,7 +76,6 @@ pub(super) async fn simplify_drop<N: Normalizer>(
     drop: &Drop,
     values: &Values,
     visited_types: &mut HashSet<Type>,
-    current_site: Global<pernixc_symbol::ID>,
     environment: &Environment<'_, N>,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<Vec<Instruction>, UnrecoverableError> {
@@ -88,17 +83,21 @@ pub(super) async fn simplify_drop<N: Normalizer>(
         Memory::Parameter(id) => {
             let parameters = environment
                 .tracked_engine()
-                .get_parameters(current_site)
+                .get_parameters(environment.current_site)
                 .await?;
 
             parameters.parameters[*id].span.unwrap()
         }
 
         Memory::Alloca(id) => values.allocas[*id].span.unwrap(),
+
+        Memory::Capture(id) => {
+            environment.captures().captures[*id].span.unwrap()
+        }
     };
 
     let ty = values
-        .type_of(&drop.address, current_site, environment)
+        .type_of(&drop.address, environment)
         .await
         .map_err(|x| x.report_as_type_calculating_overflow(span_of, &handler))?
         .result;
@@ -144,6 +143,7 @@ pub(super) async fn simplify_drop<N: Normalizer>(
                     );
 
                     if environment
+                        .type_environment
                         .query(&predicate)
                         .await
                         .map_err(|x| {
@@ -182,7 +182,6 @@ pub(super) async fn simplify_drop<N: Normalizer>(
                                 },
                                 values,
                                 visited_types,
-                                current_site,
                                 environment,
                                 handler,
                             ))
@@ -209,6 +208,7 @@ pub(super) async fn simplify_drop<N: Normalizer>(
                     );
 
                     if environment
+                        .type_environment
                         .query(&predicate)
                         .await
                         .map_err(|x| {
@@ -260,7 +260,6 @@ pub(super) async fn simplify_drop<N: Normalizer>(
                             },
                             values,
                             visited_types,
-                            current_site,
                             environment,
                             handler,
                         ))
@@ -306,7 +305,6 @@ pub(super) async fn simplify_drop<N: Normalizer>(
                                 },
                                 values,
                                 visited_types,
-                                current_site,
                                 environment,
                                 handler,
                             ))
@@ -339,7 +337,6 @@ pub(super) async fn simplify_drop<N: Normalizer>(
                                 },
                                 values,
                                 visited_types,
-                                current_site,
                                 environment,
                                 handler,
                             ))
@@ -364,7 +361,6 @@ pub(super) async fn simplify_drop<N: Normalizer>(
                                 },
                                 values,
                                 visited_types,
-                                current_site,
                                 environment,
                                 handler,
                             ))
@@ -404,7 +400,6 @@ pub(super) async fn simplify_drop<N: Normalizer>(
                 },
                 values,
                 visited_types,
-                current_site,
                 environment,
                 handler,
             ))

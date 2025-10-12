@@ -39,13 +39,13 @@ fn basic_subtyping(#[case] variance: Variance) {
 
         let a_t = Type::Reference(Reference {
             qualifier: Qualifier::Immutable,
-            lifetime: a_lt,
+            lifetime: a_lt.clone(),
             pointee: Box::new(Type::Primitive(Primitive::Bool)),
         });
 
         let static_t = Type::Reference(Reference {
             qualifier: Qualifier::Immutable,
-            lifetime: static_lt,
+            lifetime: static_lt.clone(),
             pointee: Box::new(Type::Primitive(Primitive::Bool)),
         });
 
@@ -73,20 +73,21 @@ fn basic_subtyping(#[case] variance: Variance) {
         let expected_constraints = match variance {
             Variance::Covariant => {
                 vec![LifetimeConstraint::LifetimeOutlives(Outlives {
-                    operand: a_lt,
-                    bound: static_lt,
+                    operand: a_lt.clone(),
+                    bound: static_lt.clone(),
                 })]
             }
             Variance::Contravariant => {
                 vec![LifetimeConstraint::LifetimeOutlives(Outlives {
-                    operand: static_lt,
-                    bound: a_lt,
+                    operand: static_lt.clone(),
+                    bound: a_lt.clone(),
                 })]
             }
             Variance::Invariant => {
                 vec![
                     LifetimeConstraint::LifetimeOutlives(Outlives::new(
-                        static_lt, a_lt,
+                        static_lt.clone(),
+                        a_lt.clone(),
                     )),
                     LifetimeConstraint::LifetimeOutlives(Outlives::new(
                         a_lt, static_lt,
@@ -167,7 +168,7 @@ fn subtyping_with_adt(#[case] variance: Variance) {
         let a_t = Type::Symbol(Symbol {
             id: adt_id,
             generic_arguments: GenericArguments {
-                lifetimes: vec![a_lt],
+                lifetimes: vec![a_lt.clone()],
                 types: Vec::new(),
                 constants: Vec::new(),
             },
@@ -177,7 +178,7 @@ fn subtyping_with_adt(#[case] variance: Variance) {
         let b_t = Type::Symbol(Symbol {
             id: adt_id,
             generic_arguments: GenericArguments {
-                lifetimes: vec![b_lt],
+                lifetimes: vec![b_lt.clone()],
                 types: Vec::new(),
                 constants: Vec::new(),
             },
@@ -205,8 +206,8 @@ fn subtyping_with_adt(#[case] variance: Variance) {
         let expected_constraint = match variance {
             Variance::Covariant => {
                 vec![LifetimeConstraint::LifetimeOutlives(Outlives {
-                    operand: a_lt,
-                    bound: b_lt,
+                    operand: a_lt.clone(),
+                    bound: b_lt.clone(),
                 })]
             }
             Variance::Contravariant => {
@@ -216,7 +217,10 @@ fn subtyping_with_adt(#[case] variance: Variance) {
                 })]
             }
             Variance::Invariant => vec![
-                LifetimeConstraint::LifetimeOutlives(Outlives::new(a_lt, b_lt)),
+                LifetimeConstraint::LifetimeOutlives(Outlives::new(
+                    a_lt.clone(),
+                    b_lt.clone(),
+                )),
                 LifetimeConstraint::LifetimeOutlives(Outlives::new(b_lt, a_lt)),
             ],
             Variance::Bivariant => vec![],
@@ -250,12 +254,12 @@ async fn subtyping_with_inner_tuple() {
 
     let lhs = Type::Tuple(Tuple {
         elements: vec![Element::new_regular(
-            Type::bool().to_immutable_reference(a_lt),
+            Type::bool().to_immutable_reference(a_lt.clone()),
         )],
     });
     let rhs = Type::Tuple(Tuple {
         elements: vec![Element::new_regular(
-            Type::bool().to_immutable_reference(b_lt),
+            Type::bool().to_immutable_reference(b_lt.clone()),
         )],
     });
 
@@ -308,19 +312,19 @@ async fn subtyping_with_mutable_reference() {
 
     let lhs = Type::Reference(Reference {
         qualifier: Qualifier::Mutable,
-        lifetime: a_lt,
+        lifetime: a_lt.clone(),
         pointee: Box::new(Type::Reference(Reference {
             qualifier: Qualifier::Immutable,
-            lifetime: b_lt,
+            lifetime: b_lt.clone(),
             pointee: Box::new(Type::Primitive(Primitive::Bool)),
         })),
     });
     let rhs = Type::Reference(Reference {
         qualifier: Qualifier::Mutable,
-        lifetime: c_lt,
+        lifetime: c_lt.clone(),
         pointee: Box::new(Type::Reference(Reference {
             qualifier: Qualifier::Immutable,
-            lifetime: d_lt,
+            lifetime: d_lt.clone(),
             pointee: Box::new(Type::Primitive(Primitive::Bool)),
         })),
     });
@@ -346,8 +350,10 @@ async fn subtyping_with_mutable_reference() {
         operand: a_lt,
         bound: c_lt,
     });
-    let b_and_d =
-        LifetimeConstraint::LifetimeOutlives(Outlives::new(b_lt, d_lt));
+    let b_and_d = LifetimeConstraint::LifetimeOutlives(Outlives::new(
+        b_lt.clone(),
+        d_lt.clone(),
+    ));
     let d_and_b =
         LifetimeConstraint::LifetimeOutlives(Outlives::new(d_lt, b_lt));
 

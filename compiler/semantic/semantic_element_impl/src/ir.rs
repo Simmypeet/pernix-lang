@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
-use pernixc_bind::binder::{Binder, UnrecoverableError};
+use pernixc_bind::binder::{self, Binder, UnrecoverableError};
 use pernixc_handler::Storage;
+use pernixc_ir::value::Environment as ValueEnvironment;
 use pernixc_query::runtime::executor;
 use pernixc_symbol::{kind::get_kind, syntax::get_function_body_syntax};
 use pernixc_type_system::{
@@ -28,7 +29,15 @@ async fn build_ir_for_function(
     for statement in
         function_body_syntax.members().filter_map(|x| x.into_line().ok())
     {
-        binder.bind_statement(&statement, storage).await.unwrap();
+        match binder.bind_statement(&statement, storage).await {
+            Ok(()) => {}
+            Err(UnrecoverableError::CyclicDependency(error)) => {
+                return Err(error);
+            }
+            Err(UnrecoverableError::Reported) => {
+                return Ok(Arc::new(pernixc_ir::IR::default()))
+            }
+        };
     }
 
     // finalize the binder to an ir
@@ -37,18 +46,24 @@ async fn build_ir_for_function(
         Err(UnrecoverableError::CyclicDependency(error)) => {
             return Err(error);
         }
-        Err(UnrecoverableError::Reported) => return Ok(Arc::default()),
+        Err(UnrecoverableError::Reported) => {
+            return Ok(Arc::new(pernixc_ir::IR::default()))
+        }
     };
 
     // do memory checking analysis
-    match pernixc_memory_checker::memory_check(engine, &mut ir, key.0, storage)
-        .await
+    match pernixc_memory_checker::memory_check(
+        engine, &mut ir, key.0, None, storage,
+    )
+    .await
     {
         Ok(()) => {}
         Err(UnrecoverableError::CyclicDependency(error)) => {
             return Err(error);
         }
-        Err(UnrecoverableError::Reported) => return Ok(Arc::default()),
+        Err(UnrecoverableError::Reported) => {
+            return Ok(Arc::new(pernixc_ir::IR::default()))
+        }
     }
 
     // if there's an error, should not proceed to borrow checking
@@ -65,7 +80,15 @@ async fn build_ir_for_function(
     );
 
     // do borrow checking analysis
-    match pernixc_borrow_checker::borrow_check(&ir, key.0, &env, storage).await
+    match pernixc_borrow_checker::borrow_check(
+        &ir,
+        &ValueEnvironment::builder()
+            .current_site(key.0)
+            .type_environment(&env)
+            .build(),
+        storage,
+    )
+    .await
     {
         Ok(()) => {}
 
@@ -73,7 +96,9 @@ async fn build_ir_for_function(
             return Err(error);
         }
 
-        Err(UnrecoverableError::Reported) => return Ok(Arc::default()),
+        Err(UnrecoverableError::Reported) => {
+            return Ok(Arc::new(pernixc_ir::IR::default()))
+        }
     }
 
     Ok(Arc::new(ir))
@@ -89,11 +114,15 @@ impl Build for pernixc_ir::Key {
         let kind = engine.get_kind(key.0).await;
         let storage = Storage::<Self::Diagnostic>::default();
 
+        let environment = binder::Environment::new(engine, key.0).await?;
+
         let binder = match kind {
             pernixc_symbol::kind::Kind::Function
             | pernixc_symbol::kind::Kind::ImplementationFunction => {
                 pernixc_bind::binder::Binder::new_function(
-                    engine, key.0, &storage,
+                    engine,
+                    &environment,
+                    &storage,
                 )
                 .await
             }
@@ -108,7 +137,7 @@ impl Build for pernixc_ir::Key {
             }
             Err(UnrecoverableError::Reported) => {
                 return Ok(Output {
-                    item: Arc::default(),
+                    item: Arc::new(pernixc_ir::IR::default()),
                     diagnostics: storage.into_vec().into(),
                     occurrences: Arc::default(),
                 });

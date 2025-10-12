@@ -76,7 +76,6 @@ pub struct Block {
     #[get = "pub"]
     instructions: Vec<Instruction>,
     /// The terminator instruction that will be executed last.
-    #[get = "pub"]
     terminator: Option<Terminator>,
     /// List of blocks that are predecessors of this block.
     #[get = "pub"]
@@ -95,6 +94,12 @@ impl Block {
         replacement: impl IntoIterator<Item = Instruction>,
     ) {
         self.instructions.splice(range, replacement);
+    }
+
+    /// Gets the terminator instruction of the block, if it has one.
+    #[must_use]
+    pub const fn terminator(&self) -> Option<&Terminator> {
+        self.terminator.as_ref()
     }
 
     /// Inserts a multiple instructions to the block at the given index.

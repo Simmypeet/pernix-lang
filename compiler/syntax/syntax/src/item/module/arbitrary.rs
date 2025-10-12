@@ -8,14 +8,14 @@ use proptest::{
 use crate::{
     arbitrary::{
         write_indent_line_for_indent_display, AccessModifier, IndentDisplay,
-        Passable, SimplePath,
+        IntoSeparated, Passable, SimplePath,
     },
     item::{
-        constant::arbitrary::Constant, function::arbitrary::Function,
-        implements::arbitrary::Implements, marker::arbitrary::Marker,
-        r#enum::arbitrary::Enum, r#extern::arbitrary::Extern,
-        r#struct::arbitrary::Struct, r#trait::arbitrary::Trait,
-        r#type::arbitrary::Type,
+        constant::arbitrary::Constant, effect::arbitrary::Effect,
+        function::arbitrary::Function, implements::arbitrary::Implements,
+        marker::arbitrary::Marker, r#enum::arbitrary::Enum,
+        r#extern::arbitrary::Extern, r#struct::arbitrary::Struct,
+        r#trait::arbitrary::Trait, r#type::arbitrary::Type,
     },
     reference,
 };
@@ -90,9 +90,9 @@ impl Arbitrary for ImportItems {
 
 reference! {
     #[derive(Debug, Clone, derive_more::Display)]
-    #[display("({import_items})")]
+    #[display("({})", self.items.into_separated(", "))]
     pub struct ParenthesizedImportItems for super::ParenthesizedImportItems {
-        pub import_items (ImportItems),
+        pub items (Vec<ImportItem>),
     }
 }
 
@@ -101,8 +101,8 @@ impl Arbitrary for ParenthesizedImportItems {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        ImportItems::arbitrary()
-            .prop_map(|import_items| Self { import_items })
+        proptest::collection::vec(ImportItem::arbitrary(), 0..=3)
+            .prop_map(|items| Self { items })
             .boxed()
     }
 }
@@ -332,6 +332,7 @@ reference! {
         Constant(Constant),
         Marker(Marker),
         Extern(Extern),
+        Effect(Effect),
     }
 }
 
@@ -352,6 +353,7 @@ impl Arbitrary for Member {
             Constant::arbitrary().prop_map(Member::Constant),
             Marker::arbitrary().prop_map(Member::Marker),
             Extern::arbitrary().prop_map(Member::Extern),
+            Effect::arbitrary().prop_map(Member::Effect),
         ]
         .boxed()
     }
@@ -375,6 +377,7 @@ impl IndentDisplay for Member {
             Self::Constant(constant) => constant.indent_fmt(f, indent),
             Self::Marker(marker) => marker.indent_fmt(f, indent),
             Self::Extern(extern_) => extern_.indent_fmt(f, indent),
+            Self::Effect(effect) => effect.indent_fmt(f, indent),
         }
     }
 }

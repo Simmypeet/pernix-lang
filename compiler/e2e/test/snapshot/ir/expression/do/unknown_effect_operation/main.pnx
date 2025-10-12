@@ -1,0 +1,14 @@
+public effect Test:
+    test()
+
+
+public function main():
+    do:
+        pass
+    
+    with Test:
+        test():
+            pass
+
+        unknown():
+            pass

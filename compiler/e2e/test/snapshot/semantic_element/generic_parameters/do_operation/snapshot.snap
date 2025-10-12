@@ -1,0 +1,23 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: effect operation symbol cannot have type or constant parameters
+  ╭─ compiler/e2e/test/snapshot/semantic_element/generic_parameters/do_operation/main.pnx:2:5
+  │
+1 │ public effect Test[T]:
+  │               ---- or consider moving generic parameters to the effect `main::Test` symbol instead
+2 │     doInner[A, const U: int32]():
+  │     ^^^^^^^ -        - defined here
+  │     │       │         
+  │     │       defined here
+  │     `main::Test::doInner` is an effect operation and cannot have type or constant parameters
+  │
+  = only lifetime parameters are allowed on effect operations; consider moving type or constant parameters to the parent effect symbol instead
+
+error: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

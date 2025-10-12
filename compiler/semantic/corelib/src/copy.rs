@@ -161,7 +161,10 @@ pub async fn initialize_copy_marker(
                 .unwrap(),
         ));
         let where_clause = Arc::new([Predicate {
-            predicate: predicate::Predicate::type_outlives(t_ty.clone(), a_lt),
+            predicate: predicate::Predicate::type_outlives(
+                t_ty.clone(),
+                a_lt.clone(),
+            ),
             span: None,
         }]);
 
@@ -206,7 +209,10 @@ pub async fn initialize_copy_marker(
                 .unwrap(),
         ));
         let where_clause = Arc::new([Predicate {
-            predicate: predicate::Predicate::type_outlives(t_ty.clone(), a_lt),
+            predicate: predicate::Predicate::type_outlives(
+                t_ty.clone(),
+                a_lt.clone(),
+            ),
             span: None,
         }]);
 

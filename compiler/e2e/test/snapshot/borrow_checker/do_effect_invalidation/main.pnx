@@ -1,0 +1,16 @@
+public effect Test['a]:
+    takeMut(x: &'a mut int32)
+
+
+public function useIndirectly['a](x: &'a mut int32) do Test['a]:
+    Test::takeMut(x)
+
+
+public function test['a](x: &'a mut int32) do Test['a]:
+    Test::takeMut(x)
+    Test::takeMut(x) # This should error because `x` is borrowed as mutable already
+
+
+public function anotherMain['a](x: &'a mut int32) do Test['a]:
+    useIndirectly(x)
+    useIndirectly(x) # This should error because `x` is borrowed as mutable already

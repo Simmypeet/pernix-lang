@@ -10,7 +10,7 @@ use pernixc_term::r#type::{Primitive, Qualifier, Type};
 use crate::{
     bind::{Bind, Expression, Guidance},
     binder::{type_check::Expected, BindingError, Error},
-    inference_context::constraint,
+    infer::constraint,
 };
 
 impl Bind<&pernixc_syntax::expression::prefix::Prefix>

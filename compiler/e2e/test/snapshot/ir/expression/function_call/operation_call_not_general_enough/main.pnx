@@ -1,0 +1,10 @@
+public effect Test['x]:
+    op()
+
+
+public function useForallTest() do for['x] Test['x]: # forall lifetime x
+    pass
+
+
+public function main['x]() do Test['x]: # Test['x] for specific 'x
+    useForallTest() 

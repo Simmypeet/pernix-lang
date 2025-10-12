@@ -5,41 +5,9 @@ use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_semantic_element::{
     implemented::InTargetKey, implements::get_implements,
 };
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
-use pernixc_stable_type_id::Identifiable;
-use pernixc_symbol::kind::FilterKey;
+use pernixc_symbol::get_all_implements_ids;
 use pernixc_target::{get_all_target_ids, Global, TargetID};
 use pernixc_tokio::scoped;
-
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    StableHash,
-    Serialize,
-    Deserialize,
-    Identifiable,
-)]
-pub struct ImplementationFilter;
-
-impl pernixc_symbol::kind::Filter for ImplementationFilter {
-    async fn filter(&self, kind: pernixc_symbol::kind::Kind) -> bool {
-        kind.is_implementation()
-    }
-}
-
-pernixc_register::register!(
-    FilterKey<ImplementationFilter>,
-    pernixc_symbol::kind::FilterExecutor
-);
-
-pernixc_register::register!(InTargetKey, InTargetExecutor);
 
 #[pernixc_query::executor(key(InTargetKey), name(InTargetExecutor))]
 pub async fn implemented_in_target_executor(
@@ -62,12 +30,7 @@ pub async fn implemented_in_target_executor(
         return Ok(Arc::new(HashSet::default()));
     }
 
-    let implementations = engine
-        .query(&pernixc_symbol::kind::FilterKey {
-            target_id: key.target_id,
-            filter: ImplementationFilter,
-        })
-        .await?;
+    let implementations = engine.get_all_implements_ids(key.target_id).await;
 
     // SAFETY: invokes implements calculation in parallel
     unsafe {
@@ -111,6 +74,8 @@ pub async fn implemented_in_target_executor(
 
     result
 }
+
+pernixc_register::register!(InTargetKey, InTargetExecutor);
 
 pernixc_register::register!(
     pernixc_semantic_element::implemented::Key,

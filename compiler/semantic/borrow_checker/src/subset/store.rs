@@ -18,7 +18,7 @@ impl<N: Normalizer> Context<'_, N> {
     ) -> Result<Changes, UnrecoverableError> {
         let Succeeded { result: address_ty, constraints: address_constraints } =
             self.values()
-                .type_of(store_address, self.current_site(), self.environment())
+                .type_of(store_address, self.environment())
                 .await
                 .map_err(|x| {
                     x.report_as_type_calculating_overflow(
@@ -54,7 +54,7 @@ impl<N: Normalizer> Context<'_, N> {
             borrow_created: None,
             overwritten_regions: RecursiveIterator::new(&address_ty)
                 .filter_map(|x| x.0.into_lifetime().ok())
-                .filter_map(|x| Region::try_from(*x).ok())
+                .filter_map(|x| Region::try_from(x.clone()).ok())
                 .collect::<HashSet<_>>(),
         })
     }
@@ -65,7 +65,7 @@ impl<N: Normalizer> Context<'_, N> {
     ) -> Result<Changes, UnrecoverableError> {
         let value_ty = self
             .values()
-            .type_of(&store_inst.value, self.current_site(), self.environment())
+            .type_of(&store_inst.value, self.environment())
             .await
             .map_err(|x| {
                 x.report_as_type_calculating_overflow(

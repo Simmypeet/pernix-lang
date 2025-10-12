@@ -3,36 +3,34 @@
 
 use flexstr::SharedStr;
 use pernixc_extend::extend;
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::TrackedEngine;
+use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_stable_hash::StableHash;
 use pernixc_target::{get_target_map, Global};
 
 use crate::{
-    get_table_of_symbol, get_target_root_module_id, kind::get_kind,
-    member::get_members, parent::get_parent, ID,
+    get_target_root_module_id, kind::get_kind, member::get_members,
+    parent::get_parent, ID,
 };
 
-#[pernixc_query::query(
-    key(Key),
-    id(Global<ID>),
-    value(SharedStr),
-    executor(Executor),
-    extend(method(get_name), no_cyclic)
+/// The key type used with [`TrackedEngine`] to access the name of a symbol.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+    pernixc_query::Key,
 )]
-#[allow(clippy::unnecessary_wraps)]
-pub async fn executor(
-    id: Global<ID>,
-    engine: &TrackedEngine,
-) -> Result<SharedStr, CyclicError> {
-    let table = engine.get_table_of_symbol(id).await;
-
-    Ok(table
-        .names
-        .get(&id.id)
-        .cloned()
-        .unwrap_or_else(|| panic!("invalid symbol ID: {:?}", id.id)))
-}
-
-pernixc_register::register!(Key, Executor);
+#[value(SharedStr)]
+#[extend(method(get_name), no_cyclic)]
+pub struct Key(pub Global<ID>);
 
 /// Gets the qualified name of the symbol such as `module::function`.
 #[extend]

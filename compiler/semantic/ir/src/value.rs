@@ -1,17 +1,20 @@
 //! Contains the definition of [`Value`].
 
+use bon::Builder;
 use literal::Literal;
 use pernixc_arena::ID;
 use pernixc_lexical::tree::RelativeSpan;
+use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 use pernixc_term::r#type::Type;
 use pernixc_type_system::{
-    environment::Environment, normalizer::Normalizer, Error, Succeeded,
+    environment::Environment as TyEnvironment, normalizer::Normalizer, Error,
+    Succeeded,
 };
 
-use crate::{value::register::Register, Values};
+use crate::{capture::Captures, value::register::Register, Values};
 pub mod literal;
 pub mod register;
 
@@ -38,7 +41,35 @@ pub enum Value {
     Literal(Literal),
 }
 
-/// An extension trait on [`Values`] taht provides the ability to get the type
+/// Representing an environment that the [`Values`] is in. This is primarily
+/// used for type checking and retrieving the type of a [`Value`].
+#[derive(Debug, Clone, Copy, Builder)]
+pub struct Environment<'e, N> {
+    /// The environment for type system operations.
+    pub type_environment: &'e TyEnvironment<'e, N>,
+
+    /// If the IR was built with captures, the captures here is used for
+    /// accessing the captured values.
+    pub captures: Option<&'e Captures>,
+
+    /// The site where the IR binding is being taken place in.
+    pub current_site: Global<pernixc_symbol::ID>,
+}
+
+impl<'e, N: Normalizer> Environment<'e, N> {
+    /// Gets the tracked engine from the type environment.
+    #[must_use]
+    pub fn tracked_engine(&self) -> &'e TrackedEngine {
+        self.type_environment.tracked_engine()
+    }
+
+    /// Gets the captures, unwrapping the option. Panics if there are no
+    /// captures.
+    #[must_use]
+    pub const fn captures(&self) -> &'e Captures { self.captures.unwrap() }
+}
+
+/// An extension trait on [`Values`] that provides the ability to get the type
 /// of the values in the IR.
 pub trait TypeOf<V> {
     /// Gets the type of the value
@@ -55,7 +86,6 @@ pub trait TypeOf<V> {
     fn type_of<'s, 'e, 'n, N: Normalizer>(
         &'s self,
         value: V,
-        current_site: Global<pernixc_symbol::ID>,
         environment: &'e Environment<'n, N>,
     ) -> impl std::future::Future<Output = Result<Succeeded<Type>, Error>>
            + use<'s, 'e, 'n, Self, V, N>;
@@ -65,16 +95,11 @@ impl TypeOf<&Value> for Values {
     async fn type_of<N: Normalizer>(
         &self,
         value: &Value,
-        current_site: Global<pernixc_symbol::ID>,
         environment: &Environment<'_, N>,
     ) -> Result<Succeeded<Type>, Error> {
         match value {
-            Value::Register(id) => {
-                self.type_of(*id, current_site, environment).await
-            }
-            Value::Literal(literal) => {
-                self.type_of(literal, current_site, environment).await
-            }
+            Value::Register(id) => self.type_of(*id, environment).await,
+            Value::Literal(literal) => self.type_of(literal, environment).await,
         }
     }
 }

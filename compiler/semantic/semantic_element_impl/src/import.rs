@@ -21,10 +21,7 @@ use pernixc_symbol::{
     name::get_name,
     span::get_span,
 };
-use pernixc_syntax::{
-    item::module::{ImportItems, ImportItemsKind},
-    SimplePathRoot,
-};
+use pernixc_syntax::{item::module::ImportItemsKind, SimplePathRoot};
 use pernixc_target::{get_linked_targets, get_target_map, Global};
 
 use crate::{
@@ -84,30 +81,30 @@ impl Build for import::Key {
                 None
             };
 
-            let import_items = import.items().into_iter().flat_map(|x| {
-                let test: Option<ImportItems> = match x {
-                    ImportItemsKind::Regular(import_items) => {
-                        Some(import_items)
+            let mut import_items = Vec::new();
+            if let Some(items) = import.items() {
+                match items {
+                    ImportItemsKind::Regular(syn) => {
+                        import_items.extend(syn.items());
                     }
-
-                    ImportItemsKind::Parenthesized(i) => i.import_items(),
-                };
-
-                test.into_iter()
-            });
-
-            for import_item in import_items {
-                process_import_items(
-                    engine,
-                    key.0,
-                    import,
-                    &import_item,
-                    start_from,
-                    &mut import_map,
-                    &storage,
-                )
-                .await;
+                    ImportItemsKind::Parenthesized(
+                        parenthesized_import_items,
+                    ) => {
+                        import_items.extend(parenthesized_import_items.items());
+                    }
+                }
             }
+
+            process_import_items(
+                engine,
+                key.0,
+                import,
+                &import_items,
+                start_from,
+                &mut import_map,
+                &storage,
+            )
+            .await;
         }
 
         Ok(crate::build::Output {
@@ -125,12 +122,12 @@ async fn process_import_items(
     engine: &TrackedEngine,
     defined_in_module_id: Global<pernixc_symbol::ID>,
     import: &pernixc_syntax::item::module::Import,
-    import_item: &ImportItems,
+    import_item: &[pernixc_syntax::item::module::ImportItem],
     start_from: Option<Global<pernixc_symbol::ID>>,
     import_component: &mut HashMap<SharedStr, Import>,
     handler: &dyn Handler<diagnostic::Diagnostic>,
 ) {
-    'item: for import_item in import_item.items() {
+    'item: for import_item in import_item {
         // if start from , then all the import items can't have `target` as
         // it root path
 

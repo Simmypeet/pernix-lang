@@ -21,7 +21,10 @@ use fnv::FnvHasher;
 use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
 use pernixc_extend::extend;
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::{
+    runtime::{self, executor::CyclicError},
+    TrackedEngine,
+};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::{StableHash, Value};
 use pernixc_stable_type_id::Identifiable;
@@ -829,26 +832,30 @@ pernixc_register::register!(Key, Executor, skip_cache);
 pub struct Error(pub SharedStr);
 
 impl pernixc_query::Key for Key {
-    // Loading source files is an impure operation, so it should be
-    // re-evaluated every time
-    const ALWAYS_REVERIFY: bool = true;
-
     /// The [`Ok`] value represents the source file content, while the [`Err`]
     /// is the string to report the error.
     type Value = Result<Arc<SourceFile>, Error>;
 }
 
-#[pernixc_query::executor(key(Key), name(Executor))]
-#[allow(clippy::unnecessary_wraps, clippy::unused_async)]
-pub async fn executor(
-    key: &Key,
-    _: &TrackedEngine,
-) -> Result<Result<Arc<SourceFile>, Error>, CyclicError> {
-    Ok(std::fs::File::open(key.path.as_ref())
-        .and_then(|file| {
-            Ok(Arc::new(SourceFile::load(file, key.path.to_path_buf())?))
-        })
-        .map_err(|x| Error(x.to_string().into())))
+/// An executor for the [`Key`] query that loads the source file from the file
+/// system.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Executor;
+
+impl runtime::executor::Executor<Key> for Executor {
+    const ALWAYS_RECOMPUTE: bool = true;
+
+    async fn execute(
+        &self,
+        _: &TrackedEngine,
+        key: &Key,
+    ) -> Result<Result<Arc<SourceFile>, Error>, CyclicError> {
+        Ok(std::fs::File::open(key.path.as_ref())
+            .and_then(|file| {
+                Ok(Arc::new(SourceFile::load(file, key.path.to_path_buf())?))
+            })
+            .map_err(|x| Error(x.to_string().into())))
+    }
 }
 
 /// Calculates the ID of the source file based on their path.
@@ -887,5 +894,16 @@ pub async fn calculate_path_id(
 // we be implemented in the downstream crates
 pub struct FilePathKey(pub Global<pernixc_arena::ID<SourceFile>>);
 
+/// Obtains the [`Arc<SourceFile>`] by its associated ID.
+#[pernixc_extend::extend]
+pub async fn get_source_file_by_id(
+    self: &TrackedEngine,
+    id: Global<pernixc_arena::ID<SourceFile>>,
+) -> Arc<SourceFile> {
+    let source_path = self.get_source_file_path(id).await;
+    let target_id = id.target_id;
+
+    self.query(&Key { path: source_path, target_id }).await.unwrap().unwrap()
+}
 #[cfg(test)]
 mod test;

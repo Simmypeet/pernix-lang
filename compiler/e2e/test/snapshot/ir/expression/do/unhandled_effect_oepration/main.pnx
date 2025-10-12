@@ -1,0 +1,16 @@
+public effect Test:
+    handled()   
+    
+    unhandledOne()
+    unhandledTwo()
+
+
+public function main():
+    do:
+        pass
+    
+    with Test: # unhandled effect operation
+        handled():
+            pass
+
+        

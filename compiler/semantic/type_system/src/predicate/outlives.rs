@@ -29,7 +29,7 @@ impl<U: Term, N: Normalizer> visitor::AsyncVisitor<U> for Visitor<'_, '_, N> {
     async fn visit(&mut self, term: &U, _: U::Location) -> bool {
         match self
             .environment
-            .query(&Outlives::new(term.clone(), *self.bound))
+            .query(&Outlives::new(term.clone(), self.bound.clone()))
             .await
         {
             Err(err) => {
@@ -110,7 +110,7 @@ impl Impl for Lifetime {
             }
 
             if let Some(result) = environment
-                .query(&Outlives::new(*next_bound, query.bound))
+                .query(&Outlives::new(next_bound.clone(), query.bound.clone()))
                 .await?
             {
                 return Ok(Some(result));
@@ -181,14 +181,14 @@ impl Impl for Type {
                 };
             }
 
-            let mut next_bound = *next_bound;
+            let mut next_bound = next_bound.clone();
             result
                 .result
                 .forall_lifetime_instantiations
                 .instantiate(&mut next_bound);
 
             if environment
-                .query(&Outlives::new(next_bound, query.bound))
+                .query(&Outlives::new(next_bound, query.bound.clone()))
                 .await?
                 .is_some()
             {
@@ -211,7 +211,7 @@ impl Impl for Type {
             }
 
             if environment
-                .query(&Outlives::new(operand_eq.clone(), query.bound))
+                .query(&Outlives::new(operand_eq.clone(), query.bound.clone()))
                 .await?
                 .is_some()
             {
@@ -233,7 +233,7 @@ impl Impl for Type {
             }
 
             if environment
-                .query(&Outlives::new(query.operand.clone(), *bound_eq))
+                .query(&Outlives::new(query.operand.clone(), bound_eq.clone()))
                 .await?
                 .is_some()
             {

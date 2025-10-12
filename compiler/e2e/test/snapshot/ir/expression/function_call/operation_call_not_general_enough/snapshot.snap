@@ -1,0 +1,18 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: the following effects are not handled by the caller: main::Test['∀0]
+   ╭─ compiler/e2e/test/snapshot/ir/expression/function_call/operation_call_not_general_enough/main.pnx:10:5
+   │
+10 │     useForallTest() 
+   │     ^^^^^^^^^^^^^^^ call to the `function main::useForallTest`
+   │
+   = consider adding a `do` effect annotation to the current function to handle these effects
+
+error: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

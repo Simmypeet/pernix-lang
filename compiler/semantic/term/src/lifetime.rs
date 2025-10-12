@@ -3,11 +3,13 @@
 use std::fmt::Write;
 
 use enum_as_inner::EnumAsInner;
+use flexstr::SharedStr;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_symbol::MemberID;
+use pernixc_target::Global;
 
 use crate::{
     constant::Constant,
@@ -27,7 +29,6 @@ pub mod arbitrary;
 #[derive(
     Debug,
     Clone,
-    Copy,
     PartialEq,
     Eq,
     PartialOrd,
@@ -44,6 +45,56 @@ pub struct NamedForall {
     /// The relative span can be uniquely identified the named for-all
     /// lifetime.
     pub span: RelativeSpan,
+
+    /// The name of the named for all lifetime.
+    pub shared_str: SharedStr,
+}
+
+/// From which semantic element the forall lifetime was generated.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+pub enum FromSemanticElement {
+    /// The forall lifetime was generated from a `do Effect` annotation. Where
+    /// the elided lifetimes will be replaced with forall lifetimes.
+    DoEffect,
+}
+
+/// Represents a lifetime that has been generated implicitly by the compiler
+/// in the case where the lifetime is elided.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+pub struct GeneratedForall {
+    /// The ID of the symbol from which the forall lifetime was generated.
+    pub from_id: Global<pernixc_symbol::ID>,
+
+    /// From which semantic element the forall lifetime was generated.
+    pub from_semantic_element: FromSemanticElement,
+
+    /// A unique counter to distinguish multiple generated forall lifetimes
+    /// from the same source.
+    pub unique_counter: usize,
 }
 
 /// Represents a forall lifetime; a lifetime that represents all available
@@ -51,7 +102,6 @@ pub struct NamedForall {
 #[derive(
     Debug,
     Clone,
-    Copy,
     PartialEq,
     Eq,
     PartialOrd,
@@ -65,6 +115,7 @@ pub struct NamedForall {
 #[allow(missing_docs)]
 pub enum Forall {
     Named(NamedForall),
+    Generated(GeneratedForall),
 }
 
 /// Represents a lifetime that has been generated implicitly by the compiler
@@ -95,7 +146,6 @@ pub type ElidedLifetimeID = MemberID<pernixc_arena::ID<ElidedLifetime>>;
 #[derive(
     Debug,
     Clone,
-    Copy,
     PartialEq,
     Eq,
     PartialOrd,

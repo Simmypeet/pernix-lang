@@ -10,7 +10,7 @@ use crate::{
     bind::{Bind, Expression, Guidance},
     binder::Error,
     diagnostic::Diagnostic,
-    inference_context::constraint,
+    infer::constraint,
 };
 
 impl Bind<&pernixc_syntax::expression::unit::Character>

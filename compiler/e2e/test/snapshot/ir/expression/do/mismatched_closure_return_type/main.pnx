@@ -1,0 +1,13 @@
+public effect Test:
+    op()
+
+
+public function main():
+    do:
+        # return int32 first
+        return 32
+    
+    with Test:
+        op():
+            # return boolean is an error
+            return true

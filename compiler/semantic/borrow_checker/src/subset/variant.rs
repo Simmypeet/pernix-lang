@@ -56,7 +56,7 @@ impl<N: Normalizer> Context<'_, N> {
         // handle the constraints introduced by the outlive predicates of the
         // struct
         let well_fromed_lifetime_constraints = self
-            .environment()
+            .type_environment()
             .wf_check(enum_id, *span, &instantiation, false, &self.handler())
             .await?;
 

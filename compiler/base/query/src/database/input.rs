@@ -1,7 +1,7 @@
-use std::sync::atomic::AtomicBool;
+use std::{any::Any, sync::atomic::AtomicBool};
 
 use crate::{
-    database::{Completion, DynamicKey, InputMetadata, ValueMetadata},
+    database::{Completion, Dynamic, DynamicKey, InputMetadata, ValueMetadata},
     fingerprint, Engine, Key,
 };
 
@@ -32,7 +32,7 @@ impl Engine {
     /// A helper method allowing setting the input queries via [`SetInputLock`]
     pub async fn input_session<'x, R>(
         &'x mut self,
-        f: impl AsyncFnOnce(&SetInputLock<'x>) -> R,
+        f: impl AsyncFnOnce(&SetInputLock) -> R,
     ) -> R {
         let input_lock = self.input_lock();
         let result = f(&input_lock).await;
@@ -43,8 +43,8 @@ impl Engine {
 
     /// Forcefully increments the version of the query database, making all the
     /// queries re-verify their values. This works together with the
-    /// [`Key::ALWAYS_REVERIFY`] constant, which allows the queries to work with
-    /// impure inputs.
+    /// [`Executor::ALWAYS_RECOMPUTE`] constant, which allows the queries to
+    /// work with impure inputs.
     pub fn increment_version(&mut self) {
         *self.database.version.get_mut() += 1;
     }
@@ -78,6 +78,70 @@ pub enum SetInputResult {
 }
 
 impl SetInputLock<'_> {
+    /// Mutably accesses the value of the given key in the query database
+    /// memory. After the mutation, the value is verified to see if it has
+    /// changed. This is similar to calling `set_input` for overriding the
+    /// value but more efficient as it avoids cloning the value.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the value of the key exists in the **memory** (will not try to
+    /// retrieve from the persistent storage), `false` otherwise.
+    pub fn inplace_mutate<K: Key>(
+        &self,
+        key: &K,
+        f: impl FnOnce(&mut K::Value),
+    ) -> bool {
+        let Some(mut value) = self
+            .engine
+            .database
+            .query_states_by_key
+            .get_mut(key as &dyn Dynamic)
+        else {
+            return false;
+        };
+
+        let super::State::Completion(completion) = value.value_mut() else {
+            unreachable!(
+                "should not be able to access SetInputLock while running a \
+                 query"
+            )
+        };
+
+        // try to get the value in the memory
+        let Some(store) = completion.store.as_mut() else {
+            return false;
+        };
+
+        let value = &mut **store as &mut dyn Any;
+        let value = value.downcast_mut::<K::Value>().unwrap();
+
+        f(value);
+
+        // re-calculate the fingerprint of the value
+        let value_fingerprint =
+            fingerprint::fingerprint(self.engine.database.random_seed, value);
+
+        let update =
+            self.update_metadata(&mut completion.metadata, value_fingerprint);
+
+        let key_fingerprint =
+            fingerprint::fingerprint(self.engine.database.random_seed, key);
+
+        if update.update_metadata {
+            self.engine.save_value_metadata::<K>(
+                key_fingerprint,
+                completion.metadata.clone(),
+            );
+        }
+
+        if update.update_value {
+            self.engine.save_value::<K>(value_fingerprint, value.clone());
+        }
+
+        true
+    }
+
     /// Sets the predefined input value for the given key in the query
     /// database.
     ///

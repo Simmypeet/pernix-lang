@@ -80,7 +80,7 @@
 //!
 //! # Usage Example
 //!
-//! ```rust,ignore
+//! ```ignore,ignore
 //! use pernixc_serialize::{Serialize, Deserialize};
 //!
 //! // Create a registry
