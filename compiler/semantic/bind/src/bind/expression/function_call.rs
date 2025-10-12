@@ -12,7 +12,7 @@ use pernixc_resolution::qualified_identifier::Resolution;
 use pernixc_semantic_element::{
     capability::get_capabilities, elided_lifetime::get_elided_lifetimes,
     implements_arguments::get_implements_argument, parameter::get_parameters,
-    variant::get_variant_associated_type,
+    r#unsafe::is_unsafe, variant::get_variant_associated_type,
 };
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
@@ -567,6 +567,21 @@ impl Binder<'_> {
                 }
             }
             std::cmp::Ordering::Equal => {}
+        }
+
+        // Check if calling an unsafe function requires unsafe scope
+        if callable_kind.has_function_signature() {
+            let is_unsafe = self.engine().is_unsafe(callable_id).await;
+            
+            if is_unsafe && !self.stack().is_unsafe() {
+                handler.receive(
+                    super::diagnostic::UnsafeRequired {
+                        expression_span: whole_span,
+                        operation: super::diagnostic::UnsafeOperation::UnsafeFunctionCall,
+                    }
+                    .into(),
+                );
+            }
         }
 
         let capabilities =
