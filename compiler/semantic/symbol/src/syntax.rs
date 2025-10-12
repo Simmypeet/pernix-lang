@@ -125,6 +125,25 @@ pub struct TypeAliasKey(pub Global<ID>);
 #[extend(method(get_implements_final_keyword), no_cyclic)]
 pub struct ImplementsFinalKeywordKey(pub Global<ID>);
 
+/// Retrieves the unsafe keyword defined to a function.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+    pernixc_query::Key,
+)]
+#[value(Option<pernixc_syntax::Keyword>)]
+#[extend(method(get_function_unsafe_keyword), no_cyclic)]
+pub struct FunctionUnsafeKeywordKey(pub Global<ID>);
+
 /// Retrieves the access modifier defined to an implements member.
 #[derive(
     Debug,

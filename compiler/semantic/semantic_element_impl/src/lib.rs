@@ -14,6 +14,7 @@ mod implements_qualified_identifier;
 mod import;
 mod ir;
 mod occurrences;
+mod r#unsafe;
 mod type_alias;
 mod variance;
 mod variant;

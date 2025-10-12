@@ -270,6 +270,10 @@ pub struct Table {
     pub function_do_effect_syntaxes:
         Arc<ReadOnlyView<ID, Option<pernixc_syntax::item::function::DoEffect>>>,
 
+    /// Maps the function ID to its `unsafe` keyword.
+    pub function_unsafe_keywords:
+        Arc<ReadOnlyView<ID, Option<pernixc_syntax::Keyword>>>,
+
     /// Maps the function ID to its linkage.
     pub function_linkages: Arc<ReadOnlyView<ID, linkage::Linkage>>,
 
@@ -416,6 +420,8 @@ struct TableContext {
 
     function_do_effect_syntaxes:
         DashMap<ID, Option<pernixc_syntax::item::function::DoEffect>>,
+    
+    function_unsafe_keywords: DashMap<ID, Option<pernixc_syntax::Keyword>>,
 
     token_tree: Option<Arc<pernixc_lexical::tree::Tree>>,
     source_file: Option<Arc<SourceFile>>,
@@ -576,6 +582,7 @@ pub async fn table_executor(
         final_keywords: DashMap::default(),
         function_body_syntaxes: DashMap::default(),
         function_do_effect_syntaxes: DashMap::default(),
+        function_unsafe_keywords: DashMap::default(),
         token_tree: token_tree_result.ok().map(|x| x.0),
         source_file: source_file.ok(),
         is_root,
@@ -638,6 +645,9 @@ pub async fn table_executor(
         function_linkages: Arc::new(context.function_linkages.into_read_only()),
         function_do_effect_syntaxes: Arc::new(
             context.function_do_effect_syntaxes.into_read_only(),
+        ),
+        function_unsafe_keywords: Arc::new(
+            context.function_unsafe_keywords.into_read_only(),
         ),
 
         external_submodules: Arc::new(
@@ -718,6 +728,8 @@ struct Entry {
 
     pub function_do_effect_syntax:
         Option<Option<pernixc_syntax::item::function::DoEffect>>,
+
+    pub function_unsafe_keyword: Option<Option<pernixc_syntax::Keyword>>,
 
     pub function_linkage: Option<linkage::Linkage>,
 }
@@ -915,6 +927,14 @@ impl TableContext {
                 &self.function_do_effect_syntaxes,
                 id,
                 function_do_effect_syntax,
+            );
+        }
+
+        if let Some(function_unsafe_keyword) = entry.function_unsafe_keyword {
+            Self::insert_to_table(
+                &self.function_unsafe_keywords,
+                id,
+                function_unsafe_keyword,
             );
         }
     }
