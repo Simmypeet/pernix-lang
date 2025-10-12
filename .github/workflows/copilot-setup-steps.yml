@@ -28,9 +28,6 @@ jobs:
             - name: Checkout code
               uses: actions/checkout@v5
 
-            - name: Set up Rust 1.88.0
-              uses: dtolnay/rust-toolchain@1.88.0
-
             - name: Install Dependencies
               run: sudo apt update && sudo apt install -y libtinfo5
 
@@ -53,7 +50,11 @@ jobs:
                   components: rustfmt
 
             - name: Install Cargo Insta
-              run: cargo install cargo-insta
+              uses: baptiste0928/cargo-install@v3
+              with:
+                  crate: cargo-insta
 
             - name: Install Cargo Nextest
-              run: cargo install cargo-nextest
+              uses: baptiste0928/cargo-install@v3
+              with:
+                  crate: cargo-nextest
