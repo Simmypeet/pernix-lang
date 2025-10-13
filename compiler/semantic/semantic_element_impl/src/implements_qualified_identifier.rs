@@ -620,7 +620,10 @@ async fn check_unused_generic_parameters(
         engine.get_generic_parameters(implements_id).await?;
 
     // Collect used parameters from generic arguments
-    let mut collector = UsedParameterCollector::default();
+    let mut collector = UsedParameterCollector {
+        current_symbol_id: implements_id,
+        ..Default::default()
+    };
 
     // Visit all lifetimes
     for lifetime in &generic_arguments.lifetimes {
