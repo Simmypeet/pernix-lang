@@ -475,6 +475,11 @@ async fn collect_constraints(
 ) -> Result<Vec<Arc<Constraints>>, executor::CyclicError> {
     // SAFETY: parallely collects the constraints for each ADT
 
+    // NOTE: We have to retrieve all ADT ids first before entering parallel
+    // mode, this makes sure that list of ADT ids is being verified first before
+    // any of the constraint queries are being invoked.
+    let adt_ids = engine.get_all_adt_ids(target_id).await;
+
     // Gets a list of constraints for each ADT id
     unsafe {
         engine.start_parallel();
@@ -482,12 +487,8 @@ async fn collect_constraints(
 
     let constraints_list = scoped!(|scoped| async move {
         let mut constraints_list = Vec::new();
-        for constraint_id in engine
-            .get_all_adt_ids(target_id)
-            .await
-            .iter()
-            .map(|x| target_id.make_global(*x))
-        {
+
+        for constraint_id in adt_ids.iter().map(|x| target_id.make_global(*x)) {
             let engine = engine.clone();
             scoped.spawn(async move {
                 engine.query(&ConstraintsKey(constraint_id)).await
