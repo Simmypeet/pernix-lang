@@ -17,6 +17,7 @@ pub mod import;
 pub mod late_bound_lifetime;
 pub mod parameter;
 pub mod return_type;
+pub mod r#unsafe;
 pub mod type_alias;
 pub mod variance;
 pub mod variant;
