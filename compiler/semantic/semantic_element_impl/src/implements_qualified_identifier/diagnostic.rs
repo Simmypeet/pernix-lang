@@ -42,6 +42,7 @@ pub enum Diagnostic {
     AdtImplementationCannotBeFinal(AdtImplementationCannotBeFinal),
     TraitMemberCannotHaveAccessModifier(TraitMemberCannotHaveAccessModifier),
     AdtMemberMissingAccessModifier(AdtMemberMissingAccessModifier),
+    UnusedGenericParameter(UnusedGenericParameter),
 }
 
 impl Report for Diagnostic {
@@ -84,6 +85,7 @@ impl Report for Diagnostic {
             Self::AdtMemberMissingAccessModifier(diag) => {
                 diag.report(parameter).await
             }
+            Self::UnusedGenericParameter(diag) => diag.report(parameter).await,
         }
     }
 }
@@ -822,6 +824,61 @@ impl Report for AdtMemberMissingAccessModifier {
             .help_message(
                 "add an access modifier (`public`, `private`, or `internal`) \
                  to this member"
+                    .to_string(),
+            )
+            .build())
+    }
+}
+
+/// Generic parameter defined in `implements` is not used in the generic
+/// arguments.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+pub struct UnusedGenericParameter {
+    /// The implementation ID where the generic parameter is unused.
+    pub implementation_id: Global<pernixc_symbol::ID>,
+
+    /// The span of the unused generic parameter.
+    pub unused_parameter_span: RelativeSpan,
+
+    /// The name of the unused generic parameter.
+    pub parameter_name: flexstr::SharedStr,
+}
+
+impl Report for UnusedGenericParameter {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
+    {
+        let span = engine.to_absolute_span(&self.unused_parameter_span).await;
+
+        Ok(pernixc_diagnostic::Rendered::builder()
+            .severity(Severity::Error)
+            .message("unused generic parameter in `implements`")
+            .primary_highlight(
+                Highlight::builder()
+                    .span(span)
+                    .message(format!(
+                        "generic parameter `{}` is not used in the generic \
+                         arguments of the `implements`",
+                        self.parameter_name
+                    ))
+                    .build(),
+            )
+            .help_message(
+                "remove this unused generic parameter or use it in the \
+                 generic arguments of the `implements`"
                     .to_string(),
             )
             .build())
