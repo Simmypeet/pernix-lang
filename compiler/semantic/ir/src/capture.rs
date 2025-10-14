@@ -33,7 +33,9 @@ pub enum Kind {
 
 /// Represents capturing structure used for implementing closures, do blocks,
 /// and effect handlers.
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize, Default,
+)]
 pub struct Captures {
     /// All the captures used in the closure.
     pub captures: Arena<Capture>,
