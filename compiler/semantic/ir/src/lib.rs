@@ -14,6 +14,7 @@ use pernixc_target::Global;
 use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
 
 use crate::{
+    effect_handler::HandlerGroup,
     transform::{Transformer, TypeTermSource},
     value::register::Register,
 };
@@ -22,6 +23,7 @@ pub mod address;
 pub mod alloca;
 pub mod capture;
 pub mod control_flow_graph;
+pub mod effect_handler;
 pub mod instruction;
 pub mod pattern;
 pub mod scope;
@@ -38,6 +40,9 @@ pub struct Values {
 
     /// Contains all the allocas used in the program.
     pub allocas: Arena<Alloca>,
+
+    /// Contains all the effect handler groups used in the program.
+    pub handler_groups: Arena<HandlerGroup>,
 }
 
 impl Values {
