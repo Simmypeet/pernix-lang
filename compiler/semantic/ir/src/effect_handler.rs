@@ -1,5 +1,6 @@
 //! Defines effect handlers used in `do` expressions.
 
+use derive_more::Index;
 use pernixc_arena::Arena;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
@@ -9,9 +10,31 @@ use pernixc_term::generic_arguments::GenericArguments;
 use crate::Values;
 
 /// Represents a group of with effect handlers in a `do` expression.
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    StableHash,
+    Serialize,
+    Deserialize,
+    Default,
+    Index,
+)]
 pub struct HandlerGroup {
+    #[index]
     effect_handlers: Arena<EffectHandler>,
+}
+
+impl HandlerGroup {
+    /// Adds an effect handler to this group.
+    #[must_use]
+    pub fn add_effect_handler(
+        &mut self,
+        effect_handler: EffectHandler,
+    ) -> pernixc_arena::ID<EffectHandler> {
+        self.effect_handlers.insert(effect_handler)
+    }
 }
 
 /// An effect handler for a specific effect.
