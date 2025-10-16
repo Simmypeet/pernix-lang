@@ -582,13 +582,13 @@ impl<'ctx> Context<'_, 'ctx> {
                 self,
                 &key.instantiation,
                 &function_signature,
-                &pernix_ir,
+                &pernix_ir.ir,
                 value_environment,
                 llvm_function_signatue.clone(),
             )
             .await;
 
-            for block_id in pernix_ir.control_flow_graph.blocks().ids() {
+            for block_id in pernix_ir.ir.control_flow_graph.blocks().ids() {
                 builder.build_basic_block(block_id).await;
             }
 
@@ -598,7 +598,7 @@ impl<'ctx> Context<'_, 'ctx> {
                 .inkwell_builder
                 .build_unconditional_branch(
                     builder.basic_block_map
-                        [&pernix_ir.control_flow_graph.entry_block_id()],
+                        [&pernix_ir.ir.control_flow_graph.entry_block_id()],
                 )
                 .unwrap();
         }

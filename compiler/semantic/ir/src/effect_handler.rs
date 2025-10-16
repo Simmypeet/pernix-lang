@@ -7,7 +7,32 @@ use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 use pernixc_term::generic_arguments::GenericArguments;
 
-use crate::Values;
+/// A collection of all the effect handler groups in a function body.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    StableHash,
+    Serialize,
+    Deserialize,
+    Default,
+    Index,
+)]
+pub struct HandlerGroups(Arena<HandlerGroup>);
+
+impl HandlerGroups {
+    /// Gets the [`EffectHandler`] with the [`EffectHandlerID`].
+    #[must_use]
+    pub fn get_effect_handler(&self, id: EffectHandlerID) -> &EffectHandler {
+        self.0
+            .get(id.handler_group_id)
+            .unwrap()
+            .effect_handlers
+            .get(id.effect_handler_id)
+            .unwrap()
+    }
+}
 
 /// Represents a group of with effect handlers in a `do` expression.
 #[derive(
@@ -69,21 +94,9 @@ pub struct EffectHandler {
     StableHash,
     Serialize,
     Deserialize,
+    derive_new::new,
 )]
 pub struct EffectHandlerID {
     handler_group_id: pernixc_arena::ID<HandlerGroup>,
     effect_handler_id: pernixc_arena::ID<EffectHandler>,
-}
-
-impl Values {
-    /// Gets the [`EffectHandler`] with the [`EffectHandlerID`].
-    #[must_use]
-    pub fn get_effect_handler(&self, id: EffectHandlerID) -> &EffectHandler {
-        self.handler_groups
-            .get(id.handler_group_id)
-            .unwrap()
-            .effect_handlers
-            .get(id.effect_handler_id)
-            .unwrap()
-    }
 }

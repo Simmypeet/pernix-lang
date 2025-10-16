@@ -19,11 +19,11 @@ async fn build_ir_for_function(
     key: &pernixc_ir::Key,
     mut binder: Binder<'_>,
     storage: &Storage<diagnostic::Diagnostic>,
-) -> Result<Arc<pernixc_ir::IR>, executor::CyclicError> {
+) -> Result<Arc<pernixc_ir::FunctionIR>, executor::CyclicError> {
     let function_body_syntax = engine.get_function_body_syntax(key.0).await;
 
     let Some(function_body_syntax) = function_body_syntax else {
-        return Ok(Arc::new(pernixc_ir::IR::default()));
+        return Ok(Arc::new(pernixc_ir::FunctionIR::default()));
     };
 
     for statement in
@@ -35,25 +35,25 @@ async fn build_ir_for_function(
                 return Err(error);
             }
             Err(UnrecoverableError::Reported) => {
-                return Ok(Arc::new(pernixc_ir::IR::default()))
+                return Ok(Arc::new(pernixc_ir::FunctionIR::default()))
             }
         };
     }
 
     // finalize the binder to an ir
-    let mut ir = match binder.finalize(storage).await {
+    let mut ir = match binder.finalize_function_ir(storage).await {
         Ok(ir) => ir,
         Err(UnrecoverableError::CyclicDependency(error)) => {
             return Err(error);
         }
         Err(UnrecoverableError::Reported) => {
-            return Ok(Arc::new(pernixc_ir::IR::default()))
+            return Ok(Arc::new(pernixc_ir::FunctionIR::default()))
         }
     };
 
     // do memory checking analysis
     match pernixc_memory_checker::memory_check(
-        engine, &mut ir, key.0, None, storage,
+        engine, &mut ir.ir, key.0, None, storage,
     )
     .await
     {
@@ -62,7 +62,7 @@ async fn build_ir_for_function(
             return Err(error);
         }
         Err(UnrecoverableError::Reported) => {
-            return Ok(Arc::new(pernixc_ir::IR::default()))
+            return Ok(Arc::new(pernixc_ir::FunctionIR::default()))
         }
     }
 
@@ -81,7 +81,7 @@ async fn build_ir_for_function(
 
     // do borrow checking analysis
     match pernixc_borrow_checker::borrow_check(
-        &ir,
+        &ir.ir,
         &ValueEnvironment::builder()
             .current_site(key.0)
             .type_environment(&env)
@@ -97,7 +97,7 @@ async fn build_ir_for_function(
         }
 
         Err(UnrecoverableError::Reported) => {
-            return Ok(Arc::new(pernixc_ir::IR::default()))
+            return Ok(Arc::new(pernixc_ir::FunctionIR::default()))
         }
     }
 
@@ -137,7 +137,7 @@ impl Build for pernixc_ir::Key {
             }
             Err(UnrecoverableError::Reported) => {
                 return Ok(Output {
-                    item: Arc::new(pernixc_ir::IR::default()),
+                    item: Arc::new(pernixc_ir::FunctionIR::default()),
                     diagnostics: storage.into_vec().into(),
                     occurrences: Arc::default(),
                 });
