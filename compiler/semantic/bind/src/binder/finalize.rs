@@ -2,7 +2,6 @@ use pernixc_handler::Handler;
 #[allow(unused_imports)]
 use pernixc_hash::HashSet;
 use pernixc_ir::{
-    effect_handler::HandlerGroups,
     instruction::{Instruction, ScopePop},
     value::Environment as ValueEnvironment,
     FunctionIR, IR,
@@ -128,6 +127,6 @@ impl Binder<'_> {
 
         check::check(&self.ir, &value_env, handler).await?;
 
-        Ok(FunctionIR { ir: self.ir, handler_groups: HandlerGroups::default() })
+        Ok(FunctionIR { ir: self.ir, handler_groups: self.handler_groups })
     }
 }

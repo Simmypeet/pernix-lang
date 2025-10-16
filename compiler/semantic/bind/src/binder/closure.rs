@@ -220,6 +220,7 @@ impl Binder<'_> {
             inference_context,
             unreachable_register_ids: Vec::new(),
             expected_closure_return_type: Some(expected_type.clone()),
+            handler_groups: std::mem::take(&mut self.handler_groups),
             block_context: block::Context::default(),
             loop_context: r#loop::Context::default(),
         };
@@ -235,8 +236,9 @@ impl Binder<'_> {
             .check_closure_return_type(expected_type, closure_span, handler)
             .await?;
 
-        // restore back the inference context
+        // restore back the inference context and the handler groups
         self.inference_context = binder.inference_context;
+        self.handler_groups = binder.handler_groups;
 
         result.map(|()| binder.ir)
     }
