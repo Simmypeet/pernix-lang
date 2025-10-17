@@ -89,4 +89,11 @@ impl Context {
     /// Deconstruct the context into its handler groups
     #[must_use]
     pub fn into_handler_groups(self) -> HandlerGroups { self.handler_groups }
+
+    /// Asserts that the handler group stack is empty
+    ///
+    /// This is called once after the binder is finalized.
+    pub fn assert_empty(&self) {
+        assert!(self.handler_gruop_stack.is_empty());
+    }
 }

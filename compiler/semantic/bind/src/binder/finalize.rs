@@ -1,5 +1,4 @@
 use pernixc_handler::Handler;
-#[allow(unused_imports)]
 use pernixc_hash::HashSet;
 use pernixc_ir::{
     instruction::{Instruction, ScopePop},
@@ -18,7 +17,7 @@ use crate::{
 mod check;
 mod transform_inference;
 
-#[cfg(debug_assertions)]
+#[allow(dead_code)]
 fn check_all_register_assigned(ir: &IR) {
     let mut assigned = HashSet::default();
     for (_, block) in ir.control_flow_graph.blocks().iter() {
@@ -62,6 +61,7 @@ impl Binder<'_> {
     ) -> Result<FunctionIR, UnrecoverableError> {
         self.block_context.assert_empty();
         self.loop_context.assert_empty();
+        self.effect_handler_context.assert_empty();
 
         // TODO: we might need to implements some debug verification logic here
         // to ensure the IR is valid. For example, all scope push should have

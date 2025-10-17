@@ -57,7 +57,7 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
         let with_blocks =
             extract_effect_handlers(self, syntax_tree, handler).await?;
 
-        let _handler_group_id = create_handler_group(self, &with_blocks);
+        let handler_group_id = create_handler_group(self, &with_blocks);
 
         let expected_return_type = Type::Inference(
             self.create_type_inference(constraint::Type::All(true)),
@@ -74,6 +74,9 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
             handler,
         ))
         .await?;
+
+        // pop the closure from the stack
+        self.pop_handler_group(handler_group_id);
 
         build_with_blocks(
             self,
