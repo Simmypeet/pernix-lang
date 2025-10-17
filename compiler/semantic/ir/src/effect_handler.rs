@@ -102,7 +102,7 @@ impl HandlerGroup {
                     generic_arguments,
                 )
                 .await?
-                .is_some()
+                .is_some_and(|x| x.result.forall_lifetime_errors.is_empty())
             {
                 return Ok(Some(effect_handler_id));
             }
