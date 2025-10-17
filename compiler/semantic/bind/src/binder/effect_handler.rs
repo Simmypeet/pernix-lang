@@ -1,6 +1,11 @@
 //! Contains logic related to effect handlers and handler groups.
 
-use pernixc_ir::effect_handler::{EffectHandler, HandlerGroup, HandlerGroups};
+use pernixc_ir::effect_handler::{
+    EffectHandler, EffectHandlerID, HandlerGroup, HandlerGroups,
+};
+use pernixc_target::Global;
+use pernixc_term::generic_arguments::GenericArguments;
+use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
 
 use crate::binder::Binder;
 
@@ -44,6 +49,39 @@ impl Binder<'_> {
             self.effect_handler_context.handler_gruop_stack.pop().unwrap(),
             handler_group
         );
+    }
+
+    /// Search for an effect handler from the handler stack
+    pub async fn search_effect_handler(
+        &self,
+        effect_id: Global<pernixc_symbol::ID>,
+        generic_arguments: &GenericArguments,
+        environment: &Environment<'_, impl Normalizer>,
+    ) -> Result<Option<EffectHandlerID>, pernixc_type_system::Error> {
+        for (handler_id, handler_group) in self
+            .effect_handler_context
+            .handler_gruop_stack
+            .iter()
+            .rev()
+            .copied()
+            .map(|x| (x, &self.effect_handler_context.handler_groups[x]))
+        {
+            if let Some(effect_handler_id) = handler_group
+                .search_effect_handler(
+                    effect_id,
+                    generic_arguments,
+                    environment,
+                )
+                .await?
+            {
+                return Ok(Some(EffectHandlerID::new(
+                    handler_id,
+                    effect_handler_id,
+                )));
+            }
+        }
+
+        Ok(None)
     }
 }
 
