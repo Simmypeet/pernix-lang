@@ -60,6 +60,7 @@ mod finalize;
 
 pub mod block;
 pub mod closure;
+pub mod effect_handler;
 pub mod inference_context;
 pub mod r#loop;
 pub mod stack;
