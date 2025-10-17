@@ -10,7 +10,6 @@ use pernixc_ir::{
     address::{Address, Memory},
     alloca::Alloca,
     control_flow_graph::Block,
-    effect_handler::HandlerGroups,
     instruction::{self, Instruction, ScopePop, ScopePush, Terminator},
     pattern::{Irrefutable, NameBindingPoint, Wildcard},
     scope,
@@ -131,8 +130,7 @@ pub struct Binder<'t> {
     /// determines the expected return type of the closure.
     expected_closure_return_type: Option<Type>,
 
-    handler_groups: HandlerGroups,
-
+    effect_handler_context: effect_handler::Context,
     block_context: block::Context,
     loop_context: r#loop::Context,
 }
@@ -187,8 +185,7 @@ impl<'t> Binder<'t> {
 
             expected_closure_return_type: None,
 
-            handler_groups: HandlerGroups::default(),
-
+            effect_handler_context: effect_handler::Context::default(),
             block_context: block::Context::default(),
             loop_context: r#loop::Context::default(),
         };

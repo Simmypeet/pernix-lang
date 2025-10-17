@@ -127,6 +127,9 @@ impl Binder<'_> {
 
         check::check(&self.ir, &value_env, handler).await?;
 
-        Ok(FunctionIR { ir: self.ir, handler_groups: self.handler_groups })
+        Ok(FunctionIR {
+            ir: self.ir,
+            handler_groups: self.effect_handler_context.into_handler_groups(),
+        })
     }
 }
