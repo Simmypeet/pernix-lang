@@ -660,9 +660,31 @@ impl Binder<'_> {
 
         let environment = self.create_environment();
 
+        // First, we'll traverse the capability handlers stack first, then we'll
+
         'next: for (required_id, required) in required_capabilities.iter() {
             let mut required = required.clone();
             required.generic_arguments.instantiate(instantiation);
+
+            // traverse in the handler stack
+            if let Some(effect_handler_id) = self
+                .search_effect_handler(
+                    required.id,
+                    &required.generic_arguments,
+                    &environment,
+                )
+                .await
+                .map_err(|x| {
+                    x.report_as_type_calculating_overflow(span, &handler)
+                })?
+            {
+                effect_arguments.insert(
+                    required_id,
+                    CapabilityArgument::FromEffectHandler(effect_handler_id),
+                );
+
+                continue 'next;
+            }
 
             for (available_id, available) in available_capabilities.iter() {
                 if Self::effect_compatible(

@@ -1,0 +1,13 @@
+public effect Test[T]:
+    op()
+
+
+public function main() do Test[float32]:
+    do:
+        Test[int32]::op()   # the effect is handled locally in `with`
+        Test[float32]::op() # the effect is handled by `do` annotation of function
+        Test[bool]::op()    # error, no effect handler found
+
+    with Test[int32]:
+        op():
+            pass

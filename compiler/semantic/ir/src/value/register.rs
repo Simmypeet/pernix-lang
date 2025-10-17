@@ -31,6 +31,7 @@ use super::Value;
 use crate::{
     address::Address,
     control_flow_graph::Block,
+    effect_handler::EffectHandlerID,
     transform::{
         ConstantTermSource, LifetimeTermSource, Transformer, TypeTermSource,
     },
@@ -517,6 +518,9 @@ async fn type_of_variant_assignment(
 pub enum CapabilityArgument {
     /// Uses the capability passed to the function as an argument.
     FromPassedCapability(ID<effect::Unit>),
+
+    /// Uses the local effect handler defiend via `do-with` expression.
+    FromEffectHandler(EffectHandlerID),
 
     /// The capability is unhandled, error should've been reported.
     Unhandled,

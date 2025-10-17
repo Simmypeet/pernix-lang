@@ -59,6 +59,7 @@ mod finalize;
 
 pub mod block;
 pub mod closure;
+pub mod effect_handler;
 pub mod inference_context;
 pub mod r#loop;
 pub mod stack;
@@ -129,6 +130,7 @@ pub struct Binder<'t> {
     /// determines the expected return type of the closure.
     expected_closure_return_type: Option<Type>,
 
+    effect_handler_context: effect_handler::Context,
     block_context: block::Context,
     loop_context: r#loop::Context,
 }
@@ -183,6 +185,7 @@ impl<'t> Binder<'t> {
 
             expected_closure_return_type: None,
 
+            effect_handler_context: effect_handler::Context::default(),
             block_context: block::Context::default(),
             loop_context: r#loop::Context::default(),
         };
@@ -283,7 +286,7 @@ pub enum Error {
     Unrecoverable(#[from] UnrecoverableError),
 }
 
-/// In case of the Overflow error from type system, reports it as a type    
+/// In case of the Overflow error from type system, reports it as a type
 /// calculating overflow
 #[extend]
 pub fn report_as_type_calculating_overflow(

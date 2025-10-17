@@ -14,6 +14,7 @@ use pernixc_target::Global;
 use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
 
 use crate::{
+    effect_handler::HandlerGroups,
     transform::{Transformer, TypeTermSource},
     value::register::Register,
 };
@@ -22,6 +23,7 @@ pub mod address;
 pub mod alloca;
 pub mod capture;
 pub mod control_flow_graph;
+pub mod effect_handler;
 pub mod instruction;
 pub mod pattern;
 pub mod scope;
@@ -56,21 +58,13 @@ impl Values {
     }
 }
 
-/// An intermediate representation of the program.
+/// An intermediate representation of a particular procedure.
+///
+/// It can be used as a body of a function, closure, effect handler,
+/// compile-time constant, etc.
 #[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    Default,
-    Serialize,
-    Deserialize,
-    StableHash,
-    pernixc_query::Value,
+    Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, StableHash,
 )]
-#[id(Global<pernixc_symbol::ID>)]
-#[value(Arc<IR>)]
-#[extend(method(get_ir))]
 pub struct IR {
     /// Contains the registers and allocas used in the program.
     pub values: Values,
@@ -112,4 +106,27 @@ impl IR {
 
         Ok(())
     }
+}
+
+/// An intermediate representation of a function.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
+    Serialize,
+    Deserialize,
+    StableHash,
+    pernixc_query::Value,
+)]
+#[id(Global<pernixc_symbol::ID>)]
+#[value(Arc<FunctionIR>)]
+#[extend(method(get_ir))]
+pub struct FunctionIR {
+    /// The IR representing the body of the function.
+    pub ir: IR,
+
+    /// The collection of all handler groups defined in the function body.
+    pub handler_groups: HandlerGroups,
 }

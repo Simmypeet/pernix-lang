@@ -1,10 +1,9 @@
 use pernixc_handler::Handler;
-#[allow(unused_imports)]
 use pernixc_hash::HashSet;
 use pernixc_ir::{
     instruction::{Instruction, ScopePop},
     value::Environment as ValueEnvironment,
-    IR,
+    FunctionIR, IR,
 };
 use pernixc_semantic_element::return_type::get_return_type;
 use pernixc_symbol::kind::get_kind;
@@ -18,7 +17,7 @@ use crate::{
 mod check;
 mod transform_inference;
 
-#[cfg(debug_assertions)]
+#[allow(dead_code)]
 fn check_all_register_assigned(ir: &IR) {
     let mut assigned = HashSet::default();
     for (_, block) in ir.control_flow_graph.blocks().iter() {
@@ -56,12 +55,13 @@ fn check_all_register_assigned(ir: &IR) {
 impl Binder<'_> {
     /// Finalizes the binding process, performing necessary checks and
     /// transformations on the IR.
-    pub async fn finalize(
+    pub async fn finalize_function_ir(
         mut self,
         handler: &dyn Handler<Diagnostic>,
-    ) -> Result<IR, UnrecoverableError> {
+    ) -> Result<FunctionIR, UnrecoverableError> {
         self.block_context.assert_empty();
         self.loop_context.assert_empty();
+        self.effect_handler_context.assert_empty();
 
         // TODO: we might need to implements some debug verification logic here
         // to ensure the IR is valid. For example, all scope push should have
@@ -127,6 +127,9 @@ impl Binder<'_> {
 
         check::check(&self.ir, &value_env, handler).await?;
 
-        Ok(self.ir)
+        Ok(FunctionIR {
+            ir: self.ir,
+            handler_groups: self.effect_handler_context.into_handler_groups(),
+        })
     }
 }
