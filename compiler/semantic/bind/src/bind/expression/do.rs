@@ -2,6 +2,7 @@ use pernixc_handler::Handler;
 use pernixc_hash::HashMap;
 use pernixc_ir::{
     address::{Address, Memory},
+    effect_handler::{EffectHandler, HandlerGroup},
     pattern::{Irrefutable, NameBindingPoint, Wildcard},
     value::Value,
 };
@@ -56,6 +57,8 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
         let with_blocks =
             extract_effect_handlers(self, syntax_tree, handler).await?;
 
+        let _handler_group_id = create_handler_group(self, &with_blocks);
+
         let expected_return_type = Type::Inference(
             self.create_type_inference(constraint::Type::All(true)),
         );
@@ -102,6 +105,25 @@ struct HandlerBlock {
     statements: pernixc_syntax::statement::Statements,
     parameters: Vec<pernixc_syntax::pattern::Irrefutable>,
     handler: pernixc_syntax::expression::block::Handler,
+}
+
+fn create_handler_group(
+    binder: &mut Binder<'_>,
+    with_blocks: &[WithBlock],
+) -> pernixc_arena::ID<HandlerGroup> {
+    let handler_group_id = binder.insert_effect_handler_group();
+
+    for with_block in with_blocks {
+        binder.insert_effect_handler_to_group(
+            handler_group_id,
+            EffectHandler::new(
+                with_block.effect_id,
+                with_block.generic_arguments.clone(),
+            ),
+        );
+    }
+
+    handler_group_id
 }
 
 async fn build_with_blocks(
