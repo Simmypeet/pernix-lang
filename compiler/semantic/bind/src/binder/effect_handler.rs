@@ -1,3 +1,5 @@
+//! Contains logic related to effect handlers and handler groups.
+
 use pernixc_ir::effect_handler::{EffectHandler, HandlerGroup};
 
 use crate::binder::Binder;
