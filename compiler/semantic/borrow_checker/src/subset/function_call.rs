@@ -81,6 +81,11 @@ impl<N: Normalizer> Context<'_, N> {
                         .extend(subtypable.constraints.iter().cloned());
                 }
 
+                #[allow(clippy::match_same_arms)]
+                CapabilityArgument::FromEffectHandler(_) => {
+                    // TODO: extract the lifetimme constraints
+                }
+
                 CapabilityArgument::Unhandled => {
                     // error should've been reported
                 }
