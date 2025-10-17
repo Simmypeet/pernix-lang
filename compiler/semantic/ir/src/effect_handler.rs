@@ -6,6 +6,7 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 use pernixc_term::generic_arguments::GenericArguments;
+use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
 
 /// A collection of all the effect handler groups in a function body.
 #[derive(
@@ -75,6 +76,39 @@ impl HandlerGroup {
         effect_handler: EffectHandler,
     ) -> pernixc_arena::ID<EffectHandler> {
         self.effect_handlers.insert(effect_handler)
+    }
+
+    /// Searches for an effect handler that matches the given effect ID and
+    /// generic arguments.
+    pub async fn search_effect_handler(
+        &self,
+        effect_id: Global<pernixc_symbol::ID>,
+        generic_arguments: &GenericArguments,
+        environment: &Environment<'_, impl Normalizer>,
+    ) -> Result<
+        Option<pernixc_arena::ID<EffectHandler>>,
+        pernixc_type_system::Error,
+    > {
+        for (effect_handler_id, effect_handler) in self.effect_handlers.iter() {
+            // not the same effect
+            if effect_id != effect_handler.effect_id {
+                continue;
+            }
+
+            // if the generic argument subtypable, then match
+            if environment
+                .subtypes_generic_arguments(
+                    &effect_handler.generic_arguments,
+                    generic_arguments,
+                )
+                .await?
+                .is_some()
+            {
+                return Ok(Some(effect_handler_id));
+            }
+        }
+
+        Ok(None)
     }
 }
 
