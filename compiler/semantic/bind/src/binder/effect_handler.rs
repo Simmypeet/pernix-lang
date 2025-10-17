@@ -8,6 +8,7 @@ use crate::binder::Binder;
 #[derive(Debug, Clone, Default)]
 pub struct Context {
     handler_groups: HandlerGroups,
+    handler_gruop_stack: Vec<pernixc_arena::ID<HandlerGroup>>,
 }
 
 impl Binder<'_> {
@@ -15,7 +16,12 @@ impl Binder<'_> {
     pub fn insert_effect_handler_group(
         &mut self,
     ) -> pernixc_arena::ID<HandlerGroup> {
-        self.effect_handler_context.handler_groups.insert_handler_group()
+        let handler_group =
+            self.effect_handler_context.handler_groups.insert_handler_group();
+
+        self.effect_handler_context.handler_gruop_stack.push(handler_group);
+
+        handler_group
     }
 
     /// Insert a new effect handler into an existing handler group
@@ -27,6 +33,17 @@ impl Binder<'_> {
         self.effect_handler_context
             .handler_groups
             .insert_effect_handler_to_group(handler_group_id, handler)
+    }
+
+    /// Pops the topmost handler group from the stack
+    pub fn pop_handler_group(
+        &mut self,
+        handler_group: pernixc_arena::ID<HandlerGroup>,
+    ) {
+        assert_eq!(
+            self.effect_handler_context.handler_gruop_stack.pop().unwrap(),
+            handler_group
+        );
     }
 }
 
