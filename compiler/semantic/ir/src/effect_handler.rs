@@ -32,6 +32,27 @@ impl HandlerGroups {
             .get(id.effect_handler_id)
             .unwrap()
     }
+
+    /// Inserts a new [`HandlerGroup`] into the collection.
+    pub fn insert_handler_group(
+        &mut self,
+        handler_group: HandlerGroup,
+    ) -> pernixc_arena::ID<HandlerGroup> {
+        self.0.insert(handler_group)
+    }
+
+    /// Inserts a new [`EffectHandler`] into the [`HandlerGroup`] with the
+    /// [`HandlerGroupID`].
+    pub fn insert_effect_handler_to_group(
+        &mut self,
+        handler_group_id: pernixc_arena::ID<HandlerGroup>,
+        effect_handler: EffectHandler,
+    ) -> EffectHandlerID {
+        let handler_group = self.0.get_mut(handler_group_id).unwrap();
+        let effect_handler_id =
+            handler_group.effect_handlers.insert(effect_handler);
+        EffectHandlerID { handler_group_id, effect_handler_id }
+    }
 }
 
 /// Represents a group of with effect handlers in a `do` expression.
