@@ -449,7 +449,7 @@ impl Binder<'_> {
     /// Compares the captures and their usage in the IRs. Then, the captures
     /// are pruned based on their usage information and adjust the usage in
     /// the IRs accordingly.
-    pub(crate) fn prunes_capture_ir<'x, I: Iterator<Item = &'x mut IR>>(
+    pub(crate) fn prune_capture_ir<'x, I: Iterator<Item = &'x mut IR>>(
         irs: I,
         captures: &mut pernixc_ir::capture::Captures,
         can_fn_once: bool,
