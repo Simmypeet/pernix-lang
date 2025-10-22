@@ -67,6 +67,12 @@ impl Captures {
         Ok(captures)
     }
 
+    /// Gets a clone of the underlying [`pernixc_ir::capture::Captures`].
+    #[must_use]
+    pub fn clone_captures(&self) -> pernixc_ir::capture::Captures {
+        self.captures.clone()
+    }
+
     async fn try_insert_named_binding(
         &mut self,
         new_name: &SharedStr,
