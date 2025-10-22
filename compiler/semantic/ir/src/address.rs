@@ -17,7 +17,7 @@ use pernixc_term::{
     generic_arguments::Symbol,
     generic_parameters::get_generic_parameters,
     instantiation::Instantiation,
-    r#type::{Qualifier, Type},
+    r#type::{self, Qualifier, Type},
     tuple,
 };
 use pernixc_type_system::{normalizer::Normalizer, Error, Succeeded};
@@ -442,12 +442,27 @@ impl TypeOf<&Address> for Values {
             Address::Memory(Memory::Capture(parameter)) => {
                 let capture = &environment.captures().captures[*parameter];
 
-                Ok(environment
+                let mut ty = environment
                     .type_environment
                     .simplify(capture.address_type.clone())
                     .await?
                     .deref()
-                    .clone())
+                    .clone();
+
+                match &capture.capture_mode {
+                    crate::capture::CaptureMode::ByValue => Ok(ty),
+                    crate::capture::CaptureMode::ByReference(
+                        reference_capture_mode,
+                    ) => {
+                        ty.result = Type::Reference(r#type::Reference {
+                            qualifier: reference_capture_mode.qualifier,
+                            lifetime: reference_capture_mode.lifetime.clone(),
+                            pointee: Box::new(ty.result),
+                        });
+
+                        Ok(ty)
+                    }
+                }
             }
 
             Address::Memory(Memory::Alloca(parameter)) => {
