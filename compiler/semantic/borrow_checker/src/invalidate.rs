@@ -420,9 +420,12 @@ impl<'a, N: Normalizer> Checker<'a, N> {
                 borrow_register.assignment.as_borrow().unwrap();
 
             let should_invalidate: bool = match &access_mode {
-                AccessMode::Read(read) => {
-                    let qualifier_invalidate = read.qualifier
-                        == Qualifier::Mutable
+                AccessMode::Load(_) | AccessMode::Read(_) => {
+                    let qualifier_invalidate = match access_mode {
+                        AccessMode::Read(read) => read.qualifier,
+                        AccessMode::Load(_) => Qualifier::Immutable,
+                        AccessMode::Write(_) => unreachable!(),
+                    } == Qualifier::Mutable
                         || borrow_assignment.qualifier == Qualifier::Mutable;
 
                     let address_overlap = address
