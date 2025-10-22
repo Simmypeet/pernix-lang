@@ -3,7 +3,8 @@ use pernixc_handler::Handler;
 use pernixc_hash::HashMap;
 use pernixc_ir::value::{
     register::{
-        Assignment, CapabilityArgument, FunctionCall, Load, Register, Variant,
+        Assignment, EffectHandlerArgument, FunctionCall, Load, Register,
+        Variant,
     },
     Value,
 };
@@ -630,8 +631,10 @@ impl Binder<'_> {
         span: RelativeSpan,
         available_capabilities: &OrderedArena<effect::Unit>,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
-    ) -> Result<HashMap<ID<effect::Unit>, CapabilityArgument>, UnrecoverableError>
-    {
+    ) -> Result<
+        HashMap<ID<effect::Unit>, EffectHandlerArgument>,
+        UnrecoverableError,
+    > {
         let required_capabilities =
             self.engine().get_capabilities(callable_id).await?;
 
@@ -654,8 +657,10 @@ impl Binder<'_> {
         span: RelativeSpan,
         callable_id: Global<pernixc_symbol::ID>,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
-    ) -> Result<HashMap<ID<effect::Unit>, CapabilityArgument>, UnrecoverableError>
-    {
+    ) -> Result<
+        HashMap<ID<effect::Unit>, EffectHandlerArgument>,
+        UnrecoverableError,
+    > {
         let mut effect_arguments = HashMap::default();
 
         let environment = self.create_environment();
@@ -680,7 +685,7 @@ impl Binder<'_> {
             {
                 effect_arguments.insert(
                     required_id,
-                    CapabilityArgument::FromEffectHandler(effect_handler_id),
+                    EffectHandlerArgument::FromEffectHandler(effect_handler_id),
                 );
 
                 continue 'next;
@@ -698,26 +703,29 @@ impl Binder<'_> {
                 {
                     effect_arguments.insert(
                         required_id,
-                        CapabilityArgument::FromPassedCapability(available_id),
+                        EffectHandlerArgument::FromPassedCapability(
+                            available_id,
+                        ),
                     );
                     continue 'next;
                 }
             }
 
             // cannot find a compatible capability
-            effect_arguments.insert(required_id, CapabilityArgument::Unhandled);
+            effect_arguments
+                .insert(required_id, EffectHandlerArgument::Unhandled);
         }
 
         if effect_arguments
             .iter()
-            .any(|x| x.1 == &CapabilityArgument::Unhandled)
+            .any(|x| x.1 == &EffectHandlerArgument::Unhandled)
         {
             handler.receive(crate::diagnostic::Diagnostic::UnhandledEffects(
                 UnhandledEffects {
                     effects: effect_arguments
                         .iter()
                         .filter_map(|x| {
-                            if x.1 == &CapabilityArgument::Unhandled {
+                            if x.1 == &EffectHandlerArgument::Unhandled {
                                 let mut required =
                                     required_capabilities[*x.0].clone();
 

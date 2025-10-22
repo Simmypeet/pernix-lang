@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use pernixc_arena::ID;
 use pernixc_hash::{HashMap, HashSet};
-use pernixc_ir::value::register::{CapabilityArgument, FunctionCall};
+use pernixc_ir::value::register::{EffectHandlerArgument, FunctionCall};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_semantic_element::{
     capability::get_capabilities, parameter::get_parameters, variance::Variance,
@@ -29,7 +29,7 @@ impl<N: Normalizer> Context<'_, N> {
     #[allow(clippy::too_many_lines)]
     pub(super) async fn get_subset_of_effect_operations(
         &self,
-        capability_arguments: &HashMap<ID<effect::Unit>, CapabilityArgument>,
+        capability_arguments: &HashMap<ID<effect::Unit>, EffectHandlerArgument>,
         instantiation: &Instantiation,
         callled_id: Global<pernixc_symbol::ID>,
         span: &RelativeSpan,
@@ -49,7 +49,9 @@ impl<N: Normalizer> Context<'_, N> {
             required_capability.generic_arguments.instantiate(instantiation);
 
             match argument {
-                CapabilityArgument::FromPassedCapability(capability_unit) => {
+                EffectHandlerArgument::FromPassedCapability(
+                    capability_unit,
+                ) => {
                     // no need to instantiate, as the capability unit is
                     // already instantiated from the call site
                     let available_capability =
@@ -82,11 +84,11 @@ impl<N: Normalizer> Context<'_, N> {
                 }
 
                 #[allow(clippy::match_same_arms)]
-                CapabilityArgument::FromEffectHandler(_) => {
+                EffectHandlerArgument::FromEffectHandler(_) => {
                     // TODO: extract the lifetimme constraints
                 }
 
-                CapabilityArgument::Unhandled => {
+                EffectHandlerArgument::Unhandled => {
                     // error should've been reported
                 }
             }
