@@ -1,17 +1,18 @@
 //! Defines the logic for building nested binders, such as for closures,
 //! effect handlers, do blocks, etc.
 
-use std::collections::hash_map::Entry;
+use std::{collections::hash_map::Entry, ops::Not};
 
 use flexstr::SharedStr;
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
 use pernixc_hash::HashMap;
 use pernixc_ir::{
-    address::{Address, Memory},
+    address::{Address, Memory, Reference},
     capture::{self, Capture, CaptureMode, ReferenceCaptureMode},
     instruction::{self, Instruction, ScopePush},
     pattern::{NameBinding, NameBindingPoint},
+    value::register::Assignment,
     Values, IR,
 };
 use pernixc_lexical::tree::RelativeSpan;
@@ -388,6 +389,7 @@ impl PruningContext {
         &mut self,
         instruction: &Instruction,
         values: &Values,
+        can_fn_once: bool,
     ) {
         for (address, access) in instruction.get_access_address(values) {
             // we're interested in the capture memory only
@@ -406,7 +408,15 @@ impl PruningContext {
                             })
                         }
                         instruction::AccessMode::Load(_) => {
-                            CaptureMode::ByValue
+                            if can_fn_once {
+                                CaptureMode::ByValue
+                            } else {
+                                CaptureMode::ByReference(ReferenceCaptureMode {
+                                    lifetime: Lifetime::Erased, /* defaults to
+                                                                 * erased */
+                                    qualifier: Qualifier::Immutable,
+                                })
+                            }
                         }
                         instruction::AccessMode::Write(_) => {
                             CaptureMode::ByReference(ReferenceCaptureMode {
@@ -419,6 +429,187 @@ impl PruningContext {
                 }
                 instruction::AccessKind::Drop => unreachable!(),
             });
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+enum AccessMode {
+    Borrow(Qualifier),
+    Move,
+}
+
+impl Binder<'_> {
+    /// Compares the captures and their usage in the IRs. Then, the captures
+    /// are pruned based on their usage information and adjust the usage in
+    /// the IRs accordingly.
+    pub(crate) fn prunes_capture_ir<'x, I: Iterator<Item = &'x mut IR>>(
+        irs: I,
+        captures: &mut pernixc_ir::capture::Captures,
+        can_fn_once: bool,
+    ) {
+        let mut irs = irs.collect::<Vec<_>>();
+
+        let mut pruning_context = PruningContext::new();
+
+        // visit all instructions in all IRs to collect usage information
+        for ir in &mut irs {
+            ir.control_flow_graph.traverse().for_each(|(_, block)| {
+                for inst in block.instructions() {
+                    pruning_context.visit_instruction(
+                        inst,
+                        &ir.values,
+                        can_fn_once,
+                    );
+                }
+            });
+        }
+
+        let all_capture_ids = captures.captures.ids().collect::<Vec<_>>();
+
+        // remove unused captures
+        for id in all_capture_ids {
+            if pruning_context.unsages.contains_key(&id).not() {
+                let _ = captures.captures.remove(id);
+            }
+        }
+
+        for (capture_id, new_capture) in pruning_context.unsages {
+            captures.captures[capture_id].capture_mode = new_capture;
+        }
+
+        // adjust all IRs to use the new capture modes
+        for ir in &mut irs {
+            for inst in ir.control_flow_graph.traverse_mut_instructions() {
+                match inst {
+                    Instruction::Store(store) => {
+                        Self::adjust_memory_usage(
+                            &mut store.address,
+                            AccessMode::Borrow(Qualifier::Mutable),
+                            captures,
+                        );
+                    }
+
+                    Instruction::RegisterAssignment(register_assignment) => {
+                        let register =
+                            &mut ir.values.registers[register_assignment.id];
+
+                        match &mut register.assignment {
+                            Assignment::Load(load) => {
+                                Self::adjust_memory_usage(
+                                    &mut load.address,
+                                    AccessMode::Move,
+                                    captures,
+                                );
+                            }
+
+                            Assignment::Borrow(borrow) => {
+                                Self::adjust_memory_usage(
+                                    &mut borrow.address,
+                                    AccessMode::Borrow(borrow.qualifier),
+                                    captures,
+                                );
+                            }
+
+                            Assignment::VariantNumber(variant_number) => {
+                                Self::adjust_memory_usage(
+                                    &mut variant_number.address,
+                                    AccessMode::Borrow(Qualifier::Immutable),
+                                    captures,
+                                );
+                            }
+
+                            Assignment::Tuple(_)
+                            | Assignment::Prefix(_)
+                            | Assignment::Struct(_)
+                            | Assignment::Variant(_)
+                            | Assignment::FunctionCall(_)
+                            | Assignment::Binary(_)
+                            | Assignment::Array(_)
+                            | Assignment::Phi(_)
+                            | Assignment::Cast(_) => {}
+                        }
+                    }
+
+                    Instruction::TuplePack(tuple_pack) => {
+                        Self::adjust_memory_usage(
+                            &mut tuple_pack.tuple_address,
+                            AccessMode::Move,
+                            captures,
+                        );
+                        Self::adjust_memory_usage(
+                            &mut tuple_pack.store_address,
+                            AccessMode::Borrow(Qualifier::Mutable),
+                            captures,
+                        );
+                    }
+
+                    Instruction::RegisterDiscard(_)
+                    | Instruction::ScopePush(_)
+                    | Instruction::ScopePop(_) => {}
+
+                    Instruction::DropUnpackTuple(_) | Instruction::Drop(_) => {
+                        unreachable!()
+                    }
+                }
+            }
+        }
+    }
+
+    fn adjust_memory_usage(
+        address: &mut Address,
+        access_mode: AccessMode,
+        captures: &pernixc_ir::capture::Captures,
+    ) {
+        let Memory::Capture(capture_id) = address.get_root_memory() else {
+            return;
+        };
+
+        let capture_memory_address =
+            Address::Memory(Memory::Capture(*capture_id));
+
+        let capture = &captures.captures[*capture_id];
+
+        match (&capture.capture_mode, access_mode) {
+            (
+                CaptureMode::ByValue,
+                AccessMode::Borrow(_) | AccessMode::Move,
+            ) => {
+                // no-adjustment needed
+            }
+
+            (
+                CaptureMode::ByReference(reference_capture_mode),
+                AccessMode::Borrow(qualifier),
+            ) => {
+                if qualifier == Qualifier::Mutable {
+                    assert_eq!(
+                        reference_capture_mode.qualifier,
+                        Qualifier::Mutable,
+                        "cannot borrow immutable reference as mutable"
+                    );
+                }
+
+                address.replace_with(
+                    &capture_memory_address.clone(),
+                    Address::Reference(Reference {
+                        qualifier: reference_capture_mode.qualifier,
+                        reference_address: Box::new(capture_memory_address),
+                    }),
+                );
+            }
+            (
+                CaptureMode::ByReference(reference_capture_mode),
+                AccessMode::Move,
+            ) => {
+                address.replace_with(
+                    &capture_memory_address.clone(),
+                    Address::Reference(Reference {
+                        qualifier: reference_capture_mode.qualifier,
+                        reference_address: Box::new(capture_memory_address),
+                    }),
+                );
+            }
         }
     }
 }
