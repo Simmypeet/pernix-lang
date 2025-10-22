@@ -1,17 +1,24 @@
 //! Defines the logic for building nested binders, such as for closures,
 //! effect handlers, do blocks, etc.
 
+use std::collections::hash_map::Entry;
+
 use flexstr::SharedStr;
+use pernixc_arena::ID;
 use pernixc_handler::Handler;
+use pernixc_hash::HashMap;
 use pernixc_ir::{
     address::{Address, Memory},
-    capture::{Capture, CaptureMode},
-    instruction::{self, ScopePush},
+    capture::{self, Capture, CaptureMode, ReferenceCaptureMode},
+    instruction::{self, Instruction, ScopePush},
     pattern::{NameBinding, NameBindingPoint},
-    IR,
+    Values, IR,
 };
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_term::r#type::Type;
+use pernixc_term::{
+    lifetime::Lifetime,
+    r#type::{Qualifier, Type},
+};
 use pernixc_type_system::UnrecoverableError;
 
 use crate::{
@@ -331,5 +338,87 @@ impl Binder<'_> {
         }
 
         Ok(())
+    }
+}
+
+/// A structure used for pruning the closure captures. Initially, the closure
+/// captures all the variables with by value capture mode. This is the most
+/// general settings. To ensure that the closure captures only the necessary
+/// variables, we can use the `PruningContext` to track the usage of each
+/// variable and prune the closure captures accordingly.
+#[derive(Debug, Default)]
+struct PruningContext {
+    unsages: HashMap<ID<capture::Capture>, CaptureMode>,
+}
+
+impl PruningContext {
+    fn new() -> Self { Self { unsages: HashMap::default() } }
+
+    fn visit_usage(
+        &mut self,
+        capture: ID<capture::Capture>,
+        mode: CaptureMode,
+    ) {
+        let order_capture_mode = |x: &CaptureMode| match x {
+            CaptureMode::ByValue => 2,
+            CaptureMode::ByReference(by_ref) => match by_ref.qualifier {
+                Qualifier::Immutable => 0,
+                Qualifier::Mutable => 1,
+            },
+        };
+
+        match self.unsages.entry(capture) {
+            Entry::Occupied(mut occupied_entry) => {
+                let existing_rank = order_capture_mode(occupied_entry.get());
+                let new_rank = order_capture_mode(&mode);
+
+                // update to the more general capture mode
+                if new_rank > existing_rank {
+                    occupied_entry.insert(mode);
+                }
+            }
+
+            Entry::Vacant(vacant_entry) => {
+                vacant_entry.insert(mode);
+            }
+        }
+    }
+
+    fn visit_instruction(
+        &mut self,
+        instruction: &Instruction,
+        values: &Values,
+    ) {
+        for (address, access) in instruction.get_access_address(values) {
+            // we're interested in the capture memory only
+            let Memory::Capture(root_address) = address.get_root_memory()
+            else {
+                continue;
+            };
+
+            self.visit_usage(*root_address, match access {
+                instruction::AccessKind::Normal(access_mode) => {
+                    match access_mode {
+                        instruction::AccessMode::Read(read) => {
+                            CaptureMode::ByReference(ReferenceCaptureMode {
+                                lifetime: Lifetime::Erased,
+                                qualifier: read.qualifier,
+                            })
+                        }
+                        instruction::AccessMode::Load(_) => {
+                            CaptureMode::ByValue
+                        }
+                        instruction::AccessMode::Write(_) => {
+                            CaptureMode::ByReference(ReferenceCaptureMode {
+                                lifetime: Lifetime::Erased, /* defaults to
+                                                             * erased */
+                                qualifier: Qualifier::Mutable,
+                            })
+                        }
+                    }
+                }
+                instruction::AccessKind::Drop => unreachable!(),
+            });
+        }
     }
 }
