@@ -223,6 +223,67 @@ impl<'a> Iterator for Traverser<'a> {
     }
 }
 
+/// Iterator over mutable instructions in a control flow graph.
+///
+/// This iterator traverses the control flow graph in a depth-first manner,
+/// yielding mutable references to each instruction in the graph.
+///
+/// Each instruction is guaranteed to be visited exactly once and reachable
+/// from the entry block.
+#[derive(Debug)]
+pub struct MutInstructionTraverser<'a> {
+    graph: &'a mut ControlFlowGraph,
+    visited: HashSet<ID<Block>>,
+    stack: Vec<ID<Block>>,
+
+    current_block: ID<Block>,
+    current_instruction_index: usize,
+}
+
+impl<'x> Iterator for MutInstructionTraverser<'x> {
+    type Item = &'x mut Instruction;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let block = &mut self.graph.blocks[self.current_block];
+            let inst =
+                block.instructions.get_mut(self.current_instruction_index);
+
+            if let Some(inst) = inst {
+                self.current_instruction_index += 1;
+
+                return unsafe {
+                    Some(std::mem::transmute::<
+                        &mut Instruction,
+                        &'x mut Instruction,
+                    >(inst))
+                };
+            }
+
+            let block_id = loop {
+                let block_id = self.stack.pop()?;
+                if self.visited.insert(block_id) {
+                    break block_id;
+                }
+            };
+
+            // expand the stack
+            self.stack.extend(
+                self.graph.blocks[block_id]
+                    .terminator()
+                    .iter()
+                    .filter_map(|x| x.as_jump())
+                    .flat_map(Jump::jump_targets),
+            );
+
+            self.current_block = block_id;
+            self.current_instruction_index = 0;
+
+            // loop and try get instruction again
+        }
+    }
+}
+
 /// An iterator used for retrieving the removed unreachable blocks from the
 /// control flow graph.
 ///
@@ -261,6 +322,25 @@ impl ControlFlowGraph {
             graph: self,
             visited: HashSet::default(),
             stack: vec![self.entry_block_id],
+        }
+    }
+
+    /// Creates an iterator used for traversing through every instruction in
+    /// the control flow graph mutably.
+    ///
+    /// See [`MutInstructionTraverser`] for more information.
+    pub fn traverse_mut_instructions(&mut self) -> MutInstructionTraverser<'_> {
+        MutInstructionTraverser {
+            visited: HashSet::default(),
+            stack: self.blocks[self.entry_block_id]
+                .terminator()
+                .and_then(|x| x.as_jump())
+                .into_iter()
+                .flat_map(Jump::jump_targets)
+                .collect(),
+            current_block: self.entry_block_id,
+            current_instruction_index: 0,
+            graph: self,
         }
     }
 
