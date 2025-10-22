@@ -5,7 +5,10 @@ use pernixc_arena::Arena;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
-use pernixc_term::r#type::Type;
+use pernixc_term::{
+    lifetime::Lifetime,
+    r#type::{Qualifier, Type},
+};
 
 use crate::address::Address;
 
@@ -45,7 +48,6 @@ pub struct Captures {
 #[derive(
     Debug,
     Clone,
-    Copy,
     PartialEq,
     Eq,
     PartialOrd,
@@ -60,7 +62,28 @@ pub enum CaptureMode {
     ByValue,
 
     /// Borrows the captured memory address into the closure.
-    ByReference,
+    ByReference(ReferenceCaptureMode),
+}
+
+/// Represents a variant of [`CaptureMode::ByReference`]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+pub struct ReferenceCaptureMode {
+    /// The lifetime of the captured memory address.
+    pub lifetime: Lifetime,
+
+    /// The reference qualifier of the captured memory address.
+    pub qualifier: Qualifier,
 }
 
 /// Represents a captured memory from the parent IR.
