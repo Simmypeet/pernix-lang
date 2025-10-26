@@ -29,8 +29,9 @@ use pernixc_type_system::UnrecoverableError;
 use crate::{
     bind::{Bind, Expression, Guidance},
     binder::{
-        self, inference_context::ErasedLifetimeProvider, Binder, BindingError,
-        Error,
+        closure::{self, PruneMode},
+        inference_context::ErasedLifetimeProvider,
+        Binder, BindingError, Error,
     },
     diagnostic::{
         Diagnostic, DuplicatedEffectHandler, DuplicatedEffectOperationHandler,
@@ -78,7 +79,7 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
         Self::prune_capture_ir(
             std::iter::once(&mut do_closure),
             &mut do_captures,
-            true,
+            PruneMode::Once,
         );
 
         // pop the closure from the stack
@@ -88,7 +89,7 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
             self,
             effect_handlers.with_blocks,
             &expected_return_type,
-            &captures,
+            captures,
             handler,
         )
         .await?;
@@ -111,6 +112,7 @@ struct WithBlock {
     qualified_identifier: QualifiedIdentifier,
     effect_id: Global<pernixc_symbol::ID>,
     generic_arguments: GenericArguments,
+    #[allow(dead_code)]
     handler_id: pernixc_arena::ID<EffectHandler>,
     handlers: HashMap<pernixc_symbol::ID, HandlerBlock>,
 }
@@ -126,9 +128,11 @@ async fn build_with_blocks(
     binder: &mut Binder<'_>,
     with_blocks: Vec<WithBlock>,
     expected_type: &Type,
-    captures: &binder::closure::Captures,
+    captures: closure::Captures,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<(), Error> {
+    let mut with_irs = HashMap::default();
+
     for with_block in with_blocks {
         let instantiation = binder
             .engine()
@@ -142,31 +146,45 @@ async fn build_with_blocks(
         for (effect_operation_id, handler_block) in with_block.handlers {
             let statements_span = handler_block.statements.span();
 
-            let ir = binder
-                .new_closure_binder(
-                    async |x| {
-                        Box::pin(build_handler_block(
-                            x,
-                            handler_block,
-                            with_block
-                                .effect_id
-                                .target_id
-                                .make_global(effect_operation_id),
-                            &instantiation,
-                            handler,
-                        ))
-                        .await?;
+            assert!(with_irs
+                .insert(
+                    with_block.effect_id,
+                    binder
+                        .new_closure_binder(
+                            async |x| {
+                                Box::pin(build_handler_block(
+                                    x,
+                                    handler_block,
+                                    with_block
+                                        .effect_id
+                                        .target_id
+                                        .make_global(effect_operation_id),
+                                    &instantiation,
+                                    handler,
+                                ))
+                                .await?;
 
-                        Ok(())
-                    },
-                    expected_type.clone(),
-                    statements_span,
-                    captures,
-                    handler,
+                                Ok(())
+                            },
+                            expected_type.clone(),
+                            statements_span,
+                            &captures,
+                            handler,
+                        )
+                        .await?
                 )
-                .await?;
+                .is_none());
         }
     }
+
+    let mut underlying_captures = captures.into_inner_captures();
+
+    // prune the captures
+    Binder::prune_capture_ir(
+        with_irs.values_mut(),
+        &mut underlying_captures,
+        PruneMode::Multiple,
+    );
 
     Ok(())
 }
