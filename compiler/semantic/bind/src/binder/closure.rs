@@ -348,11 +348,7 @@ impl Binder<'_> {
     }
 }
 
-/// A structure used for pruning the closure captures. Initially, the closure
-/// captures all the variables with by value capture mode. This is the most
-/// general settings. To ensure that the closure captures only the necessary
-/// variables, we can use the `PruningContext` to track the usage of each
-/// variable and prune the closure captures accordingly.
+/// A structure used for pruning the closure captures.
 #[derive(Debug, Default)]
 struct PruningContext {
     unsages: HashMap<ID<capture::Capture>, CaptureMode>,
@@ -446,9 +442,20 @@ enum AccessMode {
 }
 
 impl Binder<'_> {
-    /// Compares the captures and their usage in the IRs. Then, the captures
-    /// are pruned based on their usage information and adjust the usage in
-    /// the IRs accordingly.
+    /// Initially, the closure captures all the variables with by-value capture
+    /// mode. This is the most general settings. After binding, we look through
+    /// all the usage of the captures and figure out the most restrictive
+    /// capture mode for each capture (by-value, by-mut-ref, by-imm-ref),
+    /// and adjust all the instructions related to the captures accordingly.
+    ///
+    /// # Parameters
+    ///
+    /// - captures: The captures which initially contains all captures with
+    ///   by-value. After pruning, it will contain only the used captures with
+    ///   the most restrictive capture mode.
+    /// - `can_fn_once`: Whether the closure can be called only once. If true,
+    ///   then by-value captures can be kept as by-value. If false, then
+    ///   by-value captures need to be adjusted to by-imm-ref or by-mut-ref.
     pub(crate) fn prune_capture_ir<'x, I: Iterator<Item = &'x mut IR>>(
         irs: I,
         captures: &mut pernixc_ir::capture::Captures,
