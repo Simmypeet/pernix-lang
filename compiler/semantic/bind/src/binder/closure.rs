@@ -73,6 +73,13 @@ impl Captures {
         self.captures.clone()
     }
 
+    /// Destructs the `Captures`, returning the underlying
+    /// [`pernixc_ir::capture::Captures`].
+    #[must_use]
+    pub fn into_inner_captures(self) -> pernixc_ir::capture::Captures {
+        self.captures
+    }
+
     async fn try_insert_named_binding(
         &mut self,
         new_name: &SharedStr,
