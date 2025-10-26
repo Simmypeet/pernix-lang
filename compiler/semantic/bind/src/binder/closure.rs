@@ -398,7 +398,7 @@ impl PruningContext {
         &mut self,
         instruction: &Instruction,
         values: &Values,
-        can_fn_once: bool,
+        prune_mode: PruneMode,
     ) {
         for (address, access) in instruction.get_access_address(values) {
             // we're interested in the capture memory only
@@ -417,14 +417,15 @@ impl PruningContext {
                             })
                         }
                         instruction::AccessMode::Load(_) => {
-                            if can_fn_once {
-                                CaptureMode::ByValue
-                            } else {
-                                CaptureMode::ByReference(ReferenceCaptureMode {
-                                    lifetime: Lifetime::Erased, /* defaults to
-                                                                 * erased */
-                                    qualifier: Qualifier::Immutable,
-                                })
+                            match prune_mode {
+                                PruneMode::Once => CaptureMode::ByValue,
+                                PruneMode::Multiple => CaptureMode::ByReference(
+                                    ReferenceCaptureMode {
+                                        lifetime: Lifetime::Erased, /* defaults to
+                                                                     * erased */
+                                        qualifier: Qualifier::Immutable,
+                                    },
+                                ),
                             }
                         }
                         instruction::AccessMode::Write(_) => {
@@ -448,6 +449,20 @@ enum AccessMode {
     Move,
 }
 
+/// The mode used for pruning captures.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PruneMode {
+    /// The capture is used under the closure that can be called only once.
+    Once,
+
+    /// The capture is used under the closure that can be called multiple
+    /// times.
+    ///
+    /// This implies that some operation like loading/moving on the capture
+    /// value needs to be `Copy`.
+    Multiple,
+}
+
 impl Binder<'_> {
     /// Initially, the closure captures all the variables with by-value capture
     /// mode. This is the most general settings. After binding, we look through
@@ -460,13 +475,10 @@ impl Binder<'_> {
     /// - captures: The captures which initially contains all captures with
     ///   by-value. After pruning, it will contain only the used captures with
     ///   the most restrictive capture mode.
-    /// - `can_fn_once`: Whether the closure can be called only once. If true,
-    ///   then by-value captures can be kept as by-value. If false, then
-    ///   by-value captures need to be adjusted to by-imm-ref or by-mut-ref.
     pub(crate) fn prune_capture_ir<'x, I: Iterator<Item = &'x mut IR>>(
         irs: I,
         captures: &mut pernixc_ir::capture::Captures,
-        can_fn_once: bool,
+        mode: PruneMode,
     ) {
         let mut irs = irs.collect::<Vec<_>>();
 
@@ -476,11 +488,7 @@ impl Binder<'_> {
         for ir in &mut irs {
             ir.control_flow_graph.traverse().for_each(|(_, block)| {
                 for inst in block.instructions() {
-                    pruning_context.visit_instruction(
-                        inst,
-                        &ir.values,
-                        can_fn_once,
-                    );
+                    pruning_context.visit_instruction(inst, &ir.values, mode);
                 }
             });
         }
