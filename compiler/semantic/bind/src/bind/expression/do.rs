@@ -1,3 +1,5 @@
+use std::collections::hash_map::Entry;
+
 use pernixc_handler::Handler;
 use pernixc_hash::HashMap;
 use pernixc_ir::{
@@ -145,35 +147,38 @@ async fn build_with_blocks(
 
         for (effect_operation_id, handler_block) in with_block.handlers {
             let statements_span = handler_block.statements.span();
-
-            assert!(with_irs
-                .insert(
-                    with_block.effect_id,
-                    binder
-                        .new_closure_binder(
-                            async |x| {
-                                Box::pin(build_handler_block(
-                                    x,
-                                    handler_block,
-                                    with_block
-                                        .effect_id
-                                        .target_id
-                                        .make_global(effect_operation_id),
-                                    &instantiation,
-                                    handler,
-                                ))
-                                .await?;
-
-                                Ok(())
-                            },
-                            expected_type.clone(),
-                            statements_span,
-                            &captures,
+            let ir = binder
+                .new_closure_binder(
+                    async |x| {
+                        Box::pin(build_handler_block(
+                            x,
+                            handler_block,
+                            with_block
+                                .effect_id
+                                .target_id
+                                .make_global(effect_operation_id),
+                            &instantiation,
                             handler,
-                        )
-                        .await?
+                        ))
+                        .await?;
+
+                        Ok(())
+                    },
+                    expected_type.clone(),
+                    statements_span,
+                    &captures,
+                    handler,
                 )
-                .is_none());
+                .await?;
+
+            // only insert if it's not duplication
+            let Entry::Vacant(entry) =
+                with_irs.entry((with_block.effect_id, effect_operation_id))
+            else {
+                continue;
+            };
+
+            entry.insert(ir);
         }
     }
 
