@@ -54,16 +54,14 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
 
         let captures = self.create_captures(handler).await?;
 
-        let with_blocks =
+        let effect_handlers =
             extract_effect_handlers(self, syntax_tree, handler).await?;
-
-        let handler_group_id = create_handler_group(self, &with_blocks);
 
         let expected_return_type = Type::Inference(
             self.create_type_inference(constraint::Type::All(true)),
         );
 
-        let _do_closure = Box::pin(self.new_closure_binder(
+        let mut do_closure = Box::pin(self.new_closure_binder(
             async |x| {
                 build_do_block(x, &do_statements, handler).await?;
                 Ok(())
@@ -74,13 +72,21 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
             handler,
         ))
         .await?;
+        let mut do_captures = captures.clone_captures();
+
+        // prune the captures
+        Self::prune_capture_ir(
+            std::iter::once(&mut do_closure),
+            &mut do_captures,
+            true,
+        );
 
         // pop the closure from the stack
-        self.pop_handler_group(handler_group_id);
+        self.pop_handler_group(effect_handlers.effect_handler_group_id);
 
         build_with_blocks(
             self,
-            with_blocks,
+            effect_handlers.with_blocks,
             &expected_return_type,
             &captures,
             handler,
@@ -96,10 +102,16 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
     }
 }
 
+struct EffectHandlers {
+    with_blocks: Vec<WithBlock>,
+    effect_handler_group_id: pernixc_arena::ID<HandlerGroup>,
+}
+
 struct WithBlock {
     qualified_identifier: QualifiedIdentifier,
     effect_id: Global<pernixc_symbol::ID>,
     generic_arguments: GenericArguments,
+    handler_id: pernixc_arena::ID<EffectHandler>,
     handlers: HashMap<pernixc_symbol::ID, HandlerBlock>,
 }
 
@@ -108,25 +120,6 @@ struct HandlerBlock {
     statements: pernixc_syntax::statement::Statements,
     parameters: Vec<pernixc_syntax::pattern::Irrefutable>,
     handler: pernixc_syntax::expression::block::Handler,
-}
-
-fn create_handler_group(
-    binder: &mut Binder<'_>,
-    with_blocks: &[WithBlock],
-) -> pernixc_arena::ID<HandlerGroup> {
-    let handler_group_id = binder.insert_effect_handler_group();
-
-    for with_block in with_blocks {
-        binder.insert_effect_handler_to_group(
-            handler_group_id,
-            EffectHandler::new(
-                with_block.effect_id,
-                with_block.generic_arguments.clone(),
-            ),
-        );
-    }
-
-    handler_group_id
 }
 
 async fn build_with_blocks(
@@ -149,7 +142,7 @@ async fn build_with_blocks(
         for (effect_operation_id, handler_block) in with_block.handlers {
             let statements_span = handler_block.statements.span();
 
-            binder
+            let ir = binder
                 .new_closure_binder(
                     async |x| {
                         Box::pin(build_handler_block(
@@ -370,7 +363,10 @@ async fn extract_effect_handlers(
     binder: &mut Binder<'_>,
     syntax_tree: &pernixc_syntax::expression::block::Do,
     handler: &dyn Handler<Diagnostic>,
-) -> Result<Vec<WithBlock>, Error> {
+) -> Result<EffectHandlers, Error> {
+    // create a new handler group for this one
+    let handler_group_id = binder.insert_effect_handler_group();
+
     let mut with_handlers = Vec::<WithBlock>::new();
 
     for with in syntax_tree.with() {
@@ -487,10 +483,17 @@ async fn extract_effect_handlers(
         with_handlers.push(WithBlock {
             qualified_identifier: qualified_identifier.clone(),
             effect_id: effect.id,
+            handler_id: binder.insert_effect_handler_to_group(
+                handler_group_id,
+                EffectHandler::new(effect.id, effect.generic_arguments.clone()),
+            ),
             generic_arguments: effect.generic_arguments,
             handlers,
         });
     }
 
-    Ok(with_handlers)
+    Ok(EffectHandlers {
+        with_blocks: with_handlers,
+        effect_handler_group_id: handler_group_id,
+    })
 }
