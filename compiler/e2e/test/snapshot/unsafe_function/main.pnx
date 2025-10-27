@@ -1,0 +1,9 @@
+public struct MyType:
+    pass
+
+implements MyType:
+    public unsafe function dangerous(): 
+        pass
+
+public function main():
+    MyType.dangerous()
