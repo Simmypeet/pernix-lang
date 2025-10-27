@@ -91,7 +91,7 @@ If the container fails to build, try:
 
 If you encounter LLVM-related build errors, verify the environment variables are set:
 ```bash
-echo $LLVM_SYS_180_PREFIX
+echo $LLVM_SYS_181_PREFIX
 echo $LLVM_CONFIG
 llvm-config --version
 ```

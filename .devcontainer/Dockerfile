@@ -83,7 +83,7 @@ RUN cargo install cargo-insta
 RUN cargo install cargo-nextest --locked
 
 # Set environment variables for LLVM
-ENV LLVM_SYS_180_PREFIX=/usr/lib/llvm-18
+ENV LLVM_SYS_181_PREFIX=/usr/lib/llvm-18
 ENV LLVM_CONFIG=/usr/bin/llvm-config-18
 
 # Switch back to dialog for any ad-hoc use of apt-get
