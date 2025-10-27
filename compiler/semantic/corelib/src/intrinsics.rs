@@ -94,14 +94,19 @@ pub async fn initialize_intrinsics(
 }
 
 /// Helper function to initialize a generic intrinsic function with a single type parameter.
-async fn initialize_generic_function(
+/// 
+/// The `build_params_and_return` callback receives the function ID and the generic type parameter T,
+/// and should return (parameters, return_type) for the function.
+async fn initialize_generic_function<F>(
     engine: &mut Arc<Engine>,
     root_target_module_id: pernixc_symbol::ID,
     name_sequence: [&str; 2],
     name: &str,
-    parameters: Arc<Parameters>,
-    return_type: Arc<Type>,
-) -> Global<pernixc_symbol::ID> {
+    build_params_and_return: F,
+) -> Global<pernixc_symbol::ID>
+where
+    F: FnOnce(Global<pernixc_symbol::ID>, Type) -> (Arc<Parameters>, Arc<Type>),
+{
     let function_id = {
         let tracked_engine = engine.tracked();
         TargetID::CORE.make_global(
@@ -117,9 +122,12 @@ async fn initialize_generic_function(
     };
 
     let mut generic_params = GenericParameters::default();
-    generic_params
+    let t_param_idx = generic_params
         .add_type_parameter(TypeParameter { name: "T".into(), span: None })
         .unwrap();
+    let t_ty = Type::Parameter(TypeParameterID::new(function_id, t_param_idx));
+
+    let (parameters, return_type) = build_params_and_return(function_id, t_ty);
 
     let input_lock = Arc::get_mut(engine).unwrap().input_lock();
 
@@ -172,11 +180,15 @@ async fn initialize_sizeof(
         root_target_module_id,
         SIZEOF_FUNCTION_SEQUENCE,
         SIZEOF_FUNCTION_NAME,
-        Arc::new(Parameters {
-            parameters: Arena::default(),
-            parameter_order: Vec::new(),
-        }),
-        Arc::new(Type::Primitive(Primitive::Usize)),
+        |_function_id, _t_ty| {
+            (
+                Arc::new(Parameters {
+                    parameters: Arena::default(),
+                    parameter_order: Vec::new(),
+                }),
+                Arc::new(Type::Primitive(Primitive::Usize)),
+            )
+        },
     )
     .await
 }
@@ -195,11 +207,15 @@ async fn initialize_alignof(
         root_target_module_id,
         ALIGNOF_FUNCTION_SEQUENCE,
         ALIGNOF_FUNCTION_NAME,
-        Arc::new(Parameters {
-            parameters: Arena::default(),
-            parameter_order: Vec::new(),
-        }),
-        Arc::new(Type::Primitive(Primitive::Usize)),
+        |_function_id, _t_ty| {
+            (
+                Arc::new(Parameters {
+                    parameters: Arena::default(),
+                    parameter_order: Vec::new(),
+                }),
+                Arc::new(Type::Primitive(Primitive::Usize)),
+            )
+        },
     )
     .await
 }
@@ -213,81 +229,31 @@ async fn initialize_drop_at(
     engine: &mut Arc<Engine>,
     root_target_module_id: pernixc_symbol::ID,
 ) -> Global<pernixc_symbol::ID> {
-    let drop_at_id = {
-        let tracked_engine = engine.tracked();
-        TargetID::CORE.make_global(
-            tracked_engine
-                .calculate_qualified_name_id(
-                    DROPAT_FUNCTION_SEQUENCE,
-                    TargetID::CORE,
-                    Some(root_target_module_id),
-                    0,
-                )
-                .await,
-        )
-    };
+    initialize_generic_function(
+        engine,
+        root_target_module_id,
+        DROPAT_FUNCTION_SEQUENCE,
+        DROPAT_FUNCTION_NAME,
+        |_function_id, t_ty| {
+            let mut parameters = Arena::default();
+            let param_id = parameters.insert(Parameter {
+                r#type: Type::Pointer(Pointer {
+                    mutable: true,
+                    pointee: Box::new(t_ty),
+                }),
+                span: None,
+            });
 
-    let mut generic_params = GenericParameters::default();
-    let t_ty = Type::Parameter(TypeParameterID::new(
-        drop_at_id,
-        generic_params
-            .add_type_parameter(TypeParameter { name: "T".into(), span: None })
-            .unwrap(),
-    ));
-
-    // Add parameter: pointer: *mut T
-    let mut parameters = Arena::default();
-    let param_id = parameters.insert(Parameter {
-        r#type: Type::Pointer(Pointer {
-            mutable: true,
-            pointee: Box::new(t_ty),
-        }),
-        span: None,
-    });
-
-    let input_lock = Arc::get_mut(engine).unwrap().input_lock();
-
-    input_lock
-        .set_input(kind::Key(drop_at_id), kind::Kind::Function)
-        .await;
-    input_lock
-        .set_input(name::Key(drop_at_id), DROPAT_FUNCTION_NAME.into())
-        .await;
-    input_lock
-        .set_input(parent::Key(drop_at_id), Some(root_target_module_id))
-        .await;
-    input_lock
-        .set_input(
-            generic_parameters::Key(drop_at_id),
-            Arc::new(generic_params),
-        )
-        .await;
-    input_lock
-        .set_input(accessibility::Key(drop_at_id), Accessibility::Public)
-        .await;
-    input_lock
-        .set_input(elided_lifetime::Key(drop_at_id), Arc::default())
-        .await;
-    input_lock
-        .set_input(implied_predicate::Key(drop_at_id), Arc::default())
-        .await;
-    input_lock
-        .set_input(where_clause::Key(drop_at_id), Arc::default())
-        .await;
-    input_lock
-        .set_input(
-            parameter::Key(drop_at_id),
-            Arc::new(Parameters {
-                parameters,
-                parameter_order: vec![param_id],
-            }),
-        )
-        .await;
-    input_lock
-        .set_input(return_type::Key(drop_at_id), Arc::new(Type::unit()))
-        .await;
-
-    drop_at_id
+            (
+                Arc::new(Parameters {
+                    parameters,
+                    parameter_order: vec![param_id],
+                }),
+                Arc::new(Type::unit()),
+            )
+        },
+    )
+    .await
 }
 
 /// Creates the `NoDrop` struct.
@@ -381,76 +347,29 @@ async fn initialize_read(
     engine: &mut Arc<Engine>,
     root_target_module_id: pernixc_symbol::ID,
 ) -> Global<pernixc_symbol::ID> {
-    let read_id = {
-        let tracked_engine = engine.tracked();
-        TargetID::CORE.make_global(
-            tracked_engine
-                .calculate_qualified_name_id(
-                    READ_FUNCTION_SEQUENCE,
-                    TargetID::CORE,
-                    Some(root_target_module_id),
-                    0,
-                )
-                .await,
-        )
-    };
+    initialize_generic_function(
+        engine,
+        root_target_module_id,
+        READ_FUNCTION_SEQUENCE,
+        READ_FUNCTION_NAME,
+        |_function_id, t_ty| {
+            let mut parameters = Arena::default();
+            let param_id = parameters.insert(Parameter {
+                r#type: Type::Pointer(Pointer {
+                    mutable: false,
+                    pointee: Box::new(t_ty.clone()),
+                }),
+                span: None,
+            });
 
-    let mut generic_params = GenericParameters::default();
-    let t_ty = Type::Parameter(TypeParameterID::new(
-        read_id,
-        generic_params
-            .add_type_parameter(TypeParameter { name: "T".into(), span: None })
-            .unwrap(),
-    ));
-
-    // Add parameter: pointer: *T
-    let mut parameters = Arena::default();
-    let param_id = parameters.insert(Parameter {
-        r#type: Type::Pointer(Pointer {
-            mutable: false,
-            pointee: Box::new(t_ty.clone()),
-        }),
-        span: None,
-    });
-
-    let input_lock = Arc::get_mut(engine).unwrap().input_lock();
-
-    input_lock
-        .set_input(kind::Key(read_id), kind::Kind::Function)
-        .await;
-    input_lock
-        .set_input(name::Key(read_id), READ_FUNCTION_NAME.into())
-        .await;
-    input_lock
-        .set_input(parent::Key(read_id), Some(root_target_module_id))
-        .await;
-    input_lock
-        .set_input(generic_parameters::Key(read_id), Arc::new(generic_params))
-        .await;
-    input_lock
-        .set_input(accessibility::Key(read_id), Accessibility::Public)
-        .await;
-    input_lock
-        .set_input(elided_lifetime::Key(read_id), Arc::default())
-        .await;
-    input_lock
-        .set_input(implied_predicate::Key(read_id), Arc::default())
-        .await;
-    input_lock
-        .set_input(where_clause::Key(read_id), Arc::default())
-        .await;
-    input_lock
-        .set_input(
-            parameter::Key(read_id),
-            Arc::new(Parameters {
-                parameters,
-                parameter_order: vec![param_id],
-            }),
-        )
-        .await;
-    input_lock
-        .set_input(return_type::Key(read_id), Arc::new(t_ty))
-        .await;
-
-    read_id
+            (
+                Arc::new(Parameters {
+                    parameters,
+                    parameter_order: vec![param_id],
+                }),
+                Arc::new(t_ty),
+            )
+        },
+    )
+    .await
 }
