@@ -145,6 +145,10 @@ pub struct Input {
     /// purposes.
     #[clap(long = "target-seed")]
     pub target_seed: Option<u64>,
+
+    /// Suppresses all CLI progress indicators.
+    #[clap(short = 'q', long = "quiet")]
+    pub quiet: bool,
 }
 
 impl Input {

@@ -31,6 +31,8 @@ clap = { workspace = true }
 codespan-reporting = { workspace = true }
 derive_more = { workspace = true }
 indicatif = { workspace = true }
+colored = { workspace = true }
+atty = { workspace = true }
 parking_lot = { workspace = true }
 inkwell = { workspace = true }
 enum-as-inner = { workspace = true }

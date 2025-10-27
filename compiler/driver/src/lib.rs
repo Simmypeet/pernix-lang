@@ -14,12 +14,14 @@ use tracing::instrument;
 
 use crate::{
     diagnostic::pernix_diagnostic_to_codespan_diagnostic, llvm::MachineCodeKind,
+    progress::ProgressIndicator,
 };
 
 pub mod term;
 
 mod diagnostic;
 mod llvm;
+mod progress;
 
 struct ReportTerm<'a, 's> {
     config: codespan_reporting::term::Config,
@@ -291,6 +293,27 @@ pub async fn run(
         err_writer,
     };
 
+    // Create progress indicator
+    let mut progress = ProgressIndicator::new(argument.command.input().quiet);
+
+    // Show initial compilation/checking message
+    match &argument.command {
+        Command::Build(_) | Command::Run(_) => {
+            progress.show_compiling(
+                &target_name,
+                &argument.command.input().file,
+                report_term.err_writer,
+            );
+        }
+        Command::Check(_) => {
+            progress.show_checking(
+                &target_name,
+                &argument.command.input().file,
+                report_term.err_writer,
+            );
+        }
+    }
+
     let diagnostic_count = {
         let mut diagnostics = Vec::new();
 
@@ -339,12 +362,18 @@ pub async fn run(
 
         ExitCode::FAILURE
     } else {
+        // Show success for check command (build/run will show their own messages)
+        if matches!(&argument.command, Command::Check(_)) {
+            progress.show_success(report_term.err_writer);
+        }
+
         build(
             &argument,
             &target_name,
             local_target_id,
             &tracked_engine,
             &mut report_term,
+            &mut progress,
         )
         .await
     };
@@ -377,6 +406,7 @@ async fn build(
     current_target_id: TargetID,
     tracked_engine: &TrackedEngine,
     report_term: &mut ReportTerm<'_, '_>,
+    progress: &mut ProgressIndicator,
 ) -> ExitCode {
     // retrieve the output path
     let output_path = match &argument.command {
@@ -438,11 +468,20 @@ async fn build(
                 return ExitCode::FAILURE;
             }
 
+            // Show success message for build/run commands
+            progress.show_success(report_term.err_writer);
+
             let run_executable = matches!(kind, MachineCodeKind::Binary(true));
 
             if !run_executable {
                 return ExitCode::SUCCESS;
             }
+
+            // Show running message
+            progress.show_running(
+                output_path.as_ref().unwrap(),
+                report_term.err_writer,
+            );
 
             let mut command =
                 std::process::Command::new(output_path.as_ref().unwrap());
@@ -488,6 +527,12 @@ async fn build(
 
                 return ExitCode::FAILURE;
             }
+
+            // Show exit success message
+            progress.show_exit_success(
+                output_path.as_ref().unwrap(),
+                report_term.err_writer,
+            );
 
             ExitCode::SUCCESS
         }
