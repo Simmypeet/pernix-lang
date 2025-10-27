@@ -5,5 +5,9 @@ implements MyType:
     public unsafe function dangerous(): 
         pass
 
+public unsafe function anotherDangerous():
+    pass
+
 public function main():
-    MyType.dangerous()
+    MyType::dangerous()
+    anotherDangerous()

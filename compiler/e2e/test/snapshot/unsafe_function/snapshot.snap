@@ -3,15 +3,25 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: the symbol `struct main::MyType` cannot be used as an expression
-  ╭─ compiler/e2e/test/snapshot/unsafe_function/main.pnx:9:5
-  │
-9 │     MyType.dangerous()
-  │     ^^^^^^ cannot be used as an expression
-  │
-  = only variants, constants, functions, parameters, and variables can be used as expressions
+error: unsafe function call outside unsafe scope
+   ╭─ compiler/e2e/test/snapshot/unsafe_function/main.pnx:12:5
+   │
+ 5 │     public unsafe function dangerous(): 
+   │                            --------- the function is declared as unsafe here
+   ·
+12 │     MyType::dangerous()
+   │     ^^^^^^^^^^^^^^^^^^^ call to unsafe function `main::[implements MyType]::dangerous` requires unsafe scope
 
-error: Compilation aborted due to 1 error(s)
+error: unsafe function call outside unsafe scope
+   ╭─ compiler/e2e/test/snapshot/unsafe_function/main.pnx:13:5
+   │
+ 8 │ public unsafe function anotherDangerous():
+   │                        ---------------- the function is declared as unsafe here
+   ·
+13 │     anotherDangerous()
+   │     ^^^^^^^^^^^^^^^^^^ call to unsafe function `main::anotherDangerous` requires unsafe scope
+
+error: Compilation aborted due to 2 error(s)
 
 
 
