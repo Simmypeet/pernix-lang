@@ -2,7 +2,6 @@
 
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
-use pernixc_symbol::ID;
 use pernixc_target::Global;
 
 /// A query for retrieving whether a function is marked as unsafe.
@@ -22,4 +21,4 @@ use pernixc_target::Global;
 )]
 #[value(bool)]
 #[extend(method(is_unsafe), no_cyclic)]
-pub struct Key(pub Global<ID>);
+pub struct Key(pub Global<pernixc_symbol::ID>);
