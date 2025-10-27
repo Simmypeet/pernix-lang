@@ -575,6 +575,8 @@ pub struct Read {
 #[allow(missing_docs)]
 pub enum AccessMode {
     Read(Read),
+    /// The value is loaded/moved from the address.
+    Load(Option<RelativeSpan>),
 
     /// The address is written to.
     Write(Option<RelativeSpan>),
@@ -586,7 +588,7 @@ impl AccessMode {
     pub const fn span(&self) -> Option<&RelativeSpan> {
         match self {
             Self::Read(read) => read.span.as_ref(),
-            Self::Write(span) => span.as_ref(),
+            Self::Load(span) | Self::Write(span) => span.as_ref(),
         }
     }
 
@@ -595,7 +597,7 @@ impl AccessMode {
     pub const fn into_span(self) -> Option<RelativeSpan> {
         match self {
             Self::Read(read) => read.span,
-            Self::Write(span) => span,
+            Self::Load(span) | Self::Write(span) => span,
         }
     }
 }
@@ -645,10 +647,7 @@ impl Instruction {
                 match &register.assignment {
                     Assignment::Load(load) => vec![(
                         Cow::Borrowed(&load.address),
-                        AccessKind::Normal(AccessMode::Read(Read {
-                            qualifier: Qualifier::Immutable,
-                            span: register.span,
-                        })),
+                        AccessKind::Normal(AccessMode::Load(register.span)),
                     )],
                     Assignment::Borrow(borrow) => vec![(
                         Cow::Borrowed(&borrow.address),
@@ -686,10 +685,9 @@ impl Instruction {
                             ),
                             offset: address::Offset::Unpacked,
                         })),
-                        AccessKind::Normal(AccessMode::Read(Read {
-                            qualifier: Qualifier::Immutable,
-                            span: tuple_pack.packed_tuple_span,
-                        })),
+                        AccessKind::Normal(AccessMode::Load(
+                            tuple_pack.packed_tuple_span,
+                        )),
                     ),
                     (
                         Cow::Borrowed(&tuple_pack.store_address),

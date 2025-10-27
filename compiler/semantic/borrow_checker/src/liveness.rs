@@ -876,6 +876,10 @@ impl<N: Normalizer> Traverser for LiveBorrowTraverser<'_, N> {
                     continue;
                 }
 
+                AccessKind::Normal(AccessMode::Load(span)) => {
+                    (span.unwrap(), false)
+                }
+
                 AccessKind::Normal(AccessMode::Read(read)) => {
                     (read.span.unwrap(), false)
                 }

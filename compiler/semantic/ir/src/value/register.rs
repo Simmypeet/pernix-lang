@@ -515,7 +515,7 @@ async fn type_of_variant_assignment(
     Deserialize,
     StableHash,
 )]
-pub enum CapabilityArgument {
+pub enum EffectHandlerArgument {
     /// Uses the capability passed to the function as an argument.
     FromPassedCapability(ID<effect::Unit>),
 
@@ -539,7 +539,7 @@ pub struct FunctionCall {
     pub instantiation: Instantiation,
 
     /// The capability arguments supplied to the function.
-    pub capability_arguments: HashMap<ID<effect::Unit>, CapabilityArgument>,
+    pub capability_arguments: HashMap<ID<effect::Unit>, EffectHandlerArgument>,
 }
 
 impl FunctionCall {
