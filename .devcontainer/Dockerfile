@@ -64,9 +64,9 @@ RUN groupadd --gid $USER_GID $USERNAME \
 USER $USERNAME
 ENV HOME=/home/$USERNAME
 
-# Install Rust stable with clippy
+# Install Rust 1.88.0 (project MSRV) with clippy
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
-    --default-toolchain stable \
+    --default-toolchain 1.88.0 \
     --component clippy
 
 # Add Rust to PATH

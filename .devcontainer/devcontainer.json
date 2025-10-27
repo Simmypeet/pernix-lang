@@ -16,6 +16,6 @@
             }
         }
     },
-    "postCreateCommand": "rustc --version && cargo --version && llvm-config --version",
+    "postCreateCommand": "rustc --version; cargo --version; llvm-config --version",
     "remoteUser": "vscode"
 }
