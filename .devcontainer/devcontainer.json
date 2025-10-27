@@ -1,0 +1,21 @@
+{
+    "name": "Pernix Language Development",
+    "build": {
+        "dockerfile": "Dockerfile"
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "rust-lang.rust-analyzer",
+                "tamasfe.even-better-toml",
+                "serayuzgur.crates"
+            ],
+            "settings": {
+                "rust-analyzer.checkOnSave.command": "clippy",
+                "rust-analyzer.cargo.features": "all"
+            }
+        }
+    },
+    "postCreateCommand": "rustc --version && cargo --version && llvm-config --version",
+    "remoteUser": "vscode"
+}
