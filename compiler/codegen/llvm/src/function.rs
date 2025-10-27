@@ -337,6 +337,59 @@ impl<'ctx> Context<'_, 'ctx> {
                 builder.build_return(None).unwrap();
             }
 
+            "read" => {
+                let ty = key.instantiation.types.values().next().unwrap();
+                let llvm_ty = self.get_type(ty.clone()).await;
+
+                if let Ok(llvm_ty) = llvm_ty {
+                    // Get the pointer parameter
+                    let ptr_param = llvm_function_signature
+                        .llvm_function_value
+                        .get_nth_param(0)
+                        .unwrap()
+                        .into_pointer_value();
+
+                    if llvm_ty.is_aggregate() {
+                        // For aggregate types, we need to use sret parameter
+                        // The return value is passed as the first parameter
+                        let sret_param = llvm_function_signature
+                            .llvm_function_value
+                            .get_nth_param(0)
+                            .unwrap()
+                            .into_pointer_value();
+                        let source_param = llvm_function_signature
+                            .llvm_function_value
+                            .get_nth_param(1)
+                            .unwrap()
+                            .into_pointer_value();
+
+                        // Perform memcpy from source to sret
+                        let size = self.target_data().get_abi_size(&llvm_ty);
+                        let align = self.target_data().get_abi_alignment(&llvm_ty);
+
+                        builder
+                            .build_memcpy(
+                                sret_param,
+                                u32::from(align),
+                                source_param,
+                                u32::from(align),
+                                self.context().i64_type().const_int(size, false),
+                            )
+                            .unwrap();
+
+                        builder.build_return(None).unwrap();
+                    } else {
+                        // For scalar types, just load and return
+                        let value =
+                            builder.build_load(llvm_ty, ptr_param, "read_value").unwrap();
+                        builder.build_return(Some(&value)).unwrap();
+                    }
+                } else {
+                    // ZST - nothing to do, just return
+                    builder.build_return(None).unwrap();
+                }
+            }
+
             _ => unreachable!(),
         }
     }
