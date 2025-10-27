@@ -24,6 +24,7 @@ pub mod parent;
 pub mod source_map;
 pub mod span;
 pub mod syntax;
+pub mod r#unsafe;
 pub mod variant_declaration_order;
 
 #[cfg(any(test, feature = "arbitrary"))]
