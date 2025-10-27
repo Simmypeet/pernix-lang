@@ -49,17 +49,18 @@ pub async fn initialize_corelib(engine: &mut Arc<Engine>) {
         .set_input(import::Key(root_core_module_id), Arc::default())
         .await;
 
-    let mut member_map = [
-        ("Drop".into(), drop_trait_id),
-        ("Copy".into(), copy_marker_id),
-    ]
-    .into_iter()
-    .collect::<pernixc_hash::HashMap<_, _>>();
+    let mut member_map =
+        [("Drop".into(), drop_trait_id), ("Copy".into(), copy_marker_id)]
+            .into_iter()
+            .collect::<pernixc_hash::HashMap<_, _>>();
 
     // Add intrinsics to the core module
-    member_map.insert(intrinsics::SIZEOF_FUNCTION_NAME.into(), intrinsic_ids[0]);
-    member_map.insert(intrinsics::ALIGNOF_FUNCTION_NAME.into(), intrinsic_ids[1]);
-    member_map.insert(intrinsics::DROPAT_FUNCTION_NAME.into(), intrinsic_ids[2]);
+    member_map
+        .insert(intrinsics::SIZEOF_FUNCTION_NAME.into(), intrinsic_ids[0]);
+    member_map
+        .insert(intrinsics::ALIGNOF_FUNCTION_NAME.into(), intrinsic_ids[1]);
+    member_map
+        .insert(intrinsics::DROPAT_FUNCTION_NAME.into(), intrinsic_ids[2]);
     member_map.insert(intrinsics::NODROP_STRUCT_NAME.into(), intrinsic_ids[3]);
     member_map.insert(intrinsics::READ_FUNCTION_NAME.into(), intrinsic_ids[4]);
 

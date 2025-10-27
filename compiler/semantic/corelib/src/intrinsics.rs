@@ -18,7 +18,9 @@ use pernixc_symbol::{
 };
 use pernixc_target::{Global, TargetID};
 use pernixc_term::{
-    generic_parameters::{self, GenericParameters, TypeParameter, TypeParameterID},
+    generic_parameters::{
+        self, GenericParameters, TypeParameter, TypeParameterID,
+    },
     r#type::{Pointer, Primitive, Type},
 };
 
@@ -119,9 +121,7 @@ async fn initialize_sizeof(
 
     let input_lock = Arc::get_mut(engine).unwrap().input_lock();
 
-    input_lock
-        .set_input(kind::Key(sizeof_id), kind::Kind::Function)
-        .await;
+    input_lock.set_input(kind::Key(sizeof_id), kind::Kind::Function).await;
     input_lock
         .set_input(name::Key(sizeof_id), SIZEOF_FUNCTION_NAME.into())
         .await;
@@ -129,23 +129,16 @@ async fn initialize_sizeof(
         .set_input(parent::Key(sizeof_id), Some(root_target_module_id))
         .await;
     input_lock
-        .set_input(
-            generic_parameters::Key(sizeof_id),
-            Arc::new(generic_params),
-        )
+        .set_input(generic_parameters::Key(sizeof_id), Arc::new(generic_params))
         .await;
     input_lock
         .set_input(accessibility::Key(sizeof_id), Accessibility::Public)
         .await;
-    input_lock
-        .set_input(elided_lifetime::Key(sizeof_id), Arc::default())
-        .await;
+    input_lock.set_input(elided_lifetime::Key(sizeof_id), Arc::default()).await;
     input_lock
         .set_input(implied_predicate::Key(sizeof_id), Arc::default())
         .await;
-    input_lock
-        .set_input(where_clause::Key(sizeof_id), Arc::default())
-        .await;
+    input_lock.set_input(where_clause::Key(sizeof_id), Arc::default()).await;
     input_lock
         .set_input(
             parameter::Key(sizeof_id),
@@ -161,9 +154,7 @@ async fn initialize_sizeof(
             Arc::new(Type::Primitive(Primitive::Usize)),
         )
         .await;
-    input_lock
-        .set_input(member::Key(sizeof_id), Arc::default())
-        .await;
+    input_lock.set_input(member::Key(sizeof_id), Arc::default()).await;
 
     sizeof_id
 }
@@ -198,9 +189,7 @@ async fn initialize_alignof(
 
     let input_lock = Arc::get_mut(engine).unwrap().input_lock();
 
-    input_lock
-        .set_input(kind::Key(alignof_id), kind::Kind::Function)
-        .await;
+    input_lock.set_input(kind::Key(alignof_id), kind::Kind::Function).await;
     input_lock
         .set_input(name::Key(alignof_id), ALIGNOF_FUNCTION_NAME.into())
         .await;
@@ -222,9 +211,7 @@ async fn initialize_alignof(
     input_lock
         .set_input(implied_predicate::Key(alignof_id), Arc::default())
         .await;
-    input_lock
-        .set_input(where_clause::Key(alignof_id), Arc::default())
-        .await;
+    input_lock.set_input(where_clause::Key(alignof_id), Arc::default()).await;
     input_lock
         .set_input(
             parameter::Key(alignof_id),
@@ -240,9 +227,7 @@ async fn initialize_alignof(
             Arc::new(Type::Primitive(Primitive::Usize)),
         )
         .await;
-    input_lock
-        .set_input(member::Key(alignof_id), Arc::default())
-        .await;
+    input_lock.set_input(member::Key(alignof_id), Arc::default()).await;
 
     alignof_id
 }
@@ -280,9 +265,7 @@ async fn initialize_drop_at(
 
     let input_lock = Arc::get_mut(engine).unwrap().input_lock();
 
-    input_lock
-        .set_input(kind::Key(drop_at_id), kind::Kind::Function)
-        .await;
+    input_lock.set_input(kind::Key(drop_at_id), kind::Kind::Function).await;
     input_lock
         .set_input(name::Key(drop_at_id), DROPAT_FUNCTION_NAME.into())
         .await;
@@ -304,9 +287,7 @@ async fn initialize_drop_at(
     input_lock
         .set_input(implied_predicate::Key(drop_at_id), Arc::default())
         .await;
-    input_lock
-        .set_input(where_clause::Key(drop_at_id), Arc::default())
-        .await;
+    input_lock.set_input(where_clause::Key(drop_at_id), Arc::default()).await;
 
     // Add parameter: pointer: *mut T
     let mut parameters = Arena::default();
@@ -330,9 +311,7 @@ async fn initialize_drop_at(
     input_lock
         .set_input(return_type::Key(drop_at_id), Arc::new(Type::unit()))
         .await;
-    input_lock
-        .set_input(member::Key(drop_at_id), Arc::default())
-        .await;
+    input_lock.set_input(member::Key(drop_at_id), Arc::default()).await;
 
     drop_at_id
 }
@@ -373,9 +352,7 @@ async fn initialize_no_drop(
     let input_lock = Arc::get_mut(engine).unwrap().input_lock();
 
     // Set up the struct
-    input_lock
-        .set_input(kind::Key(no_drop_id), kind::Kind::Struct)
-        .await;
+    input_lock.set_input(kind::Key(no_drop_id), kind::Kind::Struct).await;
     input_lock
         .set_input(name::Key(no_drop_id), NODROP_STRUCT_NAME.into())
         .await;
@@ -391,12 +368,8 @@ async fn initialize_no_drop(
     input_lock
         .set_input(accessibility::Key(no_drop_id), Accessibility::Public)
         .await;
-    input_lock
-        .set_input(where_clause::Key(no_drop_id), Arc::default())
-        .await;
-    input_lock
-        .set_input(member::Key(no_drop_id), Arc::default())
-        .await;
+    input_lock.set_input(where_clause::Key(no_drop_id), Arc::default()).await;
+    input_lock.set_input(member::Key(no_drop_id), Arc::default()).await;
 
     // Set up the fields
     let mut field_arena = Arena::default();
@@ -458,33 +431,20 @@ async fn initialize_read(
 
     let input_lock = Arc::get_mut(engine).unwrap().input_lock();
 
-    input_lock
-        .set_input(kind::Key(read_id), kind::Kind::Function)
-        .await;
-    input_lock
-        .set_input(name::Key(read_id), READ_FUNCTION_NAME.into())
-        .await;
+    input_lock.set_input(kind::Key(read_id), kind::Kind::Function).await;
+    input_lock.set_input(name::Key(read_id), READ_FUNCTION_NAME.into()).await;
     input_lock
         .set_input(parent::Key(read_id), Some(root_target_module_id))
         .await;
     input_lock
-        .set_input(
-            generic_parameters::Key(read_id),
-            Arc::new(generic_params),
-        )
+        .set_input(generic_parameters::Key(read_id), Arc::new(generic_params))
         .await;
     input_lock
         .set_input(accessibility::Key(read_id), Accessibility::Public)
         .await;
-    input_lock
-        .set_input(elided_lifetime::Key(read_id), Arc::default())
-        .await;
-    input_lock
-        .set_input(implied_predicate::Key(read_id), Arc::default())
-        .await;
-    input_lock
-        .set_input(where_clause::Key(read_id), Arc::default())
-        .await;
+    input_lock.set_input(elided_lifetime::Key(read_id), Arc::default()).await;
+    input_lock.set_input(implied_predicate::Key(read_id), Arc::default()).await;
+    input_lock.set_input(where_clause::Key(read_id), Arc::default()).await;
 
     // Add parameter: pointer: *T
     let mut parameters = Arena::default();
@@ -505,12 +465,8 @@ async fn initialize_read(
             }),
         )
         .await;
-    input_lock
-        .set_input(return_type::Key(read_id), Arc::new(t_ty))
-        .await;
-    input_lock
-        .set_input(member::Key(read_id), Arc::default())
-        .await;
+    input_lock.set_input(return_type::Key(read_id), Arc::new(t_ty)).await;
+    input_lock.set_input(member::Key(read_id), Arc::default()).await;
 
     read_id
 }

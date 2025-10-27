@@ -365,7 +365,8 @@ impl<'ctx> Context<'_, 'ctx> {
 
                         // Perform memcpy from source to sret
                         let size = self.target_data().get_abi_size(&llvm_ty);
-                        let align = self.target_data().get_abi_alignment(&llvm_ty);
+                        let align =
+                            self.target_data().get_abi_alignment(&llvm_ty);
 
                         builder
                             .build_memcpy(
@@ -373,15 +374,18 @@ impl<'ctx> Context<'_, 'ctx> {
                                 u32::from(align),
                                 source_param,
                                 u32::from(align),
-                                self.context().i64_type().const_int(size, false),
+                                self.context()
+                                    .i64_type()
+                                    .const_int(size, false),
                             )
                             .unwrap();
 
                         builder.build_return(None).unwrap();
                     } else {
                         // For scalar types, just load and return
-                        let value =
-                            builder.build_load(llvm_ty, ptr_param, "read_value").unwrap();
+                        let value = builder
+                            .build_load(llvm_ty, ptr_param, "read_value")
+                            .unwrap();
                         builder.build_return(Some(&value)).unwrap();
                     }
                 } else {
