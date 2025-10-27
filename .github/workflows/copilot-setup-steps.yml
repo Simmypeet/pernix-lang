@@ -35,6 +35,7 @@ jobs:
               uses: KyleMayes/install-llvm-action@v2
               with:
                   version: 18.1
+                  directory: ${{ runner.temp }}/llvm
 
             - name: llvm-config
               run: llvm-config --version --bindir --libdir
