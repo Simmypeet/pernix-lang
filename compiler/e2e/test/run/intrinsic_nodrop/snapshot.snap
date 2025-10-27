@@ -4,8 +4,11 @@ expression: final_string
 ---
 ## Case 0
 exit_code = 0
-stdin = ""
+stdin = "10"
 stdout = """
 Value: 10
-End of main (should not drop)"""
+End of main (should not drop)
+Moved value: 20
+After move (drop should happen for moved value)
+Dropping 20"""
 stderr = ""
