@@ -1,6 +1,6 @@
 //! Module for displaying compilation progress indicators.
 
-use std::{io::Write as _, path::Path, time::Instant};
+use std::{path::Path, time::Instant};
 
 use codespan_reporting::term::termcolor::WriteColor;
 use colored::Colorize;
