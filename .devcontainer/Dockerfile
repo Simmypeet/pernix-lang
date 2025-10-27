@@ -49,7 +49,11 @@ RUN apt-get -y install --no-install-recommends \
         llvm-18-runtime \
         llvm-18-tools \
         libclang-18-dev \
-        libllvm18
+        libllvm18 \
+        libpolly-18-dev \
+        libz-dev \
+        libzstd-dev \
+        libxml2-dev
 
 RUN apt-get autoremove -y
 
@@ -83,7 +87,6 @@ ENV HOME=/home/$USERNAME
 
 # Install Rust 1.88.0 (project MSRV) with clippy
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
-    --default-toolchain 1.88.0 \
     --component clippy
 
 # Add Rust to PATH
