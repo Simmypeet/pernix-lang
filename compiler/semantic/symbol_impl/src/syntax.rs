@@ -165,9 +165,9 @@ pub async fn get_function_unsafe_keyword(
     engine: &TrackedEngine,
 ) -> Result<Option<pernixc_syntax::Keyword>, CyclicError> {
     let table = engine.get_table_of_symbol(id).await;
-    Ok(*table.function_unsafe_keywords.get(&id.id).unwrap_or_else(
-        || panic!("No function unsafe keyword found for symbol ID: {:?}", id.id),
-    ))
+    Ok(*table.function_unsafe_keywords.get(&id.id).unwrap_or_else(|| {
+        panic!("No function unsafe keyword found for symbol ID: {:?}", id.id)
+    }))
 }
 
 pernixc_register::register!(

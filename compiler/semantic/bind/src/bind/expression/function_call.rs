@@ -41,8 +41,7 @@ use crate::{
             Diagnostic, ExtraneousArgumentsToAssociatedValue,
             MismatchedArgumentsCount, MismatchedImplementationArguments,
             SymbolIsNotCallable, UnsafeFunctionCallOutsideUnsafeScope,
-            VariantAssociatedValueExpected,
-            VariantDoesntHaveAssociatedValue,
+            VariantAssociatedValueExpected, VariantDoesntHaveAssociatedValue,
         },
         LValue,
     },
@@ -301,13 +300,9 @@ impl Bind<&pernixc_syntax::expression::unit::FunctionCall> for Binder<'_> {
 
         // Check if calling an unsafe function outside an unsafe scope
         let kind = self.engine().get_kind(callable_id).await;
-        if matches!(
-            kind,
-            Kind::Function | Kind::ImplementationFunction
-        ) {
-            let is_unsafe =
-                self.engine().is_function_unsafe(callable_id).await;
-            
+        if matches!(kind, Kind::Function | Kind::ImplementationFunction) {
+            let is_unsafe = self.engine().is_function_unsafe(callable_id).await;
+
             if is_unsafe && !self.stack().is_unsafe() {
                 handler.receive(
                     Diagnostic::UnsafeFunctionCallOutsideUnsafeScope(
