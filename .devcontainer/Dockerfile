@@ -5,8 +5,9 @@ FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Configure apt and install packages
-RUN apt-get update \
-    && apt-get -y install --no-install-recommends \
+RUN apt-get update
+
+RUN apt-get -y install --no-install-recommends \
         # Essential build tools
         build-essential \
         curl \
@@ -22,43 +23,59 @@ RUN apt-get update \
         less \
         gnupg \
         lsb-release \
-        software-properties-common \
-    && apt-get autoremove -y \
-    && apt-get clean -y \
-    && rm -rf /var/lib/apt/lists/*
+        software-properties-common
+
+RUN apt-get autoremove -y
+
+RUN apt-get clean -y
+
+RUN rm -rf /var/lib/apt/lists/*
 
 # Install LLVM 18.1 and Clang
-RUN wget https://apt.llvm.org/llvm.sh \
-    && chmod +x llvm.sh \
-    && ./llvm.sh 18 \
-    && rm llvm.sh \
-    && apt-get update \
-    && apt-get -y install --no-install-recommends \
+RUN wget https://apt.llvm.org/llvm.sh
+
+RUN chmod +x llvm.sh
+
+RUN ./llvm.sh 18
+
+RUN rm llvm.sh
+
+RUN apt-get update
+
+RUN apt-get -y install --no-install-recommends \
         clang-18 \
         llvm-18 \
         llvm-18-dev \
         llvm-18-runtime \
         llvm-18-tools \
         libclang-18-dev \
-        libllvm18 \
-    && apt-get autoremove -y \
-    && apt-get clean -y \
-    && rm -rf /var/lib/apt/lists/*
+        libllvm18
+
+RUN apt-get autoremove -y
+
+RUN apt-get clean -y
+
+RUN rm -rf /var/lib/apt/lists/*
 
 # Set LLVM 18 as the default version
-RUN update-alternatives --install /usr/bin/llvm-config llvm-config /usr/bin/llvm-config-18 100 \
-    && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100 \
-    && update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 100
+RUN update-alternatives --install /usr/bin/llvm-config llvm-config /usr/bin/llvm-config-18 100
+
+RUN update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100
+
+RUN update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 100
 
 # Create a non-root user
 ARG USERNAME=vscode
 ARG USER_UID=1000
 ARG USER_GID=$USER_UID
 
-RUN groupadd --gid $USER_GID $USERNAME \
-    && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME \
-    && echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME \
-    && chmod 0440 /etc/sudoers.d/$USERNAME
+RUN groupadd --gid $USER_GID $USERNAME
+
+RUN useradd --uid $USER_UID --gid $USER_GID -m $USERNAME
+
+RUN echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME
+
+RUN chmod 0440 /etc/sudoers.d/$USERNAME
 
 # Switch to non-root user
 USER $USERNAME
@@ -73,8 +90,9 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
 ENV PATH="$HOME/.cargo/bin:$PATH"
 
 # Install Rust nightly with rustfmt
-RUN rustup toolchain install nightly \
-    && rustup component add rustfmt --toolchain nightly
+RUN rustup toolchain install nightly
+
+RUN rustup component add rustfmt --toolchain nightly
 
 # Install cargo-insta for snapshot testing
 RUN cargo install cargo-insta
