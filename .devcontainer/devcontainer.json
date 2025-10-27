@@ -1,0 +1,8 @@
+{
+    "name": "Pernix Language Development",
+    "build": {
+        "dockerfile": "Dockerfile"
+    },
+    "postCreateCommand": "rustc --version; cargo --version; llvm-config --version",
+    "remoteUser": "vscode"
+}
