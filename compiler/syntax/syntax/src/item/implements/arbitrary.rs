@@ -154,7 +154,6 @@ where
 reference! {
     #[derive(Debug, Clone)]
     pub struct FunctionSignature for super::FunctionSignature {
-        pub unsafe_keyword (bool),
         pub const_keyword (bool),
         pub signature (function::arbitrary::Signature),
     }
@@ -165,13 +164,8 @@ impl Arbitrary for FunctionSignature {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (
-            bool::arbitrary(),
-            bool::arbitrary(),
-            function::arbitrary::Signature::arbitrary(),
-        )
-            .prop_map(|(unsafe_keyword, const_keyword, signature)| Self {
-                unsafe_keyword,
+        (bool::arbitrary(), function::arbitrary::Signature::arbitrary())
+            .prop_map(|(const_keyword, signature)| Self {
                 const_keyword,
                 signature,
             })
@@ -185,10 +179,6 @@ impl IndentDisplay for FunctionSignature {
         f: &mut std::fmt::Formatter<'_>,
         indent: usize,
     ) -> std::fmt::Result {
-        if self.unsafe_keyword {
-            write!(f, "unsafe ")?;
-        }
-
         if self.const_keyword {
             write!(f, "const ")?;
         }
