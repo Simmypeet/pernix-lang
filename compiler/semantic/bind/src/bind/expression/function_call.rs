@@ -524,7 +524,7 @@ impl Binder<'_> {
                 handler.receive(
                     Diagnostic::UnsafeFunctionCallOutsideUnsafeScope(
                         UnsafeFunctionCallOutsideUnsafeScope {
-                            call_span,
+                            call_span: whole_span,
                             function_id: callable_id,
                         },
                     )
