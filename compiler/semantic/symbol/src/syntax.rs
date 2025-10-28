@@ -243,3 +243,22 @@ pub struct FunctionBodyKey(pub Global<ID>);
 #[value(Option<pernixc_syntax::item::function::DoEffect>)]
 #[extend(method(get_function_do_effect_syntax), no_cyclic)]
 pub struct FunctionDoEffectKey(pub Global<ID>);
+
+/// Retrieves the unsafe keyword defined to a function.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+    pernixc_query::Key,
+)]
+#[value(Option<pernixc_syntax::Keyword>)]
+#[extend(method(get_function_unsafe_keyword), no_cyclic)]
+pub struct FunctionUnsafeKeywordKey(pub Global<ID>);

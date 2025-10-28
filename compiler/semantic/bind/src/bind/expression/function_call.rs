@@ -20,6 +20,7 @@ use pernixc_symbol::{
     kind::{get_kind, Kind},
     linkage::{get_linkage, Linkage, C},
     parent::get_parent,
+    r#unsafe::is_function_unsafe,
 };
 use pernixc_target::Global;
 use pernixc_term::{
@@ -39,8 +40,8 @@ use crate::{
         expression::function_call::diagnostic::{
             Diagnostic, ExtraneousArgumentsToAssociatedValue,
             MismatchedArgumentsCount, MismatchedImplementationArguments,
-            SymbolIsNotCallable, VariantAssociatedValueExpected,
-            VariantDoesntHaveAssociatedValue,
+            SymbolIsNotCallable, UnsafeFunctionCallOutsideUnsafeScope,
+            VariantAssociatedValueExpected, VariantDoesntHaveAssociatedValue,
         },
         LValue,
     },
@@ -297,11 +298,28 @@ impl Bind<&pernixc_syntax::expression::unit::FunctionCall> for Binder<'_> {
         let (callable_id, instantiation) =
             get_function_instantiation(self, syntax_tree, handler).await?;
 
+        // Check if calling an unsafe function outside an unsafe scope
+        let kind = self.engine().get_kind(callable_id).await;
+        if matches!(kind, Kind::Function | Kind::ImplementationFunction) {
+            let is_unsafe = self.engine().is_function_unsafe(callable_id).await;
+
+            if is_unsafe && !self.stack().is_unsafe() {
+                handler.receive(
+                    Diagnostic::UnsafeFunctionCallOutsideUnsafeScope(
+                        UnsafeFunctionCallOutsideUnsafeScope {
+                            call_span: syntax_tree.span(),
+                            function_id: callable_id,
+                        },
+                    )
+                    .into(),
+                );
+            }
+        }
+
         let mut expected_types =
             get_callable_expected_types(self, callable_id, &instantiation)
                 .await?;
 
-        let kind = self.engine().get_kind(callable_id).await;
         let arguments = syntax_tree
             .call()
             .map(|x| x.expressions().collect::<Vec<_>>())

@@ -1,0 +1,22 @@
+public struct MyType:
+    pass
+
+
+implements MyType:
+    public unsafe function dangerous(): 
+        pass
+
+
+public unsafe function anotherDangerous():
+    pass
+
+
+public function main():
+    MyType::dangerous()
+    anotherDangerous()
+
+
+public function safeMain():
+    unsafe scope:
+        MyType::dangerous()
+        anotherDangerous()

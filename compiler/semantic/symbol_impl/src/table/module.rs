@@ -235,6 +235,9 @@ impl TableContext {
                                     .signature()
                                     .and_then(|x| x.do_effect()),
                             )
+                            .function_unsafe_keyword(
+                                function_syntax.unsafe_keyword(),
+                            )
                             .build()
                     }
 

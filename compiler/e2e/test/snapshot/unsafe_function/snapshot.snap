@@ -1,0 +1,28 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: unsafe function call outside unsafe scope
+   ╭─ compiler/e2e/test/snapshot/unsafe_function/main.pnx:15:5
+   │
+ 6 │     public unsafe function dangerous(): 
+   │                            --------- the function is declared as unsafe here
+   ·
+15 │     MyType::dangerous()
+   │     ^^^^^^^^^^^^^^^^^^^ call to unsafe function `main::[implements MyType]::dangerous` requires unsafe scope
+
+error: unsafe function call outside unsafe scope
+   ╭─ compiler/e2e/test/snapshot/unsafe_function/main.pnx:16:5
+   │
+10 │ public unsafe function anotherDangerous():
+   │                        ---------------- the function is declared as unsafe here
+   ·
+16 │     anotherDangerous()
+   │     ^^^^^^^^^^^^^^^^^^ call to unsafe function `main::anotherDangerous` requires unsafe scope
+
+error: Compilation aborted due to 2 error(s)
+
+
+
+stdout:
