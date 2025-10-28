@@ -3,18 +3,16 @@
 use std::sync::Arc;
 
 use pernixc_arena::{Arena, OrderedArena};
-use pernixc_hash::HashSet;
 use pernixc_query::Engine;
 use pernixc_semantic_element::{
-    capability, elided_lifetime, fields, implemented, implied_predicate,
+    capability, elided_lifetime, fields, implied_predicate,
     parameter::{self, Parameter, Parameters},
     return_type, where_clause,
 };
 use pernixc_symbol::{
     accessibility::{self, Accessibility},
-    calculate_qualified_name_id, get_target_root_module_id, kind,
-    member::{self, Member},
-    name, parent,
+    calculate_qualified_name_id, get_target_root_module_id, kind, member, name,
+    parent,
 };
 use pernixc_target::{Global, TargetID};
 use pernixc_term::{
