@@ -516,7 +516,7 @@ impl Binder<'_> {
 
         if matches!(
             callable_kind,
-            Kind::Function | Kind::ImplementationFunction
+            Kind::Function | Kind::ImplementationFunction | Kind::TraitFunction
         ) {
             let is_unsafe = self.engine().is_function_unsafe(callable_id).await;
 
