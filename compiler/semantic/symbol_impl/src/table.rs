@@ -1278,6 +1278,7 @@ impl TableContext {
                             )
                             .function_unsafe_keyword(
                                 fun.signature()
+                                    .and_then(|x| x.signature())
                                     .and_then(|x| x.unsafe_keyword()),
                             )
                             .build()
