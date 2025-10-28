@@ -1,0 +1,13 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: final_string
+---
+## Case 0
+exit_code = 0
+stdin = ""
+stdout = """
+alignof[int32] = 4
+alignof[int64] = 8
+alignof[uint8] = 1
+alignof[bool] = 1"""
+stderr = ""

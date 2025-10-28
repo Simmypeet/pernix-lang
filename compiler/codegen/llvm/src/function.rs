@@ -344,8 +344,9 @@ impl<'ctx> Context<'_, 'ctx> {
                 if let Ok(llvm_ty) = llvm_ty {
                     if llvm_ty.is_aggregate() {
                         // For aggregate types, we need to use sret parameter
-                        // The return value is passed as the first parameter (sret)
-                        // The source pointer is the second parameter
+                        // The return value is passed as the first parameter
+                        // (sret) The source pointer is
+                        // the second parameter
                         let sret_param = llvm_function_signature
                             .llvm_function_value
                             .get_nth_param(0)
@@ -377,7 +378,8 @@ impl<'ctx> Context<'_, 'ctx> {
                         builder.build_return(None).unwrap();
                     } else {
                         // For scalar types, just load and return
-                        // The pointer parameter is the first (and only) parameter
+                        // The pointer parameter is the first (and only)
+                        // parameter
                         let ptr_param = llvm_function_signature
                             .llvm_function_value
                             .get_nth_param(0)

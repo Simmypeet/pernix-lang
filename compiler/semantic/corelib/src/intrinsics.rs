@@ -2,11 +2,11 @@
 
 use std::sync::Arc;
 
-use pernixc_arena::Arena;
+use pernixc_arena::{Arena, OrderedArena};
 use pernixc_hash::HashSet;
 use pernixc_query::Engine;
 use pernixc_semantic_element::{
-    elided_lifetime, fields, implemented, implied_predicate,
+    capability, elided_lifetime, fields, implemented, implied_predicate,
     parameter::{self, Parameter, Parameters},
     return_type, where_clause,
 };
@@ -74,9 +74,7 @@ pub struct IntrinsicIds {
 /// - `dropAt[T](pointer: *mut T)`: Drops the value at the given pointer
 /// - `NoDrop[T]`: A struct that holds a value without dropping it
 /// - `read[T](pointer: *T) -> T`: Reads a value from the given pointer
-pub async fn initialize_intrinsics(
-    engine: &mut Arc<Engine>,
-) -> IntrinsicIds {
+pub async fn initialize_intrinsics(engine: &mut Arc<Engine>) -> IntrinsicIds {
     let root_target_module_id = {
         let tracked_engine = engine.tracked();
         tracked_engine.get_target_root_module_id(TargetID::CORE).await
@@ -85,18 +83,18 @@ pub async fn initialize_intrinsics(
     IntrinsicIds {
         sizeof_id: initialize_sizeof(engine, root_target_module_id).await.id,
         alignof_id: initialize_alignof(engine, root_target_module_id).await.id,
-        drop_at_id: initialize_drop_at(engine, root_target_module_id)
-            .await
-            .id,
+        drop_at_id: initialize_drop_at(engine, root_target_module_id).await.id,
         no_drop_id: initialize_no_drop(engine, root_target_module_id).await.id,
         read_id: initialize_read(engine, root_target_module_id).await.id,
     }
 }
 
-/// Helper function to initialize a generic intrinsic function with a single type parameter.
-/// 
-/// The `build_params_and_return` callback receives the function ID and the generic type parameter T,
-/// and should return (parameters, return_type) for the function.
+/// Helper function to initialize a generic intrinsic function with a single
+/// type parameter.
+///
+/// The `build_params_and_return` callback receives the function ID and the
+/// generic type parameter T, and should return (parameters, return_type) for
+/// the function.
 async fn initialize_generic_function<F>(
     engine: &mut Arc<Engine>,
     root_target_module_id: pernixc_symbol::ID,
@@ -131,9 +129,7 @@ where
 
     let input_lock = Arc::get_mut(engine).unwrap().input_lock();
 
-    input_lock
-        .set_input(kind::Key(function_id), kind::Kind::Function)
-        .await;
+    input_lock.set_input(kind::Key(function_id), kind::Kind::Function).await;
     input_lock.set_input(name::Key(function_id), name.into()).await;
     input_lock
         .set_input(parent::Key(function_id), Some(root_target_module_id))
@@ -153,14 +149,14 @@ where
     input_lock
         .set_input(implied_predicate::Key(function_id), Arc::default())
         .await;
+    input_lock.set_input(where_clause::Key(function_id), Arc::default()).await;
+    input_lock.set_input(parameter::Key(function_id), parameters).await;
+    input_lock.set_input(return_type::Key(function_id), return_type).await;
     input_lock
-        .set_input(where_clause::Key(function_id), Arc::default())
-        .await;
-    input_lock
-        .set_input(parameter::Key(function_id), parameters)
-        .await;
-    input_lock
-        .set_input(return_type::Key(function_id), return_type)
+        .set_input(
+            capability::Key(function_id),
+            Arc::new(OrderedArena::default()),
+        )
         .await;
 
     function_id

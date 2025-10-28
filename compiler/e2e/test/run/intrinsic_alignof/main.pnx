@@ -1,0 +1,11 @@
+from core import alignof
+
+extern "C":
+    public function printf(format: &uint8, ...) -> int32
+
+public function main():
+    unsafe scope:
+        printf(&"alignof[int32] = %zu\n\0".[0], alignof[int32]())
+        printf(&"alignof[int64] = %zu\n\0".[0], alignof[int64]())
+        printf(&"alignof[uint8] = %zu\n\0".[0], alignof[uint8]())
+        printf(&"alignof[bool] = %zu\n\0".[0], alignof[bool]())
