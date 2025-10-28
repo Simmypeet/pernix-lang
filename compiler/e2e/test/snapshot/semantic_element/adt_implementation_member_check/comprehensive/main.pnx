@@ -1,0 +1,67 @@
+// Simple struct with duplicate function across implementations
+public struct Test1:
+  pass
+
+implements Test1:
+  public function foo():
+    pass
+
+implements Test1:
+  public function foo():
+    pass
+
+// Trait with generic parameters - different instantiations should NOT error
+public trait Test2[T]:
+  public function bar()
+
+implements Test2[int32]:
+  function bar():
+    pass
+
+implements Test2[float32]:
+  function bar():
+    pass
+
+// Trait with same generic parameters - should error
+public trait Test3[T]:
+  public function baz()
+
+implements Test3[int32]:
+  function baz():
+    pass
+
+implements Test3[int32]:
+  function baz():
+    pass
+
+// Enum with duplicate members
+public enum Test4:
+  Variant1
+
+implements Test4:
+  public function qux():
+    pass
+
+implements Test4:
+  public function qux():
+    pass
+
+// Multiple duplicates in same ADT
+public struct Test5:
+  pass
+
+implements Test5:
+  public function a():
+    pass
+  public function b():
+    pass
+
+implements Test5:
+  public function a():
+    pass
+  public function c():
+    pass
+
+
+public function main():
+  pass

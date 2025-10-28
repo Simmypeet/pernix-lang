@@ -1,0 +1,84 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: unexpected `/` punctuation, expected `private` keyword, `internal` keyword, `final` keyword, `public` keyword, `implements` keyword, `extern` keyword, `const` keyword, `import` keyword, `pass` keyword, `from` keyword
+  ╭─ compiler/e2e/test/snapshot/semantic_element/adt_implementation_member_check/comprehensive/main.pnx:1:1
+  │
+1 │ // Simple struct with duplicate function across implementations
+  │ ^
+
+error: member `foo` is already defined in another implementation block for `main::Test1`
+   ╭─ compiler/e2e/test/snapshot/semantic_element/adt_implementation_member_check/comprehensive/main.pnx:10:19
+   │
+ 6 │   public function foo():
+   │                   --- member `foo` is already defined here
+   ·
+10 │   public function foo():
+   │                   ^^^ redefinition here
+   │
+   = members cannot be redefined across different implementation blocks for the same type
+
+error: unexpected `/` punctuation, expected `private` keyword, `internal` keyword, `final` keyword, `public` keyword, `implements` keyword, `extern` keyword, `const` keyword, `import` keyword, `pass` keyword, `from` keyword
+   ╭─ compiler/e2e/test/snapshot/semantic_element/adt_implementation_member_check/comprehensive/main.pnx:13:1
+   │
+13 │ // Trait with generic parameters - different instantiations should NOT error
+   │ ^
+
+error: unexpected `/` punctuation, expected `private` keyword, `internal` keyword, `final` keyword, `public` keyword, `implements` keyword, `extern` keyword, `const` keyword, `import` keyword, `pass` keyword, `from` keyword
+   ╭─ compiler/e2e/test/snapshot/semantic_element/adt_implementation_member_check/comprehensive/main.pnx:25:1
+   │
+25 │ // Trait with same generic parameters - should error
+   │ ^
+
+error: member `baz` is already defined in another implementation block for `main::Test3`
+   ╭─ compiler/e2e/test/snapshot/semantic_element/adt_implementation_member_check/comprehensive/main.pnx:30:12
+   │
+30 │   function baz():
+   │            ^^^ redefinition here
+   ·
+34 │   function baz():
+   │            --- member `baz` is already defined here
+   │
+   = members cannot be redefined across different implementation blocks for the same type
+
+error: unexpected `/` punctuation, expected `private` keyword, `internal` keyword, `final` keyword, `public` keyword, `implements` keyword, `extern` keyword, `const` keyword, `import` keyword, `pass` keyword, `from` keyword
+   ╭─ compiler/e2e/test/snapshot/semantic_element/adt_implementation_member_check/comprehensive/main.pnx:37:1
+   │
+37 │ // Enum with duplicate members
+   │ ^
+
+error: member `qux` is already defined in another implementation block for `main::Test4`
+   ╭─ compiler/e2e/test/snapshot/semantic_element/adt_implementation_member_check/comprehensive/main.pnx:46:19
+   │
+42 │   public function qux():
+   │                   --- member `qux` is already defined here
+   ·
+46 │   public function qux():
+   │                   ^^^ redefinition here
+   │
+   = members cannot be redefined across different implementation blocks for the same type
+
+error: unexpected `/` punctuation, expected `private` keyword, `internal` keyword, `final` keyword, `public` keyword, `implements` keyword, `extern` keyword, `const` keyword, `import` keyword, `pass` keyword, `from` keyword
+   ╭─ compiler/e2e/test/snapshot/semantic_element/adt_implementation_member_check/comprehensive/main.pnx:49:1
+   │
+49 │ // Multiple duplicates in same ADT
+   │ ^
+
+error: member `a` is already defined in another implementation block for `main::Test5`
+   ╭─ compiler/e2e/test/snapshot/semantic_element/adt_implementation_member_check/comprehensive/main.pnx:60:19
+   │
+54 │   public function a():
+   │                   - member `a` is already defined here
+   ·
+60 │   public function a():
+   │                   ^ redefinition here
+   │
+   = members cannot be redefined across different implementation blocks for the same type
+
+error: Compilation aborted due to 9 error(s)
+
+
+
+stdout:
