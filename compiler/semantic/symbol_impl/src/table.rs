@@ -1429,6 +1429,11 @@ impl TableContext {
                             .function_do_effect_syntax(
                                 member.signature().and_then(|x| x.do_effect()),
                             )
+                            .function_unsafe_keyword(
+                                member
+                                    .signature()
+                                    .and_then(|x| x.unsafe_keyword()),
+                            )
                             .build()
                     }
 
