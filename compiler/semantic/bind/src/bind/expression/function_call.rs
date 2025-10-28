@@ -300,21 +300,6 @@ impl Bind<&pernixc_syntax::expression::unit::FunctionCall> for Binder<'_> {
 
         // Check if calling an unsafe function outside an unsafe scope
         let kind = self.engine().get_kind(callable_id).await;
-        if matches!(kind, Kind::Function | Kind::ImplementationFunction) {
-            let is_unsafe = self.engine().is_function_unsafe(callable_id).await;
-
-            if is_unsafe && !self.stack().is_unsafe() {
-                handler.receive(
-                    Diagnostic::UnsafeFunctionCallOutsideUnsafeScope(
-                        UnsafeFunctionCallOutsideUnsafeScope {
-                            call_span: syntax_tree.span(),
-                            function_id: callable_id,
-                        },
-                    )
-                    .into(),
-                );
-            }
-        }
 
         let mut expected_types =
             get_callable_expected_types(self, callable_id, &instantiation)
@@ -527,6 +512,25 @@ impl Binder<'_> {
                 )
                 .into(),
             );
+        }
+
+        if matches!(
+            callable_kind,
+            Kind::Function | Kind::ImplementationFunction | Kind::TraitFunction
+        ) {
+            let is_unsafe = self.engine().is_function_unsafe(callable_id).await;
+
+            if is_unsafe && !self.stack().is_unsafe() {
+                handler.receive(
+                    Diagnostic::UnsafeFunctionCallOutsideUnsafeScope(
+                        UnsafeFunctionCallOutsideUnsafeScope {
+                            call_span: whole_span,
+                            function_id: callable_id,
+                        },
+                    )
+                    .into(),
+                );
+            }
         }
 
         // bind the argument and type-check

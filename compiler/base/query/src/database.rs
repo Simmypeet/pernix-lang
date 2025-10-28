@@ -882,8 +882,8 @@ impl Engine {
             .map_or_else(
                 || {
                     panic!(
-                        "No executor registered for key type `{}`",
-                        std::any::type_name::<K>()
+                        "No executor registered for key type `{} = {key:?}`",
+                        std::any::type_name::<K>(),
                     )
                 },
                 |x| (x.get_any_executor(), x.get_invoke_executor()),

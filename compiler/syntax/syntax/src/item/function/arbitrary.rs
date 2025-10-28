@@ -21,6 +21,7 @@ use crate::{
 reference! {
     #[derive(Debug, Clone)]
     pub struct Signature for super::Signature {
+        pub unsafe_keyword (bool),
         #{map_input_assert(identifier, &identifier.kind)}
         pub identifier (Identifier),
         pub generic_parameters (Option<GenericParameters>),
@@ -36,6 +37,7 @@ impl Arbitrary for Signature {
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
+            proptest::bool::ANY,
             Identifier::arbitrary(),
             proptest::option::of(GenericParameters::arbitrary()),
             Parameters::arbitrary(),
@@ -44,6 +46,7 @@ impl Arbitrary for Signature {
         )
             .prop_map(
                 |(
+                    unsafe_keyword,
                     identifier,
                     generic_parameters,
                     parameters,
@@ -51,6 +54,7 @@ impl Arbitrary for Signature {
                     do_effect,
                 )| {
                     Self {
+                        unsafe_keyword,
                         identifier,
                         generic_parameters,
                         parameters,
@@ -69,6 +73,10 @@ impl IndentDisplay for Signature {
         formatter: &mut std::fmt::Formatter<'_>,
         indent: usize,
     ) -> std::fmt::Result {
+        if self.unsafe_keyword {
+            write!(formatter, "unsafe ")?;
+        }
+
         write!(formatter, "function {}", self.identifier)?;
 
         if let Some(generic_parameters) = &self.generic_parameters {
@@ -93,7 +101,6 @@ reference! {
     #[derive(Debug, Clone)]
     pub struct Function for super::Function {
         pub access_modifier (AccessModifier),
-        pub unsafe_keyword (bool),
         pub const_keyword (bool),
         pub signature (Signature),
         pub body (Body<Statement>),
@@ -108,27 +115,12 @@ impl Arbitrary for Function {
         (
             AccessModifier::arbitrary(),
             proptest::bool::ANY,
-            proptest::bool::ANY,
             Signature::arbitrary(),
             Body::arbitrary(),
         )
-            .prop_map(
-                |(
-                    access_modifier,
-                    unsafe_keyword,
-                    const_keyword,
-                    signature,
-                    body,
-                )| {
-                    Self {
-                        access_modifier,
-                        unsafe_keyword,
-                        const_keyword,
-                        signature,
-                        body,
-                    }
-                },
-            )
+            .prop_map(|(access_modifier, const_keyword, signature, body)| {
+                Self { access_modifier, const_keyword, signature, body }
+            })
             .boxed()
     }
 }
@@ -140,10 +132,6 @@ impl IndentDisplay for Function {
         indent: usize,
     ) -> std::fmt::Result {
         write!(formatter, "{} ", self.access_modifier)?;
-
-        if self.unsafe_keyword {
-            write!(formatter, "unsafe ")?;
-        }
 
         if self.const_keyword {
             write!(formatter, "const ")?;
