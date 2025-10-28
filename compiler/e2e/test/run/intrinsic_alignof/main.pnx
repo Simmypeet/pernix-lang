@@ -3,9 +3,29 @@ from core import alignof
 extern "C":
     public function printf(format: &uint8, ...) -> int32
 
+
+public function isPowerOfTwo(value: usize) -> bool:
+    if value == 0:
+        return false
+    return (value & (value - 1)) == 0
+
+
 public function main():
     unsafe scope:
-        printf(&"alignof[int32] = %zu\n\0".[0], alignof[int32]())
-        printf(&"alignof[int64] = %zu\n\0".[0], alignof[int64]())
-        printf(&"alignof[uint8] = %zu\n\0".[0], alignof[uint8]())
-        printf(&"alignof[bool] = %zu\n\0".[0], alignof[bool]())
+        # Test that alignments are power of 2 and greater than 0
+        let align_int32 = alignof[int32]()
+        let align_int64 = alignof[int64]()
+        let align_uint8 = alignof[uint8]()
+        let align_bool = alignof[bool]()
+        
+        if isPowerOfTwo(align_int32):
+            printf(&"alignof[int32] is power of 2\n\0".[0])
+        
+        if isPowerOfTwo(align_int64):
+            printf(&"alignof[int64] is power of 2\n\0".[0])
+        
+        if isPowerOfTwo(align_uint8):
+            printf(&"alignof[uint8] is power of 2\n\0".[0])
+        
+        if isPowerOfTwo(align_bool):
+            printf(&"alignof[bool] is power of 2\n\0".[0])

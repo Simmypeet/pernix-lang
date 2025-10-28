@@ -3,42 +3,50 @@ from core import read, Copy
 extern "C":
     public function printf(format: &uint8, ...) -> int32
 
+
 # Test scalar type
-public function test_scalar():
+public function testScalar():
     unsafe scope:
         let x = 42 as int32
         let ptr = (&x) as *int32
         let value = read[int32](ptr)
         printf(&"Scalar: %d\n\0".[0], value)
 
+
 # Test aggregate type
 public struct Point:
     public x: int32
     public y: int32
 
+
 final implements Copy[Point] delete
 
-public function test_aggregate():
+
+public function testAggregate():
     unsafe scope:
         let p = Point { x: 10, y: 20 }
         let ptr = (&p) as *Point
         let p2 = read[Point](ptr)
         printf(&"Aggregate: (%d, %d)\n\0".[0], p2.x, p2.y)
 
+
 # Test ZST
 public struct Empty:
     pass
 
+
 final implements Copy[Empty] delete
 
-public function test_zst():
+
+public function testZst():
     unsafe scope:
         let e = Empty {}
         let ptr = (&e) as *Empty
         let e2 = read[Empty](ptr)
         printf(&"ZST read complete\n\0".[0])
 
+
 public function main():
-    test_scalar()
-    test_aggregate()
-    test_zst()
+    testScalar()
+    testAggregate()
+    testZst()

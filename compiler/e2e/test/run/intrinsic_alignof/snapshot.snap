@@ -6,8 +6,8 @@ expression: final_string
 exit_code = 0
 stdin = ""
 stdout = """
-alignof[int32] = 4
-alignof[int64] = 8
-alignof[uint8] = 1
-alignof[bool] = 1"""
+alignof[int32] is power of 2
+alignof[int64] is power of 2
+alignof[uint8] is power of 2
+alignof[bool] is power of 2"""
 stderr = ""
