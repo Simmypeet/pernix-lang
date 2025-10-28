@@ -366,9 +366,9 @@ impl<'ctx> Context<'_, 'ctx> {
                         builder
                             .build_memcpy(
                                 sret_param,
-                                u32::from(align),
+                                align,
                                 source_param,
-                                u32::from(align),
+                                align,
                                 self.context()
                                     .i64_type()
                                     .const_int(size, false),
