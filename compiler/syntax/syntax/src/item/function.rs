@@ -97,6 +97,7 @@ abstract_tree::abstract_tree! {
         Deserialize,
     )]
     pub struct Signature {
+        pub unsafe_keyword: Keyword = expect::Keyword::Unsafe.optional(),
         pub function_keyword: Keyword = expect::Keyword::Function,
         pub identifier: Identifier = expect::Identifier,
         pub generic_parameters: GenericParameters
@@ -210,7 +211,6 @@ abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Function {
         pub access_modifier: AccessModifier = ast::<AccessModifier>(),
-        pub unsafe_keyword: Keyword = expect::Keyword::Unsafe.optional(),
         pub const_keyword: Keyword = expect::Keyword::Const.optional(),
         pub signature: Signature = ast::<Signature>(),
         pub body: super::Body<Statement> = ast::<super::Body<Statement>>(),
