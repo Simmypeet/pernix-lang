@@ -156,6 +156,9 @@ pub async fn initialize_drop_trait(
         input_lock
             .set_input(implied_predicate::Key(drop_function_id), Arc::default())
             .await;
+        input_lock
+            .set_input(pernixc_symbol::r#unsafe::Key(drop_function_id), false)
+            .await;
 
         let mut inner_generic_params = GenericParameters::default();
         let a_lt = inner_generic_params

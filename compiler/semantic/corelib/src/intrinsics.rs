@@ -98,6 +98,7 @@ async fn initialize_generic_function<F>(
     root_target_module_id: pernixc_symbol::ID,
     name_sequence: [&str; 2],
     name: &str,
+    is_unsafe: bool,
     build_params_and_return: F,
 ) -> Global<pernixc_symbol::ID>
 where
@@ -151,6 +152,9 @@ where
     input_lock.set_input(parameter::Key(function_id), parameters).await;
     input_lock.set_input(return_type::Key(function_id), return_type).await;
     input_lock
+        .set_input(pernixc_symbol::r#unsafe::Key(function_id), is_unsafe)
+        .await;
+    input_lock
         .set_input(
             capability::Key(function_id),
             Arc::new(OrderedArena::default()),
@@ -174,6 +178,7 @@ async fn initialize_sizeof(
         root_target_module_id,
         SIZEOF_FUNCTION_SEQUENCE,
         SIZEOF_FUNCTION_NAME,
+        false,
         |_function_id, _t_ty| {
             (
                 Arc::new(Parameters {
@@ -201,6 +206,7 @@ async fn initialize_alignof(
         root_target_module_id,
         ALIGNOF_FUNCTION_SEQUENCE,
         ALIGNOF_FUNCTION_NAME,
+        false,
         |_function_id, _t_ty| {
             (
                 Arc::new(Parameters {
@@ -228,6 +234,7 @@ async fn initialize_drop_at(
         root_target_module_id,
         DROPAT_FUNCTION_SEQUENCE,
         DROPAT_FUNCTION_NAME,
+        true,
         |_function_id, t_ty| {
             let mut parameters = Arena::default();
             let param_id = parameters.insert(Parameter {
@@ -346,6 +353,7 @@ async fn initialize_read(
         root_target_module_id,
         READ_FUNCTION_SEQUENCE,
         READ_FUNCTION_NAME,
+        true,
         |_function_id, t_ty| {
             let mut parameters = Arena::default();
             let param_id = parameters.insert(Parameter {
