@@ -10,7 +10,7 @@ use pernixc_semantic_element::{
 };
 use pernixc_symbol::{
     kind::{get_kind, Kind},
-    member::get_members,
+    member::{get_members, try_get_members},
     span::get_span,
 };
 use pernixc_target::Global;
@@ -91,7 +91,10 @@ pub async fn executor(
 
         // Iterate through each implementation with the same generic arguments
         for &impl_id in impl_ids.iter() {
-            let members = engine.get_members(impl_id).await;
+            // Skip if we can't get members (e.g., invalid implementations)
+            let Some(members) = engine.try_get_members(impl_id).await else {
+                continue;
+            };
 
             // Check each named member in this implementation
             for (member_name, &member_id) in members.member_ids_by_name.iter() {
