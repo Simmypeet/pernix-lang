@@ -1,0 +1,14 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: final_string
+---
+## Case 0
+exit_code = 0
+stdin = ""
+stdout = """
+sizeof[int32] = 4
+sizeof[int64] = 8
+sizeof[uint8] = 1
+sizeof[bool] = 1
+sizeof[usize] = 8"""
+stderr = ""

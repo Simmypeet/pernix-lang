@@ -1,0 +1,12 @@
+from core import sizeof
+
+extern "C":
+    public function printf(format: &uint8, ...) -> int32
+
+public function main():
+    unsafe scope:
+        printf(&"sizeof[int32] = %zu\n\0".[0], sizeof[int32]())
+        printf(&"sizeof[int64] = %zu\n\0".[0], sizeof[int64]())
+        printf(&"sizeof[uint8] = %zu\n\0".[0], sizeof[uint8]())
+        printf(&"sizeof[bool] = %zu\n\0".[0], sizeof[bool]())
+        printf(&"sizeof[usize] = %zu\n\0".[0], sizeof[usize]())

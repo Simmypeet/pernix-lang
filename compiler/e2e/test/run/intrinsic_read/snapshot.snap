@@ -1,0 +1,12 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: final_string
+---
+## Case 0
+exit_code = 0
+stdin = ""
+stdout = """
+Scalar: 42
+Aggregate: (10, 20)
+ZST read complete"""
+stderr = ""
