@@ -1,0 +1,21 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: member `dupFunction` is already defined in another implementation block for `main::Test`
+   ╭─ compiler/e2e/test/snapshot/semantic_element/adt_implementation_member_check/main.pnx:6:19
+   │
+ 6 │   public function dupFunction():
+   │                   ^^^^^^^^^^^ redefinition here
+   ·
+11 │   public function dupFunction():
+   │                   ----------- member `dupFunction` is already defined here
+   │
+   = members cannot be redefined across different implementation blocks for the same type
+
+error: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

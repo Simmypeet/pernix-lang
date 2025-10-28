@@ -1,0 +1,16 @@
+public struct Test:
+  pass
+
+
+implements Test:
+  public function dupFunction():
+    pass
+
+
+implements Test:
+  public function dupFunction():
+    pass
+
+
+public function main():
+  pass

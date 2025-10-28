@@ -21,6 +21,7 @@ use pernixc_term::generic_parameters::Key as GenericParametersKey;
 use pernixc_tokio::scoped;
 
 use crate::{
+    adt_implementation_member_check,
     build::DiagnosticKey as BuildDiagnosticKey,
     function_signature::Key as FunctionSignatureKey,
     implements_qualified_identifier::Key as ImplementsQualifiedIdentifierKey,
@@ -138,6 +139,15 @@ pub async fn single_rendered_executor(
 
     {
         let diags = engine.query(&wf_check::Key(id)).await?;
+        for diag in diags.iter() {
+            final_diagnostics.push(diag.report(engine).await?);
+        }
+    }
+
+    // Check for member redefinitions across different implementation blocks
+    if matches!(kind, Kind::Struct | Kind::Enum | Kind::Trait | Kind::Marker) {
+        let diags =
+            engine.query(&adt_implementation_member_check::Key(id)).await?;
         for diag in diags.iter() {
             final_diagnostics.push(diag.report(engine).await?);
         }

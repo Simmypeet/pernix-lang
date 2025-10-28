@@ -4,6 +4,7 @@ use crate::build::Build;
 
 pub mod diagnostic;
 
+mod adt_implementation_member_check;
 mod build;
 mod do_effect;
 mod fields;
