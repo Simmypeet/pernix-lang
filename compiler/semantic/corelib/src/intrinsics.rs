@@ -91,7 +91,7 @@ pub async fn initialize_intrinsics(engine: &mut Arc<Engine>) -> IntrinsicIds {
 /// type parameter.
 ///
 /// The `build_params_and_return` callback receives the function ID and the
-/// generic type parameter T, and should return (parameters, return_type) for
+/// generic type parameter T, and should return (parameters, `return_type`) for
 /// the function.
 async fn initialize_generic_function<F>(
     engine: &mut Arc<Engine>,
