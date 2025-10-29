@@ -114,8 +114,7 @@ struct WithBlock {
     qualified_identifier: QualifiedIdentifier,
     effect_id: Global<pernixc_symbol::ID>,
     generic_arguments: GenericArguments,
-    #[allow(dead_code)]
-    handler_id: pernixc_arena::ID<EffectHandler>,
+    effect_handler_id: pernixc_arena::ID<EffectHandler>,
     handlers: HashMap<pernixc_symbol::ID, HandlerBlock>,
 }
 
@@ -172,8 +171,8 @@ async fn build_with_blocks(
                 .await?;
 
             // only insert if it's not duplication
-            let Entry::Vacant(entry) =
-                with_irs.entry((with_block.effect_id, effect_operation_id))
+            let Entry::Vacant(entry) = with_irs
+                .entry((with_block.effect_handler_id, effect_operation_id))
             else {
                 continue;
             };
@@ -506,7 +505,7 @@ async fn extract_effect_handlers(
         with_handlers.push(WithBlock {
             qualified_identifier: qualified_identifier.clone(),
             effect_id: effect.id,
-            handler_id: binder.insert_effect_handler_to_group(
+            effect_handler_id: binder.insert_effect_handler_to_group(
                 handler_group_id,
                 EffectHandler::new(effect.id, effect.generic_arguments.clone()),
             ),
