@@ -4,7 +4,7 @@ expression: final_string
 ---
 ## Case 0
 exit_code = 0
-stdin = "10"
+stdin = "10 20"
 stdout = """
 Value: 10
 End of main (should not drop)

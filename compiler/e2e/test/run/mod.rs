@@ -183,7 +183,10 @@ async fn test(file_path: &Path) {
             stdin_content.push('\n');
         }
 
-        stdin.write_all(stdin_content.as_bytes()).unwrap();
+        // Skip writing to stdin if it's empty, avoid broken pipe error
+        if !stdin_content.is_empty() {
+            stdin.write_all(stdin_content.as_bytes()).unwrap();
+        }
 
         drop(stdin);
 
