@@ -100,13 +100,13 @@ displaydoc = "0.2.5"
 ron = "0.10.1"
 typetag = "0.2.19"
 erased-serde = "0.4.5"
-indicatif = "0.17.9"
+indicatif = "0.18.2"
 inkwell = { version = "0.5.0", features = ["llvm18-0", "no-libffi-linking"] }
 bon = "3.7.0"
 assert_cmd = "2.0.16"
 backtrace = "0.3.69"
-toml = { version = "0.8.8", features = ["display"] }
-codespan-reporting = { version = "0.12.0" }
+toml = { version = "0.9.8", features = ["display"] }
+codespan-reporting = { version = "0.13.1" }
 fnv = "1.0.7"
 macro_rules_attribute = { version = "0.2.0", features = ["verbose-expansions"] }
 smallbox = { version = "0.8.6" }
@@ -117,8 +117,8 @@ insta = { version = "1.43.0", features = ["ron", "filters"] }
 postcard = { version = "1.1.1", features = ["use-std"] }
 termcolor = { version = "1.2.0" }
 extend = { version = "1.2.0" }
-redb = { version = "2.6.0" }
-strsim = { version = "0.10.0" }
+redb = { version = "3.1.0" }
+strsim = { version = "0.11.1" }
 tracing = { version = "0.1.40", features = ["std"] }
 tracing-subscriber = { version = "0.3.18", features = [
     "std",
@@ -129,8 +129,8 @@ tracing-subscriber = { version = "0.3.18", features = [
 extfn = { version = "0.1.1" }
 siphasher = "1.0.1"
 crossbeam = "0.8.4"
-rand = { version = "0.8.5", features = ["std"] }
-tracing-chrome = "0.5.0"
+rand = { version = "0.9.2", features = ["std"] }
+tracing-chrome = "0.7.2"
 serde = { version = "1.0.219", features = ["derive", "std"] }
 futures = { version = "0.3.30" }
 test-generator = { version = "0.3.1" }
