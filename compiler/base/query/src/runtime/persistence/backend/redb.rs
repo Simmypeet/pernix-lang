@@ -1,7 +1,7 @@
 use std::{path::Path, sync::Arc};
 
 use parking_lot::RwLock;
-use redb::TableHandle;
+use redb::{ReadableDatabase, TableHandle};
 
 const DATABASE_FILE: &str = "persistence.db";
 
