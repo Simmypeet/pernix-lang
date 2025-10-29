@@ -6,7 +6,10 @@ use pernixc_ir::{
     address::{Address, Memory},
     effect_handler::{EffectHandler, HandlerGroup},
     pattern::{Irrefutable, NameBindingPoint, Wildcard},
-    value::Value,
+    value::{
+        register::{self, r#do::EffectOperationHandlerClosure},
+        Value,
+    },
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_resolution::{
@@ -131,7 +134,7 @@ async fn build_with_blocks(
     expected_type: &Type,
     captures: closure::Captures,
     handler: &dyn Handler<Diagnostic>,
-) -> Result<(), Error> {
+) -> Result<register::r#do::With, Error> {
     let mut with_irs = HashMap::default();
 
     for with_block in with_blocks {
@@ -190,7 +193,18 @@ async fn build_with_blocks(
         PruneMode::Multiple,
     );
 
-    Ok(())
+    let mut with = register::r#do::With::new(underlying_captures);
+
+    for ((effect_handler_id, effect_operation_id), ir) in with_irs {
+        let effect_handler = with.insert_effect_handler(effect_handler_id);
+
+        effect_handler.insert_effect_operation_handler_closure(
+            effect_operation_id,
+            EffectOperationHandlerClosure::new(ir),
+        );
+    }
+
+    Ok(with)
 }
 
 async fn build_do_block(
