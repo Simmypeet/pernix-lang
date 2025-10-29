@@ -101,9 +101,8 @@ impl With {
     pub fn insert_effect_handler(
         &mut self,
         effect_id: pernixc_arena::ID<crate::effect_handler::EffectHandler>,
-        handler: EffectHandler,
-    ) {
-        assert!(self.effect_handlers.insert(effect_id, handler).is_none());
+    ) -> &mut EffectHandler {
+        self.effect_handlers.entry(effect_id).or_default()
     }
 }
 
