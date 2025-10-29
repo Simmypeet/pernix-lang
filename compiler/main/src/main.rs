@@ -11,6 +11,7 @@ use codespan_reporting::{
     term::{
         self,
         termcolor::{self, StandardStream},
+        StylesWriter,
     },
 };
 use pernixc_target::Arguments;
@@ -176,11 +177,15 @@ impl IceReport {
 fn setup_panic() {
     std::panic::set_hook(Box::new(|info| {
         let global_source_map = pernixc_source_file::SourceMap::new();
+        let styles = pernixc_driver::term::get_styles();
         let config = pernixc_driver::term::get_coonfig();
-        let stderr = StandardStream::stderr(termcolor::ColorChoice::Always);
+        let mut style_writer = StylesWriter::new(
+            StandardStream::stderr(termcolor::ColorChoice::Always),
+            &styles,
+        );
 
-        term::emit(
-            &mut stderr.lock(),
+        term::emit_to_write_style(
+            &mut style_writer,
             &config,
             &global_source_map,
             &Diagnostic::error().with_message(
@@ -190,8 +195,8 @@ fn setup_panic() {
         )
         .unwrap();
 
-        term::emit(
-            &mut stderr.lock(),
+        term::emit_to_write_style(
+            &mut style_writer,
             &config,
             &global_source_map,
             &Diagnostic::note().with_message(
@@ -240,8 +245,8 @@ fn setup_panic() {
         let file = ice_report.write_to_temp();
 
         if let Ok((_, path)) = file {
-            term::emit(
-                &mut stderr.lock(),
+            term::emit_to_write_style(
+                &mut style_writer,
                 &config,
                 &global_source_map,
                 &Diagnostic::note().with_message(format!(
@@ -251,8 +256,8 @@ fn setup_panic() {
             )
             .unwrap();
         } else {
-            term::emit(
-                &mut stderr.lock(),
+            term::emit_to_write_style(
+                &mut style_writer,
                 &config,
                 &global_source_map,
                 &Diagnostic::note().with_message(
@@ -267,8 +272,8 @@ fn setup_panic() {
             );
         }
 
-        term::emit(
-            &mut stderr.lock(),
+        term::emit_to_write_style(
+            &mut style_writer,
             &config,
             &global_source_map,
             &Diagnostic::note().with_message(
@@ -278,8 +283,8 @@ fn setup_panic() {
         )
         .unwrap();
 
-        term::emit(
-            &mut stderr.lock(),
+        term::emit_to_write_style(
+            &mut style_writer,
             &config,
             &global_source_map,
             &Diagnostic::note().with_message(
@@ -289,8 +294,8 @@ fn setup_panic() {
         )
         .unwrap();
 
-        term::emit(
-            &mut stderr.lock(),
+        term::emit_to_write_style(
+            &mut style_writer,
             &config,
             &global_source_map,
             &Diagnostic::note().with_message(
