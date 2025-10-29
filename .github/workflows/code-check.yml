@@ -43,11 +43,6 @@ jobs:
                   ls ${{ github.workspace }}/__llvm18
                   echo "LLVM_SYS_181_PREFIX=${{ github.workspace }}/__llvm18" >> $GITHUB_ENV
 
-            - name: Install cargo-nextest
-              uses: baptiste0928/cargo-install@v3.3.0
-              with:
-                  crate: cargo-nextest
-
             - name: Install Rust Nightly with Fmt
               run: |
                   rustup toolchain install nightly --component rustfmt
