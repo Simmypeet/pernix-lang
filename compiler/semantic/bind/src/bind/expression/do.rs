@@ -90,7 +90,7 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
         // pop the closure from the stack
         self.pop_handler_group(effect_handlers.effect_handler_group_id);
 
-        build_with_blocks(
+        let with = build_with_blocks(
             self,
             effect_handlers.with_blocks,
             &expected_return_type,
@@ -98,6 +98,16 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
             handler,
         )
         .await?;
+
+        let do_closure =
+            register::r#do::DoClosure::new(do_captures, do_closure);
+
+        let _do_assignment = register::r#do::Do::new(
+            effect_handlers.effect_handler_group_id,
+            do_closure,
+            with,
+            expected_return_type,
+        );
 
         Ok(Expression::RValue(Value::error(
             Type::Inference(
