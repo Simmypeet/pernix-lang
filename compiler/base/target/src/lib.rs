@@ -536,7 +536,7 @@ pub async fn target_seed_executor(
     _: &SeedKey,
     _: &TrackedEngine,
 ) -> Result<u64, pernixc_query::runtime::executor::CyclicError> {
-    Ok(rand::thread_rng().gen())
+    Ok(rand::rng().random())
 }
 
 /// A query for retrieving the `TargetID` that's currently being compiled in

@@ -744,7 +744,7 @@ impl Persistence {
 
             <(u64, u64)>::deserialize(&mut deserializer, &())?
         } else {
-            (rand::thread_rng().gen(), 0)
+            (rand::rng().random(), 0)
         };
 
         Ok(crate::database::Database::with_state(random_seed, version))
