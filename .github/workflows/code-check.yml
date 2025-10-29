@@ -1,0 +1,63 @@
+on:
+    workflow_dispatch:
+
+    push:
+        branches:
+            - main
+            - dev
+
+    pull_request:
+        branches:
+            - main
+            - dev
+permissions:
+    contents: write
+
+name: Pernixc Compiler Code Check
+jobs:
+    build:
+        name: Pernix Compiler Code Check
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout Repository
+              uses: actions/checkout@v4
+
+            - name: Set up Rust 1.90.0
+              uses: dtolnay/rust-toolchain@1.90.0
+
+            - name: Rust Cache
+              uses: Swatinem/rust-cache@v2
+
+            - name: Build LLVM on Unix-like
+              if: runner.os != 'Windows'
+              uses: ./.github/actions/build-llvm
+              with:
+                  llvm-version: 18.1.8
+                  install-prefix: ${{ github.workspace }}/__llvm18
+                  generator: "Ninja"
+                  shell: "bash"
+
+            - name: Set LLVM prefix on Unix-like
+              if: runner.os != 'Windows'
+              run: |
+                  ls ${{ github.workspace }}/__llvm18
+                  echo "LLVM_SYS_181_PREFIX=${{ github.workspace }}/__llvm18" >> $GITHUB_ENV
+
+            - name: Install cargo-nextest
+              uses: baptiste0928/cargo-install@v3.3.0
+              with:
+                  crate: cargo-nextest
+
+            - name: Install Rust Nightly with Fmt
+              run: |
+                  rustup toolchain install nightly --component rustfmt
+
+            - name: Install Rust Stable Clippy
+              run: |
+                  rustup component add clippy
+
+            - name: Check Code Formatting
+              run: cargo +nightly fmt --all -- --check
+
+            - name: Run Clippy
+              run: cargo clippy
