@@ -340,7 +340,7 @@ impl Default for Database {
     fn default() -> Self {
         Self {
             query_states_by_key: DashMap::default(),
-            random_seed: rand::thread_rng().gen(),
+            random_seed: rand::rng().random(),
             version: AtomicU64::new(0),
         }
     }
