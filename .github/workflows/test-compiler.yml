@@ -41,6 +41,9 @@ jobs:
             - name: Set up Rust 1.90.0
               uses: dtolnay/rust-toolchain@1.90.0
 
+            - name: Rust Cache
+              uses: Swatinem/rust-cache@v2
+
             - name: Build LLVM on Unix-like
               if: runner.os != 'Windows'
               uses: ./.github/actions/build-llvm
