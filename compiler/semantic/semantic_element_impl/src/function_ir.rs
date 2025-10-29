@@ -51,6 +51,11 @@ async fn build_ir_for_function(
         }
     };
 
+    // if there's an error from binding, do not proceed to analyses
+    if !storage.as_vec().is_empty() {
+        return Ok(Arc::new(ir));
+    }
+
     // do memory checking analysis
     match pernixc_memory_checker::memory_check(
         engine, &mut ir.ir, key.0, None, storage,

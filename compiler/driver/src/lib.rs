@@ -4,7 +4,7 @@ use std::{path::PathBuf, process::ExitCode, sync::Arc};
 
 use codespan_reporting::{
     diagnostic::{Diagnostic, Label, LabelStyle},
-    term::termcolor::WriteColor,
+    term::{termcolor::WriteColor, StylesWriter},
 };
 use pernixc_query::{runtime::persistence::Persistence, Engine, TrackedEngine};
 use pernixc_source_file::GlobalSourceID;
@@ -23,15 +23,15 @@ mod llvm;
 
 struct ReportTerm<'a, 's> {
     config: codespan_reporting::term::Config,
-    err_writer: &'a mut dyn WriteColor,
+    writer: StylesWriter<'a, &'s mut dyn WriteColor>,
     source_map: &'s SourceMap,
 }
 
 impl ReportTerm<'_, '_> {
     #[allow(clippy::trivially_copy_pass_by_ref)]
     fn report(&mut self, diagnostic: &Diagnostic<GlobalSourceID>) {
-        let _ = codespan_reporting::term::emit(
-            self.err_writer,
+        let _ = codespan_reporting::term::emit_to_write_style(
+            &mut self.writer,
             &self.config,
             self.source_map,
             diagnostic,
@@ -146,6 +146,7 @@ pub async fn run(
 ) -> ExitCode {
     let mut serde_registry = pernixc_register::SerdeRegistry::default();
 
+    let report_styles = term::get_styles();
     let report_config = term::get_coonfig();
     let simple_file = codespan_reporting::files::SimpleFile::new("", "");
 
@@ -169,8 +170,8 @@ pub async fn run(
                     "Failed to setup persistence: {error}"
                 ));
 
-                codespan_reporting::term::emit(
-                    err_writer,
+                codespan_reporting::term::emit_to_write_style(
+                    &mut StylesWriter::new(err_writer, &report_styles),
                     &report_config,
                     &simple_file,
                     &diag,
@@ -189,8 +190,8 @@ pub async fn run(
                     "Failed to load incremental database: {error}"
                 ));
 
-                codespan_reporting::term::emit(
-                    err_writer,
+                codespan_reporting::term::emit_to_write_style(
+                    &mut StylesWriter::new(err_writer, &report_styles),
                     &report_config,
                     &simple_file,
                     &diag,
@@ -285,10 +286,12 @@ pub async fn run(
 
     let source_map = tracked_engine.create_source_map(local_target_id).await;
 
+    let styles = term::get_styles();
+
     let mut report_term = ReportTerm {
         config: report_config.clone(),
         source_map: &source_map,
-        err_writer,
+        writer: StylesWriter::new(err_writer, &styles),
     };
 
     let diagnostic_count = {
@@ -357,8 +360,8 @@ pub async fn run(
         let diag = codespan_reporting::diagnostic::Diagnostic::error()
             .with_message(format!("Failed to save database: {error}"));
 
-        codespan_reporting::term::emit(
-            err_writer,
+        codespan_reporting::term::emit_to_write_style(
+            &mut report_term.writer,
             &report_config,
             &simple_file,
             &diag,

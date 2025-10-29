@@ -1,0 +1,7 @@
+public struct Test:
+    private a: int32
+
+
+public function test(self: &Test):
+    (*self).a = 10
+    self.a += 15
