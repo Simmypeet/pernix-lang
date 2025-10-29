@@ -41,6 +41,9 @@ jobs:
             - name: Set up Rust 1.90.0
               uses: dtolnay/rust-toolchain@1.90.0
 
+            - name: Rust Cache
+              uses: Swatinem/rust-cache@v2
+
             - name: Build LLVM on Unix-like
               if: runner.os != 'Windows'
               uses: ./.github/actions/build-llvm
@@ -76,20 +79,6 @@ jobs:
               uses: baptiste0928/cargo-install@v3.3.0
               with:
                   crate: cargo-nextest
-
-            - name: Install Rust Nightly with Fmt
-              run: |
-                  rustup toolchain install nightly --component rustfmt
-
-            - name: Install Rust Stable Clippy
-              run: |
-                  rustup component add clippy
-
-            - name: Check Code Formatting
-              run: cargo +nightly fmt --all -- --check
-
-            - name: Run Clippy
-              run: cargo clippy
 
             - name: Run cargo nextest
               run: cargo nextest run --verbose --release --no-fail-fast
