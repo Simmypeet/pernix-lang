@@ -816,7 +816,7 @@ impl Binder<'_> {
                         self.ir.values.allocas[*id].span.unwrap()
                     }
                     Memory::Capture(id) => {
-                        self.captures.unwrap().captures[*id].span.unwrap()
+                        self.captures.unwrap()[*id].span.unwrap()
                     }
                 },
                 &handler,

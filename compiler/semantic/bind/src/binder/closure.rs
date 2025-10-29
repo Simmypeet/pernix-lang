@@ -110,9 +110,8 @@ impl Captures {
                 .copied()
                 .unwrap();
 
-            let existing_captured_address = &self.captures.captures
-                [existing_binding_root]
-                .parent_captured_address;
+            let existing_captured_address =
+                &self.captures[existing_binding_root].parent_captured_address;
 
             // if the existing captured address is a child of the new
             // captured address, we re-adjust the existing capture to use
@@ -140,7 +139,7 @@ impl Captures {
         };
 
         // insert a new capture and cooresponding name binding
-        let new_capture_id = self.captures.captures.insert(new_capture);
+        let new_capture_id = self.captures.insert(new_capture);
         self.name_binding_point.named_patterns_by_name.insert(
             new_name.clone(),
             NameBinding {
@@ -168,7 +167,7 @@ impl Captures {
                 .unwrap();
 
             let dominated_root_captured_address =
-                &self.captures.captures[dominated_root].parent_captured_address;
+                &self.captures[dominated_root].parent_captured_address;
 
             // replace the captured root with the actual original captured
             // address
@@ -194,7 +193,7 @@ impl Captures {
         for dominated_capture in removing_captures {
             // it is possible we remove the same capture multiple times if
             // multiple names capture the same memory
-            let _ = self.captures.captures.remove(dominated_capture);
+            let _ = self.captures.remove(dominated_capture);
         }
 
         Ok(())
@@ -493,17 +492,17 @@ impl Binder<'_> {
             });
         }
 
-        let all_capture_ids = captures.captures.ids().collect::<Vec<_>>();
+        let all_capture_ids = captures.ids().collect::<Vec<_>>();
 
         // remove unused captures
         for id in all_capture_ids {
             if pruning_context.unsages.contains_key(&id).not() {
-                let _ = captures.captures.remove(id);
+                let _ = captures.remove(id);
             }
         }
 
         for (capture_id, new_capture) in pruning_context.unsages {
-            captures.captures[capture_id].capture_mode = new_capture;
+            captures[capture_id].capture_mode = new_capture;
         }
 
         // adjust all IRs to use the new capture modes
@@ -596,7 +595,7 @@ impl Binder<'_> {
         let capture_memory_address =
             Address::Memory(Memory::Capture(*capture_id));
 
-        let capture = &captures.captures[*capture_id];
+        let capture = &captures[*capture_id];
 
         match (&capture.capture_mode, access_mode) {
             (

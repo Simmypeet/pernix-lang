@@ -1,6 +1,7 @@
 //! Defines the [`Closure`], representing captured IR for closures, effect
 //! handlers, do blocks, etc.
 
+use derive_more::{Index, IndexMut};
 use pernixc_arena::Arena;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_serialize::{Deserialize, Serialize};
@@ -12,36 +13,48 @@ use pernixc_term::{
 
 use crate::address::Address;
 
-/// Specifies what [`Closure`] is being used for.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    StableHash,
-    Serialize,
-    Deserialize,
-)]
-pub enum Kind {
-    /// Captured as a do block.
-    DoBlock,
-
-    /// Captured as an effect handler.
-    EffectHandler,
-}
-
 /// Represents capturing structure used for implementing closures, do blocks,
 /// and effect handlers.
 #[derive(
-    Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize, Default,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    StableHash,
+    Serialize,
+    Deserialize,
+    Default,
+    Index,
+    IndexMut,
 )]
 pub struct Captures {
     /// All the captures used in the closure.
-    pub captures: Arena<Capture>,
+    #[index]
+    #[index_mut]
+    captures: Arena<Capture>,
+}
+
+impl Captures {
+    /// Inserts a new capture into the capturing structure.
+    pub fn insert(&mut self, capture: Capture) -> pernixc_arena::ID<Capture> {
+        self.captures.insert(capture)
+    }
+
+    /// Removes a capture from the capturing structure.
+    pub fn remove(
+        &mut self,
+        capture_id: pernixc_arena::ID<Capture>,
+    ) -> Option<Capture> {
+        self.captures.remove(capture_id)
+    }
+
+    /// Returns an iterator over all capture IDs in the capturing structure.
+    #[must_use]
+    pub fn ids(
+        &self,
+    ) -> impl ExactSizeIterator<Item = pernixc_arena::ID<Capture>> + '_ {
+        self.captures.ids()
+    }
 }
 
 /// Specifies how a memory is captured from the parent IR.

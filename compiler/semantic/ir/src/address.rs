@@ -440,7 +440,7 @@ impl TypeOf<&Address> for Values {
             }
 
             Address::Memory(Memory::Capture(parameter)) => {
-                let capture = &environment.captures().captures[*parameter];
+                let capture = &environment.captures()[*parameter];
 
                 let mut ty = environment
                     .type_environment
