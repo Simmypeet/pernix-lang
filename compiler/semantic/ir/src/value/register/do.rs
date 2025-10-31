@@ -5,7 +5,39 @@ use pernixc_hash::HashMap;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
-use crate::{capture::Captures, effect_handler::HandlerGroup, IR};
+use crate::{
+    capture::{Capture, Captures},
+    effect_handler::HandlerGroup,
+    value::Value,
+    IR,
+};
+
+/// Representing the capture initialization. This contains all the values
+/// used to initialize the captures.
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
+pub struct CaptureArguments {
+    captures: Captures,
+    arguments: HashMap<pernixc_arena::ID<Capture>, Value>,
+}
+
+impl CaptureArguments {
+    /// Creates a new [`CaptureArguments`] with the given captures and has
+    /// empty arguments.
+    #[must_use]
+    pub fn new(captures: Captures) -> Self {
+        Self { captures, arguments: HashMap::default() }
+    }
+
+    /// Inserts a new capture argument mapping from the given capture ID to
+    /// the provided value.
+    pub fn insert(
+        &mut self,
+        capture_id: pernixc_arena::ID<Capture>,
+        value: Value,
+    ) {
+        assert!(self.arguments.insert(capture_id, value).is_none());
+    }
+}
 
 /// Represents a `do` part of an `do-with` expression.
 ///
@@ -14,7 +46,7 @@ use crate::{capture::Captures, effect_handler::HandlerGroup, IR};
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
 pub struct DoClosure {
     /// The capture strcture for the closure.
-    capture: Captures,
+    capture_arguments: CaptureArguments,
 
     /// The IR containing the code body of the `do` closure.
     ir: IR,
@@ -23,7 +55,9 @@ pub struct DoClosure {
 impl DoClosure {
     /// Creates a new `DoClosure` with the given capture structure and IR.
     #[must_use]
-    pub const fn new(capture: Captures, ir: IR) -> Self { Self { capture, ir } }
+    pub const fn new(capture_arguments: CaptureArguments, ir: IR) -> Self {
+        Self { capture_arguments, ir }
+    }
 }
 
 /// Represents a single `with` handler for a specific `effect` that could
@@ -74,13 +108,11 @@ impl EffectOperationHandlerClosure {
 }
 
 /// Represents a group of `with` handlers following a `do` expression.
-#[derive(
-    Debug, Clone, PartialEq, Eq, Default, StableHash, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
 pub struct With {
     /// The capture structure used for all of the effect handlers in this
     /// `do-with` expression.
-    capture: Captures,
+    capture_arguments: CaptureArguments,
 
     /// The effect handlers mapped by their unique IDs within the top-level
     /// IR (function-level IR).
@@ -93,8 +125,8 @@ pub struct With {
 impl With {
     /// Creates a new `With` structure with the given capture structure.
     #[must_use]
-    pub fn new(capture: Captures) -> Self {
-        Self { capture, effect_handlers: HashMap::default() }
+    pub fn new(capture_arguments: CaptureArguments) -> Self {
+        Self { capture_arguments, effect_handlers: HashMap::default() }
     }
 
     /// Inserts a new effect handler for a specific effect ID.
