@@ -48,6 +48,7 @@ use crate::{
 };
 
 impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
+    #[allow(unreachable_code, unused_variables)]
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::expression::block::Do,
@@ -99,12 +100,9 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
         )
         .await?;
 
-        let do_closure =
-            register::r#do::DoClosure::new(do_captures, do_closure);
-
         let _do_assignment = register::r#do::Do::new(
             effect_handlers.effect_handler_group_id,
-            do_closure,
+            register::r#do::DoClosure::new(todo!(), todo!()),
             with,
             expected_return_type,
         );
@@ -138,6 +136,7 @@ struct HandlerBlock {
     handler: pernixc_syntax::expression::block::Handler,
 }
 
+#[allow(unreachable_code, unused_variables)]
 async fn build_with_blocks(
     binder: &mut Binder<'_>,
     with_blocks: Vec<WithBlock>,
@@ -203,7 +202,7 @@ async fn build_with_blocks(
         PruneMode::Multiple,
     );
 
-    let mut with = register::r#do::With::new(underlying_captures);
+    let mut with = register::r#do::With::new(todo!());
 
     for ((effect_handler_id, effect_operation_id), ir) in with_irs {
         let effect_handler = with.insert_effect_handler(effect_handler_id);
