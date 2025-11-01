@@ -223,4 +223,10 @@ impl NameBindingPoint {
             }
         }
     }
+
+    /// Checks if the name binding point contains a name.
+    #[must_use]
+    pub fn contains_name(&self, name: &str) -> bool {
+        self.named_patterns_by_name.contains_key(name)
+    }
 }
