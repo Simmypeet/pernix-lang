@@ -47,10 +47,10 @@ pub trait Typer<V> {
     type Error: From<CyclicError>;
 
     /// Retrieve the type of a value.
-    fn type_of<'s, 'v, E: Environment>(
+    fn type_of<'s, 'v, 'e, E: Environment>(
         &'s self,
         value: &'v V,
-        env: &E,
+        env: &'e E,
     ) -> impl std::future::Future<Output = Result<Self::Type<'s>, Self::Error>>
-           + use<'s, 'v, Self, V, E>;
+           + use<'s, 'v, 'e, Self, V, E>;
 }
