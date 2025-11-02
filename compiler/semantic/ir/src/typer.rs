@@ -1,3 +1,5 @@
+//! An interface for retrieving types of values.
+
 use std::ops::Deref;
 
 use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};

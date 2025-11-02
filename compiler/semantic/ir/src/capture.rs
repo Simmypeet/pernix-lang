@@ -262,6 +262,40 @@ impl Builder {
     pub fn contains_name(&self, name: &str) -> bool {
         self.name_binding_point.contains_name(name)
     }
+
+    /// Builds the capture and returns the name binding point and captures.
+    pub async fn build<T: Typer<Address>, E: typer::Environment>(
+        mut self,
+        env: &E,
+        typer: &T,
+    ) -> Result<(NameBindingPoint, Captures), T::Error> {
+        // determine the drop order of all captures
+        let mut drop_orders = Vec::new();
+
+        for capture_id in self.captures.ids() {
+            let capture = &self.captures[capture_id];
+
+            let (drop_order, _) = DropOrder::get_drop_order(
+                &capture.parent_captured_address,
+                capture.span.unwrap(),
+                env,
+                typer,
+            )
+            .await?;
+
+            drop_orders.push((capture_id, drop_order));
+        }
+
+        // sort the drop orders
+        drop_orders.sort_by(|a, b| a.1.cmp(&b.1));
+
+        // assign the drop orders
+        for (drop_index, (capture_id, _)) in drop_orders.iter().enumerate() {
+            self.captures[*capture_id].drop_order = drop_index;
+        }
+
+        Ok((self.name_binding_point, Captures { captures: self.captures }))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -390,9 +424,34 @@ enum Projection {
     Tuple(TupleProjection),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct DropOrder {
     root: RootOrder,
     projections: Vec<Projection>,
+}
+
+impl PartialOrd for DropOrder {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for DropOrder {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.root.cmp(&other.root).then_with(|| {
+            let min_len =
+                std::cmp::min(self.projections.len(), other.projections.len());
+
+            for i in 0..min_len {
+                let ord = self.projections[i].cmp(&other.projections[i]);
+                if ord != std::cmp::Ordering::Equal {
+                    return ord;
+                }
+            }
+
+            self.projections.len().cmp(&other.projections.len())
+        })
+    }
 }
 
 impl DropOrder {
