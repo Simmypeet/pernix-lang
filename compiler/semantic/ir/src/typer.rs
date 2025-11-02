@@ -35,7 +35,9 @@ pub trait Typer<V> {
     ///
     /// This type could possibly be a simple reference to the type or a complex
     /// structure that encapsulates additional information about the type.
-    type Type: Deref<Target = pernixc_term::r#type::Type>;
+    type Type<'s>: Deref<Target = pernixc_term::r#type::Type>
+    where
+        Self: 's;
 
     /// The error type that can be returned by the `type_of` method.
     ///
@@ -49,6 +51,6 @@ pub trait Typer<V> {
         &'s self,
         value: &'v V,
         env: &'e E,
-    ) -> impl std::future::Future<Output = Result<Self::Type, Self::Error>>
+    ) -> impl std::future::Future<Output = Result<Self::Type<'s>, Self::Error>>
            + use<'s, 'v, 'e, Self, V, E>;
 }

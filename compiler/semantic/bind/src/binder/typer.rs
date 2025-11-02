@@ -36,7 +36,10 @@ impl<T> Deref for DerefWrapper<T> {
 }
 
 impl Typer<Address> for BinderTyper<'_> {
-    type Type = DerefWrapper<pernixc_term::r#type::Type>;
+    type Type<'s>
+        = DerefWrapper<pernixc_term::r#type::Type>
+    where
+        Self: 's;
 
     type Error = UnrecoverableError;
 
@@ -44,7 +47,8 @@ impl Typer<Address> for BinderTyper<'_> {
         &self,
         value: &Address,
         env: &E,
-    ) -> Result<Self::Type, Self::Error> {
+    ) -> Result<DerefWrapper<pernixc_term::r#type::Type>, UnrecoverableError>
+    {
         match env
             .values()
             .type_of(
