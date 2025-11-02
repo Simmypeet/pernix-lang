@@ -3,6 +3,7 @@
 
 use derive_more::Index;
 use flexstr::SharedStr;
+use getset::Getters;
 use pernixc_arena::Arena;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_semantic_element::{fields::get_fields, parameter::get_parameters};
@@ -253,7 +254,7 @@ impl Builder {
         mut self,
         env: &E,
         typer: &T,
-    ) -> Result<(NameBindingPoint, Captures), T::Error> {
+    ) -> Result<CapturesWithNameBindingPoint, T::Error> {
         // determine the drop order of all captures
         let mut drop_orders = Vec::new();
 
@@ -279,8 +280,25 @@ impl Builder {
             self.captures[*capture_id].drop_order = drop_index;
         }
 
-        Ok((self.name_binding_point, Captures { captures: self.captures }))
+        Ok(CapturesWithNameBindingPoint {
+            name_binding_point: self.name_binding_point,
+            captures: Captures { captures: self.captures },
+        })
     }
+}
+
+/// Represents the [`Captures`] along with the name binding point used for
+/// referring to captured variables.
+#[derive(Debug, Clone, PartialEq, Eq, Getters)]
+pub struct CapturesWithNameBindingPoint {
+    /// The [`NameBindingPoint`] containing available name binding for
+    /// referencing to the captured variables.
+    #[get = "pub"]
+    name_binding_point: NameBindingPoint,
+
+    /// The [`Captures`]
+    #[get = "pub"]
+    captures: Captures,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
