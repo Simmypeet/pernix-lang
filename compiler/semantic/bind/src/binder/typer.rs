@@ -11,13 +11,13 @@ use pernixc_type_system::UnrecoverableError;
 use crate::binder::{inference_context::InferenceContext, Binder};
 
 /// The struct that implements the [`Typer`] interface for the binder.
-pub struct BinderTyper<'x, 'h> {
+pub struct BinderTyper<'x> {
     ty_environment:
         pernixc_type_system::environment::Environment<'x, InferenceContext>,
-    handler: &'h dyn Handler<crate::diagnostic::Diagnostic>,
+    handler: &'x dyn Handler<crate::diagnostic::Diagnostic>,
 }
 
-impl std::fmt::Debug for BinderTyper<'_, '_> {
+impl std::fmt::Debug for BinderTyper<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BinderTyper").finish_non_exhaustive()
     }
@@ -35,11 +35,8 @@ impl<T> Deref for DerefWrapper<T> {
     fn deref(&self) -> &Self::Target { &self.0 }
 }
 
-impl Typer<Address> for BinderTyper<'_, '_> {
-    type Type<'s>
-        = DerefWrapper<pernixc_term::r#type::Type>
-    where
-        Self: 's;
+impl Typer<Address> for BinderTyper<'_> {
+    type Type = DerefWrapper<pernixc_term::r#type::Type>;
 
     type Error = UnrecoverableError;
 
@@ -47,7 +44,7 @@ impl Typer<Address> for BinderTyper<'_, '_> {
         &self,
         value: &Address,
         env: &E,
-    ) -> Result<Self::Type<'_>, Self::Error> {
+    ) -> Result<Self::Type, Self::Error> {
         match env
             .values()
             .type_of(
@@ -117,10 +114,10 @@ impl pernixc_ir::typer::Environment for Environment<'_> {
 impl Binder<'_> {
     /// Creates a typer for the binder.
     #[must_use]
-    pub fn typer<'s, 'h>(
+    pub fn typer<'s>(
         &'s self,
-        handler: &'h dyn Handler<crate::diagnostic::Diagnostic>,
-    ) -> BinderTyper<'s, 'h> {
+        handler: &'s dyn Handler<crate::diagnostic::Diagnostic>,
+    ) -> BinderTyper<'s> {
         BinderTyper { ty_environment: self.create_environment(), handler }
     }
 
