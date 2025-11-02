@@ -131,8 +131,8 @@ impl Captures {
     ///   by-value. After pruning, it will contain only the used captures with
     ///   the most restrictive capture mode.
     pub fn prune_capture_ir<'x, I: Iterator<Item = &'x mut IR>>(
+        &mut self,
         irs: I,
-        captures: &mut Self,
         mode: PruneMode,
     ) {
         let mut irs = irs.collect::<Vec<_>>();
@@ -148,17 +148,17 @@ impl Captures {
             });
         }
 
-        let all_capture_ids = captures.ids().collect::<Vec<_>>();
+        let all_capture_ids = self.ids().collect::<Vec<_>>();
 
         // remove unused captures
         for id in all_capture_ids {
             if !pruning_context.unsages.contains_key(&id) {
-                let _ = captures.captures.remove(id);
+                let _ = self.captures.remove(id);
             }
         }
 
         for (capture_id, new_capture) in pruning_context.unsages {
-            captures.captures[capture_id].capture_mode = new_capture;
+            self.captures[capture_id].capture_mode = new_capture;
         }
 
         // adjust all IRs to use the new capture modes
@@ -166,10 +166,9 @@ impl Captures {
             for inst in ir.control_flow_graph.traverse_mut_instructions() {
                 match inst {
                     Instruction::Store(store) => {
-                        Self::adjust_memory_usage(
+                        self.adjust_memory_usage(
                             &mut store.address,
                             AccessMode::Borrow(Qualifier::Mutable),
-                            captures,
                         );
                     }
 
@@ -179,26 +178,23 @@ impl Captures {
 
                         match &mut register.assignment {
                             Assignment::Load(load) => {
-                                Self::adjust_memory_usage(
+                                self.adjust_memory_usage(
                                     &mut load.address,
                                     AccessMode::Move,
-                                    captures,
                                 );
                             }
 
                             Assignment::Borrow(borrow) => {
-                                Self::adjust_memory_usage(
+                                self.adjust_memory_usage(
                                     &mut borrow.address,
                                     AccessMode::Borrow(borrow.qualifier),
-                                    captures,
                                 );
                             }
 
                             Assignment::VariantNumber(variant_number) => {
-                                Self::adjust_memory_usage(
+                                self.adjust_memory_usage(
                                     &mut variant_number.address,
                                     AccessMode::Borrow(Qualifier::Immutable),
-                                    captures,
                                 );
                             }
 
@@ -215,15 +211,13 @@ impl Captures {
                     }
 
                     Instruction::TuplePack(tuple_pack) => {
-                        Self::adjust_memory_usage(
+                        self.adjust_memory_usage(
                             &mut tuple_pack.tuple_address,
                             AccessMode::Move,
-                            captures,
                         );
-                        Self::adjust_memory_usage(
+                        self.adjust_memory_usage(
                             &mut tuple_pack.store_address,
                             AccessMode::Borrow(Qualifier::Mutable),
-                            captures,
                         );
                     }
 
@@ -240,9 +234,9 @@ impl Captures {
     }
 
     fn adjust_memory_usage(
+        &self,
         address: &mut Address,
         access_mode: AccessMode,
-        captures: &Self,
     ) {
         let Memory::Capture(capture_id) = address.get_root_memory() else {
             return;
@@ -251,7 +245,7 @@ impl Captures {
         let capture_memory_address =
             Address::Memory(Memory::Capture(*capture_id));
 
-        let capture = &captures[*capture_id];
+        let capture = &self[*capture_id];
 
         match (&capture.capture_mode, access_mode) {
             (

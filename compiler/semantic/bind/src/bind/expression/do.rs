@@ -34,9 +34,7 @@ use pernixc_type_system::UnrecoverableError;
 use crate::{
     bind::{Bind, Expression, Guidance},
     binder::{
-        closure::{self, PruneMode},
-        inference_context::ErasedLifetimeProvider,
-        Binder, BindingError, Error,
+        inference_context::ErasedLifetimeProvider, Binder, BindingError, Error,
     },
     diagnostic::{
         Diagnostic, DuplicatedEffectHandler, DuplicatedEffectOperationHandler,
@@ -79,7 +77,8 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
             handler,
         ))
         .await?;
-        let mut do_captures = captures.clone_captures();
+        let mut do_captures = captures.captures().clone();
+        do_captures.prune_capture_ir();
 
         // prune the captures
         Self::prune_capture_ir(
