@@ -34,7 +34,7 @@ impl Binder<'_> {
                 for (name, binding) in
                     &name_binding_point.named_patterns_by_name
                 {
-                    if !builder.contains_name(&name) {
+                    if !builder.contains_name(name) {
                         builder.insert_named_binding(
                             name.clone(),
                             binding,
@@ -52,7 +52,7 @@ impl Binder<'_> {
         let typer_env = self.typer_environment();
         let typer = self.typer(handler);
 
-        Ok(builder.build(&typer_env, &typer).await?)
+        builder.build(&typer_env, &typer).await
     }
 
     /// Creates a nested binder that can be used to produce a nested IR.

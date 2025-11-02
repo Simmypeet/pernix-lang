@@ -163,11 +163,13 @@ impl<'t> Binder<'t> {
 
     /// Returns the values being built in the IR.
     #[must_use]
-    pub fn values(&self) -> &pernixc_ir::Values { &self.ir.values }
+    pub const fn values(&self) -> &pernixc_ir::Values { &self.ir.values }
 
     /// Returns the scope tree being built in the IR.
     #[must_use]
-    pub fn scope_tree(&self) -> &pernixc_ir::scope::Tree { &self.ir.scope_tree }
+    pub const fn scope_tree(&self) -> &pernixc_ir::scope::Tree {
+        &self.ir.scope_tree
+    }
 }
 
 impl<'t> Binder<'t> {

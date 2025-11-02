@@ -4,6 +4,7 @@ use pernixc_handler::Handler;
 use pernixc_hash::HashMap;
 use pernixc_ir::{
     address::{Address, Memory},
+    capture::{builder::CapturesWithNameBindingPoint, pruning::PruneMode},
     effect_handler::{EffectHandler, HandlerGroup},
     pattern::{Irrefutable, NameBindingPoint, Wildcard},
     value::{
@@ -78,12 +79,10 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
         ))
         .await?;
         let mut do_captures = captures.captures().clone();
-        do_captures.prune_capture_ir();
 
         // prune the captures
-        Self::prune_capture_ir(
+        do_captures.prune_capture_ir(
             std::iter::once(&mut do_closure),
-            &mut do_captures,
             PruneMode::Once,
         );
 
@@ -140,7 +139,7 @@ async fn build_with_blocks(
     binder: &mut Binder<'_>,
     with_blocks: Vec<WithBlock>,
     expected_type: &Type,
-    captures: closure::Captures,
+    captures: CapturesWithNameBindingPoint,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<register::r#do::With, Error> {
     let mut with_irs = HashMap::default();
@@ -192,14 +191,11 @@ async fn build_with_blocks(
         }
     }
 
-    let mut underlying_captures = captures.into_inner_captures();
+    let mut underlying_captures = captures.into_captures();
 
     // prune the captures
-    Binder::prune_capture_ir(
-        with_irs.values_mut(),
-        &mut underlying_captures,
-        PruneMode::Multiple,
-    );
+    underlying_captures
+        .prune_capture_ir(with_irs.values_mut(), PruneMode::Multiple);
 
     let mut with = register::r#do::With::new(todo!());
 

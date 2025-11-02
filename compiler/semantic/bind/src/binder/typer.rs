@@ -1,19 +1,33 @@
+//! Implements a [`Typer`] interface for the binder.
+
 use std::ops::Deref;
 
 use pernixc_handler::Handler;
 use pernixc_ir::{address::Address, typer::Typer, value::TypeOf};
 use pernixc_semantic_element::parameter::get_parameters;
+use pernixc_stable_hash::StableHash;
 use pernixc_type_system::UnrecoverableError;
 
 use crate::binder::{inference_context::InferenceContext, Binder};
 
+/// The struct that implements the [`Typer`] interface for the binder.
 pub struct BinderTyper<'x, 'h> {
     ty_environment:
         pernixc_type_system::environment::Environment<'x, InferenceContext>,
     handler: &'h dyn Handler<crate::diagnostic::Diagnostic>,
 }
 
-struct DerefWrapper<T>(T);
+impl std::fmt::Debug for BinderTyper<'_, '_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BinderTyper").finish_non_exhaustive()
+    }
+}
+
+/// An owned wrapper around a type that implements `Deref` to a type.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash,
+)]
+pub struct DerefWrapper<T>(T);
 
 impl<T> Deref for DerefWrapper<T> {
     type Target = T;
@@ -72,6 +86,8 @@ impl Typer<Address> for BinderTyper<'_, '_> {
     }
 }
 
+/// Implements the [`pernixc_ir::typer::Environment`] interface for the binder.
+#[derive(Debug, Clone, Copy)]
 pub struct Environment<'s> {
     captures: Option<&'s pernixc_ir::capture::Captures>,
     tracked_engine: &'s pernixc_query::TrackedEngine,
@@ -99,6 +115,8 @@ impl pernixc_ir::typer::Environment for Environment<'_> {
 }
 
 impl Binder<'_> {
+    /// Creates a typer for the binder.
+    #[must_use]
     pub fn typer<'s, 'h>(
         &'s self,
         handler: &'h dyn Handler<crate::diagnostic::Diagnostic>,
@@ -106,6 +124,8 @@ impl Binder<'_> {
         BinderTyper { ty_environment: self.create_environment(), handler }
     }
 
+    /// Creates a typer environment for the binder.
+    #[must_use]
     pub fn typer_environment(&self) -> Environment<'_> {
         Environment {
             captures: self.captures(),
