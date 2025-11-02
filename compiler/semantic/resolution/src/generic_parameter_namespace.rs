@@ -3,7 +3,6 @@
 
 use std::{collections::hash_map::Entry, sync::Arc};
 
-use pernixc_extend::extend;
 use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_symbol::{kind::get_kind, parent::scope_walker};
 use pernixc_target::Global;
