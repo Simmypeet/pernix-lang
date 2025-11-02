@@ -154,6 +154,9 @@ impl Captures {
         for id in all_capture_ids {
             if !pruning_context.unsages.contains_key(&id) {
                 let _ = self.captures.remove(id);
+                self.capture_order.remove(
+                    self.capture_order.iter().position(|x| *x == id).unwrap(),
+                );
             }
         }
 
@@ -230,24 +233,6 @@ impl Captures {
                     }
                 }
             }
-        }
-
-        // readjust the drop order of the captures since some might have been
-        // removed.
-
-        // TODO: maybe there's a  better way than collecting all ids and sorting
-        let mut captures_ids_with_order = self
-            .captures
-            .iter()
-            .map(|(id, c)| (id, c.drop_order))
-            .collect::<Vec<_>>();
-
-        captures_ids_with_order.sort_by_key(|x| x.1);
-
-        for (new_order, (capture_id, _)) in
-            captures_ids_with_order.into_iter().enumerate()
-        {
-            self.captures[capture_id].drop_order = new_order;
         }
     }
 

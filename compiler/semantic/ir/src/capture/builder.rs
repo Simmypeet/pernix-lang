@@ -72,7 +72,6 @@ impl Builder {
             capture_mode: CaptureMode::ByValue,
 
             span: Some(name_binding.span),
-            drop_order: 0, // will be set later
         };
 
         // insert a new capture and cooresponding name binding
@@ -148,7 +147,7 @@ impl Builder {
 
     /// Builds the capture and returns the name binding point and captures.
     pub async fn build<T: Typer<Address>, E: typer::Environment>(
-        mut self,
+        self,
         env: &E,
         typer: &T,
     ) -> Result<CapturesWithNameBindingPoint, T::Error> {
@@ -172,14 +171,12 @@ impl Builder {
         // sort the drop orders
         drop_orders.sort_by(|a, b| a.1.cmp(&b.1));
 
-        // assign the drop orders
-        for (drop_index, (capture_id, _)) in drop_orders.iter().enumerate() {
-            self.captures[*capture_id].drop_order = drop_index;
-        }
-
         Ok(CapturesWithNameBindingPoint {
             name_binding_point: self.name_binding_point,
-            captures: Captures { captures: self.captures },
+            captures: Captures {
+                captures: self.captures,
+                capture_order: drop_orders.iter().map(|(id, _)| *id).collect(),
+            },
         })
     }
 }
@@ -401,7 +398,10 @@ impl DropOrder {
                     }
 
                     Memory::Capture(id) => RootOrder::Capture(CaptureOrder {
-                        drop_order: env.captures().unwrap()[*id].drop_order,
+                        drop_order: env
+                            .captures()
+                            .unwrap()
+                            .declaration_order_of(*id),
                     }),
                 };
 

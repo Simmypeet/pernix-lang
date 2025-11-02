@@ -33,6 +33,7 @@ pub struct Captures {
     /// All the captures used in the closure.
     #[index]
     captures: Arena<Capture>,
+    capture_order: Vec<pernixc_arena::ID<Capture>>,
 }
 
 impl Captures {
@@ -42,6 +43,18 @@ impl Captures {
         &self,
     ) -> impl ExactSizeIterator<Item = pernixc_arena::ID<Capture>> + '_ {
         self.captures.ids()
+    }
+
+    /// Returns the declaration order of a capture (including drop order)
+    /// in the capturing structure.
+    ///
+    /// 0 is the first capture to be initialize or dropped.
+    #[must_use]
+    pub fn declaration_order_of(
+        &self,
+        capture_id: pernixc_arena::ID<Capture>,
+    ) -> usize {
+        self.capture_order.iter().position(|id| *id == capture_id).unwrap()
     }
 }
 
@@ -112,7 +125,4 @@ pub struct Capture {
 
     /// The span of the captured memory address.
     pub span: Option<RelativeSpan>,
-
-    /// The drop of the capture memory in (0 being the first to drop).
-    pub drop_order: usize,
 }
