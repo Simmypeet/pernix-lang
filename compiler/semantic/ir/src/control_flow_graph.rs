@@ -79,7 +79,7 @@ pub struct Block {
     terminator: Option<Terminator>,
     /// List of blocks that are predecessors of this block.
     #[get = "pub"]
-    predecessors: HashSet<ID<Block>>,
+    predecessors: HashSet<ID<Self>>,
     /// Determines if the block is the entry block.
     #[get_copy = "pub"]
     is_entry: bool,

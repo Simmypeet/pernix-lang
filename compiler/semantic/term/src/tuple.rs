@@ -101,6 +101,42 @@ impl<T: crate::display::Display> crate::display::Display for Tuple<T> {
     }
 }
 
+/// Represents a sub-tuple location in a range form.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TupleRange {
+    /// The begin index of the range.
+    pub begin: usize,
+
+    /// The end index of the range.
+    pub end: usize,
+}
+
+impl TupleRange {
+    /// Returns the length of the range.
+    #[must_use]
+    pub const fn len(&self) -> usize { self.end - self.begin }
+
+    /// Returns whether the range is empty.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool { self.len() == 0 }
+
+    /// Converts the range to a standard library range.
+    #[must_use]
+    pub const fn to_std_range(&self) -> std::ops::Range<usize> {
+        self.begin..self.end
+    }
+}
+
+impl From<std::ops::Range<usize>> for TupleRange {
+    fn from(range: std::ops::Range<usize>) -> Self {
+        Self { begin: range.start, end: range.end }
+    }
+}
+
+impl From<TupleRange> for std::ops::Range<usize> {
+    fn from(val: TupleRange) -> Self { val.begin..val.end }
+}
+
 /// Represents a sub-term location where the sub-term is stored as an element of
 /// a tuple.
 #[derive(
@@ -111,13 +147,7 @@ pub enum SubTupleLocation {
     Single(usize),
 
     /// The sub-term ranges into multiple elements of the tuple.
-    Range {
-        /// The index of the first element of the tuple.
-        begin: usize,
-
-        /// The index of the after the last element of the tuple.
-        end: usize,
-    },
+    Range(TupleRange),
 }
 
 impl<T> Tuple<T>
@@ -137,12 +167,13 @@ where
 
                 *element = sub_term;
             }
-            SubTupleLocation::Range { begin, end } => {
+            SubTupleLocation::Range(range) => {
                 let Ok(sub_constant_tuple) = Self::try_from(sub_term) else {
                     panic!("tuple expected");
                 };
 
-                let tuple_elements = self.elements.get_mut(begin..end).unwrap();
+                let tuple_elements =
+                    self.elements.get_mut(range.begin..range.end).unwrap();
 
                 assert!(
                     sub_constant_tuple.elements.len() == tuple_elements.len(),
@@ -348,10 +379,7 @@ where
             unpacked.clone(),
             to_unpack,
             SubTupleLocation::Single(unpacked_position),
-            SubTupleLocation::Range {
-                begin: to_unpack_range.start,
-                end: to_unpack_range.end,
-            },
+            SubTupleLocation::Range(to_unpack_range.into()),
             &mut existing,
             swap,
         );
