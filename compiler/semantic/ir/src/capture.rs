@@ -1,5 +1,5 @@
-//! Defines the [`Closure`], representing captured IR for closures, effect
-//! handlers, do blocks, etc.
+//! Defines the [`Captures`] representing the capturing structure used for
+//! implementing closures, do blocks, and effect handlers.
 
 use derive_more::{Index, IndexMut};
 use flexstr::SharedStr;
