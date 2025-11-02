@@ -181,10 +181,17 @@ impl Assigned {
     }
 }
 
+#[derive(Debug)]
+struct ContinueSetAssigned<'x> {
+    projection: &'x mut Assigned,
+    ty: Type,
+}
+
 #[derive(Debug, EnumAsInner)]
+#[allow(clippy::large_enum_variant)]
 enum SetAssignedResultInternal<'a> {
     Done(bool),
-    Continue { projection: &'a mut Assigned, ty: Type },
+    Continue(ContinueSetAssigned<'a>),
 }
 
 impl Assigned {
@@ -245,9 +252,9 @@ impl Assigned {
                         return Ok(done);
                     }
 
-                    SetAssignedResultInternal::Continue { projection, ty } => {
-                        (projection, ty)
-                    }
+                    SetAssignedResultInternal::Continue(
+                        ContinueSetAssigned { projection, ty },
+                    ) => (projection, ty),
                 };
 
                 let (struct_id, generic_arguments) = match ty {
@@ -330,9 +337,9 @@ impl Assigned {
                         return Ok(done);
                     }
 
-                    SetAssignedResultInternal::Continue { projection, ty } => {
-                        (projection, ty)
-                    }
+                    SetAssignedResultInternal::Continue(
+                        ContinueSetAssigned { projection, ty },
+                    ) => (projection, ty),
                 };
 
                 let mut tuple_ty = ty.into_tuple().unwrap();
@@ -420,9 +427,9 @@ impl Assigned {
                         return Ok(done);
                     }
 
-                    SetAssignedResultInternal::Continue { projection, ty } => {
-                        (projection, ty)
-                    }
+                    SetAssignedResultInternal::Continue(
+                        ContinueSetAssigned { projection, ty },
+                    ) => (projection, ty),
                 };
 
                 let (enum_id, generic_arguments) = match ty {
@@ -491,9 +498,9 @@ impl Assigned {
                         return Ok(done);
                     }
 
-                    SetAssignedResultInternal::Continue { projection, ty } => {
-                        (projection, ty)
-                    }
+                    SetAssignedResultInternal::Continue(
+                        ContinueSetAssigned { projection, ty },
+                    ) => (projection, ty),
                 };
 
                 let ty = ty.into_reference().unwrap();
@@ -519,10 +526,10 @@ impl Assigned {
 
             SetAssignedResultInternal::Done(true)
         } else {
-            SetAssignedResultInternal::Continue {
+            SetAssignedResultInternal::Continue(ContinueSetAssigned {
                 projection: target_projection,
                 ty,
-            }
+            })
         })
     }
 }
