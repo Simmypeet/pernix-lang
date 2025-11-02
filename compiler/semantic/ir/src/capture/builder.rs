@@ -198,6 +198,12 @@ pub struct CapturesWithNameBindingPoint {
     captures: Captures,
 }
 
+impl CapturesWithNameBindingPoint {
+    /// Deconstructs the structure and returns the captures.
+    #[must_use]
+    pub fn into_captures(self) -> Captures { self.captures }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct AllocaOrder {
     depth: usize,
