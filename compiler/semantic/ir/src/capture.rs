@@ -16,7 +16,7 @@ use pernixc_term::{
 use crate::{
     address::{self, Address, Memory},
     pattern::{NameBinding, NameBindingPoint},
-    typer::Typer,
+    typer::{self, Typer},
 };
 
 /// Represents capturing structure used for implementing closures, do blocks,
@@ -397,18 +397,19 @@ struct DropOrder {
 
 impl DropOrder {
     #[allow(clippy::too_many_lines)]
-    async fn get_drop_order<T: Typer<Address>>(
+    async fn get_drop_order<T: Typer<Address>, E: typer::Environment>(
         address: &Address,
         span: RelativeSpan,
+        env: &E,
         typer: &T,
     ) -> Result<(Self, bool), T::Error> {
         match address {
             Address::Memory(memory) => {
                 let root_order = match memory {
                     Memory::Parameter(id) => {
-                        let parameters = typer
+                        let parameters = env
                             .tracked_engine()
-                            .get_parameters(typer.current_site())
+                            .get_parameters(env.current_site())
                             .await?;
 
                         RootOrder::Parameter(ParameterOrder {
@@ -422,11 +423,11 @@ impl DropOrder {
 
                     Memory::Alloca(id) => {
                         let scope_id =
-                            typer.values().allocas[*id].declared_in_scope_id;
+                            env.values().allocas[*id].declared_in_scope_id;
                         let scope_depth =
-                            typer.scope_tree().scopes()[scope_id].depth;
+                            env.scope_tree().scopes()[scope_id].depth;
                         let declared_order =
-                            typer.values().allocas[*id].declaration_order;
+                            env.values().allocas[*id].declaration_order;
 
                         RootOrder::Alloca(AllocaOrder {
                             depth: scope_depth,
@@ -435,7 +436,7 @@ impl DropOrder {
                     }
 
                     Memory::Capture(id) => RootOrder::Capture(CaptureOrder {
-                        drop_order: typer.captures().unwrap()[*id].drop_order,
+                        drop_order: env.captures().unwrap()[*id].drop_order,
                     }),
                 };
 
@@ -443,23 +444,26 @@ impl DropOrder {
             }
 
             Address::Field(field) => {
-                let (mut drop_order, should_continue) = Box::pin(
-                    Self::get_drop_order(&field.struct_address, span, typer),
-                )
-                .await?;
+                let (mut drop_order, should_continue) =
+                    Box::pin(Self::get_drop_order(
+                        &field.struct_address,
+                        span,
+                        env,
+                        typer,
+                    ))
+                    .await?;
 
                 if !should_continue {
                     return Ok((drop_order, false));
                 }
 
-                let ty = typer.type_of(&*field.struct_address).await?;
+                let ty = typer.type_of(&*field.struct_address, env).await?;
 
                 // should've been a struct type
                 let struct_ty = ty.as_symbol().unwrap();
                 let struct_id = struct_ty.id;
 
-                let fields =
-                    typer.tracked_engine().get_fields(struct_id).await?;
+                let fields = env.tracked_engine().get_fields(struct_id).await?;
 
                 let field_index = fields
                     .field_declaration_order
@@ -475,16 +479,20 @@ impl DropOrder {
             }
 
             Address::Tuple(tuple) => {
-                let (mut drop_order, should_continue) = Box::pin(
-                    Self::get_drop_order(&tuple.tuple_address, span, typer),
-                )
-                .await?;
+                let (mut drop_order, should_continue) =
+                    Box::pin(Self::get_drop_order(
+                        &tuple.tuple_address,
+                        span,
+                        env,
+                        typer,
+                    ))
+                    .await?;
 
                 if !should_continue {
                     return Ok((drop_order, false));
                 }
 
-                let ty = typer.type_of(&*tuple.tuple_address).await?;
+                let ty = typer.type_of(&*tuple.tuple_address, env).await?;
                 let tuple_ty = ty.as_tuple().unwrap();
 
                 drop_order.projections.push(Projection::Tuple(
@@ -510,6 +518,7 @@ impl DropOrder {
                 let (drop_order, _) = Box::pin(Self::get_drop_order(
                     &index.array_address,
                     span,
+                    env,
                     typer,
                 ))
                 .await?;
@@ -521,6 +530,7 @@ impl DropOrder {
                 Box::pin(Self::get_drop_order(
                     &variant.enum_address,
                     span,
+                    env,
                     typer,
                 ))
                 .await
@@ -530,6 +540,7 @@ impl DropOrder {
                 let (drop_order, _) = Box::pin(Self::get_drop_order(
                     &reference.reference_address,
                     span,
+                    env,
                     typer,
                 ))
                 .await?;
