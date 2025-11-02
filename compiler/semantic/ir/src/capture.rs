@@ -122,13 +122,17 @@ pub struct Capture {
 }
 
 /// A builder for constructing a [`Captures`] structure.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Builder {
     captures: Arena<Capture>,
     name_binding_point: NameBindingPoint,
 }
 
 impl Builder {
+    /// Creates a new capture builder.
+    #[must_use]
+    pub fn new() -> Self { Self::default() }
+
     /// Inserts a named binding into the capture builder. The name should not
     /// be already inserted.
     pub fn insert_named_binding(
