@@ -60,4 +60,13 @@ impl Parameters {
     ) -> impl Iterator<Item = (ID<Parameter>, &Parameter)> {
         self.parameter_order.iter().map(|id| (*id, &self.parameters[*id]))
     }
+
+    /// Returns the declaration order of the parameter.
+    #[must_use]
+    pub fn get_parameter_declaration_order(
+        &self,
+        parameter_id: ID<Parameter>,
+    ) -> usize {
+        self.parameter_order.iter().position(|id| *id == parameter_id).unwrap()
+    }
 }
