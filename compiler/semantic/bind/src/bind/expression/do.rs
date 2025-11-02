@@ -8,7 +8,10 @@ use pernixc_ir::{
     effect_handler::{EffectHandler, HandlerGroup},
     pattern::{Irrefutable, NameBindingPoint, Wildcard},
     value::{
-        register::{self, r#do::EffectOperationHandlerClosure},
+        register::{
+            self,
+            r#do::{CaptureArguments, EffectOperationHandlerClosure},
+        },
         Value,
     },
 };
@@ -100,7 +103,10 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
 
         let _do_assignment = register::r#do::Do::new(
             effect_handlers.effect_handler_group_id,
-            register::r#do::DoClosure::new(todo!(), todo!()),
+            register::r#do::DoClosure::new(
+                CaptureArguments::new(do_captures),
+                do_closure,
+            ),
             with,
             expected_return_type,
         );
@@ -197,7 +203,8 @@ async fn build_with_blocks(
     underlying_captures
         .prune_capture_ir(with_irs.values_mut(), PruneMode::Multiple);
 
-    let mut with = register::r#do::With::new(todo!());
+    let mut with =
+        register::r#do::With::new(CaptureArguments::new(underlying_captures));
 
     for ((effect_handler_id, effect_operation_id), ir) in with_irs {
         let effect_handler = with.insert_effect_handler(effect_handler_id);
