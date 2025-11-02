@@ -16,7 +16,7 @@ pub fn pernix_diagnostic_to_codespan_diagnostic(
             codespan_reporting::diagnostic::Diagnostic::note()
         }
     }
-    .with_message(diagnostic.message.to_string());
+    .with_message(diagnostic.message.clone());
 
     if let Some(Highlight { span, message }) = &diagnostic.primary_highlight {
         result = result.with_labels(
@@ -44,7 +44,7 @@ pub fn pernix_diagnostic_to_codespan_diagnostic(
     }
 
     if let Some(msg) = &diagnostic.help_message {
-        result.with_notes(vec![msg.to_string()])
+        result.with_notes(vec![msg.clone()])
     } else {
         result
     }
