@@ -163,6 +163,8 @@ broken_intra_doc_links = "deny"
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
 pedantic = { level = "deny", priority = -1 }
+# this generates errors on enum-as-inner in nightly toolchain
+double-parens = "allow"
 missing_panics_doc = "allow"
 missing_errors_doc = "allow"
 use_self = "deny"
