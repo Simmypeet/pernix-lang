@@ -11,6 +11,7 @@ use pernixc_ir::{
         register::{
             self,
             r#do::{CaptureArguments, EffectOperationHandlerClosure},
+            Assignment,
         },
         Value,
     },
@@ -101,7 +102,7 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
         )
         .await?;
 
-        let _do_assignment = register::r#do::Do::new(
+        let do_assignment = register::r#do::Do::new(
             effect_handlers.effect_handler_group_id,
             register::r#do::DoClosure::new(
                 CaptureArguments::new(do_captures),
@@ -111,11 +112,11 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
             expected_return_type,
         );
 
-        Ok(Expression::RValue(Value::error(
-            Type::Inference(
-                self.create_type_inference(constraint::Type::All(true)),
+        Ok(Expression::RValue(Value::Register(
+            self.create_register_assignment(
+                Assignment::Do(do_assignment),
+                syntax_tree.span(),
             ),
-            Some(syntax_tree.span()),
         )))
     }
 }
