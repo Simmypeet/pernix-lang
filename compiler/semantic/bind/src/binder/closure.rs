@@ -2,9 +2,14 @@
 //! effect handlers, do blocks, etc.
 
 use pernixc_handler::Handler;
+use pernixc_hash::HashMap;
 use pernixc_ir::{
-    capture::{self, builder::CapturesWithNameBindingPoint},
+    capture::{self, builder::CapturesWithNameBindingPoint, Captures},
     instruction::{self, ScopePush},
+    value::{
+        register::{r#do::CaptureArguments, Assignment, Borrow, Load},
+        Value,
+    },
     IR,
 };
 use pernixc_lexical::tree::RelativeSpan;
@@ -196,5 +201,44 @@ impl Binder<'_> {
         }
 
         Ok(())
+    }
+
+    /// Given the captures, bind all the load/borrow operations for each capture
+    /// and create the [`CaptureArguments`] struct.
+    pub fn bind_capture_arguments(
+        &mut self,
+        captures: Captures,
+        capture_span: RelativeSpan,
+    ) -> CaptureArguments {
+        let mut capture_arguments = HashMap::default();
+
+        for (capture_id, capture) in captures.captures_as_order() {
+            // load or borrow the address based on the capture mode
+            let value = match &capture.capture_mode {
+                capture::CaptureMode::ByValue => self
+                    .create_register_assignment(
+                        Assignment::Load(Load {
+                            address: capture.parent_captured_address.clone(),
+                        }),
+                        capture_span,
+                    ),
+                capture::CaptureMode::ByReference(reference_capture_mode) => {
+                    self.create_register_assignment(
+                        Assignment::Borrow(Borrow {
+                            address: capture.parent_captured_address.clone(),
+                            qualifier: reference_capture_mode.qualifier,
+                            lifetime: pernixc_term::lifetime::Lifetime::Erased,
+                        }),
+                        capture_span,
+                    )
+                }
+            };
+
+            assert!(capture_arguments
+                .insert(capture_id, Value::Register(value))
+                .is_none());
+        }
+
+        CaptureArguments::new_with_arguments(captures, capture_arguments)
     }
 }

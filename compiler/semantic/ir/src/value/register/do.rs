@@ -1,6 +1,6 @@
 //! Defines the IR structures for representing `do-with` expressions.
 
-use getset::CopyGetters;
+use getset::{CopyGetters, Getters};
 use pernixc_hash::HashMap;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
@@ -14,8 +14,11 @@ use crate::{
 
 /// Representing the capture initialization. This contains all the values
 /// used to initialize the captures.
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize, Getters,
+)]
 pub struct CaptureArguments {
+    /// The captures structure
     captures: Captures,
     arguments: HashMap<pernixc_arena::ID<Capture>, Value>,
 }
@@ -26,6 +29,16 @@ impl CaptureArguments {
     #[must_use]
     pub fn new(captures: Captures) -> Self {
         Self { captures, arguments: HashMap::default() }
+    }
+
+    /// Creates a new [`CaptureArguments`] with the given captures and
+    /// arguments.
+    #[must_use]
+    pub const fn new_with_arguments(
+        captures: Captures,
+        arguments: HashMap<pernixc_arena::ID<Capture>, Value>,
+    ) -> Self {
+        Self { captures, arguments }
     }
 
     /// Inserts a new capture argument mapping from the given capture ID to
