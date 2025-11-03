@@ -77,6 +77,9 @@ pub enum TypeTermSource {
     /// From the type in a cast expression like `expr as T`.
     Cast,
 
+    /// The type comes from a do return instruction.
+    DoReturnType,
+
     /// The type comes from an alloca instruction.
     Alloca(ID<Alloca>),
 }
