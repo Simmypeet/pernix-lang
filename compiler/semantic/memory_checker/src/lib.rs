@@ -354,6 +354,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                         | Assignment::Tuple(_)
                         | Assignment::Binary(_)
                         | Assignment::Cast(_)
+                        | Assignment::Do(_)
                         | Assignment::VariantNumber(_) => 1,
                     }
                 }

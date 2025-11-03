@@ -503,6 +503,9 @@ impl<N: Normalizer> Builder<'_, N> {
             | Assignment::Prefix(_)
             | Assignment::Load(_) => Ok(Changes::default()),
 
+            // TODO: handle do-with subset relations
+            Assignment::Do(_do_expr) => Ok(Changes::default()),
+
             Assignment::Tuple(tuple) => {
                 self.context
                     .get_changes_of_tuple(
