@@ -33,7 +33,8 @@ use crate::{
     control_flow_graph::Block,
     effect_handler::EffectHandlerID,
     transform::{
-        ConstantTermSource, LifetimeTermSource, Transformer, TypeTermSource,
+        self, ConstantTermSource, LifetimeTermSource, Transformer,
+        TypeTermSource,
     },
     value::{Environment, TypeOf},
     Values,
@@ -1148,16 +1149,15 @@ impl TypeOf<ID<Register>> for Values {
                     type_of_variant_number(variant, environment).await,
                 ))
             }
+            Assignment::Do(d) => Ok(d.return_type().clone()),
         }?;
 
         Ok(environment.type_environment.simplify(ty).await?.deref().clone())
     }
 }
 
-impl Register {
-    /// Transforms the types, lifetimes, and constants in the register using
-    /// the given transformer.
-    pub async fn transform<
+impl transform::Element for Register {
+    async fn transform<
         T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
     >(
         &mut self,
@@ -1191,6 +1191,7 @@ impl Register {
             Assignment::VariantNumber(variant_number) => {
                 variant_number.transform(transformer).await
             }
+            Assignment::Do(d) => d.transform(transformer, engine).await,
         }
     }
 }

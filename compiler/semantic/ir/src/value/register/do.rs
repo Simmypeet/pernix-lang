@@ -244,7 +244,9 @@ impl transform::Element for With {
 }
 
 /// Represents a `do-with` expression in the IR.
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, StableHash, Getters, Serialize, Deserialize,
+)]
 pub struct Do {
     /// The unique ID of this `do-with` expression within the function-level
     /// IR.
@@ -257,6 +259,7 @@ pub struct Do {
     with: With,
 
     /// The return type of the `do` expression.
+    #[get = "pub"]
     return_type: pernixc_term::r#type::Type,
 }
 
