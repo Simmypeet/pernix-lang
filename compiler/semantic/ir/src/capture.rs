@@ -56,6 +56,16 @@ impl Captures {
     ) -> usize {
         self.capture_order.iter().position(|id| *id == capture_id).unwrap()
     }
+
+    /// Returns an iterator over all captures in the capturing structure in
+    /// declaration order.
+    #[must_use]
+    pub fn captures_as_order(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (pernixc_arena::ID<Capture>, &'_ Capture)> + '_
+    {
+        self.capture_order.iter().copied().map(|x| (x, &self.captures[x]))
+    }
 }
 
 /// Specifies how a memory is captured from the parent IR.
