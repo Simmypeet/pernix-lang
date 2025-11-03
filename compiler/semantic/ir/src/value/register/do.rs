@@ -113,7 +113,7 @@ impl transform::Element for DoClosure {
         engine: &TrackedEngine,
     ) -> Result<(), CyclicError> {
         self.capture_arguments.transform(transformer, engine).await?;
-        self.ir.transform(transformer, engine).await?;
+        Box::pin(self.ir.transform(transformer, engine)).await?;
 
         Ok(())
     }
@@ -190,7 +190,7 @@ impl transform::Element for EffectOperationHandlerClosure {
         transformer: &mut T,
         engine: &TrackedEngine,
     ) -> Result<(), CyclicError> {
-        self.ir.transform(transformer, engine).await
+        Box::pin(self.ir.transform(transformer, engine)).await
     }
 }
 
