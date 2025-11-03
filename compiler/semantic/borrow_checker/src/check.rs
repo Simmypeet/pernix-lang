@@ -226,6 +226,7 @@ impl<N: Normalizer> Checker<'_, N> {
                     | Assignment::Array(_)
                     | Assignment::Phi(_)
                     | Assignment::Cast(_)
+                    | Assignment::Do(_)
                     | Assignment::VariantNumber(_) => Ok(()),
                 }
             }

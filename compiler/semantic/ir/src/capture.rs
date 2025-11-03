@@ -4,6 +4,7 @@
 use derive_more::Index;
 use pernixc_arena::Arena;
 use pernixc_lexical::tree::RelativeSpan;
+use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_term::{
@@ -11,7 +12,10 @@ use pernixc_term::{
     r#type::{Qualifier, Type},
 };
 
-use crate::address::Address;
+use crate::{
+    address::Address,
+    transform::{self, Transformer, TypeTermSource},
+};
 
 pub mod builder;
 pub mod pruning;
@@ -36,6 +40,42 @@ pub struct Captures {
     capture_order: Vec<pernixc_arena::ID<Capture>>,
 }
 
+impl transform::Element for Captures {
+    async fn transform<
+        T: Transformer<Lifetime>
+            + Transformer<Type>
+            + Transformer<pernixc_term::constant::Constant>,
+    >(
+        &mut self,
+        transformer: &mut T,
+        _: &TrackedEngine,
+    ) -> Result<(), CyclicError> {
+        for (_, capture) in self.captures.iter_mut() {
+            transformer
+                .transform(
+                    &mut capture.address_type,
+                    TypeTermSource::Capture,
+                    capture.span,
+                )
+                .await?;
+
+            if let CaptureMode::ByReference(reference_mode) =
+                &mut capture.capture_mode
+            {
+                transformer
+                    .transform(
+                        &mut reference_mode.lifetime,
+                        transform::LifetimeTermSource::Capture,
+                        capture.span,
+                    )
+                    .await?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
 impl Captures {
     /// Returns an iterator over all capture IDs in the capturing structure.
     #[must_use]
@@ -55,6 +95,16 @@ impl Captures {
         capture_id: pernixc_arena::ID<Capture>,
     ) -> usize {
         self.capture_order.iter().position(|id| *id == capture_id).unwrap()
+    }
+
+    /// Returns an iterator over all captures in the capturing structure in
+    /// declaration order.
+    #[must_use]
+    pub fn captures_as_order(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (pernixc_arena::ID<Capture>, &'_ Capture)> + '_
+    {
+        self.capture_order.iter().copied().map(|x| (x, &self.captures[x]))
     }
 }
 

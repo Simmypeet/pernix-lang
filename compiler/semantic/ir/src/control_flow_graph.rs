@@ -8,11 +8,11 @@ use pernixc_hash::{HashMap, HashSet};
 use pernixc_query::runtime::executor::CyclicError;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
-use pernixc_term::r#type::Type;
+use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
 use pernixc_transitive_closure::TransitiveClosure;
 
 use super::instruction::{Instruction, Jump, Terminator};
-use crate::transform::Transformer;
+use crate::transform::{self, Transformer};
 
 /// A data structure used for computing whether a particular block in the
 /// control flow graph is reachable to another.
@@ -137,19 +137,22 @@ impl Block {
             true
         }
     }
+}
 
-    /// Applies the given transformer to every instruction and the terminator
-    /// in the block.
-    pub async fn transform<T: Transformer<Type>>(
+impl transform::Element for Block {
+    async fn transform<
+        T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
+    >(
         &mut self,
         transformer: &mut T,
+        engine: &pernixc_query::TrackedEngine,
     ) -> Result<(), CyclicError> {
         for inst in &mut self.instructions {
-            inst.transform(transformer).await?;
+            inst.transform(transformer, engine).await?;
         }
 
         if let Some(terminator) = &mut self.terminator {
-            terminator.transform(transformer).await?;
+            terminator.transform(transformer, engine).await?;
         }
 
         Ok(())
@@ -722,15 +725,18 @@ impl ControlFlowGraph {
 
         true
     }
+}
 
-    /// Applies the given transformer to every instruction and the terminator
-    /// in every block in the control flow graph.
-    pub async fn transform<T: Transformer<Type>>(
+impl transform::Element for ControlFlowGraph {
+    async fn transform<
+        T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
+    >(
         &mut self,
         transformer: &mut T,
+        engine: &pernixc_query::TrackedEngine,
     ) -> Result<(), CyclicError> {
         for block in self.blocks.iter_mut().map(|(_, x)| x) {
-            block.transform(transformer).await?;
+            block.transform(transformer, engine).await?;
         }
 
         Ok(())

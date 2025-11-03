@@ -289,6 +289,7 @@ async fn check_register_assignment<N: Normalizer>(
         | register::Assignment::Array(_)
         | register::Assignment::Phi(_)
         | register::Assignment::Cast(_)
+        | register::Assignment::Do(_)
         | register::Assignment::VariantNumber(_) => Ok(()),
     }
 }

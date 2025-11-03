@@ -209,6 +209,7 @@ impl Captures {
                             | Assignment::Binary(_)
                             | Assignment::Array(_)
                             | Assignment::Phi(_)
+                            | Assignment::Do(_)
                             | Assignment::Cast(_) => {}
                         }
                     }

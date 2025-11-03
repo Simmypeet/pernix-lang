@@ -77,23 +77,19 @@ pub struct IR {
     pub scope_tree: scope::Tree,
 }
 
-impl IR {
-    /// Applies the given transformer to all types, lifetimes, and constants in
-    /// the IR.
-    pub async fn transform<
+impl transform::Element for IR {
+    async fn transform<
         T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
     >(
         &mut self,
-        tracked_engine: &TrackedEngine,
         transformer: &mut T,
+        engine: &TrackedEngine,
     ) -> Result<(), CyclicError> {
-        self.control_flow_graph.transform(transformer).await?;
+        self.control_flow_graph.transform(transformer, engine).await?;
 
         for (_, register) in &mut self.values.registers {
-            register.transform(transformer, tracked_engine).await?;
+            register.transform(transformer, engine).await?;
         }
-
-        self.control_flow_graph.transform(transformer).await?;
 
         for (&alloca_id, alloca) in &mut self.values.allocas {
             transformer
