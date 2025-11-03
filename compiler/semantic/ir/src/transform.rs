@@ -4,7 +4,7 @@
 
 use pernixc_arena::ID;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::runtime::executor::CyclicError;
+use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
 use pernixc_term::{
     constant::Constant,
     generic_parameters::{
@@ -100,5 +100,20 @@ pub trait Transformer<T: Transformable> {
         term: &mut T,
         source: T::Source,
         span: Option<RelativeSpan>,
+    ) -> Result<(), CyclicError>;
+}
+
+/// A trait for an object that can have [`Transformable`] elements transformed
+/// within it.
+pub trait Element {
+    /// Transforms the types, lifetimes, and constants in self using the given
+    /// transformer.
+    #[allow(async_fn_in_trait)]
+    async fn transform<
+        T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
+    >(
+        &mut self,
+        transformer: &mut T,
+        engine: &TrackedEngine,
     ) -> Result<(), CyclicError>;
 }
