@@ -63,7 +63,7 @@ impl Executor<NegateVariable> for NegateVariableExecutor {
         engine: &TrackedEngine,
         key: &NegateVariable,
     ) -> Result<i32, CyclicError> {
-        Ok(-engine.query(&Variable(key.0.to_string())).await?)
+        Ok(-engine.query(&Variable(key.0.clone())).await?)
     }
 }
 
@@ -349,7 +349,7 @@ impl Executor<AbsVariable> for TrackedAbsExecutor {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         // Compute absolute value
-        let input_value = engine.query(&Variable(key.0.to_string())).await?;
+        let input_value = engine.query(&Variable(key.0.clone())).await?;
 
         Ok(input_value.abs())
     }

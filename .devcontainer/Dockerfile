@@ -85,17 +85,13 @@ RUN chmod 0440 /etc/sudoers.d/$USERNAME
 USER $USERNAME
 ENV HOME=/home/$USERNAME
 
-# Install Rust 1.88.0 (project MSRV) with clippy
+# Install Rust nightly with clippy and rustfmt
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
-    --component clippy
+        --default-toolchain nightly \
+        --component clippy,rustfmt
 
 # Add Rust to PATH
 ENV PATH="$HOME/.cargo/bin:$PATH"
-
-# Install Rust nightly with rustfmt
-RUN rustup toolchain install nightly
-
-RUN rustup component add rustfmt --toolchain nightly
 
 # Install cargo-insta for snapshot testing
 RUN cargo install cargo-insta

@@ -32,7 +32,7 @@ pub struct Scope {
     /// The parent scope of the current scope.
     ///
     /// If `None`, then the scope is a top-level scope.
-    pub parent_scope: Option<ID<Scope>>,
+    pub parent_scope: Option<ID<Self>>,
 
     /// The depth of the scope in the scope tree.
     ///
@@ -43,7 +43,7 @@ pub struct Scope {
     /// scopes. Else, this is an empty set.
     ///
     /// The set doesn't include this scope's ID.
-    pub neighbors: HashSet<ID<Scope>>,
+    pub neighbors: HashSet<ID<Self>>,
 
     /// The children of the scope in sequential order.
     pub children: Vec<Branch>,

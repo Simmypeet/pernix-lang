@@ -28,6 +28,7 @@ pub mod instruction;
 pub mod pattern;
 pub mod scope;
 pub mod transform;
+pub mod typer;
 pub mod value;
 
 /// Contains all the registers and allocas used in the program.

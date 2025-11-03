@@ -4,9 +4,16 @@ use pernixc_handler::Handler;
 use pernixc_hash::HashMap;
 use pernixc_ir::{
     address::{Address, Memory},
+    capture::{builder::CapturesWithNameBindingPoint, pruning::PruneMode},
     effect_handler::{EffectHandler, HandlerGroup},
     pattern::{Irrefutable, NameBindingPoint, Wildcard},
-    value::Value,
+    value::{
+        register::{
+            self,
+            r#do::{CaptureArguments, EffectOperationHandlerClosure},
+        },
+        Value,
+    },
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_resolution::{
@@ -31,9 +38,7 @@ use pernixc_type_system::UnrecoverableError;
 use crate::{
     bind::{Bind, Expression, Guidance},
     binder::{
-        closure::{self, PruneMode},
-        inference_context::ErasedLifetimeProvider,
-        Binder, BindingError, Error,
+        inference_context::ErasedLifetimeProvider, Binder, BindingError, Error,
     },
     diagnostic::{
         Diagnostic, DuplicatedEffectHandler, DuplicatedEffectOperationHandler,
@@ -45,6 +50,7 @@ use crate::{
 };
 
 impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
+    #[allow(unreachable_code, unused_variables)]
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::expression::block::Do,
@@ -75,19 +81,18 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
             handler,
         ))
         .await?;
-        let mut do_captures = captures.clone_captures();
+        let mut do_captures = captures.captures().clone();
 
         // prune the captures
-        Self::prune_capture_ir(
+        do_captures.prune_capture_ir(
             std::iter::once(&mut do_closure),
-            &mut do_captures,
             PruneMode::Once,
         );
 
         // pop the closure from the stack
         self.pop_handler_group(effect_handlers.effect_handler_group_id);
 
-        build_with_blocks(
+        let with = build_with_blocks(
             self,
             effect_handlers.with_blocks,
             &expected_return_type,
@@ -95,6 +100,16 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
             handler,
         )
         .await?;
+
+        let _do_assignment = register::r#do::Do::new(
+            effect_handlers.effect_handler_group_id,
+            register::r#do::DoClosure::new(
+                CaptureArguments::new(do_captures),
+                do_closure,
+            ),
+            with,
+            expected_return_type,
+        );
 
         Ok(Expression::RValue(Value::error(
             Type::Inference(
@@ -114,8 +129,7 @@ struct WithBlock {
     qualified_identifier: QualifiedIdentifier,
     effect_id: Global<pernixc_symbol::ID>,
     generic_arguments: GenericArguments,
-    #[allow(dead_code)]
-    handler_id: pernixc_arena::ID<EffectHandler>,
+    effect_handler_id: pernixc_arena::ID<EffectHandler>,
     handlers: HashMap<pernixc_symbol::ID, HandlerBlock>,
 }
 
@@ -126,13 +140,14 @@ struct HandlerBlock {
     handler: pernixc_syntax::expression::block::Handler,
 }
 
+#[allow(unreachable_code, unused_variables)]
 async fn build_with_blocks(
     binder: &mut Binder<'_>,
     with_blocks: Vec<WithBlock>,
     expected_type: &Type,
-    captures: closure::Captures,
+    captures: CapturesWithNameBindingPoint,
     handler: &dyn Handler<Diagnostic>,
-) -> Result<(), Error> {
+) -> Result<register::r#do::With, Error> {
     let mut with_irs = HashMap::default();
 
     for with_block in with_blocks {
@@ -172,8 +187,8 @@ async fn build_with_blocks(
                 .await?;
 
             // only insert if it's not duplication
-            let Entry::Vacant(entry) =
-                with_irs.entry((with_block.effect_id, effect_operation_id))
+            let Entry::Vacant(entry) = with_irs
+                .entry((with_block.effect_handler_id, effect_operation_id))
             else {
                 continue;
             };
@@ -182,16 +197,25 @@ async fn build_with_blocks(
         }
     }
 
-    let mut underlying_captures = captures.into_inner_captures();
+    let mut underlying_captures = captures.into_captures();
 
     // prune the captures
-    Binder::prune_capture_ir(
-        with_irs.values_mut(),
-        &mut underlying_captures,
-        PruneMode::Multiple,
-    );
+    underlying_captures
+        .prune_capture_ir(with_irs.values_mut(), PruneMode::Multiple);
 
-    Ok(())
+    let mut with =
+        register::r#do::With::new(CaptureArguments::new(underlying_captures));
+
+    for ((effect_handler_id, effect_operation_id), ir) in with_irs {
+        let effect_handler = with.insert_effect_handler(effect_handler_id);
+
+        effect_handler.insert_effect_operation_handler_closure(
+            effect_operation_id,
+            EffectOperationHandlerClosure::new(ir),
+        );
+    }
+
+    Ok(with)
 }
 
 async fn build_do_block(
@@ -506,7 +530,7 @@ async fn extract_effect_handlers(
         with_handlers.push(WithBlock {
             qualified_identifier: qualified_identifier.clone(),
             effect_id: effect.id,
-            handler_id: binder.insert_effect_handler_to_group(
+            effect_handler_id: binder.insert_effect_handler_to_group(
                 handler_group_id,
                 EffectHandler::new(effect.id, effect.generic_arguments.clone()),
             ),

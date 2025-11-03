@@ -1,6 +1,7 @@
-//! Defines the [`Closure`], representing captured IR for closures, effect
-//! handlers, do blocks, etc.
+//! Defines the [`Captures`] representing the capturing structure used for
+//! implementing closures, do blocks, and effect handlers.
 
+use derive_more::Index;
 use pernixc_arena::Arena;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_serialize::{Deserialize, Serialize};
@@ -12,36 +13,49 @@ use pernixc_term::{
 
 use crate::address::Address;
 
-/// Specifies what [`Closure`] is being used for.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    StableHash,
-    Serialize,
-    Deserialize,
-)]
-pub enum Kind {
-    /// Captured as a do block.
-    DoBlock,
-
-    /// Captured as an effect handler.
-    EffectHandler,
-}
+pub mod builder;
+pub mod pruning;
 
 /// Represents capturing structure used for implementing closures, do blocks,
 /// and effect handlers.
 #[derive(
-    Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize, Default,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    StableHash,
+    Serialize,
+    Deserialize,
+    Default,
+    Index,
 )]
 pub struct Captures {
     /// All the captures used in the closure.
-    pub captures: Arena<Capture>,
+    #[index]
+    captures: Arena<Capture>,
+    capture_order: Vec<pernixc_arena::ID<Capture>>,
+}
+
+impl Captures {
+    /// Returns an iterator over all capture IDs in the capturing structure.
+    #[must_use]
+    pub fn ids(
+        &self,
+    ) -> impl ExactSizeIterator<Item = pernixc_arena::ID<Capture>> + '_ {
+        self.captures.ids()
+    }
+
+    /// Returns the declaration order of a capture (including drop order)
+    /// in the capturing structure.
+    ///
+    /// 0 is the first capture to be initialize or dropped.
+    #[must_use]
+    pub fn declaration_order_of(
+        &self,
+        capture_id: pernixc_arena::ID<Capture>,
+    ) -> usize {
+        self.capture_order.iter().position(|id| *id == capture_id).unwrap()
+    }
 }
 
 /// Specifies how a memory is captured from the parent IR.

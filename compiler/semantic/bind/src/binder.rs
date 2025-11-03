@@ -64,6 +64,7 @@ pub mod inference_context;
 pub mod r#loop;
 pub mod stack;
 pub mod type_check;
+pub mod typer;
 
 /// The environment where the binder is operating on.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize)]
@@ -99,13 +100,14 @@ impl Environment {
 #[derive(Debug, Getters, CopyGetters)]
 pub struct Binder<'t> {
     /// Gets the engine used for querying information about the program.
-    #[get = "pub"]
+    #[get_copy = "pub"]
     engine: &'t TrackedEngine,
 
     /// The current environment information where the binder is operating on.
     environment: &'t Environment,
 
     /// The optional captures that the binder may use when building closures.
+    #[get_copy = "pub"]
     captures: Option<&'t pernixc_ir::capture::Captures>,
 
     /// The intermediate representation that is being built.
@@ -157,6 +159,16 @@ impl<'t> Binder<'t> {
     #[must_use]
     pub const fn expected_closure_return_type(&self) -> Option<&Type> {
         self.expected_closure_return_type.as_ref()
+    }
+
+    /// Returns the values being built in the IR.
+    #[must_use]
+    pub const fn values(&self) -> &pernixc_ir::Values { &self.ir.values }
+
+    /// Returns the scope tree being built in the IR.
+    #[must_use]
+    pub const fn scope_tree(&self) -> &pernixc_ir::scope::Tree {
+        &self.ir.scope_tree
     }
 }
 
@@ -816,7 +828,7 @@ impl Binder<'_> {
                         self.ir.values.allocas[*id].span.unwrap()
                     }
                     Memory::Capture(id) => {
-                        self.captures.unwrap().captures[*id].span.unwrap()
+                        self.captures.unwrap()[*id].span.unwrap()
                     }
                 },
                 &handler,

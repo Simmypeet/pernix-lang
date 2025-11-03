@@ -876,7 +876,7 @@ pub enum Event {
     FinishNode,
 
     /// Just inlines the list of events into the current event list.
-    Inline(Vec<Event>),
+    Inline(Vec<Self>),
 }
 
 struct FlattenEvent {

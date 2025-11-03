@@ -1,25 +1,14 @@
 //! Defines the logic for building nested binders, such as for closures,
 //! effect handlers, do blocks, etc.
 
-use std::{collections::hash_map::Entry, ops::Not};
-
-use flexstr::SharedStr;
-use pernixc_arena::ID;
 use pernixc_handler::Handler;
-use pernixc_hash::HashMap;
 use pernixc_ir::{
-    address::{Address, Memory, Reference},
-    capture::{self, Capture, CaptureMode, ReferenceCaptureMode},
-    instruction::{self, Instruction, ScopePush},
-    pattern::{NameBinding, NameBindingPoint},
-    value::register::Assignment,
-    Values, IR,
+    capture::{self, builder::CapturesWithNameBindingPoint},
+    instruction::{self, ScopePush},
+    IR,
 };
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_term::{
-    lifetime::Lifetime,
-    r#type::{Qualifier, Type},
-};
+use pernixc_term::r#type::Type;
 use pernixc_type_system::UnrecoverableError;
 
 use crate::{
@@ -30,185 +19,40 @@ use crate::{
     },
 };
 
-/// Represents a capturing structure available at a particular point in the
-/// binding process.
-#[derive(Debug, Default)]
-pub struct Captures {
-    captures: pernixc_ir::capture::Captures,
-    name_binding_point: NameBindingPoint,
-}
-
-impl Captures {
-    async fn new(
-        parent_stack: &Stack,
-        binder: &Binder<'_>,
-        handler: &dyn Handler<Diagnostic>,
-    ) -> Result<Self, UnrecoverableError> {
-        let mut captures = Self::default();
-
-        for scope in parent_stack.scopes().iter().rev() {
-            for named_binding in scope
-                .named_binding_points()
-                .iter()
-                .rev()
-                .flat_map(|x| x.named_patterns_by_name.iter())
-            {
-                captures
-                    .try_insert_named_binding(
-                        named_binding.0,
-                        named_binding.1,
-                        binder,
-                        handler,
-                    )
-                    .await?;
-            }
-        }
-
-        Ok(captures)
-    }
-
-    /// Gets a clone of the underlying [`pernixc_ir::capture::Captures`].
-    #[must_use]
-    pub fn clone_captures(&self) -> pernixc_ir::capture::Captures {
-        self.captures.clone()
-    }
-
-    /// Destructs the `Captures`, returning the underlying
-    /// [`pernixc_ir::capture::Captures`].
-    #[must_use]
-    pub fn into_inner_captures(self) -> pernixc_ir::capture::Captures {
-        self.captures
-    }
-
-    async fn try_insert_named_binding(
-        &mut self,
-        new_name: &SharedStr,
-        new_name_binding: &NameBinding,
-        binder: &Binder<'_>,
-        handler: &dyn Handler<Diagnostic>,
-    ) -> Result<(), UnrecoverableError> {
-        // only insert if it doesn't already exist
-        if self
-            .name_binding_point
-            .named_patterns_by_name
-            .contains_key(new_name.as_str())
-        {
-            return Ok(());
-        }
-
-        // check if this memory address dominates any existing captures, if
-        // so, we re-adjust the existing captures to use this memory address
-        let mut dominated_captures = Vec::new();
-
-        for (existing_name, existing_binding) in
-            &self.name_binding_point.named_patterns_by_name
-        {
-            let existing_binding_root = existing_binding
-                .load_address
-                .get_root_memory()
-                .as_capture()
-                .copied()
-                .unwrap();
-
-            let existing_captured_address = &self.captures.captures
-                [existing_binding_root]
-                .parent_captured_address;
-
-            // if the existing captured address is a child of the new
-            // captured address, we re-adjust the existing capture to use
-            if existing_captured_address == &new_name_binding.load_address
-                || existing_captured_address
-                    .is_child_of(&new_name_binding.load_address)
-            {
-                dominated_captures.push(existing_name.clone());
-            }
-        }
-
-        // add a new capture for the new name binding
-        let new_capture = Capture {
-            parent_captured_address: new_name_binding.load_address.clone(),
-            address_type: binder
-                .type_of_address(&new_name_binding.load_address, handler)
-                .await?,
-
-            // NOTE: While binding, we always capture by value. the
-            // memory-checker pass will later adjust this to be by reference if
-            // needed.
-            capture_mode: CaptureMode::ByValue,
-
-            span: Some(new_name_binding.span),
-        };
-
-        // insert a new capture and cooresponding name binding
-        let new_capture_id = self.captures.captures.insert(new_capture);
-        self.name_binding_point.named_patterns_by_name.insert(
-            new_name.clone(),
-            NameBinding {
-                mutable: new_name_binding.mutable,
-                load_address: Address::Memory(Memory::Capture(new_capture_id)),
-                span: new_name_binding.span,
-            },
-        );
-
-        // re-adjust all the dominated captures to use the new captured memory
-        let mut removing_captures = Vec::new();
-
-        for dominated_name in dominated_captures {
-            let dominated_binding = self
-                .name_binding_point
-                .named_patterns_by_name
-                .get_mut(&dominated_name)
-                .unwrap();
-
-            let mut dominated_address = dominated_binding.load_address.clone();
-            let dominated_root = dominated_address
-                .get_root_memory()
-                .as_capture()
-                .copied()
-                .unwrap();
-
-            let dominated_root_captured_address =
-                &self.captures.captures[dominated_root].parent_captured_address;
-
-            // replace the captured root with the actual original captured
-            // address
-            assert!(dominated_address.replace_with(
-                &Address::Memory(Memory::Capture(dominated_root)),
-                dominated_root_captured_address.clone(),
-            ));
-
-            // replace the dominated binding to use the new captured memory
-            assert!(dominated_address.replace_with(
-                &new_name_binding.load_address,
-                Address::Memory(Memory::Capture(new_capture_id)),
-            ));
-
-            // update the dominated binding
-            dominated_binding.load_address = dominated_address;
-
-            // mark the dominated capture for removal
-            removing_captures.push(dominated_root);
-        }
-
-        // remove all the dominated captures
-        for dominated_capture in removing_captures {
-            // it is possible we remove the same capture multiple times if
-            // multiple names capture the same memory
-            let _ = self.captures.captures.remove(dominated_capture);
-        }
-
-        Ok(())
-    }
-}
-
 impl Binder<'_> {
     /// Creates a capturing structure representing all the captures available
     /// at the current point in the binding process.
     pub async fn create_captures(
         &self,
         handler: &dyn Handler<Diagnostic>,
-    ) -> Result<Captures, UnrecoverableError> {
-        Captures::new(&self.stack, self, handler).await
+    ) -> Result<CapturesWithNameBindingPoint, UnrecoverableError> {
+        let mut builder = capture::builder::Builder::default();
+
+        for scope in self.stack.scopes().iter().rev() {
+            for name_binding_point in scope.named_binding_points().iter().rev()
+            {
+                for (name, binding) in
+                    &name_binding_point.named_patterns_by_name
+                {
+                    if !builder.contains_name(name) {
+                        builder.insert_named_binding(
+                            name.clone(),
+                            binding,
+                            self.type_of_address(
+                                &binding.load_address,
+                                handler,
+                            )
+                            .await?,
+                        );
+                    }
+                }
+            }
+        }
+
+        let typer_env = self.typer_environment();
+        let typer = self.typer(handler);
+
+        builder.build(&typer_env, &typer).await
     }
 
     /// Creates a nested binder that can be used to produce a nested IR.
@@ -217,7 +61,7 @@ impl Binder<'_> {
         f: impl AsyncFnOnce(&mut Binder<'_>) -> Result<(), UnrecoverableError>,
         expected_type: Type,
         closure_span: RelativeSpan,
-        captures: &Captures,
+        captures: &CapturesWithNameBindingPoint,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<IR, UnrecoverableError> {
         // temporary move out the inference context for the inner binder
@@ -229,12 +73,12 @@ impl Binder<'_> {
         let mut stack = Stack::new(ir.scope_tree.root_scope_id(), false);
         stack
             .current_scope_mut()
-            .add_named_binding_point(captures.name_binding_point.clone());
+            .add_named_binding_point(captures.name_binding_point().clone());
 
         let mut binder = Binder {
             engine: self.engine,
             environment: self.environment,
-            captures: Some(&captures.captures),
+            captures: Some(captures.captures()),
             ir,
             current_block_id,
             stack,
@@ -352,292 +196,5 @@ impl Binder<'_> {
         }
 
         Ok(())
-    }
-}
-
-/// A structure used for pruning the closure captures.
-#[derive(Debug, Default)]
-struct PruningContext {
-    unsages: HashMap<ID<capture::Capture>, CaptureMode>,
-}
-
-impl PruningContext {
-    fn new() -> Self { Self { unsages: HashMap::default() } }
-
-    fn visit_usage(
-        &mut self,
-        capture: ID<capture::Capture>,
-        mode: CaptureMode,
-    ) {
-        let order_capture_mode = |x: &CaptureMode| match x {
-            CaptureMode::ByValue => 2,
-            CaptureMode::ByReference(by_ref) => match by_ref.qualifier {
-                Qualifier::Immutable => 0,
-                Qualifier::Mutable => 1,
-            },
-        };
-
-        match self.unsages.entry(capture) {
-            Entry::Occupied(mut occupied_entry) => {
-                let existing_rank = order_capture_mode(occupied_entry.get());
-                let new_rank = order_capture_mode(&mode);
-
-                // update to the more general capture mode
-                if new_rank > existing_rank {
-                    occupied_entry.insert(mode);
-                }
-            }
-
-            Entry::Vacant(vacant_entry) => {
-                vacant_entry.insert(mode);
-            }
-        }
-    }
-
-    fn visit_instruction(
-        &mut self,
-        instruction: &Instruction,
-        values: &Values,
-        prune_mode: PruneMode,
-    ) {
-        for (address, access) in instruction.get_access_address(values) {
-            // we're interested in the capture memory only
-            let Memory::Capture(root_address) = address.get_root_memory()
-            else {
-                continue;
-            };
-
-            self.visit_usage(*root_address, match access {
-                instruction::AccessKind::Normal(access_mode) => {
-                    match access_mode {
-                        instruction::AccessMode::Read(read) => {
-                            CaptureMode::ByReference(ReferenceCaptureMode {
-                                lifetime: Lifetime::Erased,
-                                qualifier: read.qualifier,
-                            })
-                        }
-                        instruction::AccessMode::Load(_) => {
-                            match prune_mode {
-                                PruneMode::Once => CaptureMode::ByValue,
-                                PruneMode::Multiple => CaptureMode::ByReference(
-                                    ReferenceCaptureMode {
-                                        lifetime: Lifetime::Erased, /* defaults to
-                                                                     * erased */
-                                        qualifier: Qualifier::Immutable,
-                                    },
-                                ),
-                            }
-                        }
-                        instruction::AccessMode::Write(_) => {
-                            CaptureMode::ByReference(ReferenceCaptureMode {
-                                lifetime: Lifetime::Erased, /* defaults to
-                                                             * erased */
-                                qualifier: Qualifier::Mutable,
-                            })
-                        }
-                    }
-                }
-                instruction::AccessKind::Drop => unreachable!(),
-            });
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-enum AccessMode {
-    Borrow(Qualifier),
-    Move,
-}
-
-/// The mode used for pruning captures.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum PruneMode {
-    /// The capture is used under the closure that can be called only once.
-    Once,
-
-    /// The capture is used under the closure that can be called multiple
-    /// times.
-    ///
-    /// This implies that some operation like loading/moving on the capture
-    /// value needs to be `Copy`.
-    Multiple,
-}
-
-impl Binder<'_> {
-    /// Initially, the closure captures all the variables with by-value capture
-    /// mode. This is the most general settings. After binding, we look through
-    /// all the usage of the captures and figure out the most restrictive
-    /// capture mode for each capture (by-value, by-mut-ref, by-imm-ref),
-    /// and adjust all the instructions related to the captures accordingly.
-    ///
-    /// # Parameters
-    ///
-    /// - captures: The captures which initially contains all captures with
-    ///   by-value. After pruning, it will contain only the used captures with
-    ///   the most restrictive capture mode.
-    pub(crate) fn prune_capture_ir<'x, I: Iterator<Item = &'x mut IR>>(
-        irs: I,
-        captures: &mut pernixc_ir::capture::Captures,
-        mode: PruneMode,
-    ) {
-        let mut irs = irs.collect::<Vec<_>>();
-
-        let mut pruning_context = PruningContext::new();
-
-        // visit all instructions in all IRs to collect usage information
-        for ir in &mut irs {
-            ir.control_flow_graph.traverse().for_each(|(_, block)| {
-                for inst in block.instructions() {
-                    pruning_context.visit_instruction(inst, &ir.values, mode);
-                }
-            });
-        }
-
-        let all_capture_ids = captures.captures.ids().collect::<Vec<_>>();
-
-        // remove unused captures
-        for id in all_capture_ids {
-            if pruning_context.unsages.contains_key(&id).not() {
-                let _ = captures.captures.remove(id);
-            }
-        }
-
-        for (capture_id, new_capture) in pruning_context.unsages {
-            captures.captures[capture_id].capture_mode = new_capture;
-        }
-
-        // adjust all IRs to use the new capture modes
-        for ir in &mut irs {
-            for inst in ir.control_flow_graph.traverse_mut_instructions() {
-                match inst {
-                    Instruction::Store(store) => {
-                        Self::adjust_memory_usage(
-                            &mut store.address,
-                            AccessMode::Borrow(Qualifier::Mutable),
-                            captures,
-                        );
-                    }
-
-                    Instruction::RegisterAssignment(register_assignment) => {
-                        let register =
-                            &mut ir.values.registers[register_assignment.id];
-
-                        match &mut register.assignment {
-                            Assignment::Load(load) => {
-                                Self::adjust_memory_usage(
-                                    &mut load.address,
-                                    AccessMode::Move,
-                                    captures,
-                                );
-                            }
-
-                            Assignment::Borrow(borrow) => {
-                                Self::adjust_memory_usage(
-                                    &mut borrow.address,
-                                    AccessMode::Borrow(borrow.qualifier),
-                                    captures,
-                                );
-                            }
-
-                            Assignment::VariantNumber(variant_number) => {
-                                Self::adjust_memory_usage(
-                                    &mut variant_number.address,
-                                    AccessMode::Borrow(Qualifier::Immutable),
-                                    captures,
-                                );
-                            }
-
-                            Assignment::Tuple(_)
-                            | Assignment::Prefix(_)
-                            | Assignment::Struct(_)
-                            | Assignment::Variant(_)
-                            | Assignment::FunctionCall(_)
-                            | Assignment::Binary(_)
-                            | Assignment::Array(_)
-                            | Assignment::Phi(_)
-                            | Assignment::Cast(_) => {}
-                        }
-                    }
-
-                    Instruction::TuplePack(tuple_pack) => {
-                        Self::adjust_memory_usage(
-                            &mut tuple_pack.tuple_address,
-                            AccessMode::Move,
-                            captures,
-                        );
-                        Self::adjust_memory_usage(
-                            &mut tuple_pack.store_address,
-                            AccessMode::Borrow(Qualifier::Mutable),
-                            captures,
-                        );
-                    }
-
-                    Instruction::RegisterDiscard(_)
-                    | Instruction::ScopePush(_)
-                    | Instruction::ScopePop(_) => {}
-
-                    Instruction::DropUnpackTuple(_) | Instruction::Drop(_) => {
-                        unreachable!()
-                    }
-                }
-            }
-        }
-    }
-
-    fn adjust_memory_usage(
-        address: &mut Address,
-        access_mode: AccessMode,
-        captures: &pernixc_ir::capture::Captures,
-    ) {
-        let Memory::Capture(capture_id) = address.get_root_memory() else {
-            return;
-        };
-
-        let capture_memory_address =
-            Address::Memory(Memory::Capture(*capture_id));
-
-        let capture = &captures.captures[*capture_id];
-
-        match (&capture.capture_mode, access_mode) {
-            (
-                CaptureMode::ByValue,
-                AccessMode::Borrow(_) | AccessMode::Move,
-            ) => {
-                // no-adjustment needed
-            }
-
-            (
-                CaptureMode::ByReference(reference_capture_mode),
-                AccessMode::Borrow(qualifier),
-            ) => {
-                if qualifier == Qualifier::Mutable {
-                    assert_eq!(
-                        reference_capture_mode.qualifier,
-                        Qualifier::Mutable,
-                        "cannot borrow immutable reference as mutable"
-                    );
-                }
-
-                address.replace_with(
-                    &capture_memory_address.clone(),
-                    Address::Reference(Reference {
-                        qualifier: reference_capture_mode.qualifier,
-                        reference_address: Box::new(capture_memory_address),
-                    }),
-                );
-            }
-            (
-                CaptureMode::ByReference(reference_capture_mode),
-                AccessMode::Move,
-            ) => {
-                address.replace_with(
-                    &capture_memory_address.clone(),
-                    Address::Reference(Reference {
-                        qualifier: reference_capture_mode.qualifier,
-                        reference_address: Box::new(capture_memory_address),
-                    }),
-                );
-            }
-        }
     }
 }

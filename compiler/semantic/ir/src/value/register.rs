@@ -39,6 +39,8 @@ use crate::{
     Values,
 };
 
+pub mod r#do;
+
 /// Represents an element of a [`Tuple`].
 #[derive(
     Debug,

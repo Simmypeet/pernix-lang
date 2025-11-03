@@ -215,7 +215,7 @@ fn setup_panic() {
                         .downcast_ref::<String>()
                         .map_or("unknown", |payload| payload.as_str())
                 },
-                |payload| payload,
+                |payload| *payload,
             )
             .to_owned();
 
