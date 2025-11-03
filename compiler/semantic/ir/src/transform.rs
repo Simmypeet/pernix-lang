@@ -30,6 +30,9 @@ pub enum LifetimeTermSource {
     /// From the borrow expression like `&'? x`.
     Borrow,
 
+    /// From a capture field that has been captured by reference.
+    Capture,
+
     /// As a generic argument supplied to a generic symbol.
     GenericParameter(LifetimeParameterID),
 
@@ -46,6 +49,9 @@ impl Transformable for Lifetime {
 pub enum TypeTermSource {
     /// From inferring the concreete type of a numeric literal.
     Numeric,
+
+    /// From each field in a capture structure.
+    Capture,
 
     /// From inferring the concrete type of a character literal.
     Character,
