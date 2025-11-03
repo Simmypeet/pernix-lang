@@ -1069,6 +1069,7 @@ impl Assignment {
             Self::Array(array) => array.get_used_registers(),
             Self::Phi(phi) => phi.get_used_registers(),
             Self::Cast(cast) => cast.get_used_registers(),
+            Self::Do(d) => d.get_used_registers(),
 
             Self::Load(_) | Self::Borrow(_) | Self::VariantNumber(_) => {
                 Vec::new()

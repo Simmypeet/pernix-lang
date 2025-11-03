@@ -1,6 +1,7 @@
 //! Defines the IR structures for representing `do-with` expressions.
 
 use getset::{CopyGetters, Getters};
+use pernixc_arena::ID;
 use pernixc_hash::HashMap;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
@@ -8,7 +9,7 @@ use pernixc_stable_hash::StableHash;
 use crate::{
     capture::{Capture, Captures},
     effect_handler::HandlerGroup,
-    value::Value,
+    value::{register::Register, Value},
     IR,
 };
 
@@ -49,6 +50,13 @@ impl CaptureArguments {
         value: Value,
     ) {
         assert!(self.arguments.insert(capture_id, value).is_none());
+    }
+
+    /// Returns an iterator over the used registers in the capture arguments.
+    pub fn get_used_registers(
+        &self,
+    ) -> impl Iterator<Item = ID<Register>> + '_ {
+        self.arguments.values().filter_map(|x| x.as_register().copied())
     }
 }
 
@@ -178,5 +186,16 @@ impl Do {
         return_type: pernixc_term::r#type::Type,
     ) -> Self {
         Self { handler_group, closure, with, return_type }
+    }
+}
+
+impl Do {
+    /// Retrieves all the registers used by this `do` expression.
+    #[must_use]
+    pub fn get_used_registers(&self) -> Vec<ID<Register>> {
+        let mut registers = Vec::new();
+        registers.extend(self.with.capture_arguments.get_used_registers());
+        registers.extend(self.closure.capture_arguments.get_used_registers());
+        registers
     }
 }
