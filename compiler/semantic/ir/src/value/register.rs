@@ -1050,6 +1050,7 @@ pub enum Assignment {
     Phi(Phi),
     Cast(Cast),
     VariantNumber(VariantNumber),
+    Do(r#do::Do),
 }
 
 impl Assignment {
