@@ -672,6 +672,7 @@ impl Instruction {
                     | Assignment::Array(_)
                     | Assignment::Phi(_)
                     | Assignment::Cast(_)
+                    | Assignment::Do(_)
                     | Assignment::Tuple(_) => Vec::new(),
                 }
             }
