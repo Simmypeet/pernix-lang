@@ -21,7 +21,7 @@ use super::{
     },
     Values,
 };
-use crate::transform::Transformer;
+use crate::transform::{self, Transformer};
 
 /// Represents a jump to another block unconditionally.
 #[derive(
@@ -501,11 +501,15 @@ pub enum Instruction {
     Drop(Drop),
 }
 
-impl Instruction {
-    /// Applies the given transformer to the instruction.
-    pub async fn transform<T: Transformer<Type>>(
+impl transform::Element for Instruction {
+    async fn transform<
+        T: Transformer<pernixc_term::lifetime::Lifetime>
+            + Transformer<Type>
+            + Transformer<pernixc_term::constant::Constant>,
+    >(
         &mut self,
         transformer: &mut T,
+        _: &pernixc_query::TrackedEngine,
     ) -> Result<(), CyclicError> {
         match self {
             Self::Store(store) => store.transform(transformer).await,
@@ -539,11 +543,15 @@ pub enum Terminator {
     Panic,
 }
 
-impl Terminator {
-    /// Applies the given transformer to the terminator.
-    pub async fn transform<T: Transformer<Type>>(
+impl transform::Element for Terminator {
+    async fn transform<
+        T: Transformer<pernixc_term::lifetime::Lifetime>
+            + Transformer<Type>
+            + Transformer<pernixc_term::constant::Constant>,
+    >(
         &mut self,
         transformer: &mut T,
+        _: &pernixc_query::TrackedEngine,
     ) -> Result<(), CyclicError> {
         match self {
             Self::Jump(jump) => jump.transform(transformer).await,
