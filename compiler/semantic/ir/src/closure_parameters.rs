@@ -75,6 +75,15 @@ impl ClosureParameters {
         closure_parameters
     }
 
+    /// Returns an iterator over the parameters in order it was declared.
+    #[must_use]
+    pub fn parameters_as_order(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (ID<ClosureParameter>, &ClosureParameter)>
+    {
+        self.0.iter()
+    }
+
     /// Returns the declaration order of the parameter.
     #[must_use]
     pub fn get_parameter_declaration_order(
