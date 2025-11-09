@@ -4,6 +4,7 @@ use std::ops::Deref;
 
 use enum_as_inner::EnumAsInner;
 use pernixc_arena::ID;
+use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::runtime::executor::CyclicError;
 use pernixc_semantic_element::{
     fields::{self, get_fields},
@@ -665,6 +666,34 @@ impl Address {
                 Self::Reference(reference) => {
                     self = reference.reference_address.as_mut();
                 }
+            }
+        }
+    }
+}
+
+impl Values {
+    /// Returns the span of the given memory address.
+    pub async fn span_of_memory<N: Normalizer>(
+        &self,
+        address: &Memory,
+        environment: &Environment<'_, N>,
+    ) -> Result<Option<RelativeSpan>, CyclicError> {
+        match address {
+            Memory::Parameter(id) => {
+                let parameters = environment
+                    .tracked_engine()
+                    .get_parameters(environment.current_site)
+                    .await?;
+
+                Ok(parameters.parameters[*id].span)
+            }
+
+            Memory::Alloca(id) => Ok(self.allocas[*id].span),
+
+            Memory::Capture(id) => Ok(environment.captures()[*id].span),
+
+            Memory::ClosureParameter(id) => {
+                Ok(environment.closure_parameters()[*id].span)
             }
         }
     }
