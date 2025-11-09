@@ -25,6 +25,7 @@ use pernixc_type_system::{normalizer::Normalizer, Error, Succeeded};
 use crate::{
     alloca::Alloca,
     capture::Capture,
+    closure_parameters::ClosureParameter,
     transform::Transformer,
     value::{Environment, TypeOf, Value},
     Values,
@@ -226,6 +227,7 @@ pub struct Reference {
 pub enum Memory {
     Parameter(ID<Parameter>),
     Alloca(ID<Alloca>),
+    ClosureParameter(ID<ClosureParameter>),
 
     /// A captured variable from the parent closure/function.
     Capture(ID<Capture>),
@@ -463,6 +465,18 @@ impl TypeOf<&Address> for Values {
                         Ok(ty)
                     }
                 }
+            }
+
+            Address::Memory(Memory::ClosureParameter(parameter)) => {
+                let closure_parameter =
+                    &environment.closure_parameters()[*parameter];
+
+                Ok(environment
+                    .type_environment
+                    .simplify(closure_parameter.r#type.clone())
+                    .await?
+                    .deref()
+                    .clone())
             }
 
             Address::Memory(Memory::Alloca(parameter)) => {
