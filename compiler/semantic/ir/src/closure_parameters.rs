@@ -74,4 +74,13 @@ impl ClosureParameters {
 
         closure_parameters
     }
+
+    /// Returns the declaration order of the parameter.
+    #[must_use]
+    pub fn get_parameter_declaration_order(
+        &self,
+        parameter_id: ID<ClosureParameter>,
+    ) -> usize {
+        self.0.id_index(parameter_id).unwrap()
+    }
 }
