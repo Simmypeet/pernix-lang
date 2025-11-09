@@ -11,7 +11,6 @@ use pernixc_ir::{
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_semantic_element::{
     fields::{get_fields, Field},
-    parameter::get_parameters,
     variant::get_variant_associated_type,
 };
 use pernixc_symbol::kind::{get_kind, Kind};
@@ -811,29 +810,11 @@ impl<N: Normalizer> Traverser for LiveBorrowTraverser<'_, N> {
         // check each access
         for (address, kind) in accesses {
             let memory_root = address.get_root_memory();
-            let memory_root_ty = match *memory_root {
-                Memory::Parameter(id) => self
-                    .context
-                    .tracked_engine()
-                    .get_parameters(self.context.current_site())
-                    .await?
-                    .parameters
-                    .get(id)
-                    .unwrap()
-                    .r#type
-                    .clone(),
-
-                Memory::Alloca(id) => self
-                    .context
-                    .values()
-                    .allocas
-                    .get(id)
-                    .unwrap()
-                    .r#type
-                    .clone(),
-
-                Memory::Capture(_) => todo!(),
-            };
+            let memory_root_ty = self
+                .context
+                .values()
+                .simple_type_of_memory(memory_root, self.context.environment())
+                .await?;
 
             let Some(assigned_state) =
                 self.assigned_states_by_memory.get_mut(memory_root)
@@ -892,31 +873,11 @@ impl<N: Normalizer> Traverser for LiveBorrowTraverser<'_, N> {
                 }
 
                 AccessKind::Drop => (
-                    match *memory_root {
-                        Memory::Parameter(id) => self
-                            .context
-                            .tracked_engine()
-                            .get_parameters(self.context.current_site())
-                            .await?
-                            .parameters
-                            .get(id)
-                            .unwrap()
-                            .span
-                            .unwrap(),
-                        Memory::Alloca(id) => self
-                            .context
-                            .values()
-                            .allocas
-                            .get(id)
-                            .unwrap()
-                            .span
-                            .unwrap(),
-                        Memory::Capture(id) => {
-                            self.context.environment().captures()[id]
-                                .span
-                                .unwrap()
-                        }
-                    },
+                    self.context
+                        .values()
+                        .span_of_memory(memory_root, self.context.environment())
+                        .await?
+                        .unwrap(),
                     true,
                 ),
             };
@@ -1124,9 +1085,12 @@ impl<N: Normalizer> Traverser for LiveLenderTraverser<'_, N> {
 
             Instruction::ScopePop(scope_pop) => {
                 let scope_of_memory = match self.root_memory {
-                    Memory::Parameter(_) => {
+                    Memory::Capture(_)
+                    | Memory::ClosureParameter(_)
+                    | Memory::Parameter(_) => {
                         self.context.ir().scope_tree.root_scope_id()
                     }
+
                     Memory::Alloca(id) => {
                         self.context
                             .values()
@@ -1135,8 +1099,6 @@ impl<N: Normalizer> Traverser for LiveLenderTraverser<'_, N> {
                             .unwrap()
                             .declared_in_scope_id
                     }
-
-                    Memory::Capture(_) => todo!(),
                 };
 
                 if scope_of_memory == scope_pop.0 {
