@@ -5,13 +5,19 @@ use std::ops::Deref;
 use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
 use pernixc_target::Global;
 
-use crate::{capture::Captures, scope, Values};
+use crate::{
+    capture::Captures, closure_parameters::ClosureParameters, scope, Values,
+};
 
 /// Represents the environment in which the analysis takes place.
 pub trait Environment {
     /// Retrieves the captures associated with the environment (the analysis is
     /// taking place in a closure).
     fn captures(&self) -> Option<&Captures>;
+
+    /// Retrieves the closure parameters associated with the environment (the
+    /// analysis is taking place in a closure).
+    fn closure_parameters(&self) -> Option<&ClosureParameters>;
 
     /// Retrieves the [`Values`]. The central repository for retrieving values.
     fn values(&self) -> &Values;
