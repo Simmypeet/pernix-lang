@@ -4,7 +4,6 @@ use std::ops::Deref;
 
 use pernixc_handler::Handler;
 use pernixc_ir::{address::Address, typer::Typer, value::TypeOf};
-use pernixc_semantic_element::parameter::get_parameters;
 use pernixc_stable_hash::StableHash;
 use pernixc_type_system::UnrecoverableError;
 
@@ -49,40 +48,21 @@ impl Typer<Address> for BinderTyper<'_> {
         env: &E,
     ) -> Result<DerefWrapper<pernixc_term::r#type::Type>, UnrecoverableError>
     {
-        match env
-            .values()
-            .type_of(
-                value,
-                &pernixc_ir::value::Environment::builder()
-                    .maybe_captures(env.captures())
-                    .current_site(env.current_site())
-                    .type_environment(&self.ty_environment)
-                    .build(),
-            )
-            .await
-        {
+        let environment = pernixc_ir::value::Environment::builder()
+            .maybe_captures(env.captures())
+            .current_site(env.current_site())
+            .type_environment(&self.ty_environment)
+            .build();
+
+        match env.values().type_of(value, &environment).await {
             Ok(ty) => Ok(DerefWrapper(ty.result)),
-            Err(err) => {
-                let span = match value.get_root_memory() {
-                    pernixc_ir::address::Memory::Parameter(id) => {
-                        let parameters = env
-                            .tracked_engine()
-                            .get_parameters(env.current_site())
-                            .await?;
-
-                        parameters.parameters[*id].span.unwrap()
-                    }
-                    pernixc_ir::address::Memory::Alloca(id) => {
-                        env.values().allocas[*id].span.unwrap()
-                    }
-                    pernixc_ir::address::Memory::Capture(id) => {
-                        env.captures().unwrap()[*id].span.unwrap()
-                    }
-                };
-
-                Err(err
-                    .report_as_type_calculating_overflow(span, &self.handler))
-            }
+            Err(err) => Err(err.report_as_type_calculating_overflow(
+                env.values()
+                    .span_of_memory(value.get_root_memory(), &environment)
+                    .await?
+                    .unwrap(),
+                &self.handler,
+            )),
         }
     }
 }
@@ -91,6 +71,8 @@ impl Typer<Address> for BinderTyper<'_> {
 #[derive(Debug, Clone, Copy)]
 pub struct Environment<'s> {
     captures: Option<&'s pernixc_ir::capture::Captures>,
+    closure_parameters:
+        Option<&'s pernixc_ir::closure_parameters::ClosureParameters>,
     tracked_engine: &'s pernixc_query::TrackedEngine,
     current_site: pernixc_target::Global<pernixc_symbol::ID>,
     scope_tree: &'s pernixc_ir::scope::Tree,
@@ -100,6 +82,12 @@ pub struct Environment<'s> {
 impl pernixc_ir::typer::Environment for Environment<'_> {
     fn captures(&self) -> Option<&pernixc_ir::capture::Captures> {
         self.captures
+    }
+
+    fn closure_parameters(
+        &self,
+    ) -> Option<&pernixc_ir::closure_parameters::ClosureParameters> {
+        self.closure_parameters
     }
 
     fn values(&self) -> &pernixc_ir::Values { self.values }
@@ -134,6 +122,7 @@ impl Binder<'_> {
             current_site: self.current_site(),
             scope_tree: self.scope_tree(),
             values: self.values(),
+            closure_parameters: None,
         }
     }
 }
