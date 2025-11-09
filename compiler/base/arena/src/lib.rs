@@ -400,6 +400,14 @@ impl<T, G: State<T>> OrderedArena<T, G> {
         self.order.iter().map(move |id| (*id, &self.arena[*id]))
     }
 
+    /// Obtains an mutable iterator over the items.
+    #[must_use]
+    pub fn iter_mut_unordered(
+        &mut self,
+    ) -> impl ExactSizeIterator<Item = (G::ID, &mut T)> {
+        self.arena.iter_mut()
+    }
+
     /// Gets a reference to the item with the given ID.
     #[must_use]
     pub fn get(&self, id: G::ID) -> Option<&T> { self.arena.get(id) }
