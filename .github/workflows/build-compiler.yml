@@ -65,7 +65,7 @@ jobs:
 
             - name: Build Pernix Compiler
               run: |
-                  cargo install --path compiler/pernixc --root .
+                  cargo install --path compiler/main --root .
 
             - name: Upload Artifact on Unix-like
               if: runner.os != 'Windows'
