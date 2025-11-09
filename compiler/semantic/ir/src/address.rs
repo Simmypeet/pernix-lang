@@ -417,6 +417,46 @@ impl Address {
     }
 }
 
+impl Values {
+    /// Retrieves the type held in the given memory address without type
+    /// simplification/transformation.
+    pub async fn simple_type_of_memory(
+        &self,
+        address: &Memory,
+        envionment: &Environment<'_, impl Normalizer>,
+    ) -> Result<Type, CyclicError> {
+        match address {
+            Memory::Parameter(id) => {
+                let function_signature = envionment
+                    .tracked_engine()
+                    .get_parameters(envionment.current_site)
+                    .await?;
+
+                let ty = function_signature.parameters[*id].r#type.clone();
+
+                Ok(ty)
+            }
+
+            Memory::Alloca(id) => {
+                let alloca = &self.allocas[*id];
+
+                Ok(alloca.r#type.clone())
+            }
+
+            Memory::ClosureParameter(id) => {
+                let closure_parameter = &envionment.closure_parameters()[*id];
+
+                Ok(closure_parameter.r#type.clone())
+            }
+            Memory::Capture(id) => {
+                let capture = &envionment.captures()[*id];
+
+                Ok(capture.address_type.clone())
+            }
+        }
+    }
+}
+
 impl TypeOf<&Address> for Values {
     #[allow(clippy::too_many_lines)]
     async fn type_of<N: Normalizer>(
