@@ -4,6 +4,7 @@ use std::ops::Deref;
 
 use enum_as_inner::EnumAsInner;
 use pernixc_arena::ID;
+use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::runtime::executor::CyclicError;
 use pernixc_semantic_element::{
     fields::{self, get_fields},
@@ -25,6 +26,7 @@ use pernixc_type_system::{normalizer::Normalizer, Error, Succeeded};
 use crate::{
     alloca::Alloca,
     capture::Capture,
+    closure_parameters::ClosureParameter,
     transform::Transformer,
     value::{Environment, TypeOf, Value},
     Values,
@@ -226,6 +228,7 @@ pub struct Reference {
 pub enum Memory {
     Parameter(ID<Parameter>),
     Alloca(ID<Alloca>),
+    ClosureParameter(ID<ClosureParameter>),
 
     /// A captured variable from the parent closure/function.
     Capture(ID<Capture>),
@@ -414,6 +417,46 @@ impl Address {
     }
 }
 
+impl Values {
+    /// Retrieves the type held in the given memory address without type
+    /// simplification/transformation.
+    pub async fn simple_type_of_memory(
+        &self,
+        address: &Memory,
+        envionment: &Environment<'_, impl Normalizer>,
+    ) -> Result<Type, CyclicError> {
+        match address {
+            Memory::Parameter(id) => {
+                let function_signature = envionment
+                    .tracked_engine()
+                    .get_parameters(envionment.current_site)
+                    .await?;
+
+                let ty = function_signature.parameters[*id].r#type.clone();
+
+                Ok(ty)
+            }
+
+            Memory::Alloca(id) => {
+                let alloca = &self.allocas[*id];
+
+                Ok(alloca.r#type.clone())
+            }
+
+            Memory::ClosureParameter(id) => {
+                let closure_parameter = &envionment.closure_parameters()[*id];
+
+                Ok(closure_parameter.r#type.clone())
+            }
+            Memory::Capture(id) => {
+                let capture = &envionment.captures()[*id];
+
+                Ok(capture.address_type.clone())
+            }
+        }
+    }
+}
+
 impl TypeOf<&Address> for Values {
     #[allow(clippy::too_many_lines)]
     async fn type_of<N: Normalizer>(
@@ -463,6 +506,18 @@ impl TypeOf<&Address> for Values {
                         Ok(ty)
                     }
                 }
+            }
+
+            Address::Memory(Memory::ClosureParameter(parameter)) => {
+                let closure_parameter =
+                    &environment.closure_parameters()[*parameter];
+
+                Ok(environment
+                    .type_environment
+                    .simplify(closure_parameter.r#type.clone())
+                    .await?
+                    .deref()
+                    .clone())
             }
 
             Address::Memory(Memory::Alloca(parameter)) => {
@@ -651,6 +706,34 @@ impl Address {
                 Self::Reference(reference) => {
                     self = reference.reference_address.as_mut();
                 }
+            }
+        }
+    }
+}
+
+impl Values {
+    /// Returns the span of the given memory address.
+    pub async fn span_of_memory<N: Normalizer>(
+        &self,
+        address: &Memory,
+        environment: &Environment<'_, N>,
+    ) -> Result<Option<RelativeSpan>, CyclicError> {
+        match address {
+            Memory::Parameter(id) => {
+                let parameters = environment
+                    .tracked_engine()
+                    .get_parameters(environment.current_site)
+                    .await?;
+
+                Ok(parameters.parameters[*id].span)
+            }
+
+            Memory::Alloca(id) => Ok(self.allocas[*id].span),
+
+            Memory::Capture(id) => Ok(environment.captures()[*id].span),
+
+            Memory::ClosureParameter(id) => {
+                Ok(environment.closure_parameters()[*id].span)
             }
         }
     }

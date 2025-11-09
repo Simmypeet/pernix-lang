@@ -259,6 +259,7 @@ impl Ord for CaptureOrder {
 enum RootOrder {
     Alloca(AllocaOrder),
     Parameter(ParameterOrder),
+    ClosureParameter(ParameterOrder),
     Capture(CaptureOrder),
 }
 
@@ -278,7 +279,8 @@ impl Ord for RootOrder {
                 let drop_order_variant = |order: &Self| match order {
                     Self::Alloca(_) => 0,
                     Self::Parameter(_) => 1,
-                    Self::Capture(_) => 2,
+                    Self::ClosureParameter(_) => 2,
+                    Self::Capture(_) => 3,
                 };
 
                 drop_order_variant(self).cmp(&drop_order_variant(other))
@@ -403,6 +405,15 @@ impl DropOrder {
                             .unwrap()
                             .declaration_order_of(*id),
                     }),
+
+                    Memory::ClosureParameter(id) => {
+                        RootOrder::ClosureParameter(ParameterOrder {
+                            declaration_order: env
+                                .closure_parameters()
+                                .unwrap()
+                                .get_parameter_declaration_order(*id),
+                        })
+                    }
                 };
 
                 Ok((Self { root: root_order, projections: Vec::new() }, true))

@@ -366,6 +366,17 @@ impl Instantiation {
         let mut instantiater = Instantiater { substitution: self };
         visitor::accept_recursive_mut(element, &mut instantiater);
     }
+
+    /// Clones the given term and applies the substitution to the cloned
+    /// term.
+    pub fn clone_and_instantiate<T: Element + Clone + visitor::Element>(
+        &self,
+        element: &T,
+    ) -> T {
+        let mut cloned = element.clone();
+        self.instantiate(&mut cloned);
+        cloned
+    }
 }
 
 /// Retrieves the [`Instantiation`] for the given generic ID with the given

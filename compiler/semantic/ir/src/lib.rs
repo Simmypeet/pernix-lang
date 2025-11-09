@@ -22,6 +22,7 @@ use crate::{
 pub mod address;
 pub mod alloca;
 pub mod capture;
+pub mod closure_parameters;
 pub mod control_flow_graph;
 pub mod effect_handler;
 pub mod instruction;

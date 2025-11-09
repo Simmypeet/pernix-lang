@@ -67,6 +67,9 @@ impl Binder<'_> {
         expected_type: Type,
         closure_span: RelativeSpan,
         captures: &CapturesWithNameBindingPoint,
+        closure_parameters: Option<
+            &pernixc_ir::closure_parameters::ClosureParameters,
+        >,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<IR, UnrecoverableError> {
         // temporary move out the inference context for the inner binder
@@ -84,6 +87,7 @@ impl Binder<'_> {
             engine: self.engine,
             environment: self.environment,
             captures: Some(captures.captures()),
+            closure_parameters,
             ir,
             current_block_id,
             stack,

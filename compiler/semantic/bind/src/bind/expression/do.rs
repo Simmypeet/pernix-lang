@@ -5,6 +5,7 @@ use pernixc_hash::HashMap;
 use pernixc_ir::{
     address::{Address, Memory},
     capture::{builder::CapturesWithNameBindingPoint, pruning::PruneMode},
+    closure_parameters::ClosureParameters,
     effect_handler::{EffectHandler, HandlerGroup},
     pattern::{Irrefutable, NameBindingPoint, Wildcard},
     value::{
@@ -31,7 +32,7 @@ use pernixc_syntax::QualifiedIdentifier;
 use pernixc_target::Global;
 use pernixc_term::{
     generic_arguments::GenericArguments,
-    instantiation::{get_instantiation, Instantiation},
+    instantiation::get_instantiation,
     r#type::{Qualifier, Type},
 };
 use pernixc_type_system::UnrecoverableError;
@@ -79,6 +80,7 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
             expected_return_type.clone(),
             do_statements.span(),
             &captures,
+            None,
             handler,
         ))
         .await?;
@@ -163,17 +165,27 @@ async fn build_with_blocks(
 
         for (effect_operation_id, handler_block) in with_block.handlers {
             let statements_span = handler_block.statements.span();
+            let effect_operation_parameters = binder
+                .engine()
+                .get_parameters(Global::new(
+                    with_block.effect_id.target_id,
+                    effect_operation_id,
+                ))
+                .await?;
+
+            let closure_parameters =
+                ClosureParameters::from_original_parameters_and_instantiation(
+                    &effect_operation_parameters,
+                    &instantiation,
+                );
+
             let ir = binder
                 .new_closure_binder(
                     async |x| {
                         Box::pin(build_handler_block(
                             x,
+                            &closure_parameters,
                             handler_block,
-                            with_block
-                                .effect_id
-                                .target_id
-                                .make_global(effect_operation_id),
-                            &instantiation,
                             handler,
                         ))
                         .await?;
@@ -183,6 +195,7 @@ async fn build_with_blocks(
                     expected_type.clone(),
                     statements_span,
                     &captures,
+                    Some(&closure_parameters),
                     handler,
                 )
                 .await?;
@@ -194,25 +207,29 @@ async fn build_with_blocks(
                 continue;
             };
 
-            entry.insert(ir);
+            entry.insert((ir, closure_parameters));
         }
     }
 
     let mut underlying_captures = captures.into_captures();
 
     // prune the captures
-    underlying_captures
-        .prune_capture_ir(with_irs.values_mut(), PruneMode::Multiple);
+    underlying_captures.prune_capture_ir(
+        with_irs.values_mut().map(|(ir, _)| ir),
+        PruneMode::Multiple,
+    );
 
     let mut with =
         register::r#do::With::new(CaptureArguments::new(underlying_captures));
 
-    for ((effect_handler_id, effect_operation_id), ir) in with_irs {
+    for ((effect_handler_id, effect_operation_id), (ir, closure_parameters)) in
+        with_irs
+    {
         let effect_handler = with.insert_effect_handler(effect_handler_id);
 
         effect_handler.insert_effect_operation_handler_closure(
             effect_operation_id,
-            EffectOperationHandlerClosure::new(ir),
+            EffectOperationHandlerClosure::new(ir, closure_parameters),
         );
     }
 
@@ -234,31 +251,19 @@ async fn build_do_block(
 
 async fn build_handler_block(
     binder: &mut Binder<'_>,
+    closure_parameters: &ClosureParameters,
     handler_block: HandlerBlock,
-    effect_operation_id: Global<pernixc_symbol::ID>,
-    effect_inst: &Instantiation,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<(), UnrecoverableError> {
     // start binding all the arguments as parameters
     let mut name_binding_point = NameBindingPoint::default();
 
-    let effect_operation_parameters =
-        binder.engine().get_parameters(effect_operation_id).await?;
-
-    for (parameter_id, parameter_syn) in effect_operation_parameters
-        .parameter_order
-        .iter()
-        .copied()
-        .zip(&handler_block.parameters)
+    for ((parameter_id, parameter), parameter_syn) in
+        closure_parameters.parameters_as_order().zip(&handler_block.parameters)
     {
-        let mut parameter_ty =
-            effect_operation_parameters.parameters[parameter_id].r#type.clone();
-
-        effect_inst.instantiate(&mut parameter_ty);
-
         let simplified_type = binder
             .create_environment()
-            .simplify(parameter_ty)
+            .simplify(parameter.r#type.clone())
             .await
             .map_err(|x| {
                 x.report_as_type_check_overflow(parameter_syn.span(), &handler)
@@ -278,7 +283,7 @@ async fn build_handler_block(
                 &mut name_binding_point,
                 &pattern,
                 parameter_ty,
-                Address::Memory(Memory::Parameter(parameter_id)),
+                Address::Memory(Memory::ClosureParameter(parameter_id)),
                 Qualifier::Mutable,
                 &insert_name_binding::Config {
                     must_copy: false,

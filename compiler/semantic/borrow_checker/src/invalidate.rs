@@ -10,7 +10,6 @@ use pernixc_ir::{
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
-use pernixc_semantic_element::parameter::get_parameters;
 use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
@@ -145,27 +144,13 @@ impl<'a, N: Normalizer> Checker<'a, N> {
         let borrow_assignment = borrow_register.assignment.as_borrow().unwrap();
 
         // make sure that the referant of the borrow is not reassigned
-        let root_borrowed_address_type = match *borrow_assignment
-            .address
-            .get_root_memory()
-        {
-            Memory::Parameter(id) => self
-                .context
-                .tracked_engine()
-                .get_parameters(self.context.current_site())
-                .await?
-                .parameters
-                .get(id)
-                .unwrap()
-                .r#type
-                .clone(),
-
-            Memory::Alloca(id) => {
-                self.context.values().allocas.get(id).unwrap().r#type.clone()
-            }
-
-            Memory::Capture(_) => todo!(),
-        };
+        let root_borrowed_address_type = self
+            .values()
+            .simple_type_of_memory(
+                borrow_assignment.address.get_root_memory(),
+                self.environment(),
+            )
+            .await?;
 
         if !self
             .context
@@ -346,24 +331,11 @@ impl<'a, N: Normalizer> Checker<'a, N> {
                 continue;
             }
 
-            let span = match drop {
-                Memory::Parameter(id) => self
-                    .context
-                    .tracked_engine()
-                    .get_parameters(self.context.current_site())
-                    .await?
-                    .parameters
-                    .get(id)
-                    .unwrap()
-                    .span
-                    .unwrap(),
-
-                Memory::Alloca(id) => {
-                    self.context.values().allocas.get(id).unwrap().span.unwrap()
-                }
-
-                Memory::Capture(_) => todo!(),
-            };
+            let span = self
+                .values()
+                .span_of_memory(&drop, self.environment())
+                .await?
+                .unwrap();
 
             self.invalidate_borrow(
                 *borrow_register_id,

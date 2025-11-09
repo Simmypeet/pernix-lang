@@ -110,6 +110,12 @@ pub struct Binder<'t> {
     #[get_copy = "pub"]
     captures: Option<&'t pernixc_ir::capture::Captures>,
 
+    /// The optional closure parameters that the binder may use when building
+    /// closures.
+    #[get_copy = "pub"]
+    closure_parameters:
+        Option<&'t pernixc_ir::closure_parameters::ClosureParameters>,
+
     /// The intermediate representation that is being built.
     #[get = "pub"]
     ir: IR,
@@ -189,7 +195,9 @@ impl<'t> Binder<'t> {
             stack,
             current_block_id,
             environment,
+
             captures: None,
+            closure_parameters: None,
 
             inference_context: InferenceContext::default(),
 
@@ -632,6 +640,7 @@ impl Binder<'_> {
                 &ValueEnvironment::builder()
                     .type_environment(&self.create_environment())
                     .maybe_captures(self.captures)
+                    .maybe_closure_parameters(self.closure_parameters)
                     .current_site(self.current_site())
                     .build(),
             )
@@ -747,7 +756,8 @@ impl Binder<'_> {
                 Address::Memory(
                     Memory::Alloca(_)
                     | Memory::Parameter(_)
-                    | Memory::Capture(_),
+                    | Memory::Capture(_)
+                    | Memory::ClosureParameter(_),
                 ) => return Ok(None),
 
                 Address::Field(ad) => {
@@ -800,37 +810,21 @@ impl Binder<'_> {
         address: &Address,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<Type, UnrecoverableError> {
-        match self
-            .ir
-            .values
-            .type_of(
-                address,
-                &ValueEnvironment::builder()
-                    .type_environment(&self.create_environment())
-                    .maybe_captures(self.captures)
-                    .current_site(self.current_site())
-                    .build(),
-            )
-            .await
-        {
+        let ty_environment = self.create_environment();
+        let environment = ValueEnvironment::builder()
+            .type_environment(&ty_environment)
+            .maybe_captures(self.captures)
+            .maybe_closure_parameters(self.closure_parameters)
+            .current_site(self.current_site())
+            .build();
+
+        match self.ir.values.type_of(address, &environment).await {
             Ok(x) => Ok(x.result),
             Err(err) => Err(err.report_as_type_calculating_overflow(
-                match address.get_root_memory() {
-                    Memory::Parameter(id) => {
-                        let parameters = self
-                            .engine
-                            .get_parameters(self.current_site())
-                            .await?;
-
-                        parameters.parameters[*id].span.unwrap()
-                    }
-                    Memory::Alloca(id) => {
-                        self.ir.values.allocas[*id].span.unwrap()
-                    }
-                    Memory::Capture(id) => {
-                        self.captures.unwrap()[*id].span.unwrap()
-                    }
-                },
+                self.values()
+                    .span_of_memory(address.get_root_memory(), &environment)
+                    .await?
+                    .unwrap(),
                 &handler,
             )),
         }

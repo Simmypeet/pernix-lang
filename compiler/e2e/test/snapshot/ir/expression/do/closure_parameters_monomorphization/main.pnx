@@ -1,0 +1,20 @@
+public effect Test[T]:
+    doSomething(a: T)
+
+
+public function takesInt(a: int32):
+    pass
+
+
+public function takesBool(a: bool):
+    pass
+
+
+public function test():
+    do:
+        pass
+
+    with Test[int32]:
+        doSomething(a):
+            takesBool(a)
+            takesInt(a)

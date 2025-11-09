@@ -10,6 +10,7 @@ use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
 
 use crate::{
     capture::{Capture, Captures},
+    closure_parameters::ClosureParameters,
     effect_handler::HandlerGroup,
     transform::{self, Transformer},
     value::{register::Register, Value},
@@ -174,12 +175,17 @@ impl transform::Element for EffectHandler {
 pub struct EffectOperationHandlerClosure {
     /// The IR containing the code body of the effect operation handler.
     ir: IR,
+
+    /// The closure parameters for the effect operation handler.
+    closure_parameters: ClosureParameters,
 }
 
 impl EffectOperationHandlerClosure {
     /// Creates a new effect operation handler closure with the given IR.
     #[must_use]
-    pub const fn new(ir: IR) -> Self { Self { ir } }
+    pub const fn new(ir: IR, closure_parameters: ClosureParameters) -> Self {
+        Self { ir, closure_parameters }
+    }
 }
 
 impl transform::Element for EffectOperationHandlerClosure {
@@ -190,6 +196,7 @@ impl transform::Element for EffectOperationHandlerClosure {
         transformer: &mut T,
         engine: &TrackedEngine,
     ) -> Result<(), CyclicError> {
+        self.closure_parameters.transform(transformer, engine).await?;
         Box::pin(self.ir.transform(transformer, engine)).await
     }
 }
