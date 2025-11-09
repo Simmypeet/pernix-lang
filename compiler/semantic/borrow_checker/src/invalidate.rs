@@ -346,24 +346,11 @@ impl<'a, N: Normalizer> Checker<'a, N> {
                 continue;
             }
 
-            let span = match drop {
-                Memory::Parameter(id) => self
-                    .context
-                    .tracked_engine()
-                    .get_parameters(self.context.current_site())
-                    .await?
-                    .parameters
-                    .get(id)
-                    .unwrap()
-                    .span
-                    .unwrap(),
-
-                Memory::Alloca(id) => {
-                    self.context.values().allocas.get(id).unwrap().span.unwrap()
-                }
-
-                Memory::Capture(_) => todo!(),
-            };
+            let span = self
+                .values()
+                .span_of_memory(&drop, self.environment())
+                .await?
+                .unwrap();
 
             self.invalidate_borrow(
                 *borrow_register_id,

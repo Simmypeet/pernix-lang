@@ -9,7 +9,7 @@
 use pernixc_handler::Handler;
 use pernixc_hash::HashSet;
 use pernixc_ir::{
-    address::{self, Address, Field, Index, Memory, Variant},
+    address::{self, Address, Field, Index, Variant},
     instruction::{Drop, DropUnpackTuple, Instruction},
     value::{
         literal::{Literal, Unreachable},
@@ -18,8 +18,7 @@ use pernixc_ir::{
     Values,
 };
 use pernixc_semantic_element::{
-    fields::get_fields, parameter::get_parameters,
-    variant::get_variant_associated_type,
+    fields::get_fields, variant::get_variant_associated_type,
 };
 use pernixc_symbol::{
     kind::{get_kind, Kind},
@@ -79,24 +78,10 @@ pub(super) async fn simplify_drop<N: Normalizer>(
     environment: &Environment<'_, N>,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<Vec<Instruction>, UnrecoverableError> {
-    let span_of = match drop.address.get_root_memory() {
-        Memory::Parameter(id) => {
-            let parameters = environment
-                .tracked_engine()
-                .get_parameters(environment.current_site)
-                .await?;
-
-            parameters.parameters[*id].span.unwrap()
-        }
-
-        Memory::Alloca(id) => values.allocas[*id].span.unwrap(),
-
-        Memory::Capture(id) => environment.captures()[*id].span.unwrap(),
-
-        Memory::ClosureParameter(id) => {
-            environment.closure_parameters()[*id].span.unwrap()
-        }
-    };
+    let span_of = values
+        .span_of_memory(drop.address.get_root_memory(), environment)
+        .await?
+        .unwrap();
 
     let ty = values
         .type_of(&drop.address, environment)
