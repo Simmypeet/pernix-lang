@@ -110,6 +110,12 @@ pub struct Binder<'t> {
     #[get_copy = "pub"]
     captures: Option<&'t pernixc_ir::capture::Captures>,
 
+    /// The optional closure parameters that the binder may use when building
+    /// closures.
+    #[get_copy = "pub"]
+    closure_parameters:
+        Option<&'t pernixc_ir::closure_parameters::ClosureParameters>,
+
     /// The intermediate representation that is being built.
     #[get = "pub"]
     ir: IR,
@@ -189,7 +195,9 @@ impl<'t> Binder<'t> {
             stack,
             current_block_id,
             environment,
+
             captures: None,
+            closure_parameters: None,
 
             inference_context: InferenceContext::default(),
 
@@ -632,6 +640,7 @@ impl Binder<'_> {
                 &ValueEnvironment::builder()
                     .type_environment(&self.create_environment())
                     .maybe_captures(self.captures)
+                    .maybe_closure_parameters(self.closure_parameters)
                     .current_site(self.current_site())
                     .build(),
             )
@@ -805,6 +814,7 @@ impl Binder<'_> {
         let environment = ValueEnvironment::builder()
             .type_environment(&ty_environment)
             .maybe_captures(self.captures)
+            .maybe_closure_parameters(self.closure_parameters)
             .current_site(self.current_site())
             .build();
 

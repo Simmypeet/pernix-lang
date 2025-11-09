@@ -122,7 +122,7 @@ impl Binder<'_> {
             current_site: self.current_site(),
             scope_tree: self.scope_tree(),
             values: self.values(),
-            closure_parameters: None,
+            closure_parameters: self.closure_parameters(),
         }
     }
 }
