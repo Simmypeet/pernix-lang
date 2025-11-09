@@ -9,7 +9,7 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_term::{
     lifetime::Lifetime,
-    r#type::{Qualifier, Type},
+    r#type::{Qualifier, Reference, Type},
 };
 
 use crate::{
@@ -175,4 +175,21 @@ pub struct Capture {
 
     /// The span of the captured memory address.
     pub span: Option<RelativeSpan>,
+}
+
+impl Capture {
+    /// Returns the type of the captured memory.
+    #[must_use]
+    pub fn get_capture_type(&self) -> Type {
+        match &self.capture_mode {
+            CaptureMode::ByValue => self.address_type.clone(),
+            CaptureMode::ByReference(reference_capture_mode) => {
+                Type::Reference(Reference {
+                    qualifier: reference_capture_mode.qualifier,
+                    lifetime: reference_capture_mode.lifetime.clone(),
+                    pointee: Box::new(self.address_type.clone()),
+                })
+            }
+        }
+    }
 }
