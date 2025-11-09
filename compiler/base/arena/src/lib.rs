@@ -410,6 +410,12 @@ impl<T, G: State<T>> OrderedArena<T, G> {
     pub fn ids(&self) -> impl ExactSizeIterator<Item = G::ID> + '_ {
         self.order.iter().copied()
     }
+
+    /// Returns the index of the given ID in the insertion order.
+    #[must_use]
+    pub fn id_index(&self, id: G::ID) -> Option<usize> {
+        self.order.iter().position(|order_id| *order_id == id)
+    }
 }
 
 impl<T, G: State<T>> Index<G::ID> for OrderedArena<T, G> {
