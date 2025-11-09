@@ -80,6 +80,9 @@ pub enum TypeTermSource {
     /// The type comes from a do return instruction.
     DoReturnType,
 
+    /// The type comes from closure parameters.
+    ClosureParameter,
+
     /// The type comes from an alloca instruction.
     Alloca(ID<Alloca>),
 }

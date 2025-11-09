@@ -8,6 +8,8 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_term::{instantiation::Instantiation, r#type::Type};
 
+use crate::transform;
+
 /// Represents a parameter taken by a closure.
 #[derive(
     Debug,
@@ -91,5 +93,29 @@ impl ClosureParameters {
         parameter_id: ID<ClosureParameter>,
     ) -> usize {
         self.0.id_index(parameter_id).unwrap()
+    }
+}
+
+impl transform::Element for ClosureParameters {
+    async fn transform<
+        T: transform::Transformer<pernixc_term::lifetime::Lifetime>
+            + transform::Transformer<Type>
+            + transform::Transformer<pernixc_term::constant::Constant>,
+    >(
+        &mut self,
+        transformer: &mut T,
+        _engine: &pernixc_query::TrackedEngine,
+    ) -> Result<(), pernixc_query::runtime::executor::CyclicError> {
+        for (_, parameter) in self.0.iter_mut_unordered() {
+            transformer
+                .transform(
+                    &mut parameter.r#type,
+                    transform::TypeTermSource::ClosureParameter,
+                    parameter.span,
+                )
+                .await?;
+        }
+
+        Ok(())
     }
 }

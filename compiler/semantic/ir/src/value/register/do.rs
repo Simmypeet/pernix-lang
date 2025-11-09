@@ -196,6 +196,7 @@ impl transform::Element for EffectOperationHandlerClosure {
         transformer: &mut T,
         engine: &TrackedEngine,
     ) -> Result<(), CyclicError> {
+        self.closure_parameters.transform(transformer, engine).await?;
         Box::pin(self.ir.transform(transformer, engine)).await
     }
 }
