@@ -182,7 +182,7 @@ impl Captures {
                         match &mut register.assignment {
                             Assignment::Load(load) => {
                                 self.adjust_memory_usage(
-                                    &mut load.address,
+                                    load.address_mut(),
                                     AccessMode::Move,
                                 );
                             }
