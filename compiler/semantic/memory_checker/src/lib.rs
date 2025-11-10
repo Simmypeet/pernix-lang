@@ -14,7 +14,10 @@ use pernixc_ir::{
     control_flow_graph::Block,
     instruction::{Instruction, Jump, Terminator, UnconditionalJump},
     value::{
-        register::{load::Load, Assignment, Borrow},
+        register::{
+            load::{self, Load},
+            Assignment, Borrow,
+        },
         Environment as ValueEnvironment, TypeOf,
     },
     Values, IR,
@@ -60,10 +63,10 @@ async fn handle_store<N: Normalizer>(
     };
 
     // check if there's left-over mutable reference
-    if let Some(span) = state.get_moved_out_mutable_reference() {
+    if let Some(move_info) = state.get_moved_out_mutable_reference() {
         handler.receive(
             MovedOutValueFromMutableReference {
-                moved_out_value_span: *span,
+                moved_out_value_span: *move_info.span(),
                 reassignment_span: Some(store_span),
             }
             .into(),
@@ -93,10 +96,14 @@ fn handle_borrow(
             );
         }
 
-        Summary::Moved(span) => {
+        Summary::Moved(move_info) => {
             handler.receive(
-                UseAfterMove { use_span: register_span, move_span: span }
-                    .into(),
+                UseAfterMove {
+                    use_span: register_span,
+                    move_span: *move_info.span(),
+                    load_purpose: move_info.purpose(),
+                }
+                .into(),
             );
         }
     }
@@ -165,6 +172,7 @@ async fn handle_load<N: Normalizer>(
                 .set_uninitialized(
                     load.address(),
                     register_span,
+                    load.purpose(),
                     val_environment.type_environment,
                     handler,
                 )
@@ -173,7 +181,7 @@ async fn handle_load<N: Normalizer>(
             match state {
                 SetStateSucceeded::Unchanged(initialized, _) => initialized
                     .as_false()
-                    .and_then(|x| x.latest_accessor())
+                    .and_then(|x| x.latest_move())
                     .map_or(Summary::Initialized, |x| Summary::Moved(*x)),
 
                 SetStateSucceeded::Updated(state) => state.get_state_summary(),
@@ -188,10 +196,14 @@ async fn handle_load<N: Normalizer>(
             );
         }
 
-        Summary::Moved(span) => {
+        Summary::Moved(move_info) => {
             handler.receive(
-                UseAfterMove { use_span: register_span, move_span: span }
-                    .into(),
+                UseAfterMove {
+                    use_span: register_span,
+                    move_span: *move_info.span(),
+                    load_purpose: move_info.purpose(),
+                }
+                .into(),
             );
         }
 
@@ -376,6 +388,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                                 offset: address::Offset::Unpacked,
                             }),
                             tuple_pack.packed_tuple_span.unwrap(),
+                            load::Purpose::General,
                             self.value_environment.type_environment,
                             handler,
                         )
@@ -385,7 +398,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                         SetStateSucceeded::Unchanged(initialized, _) => {
                             initialized
                                 .as_false()
-                                .and_then(|x| x.latest_accessor())
+                                .and_then(|x| x.latest_move())
                                 .map_or(Summary::Initialized, |x| {
                                     Summary::Moved(*x)
                                 })
@@ -414,7 +427,8 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                                     use_span: tuple_pack
                                         .packed_tuple_span
                                         .unwrap(),
-                                    move_span: span,
+                                    move_span: *span.span(),
+                                    load_purpose: span.purpose(),
                                 }
                                 .into(),
                             );
@@ -550,7 +564,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                         {
                             handler.receive(
                                 MovedOutValueFromMutableReference {
-                                    moved_out_value_span: *moved_out,
+                                    moved_out_value_span: *moved_out.span(),
                                     reassignment_span: None,
                                 }
                                 .into(),
@@ -817,7 +831,8 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                         .map(|x| x.get_state_summary().into_moved().unwrap())
                     {
                         handler.receive(
-                            MoveInLoop { moved_value_span: move_span }.into(),
+                            MoveInLoop { moved_value_span: *move_span.span() }
+                                .into(),
                         );
                     }
                 }

@@ -7,7 +7,11 @@ use pernixc_ir::{
     capture::{self, builder::CapturesWithNameBindingPoint, Captures},
     instruction::{self, ScopePush},
     value::{
-        register::{load::Load, r#do::CaptureArguments, Assignment, Borrow},
+        register::{
+            load::{Load, Purpose},
+            r#do::CaptureArguments,
+            Assignment, Borrow,
+        },
         Value,
     },
     IR,
@@ -221,8 +225,9 @@ impl Binder<'_> {
             let value = match &capture.capture_mode {
                 capture::CaptureMode::ByValue => self
                     .create_register_assignment(
-                        Assignment::Load(Load::new(
+                        Assignment::Load(Load::with_purpose(
                             capture.parent_captured_address.clone(),
+                            Purpose::Capture,
                         )),
                         capture_span,
                     ),

@@ -1,6 +1,6 @@
 //! Contains the definition of the [`Load`] register.
 
-use getset::{Getters, MutGetters};
+use getset::{CopyGetters, Getters, MutGetters};
 use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
@@ -50,6 +50,7 @@ pub enum Purpose {
     Deserialize,
     StableHash,
     Getters,
+    CopyGetters,
     MutGetters,
 )]
 pub struct Load {
@@ -59,7 +60,7 @@ pub struct Load {
     address: Address,
 
     /// The purpose of this load.
-    #[get = "pub"]
+    #[get_copy = "pub"]
     purpose: Purpose,
 }
 
