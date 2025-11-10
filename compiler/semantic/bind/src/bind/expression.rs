@@ -250,7 +250,7 @@ impl Binder<'_> {
                 let Some(type_hint) = type_check else {
                     return Ok(Value::Register(
                         self.create_register_assignment(
-                            Assignment::Load(Load { address: value.address }),
+                            Assignment::Load(Load::new(value.address)),
                             value.span,
                         ),
                     ));
@@ -435,7 +435,7 @@ impl Binder<'_> {
             })
         ) {
             return Ok(Value::Register(self.create_register_assignment(
-                Assignment::Load(Load { address: value.address }),
+                Assignment::Load(Load::new(value.address)),
                 value.span,
             )));
         }

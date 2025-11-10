@@ -111,17 +111,18 @@ async fn handle_load<N: Normalizer>(
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<(), UnrecoverableError> {
     let ty =
-        values.type_of(&load.address, val_environment).await.map_err(|x| {
+        values.type_of(load.address(), val_environment).await.map_err(|x| {
             x.report_as_type_calculating_overflow(register_span, &handler)
         })?;
 
     // has been checked previously
     let memory_state = 'memory_state: {
-        if load.address.get_reference_qualifier() == Some(Qualifier::Immutable)
-            || load.address.is_behind_index()
+        if load.address().get_reference_qualifier()
+            == Some(Qualifier::Immutable)
+            || load.address().is_behind_index()
         {
             stack
-                .get_state(&load.address)
+                .get_state(load.address())
                 .expect("should found")
                 .get_state_summary()
         } else {
@@ -155,14 +156,14 @@ async fn handle_load<N: Normalizer>(
 
             if storage.as_vec().is_empty() {
                 break 'memory_state stack
-                    .get_state(&load.address)
+                    .get_state(load.address())
                     .expect("should found")
                     .get_state_summary();
             }
 
             let state = stack
                 .set_uninitialized(
-                    &load.address,
+                    load.address(),
                     register_span,
                     val_environment.type_environment,
                     handler,

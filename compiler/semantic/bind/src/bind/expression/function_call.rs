@@ -554,9 +554,7 @@ impl Binder<'_> {
             let value = match method_receiver.kind {
                 // load the lvalue
                 MethodReceiverKind::Value => self.create_register_assignment(
-                    Assignment::Load(Load {
-                        address: method_receiver.lvalue.address,
-                    }),
+                    Assignment::Load(Load::new(method_receiver.lvalue.address)),
                     method_receiver.lvalue.span,
                 ),
                 // borrow the lvalue

@@ -37,7 +37,7 @@ impl<N: Normalizer> Checker<'_, N> {
     ) -> Result<(), UnrecoverableError> {
         let ty = self
             .values()
-            .type_of(&load.address, self.environment())
+            .type_of(load.address(), self.environment())
             .await
             .map_err(|x| {
                 x.report_as_type_calculating_overflow(
@@ -47,7 +47,7 @@ impl<N: Normalizer> Checker<'_, N> {
             })?;
 
         self.handle_access(
-            &load.address,
+            load.address(),
             &AccessMode::Read(Read {
                 qualifier: Qualifier::Immutable,
                 span: Some(*register_span),
@@ -58,9 +58,9 @@ impl<N: Normalizer> Checker<'_, N> {
 
         // has been checked previously
         'out: {
-            if load.address.get_reference_qualifier()
+            if load.address().get_reference_qualifier()
                 == Some(Qualifier::Immutable)
-                || load.address.is_behind_index()
+                || load.address().is_behind_index()
             {
                 // TODO: check copy marker
             } else {
@@ -96,7 +96,7 @@ impl<N: Normalizer> Checker<'_, N> {
                     break 'out;
                 }
 
-                self.handle_moved_memory(&load.address, register_span, point)
+                self.handle_moved_memory(load.address(), register_span, point)
                     .await?;
             }
         };

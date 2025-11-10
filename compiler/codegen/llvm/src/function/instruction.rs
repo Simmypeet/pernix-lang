@@ -112,7 +112,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         load: &register::load::Load,
         reg_id: ID<Register>,
     ) -> Result<Option<LlvmValue<'ctx>>, Error> {
-        let Some(ptr) = self.get_address(&load.address).await? else {
+        let Some(ptr) = self.get_address(load.address()).await? else {
             return Ok(None);
         };
 

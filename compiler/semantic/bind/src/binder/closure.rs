@@ -221,9 +221,9 @@ impl Binder<'_> {
             let value = match &capture.capture_mode {
                 capture::CaptureMode::ByValue => self
                     .create_register_assignment(
-                        Assignment::Load(Load {
-                            address: capture.parent_captured_address.clone(),
-                        }),
+                        Assignment::Load(Load::new(
+                            capture.parent_captured_address.clone(),
+                        )),
                         capture_span,
                     ),
                 capture::CaptureMode::ByReference(reference_capture_mode) => {

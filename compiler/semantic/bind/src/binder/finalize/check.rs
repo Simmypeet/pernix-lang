@@ -201,13 +201,13 @@ async fn check_register_assignment<N: Normalizer>(
 
         // check for move behind shared reference on non-copy type
         register::Assignment::Load(load) => {
-            if load.address.get_reference_qualifier()
+            if load.address().get_reference_qualifier()
                 == Some(Qualifier::Immutable)
-                || load.address.is_behind_index()
+                || load.address().is_behind_index()
             {
                 let ty = ir
                     .values
-                    .type_of(&load.address, value_environment)
+                    .type_of(load.address(), value_environment)
                     .await
                     .map_err(|x| {
                         x.report_as_type_calculating_overflow(
