@@ -831,8 +831,11 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                         .map(|x| x.get_state_summary().into_moved().unwrap())
                     {
                         handler.receive(
-                            MoveInLoop { moved_value_span: *move_span.span() }
-                                .into(),
+                            MoveInLoop {
+                                moved_value_span: *move_span.span(),
+                                load_purpose: move_span.purpose(),
+                            }
+                            .into(),
                         );
                     }
                 }

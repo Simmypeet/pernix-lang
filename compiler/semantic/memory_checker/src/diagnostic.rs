@@ -216,6 +216,9 @@ impl Report for UseAfterMove {
 pub struct MoveInLoop {
     /// The span of the moved value.
     pub moved_value_span: RelativeSpan,
+
+    /// The purpose of the load/move.
+    pub load_purpose: load::Purpose,
 }
 
 impl Report for MoveInLoop {
@@ -227,10 +230,17 @@ impl Report for MoveInLoop {
             engine.to_absolute_span(&self.moved_value_span).await;
 
         Ok(pernixc_diagnostic::Rendered::builder()
-            .message(
-                "the value has been moved inside the loop, which could be \
-                 used in the subsequent iteration",
-            )
+            .message(match self.load_purpose {
+                load::Purpose::General => "the value has been moved inside \
+                                           the loop, which could be used in \
+                                           the subsequent iteration"
+                    .to_string(),
+                load::Purpose::Capture => {
+                    "the value has been moved inside the loop for closure \
+                     capture, which could be used in the subsequent iteration"
+                        .to_string()
+                }
+            })
             .severity(Severity::Warning)
             .primary_highlight(
                 Highlight::builder().span(moved_value_span).build(),
