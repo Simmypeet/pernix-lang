@@ -3,7 +3,7 @@ use pernixc_ir::{
     control_flow_graph::Point,
     instruction::{AccessMode, Instruction, Read},
     value::{
-        register::{Assignment, Load},
+        register::{load::Load, Assignment},
         TypeOf,
     },
 };

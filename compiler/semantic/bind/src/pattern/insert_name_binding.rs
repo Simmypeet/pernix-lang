@@ -12,7 +12,7 @@ use pernixc_ir::{
     },
     scope::Scope,
     value::{
-        register::{Assignment, Borrow, Load},
+        register::{load::Load, Assignment, Borrow},
         Value,
     },
 };

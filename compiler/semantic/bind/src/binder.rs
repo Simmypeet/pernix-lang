@@ -15,7 +15,7 @@ use pernixc_ir::{
     scope,
     value::{
         literal::{Literal, Unreachable},
-        register::{Assignment, Load, Register},
+        register::{load::Load, Assignment, Register},
         Environment as ValueEnvironment, TypeOf, Value,
     },
     IR,

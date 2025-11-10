@@ -8,8 +8,8 @@ use pernixc_ir::{
     value::{
         literal::{self, Boolean, Literal},
         register::{
-            ArithmeticOperator, Assignment, Binary, BinaryOperator,
-            BitwiseOperator, Load, Phi,
+            load::Load, ArithmeticOperator, Assignment, Binary, BinaryOperator,
+            BitwiseOperator, Phi,
         },
         Value,
     },

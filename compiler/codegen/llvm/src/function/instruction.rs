@@ -109,7 +109,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
 
     async fn handle_load(
         &mut self,
-        load: &register::Load,
+        load: &register::load::Load,
         reg_id: ID<Register>,
     ) -> Result<Option<LlvmValue<'ctx>>, Error> {
         let Some(ptr) = self.get_address(&load.address).await? else {

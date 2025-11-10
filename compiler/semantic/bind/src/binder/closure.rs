@@ -7,7 +7,7 @@ use pernixc_ir::{
     capture::{self, builder::CapturesWithNameBindingPoint, Captures},
     instruction::{self, ScopePush},
     value::{
-        register::{r#do::CaptureArguments, Assignment, Borrow, Load},
+        register::{load::Load, r#do::CaptureArguments, Assignment, Borrow},
         Value,
     },
     IR,

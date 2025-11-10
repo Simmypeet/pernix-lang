@@ -19,8 +19,8 @@ use pernixc_ir::{
     value::{
         literal::{self, Literal, Numeric},
         register::{
-            Assignment, Binary, BinaryOperator, Load, Phi, RelationalOperator,
-            VariantNumber,
+            load::Load, Assignment, Binary, BinaryOperator, Phi,
+            RelationalOperator, VariantNumber,
         },
         Value,
     },

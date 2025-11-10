@@ -14,7 +14,7 @@ use pernixc_ir::{
     control_flow_graph::Block,
     instruction::{Instruction, Jump, Terminator, UnconditionalJump},
     value::{
-        register::{Assignment, Borrow, Load},
+        register::{load::Load, Assignment, Borrow},
         Environment as ValueEnvironment, TypeOf,
     },
     Values, IR,

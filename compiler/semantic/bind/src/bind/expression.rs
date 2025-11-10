@@ -6,7 +6,7 @@ use pernixc_ir::{
     instruction::{Instruction, Store},
     value::{
         literal::{self, Literal},
-        register::{Assignment, Borrow, Load},
+        register::{load::Load, Assignment, Borrow},
         Value,
     },
 };

@@ -3,7 +3,7 @@ use pernixc_handler::Handler;
 use pernixc_hash::HashMap;
 use pernixc_ir::value::{
     register::{
-        Assignment, EffectHandlerArgument, FunctionCall, Load, Register,
+        load::Load, Assignment, EffectHandlerArgument, FunctionCall, Register,
         Variant,
     },
     Value,
