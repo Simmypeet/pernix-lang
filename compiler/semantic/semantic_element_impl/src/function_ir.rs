@@ -1,8 +1,8 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use pernixc_bind::binder::{self, Binder, UnrecoverableError};
 use pernixc_handler::Storage;
-use pernixc_ir::value::Environment as ValueEnvironment;
+use pernixc_ir::value::{self, Environment as ValueEnvironment};
 use pernixc_query::runtime::executor;
 use pernixc_symbol::{kind::get_kind, syntax::get_function_body_syntax};
 use pernixc_type_system::{
@@ -56,9 +56,23 @@ async fn build_ir_for_function(
         return Ok(Arc::new(ir));
     }
 
+    let premise = engine.get_active_premise(key.0).await?;
+    let ty_env = Environment::new(
+        Cow::Borrowed(&premise),
+        Cow::Borrowed(engine),
+        pernixc_type_system::normalizer::NO_OP,
+    );
+
+    let value_environment = value::Environment::builder()
+        .current_site(key.0)
+        .type_environment(&ty_env)
+        .build();
+
     // do memory checking analysis
     match pernixc_memory_checker::memory_check(
-        engine, &mut ir.ir, key.0, None, storage,
+        &mut ir.ir,
+        value_environment,
+        storage,
     )
     .await
     {

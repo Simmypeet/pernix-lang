@@ -11,7 +11,6 @@ use pernixc_handler::{Handler, Storage};
 use pernixc_ir::{
     address::{self, Address, Memory},
     alloca::Alloca,
-    capture::Captures,
     control_flow_graph::Block,
     instruction::{Instruction, Jump, Terminator, UnconditionalJump},
     value::{
@@ -31,8 +30,7 @@ use pernixc_term::{
     r#type::Qualifier,
 };
 use pernixc_type_system::{
-    environment::{get_active_premise, Environment as TyEnvironment},
-    normalizer::{self, Normalizer},
+    environment::Environment as TyEnvironment, normalizer::Normalizer,
     UnrecoverableError,
 };
 use state::{SetStateSucceeded, Stack, Summary};
@@ -266,8 +264,15 @@ struct Checker<'r, 'a, N: Normalizer> {
     /// block and the value is the starting environment of the looped block.
     target_stakcs_by_block_id: HashMap<ID<Block>, Stack>,
 
-    current_site: Global<pernixc_symbol::ID>,
     value_environment: ValueEnvironment<'a, N>,
+}
+
+impl<N: Normalizer> Checker<'_, '_, N> {
+    /// Returns the current site of the checker.
+    #[must_use]
+    pub const fn current_site(&self) -> Global<pernixc_symbol::ID> {
+        self.value_environment.current_site
+    }
 }
 
 impl<N: Normalizer> Checker<'_, '_, N> {
@@ -279,6 +284,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<(), UnrecoverableError> {
         let mut current_index = 0;
+        let current_site = self.current_site();
         let block = self
             .representation
             .control_flow_graph
@@ -456,7 +462,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                             if !self
                                 .value_environment
                                 .tracked_engine()
-                                .get_kind(self.current_site)
+                                .get_kind(current_site)
                                 .await
                                 .has_function_signature()
                             {
@@ -466,7 +472,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                             let function_signature = self
                                 .value_environment
                                 .tracked_engine()
-                                .get_parameters(self.current_site)
+                                .get_parameters(current_site)
                                 .await?;
 
                             for (parameter_id, parameter) in function_signature
@@ -526,7 +532,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                     sort_drop_addresses(
                         &mut memories,
                         &self.representation.values.allocas,
-                        self.current_site,
+                        current_site,
                         self.value_environment.tracked_engine(),
                     )
                     .await?;
@@ -695,7 +701,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                     sort_drop_addresses(
                         &mut memories,
                         &self.representation.values.allocas,
-                        self.current_site,
+                        self.current_site(),
                         self.value_environment.tracked_engine(),
                     )
                     .await?;
@@ -764,7 +770,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                 sort_drop_addresses(
                     &mut memories,
                     &self.representation.values.allocas,
-                    self.current_site,
+                    self.current_site(),
                     self.value_environment.tracked_engine(),
                 )
                 .await?;
@@ -836,20 +842,10 @@ impl<N: Normalizer> Checker<'_, '_, N> {
 /// inserts the drop instructions to the IR.
 #[allow(clippy::missing_errors_doc)]
 pub async fn memory_check(
-    engine: &TrackedEngine,
     representation: &mut IR,
-    current_site: Global<pernixc_symbol::ID>,
-    captures: Option<&Captures>,
+    value_environment: ValueEnvironment<'_, impl Normalizer>,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<(), UnrecoverableError> {
-    let premise = engine.get_active_premise(current_site).await?;
-
-    let ty_environment = TyEnvironment::new(
-        std::borrow::Cow::Borrowed(&premise),
-        std::borrow::Cow::Borrowed(engine),
-        normalizer::NO_OP,
-    );
-
     let all_block_ids =
         representation.control_flow_graph.blocks().ids().collect::<Vec<_>>();
 
@@ -857,12 +853,7 @@ pub async fn memory_check(
         representation,
         walk_results_by_block_id: HashMap::new(),
         target_stakcs_by_block_id: HashMap::new(),
-        current_site,
-        value_environment: ValueEnvironment::builder()
-            .type_environment(&ty_environment)
-            .current_site(current_site)
-            .maybe_captures(captures)
-            .build(),
+        value_environment,
     };
 
     for block_id in all_block_ids {
