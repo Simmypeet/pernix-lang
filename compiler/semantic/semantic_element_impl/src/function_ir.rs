@@ -71,7 +71,7 @@ async fn build_ir_for_function(
     // do memory checking analysis
     match pernixc_memory_checker::memory_check(
         &mut ir.ir,
-        value_environment,
+        &value_environment,
         storage,
     )
     .await

@@ -904,7 +904,7 @@ impl<N: Normalizer> Checker<'_, N> {
 /// perform memory check on them.
 pub async fn recursive_memory_check_ir(
     representation: &mut IR,
-    value_environment: ValueEnvironment<'_, impl Normalizer>,
+    value_environment: &ValueEnvironment<'_, impl Normalizer>,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<(), UnrecoverableError> {
     for do_ir in representation
@@ -922,8 +922,12 @@ pub async fn recursive_memory_check_ir(
             .build();
 
         // recursively performs memory check in nested closures
-        Box::pin(memory_check(do_closure_ir, inner_value_environment, handler))
-            .await?;
+        Box::pin(memory_check(
+            do_closure_ir,
+            &inner_value_environment,
+            handler,
+        ))
+        .await?;
 
         let (with_captures, with_irs) = do_ir.with_closures_mut();
 
@@ -936,7 +940,7 @@ pub async fn recursive_memory_check_ir(
                 .closure_parameters(with_closure_parameters)
                 .build();
 
-            Box::pin(memory_check(with_ir, inner_value_environment, handler))
+            Box::pin(memory_check(with_ir, &inner_value_environment, handler))
                 .await?;
         }
     }
@@ -949,7 +953,7 @@ pub async fn recursive_memory_check_ir(
 #[allow(clippy::missing_errors_doc)]
 pub async fn memory_check(
     representation: &mut IR,
-    value_environment: ValueEnvironment<'_, impl Normalizer>,
+    value_environment: &ValueEnvironment<'_, impl Normalizer>,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<(), UnrecoverableError> {
     let all_block_ids =
@@ -960,7 +964,7 @@ pub async fn memory_check(
         scope_tree: &representation.scope_tree,
         walk_results_by_block_id: HashMap::new(),
         target_stakcs_by_block_id: HashMap::new(),
-        value_environment: &value_environment,
+        value_environment,
     };
 
     for block_id in all_block_ids {
