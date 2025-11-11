@@ -11,8 +11,9 @@ use pernixc_handler::{Handler, Storage};
 use pernixc_ir::{
     address::{self, Address, Memory},
     alloca::Alloca,
-    control_flow_graph::Block,
+    control_flow_graph::{Block, ControlFlowGraph},
     instruction::{Instruction, Jump, Terminator, UnconditionalJump},
+    scope,
     value::{
         register::{
             load::{self, Load},
@@ -263,8 +264,9 @@ struct WalkResult {
 }
 
 #[derive(Debug)]
-struct Checker<'r, 'a, N: Normalizer> {
-    representation: &'r mut IR,
+struct Checker<'r, N: Normalizer> {
+    values: &'r Values,
+    scope_tree: &'r pernixc_ir::scope::Tree,
 
     /// The key represents the block ID that needs to be checked/explored.
     ///
@@ -277,32 +279,92 @@ struct Checker<'r, 'a, N: Normalizer> {
     /// block and the value is the starting environment of the looped block.
     target_stakcs_by_block_id: HashMap<ID<Block>, Stack>,
 
-    value_environment: ValueEnvironment<'a, N>,
+    value_environment: &'r ValueEnvironment<'r, N>,
 }
 
-impl<N: Normalizer> Checker<'_, '_, N> {
+impl<'r, N: Normalizer> Checker<'r, N> {
     /// Returns the current site of the checker.
     #[must_use]
     pub const fn current_site(&self) -> Global<pernixc_symbol::ID> {
         self.value_environment.current_site
     }
+
+    /// Returns the engine of the checker.
+    #[must_use]
+    pub fn engine(&self) -> &'r TrackedEngine {
+        self.value_environment.tracked_engine()
+    }
 }
 
-impl<N: Normalizer> Checker<'_, '_, N> {
+impl<N: Normalizer> Checker<'_, N> {
+    async fn push_scope(
+        &self,
+        stack: &mut Stack,
+        scope_id: ID<scope::Scope>,
+    ) -> Result<(), UnrecoverableError> {
+        stack.new_scope(scope_id);
+
+        'out: {
+            // if we're in the function and at the root scope,
+            // we need to initialize the parameters
+            if scope_id == self.scope_tree.root_scope_id() {
+                if !self
+                    .engine()
+                    .get_kind(self.current_site())
+                    .await
+                    .has_function_signature()
+                {
+                    break 'out;
+                }
+
+                let function_signature =
+                    self.engine().get_parameters(self.current_site()).await?;
+
+                for (parameter_id, parameter) in function_signature
+                    .parameter_order
+                    .iter()
+                    .copied()
+                    .map(|x| (x, &function_signature.parameters[x]))
+                {
+                    assert!(stack.current_mut().new_state(
+                        Memory::Parameter(parameter_id),
+                        true,
+                        parameter.r#type.clone(),
+                    ));
+                }
+            }
+        }
+
+        let allocas = self
+            .values
+            .allocas
+            .iter()
+            .filter_map(|(id, alloca)| {
+                (alloca.declared_in_scope_id == scope_id).then_some(id)
+            })
+            .collect::<Vec<_>>();
+
+        for id in allocas {
+            assert!(stack.current_mut().new_state(
+                Memory::Alloca(id),
+                false,
+                self.values.allocas.get(id).unwrap().r#type.clone(),
+            ));
+        }
+
+        Ok(())
+    }
+
     #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
     async fn walk_instructions(
         &mut self,
+        cfg: &mut ControlFlowGraph,
         block_id: ID<Block>,
         stack: &mut Stack,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<(), UnrecoverableError> {
         let mut current_index = 0;
-        let current_site = self.current_site();
-        let block = self
-            .representation
-            .control_flow_graph
-            .get_block_mut(block_id)
-            .unwrap();
+        let block = cfg.get_block_mut(block_id).unwrap();
 
         while current_index < block.instructions().len() {
             let step = match &block.instructions()[current_index] {
@@ -318,8 +380,8 @@ impl<N: Normalizer> Checker<'_, '_, N> {
 
                     let instructions = simplify_drop::simplify_drops(
                         instructions,
-                        &self.representation.values,
-                        &self.value_environment,
+                        self.values,
+                        self.value_environment,
                         handler,
                     )
                     .await?;
@@ -332,7 +394,6 @@ impl<N: Normalizer> Checker<'_, '_, N> {
 
                 Instruction::RegisterAssignment(register_assignment) => {
                     let register = self
-                        .representation
                         .values
                         .registers
                         .get(register_assignment.id)
@@ -341,11 +402,11 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                     match &register.assignment {
                         Assignment::Load(load) => {
                             handle_load(
-                                &self.representation.values,
+                                self.values,
                                 load,
                                 register.span.unwrap(),
                                 stack,
-                                &self.value_environment,
+                                self.value_environment,
                                 handler,
                             )
                             .await?;
@@ -448,8 +509,8 @@ impl<N: Normalizer> Checker<'_, '_, N> {
 
                     let instructions = simplify_drop::simplify_drops(
                         instructions,
-                        &self.representation.values,
-                        &self.value_environment,
+                        self.values,
+                        self.value_environment,
                         handler,
                     )
                     .await?;
@@ -466,69 +527,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                 | Instruction::Drop(_) => 1,
 
                 Instruction::ScopePush(scope_push) => {
-                    stack.new_scope(scope_push.0);
-
-                    'out: {
-                        // if we're in the function and at the root scope,
-                        // we need to initialize the parameters
-                        if scope_push.0
-                            == self.representation.scope_tree.root_scope_id()
-                        {
-                            if !self
-                                .value_environment
-                                .tracked_engine()
-                                .get_kind(current_site)
-                                .await
-                                .has_function_signature()
-                            {
-                                break 'out;
-                            }
-
-                            let function_signature = self
-                                .value_environment
-                                .tracked_engine()
-                                .get_parameters(current_site)
-                                .await?;
-
-                            for (parameter_id, parameter) in function_signature
-                                .parameter_order
-                                .iter()
-                                .copied()
-                                .map(|x| (x, &function_signature.parameters[x]))
-                            {
-                                assert!(stack.current_mut().new_state(
-                                    Memory::Parameter(parameter_id),
-                                    true,
-                                    parameter.r#type.clone(),
-                                ));
-                            }
-                        }
-                    }
-
-                    let allocas = self
-                        .representation
-                        .values
-                        .allocas
-                        .iter()
-                        .filter_map(|(id, alloca)| {
-                            (alloca.declared_in_scope_id == scope_push.0)
-                                .then_some(id)
-                        })
-                        .collect::<Vec<_>>();
-
-                    for id in allocas {
-                        assert!(stack.current_mut().new_state(
-                            Memory::Alloca(id),
-                            false,
-                            self.representation
-                                .values
-                                .allocas
-                                .get(id)
-                                .unwrap()
-                                .r#type
-                                .clone(),
-                        ));
-                    }
+                    self.push_scope(stack, scope_push.0).await?;
 
                     1
                 }
@@ -546,8 +545,8 @@ impl<N: Normalizer> Checker<'_, '_, N> {
 
                     sort_drop_addresses(
                         &mut memories,
-                        &self.representation.values.allocas,
-                        current_site,
+                        &self.values.allocas,
+                        self.current_site(),
                         self.value_environment.tracked_engine(),
                     )
                     .await?;
@@ -583,8 +582,8 @@ impl<N: Normalizer> Checker<'_, '_, N> {
 
                     let drop_instructions = simplify_drop::simplify_drops(
                         drop_instructions,
-                        &self.representation.values,
-                        &self.value_environment,
+                        self.values,
+                        self.value_environment,
                         handler,
                     )
                     .await?;
@@ -605,6 +604,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
     #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
     async fn walk_block(
         &mut self,
+        cfg: &mut ControlFlowGraph,
         block_id: ID<Block>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<Option<WalkResult>, UnrecoverableError> {
@@ -617,8 +617,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
         // mark as processing
         self.walk_results_by_block_id.insert(block_id, None);
 
-        let block =
-            self.representation.control_flow_graph.get_block(block_id).unwrap();
+        let block = cfg.get_block(block_id).unwrap();
 
         let (mut stack, looped_blocks) = if block.is_entry() {
             assert!(block.predecessors().is_empty());
@@ -633,7 +632,8 @@ impl<N: Normalizer> Checker<'_, '_, N> {
 
             for predecessor_id in predecessors.iter().copied() {
                 if let Some(result) =
-                    Box::pin(self.walk_block(predecessor_id, handler)).await?
+                    Box::pin(self.walk_block(cfg, predecessor_id, handler))
+                        .await?
                 {
                     merging_contexts.push((predecessor_id, result.stack));
                 } else {
@@ -652,19 +652,14 @@ impl<N: Normalizer> Checker<'_, '_, N> {
             if merging_contexts.len() > 1 {
                 for i in merging_contexts.iter().map(|x| x.0) {
                     assert_eq!(
-                        self.representation
-                            .control_flow_graph
-                            .blocks()
-                            .get(i)
-                            .unwrap()
-                            .terminator(),
+                        cfg.blocks().get(i).unwrap().terminator(),
                         Some(&Terminator::Jump(Jump::Unconditional(
                             UnconditionalJump { target: block_id }
                         ))),
                         "merging block `{i:#?}` should directly jump to the \
                          `block_id` {:#?} {:#?}",
-                        self.representation.control_flow_graph,
-                        self.representation.values
+                        cfg,
+                        self.values
                     );
                 }
             }
@@ -715,7 +710,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
 
                     sort_drop_addresses(
                         &mut memories,
-                        &self.representation.values.allocas,
+                        &self.values.allocas,
                         self.current_site(),
                         self.value_environment.tracked_engine(),
                     )
@@ -742,18 +737,14 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                     }
                 }
 
-                let block = self
-                    .representation
-                    .control_flow_graph
-                    .get_block_mut(predecessor)
-                    .unwrap();
+                let block = cfg.get_block_mut(predecessor).unwrap();
 
                 block.insert_instructions(
                     block.instructions().len(),
                     simplify_drop::simplify_drops(
                         drop_instructions,
-                        &self.representation.values,
-                        &self.value_environment,
+                        self.values,
+                        self.value_environment,
                         handler,
                     )
                     .await?,
@@ -763,7 +754,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
             (stack, looped_block_ids)
         };
 
-        self.walk_instructions(block_id, &mut stack, handler).await?;
+        self.walk_instructions(cfg, block_id, &mut stack, handler).await?;
 
         // handle loop
         if let Some(target_stack) =
@@ -784,7 +775,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
 
                 sort_drop_addresses(
                     &mut memories,
-                    &self.representation.values.allocas,
+                    &self.values.allocas,
                     self.current_site(),
                     self.value_environment.tracked_engine(),
                 )
@@ -808,17 +799,13 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                         .await
                         .unwrap();
 
-                    let block = self
-                        .representation
-                        .control_flow_graph
-                        .get_block_mut(block_id)
-                        .unwrap();
+                    let block = cfg.get_block_mut(block_id).unwrap();
                     block.insert_instructions(
                         block.instructions().len(),
                         simplify_drop::simplify_drops(
                             drop_instructions,
-                            &self.representation.values,
-                            &self.value_environment,
+                            self.values,
+                            self.value_environment,
                             handler,
                         )
                         .await?,
@@ -913,25 +900,28 @@ pub async fn memory_check(
         representation.control_flow_graph.blocks().ids().collect::<Vec<_>>();
 
     let mut checker = Checker {
-        representation,
+        values: &representation.values,
+        scope_tree: &representation.scope_tree,
         walk_results_by_block_id: HashMap::new(),
         target_stakcs_by_block_id: HashMap::new(),
-        value_environment,
+        value_environment: &value_environment,
     };
 
     for block_id in all_block_ids {
-        checker.walk_block(block_id, handler).await?;
+        checker
+            .walk_block(
+                &mut representation.control_flow_graph,
+                block_id,
+                handler,
+            )
+            .await?;
     }
 
     assert!(checker.walk_results_by_block_id.values().all(Option::is_some));
 
     // done checking memory for the current IR, recursively check nested closure
-    recursive_memory_check_ir(
-        checker.representation,
-        checker.value_environment,
-        handler,
-    )
-    .await?;
+    recursive_memory_check_ir(representation, value_environment, handler)
+        .await?;
 
     Ok(())
 }
