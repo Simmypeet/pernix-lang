@@ -116,6 +116,9 @@ impl Binder<'_> {
             .check_closure_return_type(expected_type, closure_span, handler)
             .await?;
 
+        // tidy the ir
+        binder.tidy_ir();
+
         // restore back the inference context and the handler groups
         self.inference_context = binder.inference_context;
         self.effect_handler_context = binder.effect_handler_context;
