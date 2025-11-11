@@ -654,7 +654,7 @@ impl Instruction {
 
                 match &register.assignment {
                     Assignment::Load(load) => vec![(
-                        Cow::Borrowed(&load.address),
+                        Cow::Borrowed(load.address()),
                         AccessKind::Normal(AccessMode::Load(register.span)),
                     )],
                     Assignment::Borrow(borrow) => vec![(

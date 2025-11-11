@@ -234,6 +234,21 @@ pub enum Memory {
     Capture(ID<Capture>),
 }
 
+impl Memory {
+    /// Returns the drop priority of the memory location.
+    ///
+    /// 0 being the highest priority, dropping the memory location first.
+    #[must_use]
+    pub const fn drop_priority(&self) -> usize {
+        match self {
+            Self::Capture(_) => 0,
+            Self::ClosureParameter(_) => 1,
+            Self::Parameter(_) => 2,
+            Self::Alloca(_) => 3,
+        }
+    }
+}
+
 /// Represents an address to a particular location in memory.
 #[derive(
     Debug,

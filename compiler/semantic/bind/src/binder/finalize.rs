@@ -53,15 +53,10 @@ fn check_all_register_assigned(ir: &IR) {
 }
 
 impl Binder<'_> {
-    /// Finalizes the binding process, performing necessary checks and
-    /// transformations on the IR.
-    pub async fn finalize_function_ir(
-        mut self,
-        handler: &dyn Handler<Diagnostic>,
-    ) -> Result<FunctionIR, UnrecoverableError> {
+    /// Performs sanity checks on the IR and finalizes it.
+    pub(super) fn tidy_ir(&mut self) {
         self.block_context.assert_empty();
         self.loop_context.assert_empty();
-        self.effect_handler_context.assert_empty();
 
         // TODO: we might need to implements some debug verification logic here
         // to ensure the IR is valid. For example, all scope push should have
@@ -82,6 +77,18 @@ impl Binder<'_> {
 
         #[cfg(debug_assertions)]
         check_all_register_assigned(&self.ir);
+    }
+
+    /// Finalizes the binding process, performing necessary checks and
+    /// transformations on the IR.
+    pub async fn finalize_function_ir(
+        mut self,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<FunctionIR, UnrecoverableError> {
+        // all the effect handler stacks should've been all popped
+        self.effect_handler_context.assert_empty();
+
+        self.tidy_ir();
 
         // we're in the function, check if all paths return the value
         'out: {
@@ -118,6 +125,7 @@ impl Binder<'_> {
 
         // transform inference types
         self.transform_inference(handler).await?;
+
         let ty_env = self.create_environment();
         let value_env = ValueEnvironment::builder()
             .type_environment(&ty_env)

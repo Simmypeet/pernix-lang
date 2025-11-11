@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: unsatisfied predicate
+   ╭─ compiler/e2e/test/snapshot/memory_checker/non_copyable_move_out_from_ref/main.pnx:16:10
+   │
+16 │     drop(*nonCopyable)
+   │          ^^^^^^^^^^^^ the predicate `marker core::Copy[main::NonCopyable]` is not satisfied
+
+error: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

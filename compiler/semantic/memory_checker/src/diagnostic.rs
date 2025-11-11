@@ -1,6 +1,7 @@
 //! Diagnostics for the memory checker.
 
 use pernixc_diagnostic::{ByteIndex, Highlight, Report, Severity};
+use pernixc_ir::value::register::load;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
@@ -165,6 +166,9 @@ pub struct UseAfterMove {
 
     /// The span where the value is moved.
     pub move_span: RelativeSpan,
+
+    /// The purpose of the load/move.
+    pub load_purpose: load::Purpose,
 }
 
 impl Report for UseAfterMove {
@@ -181,7 +185,14 @@ impl Report for UseAfterMove {
             .primary_highlight(Highlight::builder().span(use_span).build())
             .related(vec![Highlight::builder()
                 .span(move_span)
-                .message("the value was moved here")
+                .message(match self.load_purpose {
+                    load::Purpose::General => {
+                        "the value was moved here".to_string()
+                    }
+                    load::Purpose::Capture => "the value was moved here for \
+                                               closure capture"
+                        .to_string(),
+                })
                 .build()])
             .build())
     }
@@ -205,6 +216,9 @@ impl Report for UseAfterMove {
 pub struct MoveInLoop {
     /// The span of the moved value.
     pub moved_value_span: RelativeSpan,
+
+    /// The purpose of the load/move.
+    pub load_purpose: load::Purpose,
 }
 
 impl Report for MoveInLoop {
@@ -216,10 +230,17 @@ impl Report for MoveInLoop {
             engine.to_absolute_span(&self.moved_value_span).await;
 
         Ok(pernixc_diagnostic::Rendered::builder()
-            .message(
-                "the value has been moved inside the loop, which could be \
-                 used in the subsequent iteration",
-            )
+            .message(match self.load_purpose {
+                load::Purpose::General => "the value has been moved inside \
+                                           the loop, which could be used in \
+                                           the subsequent iteration"
+                    .to_string(),
+                load::Purpose::Capture => {
+                    "the value has been moved inside the loop for closure \
+                     capture, which could be used in the subsequent iteration"
+                        .to_string()
+                }
+            })
             .severity(Severity::Warning)
             .primary_highlight(
                 Highlight::builder().span(moved_value_span).build(),

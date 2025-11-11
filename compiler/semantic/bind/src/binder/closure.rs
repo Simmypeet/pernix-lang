@@ -7,7 +7,11 @@ use pernixc_ir::{
     capture::{self, builder::CapturesWithNameBindingPoint, Captures},
     instruction::{self, ScopePush},
     value::{
-        register::{r#do::CaptureArguments, Assignment, Borrow, Load},
+        register::{
+            load::{Load, Purpose},
+            r#do::CaptureArguments,
+            Assignment, Borrow,
+        },
         Value,
     },
     IR,
@@ -111,6 +115,9 @@ impl Binder<'_> {
         binder
             .check_closure_return_type(expected_type, closure_span, handler)
             .await?;
+
+        // tidy the ir
+        binder.tidy_ir();
 
         // restore back the inference context and the handler groups
         self.inference_context = binder.inference_context;
@@ -221,9 +228,10 @@ impl Binder<'_> {
             let value = match &capture.capture_mode {
                 capture::CaptureMode::ByValue => self
                     .create_register_assignment(
-                        Assignment::Load(Load {
-                            address: capture.parent_captured_address.clone(),
-                        }),
+                        Assignment::Load(Load::with_purpose(
+                            capture.parent_captured_address.clone(),
+                            Purpose::Capture,
+                        )),
                         capture_span,
                     ),
                 capture::CaptureMode::ByReference(reference_capture_mode) => {

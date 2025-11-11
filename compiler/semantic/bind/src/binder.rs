@@ -15,7 +15,7 @@ use pernixc_ir::{
     scope,
     value::{
         literal::{Literal, Unreachable},
-        register::{Assignment, Load, Register},
+        register::{load::Load, Assignment, Register},
         Environment as ValueEnvironment, TypeOf, Value,
     },
     IR,
@@ -622,7 +622,7 @@ impl Binder<'_> {
     /// and returns the register ID that holds the loaded value.
     pub fn load_lvalue(&mut self, lvalue: LValue) -> ID<Register> {
         self.create_register_assignment(
-            Assignment::Load(Load { address: lvalue.address }),
+            Assignment::Load(Load::new(lvalue.address)),
             lvalue.span,
         )
     }

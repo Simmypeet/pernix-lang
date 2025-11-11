@@ -12,7 +12,7 @@ use pernixc_ir::{
     },
     scope::Scope,
     value::{
-        register::{Assignment, Borrow, Load},
+        register::{load::Load, Assignment, Borrow},
         Value,
     },
 };
@@ -237,7 +237,7 @@ impl Binder<'_> {
                     // copy/move the value from the given address
                     let load_value =
                         Value::Register(self.create_register_assignment(
-                            Assignment::Load(Load { address: binding.address }),
+                            Assignment::Load(Load::new(binding.address)),
                             config.address_span.unwrap_or(pattern.span),
                         ));
 
@@ -584,7 +584,7 @@ impl Binder<'_> {
                     });
 
                     let moved_reg = self.create_register_assignment(
-                        Assignment::Load(Load { address: element_address }),
+                        Assignment::Load(Load::new(element_address)),
                         span,
                     );
 
@@ -644,7 +644,7 @@ impl Binder<'_> {
                     });
 
                     let moved_reg = self.create_register_assignment(
-                        Assignment::Load(Load { address: element_address }),
+                        Assignment::Load(Load::new(element_address)),
                         config.address_span.unwrap_or_else(|| {
                             tuple_pat
                                 .elements
@@ -685,7 +685,7 @@ impl Binder<'_> {
                     });
 
                     let moved_reg = self.create_register_assignment(
-                        Assignment::Load(Load { address: element_address }),
+                        Assignment::Load(Load::new(element_address)),
                         config.address_span.unwrap_or_else(|| {
                             tuple_pat
                                 .elements

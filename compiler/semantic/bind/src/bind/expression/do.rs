@@ -11,19 +11,19 @@ use pernixc_ir::{
     value::{
         register::{
             self,
-            r#do::{CaptureArguments, EffectOperationHandlerClosure},
+            r#do::{DoClosure, EffectOperationHandlerClosure},
             Assignment,
         },
         Value,
     },
 };
-use pernixc_lexical::tree::RelativeSpan;
+use pernixc_lexical::tree::{RelativeLocation, RelativeSpan};
 use pernixc_resolution::{
     qualified_identifier::{resolve_qualified_identifier, Resolution},
     Config,
 };
 use pernixc_semantic_element::parameter::get_parameters;
-use pernixc_source_file::SourceElement;
+use pernixc_source_file::{SourceElement, Span};
 use pernixc_symbol::{
     kind::{get_kind, Kind},
     member::get_members,
@@ -51,6 +51,21 @@ use crate::{
     pattern::insert_name_binding,
 };
 
+fn span_of_multi_syntax<T: SourceElement<Location = RelativeLocation>>(
+    elements: impl Iterator<Item = T>,
+) -> Option<RelativeSpan> {
+    let mut span = None::<Span<RelativeLocation>>;
+
+    for element in elements {
+        span = span.map_or_else(
+            || Some(element.span()),
+            |current_span| Some(current_span.join(&element.span())),
+        );
+    }
+
+    span
+}
+
 impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
     #[allow(unreachable_code, unused_variables)]
     async fn bind(
@@ -59,7 +74,9 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
         _: &Guidance<'_>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
-        let Some(do_statements) = syntax_tree.statements() else {
+        let (Some(do_kw), Some(do_statements)) =
+            (syntax_tree.do_keyword(), syntax_tree.statements())
+        else {
             return Err(Error::Binding(BindingError(syntax_tree.span())));
         };
 
@@ -95,10 +112,14 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
         // pop the closure from the stack
         self.pop_handler_group(effect_handlers.effect_handler_group_id);
 
+        let do_capture_arguments =
+            self.bind_capture_arguments(do_captures, do_kw.span());
+
         let with = build_with_blocks(
             self,
             effect_handlers.with_blocks,
             &expected_return_type,
+            span_of_multi_syntax(syntax_tree.with()).unwrap_or(do_kw.span),
             captures,
             handler,
         )
@@ -106,10 +127,7 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
 
         let do_assignment = register::r#do::Do::new(
             effect_handlers.effect_handler_group_id,
-            register::r#do::DoClosure::new(
-                CaptureArguments::new(do_captures),
-                do_closure,
-            ),
+            DoClosure::new(do_capture_arguments, do_closure),
             with,
             expected_return_type,
         );
@@ -148,6 +166,7 @@ async fn build_with_blocks(
     binder: &mut Binder<'_>,
     with_blocks: Vec<WithBlock>,
     expected_type: &Type,
+    with_span: RelativeSpan,
     captures: CapturesWithNameBindingPoint,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<register::r#do::With, Error> {
@@ -219,8 +238,9 @@ async fn build_with_blocks(
         PruneMode::Multiple,
     );
 
-    let mut with =
-        register::r#do::With::new(CaptureArguments::new(underlying_captures));
+    let mut with = register::r#do::With::new(
+        binder.bind_capture_arguments(underlying_captures, with_span),
+    );
 
     for ((effect_handler_id, effect_operation_id), (ir, closure_parameters)) in
         with_irs

@@ -316,3 +316,47 @@ impl transform::Element for Do {
         Ok(())
     }
 }
+
+impl Do {
+    /// Retrieves the mutable reference to the IR of the `do` closure and its
+    /// captures.
+    #[must_use]
+    pub const fn do_closure_mut(&mut self) -> (&mut IR, &Captures) {
+        (&mut self.closure.ir, &self.closure.capture_arguments.captures)
+    }
+
+    /// Retrieves the reference to the IR of the `do` closure and its captures.
+    #[must_use]
+    pub const fn do_closure(&self) -> (&IR, &Captures) {
+        (&self.closure.ir, &self.closure.capture_arguments.captures)
+    }
+
+    /// Retrieves the reference to each of the closure of effect handler.
+    pub fn with_closures(
+        &self,
+    ) -> (&Captures, impl Iterator<Item = (&IR, &ClosureParameters)>) {
+        (
+            &self.with.capture_arguments.captures,
+            self.with
+                .effect_handlers
+                .values()
+                .flat_map(|x| x.effect_operation_handler_closures.values())
+                .map(|x| (&x.ir, &x.closure_parameters)),
+        )
+    }
+
+    /// Retrieves the mutable reference to each of the closure of effect
+    /// handler.
+    pub fn with_closures_mut(
+        &mut self,
+    ) -> (&Captures, impl Iterator<Item = (&mut IR, &ClosureParameters)>) {
+        (
+            &self.with.capture_arguments.captures,
+            self.with
+                .effect_handlers
+                .values_mut()
+                .flat_map(|x| x.effect_operation_handler_closures.values_mut())
+                .map(|x| (&mut x.ir, &x.closure_parameters)),
+        )
+    }
+}

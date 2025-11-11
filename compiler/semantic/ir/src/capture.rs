@@ -168,6 +168,13 @@ pub struct Capture {
     pub parent_captured_address: Address,
 
     /// The type of the captured memory address.
+    ///
+    /// # NOTE
+    ///
+    /// This is the type of the [`Self::parent_captured_address`] not directly
+    /// the type of the captured memory itself. The type may differ depending
+    /// on the capture mode. Use [`Self::get_capture_type`] to get the type
+    /// of the captured memory.
     pub address_type: Type,
 
     /// Determines how the memory is captured into the closure object.

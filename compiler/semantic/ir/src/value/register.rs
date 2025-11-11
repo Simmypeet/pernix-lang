@@ -36,11 +36,15 @@ use crate::{
         self, ConstantTermSource, LifetimeTermSource, Transformer,
         TypeTermSource,
     },
-    value::{Environment, TypeOf},
+    value::{
+        register::load::{type_of_load_assignment, Load},
+        Environment, TypeOf,
+    },
     Values,
 };
 
 pub mod r#do;
+pub mod load;
 
 /// Represents an element of a [`Tuple`].
 #[derive(
@@ -134,41 +138,6 @@ async fn type_of_tuple_assignment(
         Type::Tuple(tuple::Tuple { elements }),
         constraints,
     ))
-}
-
-/// Represents a load/read from an address in memory. (The type must be Copy)
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Serialize,
-    Deserialize,
-    StableHash,
-)]
-pub struct Load {
-    /// The address where the value is stored and will be read from.
-    pub address: Address,
-}
-
-impl Load {
-    async fn transform<T: Transformer<Type>>(
-        &mut self,
-        transformer: &mut T,
-    ) -> Result<(), CyclicError> {
-        self.address.transform(transformer).await
-    }
-}
-
-async fn type_of_load_assignment(
-    values: &Values,
-    load: &Load,
-    environment: &Environment<'_, impl Normalizer>,
-) -> Result<Succeeded<Type>, Error> {
-    values.type_of(&load.address, environment).await
 }
 
 /// Obtains a reference at the given address.
@@ -1166,7 +1135,7 @@ impl transform::Element for Register {
     ) -> Result<(), CyclicError> {
         match &mut self.assignment {
             Assignment::Tuple(tuple) => tuple.transform(transformer).await,
-            Assignment::Load(load) => load.transform(transformer).await,
+            Assignment::Load(load) => load.transform(transformer, engine).await,
             Assignment::Borrow(borrow) => {
                 borrow.transform(transformer, self.span).await
             }

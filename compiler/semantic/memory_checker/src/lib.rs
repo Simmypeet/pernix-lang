@@ -1,21 +1,23 @@
 //! Contains the logic related to memory checking pass on the IR.
 
-use std::{cmp::Ordering, collections::HashMap};
+use std::collections::HashMap;
 
 use diagnostic::{
     MoveInLoop, MovedOutValueFromMutableReference, UseAfterMove,
     UseBeforeInitialization,
 };
-use pernixc_arena::{Arena, ID};
+use pernixc_arena::ID;
 use pernixc_handler::{Handler, Storage};
 use pernixc_ir::{
     address::{self, Address, Memory},
-    alloca::Alloca,
-    capture::Captures,
-    control_flow_graph::Block,
+    control_flow_graph::{Block, ControlFlowGraph},
     instruction::{Instruction, Jump, Terminator, UnconditionalJump},
+    scope,
     value::{
-        register::{Assignment, Borrow, Load},
+        register::{
+            load::{self, Load},
+            Assignment, Borrow,
+        },
         Environment as ValueEnvironment, TypeOf,
     },
     Values, IR,
@@ -31,8 +33,7 @@ use pernixc_term::{
     r#type::Qualifier,
 };
 use pernixc_type_system::{
-    environment::{get_active_premise, Environment as TyEnvironment},
-    normalizer::{self, Normalizer},
+    environment::Environment as TyEnvironment, normalizer::Normalizer,
     UnrecoverableError,
 };
 use state::{SetStateSucceeded, Stack, Summary};
@@ -62,10 +63,10 @@ async fn handle_store<N: Normalizer>(
     };
 
     // check if there's left-over mutable reference
-    if let Some(span) = state.get_moved_out_mutable_reference() {
+    if let Some(move_info) = state.get_moved_out_mutable_reference() {
         handler.receive(
             MovedOutValueFromMutableReference {
-                moved_out_value_span: *span,
+                moved_out_value_span: *move_info.span(),
                 reassignment_span: Some(store_span),
             }
             .into(),
@@ -95,10 +96,14 @@ fn handle_borrow(
             );
         }
 
-        Summary::Moved(span) => {
+        Summary::Moved(move_info) => {
             handler.receive(
-                UseAfterMove { use_span: register_span, move_span: span }
-                    .into(),
+                UseAfterMove {
+                    use_span: register_span,
+                    move_span: *move_info.span(),
+                    load_purpose: move_info.purpose(),
+                }
+                .into(),
             );
         }
     }
@@ -113,18 +118,25 @@ async fn handle_load<N: Normalizer>(
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<(), UnrecoverableError> {
     let ty =
-        values.type_of(&load.address, val_environment).await.map_err(|x| {
+        values.type_of(load.address(), val_environment).await.map_err(|x| {
             x.report_as_type_calculating_overflow(register_span, &handler)
         })?;
 
     // has been checked previously
     let memory_state = 'memory_state: {
-        if load.address.get_reference_qualifier() == Some(Qualifier::Immutable)
-            || load.address.is_behind_index()
+        if load.address().get_reference_qualifier()
+            == Some(Qualifier::Immutable)
+            || load.address().is_behind_index()
         {
+            // The check for whether the type behind the immutable reference is
+            // copyable or not has been done previously in the phase of
+            // finializing the binder IR.
+
             stack
-                .get_state(&load.address)
-                .expect("should found")
+                .get_state(load.address())
+                .unwrap_or_else(|| {
+                    panic!("state not found for {:?}", load.address())
+                })
                 .get_state_summary()
         } else {
             let copy_marker = val_environment
@@ -155,17 +167,19 @@ async fn handle_load<N: Normalizer>(
                 )
                 .await?;
 
+            // if is copyable, no need to move
             if storage.as_vec().is_empty() {
                 break 'memory_state stack
-                    .get_state(&load.address)
+                    .get_state(load.address())
                     .expect("should found")
                     .get_state_summary();
             }
 
             let state = stack
                 .set_uninitialized(
-                    &load.address,
+                    load.address(),
                     register_span,
+                    load.purpose(),
                     val_environment.type_environment,
                     handler,
                 )
@@ -174,7 +188,7 @@ async fn handle_load<N: Normalizer>(
             match state {
                 SetStateSucceeded::Unchanged(initialized, _) => initialized
                     .as_false()
-                    .and_then(|x| x.latest_accessor())
+                    .and_then(|x| x.latest_move())
                     .map_or(Summary::Initialized, |x| Summary::Moved(*x)),
 
                 SetStateSucceeded::Updated(state) => state.get_state_summary(),
@@ -189,57 +203,19 @@ async fn handle_load<N: Normalizer>(
             );
         }
 
-        Summary::Moved(span) => {
+        Summary::Moved(move_info) => {
             handler.receive(
-                UseAfterMove { use_span: register_span, move_span: span }
-                    .into(),
+                UseAfterMove {
+                    use_span: register_span,
+                    move_span: *move_info.span(),
+                    load_purpose: move_info.purpose(),
+                }
+                .into(),
             );
         }
 
         Summary::Initialized => {}
     }
-
-    Ok(())
-}
-
-async fn sort_drop_addresses(
-    addresses: &mut [Memory],
-    allocas: &Arena<Alloca>,
-    current_site: Global<pernixc_symbol::ID>,
-    engine: &TrackedEngine,
-) -> Result<(), UnrecoverableError> {
-    let function_signature = engine.get_parameters(current_site).await?;
-
-    addresses.sort_by(|x, y| match (x, y) {
-        (Memory::Parameter(x_id), Memory::Parameter(y_id)) => {
-            let x = function_signature
-                .parameter_order
-                .iter()
-                .position(|y| y == x_id)
-                .unwrap();
-            let y = function_signature
-                .parameter_order
-                .iter()
-                .position(|y| y == y_id)
-                .unwrap();
-
-            x.cmp(&y).reverse()
-        }
-
-        (Memory::Alloca(x_id), Memory::Alloca(y_id)) => {
-            let x = allocas.get(*x_id).unwrap().declaration_order;
-            let y = allocas.get(*y_id).unwrap().declaration_order;
-
-            x.cmp(&y).reverse()
-        }
-
-        (Memory::Capture(_), Memory::Capture(_)) => todo!(),
-
-        (Memory::Parameter(_), Memory::Alloca(_)) => Ordering::Greater,
-        (Memory::Alloca(_), Memory::Parameter(_)) => Ordering::Less,
-
-        _ => todo!(),
-    });
 
     Ok(())
 }
@@ -252,8 +228,9 @@ struct WalkResult {
 }
 
 #[derive(Debug)]
-struct Checker<'r, 'a, N: Normalizer> {
-    representation: &'r mut IR,
+struct Checker<'r, N: Normalizer> {
+    values: &'r Values,
+    scope_tree: &'r pernixc_ir::scope::Tree,
 
     /// The key represents the block ID that needs to be checked/explored.
     ///
@@ -266,24 +243,247 @@ struct Checker<'r, 'a, N: Normalizer> {
     /// block and the value is the starting environment of the looped block.
     target_stakcs_by_block_id: HashMap<ID<Block>, Stack>,
 
-    current_site: Global<pernixc_symbol::ID>,
-    value_environment: ValueEnvironment<'a, N>,
+    value_environment: &'r ValueEnvironment<'r, N>,
 }
 
-impl<N: Normalizer> Checker<'_, '_, N> {
+impl<'r, N: Normalizer> Checker<'r, N> {
+    /// Returns the current site of the checker.
+    #[must_use]
+    pub const fn current_site(&self) -> Global<pernixc_symbol::ID> {
+        self.value_environment.current_site
+    }
+
+    /// Returns the engine of the checker.
+    #[must_use]
+    pub fn engine(&self) -> &'r TrackedEngine {
+        self.value_environment.tracked_engine()
+    }
+}
+
+impl<N: Normalizer> Checker<'_, N> {
+    async fn sort_drop_addresses(
+        &self,
+        addresses: &mut [Memory],
+    ) -> Result<(), UnrecoverableError> {
+        let function_signature =
+            self.engine().get_parameters(self.current_site()).await?;
+
+        addresses.sort_by(|x, y| match (x, y) {
+            (Memory::Parameter(x_id), Memory::Parameter(y_id)) => {
+                let x = function_signature
+                    .parameter_order
+                    .iter()
+                    .position(|y| y == x_id)
+                    .unwrap();
+                let y = function_signature
+                    .parameter_order
+                    .iter()
+                    .position(|y| y == y_id)
+                    .unwrap();
+
+                x.cmp(&y).reverse()
+            }
+            (Memory::Alloca(x_id), Memory::Alloca(y_id)) => {
+                let x =
+                    self.values.allocas.get(*x_id).unwrap().declaration_order;
+                let y =
+                    self.values.allocas.get(*y_id).unwrap().declaration_order;
+
+                x.cmp(&y).reverse()
+            }
+            (Memory::Capture(x_id), Memory::Capture(y_id)) => {
+                let x = self
+                    .value_environment
+                    .captures()
+                    .declaration_order_of(*x_id);
+
+                let y = self
+                    .value_environment
+                    .captures()
+                    .declaration_order_of(*y_id);
+
+                x.cmp(&y)
+            }
+            (
+                Memory::ClosureParameter(x_id),
+                Memory::ClosureParameter(y_id),
+            ) => {
+                let x = self
+                    .value_environment
+                    .closure_parameters()
+                    .get_parameter_declaration_order(*x_id);
+
+                let y = self
+                    .value_environment
+                    .closure_parameters()
+                    .get_parameter_declaration_order(*y_id);
+
+                x.cmp(&y).reverse()
+            }
+
+            _ => {
+                let x_priority = x.drop_priority();
+                let y_priority = y.drop_priority();
+
+                x_priority.cmp(&y_priority)
+            }
+        });
+
+        Ok(())
+    }
+
+    async fn push_root_scope(
+        &self,
+        stack: &mut Stack,
+    ) -> Result<(), UnrecoverableError> {
+        if self
+            .engine()
+            .get_kind(self.current_site())
+            .await
+            .has_function_signature()
+        {
+            let function_signature =
+                self.engine().get_parameters(self.current_site()).await?;
+
+            for (parameter_id, parameter) in function_signature
+                .parameter_order
+                .iter()
+                .copied()
+                .map(|x| (x, &function_signature.parameters[x]))
+            {
+                assert!(stack.current_mut().new_state(
+                    Memory::Parameter(parameter_id),
+                    true,
+                    parameter.r#type.clone(),
+                ));
+            }
+        }
+
+        // if we have closure parameters, initialize them
+        if let Some(closure_parameters) =
+            self.value_environment.closure_parameters
+        {
+            for (closure_parameter_id, closure_parameter) in
+                closure_parameters.parameters_as_order()
+            {
+                assert!(stack.current_mut().new_state(
+                    Memory::ClosureParameter(closure_parameter_id),
+                    true,
+                    closure_parameter.r#type.clone(),
+                ));
+            }
+        }
+
+        // if we have captures, initialize them
+        if let Some(captures) = self.value_environment.captures {
+            for (capture_id, capture) in captures.captures_as_order() {
+                assert!(stack.current_mut().new_state(
+                    Memory::Capture(capture_id),
+                    true,
+                    capture.get_capture_type(),
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn push_scope(
+        &self,
+        stack: &mut Stack,
+        scope_id: ID<scope::Scope>,
+    ) -> Result<(), UnrecoverableError> {
+        stack.new_scope(scope_id);
+
+        // if we're in the function and at the root scope,
+        // we need to initialize the parameters
+        if scope_id == self.scope_tree.root_scope_id() {
+            self.push_root_scope(stack).await?;
+        }
+
+        let allocas = self
+            .values
+            .allocas
+            .iter()
+            .filter_map(|(id, alloca)| {
+                (alloca.declared_in_scope_id == scope_id).then_some(id)
+            })
+            .collect::<Vec<_>>();
+
+        for id in allocas {
+            assert!(stack.current_mut().new_state(
+                Memory::Alloca(id),
+                false,
+                self.values.allocas.get(id).unwrap().r#type.clone(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    async fn pop_scope(
+        &self,
+        stack: &mut Stack,
+        scope_id: ID<scope::Scope>,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<Vec<Instruction>, UnrecoverableError> {
+        // record the stack state
+        let poped_scope = stack.pop_scope().unwrap();
+        assert_eq!(poped_scope.scope_id(), scope_id);
+
+        let mut memories = poped_scope
+            .memories_by_address()
+            .keys()
+            .copied()
+            .collect::<Vec<_>>();
+
+        self.sort_drop_addresses(&mut memories).await?;
+
+        let mut drop_instructions = Vec::new();
+
+        for memory in memories {
+            let state =
+                poped_scope.get_state(&Address::Memory(memory)).unwrap();
+
+            if let Some(moved_out) = state.get_moved_out_mutable_reference() {
+                handler.receive(
+                    MovedOutValueFromMutableReference {
+                        moved_out_value_span: *moved_out.span(),
+                        reassignment_span: None,
+                    }
+                    .into(),
+                );
+            }
+
+            drop_instructions.extend(
+                state
+                    .get_drop_instructions(
+                        &Address::Memory(memory),
+                        self.value_environment.tracked_engine(),
+                    )
+                    .await?,
+            );
+        }
+
+        simplify_drop::simplify_drops(
+            drop_instructions,
+            self.values,
+            self.value_environment,
+            handler,
+        )
+        .await
+    }
+
     #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
     async fn walk_instructions(
         &mut self,
+        cfg: &mut ControlFlowGraph,
         block_id: ID<Block>,
         stack: &mut Stack,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<(), UnrecoverableError> {
         let mut current_index = 0;
-        let block = self
-            .representation
-            .control_flow_graph
-            .get_block_mut(block_id)
-            .unwrap();
+        let block = cfg.get_block_mut(block_id).unwrap();
 
         while current_index < block.instructions().len() {
             let step = match &block.instructions()[current_index] {
@@ -299,8 +499,8 @@ impl<N: Normalizer> Checker<'_, '_, N> {
 
                     let instructions = simplify_drop::simplify_drops(
                         instructions,
-                        &self.representation.values,
-                        &self.value_environment,
+                        self.values,
+                        self.value_environment,
                         handler,
                     )
                     .await?;
@@ -313,7 +513,6 @@ impl<N: Normalizer> Checker<'_, '_, N> {
 
                 Instruction::RegisterAssignment(register_assignment) => {
                     let register = self
-                        .representation
                         .values
                         .registers
                         .get(register_assignment.id)
@@ -322,11 +521,11 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                     match &register.assignment {
                         Assignment::Load(load) => {
                             handle_load(
-                                &self.representation.values,
+                                self.values,
                                 load,
                                 register.span.unwrap(),
                                 stack,
-                                &self.value_environment,
+                                self.value_environment,
                                 handler,
                             )
                             .await?;
@@ -369,6 +568,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                                 offset: address::Offset::Unpacked,
                             }),
                             tuple_pack.packed_tuple_span.unwrap(),
+                            load::Purpose::General,
                             self.value_environment.type_environment,
                             handler,
                         )
@@ -378,7 +578,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                         SetStateSucceeded::Unchanged(initialized, _) => {
                             initialized
                                 .as_false()
-                                .and_then(|x| x.latest_accessor())
+                                .and_then(|x| x.latest_move())
                                 .map_or(Summary::Initialized, |x| {
                                     Summary::Moved(*x)
                                 })
@@ -407,7 +607,8 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                                     use_span: tuple_pack
                                         .packed_tuple_span
                                         .unwrap(),
-                                    move_span: span,
+                                    move_span: *span.span(),
+                                    load_purpose: span.purpose(),
                                 }
                                 .into(),
                             );
@@ -427,8 +628,8 @@ impl<N: Normalizer> Checker<'_, '_, N> {
 
                     let instructions = simplify_drop::simplify_drops(
                         instructions,
-                        &self.representation.values,
-                        &self.value_environment,
+                        self.values,
+                        self.value_environment,
                         handler,
                     )
                     .await?;
@@ -445,131 +646,18 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                 | Instruction::Drop(_) => 1,
 
                 Instruction::ScopePush(scope_push) => {
-                    stack.new_scope(scope_push.0);
-
-                    'out: {
-                        // if we're in the function and at the root scope,
-                        // we need to initialize the parameters
-                        if scope_push.0
-                            == self.representation.scope_tree.root_scope_id()
-                        {
-                            if !self
-                                .value_environment
-                                .tracked_engine()
-                                .get_kind(self.current_site)
-                                .await
-                                .has_function_signature()
-                            {
-                                break 'out;
-                            }
-
-                            let function_signature = self
-                                .value_environment
-                                .tracked_engine()
-                                .get_parameters(self.current_site)
-                                .await?;
-
-                            for (parameter_id, parameter) in function_signature
-                                .parameter_order
-                                .iter()
-                                .copied()
-                                .map(|x| (x, &function_signature.parameters[x]))
-                            {
-                                assert!(stack.current_mut().new_state(
-                                    Memory::Parameter(parameter_id),
-                                    true,
-                                    parameter.r#type.clone(),
-                                ));
-                            }
-                        }
-                    }
-
-                    let allocas = self
-                        .representation
-                        .values
-                        .allocas
-                        .iter()
-                        .filter_map(|(id, alloca)| {
-                            (alloca.declared_in_scope_id == scope_push.0)
-                                .then_some(id)
-                        })
-                        .collect::<Vec<_>>();
-
-                    for id in allocas {
-                        assert!(stack.current_mut().new_state(
-                            Memory::Alloca(id),
-                            false,
-                            self.representation
-                                .values
-                                .allocas
-                                .get(id)
-                                .unwrap()
-                                .r#type
-                                .clone(),
-                        ));
-                    }
+                    self.push_scope(stack, scope_push.0).await?;
 
                     1
                 }
 
                 Instruction::ScopePop(scope_pop) => {
-                    // record the stack state
-                    let poped_scope = stack.pop_scope().unwrap();
-                    assert_eq!(poped_scope.scope_id(), scope_pop.0);
+                    let drop_insts =
+                        self.pop_scope(stack, scope_pop.0, handler).await?;
 
-                    let mut memories = poped_scope
-                        .memories_by_address()
-                        .keys()
-                        .copied()
-                        .collect::<Vec<_>>();
+                    let len = drop_insts.len();
 
-                    sort_drop_addresses(
-                        &mut memories,
-                        &self.representation.values.allocas,
-                        self.current_site,
-                        self.value_environment.tracked_engine(),
-                    )
-                    .await?;
-
-                    let mut drop_instructions = Vec::new();
-
-                    for memory in memories {
-                        let state = poped_scope
-                            .get_state(&Address::Memory(memory))
-                            .unwrap();
-
-                        if let Some(moved_out) =
-                            state.get_moved_out_mutable_reference()
-                        {
-                            handler.receive(
-                                MovedOutValueFromMutableReference {
-                                    moved_out_value_span: *moved_out,
-                                    reassignment_span: None,
-                                }
-                                .into(),
-                            );
-                        }
-
-                        drop_instructions.extend(
-                            state
-                                .get_drop_instructions(
-                                    &Address::Memory(memory),
-                                    self.value_environment.tracked_engine(),
-                                )
-                                .await?,
-                        );
-                    }
-
-                    let drop_instructions = simplify_drop::simplify_drops(
-                        drop_instructions,
-                        &self.representation.values,
-                        &self.value_environment,
-                        handler,
-                    )
-                    .await?;
-                    let len = drop_instructions.len();
-
-                    block.insert_instructions(current_index, drop_instructions);
+                    block.insert_instructions(current_index, drop_insts);
 
                     1 + len
                 }
@@ -584,6 +672,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
     #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
     async fn walk_block(
         &mut self,
+        cfg: &mut ControlFlowGraph,
         block_id: ID<Block>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<Option<WalkResult>, UnrecoverableError> {
@@ -596,8 +685,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
         // mark as processing
         self.walk_results_by_block_id.insert(block_id, None);
 
-        let block =
-            self.representation.control_flow_graph.get_block(block_id).unwrap();
+        let block = cfg.get_block(block_id).unwrap();
 
         let (mut stack, looped_blocks) = if block.is_entry() {
             assert!(block.predecessors().is_empty());
@@ -612,7 +700,8 @@ impl<N: Normalizer> Checker<'_, '_, N> {
 
             for predecessor_id in predecessors.iter().copied() {
                 if let Some(result) =
-                    Box::pin(self.walk_block(predecessor_id, handler)).await?
+                    Box::pin(self.walk_block(cfg, predecessor_id, handler))
+                        .await?
                 {
                     merging_contexts.push((predecessor_id, result.stack));
                 } else {
@@ -631,19 +720,14 @@ impl<N: Normalizer> Checker<'_, '_, N> {
             if merging_contexts.len() > 1 {
                 for i in merging_contexts.iter().map(|x| x.0) {
                     assert_eq!(
-                        self.representation
-                            .control_flow_graph
-                            .blocks()
-                            .get(i)
-                            .unwrap()
-                            .terminator(),
+                        cfg.blocks().get(i).unwrap().terminator(),
                         Some(&Terminator::Jump(Jump::Unconditional(
                             UnconditionalJump { target: block_id }
                         ))),
                         "merging block `{i:#?}` should directly jump to the \
                          `block_id` {:#?} {:#?}",
-                        self.representation.control_flow_graph,
-                        self.representation.values
+                        cfg,
+                        self.values
                     );
                 }
             }
@@ -692,13 +776,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                         .copied()
                         .collect::<Vec<_>>();
 
-                    sort_drop_addresses(
-                        &mut memories,
-                        &self.representation.values.allocas,
-                        self.current_site,
-                        self.value_environment.tracked_engine(),
-                    )
-                    .await?;
+                    self.sort_drop_addresses(&mut memories).await?;
 
                     for memory_to_drop in memories {
                         let this_state = this
@@ -721,18 +799,14 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                     }
                 }
 
-                let block = self
-                    .representation
-                    .control_flow_graph
-                    .get_block_mut(predecessor)
-                    .unwrap();
+                let block = cfg.get_block_mut(predecessor).unwrap();
 
                 block.insert_instructions(
                     block.instructions().len(),
                     simplify_drop::simplify_drops(
                         drop_instructions,
-                        &self.representation.values,
-                        &self.value_environment,
+                        self.values,
+                        self.value_environment,
                         handler,
                     )
                     .await?,
@@ -742,7 +816,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
             (stack, looped_block_ids)
         };
 
-        self.walk_instructions(block_id, &mut stack, handler).await?;
+        self.walk_instructions(cfg, block_id, &mut stack, handler).await?;
 
         // handle loop
         if let Some(target_stack) =
@@ -761,13 +835,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                     .copied()
                     .collect::<Vec<_>>();
 
-                sort_drop_addresses(
-                    &mut memories,
-                    &self.representation.values.allocas,
-                    self.current_site,
-                    self.value_environment.tracked_engine(),
-                )
-                .await?;
+                self.sort_drop_addresses(&mut memories).await?;
 
                 for memory in memories {
                     let this_state =
@@ -787,17 +855,13 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                         .await
                         .unwrap();
 
-                    let block = self
-                        .representation
-                        .control_flow_graph
-                        .get_block_mut(block_id)
-                        .unwrap();
+                    let block = cfg.get_block_mut(block_id).unwrap();
                     block.insert_instructions(
                         block.instructions().len(),
                         simplify_drop::simplify_drops(
                             drop_instructions,
-                            &self.representation.values,
-                            &self.value_environment,
+                            self.values,
+                            self.value_environment,
                             handler,
                         )
                         .await?,
@@ -810,7 +874,11 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                         .map(|x| x.get_state_summary().into_moved().unwrap())
                     {
                         handler.receive(
-                            MoveInLoop { moved_value_span: move_span }.into(),
+                            MoveInLoop {
+                                moved_value_span: *move_span.span(),
+                                load_purpose: move_span.purpose(),
+                            }
+                            .into(),
                         );
                     }
                 }
@@ -832,44 +900,88 @@ impl<N: Normalizer> Checker<'_, '_, N> {
     }
 }
 
+/// Recursively traverse the IR and find all the sub-IRs (closures) and
+/// perform memory check on them.
+pub async fn recursive_memory_check_ir(
+    representation: &mut IR,
+    value_environment: &ValueEnvironment<'_, impl Normalizer>,
+    handler: &dyn Handler<Diagnostic>,
+) -> Result<(), UnrecoverableError> {
+    for do_ir in representation
+        .values
+        .registers
+        .items_mut()
+        .filter_map(|x| x.assignment.as_do_mut())
+    {
+        let (do_closure_ir, do_captures) = do_ir.do_closure_mut();
+
+        let inner_value_environment = ValueEnvironment::builder()
+            .captures(do_captures)
+            .current_site(value_environment.current_site)
+            .type_environment(value_environment.type_environment)
+            .build();
+
+        // recursively performs memory check in nested closures
+        Box::pin(memory_check(
+            do_closure_ir,
+            &inner_value_environment,
+            handler,
+        ))
+        .await?;
+
+        let (with_captures, with_irs) = do_ir.with_closures_mut();
+
+        // recursively performs memory check in nested closures
+        for (with_ir, with_closure_parameters) in with_irs {
+            let inner_value_environment = ValueEnvironment::builder()
+                .captures(with_captures)
+                .current_site(value_environment.current_site)
+                .type_environment(value_environment.type_environment)
+                .closure_parameters(with_closure_parameters)
+                .build();
+
+            Box::pin(memory_check(with_ir, &inner_value_environment, handler))
+                .await?;
+        }
+    }
+
+    Ok(())
+}
+
 /// Performs the use-after-move and use-before-initialization check. Moreover,
 /// inserts the drop instructions to the IR.
 #[allow(clippy::missing_errors_doc)]
 pub async fn memory_check(
-    engine: &TrackedEngine,
     representation: &mut IR,
-    current_site: Global<pernixc_symbol::ID>,
-    captures: Option<&Captures>,
+    value_environment: &ValueEnvironment<'_, impl Normalizer>,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<(), UnrecoverableError> {
-    let premise = engine.get_active_premise(current_site).await?;
-
-    let ty_environment = TyEnvironment::new(
-        std::borrow::Cow::Borrowed(&premise),
-        std::borrow::Cow::Borrowed(engine),
-        normalizer::NO_OP,
-    );
-
     let all_block_ids =
         representation.control_flow_graph.blocks().ids().collect::<Vec<_>>();
 
     let mut checker = Checker {
-        representation,
+        values: &representation.values,
+        scope_tree: &representation.scope_tree,
         walk_results_by_block_id: HashMap::new(),
         target_stakcs_by_block_id: HashMap::new(),
-        current_site,
-        value_environment: ValueEnvironment::builder()
-            .type_environment(&ty_environment)
-            .current_site(current_site)
-            .maybe_captures(captures)
-            .build(),
+        value_environment,
     };
 
     for block_id in all_block_ids {
-        checker.walk_block(block_id, handler).await?;
+        checker
+            .walk_block(
+                &mut representation.control_flow_graph,
+                block_id,
+                handler,
+            )
+            .await?;
     }
 
     assert!(checker.walk_results_by_block_id.values().all(Option::is_some));
+
+    // done checking memory for the current IR, recursively check nested closure
+    recursive_memory_check_ir(representation, value_environment, handler)
+        .await?;
 
     Ok(())
 }

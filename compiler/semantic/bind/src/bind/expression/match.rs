@@ -19,8 +19,8 @@ use pernixc_ir::{
     value::{
         literal::{self, Literal, Numeric},
         register::{
-            Assignment, Binary, BinaryOperator, Load, Phi, RelationalOperator,
-            VariantNumber,
+            load::Load, Assignment, Binary, BinaryOperator, Phi,
+            RelationalOperator, VariantNumber,
         },
         Value,
     },
@@ -207,7 +207,7 @@ impl Binder<'_> {
     ) -> Result<(), Error> {
         let numeric_value = match main_leaf_refutable {
             Refutable::Integer(_) => self.create_register_assignment(
-                Assignment::Load(Load { address: load_address }),
+                Assignment::Load(Load::new(load_address)),
                 match_info.span,
             ),
 
@@ -412,7 +412,7 @@ impl Binder<'_> {
         assert!(arm_states_by_value.len() <= 2);
 
         let load_value = self.create_register_assignment(
-            Assignment::Load(Load { address: load_address }),
+            Assignment::Load(Load::new(load_address)),
             match_info.span,
         );
 

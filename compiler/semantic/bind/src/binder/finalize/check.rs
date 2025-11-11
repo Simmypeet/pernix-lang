@@ -201,13 +201,13 @@ async fn check_register_assignment<N: Normalizer>(
 
         // check for move behind shared reference on non-copy type
         register::Assignment::Load(load) => {
-            if load.address.get_reference_qualifier()
+            if load.address().get_reference_qualifier()
                 == Some(Qualifier::Immutable)
-                || load.address.is_behind_index()
+                || load.address().is_behind_index()
             {
                 let ty = ir
                     .values
-                    .type_of(&load.address, value_environment)
+                    .type_of(load.address(), value_environment)
                     .await
                     .map_err(|x| {
                         x.report_as_type_calculating_overflow(
@@ -294,6 +294,44 @@ async fn check_register_assignment<N: Normalizer>(
     }
 }
 
+pub(super) async fn check_recursive<N: Normalizer>(
+    ir: &IR,
+    value_environment: &ValueEnvironment<'_, N>,
+    handler: &dyn Handler<Diagnostic>,
+) -> Result<(), UnrecoverableError> {
+    for do_ir in
+        ir.values.registers.items().filter_map(|x| x.assignment.as_do())
+    {
+        let (do_closure_ir, do_captures) = do_ir.do_closure();
+
+        let inner_value_environment = ValueEnvironment::builder()
+            .captures(do_captures)
+            .current_site(value_environment.current_site)
+            .type_environment(value_environment.type_environment)
+            .build();
+
+        // recursively performs memory check in nested closures
+        Box::pin(check(do_closure_ir, &inner_value_environment, handler))
+            .await?;
+
+        let (with_captures, with_irs) = do_ir.with_closures();
+
+        // recursively performs memory check in nested closures
+        for (with_ir, with_closure_parameters) in with_irs {
+            let inner_value_environment = ValueEnvironment::builder()
+                .captures(with_captures)
+                .current_site(value_environment.current_site)
+                .type_environment(value_environment.type_environment)
+                .closure_parameters(with_closure_parameters)
+                .build();
+
+            Box::pin(check(with_ir, &inner_value_environment, handler)).await?;
+        }
+    }
+
+    Ok(())
+}
+
 pub(super) async fn check<N: Normalizer>(
     ir: &IR,
     value_environment: &ValueEnvironment<'_, N>,
@@ -308,6 +346,8 @@ pub(super) async fn check<N: Normalizer>(
         check_register_assignment(ir, register_id, value_environment, handler)
             .await?;
     }
+
+    Box::pin(check_recursive(ir, value_environment, handler)).await?;
 
     Ok(())
 }

@@ -1,0 +1,30 @@
+from core import Copy
+
+
+public struct NonCopyable:
+    pass
+
+
+final implements Copy[NonCopyable] delete
+
+
+public effect Test:
+    doSomething()
+
+
+public function drop[T](..: T):
+    pass
+
+
+public function main():
+    let nonCopyable = NonCopyable{}
+    
+    do: # the `nonCopyable` is moved here
+        drop(nonCopyable)
+    
+    with Test:
+        doSomething():
+            pass
+
+    # error: use of moved value `nonCopyable`
+    drop(nonCopyable)
