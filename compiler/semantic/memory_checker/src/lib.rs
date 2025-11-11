@@ -297,6 +297,53 @@ impl<'r, N: Normalizer> Checker<'r, N> {
 }
 
 impl<N: Normalizer> Checker<'_, N> {
+    async fn push_root_scope(
+        &self,
+        stack: &mut Stack,
+    ) -> Result<(), UnrecoverableError> {
+        if self
+            .engine()
+            .get_kind(self.current_site())
+            .await
+            .has_function_signature()
+        {
+            let function_signature =
+                self.engine().get_parameters(self.current_site()).await?;
+
+            for (parameter_id, parameter) in function_signature
+                .parameter_order
+                .iter()
+                .copied()
+                .map(|x| (x, &function_signature.parameters[x]))
+            {
+                assert!(stack.current_mut().new_state(
+                    Memory::Parameter(parameter_id),
+                    true,
+                    parameter.r#type.clone(),
+                ));
+            }
+        }
+
+        // if we have closure parameters, initialize them
+        let Some(closure_parameters) =
+            self.value_environment.closure_parameters
+        else {
+            return Ok(());
+        };
+
+        for (closure_parameter_id, closure_parameter) in
+            closure_parameters.parameters_as_order()
+        {
+            assert!(stack.current_mut().new_state(
+                Memory::ClosureParameter(closure_parameter_id),
+                true,
+                closure_parameter.r#type.clone(),
+            ));
+        }
+
+        Ok(())
+    }
+
     async fn push_scope(
         &self,
         stack: &mut Stack,
@@ -304,35 +351,10 @@ impl<N: Normalizer> Checker<'_, N> {
     ) -> Result<(), UnrecoverableError> {
         stack.new_scope(scope_id);
 
-        'out: {
-            // if we're in the function and at the root scope,
-            // we need to initialize the parameters
-            if scope_id == self.scope_tree.root_scope_id() {
-                if !self
-                    .engine()
-                    .get_kind(self.current_site())
-                    .await
-                    .has_function_signature()
-                {
-                    break 'out;
-                }
-
-                let function_signature =
-                    self.engine().get_parameters(self.current_site()).await?;
-
-                for (parameter_id, parameter) in function_signature
-                    .parameter_order
-                    .iter()
-                    .copied()
-                    .map(|x| (x, &function_signature.parameters[x]))
-                {
-                    assert!(stack.current_mut().new_state(
-                        Memory::Parameter(parameter_id),
-                        true,
-                        parameter.r#type.clone(),
-                    ));
-                }
-            }
+        // if we're in the function and at the root scope,
+        // we need to initialize the parameters
+        if scope_id == self.scope_tree.root_scope_id() {
+            self.push_root_scope(stack).await?;
         }
 
         let allocas = self
