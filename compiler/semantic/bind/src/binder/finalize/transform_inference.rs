@@ -161,7 +161,6 @@ impl Transformer<pernixc_term::constant::Constant> for ReplaceInference<'_> {
 }
 
 impl Binder<'_> {
-    
     pub(super) async fn transform_inference(
         &mut self,
         handler: &dyn Handler<Diagnostic>,
