@@ -131,7 +131,9 @@ async fn handle_load<N: Normalizer>(
         {
             stack
                 .get_state(load.address())
-                .expect("should found")
+                .unwrap_or_else(|| {
+                    panic!("state not found for {:?}", load.address())
+                })
                 .get_state_summary()
         } else {
             let copy_marker = val_environment
@@ -325,20 +327,29 @@ impl<N: Normalizer> Checker<'_, N> {
         }
 
         // if we have closure parameters, initialize them
-        let Some(closure_parameters) =
+        if let Some(closure_parameters) =
             self.value_environment.closure_parameters
-        else {
-            return Ok(());
-        };
-
-        for (closure_parameter_id, closure_parameter) in
-            closure_parameters.parameters_as_order()
         {
-            assert!(stack.current_mut().new_state(
-                Memory::ClosureParameter(closure_parameter_id),
-                true,
-                closure_parameter.r#type.clone(),
-            ));
+            for (closure_parameter_id, closure_parameter) in
+                closure_parameters.parameters_as_order()
+            {
+                assert!(stack.current_mut().new_state(
+                    Memory::ClosureParameter(closure_parameter_id),
+                    true,
+                    closure_parameter.r#type.clone(),
+                ));
+            }
+        }
+
+        // if we have captures, initialize them
+        if let Some(captures) = self.value_environment.captures {
+            for (capture_id, capture) in captures.captures_as_order() {
+                assert!(stack.current_mut().new_state(
+                    Memory::Capture(capture_id),
+                    true,
+                    capture.get_capture_type(),
+                ));
+            }
         }
 
         Ok(())
