@@ -377,6 +377,65 @@ impl<N: Normalizer> Checker<'_, N> {
         Ok(())
     }
 
+    async fn pop_scope(
+        &self,
+        stack: &mut Stack,
+        scope_id: ID<scope::Scope>,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<Vec<Instruction>, UnrecoverableError> {
+        // record the stack state
+        let poped_scope = stack.pop_scope().unwrap();
+        assert_eq!(poped_scope.scope_id(), scope_id);
+
+        let mut memories = poped_scope
+            .memories_by_address()
+            .keys()
+            .copied()
+            .collect::<Vec<_>>();
+
+        sort_drop_addresses(
+            &mut memories,
+            &self.values.allocas,
+            self.current_site(),
+            self.value_environment.tracked_engine(),
+        )
+        .await?;
+
+        let mut drop_instructions = Vec::new();
+
+        for memory in memories {
+            let state =
+                poped_scope.get_state(&Address::Memory(memory)).unwrap();
+
+            if let Some(moved_out) = state.get_moved_out_mutable_reference() {
+                handler.receive(
+                    MovedOutValueFromMutableReference {
+                        moved_out_value_span: *moved_out.span(),
+                        reassignment_span: None,
+                    }
+                    .into(),
+                );
+            }
+
+            drop_instructions.extend(
+                state
+                    .get_drop_instructions(
+                        &Address::Memory(memory),
+                        self.value_environment.tracked_engine(),
+                    )
+                    .await?,
+            );
+        }
+
+        simplify_drop::simplify_drops(
+            drop_instructions,
+            self.values,
+            self.value_environment,
+            handler,
+        )
+        .await
+    }
+
     #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
     async fn walk_instructions(
         &mut self,
@@ -555,63 +614,12 @@ impl<N: Normalizer> Checker<'_, N> {
                 }
 
                 Instruction::ScopePop(scope_pop) => {
-                    // record the stack state
-                    let poped_scope = stack.pop_scope().unwrap();
-                    assert_eq!(poped_scope.scope_id(), scope_pop.0);
+                    let drop_insts =
+                        self.pop_scope(stack, scope_pop.0, handler).await?;
 
-                    let mut memories = poped_scope
-                        .memories_by_address()
-                        .keys()
-                        .copied()
-                        .collect::<Vec<_>>();
+                    let len = drop_insts.len();
 
-                    sort_drop_addresses(
-                        &mut memories,
-                        &self.values.allocas,
-                        self.current_site(),
-                        self.value_environment.tracked_engine(),
-                    )
-                    .await?;
-
-                    let mut drop_instructions = Vec::new();
-
-                    for memory in memories {
-                        let state = poped_scope
-                            .get_state(&Address::Memory(memory))
-                            .unwrap();
-
-                        if let Some(moved_out) =
-                            state.get_moved_out_mutable_reference()
-                        {
-                            handler.receive(
-                                MovedOutValueFromMutableReference {
-                                    moved_out_value_span: *moved_out.span(),
-                                    reassignment_span: None,
-                                }
-                                .into(),
-                            );
-                        }
-
-                        drop_instructions.extend(
-                            state
-                                .get_drop_instructions(
-                                    &Address::Memory(memory),
-                                    self.value_environment.tracked_engine(),
-                                )
-                                .await?,
-                        );
-                    }
-
-                    let drop_instructions = simplify_drop::simplify_drops(
-                        drop_instructions,
-                        self.values,
-                        self.value_environment,
-                        handler,
-                    )
-                    .await?;
-                    let len = drop_instructions.len();
-
-                    block.insert_instructions(current_index, drop_instructions);
+                    block.insert_instructions(current_index, drop_insts);
 
                     1 + len
                 }
