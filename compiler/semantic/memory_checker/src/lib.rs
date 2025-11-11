@@ -857,6 +857,50 @@ impl<N: Normalizer> Checker<'_, '_, N> {
     }
 }
 
+/// Recursively traverse the IR and find all the sub-IRs (closures) and
+/// perform memory check on them.
+pub async fn recursive_memory_check_ir(
+    representation: &mut IR,
+    value_environment: ValueEnvironment<'_, impl Normalizer>,
+    handler: &dyn Handler<Diagnostic>,
+) -> Result<(), UnrecoverableError> {
+    for do_ir in representation
+        .values
+        .registers
+        .items_mut()
+        .filter_map(|x| x.assignment.as_do_mut())
+    {
+        let (do_closure_ir, do_captures) = do_ir.do_closure_mut();
+
+        let inner_value_environment = ValueEnvironment::builder()
+            .captures(do_captures)
+            .current_site(value_environment.current_site)
+            .type_environment(value_environment.type_environment)
+            .build();
+
+        // recursively performs memory check in nested closures
+        Box::pin(memory_check(do_closure_ir, inner_value_environment, handler))
+            .await?;
+
+        let (with_captures, with_irs) = do_ir.with_clousre_mut();
+
+        // recursively performs memory check in nested closures
+        for (with_ir, with_closure_parameters) in with_irs {
+            let inner_value_environment = ValueEnvironment::builder()
+                .captures(with_captures)
+                .current_site(value_environment.current_site)
+                .type_environment(value_environment.type_environment)
+                .closure_parameters(with_closure_parameters)
+                .build();
+
+            Box::pin(memory_check(with_ir, inner_value_environment, handler))
+                .await?;
+        }
+    }
+
+    Ok(())
+}
+
 /// Performs the use-after-move and use-before-initialization check. Moreover,
 /// inserts the drop instructions to the IR.
 #[allow(clippy::missing_errors_doc)]
@@ -880,6 +924,14 @@ pub async fn memory_check(
     }
 
     assert!(checker.walk_results_by_block_id.values().all(Option::is_some));
+
+    // done checking memory for the current IR, recursively check nested closure
+    recursive_memory_check_ir(
+        checker.representation,
+        checker.value_environment,
+        handler,
+    )
+    .await?;
 
     Ok(())
 }
