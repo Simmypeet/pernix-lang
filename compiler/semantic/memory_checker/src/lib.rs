@@ -129,6 +129,10 @@ async fn handle_load<N: Normalizer>(
             == Some(Qualifier::Immutable)
             || load.address().is_behind_index()
         {
+            // The check for whether the type behind the immutable reference is
+            // copyable or not has been done previously in the phase of
+            // finializing the binder IR.
+
             stack
                 .get_state(load.address())
                 .unwrap_or_else(|| {
@@ -164,6 +168,7 @@ async fn handle_load<N: Normalizer>(
                 )
                 .await?;
 
+            // if is copyable, no need to move
             if storage.as_vec().is_empty() {
                 break 'memory_state stack
                     .get_state(load.address())
