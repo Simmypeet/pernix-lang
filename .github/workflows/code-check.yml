@@ -27,9 +27,6 @@ jobs:
               with:
                   components: rustfmt, clippy
 
-            - name: Rust Cache
-              uses: Swatinem/rust-cache@v2
-
             - name: Build LLVM on Unix-like
               if: runner.os != 'Windows'
               uses: ./.github/actions/build-llvm
@@ -44,6 +41,12 @@ jobs:
               run: |
                   ls ${{ github.workspace }}/__llvm18
                   echo "LLVM_SYS_181_PREFIX=${{ github.workspace }}/__llvm18" >> $GITHUB_ENV
+
+            - name: Rust Cache
+              uses: Swatinem/rust-cache@v2
+              with:
+                  shared-key: "llvm-18.1.8"
+                  cache-on-failure: true
 
             - name: Check Code Formatting
               run: cargo fmt --all -- --check
