@@ -925,7 +925,7 @@ pub async fn recursive_memory_check_ir(
         Box::pin(memory_check(do_closure_ir, inner_value_environment, handler))
             .await?;
 
-        let (with_captures, with_irs) = do_ir.with_clousre_mut();
+        let (with_captures, with_irs) = do_ir.with_closures_mut();
 
         // recursively performs memory check in nested closures
         for (with_ir, with_closure_parameters) in with_irs {

@@ -320,13 +320,14 @@ impl transform::Element for Do {
 impl Do {
     /// Retrieves the mutable reference to the IR of the `do` closure and its
     /// captures.
+    #[must_use]
     pub const fn do_closure_mut(&mut self) -> (&mut IR, &Captures) {
         (&mut self.closure.ir, &self.closure.capture_arguments.captures)
     }
 
     /// Retrieves the mutable reference to each of the closure of effect
     /// handler.
-    pub fn with_clousre_mut(
+    pub fn with_closures_mut(
         &mut self,
     ) -> (&Captures, impl Iterator<Item = (&mut IR, &ClosureParameters)>) {
         (
