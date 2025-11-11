@@ -1,16 +1,15 @@
 //! Contains the logic related to memory checking pass on the IR.
 
-use std::{cmp::Ordering, collections::HashMap};
+use std::collections::HashMap;
 
 use diagnostic::{
     MoveInLoop, MovedOutValueFromMutableReference, UseAfterMove,
     UseBeforeInitialization,
 };
-use pernixc_arena::{Arena, ID};
+use pernixc_arena::ID;
 use pernixc_handler::{Handler, Storage};
 use pernixc_ir::{
     address::{self, Address, Memory},
-    alloca::Alloca,
     control_flow_graph::{Block, ControlFlowGraph},
     instruction::{Instruction, Jump, Terminator, UnconditionalJump},
     scope,
@@ -221,48 +220,6 @@ async fn handle_load<N: Normalizer>(
     Ok(())
 }
 
-async fn sort_drop_addresses(
-    addresses: &mut [Memory],
-    allocas: &Arena<Alloca>,
-    current_site: Global<pernixc_symbol::ID>,
-    engine: &TrackedEngine,
-) -> Result<(), UnrecoverableError> {
-    let function_signature = engine.get_parameters(current_site).await?;
-
-    addresses.sort_by(|x, y| match (x, y) {
-        (Memory::Parameter(x_id), Memory::Parameter(y_id)) => {
-            let x = function_signature
-                .parameter_order
-                .iter()
-                .position(|y| y == x_id)
-                .unwrap();
-            let y = function_signature
-                .parameter_order
-                .iter()
-                .position(|y| y == y_id)
-                .unwrap();
-
-            x.cmp(&y).reverse()
-        }
-
-        (Memory::Alloca(x_id), Memory::Alloca(y_id)) => {
-            let x = allocas.get(*x_id).unwrap().declaration_order;
-            let y = allocas.get(*y_id).unwrap().declaration_order;
-
-            x.cmp(&y).reverse()
-        }
-
-        (Memory::Capture(_), Memory::Capture(_)) => todo!(),
-
-        (Memory::Parameter(_), Memory::Alloca(_)) => Ordering::Greater,
-        (Memory::Alloca(_), Memory::Parameter(_)) => Ordering::Less,
-
-        _ => todo!(),
-    });
-
-    Ok(())
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct WalkResult {
     /// The stack state after the walking
@@ -304,6 +261,77 @@ impl<'r, N: Normalizer> Checker<'r, N> {
 }
 
 impl<N: Normalizer> Checker<'_, N> {
+    async fn sort_drop_addresses(
+        &self,
+        addresses: &mut [Memory],
+    ) -> Result<(), UnrecoverableError> {
+        let function_signature =
+            self.engine().get_parameters(self.current_site()).await?;
+
+        addresses.sort_by(|x, y| match (x, y) {
+            (Memory::Parameter(x_id), Memory::Parameter(y_id)) => {
+                let x = function_signature
+                    .parameter_order
+                    .iter()
+                    .position(|y| y == x_id)
+                    .unwrap();
+                let y = function_signature
+                    .parameter_order
+                    .iter()
+                    .position(|y| y == y_id)
+                    .unwrap();
+
+                x.cmp(&y).reverse()
+            }
+            (Memory::Alloca(x_id), Memory::Alloca(y_id)) => {
+                let x =
+                    self.values.allocas.get(*x_id).unwrap().declaration_order;
+                let y =
+                    self.values.allocas.get(*y_id).unwrap().declaration_order;
+
+                x.cmp(&y).reverse()
+            }
+            (Memory::Capture(x_id), Memory::Capture(y_id)) => {
+                let x = self
+                    .value_environment
+                    .captures()
+                    .declaration_order_of(*x_id);
+
+                let y = self
+                    .value_environment
+                    .captures()
+                    .declaration_order_of(*y_id);
+
+                x.cmp(&y)
+            }
+            (
+                Memory::ClosureParameter(x_id),
+                Memory::ClosureParameter(y_id),
+            ) => {
+                let x = self
+                    .value_environment
+                    .closure_parameters()
+                    .get_parameter_declaration_order(*x_id);
+
+                let y = self
+                    .value_environment
+                    .closure_parameters()
+                    .get_parameter_declaration_order(*y_id);
+
+                x.cmp(&y).reverse()
+            }
+
+            _ => {
+                let x_priority = x.drop_priority();
+                let y_priority = y.drop_priority();
+
+                x_priority.cmp(&y_priority)
+            }
+        });
+
+        Ok(())
+    }
+
     async fn push_root_scope(
         &self,
         stack: &mut Stack,
@@ -409,13 +437,7 @@ impl<N: Normalizer> Checker<'_, N> {
             .copied()
             .collect::<Vec<_>>();
 
-        sort_drop_addresses(
-            &mut memories,
-            &self.values.allocas,
-            self.current_site(),
-            self.value_environment.tracked_engine(),
-        )
-        .await?;
+        self.sort_drop_addresses(&mut memories).await?;
 
         let mut drop_instructions = Vec::new();
 
@@ -754,13 +776,7 @@ impl<N: Normalizer> Checker<'_, N> {
                         .copied()
                         .collect::<Vec<_>>();
 
-                    sort_drop_addresses(
-                        &mut memories,
-                        &self.values.allocas,
-                        self.current_site(),
-                        self.value_environment.tracked_engine(),
-                    )
-                    .await?;
+                    self.sort_drop_addresses(&mut memories).await?;
 
                     for memory_to_drop in memories {
                         let this_state = this
@@ -819,13 +835,7 @@ impl<N: Normalizer> Checker<'_, N> {
                     .copied()
                     .collect::<Vec<_>>();
 
-                sort_drop_addresses(
-                    &mut memories,
-                    &self.values.allocas,
-                    self.current_site(),
-                    self.value_environment.tracked_engine(),
-                )
-                .await?;
+                self.sort_drop_addresses(&mut memories).await?;
 
                 for memory in memories {
                     let this_state =
