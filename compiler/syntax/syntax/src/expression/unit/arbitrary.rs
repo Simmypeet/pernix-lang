@@ -23,6 +23,7 @@ reference! {
         Numeric(Numeric),
         Parenthesized(Parenthesized),
         FunctionCall(FunctionCall),
+        ResumeCall(ResumeCall),
         QualifiedIdentifier(QualifiedIdentifier),
         Struct(Struct),
         Array(Array),
@@ -53,6 +54,7 @@ impl IndentDisplay for Unit {
             Self::FunctionCall(function_call) => {
                 function_call.indent_fmt(f, indent)
             }
+            Self::ResumeCall(resume_call) => resume_call.indent_fmt(f, indent),
         }
     }
 }
@@ -82,8 +84,9 @@ impl Arbitrary for Unit {
             Struct::arbitrary_with((ty.clone(), expr.clone(), qi.clone()))
                 .prop_map(Unit::Struct),
             Array::arbitrary_with(expr.clone()).prop_map(Unit::Array),
-            FunctionCall::arbitrary_with((expr, ty, qi))
+            FunctionCall::arbitrary_with((expr.clone(), ty, qi))
                 .prop_map(Unit::FunctionCall),
+            ResumeCall::arbitrary_with(expr).prop_map(Unit::ResumeCall),
             Just(Self::Phantom(Phantom {})),
             Just(Self::Panic(Panic {}))
         ]
@@ -130,6 +133,66 @@ impl IndentDisplay for FunctionCall {
     ) -> std::fmt::Result {
         self.qualified_identifier.indent_fmt(f, indent)?;
         self.call.indent_fmt(f, indent)
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone)]
+    pub struct ResumeCall for super::ResumeCall {
+        pub single_call (SingleCall),
+    }
+}
+
+impl IndentDisplay for ResumeCall {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indent: usize,
+    ) -> std::fmt::Result {
+        write!(f, "resume")?;
+        self.single_call.indent_fmt(f, indent)
+    }
+}
+
+impl Arbitrary for ResumeCall {
+    type Parameters = Option<BoxedStrategy<Expression>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(expr: Self::Parameters) -> Self::Strategy {
+        SingleCall::arbitrary_with(expr)
+            .prop_map(|single_call| Self { single_call })
+            .boxed()
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone)]
+    pub struct SingleCall for super::SingleCall {
+        pub expression (Box<Expression>),
+    }
+}
+
+impl Arbitrary for SingleCall {
+    type Parameters = Option<BoxedStrategy<Expression>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(expr: Self::Parameters) -> Self::Strategy {
+        expr.unwrap_or_else(Expression::arbitrary)
+            .prop_map(Box::new)
+            .prop_map(|expression| Self { expression })
+            .boxed()
+    }
+}
+
+impl IndentDisplay for SingleCall {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indent: usize,
+    ) -> std::fmt::Result {
+        write!(f, "(")?;
+        self.expression.indent_fmt(f, indent)?;
+        write!(f, ")")
     }
 }
 
