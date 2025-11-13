@@ -9,7 +9,7 @@ use pernixc_ir::{
     value::{
         register::{
             load::{Load, Purpose},
-            r#do::CaptureArguments,
+            do_with::CaptureArguments,
             Assignment, Borrow,
         },
         Value,

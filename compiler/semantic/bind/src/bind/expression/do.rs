@@ -11,7 +11,7 @@ use pernixc_ir::{
     value::{
         register::{
             self,
-            r#do::{DoClosure, EffectOperationHandlerClosure},
+            do_with::{Do, OperationHandler},
             Assignment,
         },
         Value,
@@ -125,9 +125,9 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
         )
         .await?;
 
-        let do_assignment = register::r#do::Do::new(
+        let do_assignment = register::do_with::DoWith::new(
             effect_handlers.effect_handler_group_id,
-            DoClosure::new(do_capture_arguments, do_closure),
+            Do::new(do_capture_arguments, do_closure),
             with,
             expected_return_type,
         );
@@ -169,7 +169,7 @@ async fn build_with_blocks(
     with_span: RelativeSpan,
     captures: CapturesWithNameBindingPoint,
     handler: &dyn Handler<Diagnostic>,
-) -> Result<register::r#do::With, Error> {
+) -> Result<register::do_with::HandlerChain, Error> {
     let mut with_irs = HashMap::default();
 
     for with_block in with_blocks {
@@ -238,18 +238,18 @@ async fn build_with_blocks(
         PruneMode::Multiple,
     );
 
-    let mut with = register::r#do::With::new(
+    let mut with = register::do_with::HandlerChain::new(
         binder.bind_capture_arguments(underlying_captures, with_span),
     );
 
     for ((effect_handler_id, effect_operation_id), (ir, closure_parameters)) in
         with_irs
     {
-        let effect_handler = with.insert_effect_handler(effect_handler_id);
+        let effect_handler = with.insert_handler_clause(effect_handler_id);
 
         effect_handler.insert_effect_operation_handler_closure(
             effect_operation_id,
-            EffectOperationHandlerClosure::new(ir, closure_parameters),
+            OperationHandler::new(ir, closure_parameters),
         );
     }
 

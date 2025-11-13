@@ -43,7 +43,7 @@ use crate::{
     Values,
 };
 
-pub mod r#do;
+pub mod do_with;
 pub mod load;
 
 /// Represents an element of a [`Tuple`].
@@ -1020,7 +1020,7 @@ pub enum Assignment {
     Phi(Phi),
     Cast(Cast),
     VariantNumber(VariantNumber),
-    Do(r#do::Do),
+    Do(do_with::DoWith),
 }
 
 impl Assignment {
