@@ -8,8 +8,8 @@ use pernixc_ir::{
     instruction::{self, ScopePush},
     value::{
         register::{
-            load::{Load, Purpose},
             do_with::CaptureArguments,
+            load::{Load, Purpose},
             Assignment, Borrow,
         },
         Value,
