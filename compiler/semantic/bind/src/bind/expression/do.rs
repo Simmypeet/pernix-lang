@@ -6,7 +6,7 @@ use pernixc_ir::{
     address::{Address, Memory},
     capture::{builder::CapturesWithNameBindingPoint, pruning::PruneMode},
     closure_parameters::ClosureParameters,
-    effect_handler::{EffectHandler, HandlerGroup},
+    handling_scope::{HandlerClause, HandlingScope},
     pattern::{Irrefutable, NameBindingPoint, Wildcard},
     value::{
         register::{
@@ -143,14 +143,14 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
 
 struct EffectHandlers {
     with_blocks: Vec<WithBlock>,
-    effect_handler_group_id: pernixc_arena::ID<HandlerGroup>,
+    effect_handler_group_id: pernixc_arena::ID<HandlingScope>,
 }
 
 struct WithBlock {
     qualified_identifier: QualifiedIdentifier,
     effect_id: Global<pernixc_symbol::ID>,
     generic_arguments: GenericArguments,
-    effect_handler_id: pernixc_arena::ID<EffectHandler>,
+    effect_handler_id: pernixc_arena::ID<HandlerClause>,
     handlers: HashMap<pernixc_symbol::ID, HandlerBlock>,
 }
 
@@ -558,7 +558,7 @@ async fn extract_effect_handlers(
             effect_id: effect.id,
             effect_handler_id: binder.insert_effect_handler_to_group(
                 handler_group_id,
-                EffectHandler::new(effect.id, effect.generic_arguments.clone()),
+                HandlerClause::new(effect.id, effect.generic_arguments.clone()),
             ),
             generic_arguments: effect.generic_arguments,
             handlers,

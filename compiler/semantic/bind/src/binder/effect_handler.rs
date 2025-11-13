@@ -1,7 +1,7 @@
 //! Contains logic related to effect handlers and handler groups.
 
-use pernixc_ir::effect_handler::{
-    EffectHandler, EffectHandlerID, HandlerGroup, HandlerGroups,
+use pernixc_ir::handling_scope::{
+    HandlerClause, HandlerClauseID, HandlingScope, HandlingScopes,
 };
 use pernixc_target::Global;
 use pernixc_term::generic_arguments::GenericArguments;
@@ -12,17 +12,17 @@ use crate::binder::Binder;
 /// Context struct for managing effect handlers.
 #[derive(Debug, Clone, Default)]
 pub struct Context {
-    handler_groups: HandlerGroups,
-    handler_gruop_stack: Vec<pernixc_arena::ID<HandlerGroup>>,
+    handler_groups: HandlingScopes,
+    handler_gruop_stack: Vec<pernixc_arena::ID<HandlingScope>>,
 }
 
 impl Binder<'_> {
     /// Insert a new effect handler group
     pub fn insert_effect_handler_group(
         &mut self,
-    ) -> pernixc_arena::ID<HandlerGroup> {
+    ) -> pernixc_arena::ID<HandlingScope> {
         let handler_group =
-            self.effect_handler_context.handler_groups.insert_handler_group();
+            self.effect_handler_context.handler_groups.insert_handler_clause();
 
         self.effect_handler_context.handler_gruop_stack.push(handler_group);
 
@@ -32,9 +32,9 @@ impl Binder<'_> {
     /// Insert a new effect handler into an existing handler group
     pub fn insert_effect_handler_to_group(
         &mut self,
-        handler_group_id: pernixc_arena::ID<HandlerGroup>,
-        handler: EffectHandler,
-    ) -> pernixc_arena::ID<EffectHandler> {
+        handler_group_id: pernixc_arena::ID<HandlingScope>,
+        handler: HandlerClause,
+    ) -> pernixc_arena::ID<HandlerClause> {
         self.effect_handler_context
             .handler_groups
             .insert_effect_handler_to_group(handler_group_id, handler)
@@ -43,7 +43,7 @@ impl Binder<'_> {
     /// Pops the topmost handler group from the stack
     pub fn pop_handler_group(
         &mut self,
-        handler_group: pernixc_arena::ID<HandlerGroup>,
+        handler_group: pernixc_arena::ID<HandlingScope>,
     ) {
         assert_eq!(
             self.effect_handler_context.handler_gruop_stack.pop().unwrap(),
@@ -57,7 +57,7 @@ impl Binder<'_> {
         effect_id: Global<pernixc_symbol::ID>,
         generic_arguments: &GenericArguments,
         environment: &Environment<'_, impl Normalizer>,
-    ) -> Result<Option<EffectHandlerID>, pernixc_type_system::Error> {
+    ) -> Result<Option<HandlerClauseID>, pernixc_type_system::Error> {
         for (handler_id, handler_group) in self
             .effect_handler_context
             .handler_gruop_stack
@@ -74,7 +74,7 @@ impl Binder<'_> {
                 )
                 .await?
             {
-                return Ok(Some(EffectHandlerID::new(
+                return Ok(Some(HandlerClauseID::new(
                     handler_id,
                     effect_handler_id,
                 )));
@@ -88,7 +88,7 @@ impl Binder<'_> {
 impl Context {
     /// Deconstruct the context into its handler groups
     #[must_use]
-    pub fn into_handler_groups(self) -> HandlerGroups { self.handler_groups }
+    pub fn into_handler_groups(self) -> HandlingScopes { self.handler_groups }
 
     /// Asserts that the handler group stack is empty
     ///

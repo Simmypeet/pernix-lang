@@ -11,7 +11,7 @@ use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
 use crate::{
     capture::{Capture, Captures},
     closure_parameters::ClosureParameters,
-    effect_handler::HandlerGroup,
+    handling_scope::HandlingScope,
     transform::{self, Transformer},
     value::{register::Register, Value},
     IR,
@@ -211,7 +211,7 @@ pub struct With {
     /// The effect handlers mapped by their unique IDs within the top-level
     /// IR (function-level IR).
     effect_handlers: HashMap<
-        pernixc_arena::ID<crate::effect_handler::EffectHandler>,
+        pernixc_arena::ID<crate::handling_scope::HandlerClause>,
         EffectHandler,
     >,
 }
@@ -226,7 +226,7 @@ impl With {
     /// Inserts a new effect handler for a specific effect ID.
     pub fn insert_effect_handler(
         &mut self,
-        effect_id: pernixc_arena::ID<crate::effect_handler::EffectHandler>,
+        effect_id: pernixc_arena::ID<crate::handling_scope::HandlerClause>,
     ) -> &mut EffectHandler {
         self.effect_handlers.entry(effect_id).or_default()
     }
@@ -257,7 +257,7 @@ impl transform::Element for With {
 pub struct Do {
     /// The unique ID of this `do-with` expression within the function-level
     /// IR.
-    handler_group: pernixc_arena::ID<HandlerGroup>,
+    handler_group: pernixc_arena::ID<HandlingScope>,
 
     /// The closure for the `do` part of the expression.
     closure: DoClosure,
@@ -274,7 +274,7 @@ impl Do {
     /// Creates a new `Do` expression with the given components.
     #[must_use]
     pub const fn new(
-        handler_group: pernixc_arena::ID<HandlerGroup>,
+        handler_group: pernixc_arena::ID<HandlingScope>,
         closure: DoClosure,
         with: With,
         return_type: pernixc_term::r#type::Type,

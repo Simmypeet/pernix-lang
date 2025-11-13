@@ -31,7 +31,7 @@ use super::Value;
 use crate::{
     address::Address,
     control_flow_graph::Block,
-    effect_handler::EffectHandlerID,
+    handling_scope::HandlerClauseID,
     transform::{
         self, ConstantTermSource, LifetimeTermSource, Transformer,
         TypeTermSource,
@@ -492,7 +492,7 @@ pub enum EffectHandlerArgument {
     FromEffectAnnotation(ID<effect::Unit>),
 
     /// Uses the local effect handler defiend via `do-with` expression.
-    FromEffectHandler(EffectHandlerID),
+    FromEffectHandler(HandlerClauseID),
 
     /// The capability is unhandled, error should've been reported.
     Unhandled,

@@ -14,7 +14,7 @@ use pernixc_target::Global;
 use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
 
 use crate::{
-    effect_handler::HandlerGroups,
+    handling_scope::HandlingScopes,
     transform::{Transformer, TypeTermSource},
     value::register::Register,
 };
@@ -24,7 +24,7 @@ pub mod alloca;
 pub mod capture;
 pub mod closure_parameters;
 pub mod control_flow_graph;
-pub mod effect_handler;
+pub mod handling_scope;
 pub mod instruction;
 pub mod pattern;
 pub mod scope;
@@ -126,5 +126,5 @@ pub struct FunctionIR {
     pub ir: IR,
 
     /// The collection of all handler groups defined in the function body.
-    pub handler_groups: HandlerGroups,
+    pub handler_groups: HandlingScopes,
 }
