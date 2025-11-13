@@ -608,7 +608,7 @@ impl Binder<'_> {
             callable_id,
             instantiation,
             arguments: argument_values,
-            capability_arguments,
+            effect_arguments: capability_arguments,
         };
 
         Ok(self.create_register_assignment(

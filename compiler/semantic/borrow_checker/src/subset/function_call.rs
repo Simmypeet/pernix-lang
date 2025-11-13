@@ -243,7 +243,7 @@ impl<N: Normalizer> Context<'_, N> {
         }
 
         self.get_subset_of_effect_operations(
-            &function_call.capability_arguments,
+            &function_call.effect_arguments,
             &function_call.instantiation,
             function_call.callable_id,
             span,

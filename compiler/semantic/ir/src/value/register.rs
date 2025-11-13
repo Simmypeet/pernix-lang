@@ -511,7 +511,7 @@ pub struct FunctionCall {
     pub instantiation: Instantiation,
 
     /// The capability arguments supplied to the function.
-    pub capability_arguments: HashMap<ID<effect::Unit>, EffectHandlerArgument>,
+    pub effect_arguments: HashMap<ID<effect::Unit>, EffectHandlerArgument>,
 }
 
 impl FunctionCall {
