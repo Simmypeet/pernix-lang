@@ -241,8 +241,8 @@ pub struct FunctionBodyKey(pub Global<ID>);
     pernixc_query::Key,
 )]
 #[value(Option<pernixc_syntax::item::function::EffectAnnotation>)]
-#[extend(method(get_function_do_effect_syntax), no_cyclic)]
-pub struct FunctionDoEffectKey(pub Global<ID>);
+#[extend(method(get_function_effect_annotation_syntax), no_cyclic)]
+pub struct FunctionEffectAnnotationKey(pub Global<ID>);
 
 /// Retrieves the unsafe keyword defined to a function.
 #[derive(

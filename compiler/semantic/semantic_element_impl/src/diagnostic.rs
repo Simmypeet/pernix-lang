@@ -7,7 +7,7 @@ use pernixc_diagnostic::Report;
 use pernixc_ir::Key as IRKey;
 use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_semantic_element::{
-    capability::Key as DoEffectKey, fields::Key as FieldsKey,
+    effect_annotation::Key as DoEffectKey, fields::Key as FieldsKey,
     import::Key as ImportKey, type_alias::Key as TypeAliasKey,
     variant::Key as VariantKey, where_clause::Key as WhereClauseKey,
 };

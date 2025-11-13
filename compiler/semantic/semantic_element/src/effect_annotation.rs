@@ -25,5 +25,5 @@ use pernixc_term::effect;
     pernixc_query::Key,
 )]
 #[value(Arc<OrderedArena<effect::Unit>>)]
-#[extend(method(get_capabilities))]
+#[extend(method(get_effect_annotation))]
 pub struct Key(pub Global<ID>);

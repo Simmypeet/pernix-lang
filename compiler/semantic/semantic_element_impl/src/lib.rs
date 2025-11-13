@@ -5,7 +5,7 @@ use crate::build::Build;
 pub mod diagnostic;
 
 mod build;
-mod do_effect;
+mod effect_annotation;
 mod fields;
 mod function_ir;
 mod function_signature;

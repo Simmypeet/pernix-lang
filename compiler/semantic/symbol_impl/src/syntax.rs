@@ -4,8 +4,8 @@ use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
 use pernixc_symbol::{
     name::get_qualified_name,
     syntax::{
-        FieldsKey, FunctionBodyKey, FunctionDoEffectKey, FunctionSignatureKey,
-        FunctionUnsafeKeywordKey, GenericParametersKey,
+        FieldsKey, FunctionBodyKey, FunctionEffectAnnotationKey,
+        FunctionSignatureKey, FunctionUnsafeKeywordKey, GenericParametersKey,
         ImplementsFinalKeywordKey, ImplementsMemberAccessModifierKey,
         ImplementsQualifiedIdentifierKey, ImportKey, TypeAliasKey,
         VariantAssociatedTypeKey, WhereClauseKey,
@@ -312,12 +312,12 @@ pernixc_register::register!(FunctionBodyKey, FunctionBodyExecutor);
 
 /// Implementation of the `get_fields_syntax` method
 #[pernixc_query::executor(
-    key(FunctionDoEffectKey),
+    key(FunctionEffectAnnotationKey),
     name(FunctionDoEffectExecutor)
 )]
 #[allow(clippy::unnecessary_wraps)]
 pub async fn get_function_do_effect_syntax(
-    &FunctionDoEffectKey(id): &FunctionDoEffectKey,
+    &FunctionEffectAnnotationKey(id): &FunctionEffectAnnotationKey,
     engine: &TrackedEngine,
 ) -> Result<Option<pernixc_syntax::item::function::EffectAnnotation>, CyclicError>
 {
@@ -336,4 +336,7 @@ pub async fn get_function_do_effect_syntax(
     );
 }
 
-pernixc_register::register!(FunctionDoEffectKey, FunctionDoEffectExecutor);
+pernixc_register::register!(
+    FunctionEffectAnnotationKey,
+    FunctionDoEffectExecutor
+);

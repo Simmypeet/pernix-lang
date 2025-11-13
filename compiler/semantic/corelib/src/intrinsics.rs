@@ -5,7 +5,7 @@ use std::sync::Arc;
 use pernixc_arena::{Arena, OrderedArena};
 use pernixc_query::Engine;
 use pernixc_semantic_element::{
-    capability, elided_lifetime, fields, implied_predicate,
+    effect_annotation, elided_lifetime, fields, implied_predicate,
     parameter::{self, Parameter, Parameters},
     return_type, where_clause,
 };
@@ -156,7 +156,7 @@ where
         .await;
     input_lock
         .set_input(
-            capability::Key(function_id),
+            effect_annotation::Key(function_id),
             Arc::new(OrderedArena::default()),
         )
         .await;

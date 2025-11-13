@@ -11,12 +11,12 @@ use pernixc_resolution::{
     qualified_identifier::{resolve_qualified_identifier, Resolution},
     Config, ExtraNamespace,
 };
-use pernixc_semantic_element::capability;
+use pernixc_semantic_element::effect_annotation;
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
     kind::{get_kind, Kind},
     parent::get_parent_global,
-    syntax::get_function_do_effect_syntax,
+    syntax::get_function_effect_annotation_syntax,
 };
 use pernixc_syntax::item::function::{EffectUnit, EffectUnitListKind};
 use pernixc_target::Global;
@@ -307,7 +307,7 @@ async fn detect_duplicating_group<
     Ok(result)
 }
 
-impl Build for capability::Key {
+impl Build for effect_annotation::Key {
     type Diagnostic = diagnostic::Diagnostic;
 
     async fn execute(
@@ -340,7 +340,7 @@ impl Build for capability::Key {
         }
 
         let do_effect_syntax =
-            engine.get_function_do_effect_syntax(key.0).await;
+            engine.get_function_effect_annotation_syntax(key.0).await;
 
         let generic_namespace =
             engine.get_generic_parameter_namespace(key.0).await?;
@@ -420,4 +420,4 @@ impl Build for capability::Key {
     }
 }
 
-crate::build::register_build!(capability::Key);
+crate::build::register_build!(effect_annotation::Key);

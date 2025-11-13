@@ -11,7 +11,8 @@ use pernixc_ir::value::{
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_resolution::qualified_identifier::Resolution;
 use pernixc_semantic_element::{
-    capability::get_capabilities, elided_lifetime::get_elided_lifetimes,
+    effect_annotation::get_effect_annotation,
+    elided_lifetime::get_elided_lifetimes,
     implements_arguments::get_implements_argument, parameter::get_parameters,
     variant::get_variant_associated_type,
 };
@@ -591,7 +592,7 @@ impl Binder<'_> {
         }
 
         let capabilities =
-            self.engine().get_capabilities(self.current_site()).await?;
+            self.engine().get_effect_annotation(self.current_site()).await?;
 
         let capability_arguments = self
             .effect_check(
@@ -656,7 +657,7 @@ impl Binder<'_> {
         UnrecoverableError,
     > {
         let required_capabilities =
-            self.engine().get_capabilities(callable_id).await?;
+            self.engine().get_effect_annotation(callable_id).await?;
 
         self.check_effect_units(
             available_capabilities,
