@@ -724,7 +724,7 @@ impl Binder<'_> {
                 {
                     effect_arguments.insert(
                         required_id,
-                        EffectHandlerArgument::FromPassedCapability(
+                        EffectHandlerArgument::FromEffectAnnotation(
                             available_id,
                         ),
                     );

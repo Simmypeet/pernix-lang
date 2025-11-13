@@ -488,8 +488,8 @@ async fn type_of_variant_assignment(
     StableHash,
 )]
 pub enum EffectHandlerArgument {
-    /// Uses the capability passed to the function as an argument.
-    FromPassedCapability(ID<effect::Unit>),
+    /// Uses the handler presented in the effect annotation.
+    FromEffectAnnotation(ID<effect::Unit>),
 
     /// Uses the local effect handler defiend via `do-with` expression.
     FromEffectHandler(EffectHandlerID),

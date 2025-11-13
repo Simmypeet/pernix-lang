@@ -52,7 +52,7 @@ impl<N: Normalizer> Context<'_, N> {
             required_capability.generic_arguments.instantiate(instantiation);
 
             match argument {
-                EffectHandlerArgument::FromPassedCapability(
+                EffectHandlerArgument::FromEffectAnnotation(
                     capability_unit,
                 ) => {
                     // no need to instantiate, as the capability unit is
