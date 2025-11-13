@@ -27,7 +27,7 @@ reference! {
         pub generic_parameters (Option<GenericParameters>),
         pub parameters (Parameters),
         pub return_type (Option<ReturnType>),
-        pub do_effect (Option<EffectAnnotation>),
+        pub effect_annotation (Option<EffectAnnotation>),
     }
 }
 
@@ -51,7 +51,7 @@ impl Arbitrary for Signature {
                     generic_parameters,
                     parameters,
                     return_type,
-                    do_effect,
+                    effect_annotation,
                 )| {
                     Self {
                         unsafe_keyword,
@@ -59,7 +59,7 @@ impl Arbitrary for Signature {
                         generic_parameters,
                         parameters,
                         return_type,
-                        do_effect,
+                        effect_annotation,
                     }
                 },
             )
@@ -89,8 +89,8 @@ impl IndentDisplay for Signature {
             return_type.indent_fmt(formatter, indent)?;
         }
 
-        if let Some(do_effect) = &self.do_effect {
-            do_effect.indent_fmt(formatter, indent)?;
+        if let Some(effect_annotation) = &self.effect_annotation {
+            effect_annotation.indent_fmt(formatter, indent)?;
         }
 
         Ok(())

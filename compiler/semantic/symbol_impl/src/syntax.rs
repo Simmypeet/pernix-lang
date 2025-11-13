@@ -316,14 +316,14 @@ pernixc_register::register!(FunctionBodyKey, FunctionBodyExecutor);
     name(FunctionDoEffectExecutor)
 )]
 #[allow(clippy::unnecessary_wraps)]
-pub async fn get_function_do_effect_syntax(
+pub async fn get_function_effect_annotation_syntax(
     &FunctionEffectAnnotationKey(id): &FunctionEffectAnnotationKey,
     engine: &TrackedEngine,
 ) -> Result<Option<pernixc_syntax::item::function::EffectAnnotation>, CyclicError>
 {
     let table = engine.get_table_of_symbol(id).await;
 
-    if let Some(value) = table.function_do_effect_syntaxes.get(&id.id) {
+    if let Some(value) = table.function_effect_annotation_syntaxes.get(&id.id) {
         return Ok(value.clone());
     }
 
