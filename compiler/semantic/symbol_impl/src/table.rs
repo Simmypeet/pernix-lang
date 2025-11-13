@@ -267,8 +267,12 @@ pub struct Table {
     >,
 
     /// Maps the function ID to its `do` effect syntax if it has one.
-    pub function_do_effect_syntaxes:
-        Arc<ReadOnlyView<ID, Option<pernixc_syntax::item::function::DoEffect>>>,
+    pub function_do_effect_syntaxes: Arc<
+        ReadOnlyView<
+            ID,
+            Option<pernixc_syntax::item::function::EffectAnnotation>,
+        >,
+    >,
 
     /// Maps the function ID to its `unsafe` keyword if it has one.
     pub function_unsafe_keywords:
@@ -419,7 +423,7 @@ struct TableContext {
     >,
 
     function_do_effect_syntaxes:
-        DashMap<ID, Option<pernixc_syntax::item::function::DoEffect>>,
+        DashMap<ID, Option<pernixc_syntax::item::function::EffectAnnotation>>,
 
     function_unsafe_keywords: DashMap<ID, Option<pernixc_syntax::Keyword>>,
 
@@ -727,7 +731,7 @@ struct Entry {
     pub final_keyword: Option<Option<pernixc_syntax::Keyword>>,
 
     pub function_do_effect_syntax:
-        Option<Option<pernixc_syntax::item::function::DoEffect>>,
+        Option<Option<pernixc_syntax::item::function::EffectAnnotation>>,
 
     pub function_unsafe_keyword: Option<Option<pernixc_syntax::Keyword>>,
 

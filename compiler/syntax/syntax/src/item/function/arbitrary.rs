@@ -27,7 +27,7 @@ reference! {
         pub generic_parameters (Option<GenericParameters>),
         pub parameters (Parameters),
         pub return_type (Option<ReturnType>),
-        pub do_effect (Option<DoEffect>),
+        pub do_effect (Option<EffectAnnotation>),
     }
 }
 
@@ -42,7 +42,7 @@ impl Arbitrary for Signature {
             proptest::option::of(GenericParameters::arbitrary()),
             Parameters::arbitrary(),
             proptest::option::of(ReturnType::arbitrary()),
-            proptest::option::of(DoEffect::arbitrary()),
+            proptest::option::of(EffectAnnotation::arbitrary()),
         )
             .prop_map(
                 |(
@@ -410,12 +410,12 @@ impl IndentDisplay for EffectUnitListKind {
 
 reference! {
     #[derive(Debug, Clone)]
-    pub struct DoEffect for super::DoEffect {
+    pub struct EffectAnnotation for super::EffectAnnotation {
         pub effect_unit_list (EffectUnitListKind)
     }
 }
 
-impl Arbitrary for DoEffect {
+impl Arbitrary for EffectAnnotation {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
@@ -426,7 +426,7 @@ impl Arbitrary for DoEffect {
     }
 }
 
-impl IndentDisplay for DoEffect {
+impl IndentDisplay for EffectAnnotation {
     fn indent_fmt(
         &self,
         f: &mut std::fmt::Formatter<'_>,

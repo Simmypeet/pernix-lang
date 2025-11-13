@@ -319,7 +319,8 @@ pernixc_register::register!(FunctionBodyKey, FunctionBodyExecutor);
 pub async fn get_function_do_effect_syntax(
     &FunctionDoEffectKey(id): &FunctionDoEffectKey,
     engine: &TrackedEngine,
-) -> Result<Option<pernixc_syntax::item::function::DoEffect>, CyclicError> {
+) -> Result<Option<pernixc_syntax::item::function::EffectAnnotation>, CyclicError>
+{
     let table = engine.get_table_of_symbol(id).await;
 
     if let Some(value) = table.function_do_effect_syntaxes.get(&id.id) {
