@@ -35,15 +35,13 @@ impl HandlingScopes {
     }
 
     /// Inserts a new [`HandlingScope`] into the collection.
-    pub fn insert_handler_clause(
-        &mut self,
-    ) -> pernixc_arena::ID<HandlingScope> {
+    pub fn insert_handler_scope(&mut self) -> pernixc_arena::ID<HandlingScope> {
         self.0.insert(HandlingScope::default())
     }
 
     /// Inserts a new [`HandlerClause`] into the [`HandlingScope`] with the
     /// [`pernixc_arena::ID<HandlingScope>`].
-    pub fn insert_effect_handler_to_group(
+    pub fn insert_handler_clause_to_handling_scope(
         &mut self,
         handling_scope_id: pernixc_arena::ID<HandlingScope>,
         effect_handler: HandlerClause,
@@ -71,18 +69,18 @@ pub struct HandlingScope {
 }
 
 impl HandlingScope {
-    /// Adds an effect handler to this group.
+    /// Adds a handler clause to this scope.
     #[must_use]
-    pub fn add_effect_handler(
+    pub fn add_handler_clause(
         &mut self,
-        effect_handler: HandlerClause,
+        handler_clause: HandlerClause,
     ) -> pernixc_arena::ID<HandlerClause> {
-        self.handler_clauses.insert(effect_handler)
+        self.handler_clauses.insert(handler_clause)
     }
 
-    /// Searches for an effect handler that matches the given effect ID and
-    /// generic arguments.
-    pub async fn search_effect_handler(
+    /// Searches for an handler that matches the given effect ID and generic
+    /// arguments.
+    pub async fn search_handler_clause(
         &self,
         effect_id: Global<pernixc_symbol::ID>,
         generic_arguments: &GenericArguments,

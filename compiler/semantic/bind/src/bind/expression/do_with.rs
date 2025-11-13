@@ -83,7 +83,7 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
         let captures = self.create_captures(handler).await?;
 
         let effect_handlers =
-            extract_effect_handlers(self, syntax_tree, handler).await?;
+            extract_handler_chain(self, syntax_tree, handler).await?;
 
         let expected_return_type = Type::Inference(
             self.create_type_inference(constraint::Type::All(true)),
@@ -110,7 +110,7 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
         );
 
         // pop the closure from the stack
-        self.pop_handler_group(effect_handlers.effect_handler_group_id);
+        self.pop_handling_scope(effect_handlers.effect_handler_group_id);
 
         let do_capture_arguments =
             self.bind_capture_arguments(do_captures, do_kw.span());
@@ -141,20 +141,20 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
     }
 }
 
-struct EffectHandlers {
-    with_blocks: Vec<WithBlock>,
+struct HandlerChain {
+    with_blocks: Vec<HandlerClauseBlock>,
     effect_handler_group_id: pernixc_arena::ID<HandlingScope>,
 }
 
-struct WithBlock {
+struct HandlerClauseBlock {
     qualified_identifier: QualifiedIdentifier,
     effect_id: Global<pernixc_symbol::ID>,
     generic_arguments: GenericArguments,
-    effect_handler_id: pernixc_arena::ID<HandlerClause>,
-    handlers: HashMap<pernixc_symbol::ID, HandlerBlock>,
+    handler_clause_id: pernixc_arena::ID<HandlerClause>,
+    handlers: HashMap<pernixc_symbol::ID, OperationHanderBlock>,
 }
 
-struct HandlerBlock {
+struct OperationHanderBlock {
     identifier: pernixc_syntax::Identifier,
     statements: pernixc_syntax::statement::Statements,
     parameters: Vec<pernixc_syntax::pattern::Irrefutable>,
@@ -164,7 +164,7 @@ struct HandlerBlock {
 #[allow(unreachable_code, unused_variables)]
 async fn build_with_blocks(
     binder: &mut Binder<'_>,
-    with_blocks: Vec<WithBlock>,
+    with_blocks: Vec<HandlerClauseBlock>,
     expected_type: &Type,
     with_span: RelativeSpan,
     captures: CapturesWithNameBindingPoint,
@@ -221,7 +221,7 @@ async fn build_with_blocks(
 
             // only insert if it's not duplication
             let Entry::Vacant(entry) = with_irs
-                .entry((with_block.effect_handler_id, effect_operation_id))
+                .entry((with_block.handler_clause_id, effect_operation_id))
             else {
                 continue;
             };
@@ -272,7 +272,7 @@ async fn build_do_block(
 async fn build_handler_block(
     binder: &mut Binder<'_>,
     closure_parameters: &ClosureParameters,
-    handler_block: HandlerBlock,
+    handler_block: OperationHanderBlock,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<(), UnrecoverableError> {
     // start binding all the arguments as parameters
@@ -337,9 +337,10 @@ async fn extract_effect_operations<
     effect_id: Global<pernixc_symbol::ID>,
     with_span: RelativeSpan,
     handler: &dyn Handler<Diagnostic>,
-) -> Result<HashMap<pernixc_symbol::ID, HandlerBlock>, Error> {
+) -> Result<HashMap<pernixc_symbol::ID, OperationHanderBlock>, Error> {
     let effect_operations = binder.engine().get_members(effect_id).await;
-    let mut handlers = HashMap::<pernixc_symbol::ID, HandlerBlock>::default();
+    let mut handlers =
+        HashMap::<pernixc_symbol::ID, OperationHanderBlock>::default();
 
     for handler_syntax in effect_handlers {
         let (Some(identifier), Some(statements)) =
@@ -401,7 +402,7 @@ async fn extract_effect_operations<
             );
         }
 
-        handlers.insert(*effect_operation_id, HandlerBlock {
+        handlers.insert(*effect_operation_id, OperationHanderBlock {
             parameters,
             statements,
             identifier: identifier.clone(),
@@ -432,15 +433,15 @@ async fn extract_effect_operations<
 }
 
 #[allow(clippy::too_many_lines)]
-async fn extract_effect_handlers(
+async fn extract_handler_chain(
     binder: &mut Binder<'_>,
     syntax_tree: &pernixc_syntax::expression::block::Do,
     handler: &dyn Handler<Diagnostic>,
-) -> Result<EffectHandlers, Error> {
+) -> Result<HandlerChain, Error> {
     // create a new handler group for this one
     let handler_group_id = binder.insert_effect_handler_group();
 
-    let mut with_handlers = Vec::<WithBlock>::new();
+    let mut with_handlers = Vec::<HandlerClauseBlock>::new();
 
     for with in syntax_tree.with() {
         let Some(qualified_identifier) = with.effect() else {
@@ -553,10 +554,10 @@ async fn extract_effect_handlers(
             .await?
         };
 
-        with_handlers.push(WithBlock {
+        with_handlers.push(HandlerClauseBlock {
             qualified_identifier: qualified_identifier.clone(),
             effect_id: effect.id,
-            effect_handler_id: binder.insert_effect_handler_to_group(
+            handler_clause_id: binder.insert_handler_clause_to_handling_scope(
                 handler_group_id,
                 HandlerClause::new(effect.id, effect.generic_arguments.clone()),
             ),
@@ -565,7 +566,7 @@ async fn extract_effect_handlers(
         });
     }
 
-    Ok(EffectHandlers {
+    Ok(HandlerChain {
         with_blocks: with_handlers,
         effect_handler_group_id: handler_group_id,
     })

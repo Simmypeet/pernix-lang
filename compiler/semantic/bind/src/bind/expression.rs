@@ -35,7 +35,7 @@ pub mod character;
 pub mod r#continue;
 pub mod dereference;
 pub mod diagnostic;
-pub mod r#do;
+pub mod do_with;
 pub mod express;
 pub mod function_call;
 pub mod group;

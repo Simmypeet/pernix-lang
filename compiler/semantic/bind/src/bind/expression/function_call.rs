@@ -694,7 +694,7 @@ impl Binder<'_> {
 
             // traverse in the handler stack
             if let Some(effect_handler_id) = self
-                .search_effect_handler(
+                .search_handler_clause(
                     required.id,
                     &required.generic_arguments,
                     &environment,
