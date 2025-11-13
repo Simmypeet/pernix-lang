@@ -31,7 +31,7 @@ use super::Value;
 use crate::{
     address::Address,
     control_flow_graph::Block,
-    effect_handler::EffectHandlerID,
+    handling_scope::HandlerClauseID,
     transform::{
         self, ConstantTermSource, LifetimeTermSource, Transformer,
         TypeTermSource,
@@ -43,7 +43,7 @@ use crate::{
     Values,
 };
 
-pub mod r#do;
+pub mod do_with;
 pub mod load;
 
 /// Represents an element of a [`Tuple`].
@@ -488,11 +488,11 @@ async fn type_of_variant_assignment(
     StableHash,
 )]
 pub enum EffectHandlerArgument {
-    /// Uses the capability passed to the function as an argument.
-    FromPassedCapability(ID<effect::Unit>),
+    /// Uses the handler presented in the effect annotation.
+    FromEffectAnnotation(ID<effect::Unit>),
 
     /// Uses the local effect handler defiend via `do-with` expression.
-    FromEffectHandler(EffectHandlerID),
+    FromEffectHandler(HandlerClauseID),
 
     /// The capability is unhandled, error should've been reported.
     Unhandled,
@@ -511,7 +511,7 @@ pub struct FunctionCall {
     pub instantiation: Instantiation,
 
     /// The capability arguments supplied to the function.
-    pub capability_arguments: HashMap<ID<effect::Unit>, EffectHandlerArgument>,
+    pub effect_arguments: HashMap<ID<effect::Unit>, EffectHandlerArgument>,
 }
 
 impl FunctionCall {
@@ -1020,7 +1020,7 @@ pub enum Assignment {
     Phi(Phi),
     Cast(Cast),
     VariantNumber(VariantNumber),
-    Do(r#do::Do),
+    Do(do_with::DoWith),
 }
 
 impl Assignment {

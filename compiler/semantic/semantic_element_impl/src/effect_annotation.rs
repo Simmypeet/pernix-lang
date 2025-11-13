@@ -11,12 +11,12 @@ use pernixc_resolution::{
     qualified_identifier::{resolve_qualified_identifier, Resolution},
     Config, ExtraNamespace,
 };
-use pernixc_semantic_element::capability;
+use pernixc_semantic_element::effect_annotation;
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
     kind::{get_kind, Kind},
     parent::get_parent_global,
-    syntax::get_function_do_effect_syntax,
+    syntax::get_function_effect_annotation_syntax,
 };
 use pernixc_syntax::item::function::{EffectUnit, EffectUnitListKind};
 use pernixc_target::Global;
@@ -78,7 +78,7 @@ impl pernixc_resolution::ElidedTermProvider<Lifetime>
     }
 }
 
-async fn build_do_effect(
+async fn build_effect_annotation(
     engine: &TrackedEngine,
     effect_unit_syntax: EffectUnit,
     current_site: Global<pernixc_symbol::ID>,
@@ -307,7 +307,7 @@ async fn detect_duplicating_group<
     Ok(result)
 }
 
-impl Build for capability::Key {
+impl Build for effect_annotation::Key {
     type Diagnostic = diagnostic::Diagnostic;
 
     async fn execute(
@@ -339,23 +339,23 @@ impl Build for capability::Key {
             });
         }
 
-        let do_effect_syntax =
-            engine.get_function_do_effect_syntax(key.0).await;
+        let effect_annotation_syntax =
+            engine.get_function_effect_annotation_syntax(key.0).await;
 
         let generic_namespace =
             engine.get_generic_parameter_namespace(key.0).await?;
         let mut observer = Occurrences::default();
-        let mut do_effects = HashMap::default();
+        let mut effect_annotations = HashMap::default();
         let storage = Storage::<diagnostic::Diagnostic>::default();
 
         // extract the effect units from the do effect syntax
-        if let Some(do_effect_syntax) =
-            do_effect_syntax.and_then(|x| x.effect_unit_list())
+        if let Some(effect_annotation_syntax) =
+            effect_annotation_syntax.and_then(|x| x.effect_unit_list())
         {
-            match do_effect_syntax {
+            match effect_annotation_syntax {
                 EffectUnitListKind::EffectUnitList(effect_unit_list) => {
                     for effect_unit in effect_unit_list.effect_units() {
-                        if let Some(effect_unit) = build_do_effect(
+                        if let Some(effect_unit) = build_effect_annotation(
                             engine,
                             effect_unit,
                             key.0,
@@ -365,8 +365,8 @@ impl Build for capability::Key {
                         )
                         .await?
                         {
-                            let len = do_effects.len();
-                            do_effects
+                            let len = effect_annotations.len();
+                            effect_annotations
                                 .entry(effect_unit.0)
                                 .or_insert((effect_unit.1, len));
                         }
@@ -378,7 +378,7 @@ impl Build for capability::Key {
                     for effect_unit in
                         parenthesized_effect_unit_list.effect_units()
                     {
-                        if let Some(effect_unit) = build_do_effect(
+                        if let Some(effect_unit) = build_effect_annotation(
                             engine,
                             effect_unit,
                             key.0,
@@ -388,8 +388,8 @@ impl Build for capability::Key {
                         )
                         .await?
                         {
-                            let len = do_effects.len();
-                            do_effects
+                            let len = effect_annotations.len();
+                            effect_annotations
                                 .entry(effect_unit.0)
                                 .or_insert((effect_unit.1, len));
                         }
@@ -401,7 +401,7 @@ impl Build for capability::Key {
         let effects = match detect_duplicating_group(
             engine,
             key.0,
-            do_effects.iter(),
+            effect_annotations.iter(),
             &storage,
         )
         .await
@@ -420,4 +420,4 @@ impl Build for capability::Key {
     }
 }
 
-crate::build::register_build!(capability::Key);
+crate::build::register_build!(effect_annotation::Key);

@@ -11,7 +11,7 @@ use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
 use crate::{
     capture::{Capture, Captures},
     closure_parameters::ClosureParameters,
-    effect_handler::HandlerGroup,
+    handling_scope::HandlingScope,
     transform::{self, Transformer},
     value::{register::Register, Value},
     IR,
@@ -89,7 +89,7 @@ impl transform::Element for CaptureArguments {
 /// This is where the main computation takes place, potentially involving
 /// effectful operations.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
-pub struct DoClosure {
+pub struct Do {
     /// The capture strcture for the closure.
     capture_arguments: CaptureArguments,
 
@@ -97,7 +97,7 @@ pub struct DoClosure {
     ir: IR,
 }
 
-impl DoClosure {
+impl Do {
     /// Creates a new `DoClosure` with the given capture structure and IR.
     #[must_use]
     pub const fn new(capture_arguments: CaptureArguments, ir: IR) -> Self {
@@ -105,7 +105,7 @@ impl DoClosure {
     }
 }
 
-impl transform::Element for DoClosure {
+impl transform::Element for Do {
     async fn transform<
         T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
     >(
@@ -133,18 +133,18 @@ impl transform::Element for DoClosure {
     Deserialize,
     CopyGetters,
 )]
-pub struct EffectHandler {
+pub struct HandlerClause {
     /// The closure for handling each effect operation defined in the `effect`.
     effect_operation_handler_closures:
-        HashMap<pernixc_symbol::ID, EffectOperationHandlerClosure>,
+        HashMap<pernixc_symbol::ID, OperationHandler>,
 }
 
-impl EffectHandler {
+impl HandlerClause {
     /// Inserts a new handler closure for a specific effect operation.
     pub fn insert_effect_operation_handler_closure(
         &mut self,
         effect_operation_id: pernixc_symbol::ID,
-        closure: EffectOperationHandlerClosure,
+        closure: OperationHandler,
     ) {
         assert!(self
             .effect_operation_handler_closures
@@ -153,7 +153,7 @@ impl EffectHandler {
     }
 }
 
-impl transform::Element for EffectHandler {
+impl transform::Element for HandlerClause {
     async fn transform<
         T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
     >(
@@ -170,9 +170,9 @@ impl transform::Element for EffectHandler {
 }
 
 /// The closure for handling a specific effect operation within an
-/// [`EffectHandler`].
+/// [`HandlerClause`].
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
-pub struct EffectOperationHandlerClosure {
+pub struct OperationHandler {
     /// The IR containing the code body of the effect operation handler.
     ir: IR,
 
@@ -180,7 +180,7 @@ pub struct EffectOperationHandlerClosure {
     closure_parameters: ClosureParameters,
 }
 
-impl EffectOperationHandlerClosure {
+impl OperationHandler {
     /// Creates a new effect operation handler closure with the given IR.
     #[must_use]
     pub const fn new(ir: IR, closure_parameters: ClosureParameters) -> Self {
@@ -188,7 +188,7 @@ impl EffectOperationHandlerClosure {
     }
 }
 
-impl transform::Element for EffectOperationHandlerClosure {
+impl transform::Element for OperationHandler {
     async fn transform<
         T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
     >(
@@ -203,36 +203,38 @@ impl transform::Element for EffectOperationHandlerClosure {
 
 /// Represents a group of `with` handlers following a `do` expression.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
-pub struct With {
-    /// The capture structure used for all of the effect handlers in this
-    /// `do-with` expression.
+pub struct HandlerChain {
+    /// The capture structure used for all of the handler clauses in this
+    /// chain.
     capture_arguments: CaptureArguments,
 
     /// The effect handlers mapped by their unique IDs within the top-level
     /// IR (function-level IR).
-    effect_handlers: HashMap<
-        pernixc_arena::ID<crate::effect_handler::EffectHandler>,
-        EffectHandler,
+    handler_clauses: HashMap<
+        pernixc_arena::ID<crate::handling_scope::HandlerClause>,
+        HandlerClause,
     >,
 }
 
-impl With {
+impl HandlerChain {
     /// Creates a new `With` structure with the given capture structure.
     #[must_use]
     pub fn new(capture_arguments: CaptureArguments) -> Self {
-        Self { capture_arguments, effect_handlers: HashMap::default() }
+        Self { capture_arguments, handler_clauses: HashMap::default() }
     }
 
     /// Inserts a new effect handler for a specific effect ID.
-    pub fn insert_effect_handler(
+    pub fn insert_handler_clause(
         &mut self,
-        effect_id: pernixc_arena::ID<crate::effect_handler::EffectHandler>,
-    ) -> &mut EffectHandler {
-        self.effect_handlers.entry(effect_id).or_default()
+        handler_clause_id: pernixc_arena::ID<
+            crate::handling_scope::HandlerClause,
+        >,
+    ) -> &mut HandlerClause {
+        self.handler_clauses.entry(handler_clause_id).or_default()
     }
 }
 
-impl transform::Element for With {
+impl transform::Element for HandlerChain {
     async fn transform<
         T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
     >(
@@ -242,8 +244,8 @@ impl transform::Element for With {
     ) -> Result<(), CyclicError> {
         self.capture_arguments.transform(transformer, engine).await?;
 
-        for effect_handler in self.effect_handlers.values_mut() {
-            effect_handler.transform(transformer, engine).await?;
+        for handler_clause in self.handler_clauses.values_mut() {
+            handler_clause.transform(transformer, engine).await?;
         }
 
         Ok(())
@@ -254,47 +256,53 @@ impl transform::Element for With {
 #[derive(
     Debug, Clone, PartialEq, Eq, StableHash, Getters, Serialize, Deserialize,
 )]
-pub struct Do {
+pub struct DoWith {
     /// The unique ID of this `do-with` expression within the function-level
     /// IR.
-    handler_group: pernixc_arena::ID<HandlerGroup>,
+    handler_group: pernixc_arena::ID<HandlingScope>,
 
     /// The closure for the `do` part of the expression.
-    closure: DoClosure,
+    do_block: Do,
 
     /// The `with` handlers associated with this `do` expression.
-    with: With,
+    handleer_chain: HandlerChain,
 
     /// The return type of the `do` expression.
     #[get = "pub"]
     return_type: pernixc_term::r#type::Type,
 }
 
-impl Do {
+impl DoWith {
     /// Creates a new `Do` expression with the given components.
     #[must_use]
     pub const fn new(
-        handler_group: pernixc_arena::ID<HandlerGroup>,
-        closure: DoClosure,
-        with: With,
+        handler_group: pernixc_arena::ID<HandlingScope>,
+        closure: Do,
+        with: HandlerChain,
         return_type: pernixc_term::r#type::Type,
     ) -> Self {
-        Self { handler_group, closure, with, return_type }
+        Self {
+            handler_group,
+            do_block: closure,
+            handleer_chain: with,
+            return_type,
+        }
     }
 }
 
-impl Do {
+impl DoWith {
     /// Retrieves all the registers used by this `do` expression.
     #[must_use]
     pub fn get_used_registers(&self) -> Vec<ID<Register>> {
         let mut registers = Vec::new();
-        registers.extend(self.with.capture_arguments.get_used_registers());
-        registers.extend(self.closure.capture_arguments.get_used_registers());
+        registers
+            .extend(self.handleer_chain.capture_arguments.get_used_registers());
+        registers.extend(self.do_block.capture_arguments.get_used_registers());
         registers
     }
 }
 
-impl transform::Element for Do {
+impl transform::Element for DoWith {
     async fn transform<
         T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
     >(
@@ -302,8 +310,8 @@ impl transform::Element for Do {
         transformer: &mut T,
         engine: &TrackedEngine,
     ) -> Result<(), CyclicError> {
-        self.closure.transform(transformer, engine).await?;
-        self.with.transform(transformer, engine).await?;
+        self.do_block.transform(transformer, engine).await?;
+        self.handleer_chain.transform(transformer, engine).await?;
 
         transformer
             .transform(
@@ -317,18 +325,18 @@ impl transform::Element for Do {
     }
 }
 
-impl Do {
+impl DoWith {
     /// Retrieves the mutable reference to the IR of the `do` closure and its
     /// captures.
     #[must_use]
     pub const fn do_closure_mut(&mut self) -> (&mut IR, &Captures) {
-        (&mut self.closure.ir, &self.closure.capture_arguments.captures)
+        (&mut self.do_block.ir, &self.do_block.capture_arguments.captures)
     }
 
     /// Retrieves the reference to the IR of the `do` closure and its captures.
     #[must_use]
     pub const fn do_closure(&self) -> (&IR, &Captures) {
-        (&self.closure.ir, &self.closure.capture_arguments.captures)
+        (&self.do_block.ir, &self.do_block.capture_arguments.captures)
     }
 
     /// Retrieves the reference to each of the closure of effect handler.
@@ -336,9 +344,9 @@ impl Do {
         &self,
     ) -> (&Captures, impl Iterator<Item = (&IR, &ClosureParameters)>) {
         (
-            &self.with.capture_arguments.captures,
-            self.with
-                .effect_handlers
+            &self.handleer_chain.capture_arguments.captures,
+            self.handleer_chain
+                .handler_clauses
                 .values()
                 .flat_map(|x| x.effect_operation_handler_closures.values())
                 .map(|x| (&x.ir, &x.closure_parameters)),
@@ -351,9 +359,9 @@ impl Do {
         &mut self,
     ) -> (&Captures, impl Iterator<Item = (&mut IR, &ClosureParameters)>) {
         (
-            &self.with.capture_arguments.captures,
-            self.with
-                .effect_handlers
+            &self.handleer_chain.capture_arguments.captures,
+            self.handleer_chain
+                .handler_clauses
                 .values_mut()
                 .flat_map(|x| x.effect_operation_handler_closures.values_mut())
                 .map(|x| (&mut x.ir, &x.closure_parameters)),

@@ -20,34 +20,34 @@ use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
     Default,
     Index,
 )]
-pub struct HandlerGroups(Arena<HandlerGroup>);
+pub struct HandlingScopes(Arena<HandlingScope>);
 
-impl HandlerGroups {
-    /// Gets the [`EffectHandler`] with the [`EffectHandlerID`].
+impl HandlingScopes {
+    /// Gets the [`HandlerClause`] with the [`HandlerClauseID`].
     #[must_use]
-    pub fn get_effect_handler(&self, id: EffectHandlerID) -> &EffectHandler {
+    pub fn get_handler_clause(&self, id: HandlerClauseID) -> &HandlerClause {
         self.0
             .get(id.handler_group_id)
             .unwrap()
-            .effect_handlers
+            .handler_clauses
             .get(id.effect_handler_id)
             .unwrap()
     }
 
-    /// Inserts a new [`HandlerGroup`] into the collection.
-    pub fn insert_handler_group(&mut self) -> pernixc_arena::ID<HandlerGroup> {
-        self.0.insert(HandlerGroup::default())
+    /// Inserts a new [`HandlingScope`] into the collection.
+    pub fn insert_handler_scope(&mut self) -> pernixc_arena::ID<HandlingScope> {
+        self.0.insert(HandlingScope::default())
     }
 
-    /// Inserts a new [`EffectHandler`] into the [`HandlerGroup`] with the
-    /// [`HandlerGroupID`].
-    pub fn insert_effect_handler_to_group(
+    /// Inserts a new [`HandlerClause`] into the [`HandlingScope`] with the
+    /// [`pernixc_arena::ID<HandlingScope>`].
+    pub fn insert_handler_clause_to_handling_scope(
         &mut self,
-        handler_group_id: pernixc_arena::ID<HandlerGroup>,
-        effect_handler: EffectHandler,
-    ) -> pernixc_arena::ID<EffectHandler> {
-        let handler_group = self.0.get_mut(handler_group_id).unwrap();
-        handler_group.effect_handlers.insert(effect_handler)
+        handling_scope_id: pernixc_arena::ID<HandlingScope>,
+        effect_handler: HandlerClause,
+    ) -> pernixc_arena::ID<HandlerClause> {
+        let handling_scope = self.0.get_mut(handling_scope_id).unwrap();
+        handling_scope.handler_clauses.insert(effect_handler)
     }
 }
 
@@ -63,33 +63,33 @@ impl HandlerGroups {
     Default,
     Index,
 )]
-pub struct HandlerGroup {
+pub struct HandlingScope {
     #[index]
-    effect_handlers: Arena<EffectHandler>,
+    handler_clauses: Arena<HandlerClause>,
 }
 
-impl HandlerGroup {
-    /// Adds an effect handler to this group.
+impl HandlingScope {
+    /// Adds a handler clause to this scope.
     #[must_use]
-    pub fn add_effect_handler(
+    pub fn add_handler_clause(
         &mut self,
-        effect_handler: EffectHandler,
-    ) -> pernixc_arena::ID<EffectHandler> {
-        self.effect_handlers.insert(effect_handler)
+        handler_clause: HandlerClause,
+    ) -> pernixc_arena::ID<HandlerClause> {
+        self.handler_clauses.insert(handler_clause)
     }
 
-    /// Searches for an effect handler that matches the given effect ID and
-    /// generic arguments.
-    pub async fn search_effect_handler(
+    /// Searches for an handler that matches the given effect ID and generic
+    /// arguments.
+    pub async fn search_handler_clause(
         &self,
         effect_id: Global<pernixc_symbol::ID>,
         generic_arguments: &GenericArguments,
         environment: &Environment<'_, impl Normalizer>,
     ) -> Result<
-        Option<pernixc_arena::ID<EffectHandler>>,
+        Option<pernixc_arena::ID<HandlerClause>>,
         pernixc_type_system::Error,
     > {
-        for (effect_handler_id, effect_handler) in self.effect_handlers.iter() {
+        for (effect_handler_id, effect_handler) in self.handler_clauses.iter() {
             // not the same effect
             if effect_id != effect_handler.effect_id {
                 continue;
@@ -126,12 +126,12 @@ impl HandlerGroup {
     Deserialize,
     derive_new::new,
 )]
-pub struct EffectHandler {
+pub struct HandlerClause {
     effect_id: Global<pernixc_symbol::ID>,
     generic_arguments: GenericArguments,
 }
 
-/// An ID that uniquely identifies an [`EffectHandler`] within an [`IR`].
+/// An ID that uniquely identifies an [`HandlerClause`] within an [`IR`].
 #[derive(
     Debug,
     Clone,
@@ -146,7 +146,7 @@ pub struct EffectHandler {
     Deserialize,
     derive_new::new,
 )]
-pub struct EffectHandlerID {
-    handler_group_id: pernixc_arena::ID<HandlerGroup>,
-    effect_handler_id: pernixc_arena::ID<EffectHandler>,
+pub struct HandlerClauseID {
+    handler_group_id: pernixc_arena::ID<HandlingScope>,
+    effect_handler_id: pernixc_arena::ID<HandlerClause>,
 }

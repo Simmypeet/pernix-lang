@@ -104,7 +104,7 @@ abstract_tree::abstract_tree! {
             = ast::<GenericParameters>().optional(),
         pub parameters: Parameters = ast::<Parameters>(),
         pub return_type: ReturnType = ast::<ReturnType>().optional(),
-        pub do_effect: DoEffect = ast::<DoEffect>().optional(),
+        pub effect_annotation: EffectAnnotation = ast::<EffectAnnotation>().optional(),
     }
 }
 
@@ -121,7 +121,7 @@ abstract_tree::abstract_tree! {
         Deserialize,
         StableHash
     )]
-    pub struct DoEffect {
+    pub struct EffectAnnotation {
         pub do_keyword: Keyword = expect::Keyword::Do,
         pub effect_unit_list: EffectUnitListKind = ast::<EffectUnitListKind>(),
     }
