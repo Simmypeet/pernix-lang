@@ -3,7 +3,7 @@
 //! The register is a place where SSA values are stored. The assignment is the
 //! value that is stored in the register.
 
-use std::{collections::BTreeSet, ops::Deref};
+use std::ops::Deref;
 
 use enum_as_inner::EnumAsInner;
 use pernixc_arena::ID;
@@ -23,7 +23,6 @@ use pernixc_term::{
     instantiation::Instantiation,
     lifetime::Lifetime,
     r#type::{Primitive, Qualifier, Type},
-    tuple,
 };
 use pernixc_type_system::{normalizer::Normalizer, Error, Succeeded};
 
@@ -37,7 +36,10 @@ use crate::{
         TypeTermSource,
     },
     value::{
-        register::load::{type_of_load_assignment, Load},
+        register::{
+            load::{type_of_load_assignment, Load},
+            tuple::Tuple,
+        },
         Environment, TypeOf,
     },
     Values,
@@ -45,100 +47,7 @@ use crate::{
 
 pub mod do_with;
 pub mod load;
-
-/// Represents an element of a [`Tuple`].
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Serialize,
-    Deserialize,
-    StableHash,
-)]
-pub struct TupleElement {
-    /// The value of the tuple element.
-    pub value: Value,
-
-    /// Whether the tuple element is unpacked.
-    pub is_unpacked: bool,
-}
-
-/// Represents a tuple of values.
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Serialize,
-    Deserialize,
-    StableHash,
-)]
-pub struct Tuple {
-    /// The elements of kthe tuple.
-    pub elements: Vec<TupleElement>,
-}
-
-impl Tuple {
-    /// Returns the list of registers that are used in the tuple.
-    #[must_use]
-    pub fn get_used_registers(&self) -> Vec<ID<Register>> {
-        self.elements
-            .iter()
-            .filter_map(|x| x.value.as_register().copied())
-            .collect()
-    }
-
-    async fn transform<T: Transformer<Type>>(
-        &mut self,
-        transformer: &mut T,
-    ) -> Result<(), CyclicError> {
-        for element in
-            self.elements.iter_mut().filter_map(|x| x.value.as_literal_mut())
-        {
-            element.transform(transformer).await?;
-        }
-
-        Ok(())
-    }
-}
-
-async fn type_of_tuple_assignment(
-    values: &Values,
-    tuple: &Tuple,
-    environment: &Environment<'_, impl Normalizer>,
-) -> Result<Succeeded<Type>, Error> {
-    let mut constraints = BTreeSet::new();
-    let mut elements = Vec::new();
-
-    for element in &tuple.elements {
-        let Succeeded { result: ty, constraints: new_constraint } =
-            Box::pin(values.type_of(&element.value, environment)).await?;
-
-        constraints.extend(new_constraint);
-
-        if element.is_unpacked {
-            match ty {
-                Type::Tuple(ty) => elements.extend(ty.elements),
-                ty => elements
-                    .push(tuple::Element { term: ty, is_unpacked: true }),
-            }
-        } else {
-            elements.push(tuple::Element { term: ty, is_unpacked: false });
-        }
-    }
-
-    Ok(Succeeded::with_constraints(
-        Type::Tuple(tuple::Tuple { elements }),
-        constraints,
-    ))
-}
+pub mod tuple;
 
 /// Obtains a reference at the given address.
 #[derive(
@@ -1068,7 +977,7 @@ impl TypeOf<ID<Register>> for Values {
 
         let ty = match &register.assignment {
             Assignment::Tuple(tuple) => {
-                return type_of_tuple_assignment(self, tuple, environment).await
+                return self.type_of(tuple, environment).await
             }
             Assignment::Load(load) => {
                 return type_of_load_assignment(self, load, environment).await
@@ -1134,7 +1043,9 @@ impl transform::Element for Register {
         engine: &TrackedEngine,
     ) -> Result<(), CyclicError> {
         match &mut self.assignment {
-            Assignment::Tuple(tuple) => tuple.transform(transformer).await,
+            Assignment::Tuple(tuple) => {
+                tuple.transform(transformer, engine).await
+            }
             Assignment::Load(load) => load.transform(transformer, engine).await,
             Assignment::Borrow(borrow) => {
                 borrow.transform(transformer, self.span).await
