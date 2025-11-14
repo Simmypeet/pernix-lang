@@ -4,10 +4,11 @@ use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
 use pernixc_symbol::{
     name::get_qualified_name,
     syntax::{
-        FieldsKey, FunctionBodyKey, FunctionDoEffectKey, FunctionSignatureKey,
-        GenericParametersKey, ImplementsFinalKeywordKey,
-        ImplementsMemberAccessModifierKey, ImplementsQualifiedIdentifierKey,
-        ImportKey, TypeAliasKey, VariantAssociatedTypeKey, WhereClauseKey,
+        FieldsKey, FunctionBodyKey, FunctionEffectAnnotationKey,
+        FunctionSignatureKey, FunctionUnsafeKeywordKey, GenericParametersKey,
+        ImplementsFinalKeywordKey, ImplementsMemberAccessModifierKey,
+        ImplementsQualifiedIdentifierKey, ImportKey, TypeAliasKey,
+        VariantAssociatedTypeKey, WhereClauseKey,
     },
 };
 use pernixc_syntax::QualifiedIdentifier;
@@ -153,6 +154,27 @@ pernixc_register::register!(
     ImplementsFinalKeywordExecutor
 );
 
+/// Implementation of the `get_function_unsafe_keyword` method
+#[pernixc_query::executor(
+    key(FunctionUnsafeKeywordKey),
+    name(FunctionUnsafeKeywordExecutor)
+)]
+#[allow(clippy::unnecessary_wraps)]
+pub async fn get_function_unsafe_keyword(
+    &FunctionUnsafeKeywordKey(id): &FunctionUnsafeKeywordKey,
+    engine: &TrackedEngine,
+) -> Result<Option<pernixc_syntax::Keyword>, CyclicError> {
+    let table = engine.get_table_of_symbol(id).await;
+    Ok(*table.function_unsafe_keywords.get(&id.id).unwrap_or_else(|| {
+        panic!("No function unsafe keyword found for symbol ID: {:?}", id.id)
+    }))
+}
+
+pernixc_register::register!(
+    FunctionUnsafeKeywordKey,
+    FunctionUnsafeKeywordExecutor
+);
+
 /// Implementation of the `get_implements_member_access_modifier` method
 #[pernixc_query::executor(
     key(ImplementsMemberAccessModifierKey),
@@ -290,17 +312,18 @@ pernixc_register::register!(FunctionBodyKey, FunctionBodyExecutor);
 
 /// Implementation of the `get_fields_syntax` method
 #[pernixc_query::executor(
-    key(FunctionDoEffectKey),
+    key(FunctionEffectAnnotationKey),
     name(FunctionDoEffectExecutor)
 )]
 #[allow(clippy::unnecessary_wraps)]
-pub async fn get_function_do_effect_syntax(
-    &FunctionDoEffectKey(id): &FunctionDoEffectKey,
+pub async fn get_function_effect_annotation_syntax(
+    &FunctionEffectAnnotationKey(id): &FunctionEffectAnnotationKey,
     engine: &TrackedEngine,
-) -> Result<Option<pernixc_syntax::item::function::DoEffect>, CyclicError> {
+) -> Result<Option<pernixc_syntax::item::function::EffectAnnotation>, CyclicError>
+{
     let table = engine.get_table_of_symbol(id).await;
 
-    if let Some(value) = table.function_do_effect_syntaxes.get(&id.id) {
+    if let Some(value) = table.function_effect_annotation_syntaxes.get(&id.id) {
         return Ok(value.clone());
     }
 
@@ -313,4 +336,7 @@ pub async fn get_function_do_effect_syntax(
     );
 }
 
-pernixc_register::register!(FunctionDoEffectKey, FunctionDoEffectExecutor);
+pernixc_register::register!(
+    FunctionEffectAnnotationKey,
+    FunctionDoEffectExecutor
+);

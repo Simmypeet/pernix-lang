@@ -1,0 +1,39 @@
+## Case 0
+## 10 20
+
+from core import Drop, Copy, NoDrop
+
+
+extern "C":
+    public function printf(format: &uint8, ...) -> int32
+    public function scanf(format: &uint8, ...) -> int32
+
+
+public struct TestDrop:
+    private value: int32
+
+
+final implements Drop[TestDrop]:
+    function drop(self: &mut TestDrop):
+        unsafe scope:
+            printf(&"Dropping %d\n\0".[0], self.value)
+
+
+final implements Copy[TestDrop] delete
+
+
+public function main():
+    unsafe scope:
+        let first = 0
+        let second = 0
+        scanf(&"%d %d\0".[0], &first, &second)
+
+        let wrapped = NoDrop[TestDrop] { value: TestDrop { value: first } }
+        printf(&"Value: %d\n\0".[0], wrapped.value.value)
+        printf(&"End of main (should not drop)\n\0".[0])
+        
+        # Case 2: Move out the value from NoDrop, drop should be invoked
+        let mut wrapped2 = NoDrop[TestDrop] { value: TestDrop { value: second } }
+        let movedValue = wrapped2.value
+        printf(&"Moved value: %d\n\0".[0], movedValue.value)
+        printf(&"After move (drop should happen for moved value)\n\0".[0])

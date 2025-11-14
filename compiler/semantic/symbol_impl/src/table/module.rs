@@ -230,10 +230,15 @@ impl TableContext {
                                     .body()
                                     .and_then(|x| x.members()),
                             )
-                            .function_do_effect_syntax(
+                            .function_effect_annotation_syntax(
                                 function_syntax
                                     .signature()
-                                    .and_then(|x| x.do_effect()),
+                                    .and_then(|x| x.effect_annotation()),
+                            )
+                            .function_unsafe_keyword(
+                                function_syntax
+                                    .signature()
+                                    .and_then(|x| x.unsafe_keyword()),
                             )
                             .build()
                     }

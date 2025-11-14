@@ -34,7 +34,7 @@ enum VarianceVariable {
     /// The variance is already known.
     Constant(Variance),
     /// The variance is being transformed in the form of `0.xfrom(1)`.
-    Transform(Box<VarianceVariable>, Box<VarianceVariable>),
+    Transform(Box<Self>, Box<Self>),
     /// The variance of the type parameter is being inferred.
     InferringType(ID<TypeParameter>, pernixc_symbol::ID),
     /// The variance of the lifetime parameter is being inferred.

@@ -2,7 +2,7 @@
 //! [`BorrowModel`] and vice versa.
 
 use pernixc_ir::{
-    transform::{Transformable, Transformer},
+    transform::{Element, Transformable, Transformer},
     IR,
 };
 use pernixc_lexical::tree::RelativeSpan;
@@ -114,7 +114,7 @@ pub(super) async fn transform_to_inference(
     let mut transformer =
         ToBorrowTransformer { generator: LocalRegionGenerator::new() };
 
-    ir.transform(engine, &mut transformer).await?;
+    ir.transform(&mut transformer, engine).await?;
 
     Ok(transformer.generator)
 }

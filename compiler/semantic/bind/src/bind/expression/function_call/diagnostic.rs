@@ -40,6 +40,9 @@ diagnostic_enum! {
         MismatchedImplementationArguments(
             MismatchedImplementationArguments
         ),
+        UnsafeFunctionCallOutsideUnsafeScope(
+            UnsafeFunctionCallOutsideUnsafeScope
+        ),
     }
 }
 
@@ -403,6 +406,74 @@ impl Report for MismatchedImplementationArguments {
                         )
                     })
                     .into_iter()
+                    .collect(),
+            )
+            .build())
+    }
+}
+
+/// An unsafe function is being called outside of an unsafe scope or unsafe
+/// function.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+pub struct UnsafeFunctionCallOutsideUnsafeScope {
+    /// The span of the function call expression.
+    pub call_span: RelativeSpan,
+
+    /// The ID of the function being called.
+    pub function_id: Global<pernixc_symbol::ID>,
+}
+
+impl Report for UnsafeFunctionCallOutsideUnsafeScope {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
+    {
+        let function_name = engine.get_qualified_name(self.function_id).await;
+        let function_span = engine.get_span(self.function_id).await;
+        let absolute_call_span = engine.to_absolute_span(&self.call_span).await;
+        let absolute_function_span = if let Some(span) = function_span {
+            Some(engine.to_absolute_span(&span).await)
+        } else {
+            None
+        };
+
+        Ok(pernixc_diagnostic::Rendered::builder()
+            .message("unsafe function call outside unsafe scope")
+            .primary_highlight(
+                Highlight::builder()
+                    .span(absolute_call_span)
+                    .message(format!(
+                        "call to unsafe function `{function_name}` requires \
+                         unsafe scope"
+                    ))
+                    .build(),
+            )
+            .severity(Severity::Error)
+            .related(
+                absolute_function_span
+                    .into_iter()
+                    .map(|span| {
+                        Highlight::builder()
+                            .span(span)
+                            .message(
+                                "the function is declared as unsafe here"
+                                    .to_string(),
+                            )
+                            .build()
+                    })
                     .collect(),
             )
             .build())

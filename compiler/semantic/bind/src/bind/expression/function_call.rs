@@ -3,14 +3,16 @@ use pernixc_handler::Handler;
 use pernixc_hash::HashMap;
 use pernixc_ir::value::{
     register::{
-        Assignment, CapabilityArgument, FunctionCall, Load, Register, Variant,
+        load::Load, Assignment, EffectHandlerArgument, FunctionCall, Register,
+        Variant,
     },
     Value,
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_resolution::qualified_identifier::Resolution;
 use pernixc_semantic_element::{
-    capability::get_capabilities, elided_lifetime::get_elided_lifetimes,
+    effect_annotation::get_effect_annotation,
+    elided_lifetime::get_elided_lifetimes,
     implements_arguments::get_implements_argument, parameter::get_parameters,
     variant::get_variant_associated_type,
 };
@@ -19,6 +21,7 @@ use pernixc_symbol::{
     kind::{get_kind, Kind},
     linkage::{get_linkage, Linkage, C},
     parent::get_parent,
+    r#unsafe::is_function_unsafe,
 };
 use pernixc_target::Global;
 use pernixc_term::{
@@ -38,8 +41,8 @@ use crate::{
         expression::function_call::diagnostic::{
             Diagnostic, ExtraneousArgumentsToAssociatedValue,
             MismatchedArgumentsCount, MismatchedImplementationArguments,
-            SymbolIsNotCallable, VariantAssociatedValueExpected,
-            VariantDoesntHaveAssociatedValue,
+            SymbolIsNotCallable, UnsafeFunctionCallOutsideUnsafeScope,
+            VariantAssociatedValueExpected, VariantDoesntHaveAssociatedValue,
         },
         LValue,
     },
@@ -296,11 +299,13 @@ impl Bind<&pernixc_syntax::expression::unit::FunctionCall> for Binder<'_> {
         let (callable_id, instantiation) =
             get_function_instantiation(self, syntax_tree, handler).await?;
 
+        // Check if calling an unsafe function outside an unsafe scope
+        let kind = self.engine().get_kind(callable_id).await;
+
         let mut expected_types =
             get_callable_expected_types(self, callable_id, &instantiation)
                 .await?;
 
-        let kind = self.engine().get_kind(callable_id).await;
         let arguments = syntax_tree
             .call()
             .map(|x| x.expressions().collect::<Vec<_>>())
@@ -510,6 +515,25 @@ impl Binder<'_> {
             );
         }
 
+        if matches!(
+            callable_kind,
+            Kind::Function | Kind::ImplementationFunction | Kind::TraitFunction
+        ) {
+            let is_unsafe = self.engine().is_function_unsafe(callable_id).await;
+
+            if is_unsafe && !self.stack().is_unsafe() {
+                handler.receive(
+                    Diagnostic::UnsafeFunctionCallOutsideUnsafeScope(
+                        UnsafeFunctionCallOutsideUnsafeScope {
+                            call_span: whole_span,
+                            function_id: callable_id,
+                        },
+                    )
+                    .into(),
+                );
+            }
+        }
+
         // bind the argument and type-check
         let mut argument_values = Vec::with_capacity(
             arguments.len() + usize::from(method_receiver.is_some()),
@@ -531,9 +555,7 @@ impl Binder<'_> {
             let value = match method_receiver.kind {
                 // load the lvalue
                 MethodReceiverKind::Value => self.create_register_assignment(
-                    Assignment::Load(Load {
-                        address: method_receiver.lvalue.address,
-                    }),
+                    Assignment::Load(Load::new(method_receiver.lvalue.address)),
                     method_receiver.lvalue.span,
                 ),
                 // borrow the lvalue
@@ -570,7 +592,7 @@ impl Binder<'_> {
         }
 
         let capabilities =
-            self.engine().get_capabilities(self.current_site()).await?;
+            self.engine().get_effect_annotation(self.current_site()).await?;
 
         let capability_arguments = self
             .effect_check(
@@ -586,7 +608,7 @@ impl Binder<'_> {
             callable_id,
             instantiation,
             arguments: argument_values,
-            capability_arguments,
+            effect_arguments: capability_arguments,
         };
 
         Ok(self.create_register_assignment(
@@ -630,10 +652,12 @@ impl Binder<'_> {
         span: RelativeSpan,
         available_capabilities: &OrderedArena<effect::Unit>,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
-    ) -> Result<HashMap<ID<effect::Unit>, CapabilityArgument>, UnrecoverableError>
-    {
+    ) -> Result<
+        HashMap<ID<effect::Unit>, EffectHandlerArgument>,
+        UnrecoverableError,
+    > {
         let required_capabilities =
-            self.engine().get_capabilities(callable_id).await?;
+            self.engine().get_effect_annotation(callable_id).await?;
 
         self.check_effect_units(
             available_capabilities,
@@ -654,15 +678,39 @@ impl Binder<'_> {
         span: RelativeSpan,
         callable_id: Global<pernixc_symbol::ID>,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
-    ) -> Result<HashMap<ID<effect::Unit>, CapabilityArgument>, UnrecoverableError>
-    {
+    ) -> Result<
+        HashMap<ID<effect::Unit>, EffectHandlerArgument>,
+        UnrecoverableError,
+    > {
         let mut effect_arguments = HashMap::default();
 
         let environment = self.create_environment();
 
+        // First, we'll traverse the capability handlers stack first, then we'll
+
         'next: for (required_id, required) in required_capabilities.iter() {
             let mut required = required.clone();
             required.generic_arguments.instantiate(instantiation);
+
+            // traverse in the handler stack
+            if let Some(effect_handler_id) = self
+                .search_handler_clause(
+                    required.id,
+                    &required.generic_arguments,
+                    &environment,
+                )
+                .await
+                .map_err(|x| {
+                    x.report_as_type_calculating_overflow(span, &handler)
+                })?
+            {
+                effect_arguments.insert(
+                    required_id,
+                    EffectHandlerArgument::FromEffectHandler(effect_handler_id),
+                );
+
+                continue 'next;
+            }
 
             for (available_id, available) in available_capabilities.iter() {
                 if Self::effect_compatible(
@@ -676,26 +724,29 @@ impl Binder<'_> {
                 {
                     effect_arguments.insert(
                         required_id,
-                        CapabilityArgument::FromPassedCapability(available_id),
+                        EffectHandlerArgument::FromEffectAnnotation(
+                            available_id,
+                        ),
                     );
                     continue 'next;
                 }
             }
 
             // cannot find a compatible capability
-            effect_arguments.insert(required_id, CapabilityArgument::Unhandled);
+            effect_arguments
+                .insert(required_id, EffectHandlerArgument::Unhandled);
         }
 
         if effect_arguments
             .iter()
-            .any(|x| x.1 == &CapabilityArgument::Unhandled)
+            .any(|x| x.1 == &EffectHandlerArgument::Unhandled)
         {
             handler.receive(crate::diagnostic::Diagnostic::UnhandledEffects(
                 UnhandledEffects {
                     effects: effect_arguments
                         .iter()
                         .filter_map(|x| {
-                            if x.1 == &CapabilityArgument::Unhandled {
+                            if x.1 == &EffectHandlerArgument::Unhandled {
                                 let mut required =
                                     required_capabilities[*x.0].clone();
 

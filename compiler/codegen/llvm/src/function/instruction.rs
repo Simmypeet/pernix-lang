@@ -109,10 +109,10 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
 
     async fn handle_load(
         &mut self,
-        load: &register::Load,
+        load: &register::load::Load,
         reg_id: ID<Register>,
     ) -> Result<Option<LlvmValue<'ctx>>, Error> {
-        let Some(ptr) = self.get_address(&load.address).await? else {
+        let Some(ptr) = self.get_address(load.address()).await? else {
             return Ok(None);
         };
 
@@ -1140,7 +1140,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
 
     async fn handle_tuple(
         &mut self,
-        tuple: &register::Tuple,
+        tuple: &register::tuple::Tuple,
         reg_id: ID<Register>,
     ) -> Result<Option<LlvmValue<'ctx>>, Error> {
         let mut values = Vec::new();
@@ -1840,6 +1840,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             Assignment::VariantNumber(variant_number) => {
                 self.handle_variant_number(variant_number, reg_id).await
             }
+            Assignment::Do(_) => todo!(),
         }
     }
 

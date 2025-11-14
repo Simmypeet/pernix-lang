@@ -2,7 +2,6 @@
 
 use std::{fmt::Debug, hash::Hash};
 
-use pernixc_extend::extend;
 use pernixc_query::Value;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;

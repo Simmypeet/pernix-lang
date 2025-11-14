@@ -6,7 +6,7 @@ use pernixc_ir::{
     instruction::{Instruction, Store},
     value::{
         literal::{self, Literal},
-        register::{Assignment, Borrow, Load},
+        register::{load::Load, Assignment, Borrow},
         Value,
     },
 };
@@ -35,7 +35,7 @@ pub mod character;
 pub mod r#continue;
 pub mod dereference;
 pub mod diagnostic;
-pub mod r#do;
+pub mod do_with;
 pub mod express;
 pub mod function_call;
 pub mod group;
@@ -250,7 +250,7 @@ impl Binder<'_> {
                 let Some(type_hint) = type_check else {
                     return Ok(Value::Register(
                         self.create_register_assignment(
-                            Assignment::Load(Load { address: value.address }),
+                            Assignment::Load(Load::new(value.address)),
                             value.span,
                         ),
                     ));
@@ -435,7 +435,7 @@ impl Binder<'_> {
             })
         ) {
             return Ok(Value::Register(self.create_register_assignment(
-                Assignment::Load(Load { address: value.address }),
+                Assignment::Load(Load::new(value.address)),
                 value.span,
             )));
         }

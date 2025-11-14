@@ -1,0 +1,55 @@
+on:
+    workflow_dispatch:
+
+    push:
+        branches:
+            - main
+            - dev
+
+    pull_request:
+        branches:
+            - main
+            - dev
+permissions:
+    contents: write
+
+name: Pernixc Compiler Code Check
+jobs:
+    build:
+        name: Pernix Compiler Code Check
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout Repository
+              uses: actions/checkout@v4
+
+            - name: Set up Rust Nightly
+              uses: dtolnay/rust-toolchain@nightly
+              with:
+                  components: rustfmt, clippy
+
+            - name: Build LLVM on Unix-like
+              if: runner.os != 'Windows'
+              uses: ./.github/actions/build-llvm
+              with:
+                  llvm-version: 18.1.8
+                  install-prefix: ${{ github.workspace }}/__llvm18
+                  generator: "Ninja"
+                  shell: "bash"
+
+            - name: Set LLVM prefix on Unix-like
+              if: runner.os != 'Windows'
+              run: |
+                  ls ${{ github.workspace }}/__llvm18
+                  echo "LLVM_SYS_181_PREFIX=${{ github.workspace }}/__llvm18" >> $GITHUB_ENV
+
+            - name: Rust Cache
+              uses: Swatinem/rust-cache@v2
+              with:
+                  shared-key: "llvm-18.1.8"
+                  cache-on-failure: true
+
+            - name: Check Code Formatting
+              run: cargo fmt --all -- --check
+
+            - name: Run Clippy
+              run: cargo clippy

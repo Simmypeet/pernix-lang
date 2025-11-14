@@ -267,8 +267,16 @@ pub struct Table {
     >,
 
     /// Maps the function ID to its `do` effect syntax if it has one.
-    pub function_do_effect_syntaxes:
-        Arc<ReadOnlyView<ID, Option<pernixc_syntax::item::function::DoEffect>>>,
+    pub function_effect_annotation_syntaxes: Arc<
+        ReadOnlyView<
+            ID,
+            Option<pernixc_syntax::item::function::EffectAnnotation>,
+        >,
+    >,
+
+    /// Maps the function ID to its `unsafe` keyword if it has one.
+    pub function_unsafe_keywords:
+        Arc<ReadOnlyView<ID, Option<pernixc_syntax::Keyword>>>,
 
     /// Maps the function ID to its linkage.
     pub function_linkages: Arc<ReadOnlyView<ID, linkage::Linkage>>,
@@ -414,8 +422,10 @@ struct TableContext {
         >,
     >,
 
-    function_do_effect_syntaxes:
-        DashMap<ID, Option<pernixc_syntax::item::function::DoEffect>>,
+    function_effect_annotation_syntaxes:
+        DashMap<ID, Option<pernixc_syntax::item::function::EffectAnnotation>>,
+
+    function_unsafe_keywords: DashMap<ID, Option<pernixc_syntax::Keyword>>,
 
     token_tree: Option<Arc<pernixc_lexical::tree::Tree>>,
     source_file: Option<Arc<SourceFile>>,
@@ -575,7 +585,8 @@ pub async fn table_executor(
         function_linkages: DashMap::default(),
         final_keywords: DashMap::default(),
         function_body_syntaxes: DashMap::default(),
-        function_do_effect_syntaxes: DashMap::default(),
+        function_effect_annotation_syntaxes: DashMap::default(),
+        function_unsafe_keywords: DashMap::default(),
         token_tree: token_tree_result.ok().map(|x| x.0),
         source_file: source_file.ok(),
         is_root,
@@ -636,8 +647,11 @@ pub async fn table_executor(
             context.function_body_syntaxes.into_read_only(),
         ),
         function_linkages: Arc::new(context.function_linkages.into_read_only()),
-        function_do_effect_syntaxes: Arc::new(
-            context.function_do_effect_syntaxes.into_read_only(),
+        function_effect_annotation_syntaxes: Arc::new(
+            context.function_effect_annotation_syntaxes.into_read_only(),
+        ),
+        function_unsafe_keywords: Arc::new(
+            context.function_unsafe_keywords.into_read_only(),
         ),
 
         external_submodules: Arc::new(
@@ -716,8 +730,10 @@ struct Entry {
 
     pub final_keyword: Option<Option<pernixc_syntax::Keyword>>,
 
-    pub function_do_effect_syntax:
-        Option<Option<pernixc_syntax::item::function::DoEffect>>,
+    pub function_effect_annotation_syntax:
+        Option<Option<pernixc_syntax::item::function::EffectAnnotation>>,
+
+    pub function_unsafe_keyword: Option<Option<pernixc_syntax::Keyword>>,
 
     pub function_linkage: Option<linkage::Linkage>,
 }
@@ -909,12 +925,21 @@ impl TableContext {
             );
         }
 
-        if let Some(function_do_effect_syntax) = entry.function_do_effect_syntax
+        if let Some(function_effect_annotation_syntax) =
+            entry.function_effect_annotation_syntax
         {
             Self::insert_to_table(
-                &self.function_do_effect_syntaxes,
+                &self.function_effect_annotation_syntaxes,
                 id,
-                function_do_effect_syntax,
+                function_effect_annotation_syntax,
+            );
+        }
+
+        if let Some(function_unsafe_keyword) = entry.function_unsafe_keyword {
+            Self::insert_to_table(
+                &self.function_unsafe_keywords,
+                id,
+                function_unsafe_keyword,
             );
         }
     }
@@ -1251,10 +1276,15 @@ impl TableContext {
                             .function_body_syntax(
                                 fun.body().and_then(|x| x.members()),
                             )
-                            .function_do_effect_syntax(
+                            .function_effect_annotation_syntax(
                                 fun.signature()
                                     .and_then(|x| x.signature())
-                                    .and_then(|x| x.do_effect()),
+                                    .and_then(|x| x.effect_annotation()),
+                            )
+                            .function_unsafe_keyword(
+                                fun.signature()
+                                    .and_then(|x| x.signature())
+                                    .and_then(|x| x.unsafe_keyword()),
                             )
                             .build()
                     }
@@ -1402,8 +1432,15 @@ impl TableContext {
                                     .signature()
                                     .and_then(|x| x.return_type()),
                             ))
-                            .function_do_effect_syntax(
-                                member.signature().and_then(|x| x.do_effect()),
+                            .function_effect_annotation_syntax(
+                                member
+                                    .signature()
+                                    .and_then(|x| x.effect_annotation()),
+                            )
+                            .function_unsafe_keyword(
+                                member
+                                    .signature()
+                                    .and_then(|x| x.unsafe_keyword()),
                             )
                             .build()
                     }
@@ -1633,8 +1670,10 @@ impl TableContext {
                     function_syntax.signature().and_then(|x| x.parameters()),
                     function_syntax.signature().and_then(|x| x.return_type()),
                 ))
-                .function_do_effect_syntax(
-                    function_syntax.signature().and_then(|x| x.do_effect()),
+                .function_effect_annotation_syntax(
+                    function_syntax
+                        .signature()
+                        .and_then(|x| x.effect_annotation()),
                 )
                 .function_linkage(linkage)
                 .build();

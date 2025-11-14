@@ -1,0 +1,37 @@
+public enum Option[T]:
+    pass
+
+
+implements[T, U] Option[T]:  # U is unused
+    pass
+
+
+implements[T, U] Option[(T,)]: # U is unused
+    pass
+
+
+implements[T, U] Option[(Option[T], U)]: # all used
+    pass
+
+
+public trait Iterator[T]:
+    public type Item
+
+
+implements[T: Iterator] Option[Iterator[T]::Item]:  # should error, T used only in associated type
+    pass
+
+
+implements[T: Iterator] Option[(T, Iterator[T]::Item)]:  # T is used outside associated type
+    pass
+
+
+implements['a, 'b, T: 'b] Option[&'a &'b T]: # all used
+    where:
+        'b: 'a
+
+    pass
+
+
+implements['a, 'b, T: 'a] Option[&'a T]: # 'b is unused
+    pass

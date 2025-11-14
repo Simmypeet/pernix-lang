@@ -1,10 +1,9 @@
 use pernixc_handler::Handler;
-#[allow(unused_imports)]
 use pernixc_hash::HashSet;
 use pernixc_ir::{
     instruction::{Instruction, ScopePop},
     value::Environment as ValueEnvironment,
-    IR,
+    FunctionIR, IR,
 };
 use pernixc_semantic_element::return_type::get_return_type;
 use pernixc_symbol::kind::get_kind;
@@ -18,7 +17,7 @@ use crate::{
 mod check;
 mod transform_inference;
 
-#[cfg(debug_assertions)]
+#[allow(dead_code)]
 fn check_all_register_assigned(ir: &IR) {
     let mut assigned = HashSet::default();
     for (_, block) in ir.control_flow_graph.blocks().iter() {
@@ -54,12 +53,8 @@ fn check_all_register_assigned(ir: &IR) {
 }
 
 impl Binder<'_> {
-    /// Finalizes the binding process, performing necessary checks and
-    /// transformations on the IR.
-    pub async fn finalize(
-        mut self,
-        handler: &dyn Handler<Diagnostic>,
-    ) -> Result<IR, UnrecoverableError> {
+    /// Performs sanity checks on the IR and finalizes it.
+    pub(super) fn tidy_ir(&mut self) {
         self.block_context.assert_empty();
         self.loop_context.assert_empty();
 
@@ -82,6 +77,18 @@ impl Binder<'_> {
 
         #[cfg(debug_assertions)]
         check_all_register_assigned(&self.ir);
+    }
+
+    /// Finalizes the binding process, performing necessary checks and
+    /// transformations on the IR.
+    pub async fn finalize_function_ir(
+        mut self,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<FunctionIR, UnrecoverableError> {
+        // all the effect handler stacks should've been all popped
+        self.effect_handler_context.assert_empty();
+
+        self.tidy_ir();
 
         // we're in the function, check if all paths return the value
         'out: {
@@ -118,6 +125,7 @@ impl Binder<'_> {
 
         // transform inference types
         self.transform_inference(handler).await?;
+
         let ty_env = self.create_environment();
         let value_env = ValueEnvironment::builder()
             .type_environment(&ty_env)
@@ -127,6 +135,9 @@ impl Binder<'_> {
 
         check::check(&self.ir, &value_env, handler).await?;
 
-        Ok(self.ir)
+        Ok(FunctionIR {
+            ir: self.ir,
+            handler_groups: self.effect_handler_context.into_handler_groups(),
+        })
     }
 }

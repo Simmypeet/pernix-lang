@@ -15,7 +15,7 @@ use pernixc_ir::{
     scope,
     value::{
         literal::{Literal, Unreachable},
-        register::{Assignment, Load, Register},
+        register::{load::Load, Assignment, Register},
         Environment as ValueEnvironment, TypeOf, Value,
     },
     IR,
@@ -59,10 +59,12 @@ mod finalize;
 
 pub mod block;
 pub mod closure;
+pub mod effect_handler;
 pub mod inference_context;
 pub mod r#loop;
 pub mod stack;
 pub mod type_check;
+pub mod typer;
 
 /// The environment where the binder is operating on.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize)]
@@ -98,14 +100,21 @@ impl Environment {
 #[derive(Debug, Getters, CopyGetters)]
 pub struct Binder<'t> {
     /// Gets the engine used for querying information about the program.
-    #[get = "pub"]
+    #[get_copy = "pub"]
     engine: &'t TrackedEngine,
 
     /// The current environment information where the binder is operating on.
     environment: &'t Environment,
 
     /// The optional captures that the binder may use when building closures.
+    #[get_copy = "pub"]
     captures: Option<&'t pernixc_ir::capture::Captures>,
+
+    /// The optional closure parameters that the binder may use when building
+    /// closures.
+    #[get_copy = "pub"]
+    closure_parameters:
+        Option<&'t pernixc_ir::closure_parameters::ClosureParameters>,
 
     /// The intermediate representation that is being built.
     #[get = "pub"]
@@ -129,6 +138,7 @@ pub struct Binder<'t> {
     /// determines the expected return type of the closure.
     expected_closure_return_type: Option<Type>,
 
+    effect_handler_context: effect_handler::Context,
     block_context: block::Context,
     loop_context: r#loop::Context,
 }
@@ -156,6 +166,16 @@ impl<'t> Binder<'t> {
     pub const fn expected_closure_return_type(&self) -> Option<&Type> {
         self.expected_closure_return_type.as_ref()
     }
+
+    /// Returns the values being built in the IR.
+    #[must_use]
+    pub const fn values(&self) -> &pernixc_ir::Values { &self.ir.values }
+
+    /// Returns the scope tree being built in the IR.
+    #[must_use]
+    pub const fn scope_tree(&self) -> &pernixc_ir::scope::Tree {
+        &self.ir.scope_tree
+    }
 }
 
 impl<'t> Binder<'t> {
@@ -175,7 +195,9 @@ impl<'t> Binder<'t> {
             stack,
             current_block_id,
             environment,
+
             captures: None,
+            closure_parameters: None,
 
             inference_context: InferenceContext::default(),
 
@@ -183,6 +205,7 @@ impl<'t> Binder<'t> {
 
             expected_closure_return_type: None,
 
+            effect_handler_context: effect_handler::Context::default(),
             block_context: block::Context::default(),
             loop_context: r#loop::Context::default(),
         };
@@ -283,7 +306,7 @@ pub enum Error {
     Unrecoverable(#[from] UnrecoverableError),
 }
 
-/// In case of the Overflow error from type system, reports it as a type    
+/// In case of the Overflow error from type system, reports it as a type
 /// calculating overflow
 #[extend]
 pub fn report_as_type_calculating_overflow(
@@ -599,7 +622,7 @@ impl Binder<'_> {
     /// and returns the register ID that holds the loaded value.
     pub fn load_lvalue(&mut self, lvalue: LValue) -> ID<Register> {
         self.create_register_assignment(
-            Assignment::Load(Load { address: lvalue.address }),
+            Assignment::Load(Load::new(lvalue.address)),
             lvalue.span,
         )
     }
@@ -617,6 +640,7 @@ impl Binder<'_> {
                 &ValueEnvironment::builder()
                     .type_environment(&self.create_environment())
                     .maybe_captures(self.captures)
+                    .maybe_closure_parameters(self.closure_parameters)
                     .current_site(self.current_site())
                     .build(),
             )
@@ -732,7 +756,8 @@ impl Binder<'_> {
                 Address::Memory(
                     Memory::Alloca(_)
                     | Memory::Parameter(_)
-                    | Memory::Capture(_),
+                    | Memory::Capture(_)
+                    | Memory::ClosureParameter(_),
                 ) => return Ok(None),
 
                 Address::Field(ad) => {
@@ -785,37 +810,21 @@ impl Binder<'_> {
         address: &Address,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<Type, UnrecoverableError> {
-        match self
-            .ir
-            .values
-            .type_of(
-                address,
-                &ValueEnvironment::builder()
-                    .type_environment(&self.create_environment())
-                    .maybe_captures(self.captures)
-                    .current_site(self.current_site())
-                    .build(),
-            )
-            .await
-        {
+        let ty_environment = self.create_environment();
+        let environment = ValueEnvironment::builder()
+            .type_environment(&ty_environment)
+            .maybe_captures(self.captures)
+            .maybe_closure_parameters(self.closure_parameters)
+            .current_site(self.current_site())
+            .build();
+
+        match self.ir.values.type_of(address, &environment).await {
             Ok(x) => Ok(x.result),
             Err(err) => Err(err.report_as_type_calculating_overflow(
-                match address.get_root_memory() {
-                    Memory::Parameter(id) => {
-                        let parameters = self
-                            .engine
-                            .get_parameters(self.current_site())
-                            .await?;
-
-                        parameters.parameters[*id].span.unwrap()
-                    }
-                    Memory::Alloca(id) => {
-                        self.ir.values.allocas[*id].span.unwrap()
-                    }
-                    Memory::Capture(id) => {
-                        self.captures.unwrap().captures[*id].span.unwrap()
-                    }
-                },
+                self.values()
+                    .span_of_memory(address.get_root_memory(), &environment)
+                    .await?
+                    .unwrap(),
                 &handler,
             )),
         }

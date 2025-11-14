@@ -1,7 +1,9 @@
 use std::borrow::Cow;
 
 use pernixc_handler::Handler;
-use pernixc_ir::transform::{ConstantTermSource, Transformer, TypeTermSource};
+use pernixc_ir::transform::{
+    ConstantTermSource, Element, Transformer, TypeTermSource,
+};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::runtime::executor::CyclicError;
 use pernixc_term::{
@@ -174,7 +176,7 @@ impl Binder<'_> {
             handler,
         };
 
-        self.ir.transform(self.engine, &mut transformer).await?;
+        self.ir.transform(&mut transformer, self.engine).await?;
 
         Ok(())
     }

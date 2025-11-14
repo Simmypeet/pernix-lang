@@ -11,7 +11,6 @@ use pernixc_ir::{
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_semantic_element::{
     fields::{get_fields, Field},
-    parameter::get_parameters,
     variant::get_variant_associated_type,
 };
 use pernixc_symbol::kind::{get_kind, Kind};
@@ -181,10 +180,17 @@ impl Assigned {
     }
 }
 
+#[derive(Debug)]
+struct ContinueSetAssigned<'x> {
+    projection: &'x mut Assigned,
+    ty: Type,
+}
+
 #[derive(Debug, EnumAsInner)]
+#[allow(clippy::large_enum_variant)]
 enum SetAssignedResultInternal<'a> {
     Done(bool),
-    Continue { projection: &'a mut Assigned, ty: Type },
+    Continue(ContinueSetAssigned<'a>),
 }
 
 impl Assigned {
@@ -245,9 +251,9 @@ impl Assigned {
                         return Ok(done);
                     }
 
-                    SetAssignedResultInternal::Continue { projection, ty } => {
-                        (projection, ty)
-                    }
+                    SetAssignedResultInternal::Continue(
+                        ContinueSetAssigned { projection, ty },
+                    ) => (projection, ty),
                 };
 
                 let (struct_id, generic_arguments) = match ty {
@@ -330,9 +336,9 @@ impl Assigned {
                         return Ok(done);
                     }
 
-                    SetAssignedResultInternal::Continue { projection, ty } => {
-                        (projection, ty)
-                    }
+                    SetAssignedResultInternal::Continue(
+                        ContinueSetAssigned { projection, ty },
+                    ) => (projection, ty),
                 };
 
                 let mut tuple_ty = ty.into_tuple().unwrap();
@@ -420,9 +426,9 @@ impl Assigned {
                         return Ok(done);
                     }
 
-                    SetAssignedResultInternal::Continue { projection, ty } => {
-                        (projection, ty)
-                    }
+                    SetAssignedResultInternal::Continue(
+                        ContinueSetAssigned { projection, ty },
+                    ) => (projection, ty),
                 };
 
                 let (enum_id, generic_arguments) = match ty {
@@ -491,9 +497,9 @@ impl Assigned {
                         return Ok(done);
                     }
 
-                    SetAssignedResultInternal::Continue { projection, ty } => {
-                        (projection, ty)
-                    }
+                    SetAssignedResultInternal::Continue(
+                        ContinueSetAssigned { projection, ty },
+                    ) => (projection, ty),
                 };
 
                 let ty = ty.into_reference().unwrap();
@@ -519,10 +525,10 @@ impl Assigned {
 
             SetAssignedResultInternal::Done(true)
         } else {
-            SetAssignedResultInternal::Continue {
+            SetAssignedResultInternal::Continue(ContinueSetAssigned {
                 projection: target_projection,
                 ty,
-            }
+            })
         })
     }
 }
@@ -804,29 +810,11 @@ impl<N: Normalizer> Traverser for LiveBorrowTraverser<'_, N> {
         // check each access
         for (address, kind) in accesses {
             let memory_root = address.get_root_memory();
-            let memory_root_ty = match *memory_root {
-                Memory::Parameter(id) => self
-                    .context
-                    .tracked_engine()
-                    .get_parameters(self.context.current_site())
-                    .await?
-                    .parameters
-                    .get(id)
-                    .unwrap()
-                    .r#type
-                    .clone(),
-
-                Memory::Alloca(id) => self
-                    .context
-                    .values()
-                    .allocas
-                    .get(id)
-                    .unwrap()
-                    .r#type
-                    .clone(),
-
-                Memory::Capture(_) => todo!(),
-            };
+            let memory_root_ty = self
+                .context
+                .values()
+                .simple_type_of_memory(memory_root, self.context.environment())
+                .await?;
 
             let Some(assigned_state) =
                 self.assigned_states_by_memory.get_mut(memory_root)
@@ -876,40 +864,20 @@ impl<N: Normalizer> Traverser for LiveBorrowTraverser<'_, N> {
                     continue;
                 }
 
+                AccessKind::Normal(AccessMode::Load(span)) => {
+                    (span.unwrap(), false)
+                }
+
                 AccessKind::Normal(AccessMode::Read(read)) => {
                     (read.span.unwrap(), false)
                 }
 
                 AccessKind::Drop => (
-                    match *memory_root {
-                        Memory::Parameter(id) => self
-                            .context
-                            .tracked_engine()
-                            .get_parameters(self.context.current_site())
-                            .await?
-                            .parameters
-                            .get(id)
-                            .unwrap()
-                            .span
-                            .unwrap(),
-                        Memory::Alloca(id) => self
-                            .context
-                            .values()
-                            .allocas
-                            .get(id)
-                            .unwrap()
-                            .span
-                            .unwrap(),
-                        Memory::Capture(id) => self
-                            .context
-                            .environment()
-                            .captures()
-                            .captures
-                            .get(id)
-                            .unwrap()
-                            .span
-                            .unwrap(),
-                    },
+                    self.context
+                        .values()
+                        .span_of_memory(memory_root, self.context.environment())
+                        .await?
+                        .unwrap(),
                     true,
                 ),
             };
@@ -1117,9 +1085,12 @@ impl<N: Normalizer> Traverser for LiveLenderTraverser<'_, N> {
 
             Instruction::ScopePop(scope_pop) => {
                 let scope_of_memory = match self.root_memory {
-                    Memory::Parameter(_) => {
+                    Memory::Capture(_)
+                    | Memory::ClosureParameter(_)
+                    | Memory::Parameter(_) => {
                         self.context.ir().scope_tree.root_scope_id()
                     }
+
                     Memory::Alloca(id) => {
                         self.context
                             .values()
@@ -1128,8 +1099,6 @@ impl<N: Normalizer> Traverser for LiveLenderTraverser<'_, N> {
                             .unwrap()
                             .declared_in_scope_id
                     }
-
-                    Memory::Capture(_) => todo!(),
                 };
 
                 if scope_of_memory == scope_pop.0 {

@@ -4,7 +4,7 @@
 
 use pernixc_arena::ID;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::runtime::executor::CyclicError;
+use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
 use pernixc_term::{
     constant::Constant,
     generic_parameters::{
@@ -30,6 +30,9 @@ pub enum LifetimeTermSource {
     /// From the borrow expression like `&'? x`.
     Borrow,
 
+    /// From a capture field that has been captured by reference.
+    Capture,
+
     /// As a generic argument supplied to a generic symbol.
     GenericParameter(LifetimeParameterID),
 
@@ -46,6 +49,9 @@ impl Transformable for Lifetime {
 pub enum TypeTermSource {
     /// From inferring the concreete type of a numeric literal.
     Numeric,
+
+    /// From each field in a capture structure.
+    Capture,
 
     /// From inferring the concrete type of a character literal.
     Character,
@@ -70,6 +76,12 @@ pub enum TypeTermSource {
 
     /// From the type in a cast expression like `expr as T`.
     Cast,
+
+    /// The type comes from a do return instruction.
+    DoReturnType,
+
+    /// The type comes from closure parameters.
+    ClosureParameter,
 
     /// The type comes from an alloca instruction.
     Alloca(ID<Alloca>),
@@ -100,5 +112,20 @@ pub trait Transformer<T: Transformable> {
         term: &mut T,
         source: T::Source,
         span: Option<RelativeSpan>,
+    ) -> Result<(), CyclicError>;
+}
+
+/// A trait for an object that can have [`Transformable`] elements transformed
+/// within it.
+pub trait Element {
+    /// Transforms the types, lifetimes, and constants in self using the given
+    /// transformer.
+    #[allow(async_fn_in_trait)]
+    async fn transform<
+        T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
+    >(
+        &mut self,
+        transformer: &mut T,
+        engine: &TrackedEngine,
     ) -> Result<(), CyclicError>;
 }

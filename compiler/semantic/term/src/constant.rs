@@ -252,9 +252,9 @@ impl Location<Constant, Constant> for SubConstantLocation {
                 SubTupleLocation::Single(single) => {
                     tuple.elements.get(single).map(|x| x.term.clone())
                 }
-                SubTupleLocation::Range { begin, end } => tuple
+                SubTupleLocation::Range(range) => tuple
                     .elements
-                    .get(begin..end)
+                    .get(range.to_std_range())
                     .map(|x| Constant::Tuple(Tuple { elements: x.to_vec() })),
             },
 

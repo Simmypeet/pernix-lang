@@ -8,8 +8,8 @@ use pernixc_ir::{
     value::{
         literal::{self, Boolean, Literal},
         register::{
-            ArithmeticOperator, Assignment, Binary, BinaryOperator,
-            BitwiseOperator, Load, Phi,
+            load::Load, ArithmeticOperator, Assignment, Binary, BinaryOperator,
+            BitwiseOperator, Phi,
         },
         Value,
     },
@@ -339,9 +339,7 @@ impl Binder<'_> {
                 };
 
                 let lhs_register = self.create_register_assignment(
-                    Assignment::Load(Load {
-                        address: lhs_lvalue.address.clone(),
-                    }),
+                    Assignment::Load(Load::new(lhs_lvalue.address.clone())),
                     syntax_tree.left.span(),
                 );
 

@@ -8,11 +8,11 @@ use pernixc_hash::{HashMap, HashSet};
 use pernixc_query::runtime::executor::CyclicError;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
-use pernixc_term::r#type::Type;
+use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
 use pernixc_transitive_closure::TransitiveClosure;
 
 use super::instruction::{Instruction, Jump, Terminator};
-use crate::transform::Transformer;
+use crate::transform::{self, Transformer};
 
 /// A data structure used for computing whether a particular block in the
 /// control flow graph is reachable to another.
@@ -79,7 +79,7 @@ pub struct Block {
     terminator: Option<Terminator>,
     /// List of blocks that are predecessors of this block.
     #[get = "pub"]
-    predecessors: HashSet<ID<Block>>,
+    predecessors: HashSet<ID<Self>>,
     /// Determines if the block is the entry block.
     #[get_copy = "pub"]
     is_entry: bool,
@@ -137,19 +137,22 @@ impl Block {
             true
         }
     }
+}
 
-    /// Applies the given transformer to every instruction and the terminator
-    /// in the block.
-    pub async fn transform<T: Transformer<Type>>(
+impl transform::Element for Block {
+    async fn transform<
+        T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
+    >(
         &mut self,
         transformer: &mut T,
+        engine: &pernixc_query::TrackedEngine,
     ) -> Result<(), CyclicError> {
         for inst in &mut self.instructions {
-            inst.transform(transformer).await?;
+            inst.transform(transformer, engine).await?;
         }
 
         if let Some(terminator) = &mut self.terminator {
-            terminator.transform(transformer).await?;
+            terminator.transform(transformer, engine).await?;
         }
 
         Ok(())
@@ -223,6 +226,67 @@ impl<'a> Iterator for Traverser<'a> {
     }
 }
 
+/// Iterator over mutable instructions in a control flow graph.
+///
+/// This iterator traverses the control flow graph in a depth-first manner,
+/// yielding mutable references to each instruction in the graph.
+///
+/// Each instruction is guaranteed to be visited exactly once and reachable
+/// from the entry block.
+#[derive(Debug)]
+pub struct MutInstructionTraverser<'a> {
+    graph: &'a mut ControlFlowGraph,
+    visited: HashSet<ID<Block>>,
+    stack: Vec<ID<Block>>,
+
+    current_block: ID<Block>,
+    current_instruction_index: usize,
+}
+
+impl<'x> Iterator for MutInstructionTraverser<'x> {
+    type Item = &'x mut Instruction;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let block = &mut self.graph.blocks[self.current_block];
+            let inst =
+                block.instructions.get_mut(self.current_instruction_index);
+
+            if let Some(inst) = inst {
+                self.current_instruction_index += 1;
+
+                return unsafe {
+                    Some(std::mem::transmute::<
+                        &mut Instruction,
+                        &'x mut Instruction,
+                    >(inst))
+                };
+            }
+
+            let block_id = loop {
+                let block_id = self.stack.pop()?;
+                if self.visited.insert(block_id) {
+                    break block_id;
+                }
+            };
+
+            // expand the stack
+            self.stack.extend(
+                self.graph.blocks[block_id]
+                    .terminator()
+                    .iter()
+                    .filter_map(|x| x.as_jump())
+                    .flat_map(Jump::jump_targets),
+            );
+
+            self.current_block = block_id;
+            self.current_instruction_index = 0;
+
+            // loop and try get instruction again
+        }
+    }
+}
+
 /// An iterator used for retrieving the removed unreachable blocks from the
 /// control flow graph.
 ///
@@ -261,6 +325,25 @@ impl ControlFlowGraph {
             graph: self,
             visited: HashSet::default(),
             stack: vec![self.entry_block_id],
+        }
+    }
+
+    /// Creates an iterator used for traversing through every instruction in
+    /// the control flow graph mutably.
+    ///
+    /// See [`MutInstructionTraverser`] for more information.
+    pub fn traverse_mut_instructions(&mut self) -> MutInstructionTraverser<'_> {
+        MutInstructionTraverser {
+            visited: HashSet::default(),
+            stack: self.blocks[self.entry_block_id]
+                .terminator()
+                .and_then(|x| x.as_jump())
+                .into_iter()
+                .flat_map(Jump::jump_targets)
+                .collect(),
+            current_block: self.entry_block_id,
+            current_instruction_index: 0,
+            graph: self,
         }
     }
 
@@ -642,15 +725,18 @@ impl ControlFlowGraph {
 
         true
     }
+}
 
-    /// Applies the given transformer to every instruction and the terminator
-    /// in every block in the control flow graph.
-    pub async fn transform<T: Transformer<Type>>(
+impl transform::Element for ControlFlowGraph {
+    async fn transform<
+        T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
+    >(
         &mut self,
         transformer: &mut T,
+        engine: &pernixc_query::TrackedEngine,
     ) -> Result<(), CyclicError> {
         for block in self.blocks.iter_mut().map(|(_, x)| x) {
-            block.transform(transformer).await?;
+            block.transform(transformer, engine).await?;
         }
 
         Ok(())

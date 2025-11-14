@@ -14,7 +14,10 @@ use pernixc_type_system::{
     Succeeded,
 };
 
-use crate::{capture::Captures, value::register::Register, Values};
+use crate::{
+    capture::Captures, closure_parameters::ClosureParameters,
+    value::register::Register, Values,
+};
 pub mod literal;
 pub mod register;
 
@@ -52,6 +55,10 @@ pub struct Environment<'e, N> {
     /// accessing the captured values.
     pub captures: Option<&'e Captures>,
 
+    /// If the IR was built with closure parameters, the closure parameters
+    /// here is used for accessing the closure parameters.
+    pub closure_parameters: Option<&'e ClosureParameters>,
+
     /// The site where the IR binding is being taken place in.
     pub current_site: Global<pernixc_symbol::ID>,
 }
@@ -67,6 +74,13 @@ impl<'e, N: Normalizer> Environment<'e, N> {
     /// captures.
     #[must_use]
     pub const fn captures(&self) -> &'e Captures { self.captures.unwrap() }
+
+    /// Gets the closure parameters, unwrapping the option. Panics if there
+    /// are no closure parameters.
+    #[must_use]
+    pub const fn closure_parameters(&self) -> &'e ClosureParameters {
+        self.closure_parameters.unwrap()
+    }
 }
 
 /// An extension trait on [`Values`] that provides the ability to get the type

@@ -45,7 +45,6 @@ abstract_tree::abstract_tree! {
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct FunctionSignature {
-        pub unsafe_keyword: Keyword = expect::Keyword::Unsafe.optional(),
         pub const_keyword: Keyword = expect::Keyword::Const.optional(),
         pub signature: function::Signature = ast::<function::Signature>(),
     }

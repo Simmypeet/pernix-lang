@@ -1,6 +1,6 @@
 use crate::runtime::persistence::backend::{
-    fjall::FjallBackend, redb::RedbBackend, sled::SledBackend, Backend,
-    BackgroundWriter, Table, WriteTransaction, Writer,
+    redb::RedbBackend, Backend, BackgroundWriter, Table, WriteTransaction,
+    Writer,
 };
 
 async fn basic_template<B: Backend>() {
@@ -55,9 +55,3 @@ async fn basic_template<B: Backend>() {
 
 #[tokio::test]
 async fn basic_redb() { basic_template::<RedbBackend>().await; }
-
-#[tokio::test]
-async fn basic_fjall() { basic_template::<FjallBackend>().await; }
-
-#[tokio::test]
-async fn basic_sled() { basic_template::<SledBackend>().await; }

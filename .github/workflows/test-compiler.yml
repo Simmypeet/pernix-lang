@@ -38,8 +38,8 @@ jobs:
             - name: Checkout Repository
               uses: actions/checkout@v4
 
-            - name: Set up Rust 1.88.0
-              uses: dtolnay/rust-toolchain@1.88.0
+            - name: Set up Rust Nightly
+              uses: dtolnay/rust-toolchain@nightly
 
             - name: Build LLVM on Unix-like
               if: runner.os != 'Windows'
@@ -72,24 +72,16 @@ jobs:
                   echo "LLVM_SYS_181_PREFIX${{ github.workspace }}/__llvm18"
                   echo "LLVM_SYS_181_PREFIX=${{ github.workspace }}/__llvm18" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+            - name: Rust Cache
+              uses: Swatinem/rust-cache@v2
+              with:
+                  shared-key: "llvm-18.1.8"
+                  cache-on-failure: true
+
             - name: Install cargo-nextest
               uses: baptiste0928/cargo-install@v3.3.0
               with:
                   crate: cargo-nextest
-
-            - name: Install Rust Nightly with Fmt
-              run: |
-                  rustup toolchain install nightly --component rustfmt
-
-            - name: Install Rust Stable Clippy
-              run: |
-                  rustup component add clippy
-
-            - name: Check Code Formatting
-              run: cargo +nightly fmt --all -- --check
-
-            - name: Run Clippy
-              run: cargo clippy
 
             - name: Run cargo nextest
               run: cargo nextest run --verbose --release --no-fail-fast

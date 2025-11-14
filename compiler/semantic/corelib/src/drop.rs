@@ -2,11 +2,11 @@
 
 use std::sync::Arc;
 
-use pernixc_arena::Arena;
+use pernixc_arena::{Arena, OrderedArena};
 use pernixc_hash::HashSet;
 use pernixc_query::Engine;
 use pernixc_semantic_element::{
-    elided_lifetime, implemented, implied_predicate,
+    effect_annotation, elided_lifetime, implemented, implied_predicate,
     parameter::{self, Parameter, Parameters},
     return_type, where_clause,
 };
@@ -156,6 +156,9 @@ pub async fn initialize_drop_trait(
         input_lock
             .set_input(implied_predicate::Key(drop_function_id), Arc::default())
             .await;
+        input_lock
+            .set_input(pernixc_symbol::r#unsafe::Key(drop_function_id), false)
+            .await;
 
         let mut inner_generic_params = GenericParameters::default();
         let a_lt = inner_generic_params
@@ -220,6 +223,13 @@ pub async fn initialize_drop_trait(
             .set_input(
                 return_type::Key(drop_function_id),
                 Arc::new(Type::unit()),
+            )
+            .await;
+
+        input_lock
+            .set_input(
+                effect_annotation::Key(drop_function_id),
+                Arc::new(OrderedArena::default()),
             )
             .await;
     }

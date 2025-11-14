@@ -1,0 +1,13 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: final_string
+---
+## Case 0
+exit_code = 0
+stdin = ""
+stdout = """
+Before dropAt: 42
+Dropping 42
+After dropAt (should not drop again)
+Dropping 42"""
+stderr = ""

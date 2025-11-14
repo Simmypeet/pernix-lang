@@ -1,0 +1,16 @@
+from core import Copy
+
+
+public struct NonCopyable:
+    pass
+
+
+final implements Copy[NonCopyable] delete
+
+
+public function drop[T](..: T):
+    pass
+
+
+public function moveOutFromReference(nonCopyable: &NonCopyable):
+    drop(*nonCopyable)

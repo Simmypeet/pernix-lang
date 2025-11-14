@@ -21,7 +21,7 @@ use super::{
     },
     Values,
 };
-use crate::transform::Transformer;
+use crate::transform::{self, Transformer};
 
 /// Represents a jump to another block unconditionally.
 #[derive(
@@ -501,11 +501,15 @@ pub enum Instruction {
     Drop(Drop),
 }
 
-impl Instruction {
-    /// Applies the given transformer to the instruction.
-    pub async fn transform<T: Transformer<Type>>(
+impl transform::Element for Instruction {
+    async fn transform<
+        T: Transformer<pernixc_term::lifetime::Lifetime>
+            + Transformer<Type>
+            + Transformer<pernixc_term::constant::Constant>,
+    >(
         &mut self,
         transformer: &mut T,
+        _: &pernixc_query::TrackedEngine,
     ) -> Result<(), CyclicError> {
         match self {
             Self::Store(store) => store.transform(transformer).await,
@@ -539,11 +543,15 @@ pub enum Terminator {
     Panic,
 }
 
-impl Terminator {
-    /// Applies the given transformer to the terminator.
-    pub async fn transform<T: Transformer<Type>>(
+impl transform::Element for Terminator {
+    async fn transform<
+        T: Transformer<pernixc_term::lifetime::Lifetime>
+            + Transformer<Type>
+            + Transformer<pernixc_term::constant::Constant>,
+    >(
         &mut self,
         transformer: &mut T,
+        _: &pernixc_query::TrackedEngine,
     ) -> Result<(), CyclicError> {
         match self {
             Self::Jump(jump) => jump.transform(transformer).await,
@@ -575,6 +583,8 @@ pub struct Read {
 #[allow(missing_docs)]
 pub enum AccessMode {
     Read(Read),
+    /// The value is loaded/moved from the address.
+    Load(Option<RelativeSpan>),
 
     /// The address is written to.
     Write(Option<RelativeSpan>),
@@ -586,7 +596,7 @@ impl AccessMode {
     pub const fn span(&self) -> Option<&RelativeSpan> {
         match self {
             Self::Read(read) => read.span.as_ref(),
-            Self::Write(span) => span.as_ref(),
+            Self::Load(span) | Self::Write(span) => span.as_ref(),
         }
     }
 
@@ -595,7 +605,7 @@ impl AccessMode {
     pub const fn into_span(self) -> Option<RelativeSpan> {
         match self {
             Self::Read(read) => read.span,
-            Self::Write(span) => span,
+            Self::Load(span) | Self::Write(span) => span,
         }
     }
 }
@@ -644,11 +654,8 @@ impl Instruction {
 
                 match &register.assignment {
                     Assignment::Load(load) => vec![(
-                        Cow::Borrowed(&load.address),
-                        AccessKind::Normal(AccessMode::Read(Read {
-                            qualifier: Qualifier::Immutable,
-                            span: register.span,
-                        })),
+                        Cow::Borrowed(load.address()),
+                        AccessKind::Normal(AccessMode::Load(register.span)),
                     )],
                     Assignment::Borrow(borrow) => vec![(
                         Cow::Borrowed(&borrow.address),
@@ -673,6 +680,7 @@ impl Instruction {
                     | Assignment::Array(_)
                     | Assignment::Phi(_)
                     | Assignment::Cast(_)
+                    | Assignment::Do(_)
                     | Assignment::Tuple(_) => Vec::new(),
                 }
             }
@@ -686,10 +694,9 @@ impl Instruction {
                             ),
                             offset: address::Offset::Unpacked,
                         })),
-                        AccessKind::Normal(AccessMode::Read(Read {
-                            qualifier: Qualifier::Immutable,
-                            span: tuple_pack.packed_tuple_span,
-                        })),
+                        AccessKind::Normal(AccessMode::Load(
+                            tuple_pack.packed_tuple_span,
+                        )),
                     ),
                     (
                         Cow::Borrowed(&tuple_pack.store_address),

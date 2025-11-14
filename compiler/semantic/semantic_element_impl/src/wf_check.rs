@@ -30,7 +30,10 @@ use pernixc_term::{
 };
 use pernixc_type_system::{
     deduction,
-    diagnostic::{ImplementationIsNotGeneralEnough, UnsatisfiedPredicate},
+    diagnostic::{
+        ImplementationIsNotGeneralEnough as ImplementationIsNotGeneralEnoughDiag,
+        UnsatisfiedPredicate,
+    },
     environment::{get_active_premise, Environment},
     lifetime_constraint::LifetimeConstraint,
     normalizer,
@@ -48,29 +51,38 @@ use crate::{
 
 pub mod diagnostic;
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) struct UnsatisfiedError {
+    pub(super) predicate: Predicate,
+    pub(super) predicate_declaration_span: Option<RelativeSpan>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) struct UndecidableError {
+    pub(super) predicate: Predicate,
+    pub(super) predicate_declaration_span: Option<RelativeSpan>,
+    pub(super) overflow_error: OverflowError,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) struct ImplementationIsNotGeneralEnough {
+    pub(super) resolved_implementation: resolution::Implementation,
+    pub(super) generic_arguments: GenericArguments,
+    pub(super) predicate_declaration_span: Option<RelativeSpan>,
+}
+
 /// An enumeration of ways the predicate can be erroneous.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub(super) enum PredicateError {
     /// The predicate isn't satisfied.
-    Unsatisfied {
-        predicate: Predicate,
-        predicate_declaration_span: Option<RelativeSpan>,
-    },
+    Unsatisfied(UnsatisfiedError),
 
     /// The type system can't determine if the predicate is satisfiable or not.
-    Undecidable {
-        predicate: Predicate,
-        predicate_declaration_span: Option<RelativeSpan>,
-        overflow_error: OverflowError,
-    },
+    Undecidable(UndecidableError),
 
     /// The solved trait/marker implementation is not general enough for the
     /// forall lifetime requirements.
-    ImplementationIsNotGeneralEnough {
-        resolved_implementation: resolution::Implementation,
-        generic_arguments: GenericArguments,
-        predicate_declaration_span: Option<RelativeSpan>,
-    },
+    ImplementationIsNotGeneralEnough(ImplementationIsNotGeneralEnough),
 }
 
 impl PredicateError {
@@ -80,7 +92,10 @@ impl PredicateError {
         handler: &Storage<Diagnostic>,
     ) {
         match self {
-            Self::Unsatisfied { predicate, predicate_declaration_span } => {
+            Self::Unsatisfied(UnsatisfiedError {
+                predicate,
+                predicate_declaration_span,
+            }) => {
                 handler.receive(UnsatisfiedPredicate {
                     predicate,
                     instantiation_span,
@@ -88,11 +103,11 @@ impl PredicateError {
                 });
             }
 
-            Self::Undecidable {
+            Self::Undecidable(UndecidableError {
                 predicate,
                 predicate_declaration_span,
                 overflow_error,
-            } => {
+            }) => {
                 if predicate.contains_error() {
                     return;
                 }
@@ -105,16 +120,18 @@ impl PredicateError {
                 );
             }
 
-            Self::ImplementationIsNotGeneralEnough {
-                resolved_implementation,
-                predicate_declaration_span,
-                generic_arguments,
-            } => {
+            Self::ImplementationIsNotGeneralEnough(
+                ImplementationIsNotGeneralEnough {
+                    resolved_implementation,
+                    predicate_declaration_span,
+                    generic_arguments,
+                },
+            ) => {
                 if generic_arguments.contains_error() {
                     return;
                 }
 
-                handler.receive(ImplementationIsNotGeneralEnough {
+                handler.receive(ImplementationIsNotGeneralEnoughDiag {
                     resolvable_implementation_id: resolved_implementation.id,
                     instantiation_span,
                     predicate_declaration_span,
@@ -518,15 +535,17 @@ impl Checker<'_> {
         }
 
         if is_not_general_enough {
-            errors.push(PredicateError::ImplementationIsNotGeneralEnough {
-                resolved_implementation: resolution::Implementation {
-                    instantiation: instantiation.clone(),
-                    id: implementation_id,
-                    is_not_general_enough,
+            errors.push(PredicateError::ImplementationIsNotGeneralEnough(
+                ImplementationIsNotGeneralEnough {
+                    resolved_implementation: resolution::Implementation {
+                        instantiation: instantiation.clone(),
+                        id: implementation_id,
+                        is_not_general_enough,
+                    },
+                    generic_arguments: generic_arguments.clone(),
+                    predicate_declaration_span,
                 },
-                generic_arguments: generic_arguments.clone(),
-                predicate_declaration_span,
-            });
+            ));
         }
 
         Ok(errors)
@@ -633,10 +652,12 @@ impl Checker<'_> {
                 return match self.environment.query(pred).await {
                     Ok(Some(_)) => Ok(vec![]),
 
-                    Ok(None) => Ok(vec![PredicateError::Unsatisfied {
-                        predicate,
-                        predicate_declaration_span,
-                    }]),
+                    Ok(None) => Ok(vec![PredicateError::Unsatisfied(
+                        UnsatisfiedError {
+                            predicate,
+                            predicate_declaration_span,
+                        },
+                    )]),
 
                     Err(pernixc_type_system::Error::CyclicDependency(err)) => {
                         Err(err)
@@ -644,11 +665,13 @@ impl Checker<'_> {
 
                     Err(pernixc_type_system::Error::Overflow(
                         overflow_error,
-                    )) => Ok(vec![PredicateError::Undecidable {
-                        predicate,
-                        predicate_declaration_span,
-                        overflow_error,
-                    }]),
+                    )) => Ok(vec![PredicateError::Undecidable(
+                        UndecidableError {
+                            predicate,
+                            predicate_declaration_span,
+                            overflow_error,
+                        },
+                    )]),
                 };
             }
 
@@ -656,10 +679,12 @@ impl Checker<'_> {
                 return match self.environment.query(pred).await {
                     Ok(Some(_)) => Ok(vec![]),
 
-                    Ok(None) => Ok(vec![PredicateError::Unsatisfied {
-                        predicate,
-                        predicate_declaration_span,
-                    }]),
+                    Ok(None) => Ok(vec![PredicateError::Unsatisfied(
+                        UnsatisfiedError {
+                            predicate,
+                            predicate_declaration_span,
+                        },
+                    )]),
 
                     Err(pernixc_type_system::Error::CyclicDependency(err)) => {
                         Err(err)
@@ -667,11 +692,13 @@ impl Checker<'_> {
 
                     Err(pernixc_type_system::Error::Overflow(
                         overflow_error,
-                    )) => Ok(vec![PredicateError::Undecidable {
-                        predicate,
-                        predicate_declaration_span,
-                        overflow_error,
-                    }]),
+                    )) => Ok(vec![PredicateError::Undecidable(
+                        UndecidableError {
+                            predicate,
+                            predicate_declaration_span,
+                            overflow_error,
+                        },
+                    )]),
                 };
             }
 
@@ -822,27 +849,33 @@ impl Checker<'_> {
                         {
                             Ok(None) => {
                                 extra_predicate_error.push(
-                                    PredicateError::Unsatisfied {
-                                        predicate: Predicate::LifetimeOutlives(
-                                            pred,
-                                        ),
+                                    PredicateError::Unsatisfied(
+                                        UnsatisfiedError {
+                                            predicate:
+                                                Predicate::LifetimeOutlives(
+                                                    pred,
+                                                ),
 
-                                        predicate_declaration_span: None,
-                                    },
+                                            predicate_declaration_span: None,
+                                        },
+                                    ),
                                 );
                             }
                             Err(pernixc_type_system::Error::Overflow(
                                 overflow_error,
                             )) => {
                                 extra_predicate_error.push(
-                                    PredicateError::Undecidable {
-                                        predicate: Predicate::LifetimeOutlives(
-                                            pred,
-                                        ),
+                                    PredicateError::Undecidable(
+                                        UndecidableError {
+                                            predicate:
+                                                Predicate::LifetimeOutlives(
+                                                    pred,
+                                                ),
 
-                                        predicate_declaration_span: None,
-                                        overflow_error,
-                                    },
+                                            predicate_declaration_span: None,
+                                            overflow_error,
+                                        },
+                                    ),
                                 );
                             }
 
@@ -863,10 +896,9 @@ impl Checker<'_> {
             }
 
             Ok(None) => {
-                extra_predicate_error.push(PredicateError::Unsatisfied {
-                    predicate,
-                    predicate_declaration_span,
-                });
+                extra_predicate_error.push(PredicateError::Unsatisfied(
+                    UnsatisfiedError { predicate, predicate_declaration_span },
+                ));
 
                 Ok(extra_predicate_error)
             }
@@ -874,11 +906,13 @@ impl Checker<'_> {
             Err(pernixc_type_system::Error::CyclicDependency(err)) => Err(err),
 
             Err(pernixc_type_system::Error::Overflow(overflow_error)) => {
-                extra_predicate_error.push(PredicateError::Undecidable {
-                    predicate,
-                    predicate_declaration_span,
-                    overflow_error,
-                });
+                extra_predicate_error.push(PredicateError::Undecidable(
+                    UndecidableError {
+                        predicate,
+                        predicate_declaration_span,
+                        overflow_error,
+                    },
+                ));
 
                 Ok(extra_predicate_error)
             }

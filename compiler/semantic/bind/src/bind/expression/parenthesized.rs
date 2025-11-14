@@ -58,7 +58,7 @@ impl Bind<&pernixc_syntax::expression::unit::Parenthesized>
                     .await?
             };
 
-            elements.push(register::TupleElement {
+            elements.push(register::tuple::TupleElement {
                 value,
                 is_unpacked: element_syn.ellipsis().is_some(),
             });
@@ -105,7 +105,7 @@ impl Bind<&pernixc_syntax::expression::unit::Parenthesized>
             }))
         } else {
             let create_register_assignmnet = self.create_register_assignment(
-                Assignment::Tuple(register::Tuple { elements }),
+                Assignment::Tuple(register::tuple::Tuple { elements }),
                 syntax_tree.span(),
             );
             Value::Register(create_register_assignmnet)

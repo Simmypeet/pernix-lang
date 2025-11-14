@@ -9,6 +9,7 @@ use pernixc_ir::{
     address::{self, Address, Offset},
     instruction::{Drop, DropUnpackTuple, Instruction},
     scope,
+    value::register::load,
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
@@ -87,11 +88,34 @@ pub enum Projection {
     MutableReference(MutableReference),
 }
 
+/// Represents a move operation that moved the value from memory.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Getters,
+    CopyGetters,
+)]
+pub struct Move {
+    /// The span to the source code that move the value.
+    #[get = "pub"]
+    span: RelativeSpan,
+
+    /// The reason why the value was moved from the memory.
+    #[get_copy = "pub"]
+    purpose: load::Purpose,
+}
+
 /// Represents the state of the value in memory that is uninitialized.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Uninitialized {
     /// The span that last moved the value.
-    latest_accessor: Option<RelativeSpan>,
+    latest_move: Option<Move>,
 
     /// Used to determine the order of moves. The higher the version, the
     /// later/newer the move.
@@ -100,8 +124,8 @@ pub struct Uninitialized {
 
 impl Uninitialized {
     /// Returns the latest accessor that moved the value.
-    pub const fn latest_accessor(&self) -> Option<&RelativeSpan> {
-        self.latest_accessor.as_ref()
+    pub const fn latest_move(&self) -> Option<&Move> {
+        self.latest_move.as_ref()
     }
 }
 
@@ -126,7 +150,7 @@ pub enum State {
 
 fn try_simplify_to_uninitialized<'a>(
     iterator: impl IntoIterator<Item = &'a State>,
-) -> Option<(&'a RelativeSpan, usize)> {
+) -> Option<(&'a Move, usize)> {
     let mut iterator = iterator.into_iter();
 
     let mut current = iterator
@@ -134,13 +158,13 @@ fn try_simplify_to_uninitialized<'a>(
         .expect("should have at least one element")
         .as_total()
         .and_then(|x| x.as_false())
-        .map(|x| (x.latest_accessor.as_ref().unwrap(), x.version))?;
+        .map(|x| (x.latest_move.as_ref().unwrap(), x.version))?;
 
     for state in iterator {
         let Some(next) = state
             .as_total()
             .and_then(|x| x.as_false())
-            .map(|x| (x.latest_accessor.as_ref().unwrap(), x.version))
+            .map(|x| (x.latest_move.as_ref().unwrap(), x.version))
         else {
             // it's a mix of initialized and uninitialized, leave
             // it as is
@@ -158,7 +182,7 @@ fn try_simplify_to_uninitialized<'a>(
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 enum LatestLoad<'a> {
     Uninitialized,
-    Moved(&'a RelativeSpan, usize),
+    Moved(&'a Move, usize),
 }
 
 /// Summary of the state.
@@ -171,7 +195,7 @@ pub enum Summary {
     Uninitialized,
 
     /// The value has been moved out by some instructions
-    Moved(RelativeSpan),
+    Moved(Move),
 }
 
 /// Two memory contains the projection that aren't copmatible.
@@ -233,7 +257,7 @@ impl Memory {
                 *version += 1;
 
                 *self_state = State::Total(Initialized::False(Uninitialized {
-                    latest_accessor: falsed.latest_accessor,
+                    latest_move: falsed.latest_move,
                     version: new_version,
                 }));
 
@@ -723,13 +747,13 @@ impl State {
 
     /// Returns `Some` with the register that move, if there's a moved out value
     /// in a mutable reference.
-    pub fn get_moved_out_mutable_reference(&self) -> Option<&RelativeSpan> {
+    pub fn get_moved_out_mutable_reference(&self) -> Option<&Move> {
         self.get_moved_out_mutable_reference_internal().map(|x| x.0)
     }
 
     fn get_moved_out_mutable_reference_internal(
         &self,
-    ) -> Option<(&RelativeSpan, usize)> {
+    ) -> Option<(&Move, usize)> {
         match self {
             Self::Total(_) => None,
 
@@ -755,8 +779,8 @@ impl State {
                     match mutable_reference.state.get_latest_accessor_internal()
                     {
                         Some(LatestLoad::Uninitialized) => unreachable!(),
-                        Some(LatestLoad::Moved(id, version)) => {
-                            Some((id, version))
+                        Some(LatestLoad::Moved(move_info, version)) => {
+                            Some((move_info, version))
                         }
                         None => None,
                     }
@@ -769,7 +793,7 @@ impl State {
         self.get_latest_accessor_internal().map_or(Summary::Initialized, |x| {
             match x {
                 LatestLoad::Uninitialized => Summary::Uninitialized,
-                LatestLoad::Moved(id, _) => Summary::Moved(*id),
+                LatestLoad::Moved(move_info, _) => Summary::Moved(*move_info),
             }
         })
     }
@@ -777,14 +801,12 @@ impl State {
     fn get_latest_accessor_internal(&self) -> Option<LatestLoad<'_>> {
         match self {
             Self::Total(Initialized::False(Uninitialized {
-                latest_accessor,
+                latest_move,
                 version,
             })) => Some(
-                latest_accessor
-                    .as_ref()
-                    .map_or(LatestLoad::Uninitialized, |x| {
-                        LatestLoad::Moved(x, *version)
-                    }),
+                latest_move.as_ref().map_or(LatestLoad::Uninitialized, |x| {
+                    LatestLoad::Moved(x, *version)
+                }),
             ),
             Self::Projection(Projection::Struct(Struct {
                 states_by_field_id,
@@ -860,7 +882,7 @@ impl State {
                     try_simplify_to_uninitialized(states_by_field_id.values())
                 {
                     *self = Self::Total(Initialized::False(Uninitialized {
-                        latest_accessor: Some(*latest_accessor),
+                        latest_move: Some(*latest_accessor),
                         version,
                     }));
                 }
@@ -884,7 +906,7 @@ impl State {
                     )
                 {
                     *self = Self::Total(Initialized::False(Uninitialized {
-                        latest_accessor: Some(*latest_accessor),
+                        latest_move: Some(*latest_accessor),
                         version,
                     }));
                 }
@@ -985,6 +1007,14 @@ pub enum ScopeMergeError {
     MemoryMerge(#[from] MemoryMergeError),
 }
 
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
+)]
+enum SetState {
+    Initialized,
+    Move(load::Purpose),
+}
+
 impl Scope {
     pub fn new(scope_id: ID<scope::Scope>) -> Self {
         Self { scope_id, memories_by_address: HashMap::default() }
@@ -1042,7 +1072,7 @@ impl Scope {
                         State::Total(Initialized::True)
                     } else {
                         State::Total(Initialized::False(Uninitialized {
-                            latest_accessor: None,
+                            latest_move: None,
                             version: 0,
                         }))
                     },
@@ -1065,6 +1095,7 @@ impl Scope {
         &mut self,
         address: &Address,
         load_span: RelativeSpan,
+        load_purpose: load::Purpose,
         environment: &Environment<'_, N>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<SetStateSucceeded, UnrecoverableError> {
@@ -1072,7 +1103,7 @@ impl Scope {
             .set_state_internal(
                 address,
                 load_span,
-                false,
+                SetState::Move(load_purpose),
                 true,
                 environment,
                 handler,
@@ -1114,7 +1145,7 @@ impl Scope {
             .set_state_internal(
                 address,
                 set_span,
-                true,
+                SetState::Initialized,
                 true,
                 environment,
                 handler,
@@ -1208,7 +1239,7 @@ impl Scope {
         &mut self,
         address: &Address,
         set_span: RelativeSpan,
-        set_initialized: bool,
+        set_initialized: SetState,
         root: bool,
         environment: &Environment<'_, N>,
         handler: &dyn Handler<Diagnostic>,
@@ -1267,7 +1298,7 @@ impl Scope {
 
                 if let State::Total(current) = state {
                     // already satisfied
-                    if current.is_true() == set_initialized {
+                    if current.is_true() == set_initialized.is_initialized() {
                         return Ok(SetStateResultInternal::Unchanged(
                             current.clone(),
                             (*field.struct_address).clone(),
@@ -1339,7 +1370,7 @@ impl Scope {
 
                 if let State::Total(current) = state {
                     // already satisfied
-                    if current.is_true() == set_initialized {
+                    if current.is_true() == set_initialized.is_initialized() {
                         return Ok(SetStateResultInternal::Unchanged(
                             current.clone(),
                             (*tuple.tuple_address).clone(),
@@ -1454,7 +1485,7 @@ impl Scope {
 
                 if let State::Total(current) = state {
                     // already satisfied
-                    if current.is_true() == set_initialized {
+                    if current.is_true() == set_initialized.is_initialized() {
                         return Ok(SetStateResultInternal::Unchanged(
                             current.clone(),
                             (*variant.enum_address).clone(),
@@ -1531,7 +1562,7 @@ impl Scope {
 
                 if let State::Total(current) = state {
                     // already satisfied
-                    if current.is_true() == set_initialized {
+                    if current.is_true() == set_initialized.is_initialized() {
                         return Ok(SetStateResultInternal::Unchanged(
                             current.clone(),
                             (*reference.reference_address).clone(),
@@ -1559,19 +1590,26 @@ impl Scope {
         };
 
         if root {
-            let replaced = if set_initialized {
-                std::mem::replace(target_state, State::Total(Initialized::True))
-            } else {
-                let current_version = *version;
-                *version += 1;
-
-                std::mem::replace(
+            let replaced = match set_initialized {
+                SetState::Initialized => std::mem::replace(
                     target_state,
-                    State::Total(Initialized::False(Uninitialized {
-                        latest_accessor: Some(set_span),
-                        version: current_version,
-                    })),
-                )
+                    State::Total(Initialized::True),
+                ),
+                SetState::Move(load_purpose) => {
+                    let current_version = *version;
+                    *version += 1;
+
+                    std::mem::replace(
+                        target_state,
+                        State::Total(Initialized::False(Uninitialized {
+                            latest_move: Some(Move {
+                                purpose: load_purpose,
+                                span: set_span,
+                            }),
+                            version: current_version,
+                        })),
+                    )
+                }
             };
 
             Ok(SetStateResultInternal::Done(replaced))
@@ -1642,6 +1680,7 @@ impl Stack {
         &mut self,
         address: &Address,
         move_span: RelativeSpan,
+        load_purpose: load::Purpose,
         environment: &Environment<'_, N>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<SetStateSucceeded, UnrecoverableError> {
@@ -1649,7 +1688,13 @@ impl Stack {
         for scope in self.scopes.iter_mut().rev() {
             if scope.contains(root) {
                 return scope
-                    .set_uninitialized(address, move_span, environment, handler)
+                    .set_uninitialized(
+                        address,
+                        move_span,
+                        load_purpose,
+                        environment,
+                        handler,
+                    )
                     .await;
             }
         }

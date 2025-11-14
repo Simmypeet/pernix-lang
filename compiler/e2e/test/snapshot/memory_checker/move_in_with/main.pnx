@@ -1,0 +1,28 @@
+from core import Copy
+
+
+public effect Test[T]:
+    operation(value: T)
+
+
+public struct NonCopyable:
+    pass
+
+
+final implements Copy[NonCopyable] delete
+
+
+public function drop[T](..: T):
+    pass
+
+
+public function main():
+    let nonCopyableOuter = NonCopyable{}
+
+    do:
+        pass
+
+    with Test[NonCopyable]:
+        operation(innerNoncopyable):
+            drop(innerNoncopyable) # it's fine
+            drop(nonCopyableOuter) # not fine

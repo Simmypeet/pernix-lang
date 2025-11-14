@@ -1,0 +1,38 @@
+public struct MyType:
+    pass
+
+
+implements MyType:
+    public unsafe function dangerous(): 
+        pass
+
+    
+    public unsafe function dangerousMethod(self: &this):
+        pass
+
+
+public unsafe function anotherDangerous():
+    pass
+
+
+public trait MyTrait[T]:
+    public unsafe function traitDangerous()
+
+    public unsafe function traitDangerousMethod(self: &T)
+
+
+public function main[T: MyTrait](t: T):
+    MyType::dangerous()
+    anotherDangerous()
+    MyType{}.dangerousMethod()
+    MyTrait[T]::traitDangerous()
+    t.traitDangerousMethod()
+
+
+public function safeMain[T: MyTrait](t: T):
+    unsafe scope:
+        MyType::dangerous()
+        anotherDangerous()
+        MyType{}.dangerousMethod()
+        MyTrait[T]::traitDangerous()
+        t.traitDangerousMethod()

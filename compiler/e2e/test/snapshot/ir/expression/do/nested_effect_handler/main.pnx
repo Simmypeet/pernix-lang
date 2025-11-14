@@ -1,0 +1,29 @@
+public effect Effect[T]:
+    op()
+
+
+public function error():
+    do:
+        Effect[int32]::op() # effect is handled
+
+    with Effect[int32]:
+        op():
+            Effect[float32]::op() # effect isn't considered handled
+
+    with Effect[float32]:
+        op():
+            pass
+
+
+public function valid():
+    do:
+        let something = do:
+            Effect[int32]::op() # effect is handled by inner do
+
+        with Effect[int32]:
+            op():
+                Effect[float32]::op() # effect is handled by outer do
+
+    with Effect[float32]:
+        op():
+            pass

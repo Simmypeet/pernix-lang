@@ -31,14 +31,17 @@ use crate::{
     infer::constraint,
 };
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LoopTracking {
+    incoming_values: HashMap<ID<Block>, Value>,
+    break_type: Option<Type>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, EnumAsInner)]
 #[allow(clippy::large_enum_variant)]
 enum LoopKindState {
     While,
-    Loop {
-        incoming_values: HashMap<ID<Block>, Value>,
-        break_type: Option<Type>,
-    },
+    Loop(LoopTracking),
 }
 
 /// Represents the state of a loop during binding. It may contain additional
@@ -70,7 +73,7 @@ impl LoopState {
     pub fn get_expected_type(&self) -> Option<Type> {
         match &self.kind_state {
             LoopKindState::While => Some(Type::unit()),
-            LoopKindState::Loop { break_type, .. } => break_type.clone(),
+            LoopKindState::Loop(tracking) => tracking.break_type.clone(),
         }
     }
 }
@@ -111,10 +114,10 @@ impl Binder<'_> {
     ) {
         let kind_state = match kind {
             LoopKind::While => LoopKindState::While,
-            LoopKind::Loop => LoopKindState::Loop {
+            LoopKind::Loop => LoopKindState::Loop(LoopTracking {
                 incoming_values: HashMap::default(),
                 break_type: None,
-            },
+            }),
         };
 
         let loop_state = LoopState {
@@ -219,7 +222,10 @@ impl Binder<'_> {
                 // assuming the type has been checked already
             }
 
-            LoopKindState::Loop { incoming_values, break_type } => {
+            LoopKindState::Loop(LoopTracking {
+                incoming_values,
+                break_type,
+            }) => {
                 if break_type.is_none() {
                     *break_type = Some(ty);
                 }
@@ -263,7 +269,10 @@ impl Bind<LoopState> for Binder<'_> {
                 Ok(Expression::RValue(value))
             }
 
-            LoopKindState::Loop { mut incoming_values, break_type } => {
+            LoopKindState::Loop(LoopTracking {
+                mut incoming_values,
+                break_type,
+            }) => {
                 // set the current block to the exit block
                 let value = if let Some(break_type) = break_type {
                     assert!(self

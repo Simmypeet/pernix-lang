@@ -1,2 +1,9 @@
 [env]
 PERNIXC_CARGO_WORKSPACE_DIR = { value = "", relative = true }
+
+# The flag -Zhigher-ranked-assumptions is needed to work around the false 
+# positive in borrow-checker when working with async trait and GATs. 
+# If this issue is fixed in Rust, this flag can be removed 
+# https://github.com/rust-lang/rust/pull/143545
+[target.'cfg(all())']
+rustflags = ["-Zhigher-ranked-assumptions"]

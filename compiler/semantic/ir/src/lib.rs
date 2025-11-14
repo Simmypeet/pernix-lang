@@ -14,6 +14,7 @@ use pernixc_target::Global;
 use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
 
 use crate::{
+    handling_scope::HandlingScopes,
     transform::{Transformer, TypeTermSource},
     value::register::Register,
 };
@@ -21,12 +22,16 @@ use crate::{
 pub mod address;
 pub mod alloca;
 pub mod capture;
+pub mod closure_parameters;
 pub mod control_flow_graph;
+pub mod handling_scope;
 pub mod instruction;
 pub mod pattern;
 pub mod scope;
 pub mod transform;
+pub mod typer;
 pub mod value;
+pub mod visitor;
 
 /// Contains all the registers and allocas used in the program.
 #[derive(
@@ -56,21 +61,13 @@ impl Values {
     }
 }
 
-/// An intermediate representation of the program.
+/// An intermediate representation of a particular procedure.
+///
+/// It can be used as a body of a function, closure, effect handler,
+/// compile-time constant, etc.
 #[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    Default,
-    Serialize,
-    Deserialize,
-    StableHash,
-    pernixc_query::Value,
+    Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, StableHash,
 )]
-#[id(Global<pernixc_symbol::ID>)]
-#[value(Arc<IR>)]
-#[extend(method(get_ir))]
 pub struct IR {
     /// Contains the registers and allocas used in the program.
     pub values: Values,
@@ -82,23 +79,19 @@ pub struct IR {
     pub scope_tree: scope::Tree,
 }
 
-impl IR {
-    /// Applies the given transformer to all types, lifetimes, and constants in
-    /// the IR.
-    pub async fn transform<
+impl transform::Element for IR {
+    async fn transform<
         T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
     >(
         &mut self,
-        tracked_engine: &TrackedEngine,
         transformer: &mut T,
+        engine: &TrackedEngine,
     ) -> Result<(), CyclicError> {
-        self.control_flow_graph.transform(transformer).await?;
+        self.control_flow_graph.transform(transformer, engine).await?;
 
         for (_, register) in &mut self.values.registers {
-            register.transform(transformer, tracked_engine).await?;
+            register.transform(transformer, engine).await?;
         }
-
-        self.control_flow_graph.transform(transformer).await?;
 
         for (&alloca_id, alloca) in &mut self.values.allocas {
             transformer
@@ -112,4 +105,27 @@ impl IR {
 
         Ok(())
     }
+}
+
+/// An intermediate representation of a function.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
+    Serialize,
+    Deserialize,
+    StableHash,
+    pernixc_query::Value,
+)]
+#[id(Global<pernixc_symbol::ID>)]
+#[value(Arc<FunctionIR>)]
+#[extend(method(get_ir))]
+pub struct FunctionIR {
+    /// The IR representing the body of the function.
+    pub ir: IR,
+
+    /// The collection of all handler groups defined in the function body.
+    pub handler_groups: HandlingScopes,
 }

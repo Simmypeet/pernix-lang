@@ -40,7 +40,7 @@ pub enum PositiveSatisfied {
     Implementation(Implementation),
 
     /// Satisfied by proving that all the fields/sub-terms are satisfied.
-    Congruence(BTreeMap<PositiveMarker, Arc<Succeeded<PositiveSatisfied>>>),
+    Congruence(BTreeMap<PositiveMarker, Arc<Succeeded<Self>>>),
 
     /// Satisfied by the fact that the query was made in the marker/its
     /// implementation.

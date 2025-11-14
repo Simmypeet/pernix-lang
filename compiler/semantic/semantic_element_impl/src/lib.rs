@@ -5,14 +5,14 @@ use crate::build::Build;
 pub mod diagnostic;
 
 mod build;
-mod do_effect;
+mod effect_annotation;
 mod fields;
+mod function_ir;
 mod function_signature;
 mod generic_parameters;
 mod implemented;
 mod implements_qualified_identifier;
 mod import;
-mod ir;
 mod occurrences;
 mod type_alias;
 mod variance;

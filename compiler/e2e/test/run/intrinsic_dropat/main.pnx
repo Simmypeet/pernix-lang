@@ -1,0 +1,22 @@
+from core import Drop, Copy, dropAt
+
+extern "C":
+    public function printf(format: &uint8, ...) -> int32
+
+public struct TestDrop:
+    private value: int32
+
+final implements Drop[TestDrop]:
+    function drop(self: &mut TestDrop):
+        unsafe scope:
+            printf(&"Dropping %d\n\0".[0], self.value)
+
+final implements Copy[TestDrop] delete
+
+public function main():
+    unsafe scope:
+        let mut x = TestDrop { value: 42 }
+        printf(&"Before dropAt: %d\n\0".[0], x.value)
+        let ptr = (&mut x) as *mut TestDrop
+        dropAt[TestDrop](ptr)
+        printf(&"After dropAt (should not drop again)\n\0".[0])

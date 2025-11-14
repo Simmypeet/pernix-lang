@@ -1,0 +1,13 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: final_string
+---
+## Case 0
+exit_code = 0
+stdin = ""
+stdout = """
+alignof[int32] is power of 2
+alignof[int64] is power of 2
+alignof[uint8] is power of 2
+alignof[bool] is power of 2"""
+stderr = ""

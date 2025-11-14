@@ -2,10 +2,11 @@ use std::collections::BTreeSet;
 
 use pernixc_arena::ID;
 use pernixc_hash::{HashMap, HashSet};
-use pernixc_ir::value::register::{CapabilityArgument, FunctionCall};
+use pernixc_ir::value::register::{EffectHandlerArgument, FunctionCall};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_semantic_element::{
-    capability::get_capabilities, parameter::get_parameters, variance::Variance,
+    effect_annotation::get_effect_annotation, parameter::get_parameters,
+    variance::Variance,
 };
 use pernixc_symbol::{
     kind::{get_kind, Kind},
@@ -29,17 +30,19 @@ impl<N: Normalizer> Context<'_, N> {
     #[allow(clippy::too_many_lines)]
     pub(super) async fn get_subset_of_effect_operations(
         &self,
-        capability_arguments: &HashMap<ID<effect::Unit>, CapabilityArgument>,
+        capability_arguments: &HashMap<ID<effect::Unit>, EffectHandlerArgument>,
         instantiation: &Instantiation,
         callled_id: Global<pernixc_symbol::ID>,
         span: &RelativeSpan,
         lifetime_constraints: &mut BTreeSet<LifetimeConstraint>,
     ) -> Result<(), UnrecoverableError> {
         let called_capabilities =
-            self.tracked_engine().get_capabilities(callled_id).await?;
+            self.tracked_engine().get_effect_annotation(callled_id).await?;
 
-        let current_capabilities =
-            self.tracked_engine().get_capabilities(self.current_site()).await?;
+        let current_capabilities = self
+            .tracked_engine()
+            .get_effect_annotation(self.current_site())
+            .await?;
 
         for (required_id, argument) in capability_arguments {
             let mut required_capability =
@@ -49,7 +52,9 @@ impl<N: Normalizer> Context<'_, N> {
             required_capability.generic_arguments.instantiate(instantiation);
 
             match argument {
-                CapabilityArgument::FromPassedCapability(capability_unit) => {
+                EffectHandlerArgument::FromEffectAnnotation(
+                    capability_unit,
+                ) => {
                     // no need to instantiate, as the capability unit is
                     // already instantiated from the call site
                     let available_capability =
@@ -81,7 +86,12 @@ impl<N: Normalizer> Context<'_, N> {
                         .extend(subtypable.constraints.iter().cloned());
                 }
 
-                CapabilityArgument::Unhandled => {
+                #[allow(clippy::match_same_arms)]
+                EffectHandlerArgument::FromEffectHandler(_) => {
+                    // TODO: extract the lifetimme constraints
+                }
+
+                EffectHandlerArgument::Unhandled => {
                     // error should've been reported
                 }
             }
@@ -233,7 +243,7 @@ impl<N: Normalizer> Context<'_, N> {
         }
 
         self.get_subset_of_effect_operations(
-            &function_call.capability_arguments,
+            &function_call.effect_arguments,
             &function_call.instantiation,
             function_call.callable_id,
             span,
