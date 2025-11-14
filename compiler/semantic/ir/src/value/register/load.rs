@@ -88,10 +88,12 @@ impl transform::Element for Load {
     }
 }
 
-pub(super) async fn type_of_load_assignment(
-    values: &Values,
-    load: &Load,
-    environment: &Environment<'_, impl Normalizer>,
-) -> Result<Succeeded<Type>, Error> {
-    values.type_of(&load.address, environment).await
+impl TypeOf<&Load> for Values {
+    async fn type_of<N: Normalizer>(
+        &self,
+        load: &Load,
+        environment: &Environment<'_, N>,
+    ) -> Result<Succeeded<Type>, Error> {
+        self.type_of(&load.address, environment).await
+    }
 }
