@@ -46,6 +46,14 @@ impl Array {
     }
 }
 
+impl crate::visitor::Element for Array {
+    fn accept(&self, visitor: &mut impl crate::visitor::Visitor) {
+        for element in &self.elements {
+            visitor.visit_value(std::borrow::Cow::Borrowed(element));
+        }
+    }
+}
+
 pub(super) async fn transform_array<T: Transformer<Type>>(
     array: &mut Array,
     transformer: &mut T,

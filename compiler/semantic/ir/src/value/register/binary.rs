@@ -181,6 +181,13 @@ impl Binary {
     }
 }
 
+impl crate::visitor::Element for Binary {
+    fn accept(&self, visitor: &mut impl crate::visitor::Visitor) {
+        visitor.visit_value(std::borrow::Cow::Borrowed(&self.lhs));
+        visitor.visit_value(std::borrow::Cow::Borrowed(&self.rhs));
+    }
+}
+
 pub(super) async fn transform_binary<T: Transformer<Type>>(
     binary: &mut Binary,
     transformer: &mut T,

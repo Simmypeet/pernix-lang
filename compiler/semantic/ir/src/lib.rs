@@ -31,6 +31,7 @@ pub mod scope;
 pub mod transform;
 pub mod typer;
 pub mod value;
+pub mod visitor;
 
 /// Contains all the registers and allocas used in the program.
 #[derive(

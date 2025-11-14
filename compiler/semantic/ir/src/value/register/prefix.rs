@@ -67,6 +67,12 @@ impl Prefix {
     }
 }
 
+impl crate::visitor::Element for Prefix {
+    fn accept(&self, visitor: &mut impl crate::visitor::Visitor) {
+        visitor.visit_value(std::borrow::Cow::Borrowed(&self.operand));
+    }
+}
+
 pub(super) async fn transform_prefix<T: Transformer<Type>>(
     prefix: &mut Prefix,
     transformer: &mut T,

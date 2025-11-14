@@ -303,6 +303,17 @@ impl DoWith {
     }
 }
 
+impl crate::visitor::Element for DoWith {
+    fn accept(&self, visitor: &mut impl crate::visitor::Visitor) {
+        for value in self.handleer_chain.capture_arguments.arguments.values() {
+            visitor.visit_value(std::borrow::Cow::Borrowed(value));
+        }
+        for value in self.do_block.capture_arguments.arguments.values() {
+            visitor.visit_value(std::borrow::Cow::Borrowed(value));
+        }
+    }
+}
+
 impl transform::Element for DoWith {
     async fn transform<
         T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,

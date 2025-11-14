@@ -72,6 +72,14 @@ impl FunctionCall {
     }
 }
 
+impl crate::visitor::Element for FunctionCall {
+    fn accept(&self, visitor: &mut impl crate::visitor::Visitor) {
+        for argument in &self.arguments {
+            visitor.visit_value(std::borrow::Cow::Borrowed(argument));
+        }
+    }
+}
+
 #[allow(clippy::too_many_lines)]
 pub(super) async fn transform_function_call<
     T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
