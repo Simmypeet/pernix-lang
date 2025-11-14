@@ -6,11 +6,13 @@ use pernixc_query::runtime::executor::CyclicError;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_term::r#type::Type;
+use pernixc_type_system::{normalizer::Normalizer, Error, Succeeded};
 
 use crate::{
     control_flow_graph::Block,
     transform::{Transformer, TypeTermSource},
-    value::{register::Register, Value},
+    value::{register::Register, Environment, TypeOf, Value},
+    Values,
 };
 
 /// Represents a phi node in the SSA form.
@@ -54,4 +56,14 @@ pub(super) async fn transform_phi<T: Transformer<Type>>(
     }
 
     transformer.transform(&mut phi.r#type, TypeTermSource::Phi, span).await
+}
+
+impl TypeOf<&Phi> for Values {
+    async fn type_of<N: Normalizer>(
+        &self,
+        phi: &Phi,
+        _environment: &Environment<'_, N>,
+    ) -> Result<Succeeded<Type>, Error> {
+        Ok(Succeeded::new(phi.r#type.clone()))
+    }
 }

@@ -158,22 +158,19 @@ impl TypeOf<ID<Register>> for Values {
             Assignment::Binary(binary) => {
                 return self.type_of(binary, environment).await;
             }
-            Assignment::Phi(phi_node) => Ok(phi_node.r#type.clone()),
-            Assignment::Array(array) => {
-                Ok(Type::Array(pernixc_term::r#type::Array {
-                    r#type: Box::new(array.element_type.clone()),
-                    length: Constant::Primitive(
-                        pernixc_term::constant::Primitive::Usize(
-                            array.elements.len() as u64,
-                        ),
-                    ),
-                }))
+            Assignment::Phi(phi_node) => {
+                return self.type_of(phi_node, environment).await
             }
-            Assignment::Cast(cast) => Ok(cast.r#type.clone()),
+            Assignment::Array(array) => {
+                return self.type_of(array, environment).await
+            }
+            Assignment::Cast(cast) => {
+                return self.type_of(cast, environment).await
+            }
             Assignment::VariantNumber(variant) => {
                 return self.type_of(variant, environment).await
             }
-            Assignment::Do(d) => Ok(d.return_type().clone()),
+            Assignment::Do(d) => return self.type_of(d, environment).await,
         }?;
 
         Ok(environment.type_environment.simplify(ty).await?.deref().clone())
