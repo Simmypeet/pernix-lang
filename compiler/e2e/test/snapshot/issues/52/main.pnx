@@ -1,0 +1,8 @@
+public function useValue[T](..: T):
+    pass
+
+
+public function moveOut[T](value: (T, T)):
+    useValue(value.0)
+    useValue(value.1)
+    useValue(value.0)
