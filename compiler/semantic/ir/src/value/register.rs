@@ -3,7 +3,7 @@
 //! The register is a place where SSA values are stored. The assignment is the
 //! value that is stored in the register.
 
-use std::ops::Deref;
+use std::{borrow::Cow, ops::Deref};
 
 use enum_as_inner::EnumAsInner;
 use pernixc_arena::ID;
@@ -21,11 +21,12 @@ use pernixc_term::{
 use pernixc_type_system::{normalizer::Normalizer, Error, Succeeded};
 
 use crate::{
+    address::Address,
     transform::{
         self, ConstantTermSource, LifetimeTermSource, Transformer,
         TypeTermSource,
     },
-    value::{Environment, TypeOf},
+    value::{Environment, TypeOf, Value},
     visitor, Values,
 };
 
@@ -325,16 +326,17 @@ struct RegisterVisitor {
 }
 
 impl visitor::Visitor for RegisterVisitor {
-    fn visit_value(&mut self, value: std::borrow::Cow<crate::value::Value>) {
+    fn visit_value(&mut self, value: Cow<Value>) {
         if let Some(&register_id) = value.as_register() {
             self.registers.push(register_id);
         }
     }
 
-    fn visit_address(
-        &mut self,
-        _address: std::borrow::Cow<crate::address::Address>,
-    ) {
-        // Addresses don't contain registers
+    fn visit_address(&mut self, address: Cow<Address>) {
+        if let Address::Index(index) = &*address {
+            if let Value::Register(register_id) = &index.indexing_value {
+                self.registers.push(*register_id);
+            }
+        }
     }
 }
