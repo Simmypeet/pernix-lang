@@ -7,7 +7,7 @@ use pernixc_stable_hash::StableHash;
 use pernixc_term::r#type::Type;
 
 use crate::{
-    transform::{self, Transformer, TypeTermSource},
+    transform::{Transformer, TypeTermSource},
     value::{register::Register, Value},
 };
 
@@ -40,18 +40,14 @@ impl Cast {
     }
 }
 
-impl transform::Element for Cast {
-    async fn transform<T: Transformer<Type>>(
-        &mut self,
-        transformer: &mut T,
-        _engine: &pernixc_query::TrackedEngine,
-    ) -> Result<(), CyclicError> {
-        if let Some(literal) = self.value.as_literal_mut() {
-            literal.transform(transformer).await?;
-        }
-
-        transformer
-            .transform(&mut self.r#type, TypeTermSource::Cast, None)
-            .await
+pub(super) async fn transform_cast<T: Transformer<Type>>(
+    cast: &mut Cast,
+    transformer: &mut T,
+    span: Option<pernixc_lexical::tree::RelativeSpan>,
+) -> Result<(), CyclicError> {
+    if let Some(literal) = cast.value.as_literal_mut() {
+        literal.transform(transformer).await?;
     }
+
+    transformer.transform(&mut cast.r#type, TypeTermSource::Cast, span).await
 }

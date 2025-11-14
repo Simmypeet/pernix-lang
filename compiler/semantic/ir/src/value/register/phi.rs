@@ -9,7 +9,7 @@ use pernixc_term::r#type::Type;
 
 use crate::{
     control_flow_graph::Block,
-    transform::{self, Transformer, TypeTermSource},
+    transform::{Transformer, TypeTermSource},
     value::{register::Register, Value},
 };
 
@@ -42,18 +42,16 @@ impl Phi {
     }
 }
 
-impl transform::Element for Phi {
-    async fn transform<T: Transformer<Type>>(
-        &mut self,
-        transformer: &mut T,
-        _engine: &pernixc_query::TrackedEngine,
-    ) -> Result<(), CyclicError> {
-        for value in self.incoming_values.values_mut() {
-            if let Some(literal) = value.as_literal_mut() {
-                literal.transform(transformer).await?;
-            }
+pub(super) async fn transform_phi<T: Transformer<Type>>(
+    phi: &mut Phi,
+    transformer: &mut T,
+    span: Option<pernixc_lexical::tree::RelativeSpan>,
+) -> Result<(), CyclicError> {
+    for value in phi.incoming_values.values_mut() {
+        if let Some(literal) = value.as_literal_mut() {
+            literal.transform(transformer).await?;
         }
-
-        transformer.transform(&mut self.r#type, TypeTermSource::Phi, None).await
     }
+
+    transformer.transform(&mut phi.r#type, TypeTermSource::Phi, span).await
 }

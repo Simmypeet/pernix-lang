@@ -1,6 +1,6 @@
 //! Contains the definition of the [`VariantNumber`] register.
 
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::runtime::executor::CyclicError;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_symbol::member::get_members;
@@ -10,7 +10,7 @@ use pernixc_type_system::{normalizer::Normalizer, Succeeded};
 
 use crate::{
     address::Address,
-    transform::{self, Transformer},
+    transform::Transformer,
     value::{Environment, TypeOf},
     Values,
 };
@@ -42,14 +42,12 @@ pub struct VariantNumber {
     pub enum_id: Global<pernixc_symbol::ID>,
 }
 
-impl transform::Element for VariantNumber {
-    async fn transform<T: Transformer<Type>>(
-        &mut self,
-        transformer: &mut T,
-        _engine: &TrackedEngine,
-    ) -> Result<(), CyclicError> {
-        self.address.transform(transformer).await
-    }
+pub(super) async fn transform_variant_number<T: Transformer<Type>>(
+    variant_number: &mut VariantNumber,
+    transformer: &mut T,
+    _span: Option<pernixc_lexical::tree::RelativeSpan>,
+) -> Result<(), CyclicError> {
+    variant_number.address.transform(transformer).await
 }
 
 impl TypeOf<&VariantNumber> for Values {

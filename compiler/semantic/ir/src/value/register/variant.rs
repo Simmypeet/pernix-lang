@@ -13,10 +13,12 @@ use pernixc_term::{
     r#type::Type,
 };
 
-use super::r#struct::transform_generic_arguments;
 use crate::{
-    transform::{self, Transformer},
-    value::{register::Register, Value},
+    transform::Transformer,
+    value::{
+        register::{transform_generic_arguments, Register},
+        Value,
+    },
 };
 
 /// Represents a variant value.
@@ -56,31 +58,31 @@ impl Variant {
     }
 }
 
-impl transform::Element for Variant {
-    async fn transform<
-        T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
-    >(
-        &mut self,
-        transformer: &mut T,
-        engine: &TrackedEngine,
-    ) -> Result<(), CyclicError> {
-        if let Some(value) = self.associated_value.as_mut() {
-            if let Some(literal) = value.as_literal_mut() {
-                literal.transform(transformer).await?;
-            }
+pub(super) async fn transform_variant<
+    T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
+>(
+    variant: &mut Variant,
+    transformer: &mut T,
+    span: Option<pernixc_lexical::tree::RelativeSpan>,
+    engine: &TrackedEngine,
+) -> Result<(), CyclicError> {
+    if let Some(value) = variant.associated_value.as_mut() {
+        if let Some(literal) = value.as_literal_mut() {
+            literal.transform(transformer).await?;
         }
-
-        transform_generic_arguments(
-            transformer,
-            self.variant_id
-                .target_id
-                .make_global(engine.get_parent(self.variant_id).await.unwrap()),
-            None,
-            engine,
-            &mut self.generic_arguments,
-        )
-        .await
     }
+
+    transform_generic_arguments(
+        transformer,
+        variant
+            .variant_id
+            .target_id
+            .make_global(engine.get_parent(variant.variant_id).await.unwrap()),
+        span,
+        engine,
+        &mut variant.generic_arguments,
+    )
+    .await
 }
 
 pub(super) async fn type_of_variant_assignment(

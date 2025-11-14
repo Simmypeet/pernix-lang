@@ -10,7 +10,7 @@ use pernixc_term::r#type::Type;
 use pernixc_type_system::Succeeded;
 
 use crate::{
-    transform::{self, Transformer},
+    transform::Transformer,
     value::{register::Register, TypeOf, Value},
     Values,
 };
@@ -65,24 +65,23 @@ impl Tuple {
     }
 }
 
-impl transform::Element for Tuple {
-    async fn transform<
-        T: Transformer<pernixc_term::lifetime::Lifetime>
-            + Transformer<Type>
-            + Transformer<pernixc_term::constant::Constant>,
-    >(
-        &mut self,
-        transformer: &mut T,
-        _engine: &pernixc_query::TrackedEngine,
-    ) -> Result<(), CyclicError> {
-        for element in
-            self.elements.iter_mut().filter_map(|x| x.value.as_literal_mut())
-        {
-            element.transform(transformer).await?;
-        }
-
-        Ok(())
+pub(super) async fn transform_tuple<
+    T: Transformer<pernixc_term::lifetime::Lifetime>
+        + Transformer<Type>
+        + Transformer<pernixc_term::constant::Constant>,
+>(
+    tuple: &mut Tuple,
+    transformer: &mut T,
+    _span: Option<pernixc_lexical::tree::RelativeSpan>,
+    _engine: &pernixc_query::TrackedEngine,
+) -> Result<(), CyclicError> {
+    for element in
+        tuple.elements.iter_mut().filter_map(|x| x.value.as_literal_mut())
+    {
+        element.transform(transformer).await?;
     }
+
+    Ok(())
 }
 
 impl TypeOf<&Tuple> for Values {

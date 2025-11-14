@@ -1,7 +1,7 @@
 //! Contains the definition of the [`Load`] register.
 
 use getset::{CopyGetters, Getters, MutGetters};
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::runtime::executor::CyclicError;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_term::r#type::Type;
@@ -9,7 +9,7 @@ use pernixc_type_system::{normalizer::Normalizer, Error, Succeeded};
 
 use crate::{
     address::Address,
-    transform::{self, Transformer},
+    transform::Transformer,
     value::{Environment, TypeOf},
     Values,
 };
@@ -78,14 +78,14 @@ impl Load {
     }
 }
 
-impl transform::Element for Load {
-    async fn transform<T: Transformer<pernixc_term::r#type::Type>>(
-        &mut self,
-        transformer: &mut T,
-        _: &TrackedEngine,
-    ) -> Result<(), CyclicError> {
-        self.address.transform(transformer).await
-    }
+pub(super) async fn transform_load<
+    T: Transformer<pernixc_term::r#type::Type>,
+>(
+    load: &mut Load,
+    transformer: &mut T,
+    _span: Option<pernixc_lexical::tree::RelativeSpan>,
+) -> Result<(), CyclicError> {
+    load.address.transform(transformer).await
 }
 
 impl TypeOf<&Load> for Values {

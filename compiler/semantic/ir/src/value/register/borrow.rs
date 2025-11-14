@@ -1,6 +1,7 @@
 //! Contains the definition of the [`Borrow`] register.
 
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_lexical::tree::RelativeSpan;
+use pernixc_query::runtime::executor::CyclicError;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_term::{
@@ -11,7 +12,7 @@ use pernixc_type_system::{normalizer::Normalizer, Error, Succeeded};
 
 use crate::{
     address::Address,
-    transform::{self, LifetimeTermSource, Transformer},
+    transform::{LifetimeTermSource, Transformer},
     value::{Environment, TypeOf},
     Values,
 };
@@ -40,18 +41,18 @@ pub struct Borrow {
     pub lifetime: Lifetime,
 }
 
-impl transform::Element for Borrow {
-    async fn transform<T: Transformer<Type> + Transformer<Lifetime>>(
-        &mut self,
-        transformer: &mut T,
-        _engine: &TrackedEngine,
-    ) -> Result<(), CyclicError> {
-        self.address.transform(transformer).await?;
+pub(super) async fn transform_borrow<
+    T: Transformer<Type> + Transformer<Lifetime>,
+>(
+    borrow: &mut Borrow,
+    transformer: &mut T,
+    span: Option<RelativeSpan>,
+) -> Result<(), CyclicError> {
+    borrow.address.transform(transformer).await?;
 
-        transformer
-            .transform(&mut self.lifetime, LifetimeTermSource::Borrow, None)
-            .await
-    }
+    transformer
+        .transform(&mut borrow.lifetime, LifetimeTermSource::Borrow, span)
+        .await
 }
 
 impl TypeOf<&Borrow> for Values {

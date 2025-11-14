@@ -8,7 +8,7 @@ use pernixc_term::r#type::Type;
 use pernixc_type_system::{normalizer::Normalizer, Error, Succeeded};
 
 use crate::{
-    transform::{self, Transformer},
+    transform::Transformer,
     value::{register::Register, Environment, TypeOf, Value},
     Values,
 };
@@ -67,18 +67,16 @@ impl Prefix {
     }
 }
 
-impl transform::Element for Prefix {
-    async fn transform<T: Transformer<Type>>(
-        &mut self,
-        transformer: &mut T,
-        _engine: &pernixc_query::TrackedEngine,
-    ) -> Result<(), CyclicError> {
-        if let Some(operand) = self.operand.as_literal_mut() {
-            operand.transform(transformer).await?;
-        }
-
-        Ok(())
+pub(super) async fn transform_prefix<T: Transformer<Type>>(
+    prefix: &mut Prefix,
+    transformer: &mut T,
+    _span: Option<pernixc_lexical::tree::RelativeSpan>,
+) -> Result<(), CyclicError> {
+    if let Some(operand) = prefix.operand.as_literal_mut() {
+        operand.transform(transformer).await?;
     }
+
+    Ok(())
 }
 
 impl TypeOf<&Prefix> for Values {

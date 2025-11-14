@@ -18,8 +18,7 @@ use pernixc_type_system::Error;
 use crate::{
     handling_scope::HandlerClauseID,
     transform::{
-        self, ConstantTermSource, LifetimeTermSource, Transformer,
-        TypeTermSource,
+        ConstantTermSource, LifetimeTermSource, Transformer, TypeTermSource,
     },
     value::{register::Register, Value},
 };
@@ -73,67 +72,65 @@ impl FunctionCall {
     }
 }
 
-impl transform::Element for FunctionCall {
-    #[allow(clippy::too_many_lines)]
-    async fn transform<
-        T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
-    >(
-        &mut self,
-        transformer: &mut T,
-        _engine: &TrackedEngine,
-    ) -> Result<(), CyclicError> {
-        for argument in &mut self.arguments {
-            if let Some(literal) = argument.as_literal_mut() {
-                literal.transform(transformer).await?;
-            }
+#[allow(clippy::too_many_lines)]
+pub(super) async fn transform_function_call<
+    T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
+>(
+    function_call: &mut FunctionCall,
+    transformer: &mut T,
+    span: Option<pernixc_lexical::tree::RelativeSpan>,
+) -> Result<(), CyclicError> {
+    for argument in &mut function_call.arguments {
+        if let Some(literal) = argument.as_literal_mut() {
+            literal.transform(transformer).await?;
         }
-
-        for (lt_id, lt) in &mut self.instantiation.lifetimes {
-            let source = match lt_id {
-                Lifetime::Parameter(member_id) => {
-                    LifetimeTermSource::GenericParameter(*member_id)
-                }
-                Lifetime::Elided(member_id) => {
-                    LifetimeTermSource::ElidedLifetimeParameter(*member_id)
-                }
-                _ => unreachable!("should've either be parameter or elided"),
-            };
-
-            transformer.transform(lt, source, None).await?;
-        }
-
-        for (ty_id, ty) in &mut self.instantiation.types {
-            transformer
-                .transform(
-                    ty,
-                    TypeTermSource::GenericParameter(
-                        ty_id
-                            .clone()
-                            .into_parameter()
-                            .expect("should've been a type ID"),
-                    ),
-                    None,
-                )
-                .await?;
-        }
-
-        for (ct_id, ct) in &mut self.instantiation.constants {
-            transformer
-                .transform(
-                    ct,
-                    ConstantTermSource::GenericParameter(
-                        ct_id
-                            .clone()
-                            .into_parameter()
-                            .expect("should've been a constant ID"),
-                    ),
-                    None,
-                )
-                .await?;
-        }
-
-        Ok(())
     }
+
+    for (lt_id, lt) in &mut function_call.instantiation.lifetimes {
+        let source = match lt_id {
+            Lifetime::Parameter(member_id) => {
+                LifetimeTermSource::GenericParameter(*member_id)
+            }
+            Lifetime::Elided(member_id) => {
+                LifetimeTermSource::ElidedLifetimeParameter(*member_id)
+            }
+            _ => unreachable!("should've either be parameter or elided"),
+        };
+
+        transformer.transform(lt, source, span).await?;
+    }
+
+    for (ty_id, ty) in &mut function_call.instantiation.types {
+        transformer
+            .transform(
+                ty,
+                TypeTermSource::GenericParameter(
+                    ty_id
+                        .clone()
+                        .into_parameter()
+                        .expect("should've been a type ID"),
+                ),
+                span,
+            )
+            .await?;
+    }
+
+    for (ct_id, ct) in &mut function_call.instantiation.constants {
+        transformer
+            .transform(
+                ct,
+                ConstantTermSource::GenericParameter(
+                    ct_id
+                        .clone()
+                        .into_parameter()
+                        .expect("should've been a constant ID"),
+                ),
+                span,
+            )
+            .await?;
+    }
+
+    Ok(())
 }
 
 pub(super) async fn type_of_function_call_assignment(
