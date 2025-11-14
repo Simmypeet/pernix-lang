@@ -1140,7 +1140,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
 
     async fn handle_tuple(
         &mut self,
-        tuple: &register::Tuple,
+        tuple: &register::tuple::Tuple,
         reg_id: ID<Register>,
     ) -> Result<Option<LlvmValue<'ctx>>, Error> {
         let mut values = Vec::new();
