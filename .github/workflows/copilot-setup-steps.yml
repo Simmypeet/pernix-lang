@@ -40,15 +40,10 @@ jobs:
             - name: llvm-config
               run: llvm-config --version --bindir --libdir
 
-            - name: Install Rust Stable
-              uses: dtolnay/rust-toolchain@stable
-              with:
-                  components: clippy
-
             - name: Install Rust Nightly
               uses: dtolnay/rust-toolchain@nightly
               with:
-                  components: rustfmt
+                  components: clippy, rustfmt
 
             - name: Install Cargo Insta
               uses: baptiste0928/cargo-install@v3
