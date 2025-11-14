@@ -3,7 +3,7 @@
 
 use std::borrow::Cow;
 
-use crate::value::Value;
+use crate::{address::Address, value::Value};
 
 /// Implemented by the [`Address`] and [`Assignment`] to inspect the value that
 /// it contains.
@@ -16,6 +16,9 @@ pub trait Element {
 pub trait Visitor {
     /// Visits a value.
     fn visit_value(&mut self, value: Cow<Value>);
+
+    /// Visits an address.
+    fn visit_address(&mut self, address: Cow<Address>);
 }
 
 // NOTE: If in the future we would want to support `async` visitors,

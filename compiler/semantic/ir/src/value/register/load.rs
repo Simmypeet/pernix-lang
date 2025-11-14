@@ -78,6 +78,12 @@ impl Load {
     }
 }
 
+impl crate::visitor::Element for Load {
+    fn accept(&self, visitor: &mut impl crate::visitor::Visitor) {
+        visitor.visit_address(std::borrow::Cow::Borrowed(&self.address));
+    }
+}
+
 pub(super) async fn transform_load<
     T: Transformer<pernixc_term::r#type::Type>,
 >(

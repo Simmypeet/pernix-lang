@@ -46,6 +46,14 @@ impl Struct {
     }
 }
 
+impl crate::visitor::Element for Struct {
+    fn accept(&self, visitor: &mut impl crate::visitor::Visitor) {
+        for value in self.initializers_by_field_id.values() {
+            visitor.visit_value(std::borrow::Cow::Borrowed(value));
+        }
+    }
+}
+
 pub(super) async fn transform_struct<
     T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
 >(

@@ -41,6 +41,12 @@ pub struct Borrow {
     pub lifetime: Lifetime,
 }
 
+impl crate::visitor::Element for Borrow {
+    fn accept(&self, visitor: &mut impl crate::visitor::Visitor) {
+        visitor.visit_address(std::borrow::Cow::Borrowed(&self.address));
+    }
+}
+
 pub(super) async fn transform_borrow<
     T: Transformer<Type> + Transformer<Lifetime>,
 >(

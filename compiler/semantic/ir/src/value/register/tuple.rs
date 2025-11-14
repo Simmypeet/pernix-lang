@@ -65,6 +65,14 @@ impl Tuple {
     }
 }
 
+impl crate::visitor::Element for Tuple {
+    fn accept(&self, visitor: &mut impl crate::visitor::Visitor) {
+        for element in &self.elements {
+            visitor.visit_value(std::borrow::Cow::Borrowed(&element.value));
+        }
+    }
+}
+
 pub(super) async fn transform_tuple<
     T: Transformer<pernixc_term::lifetime::Lifetime>
         + Transformer<Type>

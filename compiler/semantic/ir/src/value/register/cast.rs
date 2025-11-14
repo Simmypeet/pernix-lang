@@ -42,6 +42,12 @@ impl Cast {
     }
 }
 
+impl crate::visitor::Element for Cast {
+    fn accept(&self, visitor: &mut impl crate::visitor::Visitor) {
+        visitor.visit_value(std::borrow::Cow::Borrowed(&self.value));
+    }
+}
+
 pub(super) async fn transform_cast<T: Transformer<Type>>(
     cast: &mut Cast,
     transformer: &mut T,

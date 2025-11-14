@@ -42,6 +42,12 @@ pub struct VariantNumber {
     pub enum_id: Global<pernixc_symbol::ID>,
 }
 
+impl crate::visitor::Element for VariantNumber {
+    fn accept(&self, visitor: &mut impl crate::visitor::Visitor) {
+        visitor.visit_address(std::borrow::Cow::Borrowed(&self.address));
+    }
+}
+
 pub(super) async fn transform_variant_number<T: Transformer<Type>>(
     variant_number: &mut VariantNumber,
     transformer: &mut T,

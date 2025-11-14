@@ -44,6 +44,14 @@ impl Phi {
     }
 }
 
+impl crate::visitor::Element for Phi {
+    fn accept(&self, visitor: &mut impl crate::visitor::Visitor) {
+        for value in self.incoming_values.values() {
+            visitor.visit_value(std::borrow::Cow::Borrowed(value));
+        }
+    }
+}
+
 pub(super) async fn transform_phi<T: Transformer<Type>>(
     phi: &mut Phi,
     transformer: &mut T,

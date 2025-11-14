@@ -26,7 +26,7 @@ use crate::{
         TypeTermSource,
     },
     value::{Environment, TypeOf},
-    Values,
+    visitor, Values,
 };
 
 pub mod array;
@@ -82,28 +82,36 @@ pub enum Assignment {
     Do(do_with::DoWith),
 }
 
+impl visitor::Element for Assignment {
+    fn accept(&self, visitor: &mut impl visitor::Visitor) {
+        match self {
+            Self::Tuple(tuple) => tuple.accept(visitor),
+            Self::Load(load) => load.accept(visitor),
+            Self::Borrow(borrow) => borrow.accept(visitor),
+            Self::Prefix(prefix) => prefix.accept(visitor),
+            Self::Struct(st) => st.accept(visitor),
+            Self::Variant(variant) => variant.accept(visitor),
+            Self::FunctionCall(function_call) => function_call.accept(visitor),
+            Self::Binary(binary) => binary.accept(visitor),
+            Self::Array(array) => array.accept(visitor),
+            Self::Phi(phi) => phi.accept(visitor),
+            Self::Cast(cast) => cast.accept(visitor),
+            Self::VariantNumber(variant_number) => {
+                variant_number.accept(visitor);
+            }
+            Self::Do(d) => d.accept(visitor),
+        }
+    }
+}
+
 impl Assignment {
     /// Returns the register that is used in the assignment.
     #[must_use]
     pub fn get_used_registers(&self) -> Vec<ID<Register>> {
-        match self {
-            Self::Tuple(tuple) => tuple.get_used_registers(),
-            Self::Prefix(prefix) => prefix.get_used_registers(),
-            Self::Struct(st) => st.get_used_registers(),
-            Self::Variant(variant) => variant.get_used_registers(),
-            Self::FunctionCall(function_call) => {
-                function_call.get_used_registers()
-            }
-            Self::Binary(binary) => binary.get_used_registers(),
-            Self::Array(array) => array.get_used_registers(),
-            Self::Phi(phi) => phi.get_used_registers(),
-            Self::Cast(cast) => cast.get_used_registers(),
-            Self::Do(d) => d.get_used_registers(),
-
-            Self::Load(_) | Self::Borrow(_) | Self::VariantNumber(_) => {
-                Vec::new()
-            }
-        }
+        use visitor::Element;
+        let mut visitor = RegisterVisitor::default();
+        self.accept(&mut visitor);
+        visitor.registers
     }
 }
 
@@ -308,4 +316,25 @@ pub(super) async fn transform_generic_arguments<
     }
 
     Ok(())
+}
+
+/// A visitor that collects all register IDs from values.
+#[derive(Debug, Default)]
+struct RegisterVisitor {
+    registers: Vec<ID<Register>>,
+}
+
+impl visitor::Visitor for RegisterVisitor {
+    fn visit_value(&mut self, value: std::borrow::Cow<crate::value::Value>) {
+        if let Some(&register_id) = value.as_register() {
+            self.registers.push(register_id);
+        }
+    }
+
+    fn visit_address(
+        &mut self,
+        _address: std::borrow::Cow<crate::address::Address>,
+    ) {
+        // Addresses don't contain registers
+    }
 }

@@ -58,6 +58,14 @@ impl Variant {
     }
 }
 
+impl crate::visitor::Element for Variant {
+    fn accept(&self, visitor: &mut impl crate::visitor::Visitor) {
+        if let Some(value) = &self.associated_value {
+            visitor.visit_value(std::borrow::Cow::Borrowed(value));
+        }
+    }
+}
+
 pub(super) async fn transform_variant<
     T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
 >(
