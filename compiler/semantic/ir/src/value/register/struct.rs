@@ -1,0 +1,78 @@
+//! Contains the definition of the [`Struct`] register.
+
+use pernixc_arena::ID;
+use pernixc_hash::HashMap;
+use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_semantic_element::fields::Field;
+use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_stable_hash::StableHash;
+use pernixc_target::Global;
+use pernixc_term::{
+    constant::Constant,
+    generic_arguments::{GenericArguments, Symbol},
+    lifetime::Lifetime,
+    r#type::Type,
+};
+
+use crate::{
+    transform::Transformer,
+    value::{
+        register::{transform_generic_arguments, Register},
+        Value,
+    },
+};
+
+/// Represents a struct value.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, StableHash)]
+pub struct Struct {
+    /// The struct ID of the struct.
+    pub struct_id: Global<pernixc_symbol::ID>,
+
+    /// The field initializers of the struct.
+    pub initializers_by_field_id: HashMap<ID<Field>, Value>,
+
+    /// The generic arguments supplied to the struct.
+    pub generic_arguments: GenericArguments,
+}
+
+impl Struct {
+    /// Returns the list of registers that are used in the struct.
+    #[must_use]
+    pub fn get_used_registers(&self) -> Vec<ID<Register>> {
+        self.initializers_by_field_id
+            .values()
+            .filter_map(|x| x.as_register().copied())
+            .collect()
+    }
+}
+
+pub(super) async fn transform_struct<
+    T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
+>(
+    st: &mut Struct,
+    transformer: &mut T,
+    span: Option<pernixc_lexical::tree::RelativeSpan>,
+    engine: &TrackedEngine,
+) -> Result<(), CyclicError> {
+    for value in st.initializers_by_field_id.values_mut() {
+        if let Some(literal) = value.as_literal_mut() {
+            literal.transform(transformer).await?;
+        }
+    }
+
+    transform_generic_arguments(
+        transformer,
+        st.struct_id,
+        span,
+        engine,
+        &mut st.generic_arguments,
+    )
+    .await
+}
+
+pub(super) fn type_of_struct_assignment(st: &Struct) -> Type {
+    Type::Symbol(Symbol {
+        id: st.struct_id,
+        generic_arguments: st.generic_arguments.clone(),
+    })
+}

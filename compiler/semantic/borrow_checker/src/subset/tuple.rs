@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use pernixc_hash::HashSet;
-use pernixc_ir::value::{register::Tuple, TypeOf};
+use pernixc_ir::value::{register::tuple::Tuple, TypeOf};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_term::predicate::{self, Predicate};
 use pernixc_type_system::{

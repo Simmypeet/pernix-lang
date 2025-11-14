@@ -7,14 +7,15 @@ use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
+use pernixc_type_system::{normalizer::Normalizer, Error, Succeeded};
 
 use crate::{
     capture::{Capture, Captures},
     closure_parameters::ClosureParameters,
     handling_scope::HandlingScope,
     transform::{self, Transformer},
-    value::{register::Register, Value},
-    IR,
+    value::{register::Register, Environment, TypeOf, Value},
+    Values, IR,
 };
 
 /// Representing the capture initialization. This contains all the values
@@ -366,5 +367,15 @@ impl DoWith {
                 .flat_map(|x| x.effect_operation_handler_closures.values_mut())
                 .map(|x| (&mut x.ir, &x.closure_parameters)),
         )
+    }
+}
+
+impl TypeOf<&DoWith> for Values {
+    async fn type_of<N: Normalizer>(
+        &self,
+        do_with: &DoWith,
+        _environment: &Environment<'_, N>,
+    ) -> Result<Succeeded<Type>, Error> {
+        Ok(Succeeded::new(do_with.return_type().clone()))
     }
 }
