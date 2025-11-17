@@ -211,6 +211,7 @@ impl Captures {
                             | Assignment::Array(_)
                             | Assignment::Phi(_)
                             | Assignment::Do(_)
+                            | Assignment::ResumeCall(_)
                             | Assignment::Cast(_) => {}
                         }
                     }

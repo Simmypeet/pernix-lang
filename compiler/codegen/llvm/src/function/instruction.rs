@@ -1840,7 +1840,12 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             Assignment::VariantNumber(variant_number) => {
                 self.handle_variant_number(variant_number, reg_id).await
             }
+
+            // TODO: handle do-with block codegen
             Assignment::Do(_) => todo!(),
+
+            // TODO: handle resume call codegen
+            Assignment::ResumeCall(_) => todo!(),
         }
     }
 

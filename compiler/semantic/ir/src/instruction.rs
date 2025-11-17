@@ -681,6 +681,7 @@ impl Instruction {
                     | Assignment::Phi(_)
                     | Assignment::Cast(_)
                     | Assignment::Do(_)
+                    | Assignment::ResumeCall(_)
                     | Assignment::Tuple(_) => Vec::new(),
                 }
             }
