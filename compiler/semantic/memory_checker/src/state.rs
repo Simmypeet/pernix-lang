@@ -171,7 +171,7 @@ fn try_simplify_to_uninitialized<'a>(
             return None;
         };
 
-        if next.1 < current.1 {
+        if next.1 > current.1 {
             current = next;
         }
     }
