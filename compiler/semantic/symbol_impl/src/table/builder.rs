@@ -363,6 +363,17 @@ impl Builder {
         assert!(self.final_keywords.insert(id, final_keyword).is_none());
     }
 
+    pub fn insert_implements_qualified_identifier_syntax(
+        &self,
+        id: pernixc_symbol::ID,
+        qualified_identifier: pernixc_syntax::QualifiedIdentifier,
+    ) {
+        assert!(self
+            .implements_qualified_identifier_syntaxes
+            .insert(id, qualified_identifier)
+            .is_none());
+    }
+
     pub fn insert_implements_access_modifier_syntax(
         &self,
         id: pernixc_symbol::ID,

@@ -63,6 +63,10 @@ impl Builder {
         );
         self.insert_where_clause_syntax(implements_id, where_clause);
         self.insert_final_keyword(implements_id, implements_final_keyword);
+        self.insert_implements_qualified_identifier_syntax(
+            implements_id,
+            qualified_identifier.clone(),
+        );
 
         match body {
             Some(pernixc_syntax::item::implements::Body::Negative(_)) => {
@@ -79,6 +83,8 @@ impl Builder {
             }
 
             Some(pernixc_syntax::item::implements::Body::Positive(body)) => {
+                self.insert_kind(implements_id, Kind::PositiveImplementation);
+
                 let builder = self.clone();
                 let implements_name_sequence = module_member_builder
                     .extend_qualified_name_sequence(implements_qualified_name);

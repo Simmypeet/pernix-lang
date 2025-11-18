@@ -78,7 +78,7 @@ impl Builder {
                 );
             }
 
-            builder.insert_kind(effect_id, Kind::EffectOperation);
+            builder.insert_kind(effect_id, Kind::Effect);
             builder.insert_name_identifier(effect_id, &identifier);
             builder.insert_generic_parameters_syntax(
                 effect_id,
