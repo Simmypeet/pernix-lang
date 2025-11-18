@@ -161,7 +161,9 @@ impl TypeOf<ID<Register>> for Values {
             Assignment::FunctionCall(function_call) => {
                 return self.type_of(function_call, environment).await;
             }
-            Assignment::ResumeCall(d) => Ok(d.return_type().clone()),
+            Assignment::ResumeCall(d) => {
+                return self.type_of(d, environment).await
+            }
             Assignment::Binary(binary) => {
                 return self.type_of(binary, environment).await;
             }

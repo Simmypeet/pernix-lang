@@ -1,16 +1,19 @@
 //! Defines the [`ResumeCall`] register.
 
+use std::ops::Deref;
+
 use getset::Getters;
 use pernixc_query::runtime::executor::CyclicError;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
+use pernixc_type_system::Error;
 
 use crate::{
     handling_scope::HandlerClauseID,
     transform::{Transformer, TypeTermSource},
-    value::Value,
-    visitor,
+    value::{TypeOf, Value},
+    visitor, Values,
 };
 
 /// Represents a `reumse(value)` expression found inside operation handler
@@ -62,5 +65,20 @@ pub(super) async fn transform_resume_call<
 impl visitor::Element for ResumeCall {
     fn accept(&self, visitor: &mut impl visitor::Visitor) {
         visitor.visit_value(std::borrow::Cow::Borrowed(&self.value));
+    }
+}
+
+impl TypeOf<&ResumeCall> for Values {
+    async fn type_of<N: pernixc_type_system::normalizer::Normalizer>(
+        &self,
+        value: &ResumeCall,
+        environment: &crate::value::Environment<'_, N>,
+    ) -> Result<pernixc_type_system::Succeeded<Type>, Error> {
+        Ok(environment
+            .type_environment
+            .simplify(value.return_type().clone())
+            .await?
+            .deref()
+            .clone())
     }
 }
