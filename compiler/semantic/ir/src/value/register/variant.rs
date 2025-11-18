@@ -96,18 +96,6 @@ pub(super) async fn transform_variant<
     .await
 }
 
-pub(super) async fn type_of_variant_assignment(
-    variant: &Variant,
-    engine: &TrackedEngine,
-) -> Type {
-    let enum_id = engine.get_parent(variant.variant_id).await.unwrap();
-
-    Type::Symbol(Symbol {
-        id: Global::new(variant.variant_id.target_id, enum_id),
-        generic_arguments: variant.generic_arguments.clone(),
-    })
-}
-
 impl TypeOf<&Variant> for Values {
     async fn type_of<N: pernixc_type_system::normalizer::Normalizer>(
         &self,

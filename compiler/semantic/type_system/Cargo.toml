@@ -18,7 +18,6 @@ pernixc_diagnostic = { path = "../../base/diagnostic" }
 pernixc_source_file = { path = "../../base/source_file" }
 pernixc_handler = { path = "../../base/handler" }
 pernixc_term = { path = "../term" }
-pernixc_hash = { path = "../../base/hash" }
 pernixc_symbol = { path = "../symbol" }
 pernixc_semantic_element = { path = "../semantic_element" }
 pernixc_register = { path = "../../base/register" }

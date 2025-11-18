@@ -297,27 +297,12 @@ pub async fn run(
     let diagnostic_count = {
         let mut diagnostics = Vec::new();
 
-        let symbol_errors = tracked_engine
-            .query(&pernixc_symbol_impl::diagnostic::RenderedKey(
-                local_target_id,
-            ))
+        let check = tracked_engine
+            .query(&pernixc_check::Key(local_target_id))
             .await
             .unwrap();
 
-        let term_errors = tracked_engine
-            .query(&pernixc_semantic_element_impl::diagnostic::AllRenderedKey(
-                local_target_id,
-            ))
-            .await
-            .unwrap();
-
-        for diag in symbol_errors.as_ref() {
-            diagnostics.push(SortableDiagnostic(
-                pernix_diagnostic_to_codespan_diagnostic(diag),
-            ));
-        }
-
-        for diag in term_errors.iter().flat_map(|x| x.iter()) {
+        for diag in check.all_diagnostics() {
             diagnostics.push(SortableDiagnostic(
                 pernix_diagnostic_to_codespan_diagnostic(diag),
             ));

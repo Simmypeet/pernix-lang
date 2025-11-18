@@ -15,25 +15,13 @@ pernixc_handler = { path = "../base/handler" }
 pernixc_target = { path = "../base/target" }
 pernixc_query = { path = "../base/query" }
 pernixc_corelib = { path = "../semantic/corelib" }
-pernixc_lexical = { path = "../syntax/lexical" }
-pernixc_serialize = { path = "../base/serialize/" }
-pernixc_hash = { path = "../base/hash" }
-pernixc_stable_type_id = { path = "../base/stable_type_id" }
 pernixc_symbol = { path = "../semantic/symbol" }
-pernixc_syntax = { path = "../syntax/syntax" }
-pernixc_type_system = { path = "../semantic/type_system" }
-pernixc_resolution = { path = "../semantic/resolution" }
 pernixc_symbol_impl = { path = "../semantic/symbol_impl" }
-pernixc_semantic_element_impl = { path = "../semantic/semantic_element_impl" }
+pernixc_check = { path = "../semantic/check" }
 pernixc_register = { path = "../base/register" }
 pernixc_llvm = { path = "../codegen/llvm" }
-clap = { workspace = true }
 codespan-reporting = { workspace = true }
-derive_more = { workspace = true }
-indicatif = { workspace = true }
-parking_lot = { workspace = true }
 inkwell = { workspace = true }
-enum-as-inner = { workspace = true }
 tracing = { workspace = true }
 
 [lints]

@@ -226,44 +226,16 @@ impl Analyzer {
 
         let engine = engine_lock.tracked();
 
-        let symbol_impl = {
-            let engine = engine.clone();
-            let current_target_id = self.current_target_id;
-
-            tokio::spawn(async move {
-                engine
-                    .query(&pernixc_symbol_impl::diagnostic::RenderedKey(
-                        current_target_id,
-                    ))
-                    .await
-            })
+        let Ok(check) =
+            engine.query(&pernixc_check::Key(self.current_target_id)).await
+        else {
+            return;
         };
-        let semantic_element_impl = {
-            let engine = engine.clone();
-            let current_target_id = self.current_target_id;
-
-            tokio::spawn(async move {
-                engine
-                .query(
-                    &pernixc_semantic_element_impl::diagnostic::AllRenderedKey(
-                        current_target_id,
-                    ),
-                )
-                .await
-            })
-        };
-
-        let symbol_impl = symbol_impl.await.unwrap().unwrap();
-        let semantic_element_impl =
-            semantic_element_impl.await.unwrap().unwrap();
 
         // collect diagnostics and group them by source file URL
         let mut diagnostics = HashMap::new();
 
-        for diag in symbol_impl
-            .iter()
-            .chain(semantic_element_impl.iter().flat_map(|x| x.iter()))
-        {
+        for diag in check.all_diagnostics() {
             let url = if let Some(primary) = &diag.primary_highlight {
                 engine.get_url_by_source_id(primary.span.source_id).await
             } else {

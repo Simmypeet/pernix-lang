@@ -10,7 +10,7 @@ use pernixc_stable_hash::StableHash;
 use pernixc_stable_type_id::Identifiable;
 use pernixc_symbol::{
     kind::{Key, Kind},
-    AllAdtIDKey, AllImplementsIDKey, ID,
+    AllAdtIDKey, AllFunctionWithBodyIDKey, AllImplementsIDKey, ID,
 };
 use pernixc_target::TargetID;
 use pernixc_tokio::scoped;
@@ -260,3 +260,42 @@ pub async fn all_implements_ids_executor(
 }
 
 pernixc_register::register!(AllImplementsIDKey, AllImplementsIDExecutor);
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+    Identifiable,
+)]
+pub struct FunctionWithBodyFilter;
+
+impl Filter for FunctionWithBodyFilter {
+    async fn filter(&self, kind: pernixc_symbol::kind::Kind) -> bool {
+        kind.has_function_body()
+    }
+}
+
+pernixc_register::register!(FilterKey<FunctionWithBodyFilter>, FilterExecutor);
+
+#[pernixc_query::executor(
+    key(AllFunctionWithBodyIDKey),
+    name(AllFunctionIDExecutor)
+)]
+pub async fn all_function_ids_executor(
+    &AllFunctionWithBodyIDKey(id): &AllFunctionWithBodyIDKey,
+    engine: &TrackedEngine,
+) -> Result<Arc<[ID]>, executor::CyclicError> {
+    engine
+        .query(&FilterKey { target_id: id, filter: FunctionWithBodyFilter })
+        .await
+}
+
+pernixc_register::register!(AllFunctionWithBodyIDKey, AllFunctionIDExecutor);
