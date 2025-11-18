@@ -131,7 +131,15 @@ pub struct DiagnosticKey(pub Key);
 
 pernixc_register::register!(DiagnosticKey, DiagnosticExecutor);
 
+/// A type-alias for a read-only map from symbol ID to value.
+pub type ReadOnlyMap<V> = Arc<ReadOnlyView<ID, V>>;
+
 /// A symbol table from parsing a single file.
+///
+/// This table contains various maps from symbol IDs to their properties,
+/// such as their kinds, names, spans, members, accessibilities, and various
+/// syntax extractions. This table stores only symbols defined in a single
+/// source file.
 #[derive(Debug, Clone, Serialize, Deserialize, StableHash)]
 #[allow(clippy::type_complexity)]
 pub struct Table {
@@ -139,147 +147,119 @@ pub struct Table {
     ///
     /// Every symbol must have a kind, therefore, this map is guaranteed to
     /// contain every symbol ID that is present
-    pub kinds: Arc<ReadOnlyView<ID, Kind>>,
+    pub kinds: ReadOnlyMap<Kind>,
 
     /// Maps the ID of the symbol to its name.
     ///
     /// This is not a qualified name, but rather a simple name of the symbol.
-    pub names: Arc<ReadOnlyView<ID, SharedStr>>,
+    pub names: ReadOnlyMap<SharedStr>,
 
     /// Maps the ID of the symbol to its span in the source code.
     ///
     /// The span shall point to the identifier of the symbol in the source
     /// code, not the whole declaration.
-    pub spans: Arc<ReadOnlyView<ID, Option<RelativeSpan>>>,
+    pub spans: ReadOnlyMap<Option<RelativeSpan>>,
 
     /// Maps the ID of the symbol to its list of members if that particular
     /// kind of symbol can have members.
-    pub members: Arc<ReadOnlyView<ID, Arc<Member>>>,
+    pub members: ReadOnlyMap<Arc<Member>>,
 
     /// Maps the ID of the symbol to its accessibility.
-    pub accessibilities: Arc<ReadOnlyView<ID, Accessibility<ID>>>,
+    pub accessibilities: ReadOnlyMap<Accessibility<ID>>,
 
     /// Maps the ID of the implements member (type, function, constant) to its
     /// extracted access modifier syntax.
     pub implements_access_modifier_syntaxes:
-        Arc<ReadOnlyView<ID, Option<pernixc_syntax::AccessModifier>>>,
+        ReadOnlyMap<Option<pernixc_syntax::AccessModifier>>,
 
     /// Maps the ID of the symbol to its generic parameters declaration syntax.
     ///
     /// This represents the generic parameters `['a, T, const N: usize]`
     /// declaration of the symbol.
-    pub generic_parameter_syntaxes: Arc<
-        ReadOnlyView<
-            ID,
-            Option<pernixc_syntax::item::generic_parameters::GenericParameters>,
-        >,
+    pub generic_parameter_syntaxes: ReadOnlyMap<
+        Option<pernixc_syntax::item::generic_parameters::GenericParameters>,
     >,
 
     /// Maps the ID of the symbol to its where clause declaration syntax.
     ///
     /// This represents the `where` clause of the symbol, such as
     /// `where: T: Trait, U: AnotherTrait`.
-    pub where_clause_syntaxes: Arc<
-        ReadOnlyView<
-            ID,
-            Option<pernixc_syntax::item::where_clause::Predicates>,
-        >,
-    >,
+    pub where_clause_syntaxes:
+        ReadOnlyMap<Option<pernixc_syntax::item::where_clause::Predicates>>,
 
     /// Maps the ID of the symbol to its type alias declaration syntax.
     ///
     /// This represents the `= Type` part that presents only in type alias
     /// declarations.
-    pub type_alias_syntaxes:
-        Arc<ReadOnlyView<ID, Option<pernixc_syntax::r#type::Type>>>,
+    pub type_alias_syntaxes: ReadOnlyMap<Option<pernixc_syntax::r#type::Type>>,
 
     /// Maps the ID of the symbol to its constant type annotation syntax.
     ///
     /// This represents the `const T: Type` part that presents only in
     /// constant declarations.
     pub constant_type_annotation_syntaxes:
-        Arc<ReadOnlyView<ID, Option<pernixc_syntax::r#type::Type>>>,
+        ReadOnlyMap<Option<pernixc_syntax::r#type::Type>>,
 
     /// Maps the ID of the symbol to its constant expression syntax.
     ///
     /// This represents the `= Expression` part that presents only in
     /// constant declarations.
     pub constant_expression_syntaxes:
-        Arc<ReadOnlyView<ID, Option<pernixc_syntax::expression::Expression>>>,
+        ReadOnlyMap<Option<pernixc_syntax::expression::Expression>>,
 
     /// Maps the ID of the symbol to its function signature syntax.
     ///
     /// This represents the `fn function_name(...) -> T` part that presents
     /// only in function declarations.
-    pub function_signature_syntaxes: Arc<
-        ReadOnlyView<
-            ID,
-            (
-                Option<pernixc_syntax::item::function::Parameters>,
-                Option<pernixc_syntax::item::function::ReturnType>,
-            ),
-        >,
-    >,
+    pub function_signature_syntaxes: ReadOnlyMap<(
+        Option<pernixc_syntax::item::function::Parameters>,
+        Option<pernixc_syntax::item::function::ReturnType>,
+    )>,
 
     /// Maps the struct ID to its body syntax, which contains a list of fields.
-    pub fields_syntaxes: Arc<
-        ReadOnlyView<
-            ID,
-            Option<
-                pernixc_syntax::item::Body<
-                    pernixc_syntax::item::r#struct::Field,
-                >,
-            >,
+    pub fields_syntaxes: ReadOnlyMap<
+        Option<
+            pernixc_syntax::item::Body<pernixc_syntax::item::r#struct::Field>,
         >,
     >,
 
     /// Maps the variant ID to its associated type syntax, which is represented
     /// by the `Variant(Type)` syntax.
     pub variant_associated_type_syntaxes:
-        Arc<ReadOnlyView<ID, Option<pernixc_syntax::r#type::Type>>>,
+        ReadOnlyMap<Option<pernixc_syntax::r#type::Type>>,
 
     /// Maps the enum variant ID to the order of its declaration in the enum.
-    pub variant_declaration_orders: Arc<ReadOnlyView<ID, usize>>,
+    pub variant_declaration_orders: ReadOnlyMap<usize>,
 
     /// Maps the module symbol ID to the list of import syntaxes that
     /// are defined in the module.
     pub import_syntaxes:
-        Arc<ReadOnlyView<ID, Arc<[pernixc_syntax::item::module::Import]>>>,
+        ReadOnlyMap<Arc<[pernixc_syntax::item::module::Import]>>,
 
     /// Maps the implements ID to its qualified identifier syntax.
     pub implements_qualified_identifier_syntaxes:
-        Arc<ReadOnlyView<ID, QualifiedIdentifier>>,
+        ReadOnlyMap<QualifiedIdentifier>,
 
     /// Maps the implements ID to its `final` keyword.
-    pub final_keywords: Arc<ReadOnlyView<ID, Option<pernixc_syntax::Keyword>>>,
+    pub final_keywords: ReadOnlyMap<Option<pernixc_syntax::Keyword>>,
 
     /// Maps the function ID to its body syntax, which contains a list of
     /// statements.
-    pub function_body_syntaxes: Arc<
-        ReadOnlyView<
-            ID,
-            Option<
-                pernixc_syntax::item::Members<
-                    pernixc_syntax::statement::Statement,
-                >,
-            >,
+    pub function_body_syntaxes: ReadOnlyMap<
+        Option<
+            pernixc_syntax::item::Members<pernixc_syntax::statement::Statement>,
         >,
     >,
 
     /// Maps the function ID to its `do` effect syntax if it has one.
-    pub function_effect_annotation_syntaxes: Arc<
-        ReadOnlyView<
-            ID,
-            Option<pernixc_syntax::item::function::EffectAnnotation>,
-        >,
-    >,
+    pub function_effect_annotation_syntaxes:
+        ReadOnlyMap<Option<pernixc_syntax::item::function::EffectAnnotation>>,
 
     /// Maps the function ID to its `unsafe` keyword if it has one.
-    pub function_unsafe_keywords:
-        Arc<ReadOnlyView<ID, Option<pernixc_syntax::Keyword>>>,
+    pub function_unsafe_keywords: ReadOnlyMap<Option<pernixc_syntax::Keyword>>,
 
     /// Maps the function ID to its linkage.
-    pub function_linkages: Arc<ReadOnlyView<ID, linkage::Linkage>>,
+    pub function_linkages: ReadOnlyMap<linkage::Linkage>,
 
     /// Maps the module ID to the external submodules where its content is
     /// defined in. This added to the table via `public module subModule`
@@ -287,7 +267,7 @@ pub struct Table {
     ///
     /// The content of the submodule is not defined in the current [`Table`],
     /// this is simply a reference to where the submodule is defined in
-    pub external_submodules: Arc<ReadOnlyView<ID, Arc<ExternalSubmodule>>>,
+    pub external_submodules: ReadOnlyMap<Arc<ExternalSubmodule>>,
 
     /// The diagnostics that were collected while building the table.
     pub diagnostics: Arc<HashSet<Diagnostic>>,
@@ -307,7 +287,7 @@ pub struct Table {
     StableHash,
     pernixc_query::Key,
 )]
-#[value(Arc<ReadOnlyView<ID, Kind>>)]
+#[value(ReadOnlyMap<Kind>)]
 pub struct KindMapKey(pub Key);
 
 pernixc_register::register!(KindMapKey, KindMapExecutor);
@@ -316,7 +296,7 @@ pernixc_register::register!(KindMapKey, KindMapExecutor);
 pub async fn kind_map_executor(
     KindMapKey(key): &KindMapKey,
     engine: &TrackedEngine,
-) -> Result<Arc<ReadOnlyView<ID, Kind>>, CyclicError> {
+) -> Result<ReadOnlyMap<Kind>, CyclicError> {
     let table = engine.query(&TableKey(key.clone())).await?;
     Ok(table.kinds.clone())
 }
@@ -335,7 +315,7 @@ pub async fn kind_map_executor(
     StableHash,
     pernixc_query::Key,
 )]
-#[value(Arc<ReadOnlyView<ID, Arc<ExternalSubmodule>>>)]
+#[value(ReadOnlyMap<Arc<ExternalSubmodule>>)]
 pub struct ExternalSubmoduleMapKey(pub Key);
 
 pernixc_register::register!(
@@ -350,7 +330,7 @@ pernixc_register::register!(
 pub async fn external_submodule_map_executor(
     ExternalSubmoduleMapKey(key): &ExternalSubmoduleMapKey,
     engine: &TrackedEngine,
-) -> Result<Arc<ReadOnlyView<ID, Arc<ExternalSubmodule>>>, CyclicError> {
+) -> Result<ReadOnlyMap<Arc<ExternalSubmodule>>, CyclicError> {
     let table = engine.query(&TableKey(key.clone())).await?;
     Ok(table.external_submodules.clone())
 }
