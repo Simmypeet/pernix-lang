@@ -215,6 +215,9 @@ pub async fn run(
     pernixc_register::Registration::register_executor(
         &mut engine.runtime.executor,
     );
+    pernixc_register::Registration::register_always_recompute(
+        &mut engine.runtime.executor,
+    );
 
     // set the initial input, the invocation arguments
     let local_target_id =

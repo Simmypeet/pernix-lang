@@ -5,7 +5,7 @@ use std::sync::Arc;
 pub use inventory::submit;
 use pernixc_query::{
     runtime::{
-        executor::{self, Executor},
+        executor::{self, Executor, Registry},
         persistence::{self, serde::DynamicRegistry, Persistence},
     },
     Key,
@@ -33,8 +33,8 @@ pub struct Registration<
 > {
     register_executor: fn(&mut executor::Registry),
     register_serde_registry: fn(&mut R),
-    skip_persistence: fn(&mut Persistence),
-    skip_persistence_toggle: bool,
+    skip_persistence: Option<fn(&mut Persistence)>,
+    always_recompute: Option<fn(&mut Registry)>,
 }
 
 inventory::collect!(Registration);
@@ -50,7 +50,10 @@ impl Registration {
             + Serialize<persistence::Serializer, SerdeRegistry>
             + Deserialize<persistence::Deserializer, SerdeRegistry>,
         E: Executor<T> + Default,
-    >() -> Self
+    >(
+        skip_persistence: bool,
+        always_recompute: bool,
+    ) -> Self
     where
         T::Value: Serialize<persistence::Serializer, SerdeRegistry>
             + Deserialize<persistence::Deserializer, SerdeRegistry>,
@@ -58,8 +61,20 @@ impl Registration {
         Self {
             register_executor: register_executor::<T, E>,
             register_serde_registry: register_serde_registry::<T>,
-            skip_persistence: skip_persistence::<T>,
-            skip_persistence_toggle: false,
+            skip_persistence: {
+                if skip_persistence {
+                    Some(crate::skip_persistence::<T>)
+                } else {
+                    None
+                }
+            },
+            always_recompute: {
+                if always_recompute {
+                    Some(crate::always_recompute::<T>)
+                } else {
+                    None
+                }
+            },
         }
     }
 
@@ -80,16 +95,9 @@ impl Registration {
         Self {
             register_executor: |_: &mut executor::Registry| {},
             register_serde_registry: register_serde_registry::<T>,
-            skip_persistence: skip_persistence::<T>,
-            skip_persistence_toggle: false,
+            skip_persistence: None,
+            always_recompute: None,
         }
-    }
-
-    /// Registers the helper with a flag to skip persistence.
-    #[must_use]
-    pub const fn skip_persistence(mut self) -> Self {
-        self.skip_persistence_toggle = true;
-        self
     }
 
     /// Registers all the `serde` helpers set-up so far.
@@ -109,11 +117,22 @@ impl Registration {
     /// Registers all the key type to be skipped for persistence.
     pub fn register_skip_persistence(persistence: &mut Persistence) {
         for registration in inventory::iter::<Self> {
-            if !registration.skip_persistence_toggle {
+            let Some(skip_fn) = registration.skip_persistence else {
                 continue;
-            }
+            };
 
-            (registration.skip_persistence)(persistence);
+            skip_fn(persistence);
+        }
+    }
+
+    /// Registers all the key types that should always recompute their value
+    pub fn register_always_recompute(registry: &mut Registry) {
+        for registration in inventory::iter::<Self> {
+            let Some(recompute_fn) = registration.always_recompute else {
+                continue;
+            };
+
+            recompute_fn(registry);
         }
     }
 }
@@ -141,6 +160,10 @@ fn skip_persistence<T: Key>(persistence: &mut Persistence) {
     persistence.skip_cache_value::<T>();
 }
 
+fn always_recompute<T: Key>(registtry: &mut Registry) {
+    registtry.set_always_recompute::<T>(true);
+}
+
 /// Registers the key and executor for the main compiler driver.
 #[macro_export]
 macro_rules! register {
@@ -152,14 +175,25 @@ macro_rules! register {
 
     ($key:ty, $executor:ty) => {
         $crate::submit! {
-            $crate::Registration::register_key::<$key, $executor>()
+            $crate::Registration::register_key::<$key, $executor>(false, false)
         }
     };
 
     ($key:ty, $executor:ty, skip_cache) => {
         $crate::submit! {
-            $crate::Registration::register_key::<$key, $executor>()
-                .skip_persistence()
+            $crate::Registration::register_key::<$key, $executor>(true, false)
+        }
+    };
+
+    ($key:ty, $executor:ty, skip_cache, always_recompute) => {
+        $crate::submit! {
+            $crate::Registration::register_key::<$key, $executor>(true, true)
+        }
+    };
+
+    ($key:ty, $executor:ty, always_recompute) => {
+        $crate::submit! {
+            $crate::Registration::register_key::<$key, $executor>(false, true)
         }
     };
 }

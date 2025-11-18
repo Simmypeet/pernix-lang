@@ -811,7 +811,7 @@ pub struct Key {
     pub target_id: TargetID,
 }
 
-pernixc_register::register!(Key, Executor, skip_cache);
+pernixc_register::register!(Key, Executor, skip_cache, always_recompute);
 
 /// The string formatted error from the [`std::io::Error`] when loading
 /// the source file.
