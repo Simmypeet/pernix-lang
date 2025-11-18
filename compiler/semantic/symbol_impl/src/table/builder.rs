@@ -499,6 +499,14 @@ impl Builder {
             .is_none());
     }
 
+    pub fn insert_function_linkage(
+        &self,
+        id: pernixc_symbol::ID,
+        linkage: linkage::Linkage,
+    ) {
+        assert!(self.function_linkages.insert(id, linkage).is_none());
+    }
+
     /// Inserts imports into the builder.
     pub fn insert_imports(
         &self,

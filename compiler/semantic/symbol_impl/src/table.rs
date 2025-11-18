@@ -22,7 +22,6 @@ use pernixc_symbol::{
 };
 use pernixc_syntax::QualifiedIdentifier;
 use pernixc_target::{get_invocation_arguments, Global, TargetID};
-use tokio::task::JoinHandle;
 
 use crate::{
     diagnostic::{Diagnostic, SourceFileLoadFail},
@@ -32,9 +31,10 @@ use crate::{
 mod builder;
 
 mod effect;
+mod r#enum;
+mod r#extern;
 mod module;
 mod r#trait;
-mod r#enum;
 
 /// The key to query each table node.
 #[derive(
@@ -998,88 +998,6 @@ impl Builder {
         }
 
         impl_member_builder
-    }
-
-    async fn handle_extern(
-        self: &Arc<Self>,
-        extern_syn: &pernixc_syntax::item::r#extern::Extern,
-        module_member_builder: &mut MemberBuilder,
-    ) {
-        let Some(body) = extern_syn.body() else {
-            return;
-        };
-
-        let Some(convention) = extern_syn.convention() else {
-            return;
-        };
-
-        let linkage = match convention.kind.as_str() {
-            "C" | "c" => linkage::Linkage::C(C { variadic: false }),
-            _ => linkage::Linkage::Unknown,
-        };
-
-        for function_syntax in
-            body.functions().filter_map(|x| x.into_line().ok())
-        {
-            let Some(identifier) =
-                function_syntax.signature().and_then(|x| x.identifier())
-            else {
-                continue;
-            };
-
-            let linkage = match linkage {
-                linkage::Linkage::C(mut c) => {
-                    c.variadic = function_syntax
-                        .signature()
-                        .and_then(|x| x.parameters())
-                        .is_some_and(|x| {
-                            x.parameters().any(|x| x.is_variadic())
-                        });
-
-                    linkage::Linkage::C(c)
-                }
-
-                linkage::Linkage::Unknown => linkage::Linkage::Unknown,
-            };
-
-            let entry = Entry::builder()
-                .kind(Kind::ExternFunction)
-                .naming(Naming::Identifier(identifier.clone()))
-                .accessibility(function_syntax.access_modifier())
-                .generic_parameters_syntax(
-                    function_syntax
-                        .signature()
-                        .and_then(|x| x.generic_parameters()),
-                )
-                .where_clause_syntax(
-                    function_syntax
-                        .trailing_where_clause()
-                        .and_then(|x| x.where_clause())
-                        .and_then(|x| x.predicates()),
-                )
-                .function_signature_syntax((
-                    function_syntax.signature().and_then(|x| x.parameters()),
-                    function_syntax.signature().and_then(|x| x.return_type()),
-                ))
-                .function_effect_annotation_syntax(
-                    function_syntax
-                        .signature()
-                        .and_then(|x| x.effect_annotation()),
-                )
-                .function_linkage(linkage)
-                .build();
-
-            let member_id = module_member_builder
-                .add_member(identifier, &self.engine)
-                .await;
-
-            self.add_symbol_entry(
-                member_id,
-                module_member_builder.symbol_id,
-                entry,
-            )
-            .await;
-        }
     }
 }
 
