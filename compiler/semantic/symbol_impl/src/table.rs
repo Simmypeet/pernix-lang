@@ -260,6 +260,9 @@ pub struct Table {
     /// Maps the function ID to its linkage.
     pub function_linkages: ReadOnlyMap<linkage::Linkage>,
 
+    /// Maps the symbol ID to its scope span in the source code.
+    pub scope_spans: ReadOnlyMap<Option<RelativeSpan>>,
+
     /// Maps the module ID to the external submodules where its content is
     /// defined in. This added to the table via `public module subModule`
     /// declaration syntax.
@@ -481,17 +484,20 @@ pub async fn table_executor(
         is_root,
     ));
 
+    let module_content = tree.and_then(|t| t.0);
+    let scope_span =
+        module_content.as_ref().map(pernixc_source_file::SourceElement::span);
     builder
-        .create_module(tree.and_then(|t| t.0), module_kind)
+        .create_module(module_content, scope_span, module_kind)
         .await
         .await
         .expect("failed to join task");
 
-    let Ok(context) = Arc::try_unwrap(builder) else {
+    let Ok(builder) = Arc::try_unwrap(builder) else {
         panic!("some threads are not joined")
     };
 
-    Ok(context.into_table())
+    Ok(builder.into_table())
 }
 
 #[pernixc_query::executor(key(DiagnosticKey), name(DiagnosticExecutor))]

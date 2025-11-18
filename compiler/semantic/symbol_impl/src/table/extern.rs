@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
     kind::Kind,
     linkage::{self, C},
@@ -55,6 +56,7 @@ impl Builder {
                 .await;
 
             self.insert_kind(id, Kind::ExternFunction);
+            self.insert_scope_span(id, function_syntax.span());
             self.insert_name_identifier(id, &identifier);
             self.insert_accessibility_by_access_modifier(
                 id,

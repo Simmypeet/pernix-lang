@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use pernixc_source_file::SourceElement;
 use pernixc_symbol::kind::Kind;
 use pernixc_syntax::item::r#trait::Member as TraitMemberSyn;
 use tokio::task::JoinHandle;
@@ -34,6 +35,7 @@ impl Builder {
             .and_then(|x| x.predicates());
 
         let parent_module_id = module_member_builder.current_symbol_id();
+        let trait_scope_span = trait_syntax.span();
 
         let builder = self.clone();
 
@@ -64,6 +66,7 @@ impl Builder {
                             .await;
 
                         builder.insert_kind(id, Kind::TraitType);
+                        builder.insert_scope_span(id, member.span());
                         builder.insert_name_identifier(id, &identifier);
                         builder
                             .insert_accessibility_by_access_modifier(
@@ -99,6 +102,7 @@ impl Builder {
                             .await;
 
                         builder.insert_kind(id, Kind::TraitFunction);
+                        builder.insert_scope_span(id, member.span());
                         builder.insert_name_identifier(id, &identifier);
                         builder
                             .insert_accessibility_by_access_modifier(
@@ -149,6 +153,7 @@ impl Builder {
                             .await;
 
                         builder.insert_kind(id, Kind::TraitConstant);
+                        builder.insert_scope_span(id, member.span());
                         builder.insert_name_identifier(id, &identifier);
                         builder
                             .insert_accessibility_by_access_modifier(
@@ -179,6 +184,7 @@ impl Builder {
             }
 
             builder.insert_kind(trait_id, Kind::Trait);
+            builder.insert_scope_span(trait_id, trait_scope_span);
             builder.insert_name_identifier(trait_id, &identifier);
             builder
                 .insert_generic_parameters_syntax(trait_id, generic_parameters);
