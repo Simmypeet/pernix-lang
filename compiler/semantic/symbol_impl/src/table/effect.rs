@@ -5,10 +5,10 @@ use tokio::task::JoinHandle;
 
 use crate::{
     diagnostic::Diagnostic,
-    table::{Entry, MemberBuilder, Naming, TableContext},
+    table::{builder::Builder, Entry, MemberBuilder, Naming, TableContext},
 };
 
-impl TableContext {
+impl Builder {
     #[allow(clippy::too_many_lines)]
     pub(super) async fn handle_effect_member(
         self: &Arc<Self>,

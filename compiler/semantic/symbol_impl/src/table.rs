@@ -1,11 +1,9 @@
-use std::{collections::hash_map, path::Path, sync::Arc};
+use std::{path::Path, sync::Arc};
 
-use bon::Builder;
-use enum_as_inner::EnumAsInner;
 use flexstr::SharedStr;
 use pernixc_extend::extend;
 use pernixc_handler::{Handler, Storage};
-use pernixc_hash::{DashMap, HashMap, HashSet, ReadOnlyView};
+use pernixc_hash::{DashMap, HashSet, ReadOnlyView};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::{
     runtime::executor::{self, CyclicError, Future},
@@ -16,11 +14,10 @@ use pernixc_source_file::{calculate_path_id, SourceElement, SourceFile};
 use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{
     accessibility::Accessibility,
-    calculate_implements_id, calculate_qualified_name_id,
-    get_target_root_module_id,
-    kind::{self, Kind},
+    calculate_implements_id, get_target_root_module_id,
+    kind::Kind,
     linkage::{self, C},
-    member::{self, Member},
+    member::Member,
     AllSymbolIDKey, ID,
 };
 use pernixc_syntax::{
@@ -29,8 +26,12 @@ use pernixc_syntax::{
 use pernixc_target::{get_invocation_arguments, Global, TargetID};
 use tokio::task::JoinHandle;
 
-use crate::diagnostic::{Diagnostic, ItemRedefinition, SourceFileLoadFail};
+use crate::{
+    diagnostic::{Diagnostic, SourceFileLoadFail},
+    table::builder::Builder,
+};
 
+mod builder;
 mod effect;
 mod module;
 
@@ -346,73 +347,6 @@ enum ModuleKind {
     },
 }
 
-struct TableContext {
-    engine: TrackedEngine,
-    storage: Storage<Diagnostic>,
-    target_id: TargetID,
-
-    kinds: DashMap<ID, Kind>,
-    names: DashMap<ID, SharedStr>,
-    spans: DashMap<ID, Option<RelativeSpan>>,
-    members: DashMap<ID, Arc<Member>>,
-    accessibilities: DashMap<ID, Accessibility<ID>>,
-
-    implements_access_modifier_syntaxes:
-        DashMap<ID, Option<pernixc_syntax::AccessModifier>>,
-
-    external_submodules: DashMap<ID, Arc<ExternalSubmodule>>,
-
-    generic_parameter_syntaxes: DashMap<
-        ID,
-        Option<pernixc_syntax::item::generic_parameters::GenericParameters>,
-    >,
-    where_clause_syntaxes:
-        DashMap<ID, Option<pernixc_syntax::item::where_clause::Predicates>>,
-    type_alias_syntaxes: DashMap<ID, Option<pernixc_syntax::r#type::Type>>,
-    constant_type_annotation_syntaxes:
-        DashMap<ID, Option<pernixc_syntax::r#type::Type>>,
-    constant_expression_syntaxes:
-        DashMap<ID, Option<pernixc_syntax::expression::Expression>>,
-    function_signature_syntaxes: DashMap<
-        ID,
-        (
-            Option<pernixc_syntax::item::function::Parameters>,
-            Option<pernixc_syntax::item::function::ReturnType>,
-        ),
-    >,
-    function_linkages: DashMap<ID, linkage::Linkage>,
-    fields_syntaxes: DashMap<
-        ID,
-        Option<
-            pernixc_syntax::item::Body<pernixc_syntax::item::r#struct::Field>,
-        >,
-    >,
-    variant_associated_type_syntaxes:
-        DashMap<ID, Option<pernixc_syntax::r#type::Type>>,
-    variant_declaration_orders: DashMap<ID, usize>,
-    import_syntaxes: DashMap<ID, Arc<[pernixc_syntax::item::module::Import]>>,
-    implements_qualified_identifier_syntaxes:
-        DashMap<ID, pernixc_syntax::QualifiedIdentifier>,
-    final_keywords: DashMap<ID, Option<pernixc_syntax::Keyword>>,
-
-    function_body_syntaxes: DashMap<
-        ID,
-        Option<
-            pernixc_syntax::item::Members<pernixc_syntax::statement::Statement>,
-        >,
-    >,
-
-    function_effect_annotation_syntaxes:
-        DashMap<ID, Option<pernixc_syntax::item::function::EffectAnnotation>>,
-
-    function_unsafe_keywords: DashMap<ID, Option<pernixc_syntax::Keyword>>,
-
-    token_tree: Option<Arc<pernixc_lexical::tree::Tree>>,
-    source_file: Option<Arc<SourceFile>>,
-
-    is_root: bool,
-}
-
 #[pernixc_query::executor(key(TableKey), name(TableExecutor))]
 #[allow(clippy::too_many_lines)]
 pub async fn table_executor(
@@ -540,105 +474,26 @@ pub async fn table_executor(
         }
     };
 
-    let context = Arc::new(TableContext {
-        engine: engine.clone(),
+    let builder = Arc::new(Builder::new(
+        engine.clone(),
         storage,
+        source_file.ok(),
+        token_tree_result.ok().map(|x| x.0),
         target_id,
-        kinds: DashMap::default(),
-        names: DashMap::default(),
-        spans: DashMap::default(),
-        members: DashMap::default(),
-        accessibilities: DashMap::default(),
-        implements_access_modifier_syntaxes: DashMap::default(),
-        external_submodules: DashMap::default(),
-        generic_parameter_syntaxes: DashMap::default(),
-        where_clause_syntaxes: DashMap::default(),
-        type_alias_syntaxes: DashMap::default(),
-        constant_type_annotation_syntaxes: DashMap::default(),
-        constant_expression_syntaxes: DashMap::default(),
-        function_signature_syntaxes: DashMap::default(),
-        fields_syntaxes: DashMap::default(),
-        variant_associated_type_syntaxes: DashMap::default(),
-        variant_declaration_orders: DashMap::default(),
-        import_syntaxes: DashMap::default(),
-        implements_qualified_identifier_syntaxes: DashMap::default(),
-        function_linkages: DashMap::default(),
-        final_keywords: DashMap::default(),
-        function_body_syntaxes: DashMap::default(),
-        function_effect_annotation_syntaxes: DashMap::default(),
-        function_unsafe_keywords: DashMap::default(),
-        token_tree: token_tree_result.ok().map(|x| x.0),
-        source_file: source_file.ok(),
         is_root,
-    });
+    ));
 
-    context
+    builder
         .create_module(tree.and_then(|t| t.0), module_kind)
         .await
         .await
         .expect("failed to join task");
 
-    let Ok(context) = Arc::try_unwrap(context) else {
+    let Ok(context) = Arc::try_unwrap(builder) else {
         panic!("some threads are not joined")
     };
 
-    Ok(Arc::new(Table {
-        kinds: Arc::new(context.kinds.into_read_only()),
-        names: Arc::new(context.names.into_read_only()),
-        spans: Arc::new(context.spans.into_read_only()),
-        members: Arc::new(context.members.into_read_only()),
-        accessibilities: Arc::new(context.accessibilities.into_read_only()),
-        implements_access_modifier_syntaxes: Arc::new(
-            context.implements_access_modifier_syntaxes.into_read_only(),
-        ),
-
-        // syntax extractions
-        generic_parameter_syntaxes: Arc::new(
-            context.generic_parameter_syntaxes.into_read_only(),
-        ),
-        where_clause_syntaxes: Arc::new(
-            context.where_clause_syntaxes.into_read_only(),
-        ),
-        type_alias_syntaxes: Arc::new(
-            context.type_alias_syntaxes.into_read_only(),
-        ),
-        constant_type_annotation_syntaxes: Arc::new(
-            context.constant_type_annotation_syntaxes.into_read_only(),
-        ),
-        constant_expression_syntaxes: Arc::new(
-            context.constant_expression_syntaxes.into_read_only(),
-        ),
-        function_signature_syntaxes: Arc::new(
-            context.function_signature_syntaxes.into_read_only(),
-        ),
-        fields_syntaxes: Arc::new(context.fields_syntaxes.into_read_only()),
-        variant_associated_type_syntaxes: Arc::new(
-            context.variant_associated_type_syntaxes.into_read_only(),
-        ),
-        variant_declaration_orders: Arc::new(
-            context.variant_declaration_orders.into_read_only(),
-        ),
-        import_syntaxes: Arc::new(context.import_syntaxes.into_read_only()),
-        implements_qualified_identifier_syntaxes: Arc::new(
-            context.implements_qualified_identifier_syntaxes.into_read_only(),
-        ),
-        final_keywords: Arc::new(context.final_keywords.into_read_only()),
-        function_body_syntaxes: Arc::new(
-            context.function_body_syntaxes.into_read_only(),
-        ),
-        function_linkages: Arc::new(context.function_linkages.into_read_only()),
-        function_effect_annotation_syntaxes: Arc::new(
-            context.function_effect_annotation_syntaxes.into_read_only(),
-        ),
-        function_unsafe_keywords: Arc::new(
-            context.function_unsafe_keywords.into_read_only(),
-        ),
-
-        external_submodules: Arc::new(
-            context.external_submodules.into_read_only(),
-        ),
-        diagnostics: Arc::new(context.storage.into_vec().into_iter().collect()),
-    }))
+    Ok(context.into_table())
 }
 
 #[pernixc_query::executor(key(DiagnosticKey), name(DiagnosticExecutor))]
@@ -655,70 +510,7 @@ pub async fn diagnostic_executor(
     Ok(table.diagnostics.clone())
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, EnumAsInner)]
-enum Naming {
-    Identifier(pernixc_syntax::Identifier),
-    Implements(pernixc_syntax::QualifiedIdentifier),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Builder)]
-#[allow(clippy::option_option)]
-struct Entry {
-    pub naming: Naming,
-    pub kind: kind::Kind,
-
-    pub member: Option<Arc<member::Member>>,
-
-    pub accessibility: Option<Option<pernixc_syntax::AccessModifier>>,
-
-    pub generic_parameters_syntax: Option<
-        Option<pernixc_syntax::item::generic_parameters::GenericParameters>,
-    >,
-
-    pub where_clause_syntax:
-        Option<Option<pernixc_syntax::item::where_clause::Predicates>>,
-
-    pub type_alias_syntax: Option<Option<pernixc_syntax::r#type::Type>>,
-
-    pub constant_type_annotation_syntax:
-        Option<Option<pernixc_syntax::r#type::Type>>,
-
-    pub constant_expression_syntax:
-        Option<Option<pernixc_syntax::expression::Expression>>,
-
-    pub function_signature_syntax: Option<(
-        Option<pernixc_syntax::item::function::Parameters>,
-        Option<pernixc_syntax::item::function::ReturnType>,
-    )>,
-
-    pub fields_syntax: Option<
-        Option<
-            pernixc_syntax::item::Body<pernixc_syntax::item::r#struct::Field>,
-        >,
-    >,
-
-    pub variant_associated_type_syntax:
-        Option<Option<pernixc_syntax::r#type::Type>>,
-
-    pub variant_declaration_order: Option<usize>,
-
-    pub function_body_syntax: Option<
-        Option<
-            pernixc_syntax::item::Members<pernixc_syntax::statement::Statement>,
-        >,
-    >,
-
-    pub final_keyword: Option<Option<pernixc_syntax::Keyword>>,
-
-    pub function_effect_annotation_syntax:
-        Option<Option<pernixc_syntax::item::function::EffectAnnotation>>,
-
-    pub function_unsafe_keyword: Option<Option<pernixc_syntax::Keyword>>,
-
-    pub function_linkage: Option<linkage::Linkage>,
-}
-
-impl TableContext {
+impl Builder {
     fn implements_qualified_identifier_name(
         &self,
         qualified_identifier_span: &RelativeSpan,
@@ -931,109 +723,6 @@ impl TableContext {
              project and delete the incremental directory if the problem \
              persists."
         );
-    }
-
-    async fn create_module(
-        self: &Arc<Self>,
-        module_content: Option<pernixc_syntax::item::module::Content>,
-        module_kind: ModuleKind,
-    ) -> JoinHandle<()> {
-        // extract the information about the module
-        let (accessibility, current_module_id, module_qualified_name, span) =
-            match module_kind {
-                ModuleKind::Root => {
-                    let invocation_arguments = self
-                        .engine
-                        .get_invocation_arguments(self.target_id)
-                        .await;
-
-                    let target_name =
-                        invocation_arguments.command.input().target_name();
-
-                    let current_module_id = self
-                        .engine
-                        .get_target_root_module_id(self.target_id)
-                        .await;
-
-                    let module_qualified_name = Arc::from([target_name]);
-
-                    (
-                        Accessibility::Public,
-                        current_module_id,
-                        module_qualified_name,
-                        None,
-                    )
-                }
-                ModuleKind::Submodule {
-                    submodule_id,
-                    submodule_qualified_name,
-                    accessibility,
-                    span,
-                } => (
-                    accessibility,
-                    submodule_id,
-                    submodule_qualified_name,
-                    Some(span),
-                ),
-            };
-
-        let context = self.clone();
-
-        tokio::spawn(async move {
-            let mut member_builder = MemberBuilder::new(
-                current_module_id,
-                module_qualified_name,
-                context.target_id,
-            );
-            let mut imports = Vec::new();
-
-            if let Some(module_content) = module_content {
-                context
-                    .handle_module_content(
-                        module_content,
-                        &mut member_builder,
-                        &mut imports,
-                    )
-                    .await;
-            }
-
-            Self::insert_to_table(
-                &context.names,
-                current_module_id,
-                member_builder.symbol_qualified_name.last().cloned().unwrap(),
-            );
-            Self::insert_to_table(
-                &context.accessibilities,
-                current_module_id,
-                accessibility,
-            );
-            Self::insert_to_table(
-                &context.kinds,
-                current_module_id,
-                Kind::Module,
-            );
-            Self::insert_to_table(&context.spans, current_module_id, span);
-            Self::insert_to_table(
-                &context.members,
-                current_module_id,
-                Arc::new(Member {
-                    member_ids_by_name: member_builder.member_ids_by_name,
-                    unnameds: member_builder.unnameds,
-                }),
-            );
-            Self::insert_to_table(
-                &context.import_syntaxes,
-                current_module_id,
-                imports.into(),
-            );
-
-            context.storage.as_vec_mut().extend(
-                member_builder
-                    .redefinition_errors
-                    .into_iter()
-                    .map(Diagnostic::ItemRedefinition),
-            );
-        })
     }
 
     #[allow(clippy::too_many_lines)]
@@ -1669,81 +1358,6 @@ impl TableContext {
             )
             .await;
         }
-    }
-}
-
-struct MemberBuilder {
-    symbol_id: ID,
-    symbol_qualified_name: Arc<[SharedStr]>,
-    target_id: TargetID,
-
-    member_ids_by_name: HashMap<SharedStr, ID>,
-    name_occurrences: HashMap<SharedStr, usize>,
-    unnameds: HashSet<ID>,
-
-    redefinition_errors: HashSet<ItemRedefinition>,
-}
-
-impl MemberBuilder {
-    fn new(
-        symbol_id: ID,
-        symbol_qualified_name: Arc<[SharedStr]>,
-        target_id: TargetID,
-    ) -> Self {
-        Self {
-            symbol_id,
-            symbol_qualified_name,
-            target_id,
-
-            member_ids_by_name: HashMap::default(),
-            name_occurrences: HashMap::default(),
-            unnameds: HashSet::default(),
-
-            redefinition_errors: HashSet::default(),
-        }
-    }
-
-    async fn add_member(
-        &mut self,
-        identifier: pernixc_syntax::Identifier,
-        engine: &TrackedEngine,
-    ) -> ID {
-        let occurrences =
-            self.name_occurrences.entry(identifier.kind.0.clone()).or_default();
-
-        let current_count = *occurrences;
-        *occurrences += 1;
-
-        let new_member_id = engine
-            .calculate_qualified_name_id(
-                self.symbol_qualified_name
-                    .iter()
-                    .map(flexstr::FlexStr::as_str)
-                    .chain(std::iter::once(identifier.kind.0.as_str())),
-                self.target_id,
-                Some(self.symbol_id),
-                current_count,
-            )
-            .await;
-
-        match self.member_ids_by_name.entry(identifier.kind.0) {
-            hash_map::Entry::Occupied(occupied_entry) => {
-                self.redefinition_errors.insert(ItemRedefinition {
-                    existing_id: self
-                        .target_id
-                        .make_global(*occupied_entry.get()),
-                    redefinition_span: identifier.span,
-                    in_id: self.target_id.make_global(self.symbol_id),
-                });
-
-                self.unnameds.insert(new_member_id);
-            }
-            hash_map::Entry::Vacant(vacant_entry) => {
-                vacant_entry.insert(new_member_id);
-            }
-        }
-
-        new_member_id
     }
 }
 

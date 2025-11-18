@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use flexstr::FlexStr;
-use pernixc_handler::Handler;
 use pernixc_symbol::{
     accessibility::Accessibility, get_target_root_module_id, kind::Kind,
 };
@@ -11,29 +10,29 @@ use pernixc_tokio::scoped;
 use tokio::task::JoinHandle;
 
 use crate::{
-    diagnostic::{Diagnostic, ItemRedefinition, RecursiveFileRequest},
+    diagnostic::{Diagnostic, RecursiveFileRequest},
     table::{
-        Entry, ExternalSubmodule, MemberBuilder, ModuleKind, Naming,
-        TableContext,
+        builder::{Builder, MemberBuilder},
+        ExternalSubmodule, ModuleKind,
     },
 };
 
-impl TableContext {
+impl Builder {
     #[allow(clippy::manual_async_fn)]
-    fn handle_module_member<'x>(
+    fn handle_module_members<'x>(
         self: &'x Arc<Self>,
         module_syntax: &'x pernixc_syntax::item::module::Module,
         member_builder: &'x mut MemberBuilder,
     ) -> impl std::future::Future<Output = Option<JoinHandle<()>>> + Send + 'x
     {
         async move {
-            self.handle_module_member_internal(module_syntax, member_builder)
+            self.handle_module_members_internal(module_syntax, member_builder)
                 .await
         }
     }
 
     #[allow(clippy::too_many_lines)]
-    async fn handle_module_member_internal(
+    async fn handle_module_members_internal(
         self: &Arc<Self>,
         module_syntax: &pernixc_syntax::item::module::Module,
         member_builder: &mut MemberBuilder,
@@ -43,31 +42,19 @@ impl TableContext {
 
         let access_modifier = module_syntax.access_modifier();
         let next_submodule_qualified_name = member_builder
-            .symbol_qualified_name
-            .iter()
-            .cloned()
-            .chain(std::iter::once(identifier.kind.0.clone()))
-            .collect::<Arc<[_]>>();
+            .extend_qualified_name_sequence(identifier.kind.0.clone());
 
-        let accessibility = match access_modifier {
-            Some(pernixc_syntax::AccessModifier::Private(_)) => {
-                Accessibility::Scoped(member_builder.symbol_id)
-            }
-            Some(pernixc_syntax::AccessModifier::Internal(_)) => {
-                Accessibility::Scoped(
-                    self.engine.get_target_root_module_id(self.target_id).await,
-                )
-            }
-            Some(pernixc_syntax::AccessModifier::Public(_)) | None => {
-                Accessibility::Public
-            }
-        };
-
+        let accessibility = self
+            .create_accessibility(
+                member_builder.current_symbol_id(),
+                access_modifier.as_ref(),
+            )
+            .await;
         let span = identifier.span;
 
         if let Some(member) = module_syntax.inline_body() {
             let next_submodule_id =
-                member_builder.add_member(identifier, &self.engine).await;
+                member_builder.add_member(identifier, self.engine()).await;
 
             Some(
                 self.create_module(member.content(), ModuleKind::Submodule {
@@ -80,7 +67,7 @@ impl TableContext {
             )
         } else {
             let invocation_arguments =
-                self.engine.get_invocation_arguments(self.target_id).await;
+                self.engine().get_invocation_arguments(self.target_id()).await;
 
             let mut load_path = invocation_arguments
                 .command
@@ -99,7 +86,7 @@ impl TableContext {
 
             load_path.set_extension("pnx");
 
-            if self.is_root
+            if self.is_root()
                 && invocation_arguments
                     .command
                     .input()
@@ -111,7 +98,7 @@ impl TableContext {
                     == identifier.kind.0.as_str()
             {
                 // this is the recursive file loading, so we skip it
-                self.storage.receive(Diagnostic::RecursiveFileRequest(
+                self.add_diagnostic(Diagnostic::RecursiveFileRequest(
                     RecursiveFileRequest {
                         submodule_span: identifier.span,
                         path: load_path,
@@ -120,22 +107,11 @@ impl TableContext {
                 return None;
             }
 
-            let existing_member_id = member_builder
-                .member_ids_by_name
-                .get(&identifier.kind.0)
-                .copied();
-
-            if let Some(existing_member_id) = existing_member_id {
-                member_builder.redefinition_errors.insert(ItemRedefinition {
-                    existing_id: self.target_id.make_global(existing_member_id),
-                    redefinition_span: identifier.span,
-                    in_id: self.target_id.make_global(member_builder.symbol_id),
-                });
-            } else {
-                let id =
-                    member_builder.add_member(identifier, &self.engine).await;
-
-                self.external_submodules.insert(
+            if let Some(id) = member_builder
+                .add_member_no_unnamed(identifier, self.engine())
+                .await
+            {
+                self.insert_external_submodule(
                     id,
                     Arc::new(ExternalSubmodule {
                         path: Arc::from(load_path),
@@ -152,7 +128,7 @@ impl TableContext {
     }
 
     #[allow(clippy::needless_pass_by_value, clippy::too_many_lines)]
-    pub(super) async fn handle_module_content(
+    async fn handle_module_content(
         self: &Arc<Self>,
         module_content: pernixc_syntax::item::module::Content,
         module_member_builder: &mut MemberBuilder,
@@ -163,268 +139,352 @@ impl TableContext {
             for item in
                 module_content.members().filter_map(|x| x.into_line().ok())
             {
-                let entry = match item {
-                    ModuleMemberSyn::Module(module) => {
-                        // custom handling for the module member
-                        if let Some(handle) = self
-                            .handle_module_member(
-                                &module,
-                                module_member_builder,
-                            )
-                            .await
-                        {
-                            tasks.push(handle);
-                        }
-
-                        continue;
-                    }
-
-                    ModuleMemberSyn::Trait(trait_syntax) => {
-                        // custom handling for the trait member
-                        if let Some(handle) = self
-                            .handle_trait_member(
-                                &trait_syntax,
-                                module_member_builder,
-                            )
-                            .await
-                        {
-                            tasks.push(handle);
-                        }
-
-                        continue;
-                    }
-
-                    ModuleMemberSyn::Function(function_syntax) => {
-                        let Some(identifier) = function_syntax
-                            .signature()
-                            .and_then(|x| x.identifier())
-                        else {
-                            continue;
-                        };
-
-                        Entry::builder()
-                            .kind(Kind::Function)
-                            .naming(Naming::Identifier(identifier.clone()))
-                            .accessibility(function_syntax.access_modifier())
-                            .generic_parameters_syntax(
-                                function_syntax
-                                    .signature()
-                                    .and_then(|x| x.generic_parameters()),
-                            )
-                            .where_clause_syntax(
-                                function_syntax
-                                    .body()
-                                    .and_then(|x| x.where_clause())
-                                    .and_then(|x| x.predicates()),
-                            )
-                            .function_signature_syntax((
-                                function_syntax
-                                    .signature()
-                                    .and_then(|x| x.parameters()),
-                                function_syntax
-                                    .signature()
-                                    .and_then(|x| x.return_type()),
-                            ))
-                            .function_body_syntax(
-                                function_syntax
-                                    .body()
-                                    .and_then(|x| x.members()),
-                            )
-                            .function_effect_annotation_syntax(
-                                function_syntax
-                                    .signature()
-                                    .and_then(|x| x.effect_annotation()),
-                            )
-                            .function_unsafe_keyword(
-                                function_syntax
-                                    .signature()
-                                    .and_then(|x| x.unsafe_keyword()),
-                            )
-                            .build()
-                    }
-
-                    ModuleMemberSyn::Type(type_syntax) => {
-                        let Some(identifier) = type_syntax
-                            .signature()
-                            .and_then(|x| x.identifier())
-                        else {
-                            continue;
-                        };
-
-                        Entry::builder()
-                            .kind(Kind::Type)
-                            .naming(Naming::Identifier(identifier.clone()))
-                            .accessibility(type_syntax.access_modifier())
-                            .generic_parameters_syntax(
-                                type_syntax
-                                    .signature()
-                                    .and_then(|x| x.generic_parameters()),
-                            )
-                            .where_clause_syntax(
-                                type_syntax
-                                    .body()
-                                    .and_then(|x| x.trailing_where_clause())
-                                    .and_then(|x| x.where_clause())
-                                    .and_then(|x| x.predicates()),
-                            )
-                            .type_alias_syntax(
-                                type_syntax.body().and_then(|x| x.r#type()),
-                            )
-                            .build()
-                    }
-
-                    ModuleMemberSyn::Constant(constant_syntax) => {
-                        let Some(identifier) = constant_syntax
-                            .signature()
-                            .and_then(|x| x.identifier())
-                        else {
-                            continue;
-                        };
-
-                        Entry::builder()
-                            .kind(Kind::Constant)
-                            .naming(Naming::Identifier(identifier.clone()))
-                            .accessibility(constant_syntax.access_modifier())
-                            .generic_parameters_syntax(
-                                constant_syntax
-                                    .signature()
-                                    .and_then(|x| x.generic_parameters()),
-                            )
-                            .where_clause_syntax(
-                                constant_syntax
-                                    .body()
-                                    .and_then(|x| x.trailing_where_clause())
-                                    .and_then(|x| x.where_clause())
-                                    .and_then(|x| x.predicates()),
-                            )
-                            .constant_type_annotation_syntax(
-                                constant_syntax
-                                    .signature()
-                                    .and_then(|x| x.r#type()),
-                            )
-                            .constant_expression_syntax(
-                                constant_syntax
-                                    .body()
-                                    .and_then(|x| x.expression()),
-                            )
-                            .build()
-                    }
-
-                    ModuleMemberSyn::Struct(struct_syntax) => {
-                        let Some(identifier) = struct_syntax
-                            .signature()
-                            .and_then(|x| x.identifier())
-                        else {
-                            continue;
-                        };
-
-                        Entry::builder()
-                            .kind(Kind::Struct)
-                            .naming(Naming::Identifier(identifier.clone()))
-                            .accessibility(struct_syntax.access_modifier())
-                            .generic_parameters_syntax(
-                                struct_syntax
-                                    .signature()
-                                    .and_then(|x| x.generic_parameters()),
-                            )
-                            .where_clause_syntax(
-                                struct_syntax
-                                    .body()
-                                    .and_then(|x| x.where_clause())
-                                    .and_then(|x| x.predicates()),
-                            )
-                            .fields_syntax(struct_syntax.body())
-                            .build()
-                    }
-
-                    ModuleMemberSyn::Enum(enum_syntax) => {
-                        // custom handling for the enum member
-                        if let Some(handle) = self
-                            .handle_enum_member(
-                                &enum_syntax,
-                                module_member_builder,
-                            )
-                            .await
-                        {
-                            tasks.push(handle);
-                        }
-
-                        continue;
-                    }
-
-                    ModuleMemberSyn::Marker(marker_syntax) => {
-                        let Some(identifier) = marker_syntax
-                            .signature()
-                            .and_then(|x| x.identifier())
-                        else {
-                            continue;
-                        };
-
-                        Entry::builder()
-                            .kind(Kind::Marker)
-                            .naming(Naming::Identifier(identifier.clone()))
-                            .accessibility(marker_syntax.access_modifier())
-                            .generic_parameters_syntax(
-                                marker_syntax
-                                    .signature()
-                                    .and_then(|x| x.generic_parameters()),
-                            )
-                            .where_clause_syntax(
-                                marker_syntax
-                                    .trailing_where_clause()
-                                    .and_then(|x| x.where_clause())
-                                    .and_then(|x| x.predicates()),
-                            )
-                            .build()
-                    }
-
-                    ModuleMemberSyn::Import(import) => {
-                        // collect the import syntax for later processing
-                        imports.push(import);
-                        continue;
-                    }
-
-                    ModuleMemberSyn::Implements(impls) => {
-                        // custom handling for the implements member
-                        self.handle_implements(impls, module_member_builder)
-                            .await;
-
-                        continue;
-                    }
-
-                    ModuleMemberSyn::Extern(ext) => {
-                        // custom handling for the extern member
-                        self.handle_extern(&ext, module_member_builder).await;
-
-                        continue;
-                    }
-
-                    ModuleMemberSyn::Effect(eff) => {
-                        if let Some(handle) = self
-                            .handle_effect_member(&eff, module_member_builder)
-                            .await
-                        {
-                            tasks.push(handle);
-                        }
-
-                        continue;
-                    }
+                let Some(handle) = self
+                    .handle_module_member(item, module_member_builder, imports)
+                    .await
+                else {
+                    continue;
                 };
 
-                let member_id = module_member_builder
-                    .add_member(
-                        entry.naming.as_identifier().unwrap().clone(),
-                        &self.engine,
-                    )
-                    .await;
-
-                self.add_symbol_entry(
-                    member_id,
-                    module_member_builder.symbol_id,
-                    entry,
-                )
-                .await;
+                tasks.push(handle);
             }
         });
+    }
+
+    async fn handle_module_member(
+        self: &Arc<Self>,
+        member: pernixc_syntax::item::module::Member,
+        module_member_builder: &mut MemberBuilder,
+        imports: &mut Vec<pernixc_syntax::item::module::Import>,
+    ) -> Option<JoinHandle<()>> {
+        match member {
+            ModuleMemberSyn::Module(module) => {
+                self.handle_module_members(&module, module_member_builder).await
+            }
+
+            ModuleMemberSyn::Trait(trait_syntax) => {
+                self.handle_trait_member(&trait_syntax, module_member_builder)
+                    .await
+            }
+
+            ModuleMemberSyn::Function(function_syntax) => {
+                let Some(identifier) =
+                    function_syntax.signature().and_then(|x| x.identifier())
+                else {
+                    return None;
+                };
+
+                let id = module_member_builder
+                    .add_member(identifier, self.engine())
+                    .await;
+
+                self.insert_kind(id, Kind::Function);
+                self.insert_name_identifier(id, &identifier);
+                self.insert_accessibility_by_access_modifier(
+                    id,
+                    module_member_builder.current_symbol_id(),
+                    function_syntax.access_modifier().as_ref(),
+                );
+                self.insert_generic_parameters_syntax(
+                    id,
+                    function_syntax
+                        .signature()
+                        .and_then(|x| x.generic_parameters()),
+                );
+                self.insert_where_clause_syntax(
+                    id,
+                    function_syntax
+                        .body()
+                        .and_then(|x| x.where_clause())
+                        .and_then(|x| x.predicates()),
+                );
+                self.insert_function_signature_syntax(
+                    id,
+                    function_syntax.signature().and_then(|x| x.parameters()),
+                    function_syntax.signature().and_then(|x| x.return_type()),
+                );
+                self.insert_function_body_syntax(
+                    id,
+                    function_syntax.body().and_then(|x| x.members()),
+                );
+                self.insert_function_effect_annotation_syntax(
+                    id,
+                    function_syntax
+                        .signature()
+                        .and_then(|x| x.effect_annotation()),
+                );
+                self.insert_function_unsafe_keyword(
+                    id,
+                    function_syntax
+                        .signature()
+                        .and_then(|x| x.unsafe_keyword()),
+                );
+
+                None
+            }
+
+            ModuleMemberSyn::Type(type_syntax) => {
+                let Some(identifier) =
+                    type_syntax.signature().and_then(|x| x.identifier())
+                else {
+                    return None;
+                };
+
+                let id = module_member_builder
+                    .add_member(identifier, self.engine())
+                    .await;
+
+                self.insert_kind(id, Kind::Type);
+                self.insert_name_identifier(id, &identifier);
+                self.insert_accessibility_by_access_modifier(
+                    id,
+                    module_member_builder.current_symbol_id(),
+                    type_syntax.access_modifier().as_ref(),
+                );
+                self.insert_generic_parameters_syntax(
+                    id,
+                    type_syntax
+                        .signature()
+                        .and_then(|x| x.generic_parameters()),
+                );
+                self.insert_where_clause_syntax(
+                    id,
+                    type_syntax
+                        .body()
+                        .and_then(|x| x.trailing_where_clause())
+                        .and_then(|x| x.where_clause())
+                        .and_then(|x| x.predicates()),
+                );
+                self.insert_type_alias_syntax(
+                    id,
+                    type_syntax.body().and_then(|x| x.r#type()),
+                );
+
+                None
+            }
+
+            ModuleMemberSyn::Constant(constant_syntax) => {
+                let Some(identifier) =
+                    constant_syntax.signature().and_then(|x| x.identifier())
+                else {
+                    return None;
+                };
+
+                let id = module_member_builder
+                    .add_member(identifier, self.engine())
+                    .await;
+
+                self.insert_kind(id, Kind::Constant);
+                self.insert_name_identifier(id, &identifier);
+                self.insert_accessibility_by_access_modifier(
+                    id,
+                    module_member_builder.current_symbol_id(),
+                    constant_syntax.access_modifier().as_ref(),
+                );
+                self.insert_generic_parameters_syntax(
+                    id,
+                    constant_syntax
+                        .signature()
+                        .and_then(|x| x.generic_parameters()),
+                );
+                self.insert_where_clause_syntax(
+                    id,
+                    constant_syntax
+                        .body()
+                        .and_then(|x| x.trailing_where_clause())
+                        .and_then(|x| x.where_clause())
+                        .and_then(|x| x.predicates()),
+                );
+                self.insert_constant_type_annotation_syntax(
+                    id,
+                    constant_syntax.signature().and_then(|x| x.r#type()),
+                );
+                self.insert_constant_expression_syntax(
+                    id,
+                    constant_syntax.body().and_then(|x| x.expression()),
+                );
+
+                None
+            }
+
+            ModuleMemberSyn::Struct(struct_syntax) => {
+                let Some(identifier) =
+                    struct_syntax.signature().and_then(|x| x.identifier())
+                else {
+                    return None;
+                };
+
+                let id = module_member_builder
+                    .add_member(identifier, self.engine())
+                    .await;
+
+                self.insert_kind(id, Kind::Struct);
+                self.insert_name_identifier(id, &identifier);
+                self.insert_accessibility_by_access_modifier(
+                    id,
+                    module_member_builder.current_symbol_id(),
+                    struct_syntax.access_modifier().as_ref(),
+                );
+                self.insert_generic_parameters_syntax(
+                    id,
+                    struct_syntax
+                        .signature()
+                        .and_then(|x| x.generic_parameters()),
+                );
+                self.insert_where_clause_syntax(
+                    id,
+                    struct_syntax
+                        .body()
+                        .and_then(|x| x.where_clause())
+                        .and_then(|x| x.predicates()),
+                );
+                self.insert_struct_field_syntax(id, struct_syntax.body());
+
+                None
+            }
+
+            ModuleMemberSyn::Enum(enum_syntax) => {
+                self.handle_enum_member(&enum_syntax, module_member_builder)
+                    .await
+            }
+
+            ModuleMemberSyn::Marker(marker_syntax) => {
+                let Some(identifier) =
+                    marker_syntax.signature().and_then(|x| x.identifier())
+                else {
+                    return None;
+                };
+
+                let id = module_member_builder
+                    .add_member(identifier, self.engine())
+                    .await;
+
+                self.insert_kind(id, Kind::Marker);
+                self.insert_name_identifier(id, &identifier);
+                self.insert_accessibility_by_access_modifier(
+                    id,
+                    module_member_builder.current_symbol_id(),
+                    marker_syntax.access_modifier().as_ref(),
+                );
+                self.insert_generic_parameters_syntax(
+                    id,
+                    marker_syntax
+                        .signature()
+                        .and_then(|x| x.generic_parameters()),
+                );
+                self.insert_where_clause_syntax(
+                    id,
+                    marker_syntax
+                        .trailing_where_clause()
+                        .and_then(|x| x.where_clause())
+                        .and_then(|x| x.predicates()),
+                );
+
+                None
+            }
+
+            ModuleMemberSyn::Import(import) => {
+                // collect the import syntax for later processing
+                imports.push(import);
+
+                None
+            }
+
+            ModuleMemberSyn::Implements(impls) => {
+                // custom handling for the implements member
+                self.handle_implements(impls, module_member_builder).await;
+
+                None
+            }
+
+            ModuleMemberSyn::Extern(ext) => {
+                // custom handling for the extern member
+                self.handle_extern(&ext, module_member_builder).await;
+
+                None
+            }
+
+            ModuleMemberSyn::Effect(eff) => {
+                self.handle_effect_member(&eff, module_member_builder).await
+            }
+        }
+    }
+
+    /// Creates a new module symbol and populates the symbol table with its
+    /// members.
+    pub async fn create_module(
+        self: &Arc<Self>,
+        module_content: Option<pernixc_syntax::item::module::Content>,
+        module_kind: ModuleKind,
+    ) -> JoinHandle<()> {
+        // extract the information about the module
+        let (accessibility, current_module_id, module_qualified_name, span) =
+            match module_kind {
+                ModuleKind::Root => {
+                    let invocation_arguments = self
+                        .engine()
+                        .get_invocation_arguments(self.target_id())
+                        .await;
+
+                    let target_name =
+                        invocation_arguments.command.input().target_name();
+
+                    let current_module_id = self
+                        .engine()
+                        .get_target_root_module_id(self.target_id())
+                        .await;
+
+                    let module_qualified_name = Arc::from([target_name]);
+
+                    (
+                        Accessibility::Public,
+                        current_module_id,
+                        module_qualified_name,
+                        None,
+                    )
+                }
+                ModuleKind::Submodule {
+                    submodule_id,
+                    submodule_qualified_name,
+                    accessibility,
+                    span,
+                } => (
+                    accessibility,
+                    submodule_id,
+                    submodule_qualified_name,
+                    Some(span),
+                ),
+            };
+
+        let builder = self.clone();
+
+        tokio::spawn(async move {
+            let mut member_builder = MemberBuilder::new(
+                current_module_id,
+                module_qualified_name,
+                builder.target_id(),
+            );
+            let mut imports = Vec::new();
+
+            if let Some(module_content) = module_content {
+                builder
+                    .handle_module_content(
+                        module_content,
+                        &mut member_builder,
+                        &mut imports,
+                    )
+                    .await;
+            }
+
+            builder.insert_imports(current_module_id, imports.into());
+            builder.insert_span(current_module_id, span);
+            builder.insert_accessibility(current_module_id, accessibility);
+            builder.insert_name(
+                current_module_id,
+                member_builder.last_name().clone(),
+            );
+            builder.insert_kind(current_module_id, Kind::Module);
+            builder.insert_member(current_module_id, member_builder);
+        })
     }
 }
