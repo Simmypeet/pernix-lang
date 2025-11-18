@@ -11,7 +11,6 @@ pernixc_source_file = { path = "../../base/source_file" }
 pernixc_stable_hash = { path = "../../base/stable_hash" }
 pernixc_stable_type_id = { path = "../../base/stable_type_id" }
 pernixc_serialize = { path = "../../base/serialize" }
-pernixc_extend = { path = "../../base/extend" }
 pernixc_arena = { path = "../../base/arena" }
 pernixc_hash = { path = "../../base/hash" }
 pernixc_query = { path = "../../base/query" }

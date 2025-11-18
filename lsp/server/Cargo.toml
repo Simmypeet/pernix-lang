@@ -12,11 +12,8 @@ log = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 tower-lsp = { workspace = true }
-parking_lot = { workspace = true }
 getset = { workspace = true }
-derive_more = { workspace = true }
 thiserror = { workspace = true }
-by_address = { workspace = true }
 serde = { workspace = true }
 
 pernixc_source_file = { path = "../../compiler/base/source_file" }
@@ -24,12 +21,10 @@ pernixc_diagnostic = { path = "../../compiler/base/diagnostic" }
 pernixc_lexical = { path = "../../compiler/syntax/lexical" }
 pernixc_target = { path = "../../compiler/base/target" }
 pernixc_query = { path = "../../compiler/base/query" }
-pernixc_corelib = { path = "../../compiler/semantic/corelib" }
-pernixc_symbol_impl = { path = "../../compiler/semantic/symbol_impl" }
-pernixc_semantic_element_impl = { path = "../../compiler/semantic/semantic_element_impl" }
-pernixc_register = { path = "../../compiler/base/register" }
 pernixc_extend = { path = "../../compiler/base/extend" }
-
+pernixc_check = { path = "../../compiler/semantic/check" }
+pernixc_corelib = { path = "../../compiler/semantic/corelib" }
+pernixc_register = { path = "../../compiler/base/register" }
 
 [lints]
 workspace = true

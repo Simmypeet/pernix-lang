@@ -12,7 +12,6 @@ pernixc_query = { path = "../../base/query" }
 pernixc_target = { path = "../../base/target" }
 pernixc_stable_hash = { path = "../../base/stable_hash" }
 pernixc_serialize = { path = "../../base/serialize" }
-pernixc_tokio = { path = "../../base/tokio" }
 pernixc_symbol_impl = { path = "../symbol_impl" }
 pernixc_semantic_element_impl = { path = "../semantic_element_impl" }
 pernixc_ir_impl = { path = "../ir_impl" }

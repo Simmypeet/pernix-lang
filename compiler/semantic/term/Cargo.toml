@@ -33,7 +33,6 @@ thiserror = { workspace = true }
 derive-new = { workspace = true }
 proptest = { workspace = true, optional = true }
 flexstr = { workspace = true }
-trait-variant = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
