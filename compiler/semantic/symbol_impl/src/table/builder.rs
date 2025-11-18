@@ -480,6 +480,25 @@ impl Builder {
         assert!(self.fields_syntaxes.insert(id, fields).is_none());
     }
 
+    pub fn insert_variant_declaration_order(
+        &self,
+        id: pernixc_symbol::ID,
+        order: usize,
+    ) {
+        assert!(self.variant_declaration_orders.insert(id, order).is_none());
+    }
+
+    pub fn insert_variant_associated_type_syntax(
+        &self,
+        id: pernixc_symbol::ID,
+        associated_type: Option<pernixc_syntax::r#type::Type>,
+    ) {
+        assert!(self
+            .variant_associated_type_syntaxes
+            .insert(id, associated_type)
+            .is_none());
+    }
+
     /// Inserts imports into the builder.
     pub fn insert_imports(
         &self,
