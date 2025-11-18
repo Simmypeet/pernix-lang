@@ -60,7 +60,8 @@ impl Builder {
                 id,
                 module_member_builder.current_symbol_id(),
                 function_syntax.access_modifier().as_ref(),
-            );
+            )
+            .await;
             self.insert_generic_parameters_syntax(
                 id,
                 function_syntax
@@ -83,7 +84,7 @@ impl Builder {
                 id,
                 function_syntax.signature().and_then(|x| x.effect_annotation()),
             );
-            self.insert_function_linkage(id, linkage.clone());
+            self.insert_function_linkage(id, linkage);
         }
     }
 }

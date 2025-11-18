@@ -65,11 +65,13 @@ impl Builder {
 
                         builder.insert_kind(id, Kind::TraitType);
                         builder.insert_name_identifier(id, &identifier);
-                        builder.insert_accessibility_by_access_modifier(
-                            id,
-                            parent_module_id,
-                            member.access_modifier().as_ref(),
-                        );
+                        builder
+                            .insert_accessibility_by_access_modifier(
+                                id,
+                                parent_module_id,
+                                member.access_modifier().as_ref(),
+                            )
+                            .await;
                         builder.insert_generic_parameters_syntax(
                             id,
                             member
@@ -98,11 +100,13 @@ impl Builder {
 
                         builder.insert_kind(id, Kind::TraitFunction);
                         builder.insert_name_identifier(id, &identifier);
-                        builder.insert_accessibility_by_access_modifier(
-                            id,
-                            parent_module_id,
-                            member.access_modifier().as_ref(),
-                        );
+                        builder
+                            .insert_accessibility_by_access_modifier(
+                                id,
+                                parent_module_id,
+                                member.access_modifier().as_ref(),
+                            )
+                            .await;
                         builder.insert_generic_parameters_syntax(
                             id,
                             member
@@ -146,11 +150,13 @@ impl Builder {
 
                         builder.insert_kind(id, Kind::TraitConstant);
                         builder.insert_name_identifier(id, &identifier);
-                        builder.insert_accessibility_by_access_modifier(
-                            id,
-                            parent_module_id,
-                            member.access_modifier().as_ref(),
-                        );
+                        builder
+                            .insert_accessibility_by_access_modifier(
+                                id,
+                                parent_module_id,
+                                member.access_modifier().as_ref(),
+                            )
+                            .await;
                         builder.insert_generic_parameters_syntax(
                             id,
                             member
@@ -177,11 +183,13 @@ impl Builder {
             builder
                 .insert_generic_parameters_syntax(trait_id, generic_parameters);
             builder.insert_where_clause_syntax(trait_id, where_clause);
-            builder.insert_accessibility_by_access_modifier(
-                trait_id,
-                parent_module_id,
-                access_modifier.as_ref(),
-            );
+            builder
+                .insert_accessibility_by_access_modifier(
+                    trait_id,
+                    parent_module_id,
+                    access_modifier.as_ref(),
+                )
+                .await;
             builder.insert_member_from_builder(trait_id, trait_member_builder);
         }))
     }

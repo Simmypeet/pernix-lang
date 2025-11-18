@@ -1,7 +1,5 @@
-use std::{collections::hash_map, mem, sync::Arc};
+use std::{collections::hash_map, sync::Arc};
 
-use bon::Builder;
-use enum_as_inner::EnumAsInner;
 use flexstr::SharedStr;
 use pernixc_handler::Storage;
 use pernixc_hash::{DashMap, HashMap, HashSet};
@@ -88,69 +86,6 @@ pub struct Builder {
     is_root: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, EnumAsInner)]
-pub enum Naming {
-    Identifier(pernixc_syntax::Identifier),
-    Implements(pernixc_syntax::QualifiedIdentifier),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Builder)]
-#[allow(clippy::option_option)]
-pub struct Entry {
-    pub naming: Naming,
-    pub kind: Kind,
-
-    pub member: Option<Arc<Member>>,
-
-    pub accessibility: Option<Option<pernixc_syntax::AccessModifier>>,
-
-    pub generic_parameters_syntax: Option<
-        Option<pernixc_syntax::item::generic_parameters::GenericParameters>,
-    >,
-
-    pub where_clause_syntax:
-        Option<Option<pernixc_syntax::item::where_clause::Predicates>>,
-
-    pub type_alias_syntax: Option<Option<pernixc_syntax::r#type::Type>>,
-
-    pub constant_type_annotation_syntax:
-        Option<Option<pernixc_syntax::r#type::Type>>,
-
-    pub constant_expression_syntax:
-        Option<Option<pernixc_syntax::expression::Expression>>,
-
-    pub function_signature_syntax: Option<(
-        Option<pernixc_syntax::item::function::Parameters>,
-        Option<pernixc_syntax::item::function::ReturnType>,
-    )>,
-
-    pub fields_syntax: Option<
-        Option<
-            pernixc_syntax::item::Body<pernixc_syntax::item::r#struct::Field>,
-        >,
-    >,
-
-    pub variant_associated_type_syntax:
-        Option<Option<pernixc_syntax::r#type::Type>>,
-
-    pub variant_declaration_order: Option<usize>,
-
-    pub function_body_syntax: Option<
-        Option<
-            pernixc_syntax::item::Members<pernixc_syntax::statement::Statement>,
-        >,
-    >,
-
-    pub final_keyword: Option<Option<pernixc_syntax::Keyword>>,
-
-    pub function_effect_annotation_syntax:
-        Option<Option<pernixc_syntax::item::function::EffectAnnotation>>,
-
-    pub function_unsafe_keyword: Option<Option<pernixc_syntax::Keyword>>,
-
-    pub function_linkage: Option<linkage::Linkage>,
-}
-
 impl Builder {
     /// Creates a new [`Builder`].
     pub fn new(
@@ -196,11 +131,11 @@ impl Builder {
 
     /// Retrieves the tracked engine.
     #[must_use]
-    pub fn engine(&self) -> &TrackedEngine { &self.engine }
+    pub const fn engine(&self) -> &TrackedEngine { &self.engine }
 
     /// Retrieves the target ID.
     #[must_use]
-    pub fn target_id(&self) -> TargetID { self.target_id }
+    pub const fn target_id(&self) -> TargetID { self.target_id }
 
     /// Finiailizes the builder into an immutable [`super::Table`].
     #[must_use]
@@ -296,7 +231,7 @@ impl Builder {
 
     /// Determines whether the table being built is defined at the root level.
     #[must_use]
-    pub fn is_root(&self) -> bool { self.is_root }
+    pub const fn is_root(&self) -> bool { self.is_root }
 
     /// Creates a name for the implements qualified identifier.
     #[must_use]
@@ -622,7 +557,7 @@ impl MemberBuilder {
 
     /// Retrieves the symbol ID of the member being built.
     #[must_use]
-    pub fn current_symbol_id(&self) -> ID { self.symbol_id }
+    pub const fn current_symbol_id(&self) -> ID { self.symbol_id }
 
     /// Retrieves the last name in the qualified name.
     pub fn last_name(&self) -> &SharedStr {
@@ -730,17 +665,5 @@ impl MemberBuilder {
                 Some(new_member_id)
             }
         }
-    }
-
-    /// Retrieves a member ID by name.
-    #[must_use]
-    pub fn get_member<Q: std::hash::Hash + std::cmp::Eq>(
-        &self,
-        name: &Q,
-    ) -> Option<&ID>
-    where
-        SharedStr: std::borrow::Borrow<Q>,
-    {
-        self.member_ids_by_name.get(name)
     }
 }

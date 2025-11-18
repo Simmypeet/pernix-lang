@@ -70,11 +70,13 @@ impl Builder {
 
             builder.insert_kind(enum_id, Kind::Enum);
             builder.insert_name_identifier(enum_id, &identifier);
-            builder.insert_accessibility_by_access_modifier(
-                enum_id,
-                parent_module_id,
-                access_modifier.as_ref(),
-            );
+            builder
+                .insert_accessibility_by_access_modifier(
+                    enum_id,
+                    parent_module_id,
+                    access_modifier.as_ref(),
+                )
+                .await;
             builder
                 .insert_generic_parameters_syntax(enum_id, generic_parameters);
             builder.insert_where_clause_syntax(enum_id, where_clause);

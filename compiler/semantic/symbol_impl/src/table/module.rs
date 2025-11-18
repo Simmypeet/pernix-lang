@@ -151,6 +151,7 @@ impl Builder {
         });
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn handle_module_member(
         self: &Arc<Self>,
         member: pernixc_syntax::item::module::Member,
@@ -168,11 +169,8 @@ impl Builder {
             }
 
             ModuleMemberSyn::Function(function_syntax) => {
-                let Some(identifier) =
-                    function_syntax.signature().and_then(|x| x.identifier())
-                else {
-                    return None;
-                };
+                let identifier =
+                    function_syntax.signature().and_then(|x| x.identifier())?;
 
                 let id = module_member_builder
                     .add_member(identifier.clone(), self.engine())
@@ -184,7 +182,8 @@ impl Builder {
                     id,
                     module_member_builder.current_symbol_id(),
                     function_syntax.access_modifier().as_ref(),
-                );
+                )
+                .await;
                 self.insert_generic_parameters_syntax(
                     id,
                     function_syntax
@@ -224,11 +223,8 @@ impl Builder {
             }
 
             ModuleMemberSyn::Type(type_syntax) => {
-                let Some(identifier) =
-                    type_syntax.signature().and_then(|x| x.identifier())
-                else {
-                    return None;
-                };
+                let identifier =
+                    type_syntax.signature().and_then(|x| x.identifier())?;
 
                 let id = module_member_builder
                     .add_member(identifier.clone(), self.engine())
@@ -240,7 +236,8 @@ impl Builder {
                     id,
                     module_member_builder.current_symbol_id(),
                     type_syntax.access_modifier().as_ref(),
-                );
+                )
+                .await;
                 self.insert_generic_parameters_syntax(
                     id,
                     type_syntax
@@ -264,11 +261,8 @@ impl Builder {
             }
 
             ModuleMemberSyn::Constant(constant_syntax) => {
-                let Some(identifier) =
-                    constant_syntax.signature().and_then(|x| x.identifier())
-                else {
-                    return None;
-                };
+                let identifier =
+                    constant_syntax.signature().and_then(|x| x.identifier())?;
 
                 let id = module_member_builder
                     .add_member(identifier.clone(), self.engine())
@@ -280,7 +274,8 @@ impl Builder {
                     id,
                     module_member_builder.current_symbol_id(),
                     constant_syntax.access_modifier().as_ref(),
-                );
+                )
+                .await;
                 self.insert_generic_parameters_syntax(
                     id,
                     constant_syntax
@@ -308,11 +303,8 @@ impl Builder {
             }
 
             ModuleMemberSyn::Struct(struct_syntax) => {
-                let Some(identifier) =
-                    struct_syntax.signature().and_then(|x| x.identifier())
-                else {
-                    return None;
-                };
+                let identifier =
+                    struct_syntax.signature().and_then(|x| x.identifier())?;
 
                 let id = module_member_builder
                     .add_member(identifier.clone(), self.engine())
@@ -324,7 +316,8 @@ impl Builder {
                     id,
                     module_member_builder.current_symbol_id(),
                     struct_syntax.access_modifier().as_ref(),
-                );
+                )
+                .await;
                 self.insert_generic_parameters_syntax(
                     id,
                     struct_syntax
@@ -349,11 +342,8 @@ impl Builder {
             }
 
             ModuleMemberSyn::Marker(marker_syntax) => {
-                let Some(identifier) =
-                    marker_syntax.signature().and_then(|x| x.identifier())
-                else {
-                    return None;
-                };
+                let identifier =
+                    marker_syntax.signature().and_then(|x| x.identifier())?;
 
                 let id = module_member_builder
                     .add_member(identifier.clone(), self.engine())
@@ -365,7 +355,8 @@ impl Builder {
                     id,
                     module_member_builder.current_symbol_id(),
                     marker_syntax.access_modifier().as_ref(),
-                );
+                )
+                .await;
                 self.insert_generic_parameters_syntax(
                     id,
                     marker_syntax
@@ -392,9 +383,7 @@ impl Builder {
 
             ModuleMemberSyn::Implements(impls) => {
                 // custom handling for the implements member
-                self.handle_implements(impls, module_member_builder).await;
-
-                None
+                self.handle_implements(impls, module_member_builder).await
             }
 
             ModuleMemberSyn::Extern(ext) => {

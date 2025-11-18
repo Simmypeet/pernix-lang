@@ -14,14 +14,8 @@ impl Builder {
         implements_syntax: pernixc_syntax::item::implements::Implements,
         module_member_builder: &mut MemberBuilder,
     ) -> Option<JoinHandle<()>> {
-        let Some(signature) = implements_syntax.signature() else {
-            return None;
-        };
-
-        let Some(qualified_identifier) = signature.qualified_identifier()
-        else {
-            return None;
-        };
+        let signature = implements_syntax.signature()?;
+        let qualified_identifier = signature.qualified_identifier()?;
 
         let body = implements_syntax.body();
         let qualified_identifier_span = qualified_identifier.span();
@@ -124,7 +118,7 @@ impl Builder {
 
         if let Some(members) = body.members() {
             for member in members.members().filter_map(|x| x.into_line().ok()) {
-                 match member {
+                match member {
                     pernixc_syntax::item::implements::Member::Constant(con) => {
                         let Some(identifier) =
                             con.signature().and_then(|x| x.identifier())
