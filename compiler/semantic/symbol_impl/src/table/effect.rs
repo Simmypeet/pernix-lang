@@ -1,14 +1,11 @@
 use std::sync::Arc;
 
-use pernixc_symbol::{kind::Kind, member::Member};
+use pernixc_symbol::kind::Kind;
 use tokio::task::JoinHandle;
 
-use crate::{
-    diagnostic::Diagnostic,
-    table::{Entry, MemberBuilder, Naming, TableContext},
-};
+use crate::table::builder::{Builder, MemberBuilder};
 
-impl TableContext {
+impl Builder {
     #[allow(clippy::too_many_lines)]
     pub(super) async fn handle_effect_member(
         self: &Arc<Self>,
@@ -19,14 +16,10 @@ impl TableContext {
         let identifier = signature.identifier()?;
 
         let next_submodule_qualified_name = module_member_builder
-            .symbol_qualified_name
-            .iter()
-            .cloned()
-            .chain(std::iter::once(identifier.kind.0.clone()))
-            .collect::<Arc<[_]>>();
+            .extend_qualified_name_sequence(identifier.kind.0.clone());
 
         let effect_id = module_member_builder
-            .add_member(identifier.clone(), &self.engine)
+            .add_member(identifier.clone(), self.engine())
             .await;
 
         let effect_body = effect_syntax.body();
@@ -39,15 +32,15 @@ impl TableContext {
             .and_then(|x| x.where_clause())
             .and_then(|x| x.predicates());
 
-        let parent_module_id = module_member_builder.symbol_id;
+        let parent_module_id = module_member_builder.current_symbol_id();
 
-        let context = self.clone();
+        let builder = self.clone();
 
         Some(tokio::spawn(async move {
             let mut effect_member_builder = MemberBuilder::new(
                 effect_id,
                 next_submodule_qualified_name,
-                context.target_id,
+                builder.target_id(),
             );
 
             // add each of the member to the effect member
@@ -61,57 +54,46 @@ impl TableContext {
                     continue;
                 };
 
-                let entry = Entry::builder()
-                    .kind(Kind::EffectOperation)
-                    .naming(Naming::Identifier(identifier))
-                    .generic_parameters_syntax(member.generic_parameters())
-                    .function_signature_syntax((
-                        member.parameters(),
-                        member.return_type(),
-                    ))
-                    .where_clause_syntax(
-                        member
-                            .trailing_where_clause()
-                            .and_then(|x| x.where_clause())
-                            .and_then(|x| x.predicates()),
-                    )
-                    .build();
-
-                let member_id = effect_member_builder
-                    .add_member(
-                        entry.naming.as_identifier().unwrap().clone(),
-                        &context.engine,
-                    )
+                let operation_id = effect_member_builder
+                    .add_member(identifier.clone(), builder.engine())
                     .await;
 
-                context.add_symbol_entry(member_id, effect_id, entry).await;
+                builder.insert_kind(operation_id, Kind::EffectOperation);
+                builder.insert_name_identifier(operation_id, &identifier);
+                builder.insert_generic_parameters_syntax(
+                    operation_id,
+                    member.generic_parameters(),
+                );
+                builder.insert_function_signature_syntax(
+                    operation_id,
+                    member.parameters(),
+                    member.return_type(),
+                );
+                builder.insert_where_clause_syntax(
+                    operation_id,
+                    member
+                        .trailing_where_clause()
+                        .and_then(|x| x.where_clause())
+                        .and_then(|x| x.predicates()),
+                );
             }
 
-            context
-                .add_symbol_entry(
+            builder.insert_kind(effect_id, Kind::Effect);
+            builder.insert_name_identifier(effect_id, &identifier);
+            builder.insert_generic_parameters_syntax(
+                effect_id,
+                generic_parameters,
+            );
+            builder.insert_where_clause_syntax(effect_id, where_clause);
+            builder
+                .insert_member_from_builder(effect_id, effect_member_builder);
+            builder
+                .insert_accessibility_by_access_modifier(
                     effect_id,
                     parent_module_id,
-                    Entry::builder()
-                        .kind(Kind::Effect)
-                        .naming(Naming::Identifier(identifier))
-                        .accessibility(access_modifier)
-                        .generic_parameters_syntax(generic_parameters)
-                        .where_clause_syntax(where_clause)
-                        .member(Arc::new(Member {
-                            member_ids_by_name: effect_member_builder
-                                .member_ids_by_name,
-                            unnameds: effect_member_builder.unnameds,
-                        }))
-                        .build(),
+                    access_modifier.as_ref(),
                 )
                 .await;
-
-            context.storage.as_vec_mut().extend(
-                effect_member_builder
-                    .redefinition_errors
-                    .into_iter()
-                    .map(Diagnostic::ItemRedefinition),
-            );
         }))
     }
 }
