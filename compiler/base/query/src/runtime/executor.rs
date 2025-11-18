@@ -135,6 +135,16 @@ impl Registry {
             .map(|entry| entry.executor)
     }
 
+    /// Sets whether the executor for the given key type [`K`] should always
+    /// recompute its value when the query's version needs to be verified.
+    pub fn set_always_recompute<K: Key>(&mut self, recompute: bool) {
+        if let Some(entry) =
+            self.executors_by_key_type_id.get_mut(&TypeId::of::<K>())
+        {
+            entry.always_recompute = recompute;
+        }
+    }
+
     pub(crate) fn executor_always_recompute<K: Key>(&self) -> Option<bool> {
         self.executors_by_key_type_id
             .get(&TypeId::of::<K>())
