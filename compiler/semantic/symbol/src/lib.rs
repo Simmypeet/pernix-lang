@@ -245,3 +245,22 @@ pub struct AllAdtIDKey(pub TargetID);
 #[value(Arc<[ID]>)]
 #[extend(method(get_all_implements_ids), no_cyclic)]
 pub struct AllImplementsIDKey(pub TargetID);
+
+/// Retrieves all function having body symbol IDs in the given target.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+    pernixc_query::Key,
+)]
+#[value(Arc<[ID]>)]
+#[extend(method(get_all_function_with_body_ids), no_cyclic)]
+pub struct AllFunctionWithBodyIDKey(pub TargetID);

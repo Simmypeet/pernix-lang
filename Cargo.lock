@@ -1669,6 +1669,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "pernixc_ir_impl"
+version = "0.1.0-beta.2"
+dependencies = [
+ "derive_more",
+ "pernixc_bind",
+ "pernixc_borrow_checker",
+ "pernixc_diagnostic",
+ "pernixc_handler",
+ "pernixc_ir",
+ "pernixc_memory_checker",
+ "pernixc_query",
+ "pernixc_register",
+ "pernixc_serialize",
+ "pernixc_source_file",
+ "pernixc_stable_hash",
+ "pernixc_symbol",
+ "pernixc_target",
+ "pernixc_tokio",
+ "pernixc_type_system",
+]
+
+[[package]]
 name = "pernixc_lexical"
 version = "0.1.0-beta.2"
 dependencies = [
