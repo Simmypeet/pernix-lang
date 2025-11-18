@@ -40,6 +40,7 @@ members = [
     "compiler/semantic/cps",
     "compiler/semantic/memory_checker",
     "compiler/semantic/borrow_checker",
+    "compiler/semantic/check",
 
     "compiler/codegen/llvm",
 

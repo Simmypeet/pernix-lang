@@ -1518,6 +1518,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "pernixc_check"
+version = "0.1.0-beta.2"
+dependencies = [
+ "pernixc_diagnostic",
+ "pernixc_ir_impl",
+ "pernixc_query",
+ "pernixc_register",
+ "pernixc_semantic_element_impl",
+ "pernixc_serialize",
+ "pernixc_stable_hash",
+ "pernixc_symbol_impl",
+ "pernixc_target",
+ "pernixc_tokio",
+ "tokio",
+]
+
+[[package]]
 name = "pernixc_corelib"
 version = "0.1.0-beta.2"
 dependencies = [
@@ -1557,6 +1574,7 @@ dependencies = [
  "indicatif",
  "inkwell",
  "parking_lot 0.12.4",
+ "pernixc_check",
  "pernixc_corelib",
  "pernixc_diagnostic",
  "pernixc_handler",

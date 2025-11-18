@@ -24,6 +24,7 @@ pernixc_syntax = { path = "../syntax/syntax" }
 pernixc_type_system = { path = "../semantic/type_system" }
 pernixc_resolution = { path = "../semantic/resolution" }
 pernixc_symbol_impl = { path = "../semantic/symbol_impl" }
+pernixc_check = { path = "../semantic/check" }
 pernixc_semantic_element_impl = { path = "../semantic/semantic_element_impl" }
 pernixc_register = { path = "../base/register" }
 pernixc_llvm = { path = "../codegen/llvm" }
