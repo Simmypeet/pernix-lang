@@ -8,7 +8,7 @@ use pernixc_source_file::{
     get_source_file_by_id, EditorLocation, GlobalSourceID, SourceFile,
 };
 use pernixc_target::{Arguments, Check, Input, TargetID};
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, RwLockReadGuard};
 use tower_lsp::lsp_types::{DidChangeTextDocumentParams, Url};
 
 use crate::workspace::{self, NewWorkspaceError, Workspace};
@@ -45,6 +45,17 @@ impl executor::Executor<pernixc_source_file::Key> for LoadSourceFileExecutor {
             })
             .map_err(|x| pernixc_source_file::Error(x.to_string().into())))
     }
+}
+
+impl Analyzer {
+    /// Returns a read guard to the engine.
+    pub async fn engine(&self) -> RwLockReadGuard<'_, Arc<Engine>> {
+        self.engine.read().await
+    }
+
+    /// Returns the current target ID.
+    #[must_use]
+    pub const fn current_target_id(&self) -> TargetID { self.current_target_id }
 }
 
 impl Analyzer {
