@@ -3,7 +3,7 @@
 use pernixc_extend::extend;
 use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
 use pernixc_source_file::{
-    calculate_path_id, get_source_file_by_id, SourceFile,
+    calculate_path_id, get_source_file_by_id, GlobalSourceID, SourceFile,
 };
 use pernixc_symbol::{
     member::try_get_members, name::get_qualified_name,
@@ -42,8 +42,9 @@ pub async fn handle_hover(
     );
 
     // get the most specific symbol scope at the byte index
-    let symbol_scope_id =
-        self.get_symbol_scope_at_byte_index(module_id, byte_index).await;
+    let symbol_scope_id = self
+        .get_symbol_scope_at_byte_index(module_id, source_id, byte_index)
+        .await;
 
     Ok(Some(tower_lsp::lsp_types::Hover {
         contents: tower_lsp::lsp_types::HoverContents::Markup(MarkupContent {
@@ -85,6 +86,7 @@ pub fn lsp_position_to_byte_index(
 pub async fn get_symbol_scope_at_byte_index(
     self: &TrackedEngine,
     current_scope_id: Global<pernixc_symbol::ID>,
+    current_souce_file_id: GlobalSourceID,
     byte_index: pernixc_source_file::ByteIndex,
 ) -> Global<pernixc_symbol::ID> {
     let Some(members) = self.try_get_members(current_scope_id).await else {
@@ -104,10 +106,14 @@ pub async fn get_symbol_scope_at_byte_index(
         };
 
         let abs_span = self.to_absolute_span(&span).await;
-        if abs_span.range().contains(&byte_index) {
-            return Box::pin(
-                self.get_symbol_scope_at_byte_index(member, byte_index),
-            )
+        if abs_span.range().contains(&byte_index)
+            && abs_span.source_id == current_souce_file_id
+        {
+            return Box::pin(self.get_symbol_scope_at_byte_index(
+                member,
+                current_souce_file_id,
+                byte_index,
+            ))
             .await;
         }
     }
