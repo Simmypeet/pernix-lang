@@ -4,7 +4,7 @@ use std::ops::Deref;
 
 use pernixc_arena::ID;
 use pernixc_hash::HashMap;
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::runtime::executor::CyclicError;
 use pernixc_semantic_element::return_type::get_return_type;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
@@ -20,7 +20,8 @@ use crate::{
     transform::{
         ConstantTermSource, LifetimeTermSource, Transformer, TypeTermSource,
     },
-    value::{register::Register, Value},
+    value::{register::Register, TypeOf, Value},
+    Values,
 };
 
 /// Specifies how an effectful operation's capability arguments are supplied.
@@ -141,17 +142,26 @@ pub(super) async fn transform_function_call<
     Ok(())
 }
 
-pub(super) async fn type_of_function_call_assignment(
-    function_call: &FunctionCall,
-    engine: &TrackedEngine,
-) -> Result<Type, Error> {
-    let mut return_type = engine
-        .get_return_type(function_call.callable_id)
-        .await?
-        .deref()
-        .clone();
+impl TypeOf<&FunctionCall> for Values {
+    async fn type_of<N: pernixc_type_system::normalizer::Normalizer>(
+        &self,
+        value: &FunctionCall,
+        environment: &crate::value::Environment<'_, N>,
+    ) -> Result<pernixc_type_system::Succeeded<Type>, Error> {
+        let mut return_type = environment
+            .tracked_engine()
+            .get_return_type(value.callable_id)
+            .await?
+            .deref()
+            .clone();
 
-    function_call.instantiation.instantiate(&mut return_type);
+        value.instantiation.instantiate(&mut return_type);
 
-    Ok(return_type)
+        Ok(environment
+            .type_environment
+            .simplify(return_type)
+            .await?
+            .deref()
+            .clone())
+    }
 }

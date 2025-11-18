@@ -1,5 +1,7 @@
 //! Contains the definition of the [`Phi`] register.
 
+use std::ops::Deref;
+
 use pernixc_arena::ID;
 use pernixc_hash::HashMap;
 use pernixc_query::runtime::executor::CyclicError;
@@ -70,8 +72,13 @@ impl TypeOf<&Phi> for Values {
     async fn type_of<N: Normalizer>(
         &self,
         phi: &Phi,
-        _environment: &Environment<'_, N>,
+        environment: &Environment<'_, N>,
     ) -> Result<Succeeded<Type>, Error> {
-        Ok(Succeeded::new(phi.r#type.clone()))
+        Ok(environment
+            .type_environment
+            .simplify(phi.r#type.clone())
+            .await?
+            .deref()
+            .clone())
     }
 }

@@ -1,5 +1,7 @@
 //! Contains the definition of the [`Cast`] register.
 
+use std::ops::Deref;
+
 use pernixc_arena::ID;
 use pernixc_query::runtime::executor::CyclicError;
 use pernixc_serialize::{Deserialize, Serialize};
@@ -64,8 +66,13 @@ impl TypeOf<&Cast> for Values {
     async fn type_of<N: Normalizer>(
         &self,
         cast: &Cast,
-        _environment: &Environment<'_, N>,
+        environment: &Environment<'_, N>,
     ) -> Result<Succeeded<Type>, Error> {
-        Ok(Succeeded::new(cast.r#type.clone()))
+        Ok(environment
+            .type_environment
+            .simplify(cast.r#type.clone())
+            .await?
+            .deref()
+            .clone())
     }
 }

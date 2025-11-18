@@ -1,5 +1,7 @@
 //! Defines the IR structures for representing `do-with` expressions.
 
+use std::ops::Deref;
+
 use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
 use pernixc_hash::HashMap;
@@ -385,8 +387,13 @@ impl TypeOf<&DoWith> for Values {
     async fn type_of<N: Normalizer>(
         &self,
         do_with: &DoWith,
-        _environment: &Environment<'_, N>,
+        environment: &Environment<'_, N>,
     ) -> Result<Succeeded<Type>, Error> {
-        Ok(Succeeded::new(do_with.return_type().clone()))
+        Ok(environment
+            .type_environment
+            .simplify(do_with.return_type().clone())
+            .await?
+            .deref()
+            .clone())
     }
 }

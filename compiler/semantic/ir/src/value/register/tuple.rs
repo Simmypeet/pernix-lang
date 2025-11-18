@@ -1,6 +1,6 @@
 //! Contains the definition of a [`Tuple`] register assignment.
 
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, ops::Deref};
 
 use pernixc_arena::ID;
 use pernixc_query::runtime::executor::CyclicError;
@@ -124,9 +124,14 @@ impl TypeOf<&Tuple> for Values {
             }
         }
 
-        Ok(Succeeded::with_constraints(
-            Type::Tuple(pernixc_term::tuple::Tuple { elements }),
-            constraints,
-        ))
+        let tuple_ty = Type::Tuple(pernixc_term::tuple::Tuple { elements });
+        let mut simplified_ty = environment
+            .type_environment
+            .simplify(tuple_ty)
+            .await?
+            .deref()
+            .clone();
+        simplified_ty.constraints.extend(constraints);
+        Ok(simplified_ty)
     }
 }
