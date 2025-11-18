@@ -184,7 +184,14 @@ pub(super) async fn emit_as_machine_code(
 }
 
 fn linker_command(obj: &Path, out: &Path) -> std::process::Command {
-    let mut cmd = std::process::Command::new("clang");
+    let mut cmd = if cfg!(target_os = "macos") {
+        // on macOS, use the full path to clang to avoid ambiguity with
+        // other clang installations (e.g. from Homebrew)
+        std::process::Command::new("/usr/bin/clang")
+    } else {
+        std::process::Command::new("clang")
+    };
+
     cmd.arg(obj).arg("-o").arg(out);
 
     if cfg!(target_os = "windows") {
