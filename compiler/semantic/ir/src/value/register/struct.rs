@@ -1,5 +1,7 @@
 //! Contains the definition of the [`Struct`] register.
 
+use std::ops::Deref;
+
 use pernixc_arena::ID;
 use pernixc_hash::HashMap;
 use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
@@ -18,8 +20,9 @@ use crate::{
     transform::Transformer,
     value::{
         register::{transform_generic_arguments, Register},
-        Value,
+        TypeOf, Value,
     },
+    Values,
 };
 
 /// Represents a struct value.
@@ -78,9 +81,21 @@ pub(super) async fn transform_struct<
     .await
 }
 
-pub(super) fn type_of_struct_assignment(st: &Struct) -> Type {
-    Type::Symbol(Symbol {
-        id: st.struct_id,
-        generic_arguments: st.generic_arguments.clone(),
-    })
+impl TypeOf<&Struct> for Values {
+    async fn type_of<N: pernixc_type_system::normalizer::Normalizer>(
+        &self,
+        value: &Struct,
+        environment: &crate::value::Environment<'_, N>,
+    ) -> Result<pernixc_type_system::Succeeded<Type>, pernixc_type_system::Error>
+    {
+        Ok(environment
+            .type_environment
+            .simplify(Type::Symbol(Symbol {
+                id: value.struct_id,
+                generic_arguments: value.generic_arguments.clone(),
+            }))
+            .await?
+            .deref()
+            .clone())
+    }
 }

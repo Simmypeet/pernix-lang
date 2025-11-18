@@ -3,7 +3,7 @@
 //! The register is a place where SSA values are stored. The assignment is the
 //! value that is stored in the register.
 
-use std::{borrow::Cow, ops::Deref};
+use std::borrow::Cow;
 
 use enum_as_inner::EnumAsInner;
 use pernixc_arena::ID;
@@ -134,7 +134,7 @@ impl TypeOf<ID<Register>> for Values {
     ) -> Result<Succeeded<Type>, Error> {
         let register = &self.registers[id];
 
-        let ty = match &register.assignment {
+        match &register.assignment {
             Assignment::Tuple(tuple) => {
                 return self.type_of(tuple, environment).await
             }
@@ -148,21 +148,13 @@ impl TypeOf<ID<Register>> for Values {
                 return self.type_of(prefix, environment).await
             }
             Assignment::Struct(st) => {
-                Ok(r#struct::type_of_struct_assignment(st))
+                return self.type_of(st, environment).await
             }
             Assignment::Variant(variant) => {
-                Ok(variant::type_of_variant_assignment(
-                    variant,
-                    environment.tracked_engine(),
-                )
-                .await)
+                return self.type_of(variant, environment).await
             }
             Assignment::FunctionCall(function_call) => {
-                function_call::type_of_function_call_assignment(
-                    function_call,
-                    environment.tracked_engine(),
-                )
-                .await
+                return self.type_of(function_call, environment).await
             }
             Assignment::Binary(binary) => {
                 return self.type_of(binary, environment).await;
@@ -180,9 +172,7 @@ impl TypeOf<ID<Register>> for Values {
                 return self.type_of(variant, environment).await
             }
             Assignment::Do(d) => return self.type_of(d, environment).await,
-        }?;
-
-        Ok(environment.type_environment.simplify(ty).await?.deref().clone())
+        }
     }
 }
 

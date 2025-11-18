@@ -1,5 +1,7 @@
 //! Contains the definition of the [`Array`] register.
 
+use std::ops::Deref;
+
 use pernixc_arena::ID;
 use pernixc_query::runtime::executor::CyclicError;
 use pernixc_serialize::{Deserialize, Serialize};
@@ -74,15 +76,20 @@ impl TypeOf<&Array> for Values {
     async fn type_of<N: Normalizer>(
         &self,
         array: &Array,
-        _environment: &Environment<'_, N>,
+        environment: &Environment<'_, N>,
     ) -> Result<Succeeded<Type>, Error> {
-        Ok(Succeeded::new(Type::Array(pernixc_term::r#type::Array {
-            r#type: Box::new(array.element_type.clone()),
-            length: Constant::Primitive(
-                pernixc_term::constant::Primitive::Usize(
-                    array.elements.len() as u64
+        Ok(environment
+            .type_environment
+            .simplify(Type::Array(pernixc_term::r#type::Array {
+                r#type: Box::new(array.element_type.clone()),
+                length: Constant::Primitive(
+                    pernixc_term::constant::Primitive::Usize(
+                        array.elements.len() as u64,
+                    ),
                 ),
-            ),
-        })))
+            }))
+            .await?
+            .deref()
+            .clone())
     }
 }

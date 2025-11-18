@@ -1,5 +1,7 @@
 //! Contains the definition of the [`Variant`] register.
 
+use std::ops::Deref;
+
 use pernixc_arena::ID;
 use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
@@ -17,8 +19,9 @@ use crate::{
     transform::Transformer,
     value::{
         register::{transform_generic_arguments, Register},
-        Value,
+        TypeOf, Value,
     },
+    Values,
 };
 
 /// Represents a variant value.
@@ -103,4 +106,29 @@ pub(super) async fn type_of_variant_assignment(
         id: Global::new(variant.variant_id.target_id, enum_id),
         generic_arguments: variant.generic_arguments.clone(),
     })
+}
+
+impl TypeOf<&Variant> for Values {
+    async fn type_of<N: pernixc_type_system::normalizer::Normalizer>(
+        &self,
+        value: &Variant,
+        environment: &crate::value::Environment<'_, N>,
+    ) -> Result<pernixc_type_system::Succeeded<Type>, pernixc_type_system::Error>
+    {
+        let enum_id = environment
+            .tracked_engine()
+            .get_parent(value.variant_id)
+            .await
+            .unwrap();
+
+        Ok(environment
+            .type_environment
+            .simplify(Type::Symbol(Symbol {
+                id: value.variant_id.target_id.make_global(enum_id),
+                generic_arguments: value.generic_arguments.clone(),
+            }))
+            .await?
+            .deref()
+            .clone())
+    }
 }
