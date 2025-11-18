@@ -7,15 +7,15 @@ use tower_lsp::{
     lsp_types::{
         DidChangeTextDocumentParams, DidChangeWatchedFilesParams,
         DidOpenTextDocumentParams, DidSaveTextDocumentParams, FileChangeType,
-        InitializeParams, InitializeResult, InitializedParams, MessageType,
-        OneOf, Registration, ServerCapabilities, TextDocumentSyncCapability,
-        TextDocumentSyncKind, Url, WorkspaceFoldersServerCapabilities,
-        WorkspaceServerCapabilities,
+        HoverProviderCapability, InitializeParams, InitializeResult,
+        InitializedParams, MessageType, OneOf, Registration,
+        ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind,
+        Url, WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities,
     },
     Client, LanguageServer,
 };
 
-use crate::analyzer::Analyzer;
+use crate::{analyzer::Analyzer, hover::handle_hover};
 
 /// A diagnostic with its source file uri.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,6 +28,7 @@ pub struct DiagnosticsWithUrl {
 }
 
 pub mod analyzer;
+pub mod hover;
 pub mod workspace;
 
 /// The language server protocal implementation for Pernix.
@@ -76,7 +77,7 @@ impl LanguageServer for Server {
                     ),
                     file_operations: None,
                 }),
-
+                hover_provider: Some(HoverProviderCapability::Simple(true)),
                 semantic_tokens_provider: None,
 
                 ..ServerCapabilities::default()
@@ -211,6 +212,24 @@ impl LanguageServer for Server {
         info!("Did open: {}", params.text_document.uri.path());
 
         analyzer.check(&self.client, None).await;
+    }
+
+    async fn hover(
+        &self,
+        params: tower_lsp::lsp_types::HoverParams,
+    ) -> jsonrpc::Result<Option<tower_lsp::lsp_types::Hover>> {
+        let analyzer = self.analyzer.read().await;
+        let Some(analyzer) = analyzer.as_ref() else {
+            return Ok(None);
+        };
+
+        let engine = analyzer.engine().await;
+        let engine = engine.tracked();
+
+        Ok(engine
+            .handle_hover(analyzer.current_target_id(), params)
+            .await
+            .unwrap_or_default())
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
