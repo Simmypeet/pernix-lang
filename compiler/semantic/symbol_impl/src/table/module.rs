@@ -69,7 +69,8 @@ impl Builder {
                         span,
                     },
                 )
-                .await,
+                .await
+                .0,
             )
         } else {
             let invocation_arguments =
@@ -417,7 +418,7 @@ impl Builder {
         module_content: Option<pernixc_syntax::item::module::Content>,
         scope_span: Option<RelativeSpan>,
         module_kind: ModuleKind,
-    ) -> JoinHandle<()> {
+    ) -> (JoinHandle<()>, pernixc_symbol::ID) {
         // extract the information about the module
         let (accessibility, current_module_id, module_qualified_name, span) =
             match module_kind {
@@ -459,35 +460,40 @@ impl Builder {
 
         let builder = self.clone();
 
-        tokio::spawn(async move {
-            let mut member_builder = MemberBuilder::new(
-                current_module_id,
-                module_qualified_name,
-                builder.target_id(),
-            );
-            let mut imports = Vec::new();
+        (
+            tokio::spawn(async move {
+                let mut member_builder = MemberBuilder::new(
+                    current_module_id,
+                    module_qualified_name,
+                    builder.target_id(),
+                );
+                let mut imports = Vec::new();
 
-            if let Some(module_content) = module_content {
-                builder
-                    .handle_module_content(
-                        module_content,
-                        &mut member_builder,
-                        &mut imports,
-                    )
-                    .await;
-            }
+                if let Some(module_content) = module_content {
+                    builder
+                        .handle_module_content(
+                            module_content,
+                            &mut member_builder,
+                            &mut imports,
+                        )
+                        .await;
+                }
 
-            builder.insert_imports(current_module_id, imports.into());
-            builder.insert_span(current_module_id, span);
-            builder.insert_maybe_scope_span(current_module_id, scope_span);
-            builder.insert_accessibility(current_module_id, accessibility);
-            builder.insert_name(
-                current_module_id,
-                member_builder.last_name().clone(),
-            );
-            builder.insert_kind(current_module_id, Kind::Module);
-            builder
-                .insert_member_from_builder(current_module_id, member_builder);
-        })
+                builder.insert_imports(current_module_id, imports.into());
+                builder.insert_span(current_module_id, span);
+                builder.insert_maybe_scope_span(current_module_id, scope_span);
+                builder.insert_accessibility(current_module_id, accessibility);
+                builder.insert_name(
+                    current_module_id,
+                    member_builder.last_name().clone(),
+                );
+                builder.insert_kind(current_module_id, Kind::Module);
+                builder.insert_member_from_builder(
+                    current_module_id,
+                    member_builder,
+                );
+            }),
+            current_module_id,
+        )
     }
 }

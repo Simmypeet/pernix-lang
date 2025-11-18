@@ -22,6 +22,7 @@ pub mod member;
 pub mod name;
 pub mod parent;
 pub mod scope_span;
+pub mod source_file_module;
 pub mod source_map;
 pub mod span;
 pub mod syntax;

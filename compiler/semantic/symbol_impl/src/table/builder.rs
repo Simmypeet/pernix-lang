@@ -142,7 +142,7 @@ impl Builder {
 
     /// Finiailizes the builder into an immutable [`super::Table`].
     #[must_use]
-    pub fn into_table(self) -> Arc<super::Table> {
+    pub fn into_table(self, module_id: ID) -> Arc<super::Table> {
         Arc::new(Table {
             kinds: Arc::new(self.kinds.into_read_only()),
             names: Arc::new(self.names.into_read_only()),
@@ -204,6 +204,7 @@ impl Builder {
             diagnostics: Arc::new(
                 self.storage.into_vec().into_iter().collect(),
             ),
+            module_id,
         })
     }
 

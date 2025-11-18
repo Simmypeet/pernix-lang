@@ -271,6 +271,9 @@ pub struct Table {
     /// this is simply a reference to where the submodule is defined in
     pub external_submodules: ReadOnlyMap<Arc<ExternalSubmodule>>,
 
+    /// The ID of the module that this table represents.
+    pub module_id: pernixc_symbol::ID,
+
     /// The diagnostics that were collected while building the table.
     pub diagnostics: Arc<HashSet<Diagnostic>>,
 }
@@ -487,17 +490,17 @@ pub async fn table_executor(
     let module_content = tree.and_then(|t| t.0);
     let scope_span =
         module_content.as_ref().map(pernixc_source_file::SourceElement::span);
-    builder
-        .create_module(module_content, scope_span, module_kind)
-        .await
-        .await
-        .expect("failed to join task");
+
+    let (join_handler, module_id) =
+        builder.create_module(module_content, scope_span, module_kind).await;
+
+    join_handler.await.expect("failed to join handler");
 
     let Ok(builder) = Arc::try_unwrap(builder) else {
         panic!("some threads are not joined")
     };
 
-    Ok(builder.into_table())
+    Ok(builder.into_table(module_id))
 }
 
 #[pernixc_query::executor(key(DiagnosticKey), name(DiagnosticExecutor))]
