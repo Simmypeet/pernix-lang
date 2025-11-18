@@ -7,7 +7,6 @@ pub mod diagnostic;
 mod build;
 mod effect_annotation;
 mod fields;
-mod function_ir;
 mod function_signature;
 mod generic_parameters;
 mod implemented;
