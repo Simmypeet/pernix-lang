@@ -1,4 +1,4 @@
-use std::{collections::hash_map, sync::Arc};
+use std::{collections::hash_map, mem, sync::Arc};
 
 use bon::Builder;
 use enum_as_inner::EnumAsInner;
@@ -297,6 +297,24 @@ impl Builder {
     /// Determines whether the table being built is defined at the root level.
     #[must_use]
     pub fn is_root(&self) -> bool { self.is_root }
+
+    /// Creates a name for the implements qualified identifier.
+    #[must_use]
+    pub fn implements_qualified_identifier_name(
+        &self,
+        qualified_identifier_span: &RelativeSpan,
+    ) -> SharedStr {
+        let source_file = self.source_file.as_ref().unwrap();
+        let token_tree = self.token_tree.as_ref().unwrap();
+
+        format!(
+            "[implements {}]",
+            &source_file.content()[qualified_identifier_span
+                .to_absolute_span(source_file, token_tree)
+                .range()]
+        )
+        .into()
+    }
 }
 
 impl Builder {
@@ -306,7 +324,11 @@ impl Builder {
     }
 
     /// Inserts a member into the builder from the [`MemberBuilder`].
-    pub fn insert_member(&self, id: pernixc_symbol::ID, member: MemberBuilder) {
+    pub fn insert_member_from_builder(
+        &self,
+        id: pernixc_symbol::ID,
+        member: MemberBuilder,
+    ) {
         assert!(self
             .members
             .insert(
@@ -324,6 +346,10 @@ impl Builder {
                 .into_iter()
                 .map(Diagnostic::ItemRedefinition),
         );
+    }
+
+    pub fn insert_member(&self, id: pernixc_symbol::ID, member: Arc<Member>) {
+        assert!(self.members.insert(id, member,).is_none());
     }
 
     /// Inserts a name into the builder.
@@ -392,6 +418,25 @@ impl Builder {
         where_clause: Option<pernixc_syntax::item::where_clause::Predicates>,
     ) {
         assert!(self.where_clause_syntaxes.insert(id, where_clause).is_none());
+    }
+
+    pub fn insert_final_keyword(
+        &self,
+        id: pernixc_symbol::ID,
+        final_keyword: Option<pernixc_syntax::Keyword>,
+    ) {
+        assert!(self.final_keywords.insert(id, final_keyword).is_none());
+    }
+
+    pub fn insert_implements_access_modifier_syntax(
+        &self,
+        id: pernixc_symbol::ID,
+        access_modifier: Option<pernixc_syntax::AccessModifier>,
+    ) {
+        assert!(self
+            .implements_access_modifier_syntaxes
+            .insert(id, access_modifier)
+            .is_none());
     }
 
     pub fn insert_function_signature_syntax(
@@ -568,6 +613,11 @@ impl MemberBuilder {
 
             redefinition_errors: HashSet::default(),
         }
+    }
+
+    /// Explicitly inserts an unnamed member ID.
+    pub fn insert_unnameds(&mut self, id: ID) {
+        assert!(self.unnameds.insert(id));
     }
 
     /// Retrieves the symbol ID of the member being built.

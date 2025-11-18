@@ -182,7 +182,7 @@ impl Builder {
                 parent_module_id,
                 access_modifier.as_ref(),
             );
-            builder.insert_member(trait_id, trait_member_builder);
+            builder.insert_member_from_builder(trait_id, trait_member_builder);
         }))
     }
 }

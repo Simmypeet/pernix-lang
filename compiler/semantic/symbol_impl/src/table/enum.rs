@@ -78,7 +78,7 @@ impl Builder {
             builder
                 .insert_generic_parameters_syntax(enum_id, generic_parameters);
             builder.insert_where_clause_syntax(enum_id, where_clause);
-            builder.insert_member(enum_id, enum_member_builder);
+            builder.insert_member_from_builder(enum_id, enum_member_builder);
         }))
     }
 }

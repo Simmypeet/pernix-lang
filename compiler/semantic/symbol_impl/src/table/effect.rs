@@ -85,7 +85,8 @@ impl Builder {
                 generic_parameters,
             );
             builder.insert_where_clause_syntax(effect_id, where_clause);
-            builder.insert_member(effect_id, effect_member_builder);
+            builder
+                .insert_member_from_builder(effect_id, effect_member_builder);
             builder.insert_accessibility_by_access_modifier(
                 effect_id,
                 parent_module_id,

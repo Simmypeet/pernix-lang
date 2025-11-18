@@ -175,7 +175,7 @@ impl Builder {
                 };
 
                 let id = module_member_builder
-                    .add_member(identifier, self.engine())
+                    .add_member(identifier.clone(), self.engine())
                     .await;
 
                 self.insert_kind(id, Kind::Function);
@@ -231,7 +231,7 @@ impl Builder {
                 };
 
                 let id = module_member_builder
-                    .add_member(identifier, self.engine())
+                    .add_member(identifier.clone(), self.engine())
                     .await;
 
                 self.insert_kind(id, Kind::Type);
@@ -271,7 +271,7 @@ impl Builder {
                 };
 
                 let id = module_member_builder
-                    .add_member(identifier, self.engine())
+                    .add_member(identifier.clone(), self.engine())
                     .await;
 
                 self.insert_kind(id, Kind::Constant);
@@ -315,7 +315,7 @@ impl Builder {
                 };
 
                 let id = module_member_builder
-                    .add_member(identifier, self.engine())
+                    .add_member(identifier.clone(), self.engine())
                     .await;
 
                 self.insert_kind(id, Kind::Struct);
@@ -356,7 +356,7 @@ impl Builder {
                 };
 
                 let id = module_member_builder
-                    .add_member(identifier, self.engine())
+                    .add_member(identifier.clone(), self.engine())
                     .await;
 
                 self.insert_kind(id, Kind::Marker);
@@ -484,7 +484,8 @@ impl Builder {
                 member_builder.last_name().clone(),
             );
             builder.insert_kind(current_module_id, Kind::Module);
-            builder.insert_member(current_module_id, member_builder);
+            builder
+                .insert_member_from_builder(current_module_id, member_builder);
         })
     }
 }
