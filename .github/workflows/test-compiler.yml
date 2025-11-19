@@ -22,15 +22,15 @@ jobs:
                 # windows-latest is `windows-x64`
                 # macOS-latest is `macos-arm64`
                 # macOS-13 is `macos-x64`
-                # ubuntu-20.04 is `ubuntu-x64`
-                # ubuntu-22.04-arm is `ubuntu-arm64`
+                # ubuntu-24.04 is `ubuntu-x64`
+                # ubuntu-24.04-arm is `ubuntu-arm64`
                 os:
                     [
                         windows-latest,
                         macOS-latest,
                         macOS-13,
-                        ubuntu-22.04,
-                        ubuntu-22.04-arm,
+                        ubuntu-24.04,
+                        ubuntu-24.04-arm,
                     ]
         steps:
             - name: Checkout Repository
