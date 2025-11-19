@@ -29,6 +29,7 @@ pub struct DiagnosticsWithUrl {
 
 pub mod analyzer;
 pub mod hover;
+pub mod pointing;
 pub mod workspace;
 
 /// The language server protocal implementation for Pernix.
