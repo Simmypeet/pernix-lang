@@ -133,6 +133,46 @@ impl Drop for Tree {
     }
 }
 
+impl Tree {
+    /// Retrieves the token that contains the given byte index, if any.
+    #[must_use]
+    pub fn get_pointing_token(
+        &self,
+        token_tree: &pernixc_lexical::tree::Tree,
+        byte_index: pernixc_source_file::ByteIndex,
+    ) -> Option<token::Kind<RelativeLocation>> {
+        // binary search for the token that contains the byte index
+        let mut left = 0;
+        let mut right = self.nodes.len();
+
+        while left < right {
+            let mid = usize::midpoint(left, right);
+            let node = &self.nodes[mid];
+
+            let span = node.span();
+            let abs_span = token_tree.absolute_span_of(&span);
+
+            if abs_span.range().contains(&byte_index) {
+                // found the token
+                return match node {
+                    Node::Leaf(token) => Some(token.clone()),
+                    Node::Branch(tree) => {
+                        // recurse into the branch
+                        tree.get_pointing_token(token_tree, byte_index)
+                    }
+                    Node::SkipFragment(_, _) => None,
+                };
+            } else if byte_index < abs_span.start {
+                right = mid;
+            } else {
+                left = mid + 1;
+            }
+        }
+
+        None
+    }
+}
+
 impl SourceElement for Tree {
     type Location = RelativeLocation;
 
