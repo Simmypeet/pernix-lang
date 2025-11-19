@@ -22,6 +22,12 @@ jobs:
             - name: Checkout Repository
               uses: actions/checkout@v4
 
+            - name: Cache Rust Target Files
+              uses: actions/cache@v4
+              with:
+                  path: target
+                  key: ${{ runner.os }}-${{ runner.arch }}-cargo-target-${{ hashFiles('**/Cargo.lock') }}
+
             - name: Set up Rust Nightly
               uses: dtolnay/rust-toolchain@nightly
               with:
@@ -41,12 +47,6 @@ jobs:
               run: |
                   ls ${{ github.workspace }}/__llvm18
                   echo "LLVM_SYS_181_PREFIX=${{ github.workspace }}/__llvm18" >> $GITHUB_ENV
-
-            - name: Rust Cache
-              uses: Swatinem/rust-cache@v2
-              with:
-                  shared-key: "llvm-18.1.8"
-                  cache-on-failure: true
 
             - name: Check Code Formatting
               run: cargo fmt --all -- --check
