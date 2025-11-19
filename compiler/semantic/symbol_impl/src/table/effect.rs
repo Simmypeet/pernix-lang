@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use pernixc_source_file::SourceElement;
 use pernixc_symbol::kind::Kind;
 use tokio::task::JoinHandle;
 
@@ -33,6 +34,7 @@ impl Builder {
             .and_then(|x| x.predicates());
 
         let parent_module_id = module_member_builder.current_symbol_id();
+        let effect_scope_span = effect_syntax.span();
 
         let builder = self.clone();
 
@@ -59,6 +61,7 @@ impl Builder {
                     .await;
 
                 builder.insert_kind(operation_id, Kind::EffectOperation);
+                builder.insert_scope_span(operation_id, member.span());
                 builder.insert_name_identifier(operation_id, &identifier);
                 builder.insert_generic_parameters_syntax(
                     operation_id,
@@ -79,6 +82,7 @@ impl Builder {
             }
 
             builder.insert_kind(effect_id, Kind::Effect);
+            builder.insert_scope_span(effect_id, effect_scope_span);
             builder.insert_name_identifier(effect_id, &identifier);
             builder.insert_generic_parameters_syntax(
                 effect_id,

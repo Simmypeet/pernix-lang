@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use pernixc_source_file::SourceElement;
 use pernixc_symbol::kind::Kind;
 use tokio::task::JoinHandle;
 
@@ -31,6 +32,7 @@ impl Builder {
         let where_clause = enum_body
             .and_then(|x| x.where_clause())
             .and_then(|x| x.predicates());
+        let enum_scope_span = enum_syntax.span();
 
         let parent_module_id = module_member_builder.current_symbol_id();
 
@@ -60,6 +62,7 @@ impl Builder {
                     .await;
 
                 builder.insert_kind(variant_id, Kind::Variant);
+                builder.insert_scope_span(variant_id, variant.span());
                 builder.insert_name_identifier(variant_id, &identifier);
                 builder.insert_variant_declaration_order(variant_id, order);
                 builder.insert_variant_associated_type_syntax(
@@ -70,6 +73,7 @@ impl Builder {
 
             builder.insert_kind(enum_id, Kind::Enum);
             builder.insert_name_identifier(enum_id, &identifier);
+            builder.insert_scope_span(enum_id, enum_scope_span);
             builder
                 .insert_accessibility_by_access_modifier(
                     enum_id,

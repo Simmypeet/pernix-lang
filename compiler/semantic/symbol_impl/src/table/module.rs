@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
 use flexstr::FlexStr;
+use pernixc_lexical::tree::RelativeSpan;
+use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
     accessibility::Accessibility, get_target_root_module_id, kind::Kind,
 };
@@ -57,13 +59,18 @@ impl Builder {
                 member_builder.add_member(identifier, self.engine()).await;
 
             Some(
-                self.create_module(member.content(), ModuleKind::Submodule {
-                    submodule_id: next_submodule_id,
-                    submodule_qualified_name: next_submodule_qualified_name,
-                    accessibility,
-                    span,
-                })
-                .await,
+                self.create_module(
+                    member.content(),
+                    Some(module_syntax.span()),
+                    ModuleKind::Submodule {
+                        submodule_id: next_submodule_id,
+                        submodule_qualified_name: next_submodule_qualified_name,
+                        accessibility,
+                        span,
+                    },
+                )
+                .await
+                .0,
             )
         } else {
             let invocation_arguments =
@@ -177,6 +184,7 @@ impl Builder {
                     .await;
 
                 self.insert_kind(id, Kind::Function);
+                self.insert_scope_span(id, function_syntax.span());
                 self.insert_name_identifier(id, &identifier);
                 self.insert_accessibility_by_access_modifier(
                     id,
@@ -231,6 +239,7 @@ impl Builder {
                     .await;
 
                 self.insert_kind(id, Kind::Type);
+                self.insert_scope_span(id, type_syntax.span());
                 self.insert_name_identifier(id, &identifier);
                 self.insert_accessibility_by_access_modifier(
                     id,
@@ -269,6 +278,7 @@ impl Builder {
                     .await;
 
                 self.insert_kind(id, Kind::Constant);
+                self.insert_scope_span(id, constant_syntax.span());
                 self.insert_name_identifier(id, &identifier);
                 self.insert_accessibility_by_access_modifier(
                     id,
@@ -311,6 +321,7 @@ impl Builder {
                     .await;
 
                 self.insert_kind(id, Kind::Struct);
+                self.insert_scope_span(id, struct_syntax.span());
                 self.insert_name_identifier(id, &identifier);
                 self.insert_accessibility_by_access_modifier(
                     id,
@@ -350,6 +361,7 @@ impl Builder {
                     .await;
 
                 self.insert_kind(id, Kind::Marker);
+                self.insert_scope_span(id, marker_syntax.span());
                 self.insert_name_identifier(id, &identifier);
                 self.insert_accessibility_by_access_modifier(
                     id,
@@ -404,8 +416,9 @@ impl Builder {
     pub async fn create_module(
         self: &Arc<Self>,
         module_content: Option<pernixc_syntax::item::module::Content>,
+        scope_span: Option<RelativeSpan>,
         module_kind: ModuleKind,
-    ) -> JoinHandle<()> {
+    ) -> (JoinHandle<()>, pernixc_symbol::ID) {
         // extract the information about the module
         let (accessibility, current_module_id, module_qualified_name, span) =
             match module_kind {
@@ -447,34 +460,40 @@ impl Builder {
 
         let builder = self.clone();
 
-        tokio::spawn(async move {
-            let mut member_builder = MemberBuilder::new(
-                current_module_id,
-                module_qualified_name,
-                builder.target_id(),
-            );
-            let mut imports = Vec::new();
+        (
+            tokio::spawn(async move {
+                let mut member_builder = MemberBuilder::new(
+                    current_module_id,
+                    module_qualified_name,
+                    builder.target_id(),
+                );
+                let mut imports = Vec::new();
 
-            if let Some(module_content) = module_content {
-                builder
-                    .handle_module_content(
-                        module_content,
-                        &mut member_builder,
-                        &mut imports,
-                    )
-                    .await;
-            }
+                if let Some(module_content) = module_content {
+                    builder
+                        .handle_module_content(
+                            module_content,
+                            &mut member_builder,
+                            &mut imports,
+                        )
+                        .await;
+                }
 
-            builder.insert_imports(current_module_id, imports.into());
-            builder.insert_span(current_module_id, span);
-            builder.insert_accessibility(current_module_id, accessibility);
-            builder.insert_name(
-                current_module_id,
-                member_builder.last_name().clone(),
-            );
-            builder.insert_kind(current_module_id, Kind::Module);
-            builder
-                .insert_member_from_builder(current_module_id, member_builder);
-        })
+                builder.insert_imports(current_module_id, imports.into());
+                builder.insert_span(current_module_id, span);
+                builder.insert_maybe_scope_span(current_module_id, scope_span);
+                builder.insert_accessibility(current_module_id, accessibility);
+                builder.insert_name(
+                    current_module_id,
+                    member_builder.last_name().clone(),
+                );
+                builder.insert_kind(current_module_id, Kind::Module);
+                builder.insert_member_from_builder(
+                    current_module_id,
+                    member_builder,
+                );
+            }),
+            current_module_id,
+        )
     }
 }

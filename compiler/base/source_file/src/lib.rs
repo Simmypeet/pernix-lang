@@ -311,6 +311,15 @@ impl SourceFile {
             .ok()
     }
 
+    /// Gets the starting byte index of the given line number (0 indexed).
+    #[must_use]
+    pub fn get_starting_byte_index_of_line(
+        &self,
+        line: usize,
+    ) -> Option<ByteIndex> {
+        self.lines.get(line).map(|range| range.start)
+    }
+
     /// Gets the line of the source file at the given line number.
     ///
     /// The line number starts at 0.

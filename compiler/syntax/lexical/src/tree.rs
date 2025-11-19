@@ -171,6 +171,13 @@ pub struct Indentation {
 )]
 pub enum OffsetMode {
     /// Relative to the start byte of the branch.
+    ///
+    /// The position is offset from the starting byte of the branch's delimiter
+    /// token. For example, in a parenthesis-delimited fragment `( ... )`,
+    /// the offset is calculated from the start byte of the `(` token
+    /// (including the leading insignificant tokens before the `(` token).
+    /// Same applies to the indentation, where the offset is calculated from
+    /// the starting byte of the colon token.
     Start,
 
     /// Relative to the end byte of the branch.

@@ -260,6 +260,9 @@ pub struct Table {
     /// Maps the function ID to its linkage.
     pub function_linkages: ReadOnlyMap<linkage::Linkage>,
 
+    /// Maps the symbol ID to its scope span in the source code.
+    pub scope_spans: ReadOnlyMap<Option<RelativeSpan>>,
+
     /// Maps the module ID to the external submodules where its content is
     /// defined in. This added to the table via `public module subModule`
     /// declaration syntax.
@@ -267,6 +270,9 @@ pub struct Table {
     /// The content of the submodule is not defined in the current [`Table`],
     /// this is simply a reference to where the submodule is defined in
     pub external_submodules: ReadOnlyMap<Arc<ExternalSubmodule>>,
+
+    /// The ID of the module that this table represents.
+    pub module_id: pernixc_symbol::ID,
 
     /// The diagnostics that were collected while building the table.
     pub diagnostics: Arc<HashSet<Diagnostic>>,
@@ -481,17 +487,20 @@ pub async fn table_executor(
         is_root,
     ));
 
-    builder
-        .create_module(tree.and_then(|t| t.0), module_kind)
-        .await
-        .await
-        .expect("failed to join task");
+    let module_content = tree.and_then(|t| t.0);
+    let scope_span =
+        module_content.as_ref().map(pernixc_source_file::SourceElement::span);
 
-    let Ok(context) = Arc::try_unwrap(builder) else {
+    let (join_handler, module_id) =
+        builder.create_module(module_content, scope_span, module_kind).await;
+
+    join_handler.await.expect("failed to join handler");
+
+    let Ok(builder) = Arc::try_unwrap(builder) else {
         panic!("some threads are not joined")
     };
 
-    Ok(context.into_table())
+    Ok(builder.into_table(module_id))
 }
 
 #[pernixc_query::executor(key(DiagnosticKey), name(DiagnosticExecutor))]

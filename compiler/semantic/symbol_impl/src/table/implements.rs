@@ -56,6 +56,7 @@ impl Builder {
                 &qualified_identifier_span,
             ),
         );
+        self.insert_scope_span(implements_id, implements_syntax.span());
         self.insert_span(implements_id, Some(qualified_identifier_span));
         self.insert_generic_parameters_syntax(
             implements_id,
@@ -137,6 +138,7 @@ impl Builder {
                             .await;
 
                         self.insert_kind(id, Kind::ImplementationConstant);
+                        self.insert_scope_span(id, con.span());
                         self.insert_name_identifier(id, &identifier);
                         self.insert_implements_access_modifier_syntax(
                             id,
@@ -178,6 +180,7 @@ impl Builder {
                             .await;
 
                         self.insert_kind(id, Kind::ImplementationFunction);
+                        self.insert_scope_span(id, fun.span());
                         self.insert_name_identifier(id, &identifier);
                         self.insert_implements_access_modifier_syntax(
                             id,
@@ -234,6 +237,7 @@ impl Builder {
                             .await;
 
                         self.insert_kind(id, Kind::ImplementationType);
+                        self.insert_scope_span(id, ty.span());
                         self.insert_name_identifier(id, &identifier);
                         self.insert_implements_access_modifier_syntax(
                             id,

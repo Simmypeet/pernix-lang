@@ -80,6 +80,8 @@ pub struct Builder {
 
     function_unsafe_keywords: DashMap<ID, Option<pernixc_syntax::Keyword>>,
 
+    scope_spans: DashMap<ID, Option<RelativeSpan>>,
+
     token_tree: Option<Arc<pernixc_lexical::tree::Tree>>,
     source_file: Option<Arc<SourceFile>>,
 
@@ -122,6 +124,7 @@ impl Builder {
             final_keywords: DashMap::default(),
             function_body_syntaxes: DashMap::default(),
             function_effect_annotation_syntaxes: DashMap::default(),
+            scope_spans: DashMap::default(),
             function_unsafe_keywords: DashMap::default(),
             token_tree,
             source_file,
@@ -139,7 +142,7 @@ impl Builder {
 
     /// Finiailizes the builder into an immutable [`super::Table`].
     #[must_use]
-    pub fn into_table(self) -> Arc<super::Table> {
+    pub fn into_table(self, module_id: ID) -> Arc<super::Table> {
         Arc::new(Table {
             kinds: Arc::new(self.kinds.into_read_only()),
             names: Arc::new(self.names.into_read_only()),
@@ -193,6 +196,7 @@ impl Builder {
             function_unsafe_keywords: Arc::new(
                 self.function_unsafe_keywords.into_read_only(),
             ),
+            scope_spans: Arc::new(self.scope_spans.into_read_only()),
 
             external_submodules: Arc::new(
                 self.external_submodules.into_read_only(),
@@ -200,6 +204,7 @@ impl Builder {
             diagnostics: Arc::new(
                 self.storage.into_vec().into_iter().collect(),
             ),
+            module_id,
         })
     }
 
@@ -496,6 +501,22 @@ impl Builder {
         linkage: linkage::Linkage,
     ) {
         assert!(self.function_linkages.insert(id, linkage).is_none());
+    }
+
+    pub fn insert_scope_span(
+        &self,
+        id: pernixc_symbol::ID,
+        span: RelativeSpan,
+    ) {
+        assert!(self.scope_spans.insert(id, Some(span)).is_none());
+    }
+
+    pub fn insert_maybe_scope_span(
+        &self,
+        id: pernixc_symbol::ID,
+        span: Option<RelativeSpan>,
+    ) {
+        assert!(self.scope_spans.insert(id, span).is_none());
     }
 
     /// Inserts imports into the builder.
