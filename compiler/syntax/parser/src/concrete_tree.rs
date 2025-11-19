@@ -17,6 +17,8 @@ use pernixc_stable_hash::StableHash;
 use pernixc_stable_type_id::StableTypeID;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
+use crate::abstract_tree::AbstractTree;
+
 /// An enumeration of the different types of nodes that can be found in
 /// the concrete syntax tree.
 #[derive(
@@ -43,6 +45,136 @@ pub enum Node {
 
     /// A fragment of the tree that isn't stepped into.
     SkipFragment(ID<pernixc_lexical::tree::Branch>, GlobalSourceID),
+}
+
+impl Node {
+    /// Retrieves the token that contains the given byte index, if any.
+    ///
+    /// # Parameters
+    ///
+    /// - `token_tree`: The token tree that this concrete tree was built from.
+    /// - `byte_index`: The byte index to look for.
+    #[must_use]
+    pub fn get_pointing_token(
+        mut self: &Self,
+        token_tree: &pernixc_lexical::tree::Tree,
+        byte_index: pernixc_source_file::ByteIndex,
+    ) -> Option<token::Kind<RelativeLocation>> {
+        let span = self.span();
+        let abs_span = token_tree.absolute_span_of(&span);
+        if !abs_span.range().contains(&byte_index) {
+            return None;
+        }
+
+        'recurse: loop {
+            match self {
+                Self::Leaf(token) => {
+                    return Some(token.clone());
+                }
+
+                Self::Branch(tree) => {
+                    // binary search for the child node that contains the byte
+                    // index, then we test that node.
+                    //
+                    // if the byte index is in node, we continue recursing into
+                    // that node.
+                    let mut left = 0;
+                    let mut right = tree.nodes.len();
+
+                    while left < right {
+                        let mid = usize::midpoint(left, right);
+                        let node = &tree.nodes[mid];
+
+                        let span = node.span();
+                        let abs_span = token_tree.absolute_span_of(&span);
+
+                        // found the node, continue recursing into this node
+                        if abs_span.range().contains(&byte_index) {
+                            self = node;
+                            continue 'recurse;
+                        } else if byte_index < abs_span.start {
+                            right = mid;
+                        } else {
+                            left = mid + 1;
+                        }
+                    }
+
+                    // no child node contains the byte index, return None
+                    return None;
+                }
+                Self::SkipFragment(_, _) => {
+                    return None;
+                }
+            }
+        }
+    }
+
+    /// Retrieves the deepest AST of type `T` that contains the given byte
+    /// index.
+    #[must_use]
+    pub fn get_deepest_ast<T: AbstractTree>(
+        mut self: &Self,
+        token_tree: &pernixc_lexical::tree::Tree,
+        byte_index: pernixc_source_file::ByteIndex,
+    ) -> Option<T> {
+        // check if self contains the byte index
+        let span = self.span();
+        let abs_span = token_tree.absolute_span_of(&span);
+        if !abs_span.range().contains(&byte_index) {
+            return None;
+        }
+
+        // attempt to cast to AST T
+        let mut current_node = T::from_node(self);
+
+        'recurse: loop {
+            // check if self contains the byte index
+            match self {
+                // no more to recurse into
+                Self::SkipFragment(_, _) | Self::Leaf(_) => {
+                    return current_node
+                }
+
+                Self::Branch(tree) => {
+                    // binary search for the child node that contains the byte
+                    // index, then we test that node.
+                    //
+                    // if the byte index is in node, we attempt to update the
+                    // deepest AST found so far, and continue recursing into
+                    // that node.
+                    let mut left = 0;
+                    let mut right = tree.nodes.len();
+
+                    while left < right {
+                        let mid = usize::midpoint(left, right);
+                        let node = &tree.nodes[mid];
+
+                        let span = node.span();
+                        let abs_span = token_tree.absolute_span_of(&span);
+
+                        // found the node, attempt to cast to T
+                        if abs_span.range().contains(&byte_index) {
+                            if let Some(casted) = T::from_node(node) {
+                                current_node = Some(casted);
+                            }
+
+                            // continue recursing into this node
+                            self = node;
+                            continue 'recurse;
+                        } else if byte_index < abs_span.start {
+                            right = mid;
+                        } else {
+                            left = mid + 1;
+                        }
+                    }
+
+                    // no child node contains the byte index, return current
+                    // found AST
+                    return current_node;
+                }
+            }
+        }
+    }
 }
 
 impl Node {
@@ -133,45 +265,7 @@ impl Drop for Tree {
     }
 }
 
-impl Tree {
-    /// Retrieves the token that contains the given byte index, if any.
-    #[must_use]
-    pub fn get_pointing_token(
-        &self,
-        token_tree: &pernixc_lexical::tree::Tree,
-        byte_index: pernixc_source_file::ByteIndex,
-    ) -> Option<token::Kind<RelativeLocation>> {
-        // binary search for the token that contains the byte index
-        let mut left = 0;
-        let mut right = self.nodes.len();
-
-        while left < right {
-            let mid = usize::midpoint(left, right);
-            let node = &self.nodes[mid];
-
-            let span = node.span();
-            let abs_span = token_tree.absolute_span_of(&span);
-
-            if abs_span.range().contains(&byte_index) {
-                // found the token
-                return match node {
-                    Node::Leaf(token) => Some(token.clone()),
-                    Node::Branch(tree) => {
-                        // recurse into the branch
-                        tree.get_pointing_token(token_tree, byte_index)
-                    }
-                    Node::SkipFragment(_, _) => None,
-                };
-            } else if byte_index < abs_span.start {
-                right = mid;
-            } else {
-                left = mid + 1;
-            }
-        }
-
-        None
-    }
-}
+impl Tree {}
 
 impl SourceElement for Tree {
     type Location = RelativeLocation;
