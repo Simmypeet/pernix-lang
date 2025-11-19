@@ -4,12 +4,10 @@ on:
     push:
         branches:
             - main
-            - dev
 
     pull_request:
         branches:
             - main
-            - dev
 permissions:
     contents: write
 
@@ -37,6 +35,12 @@ jobs:
         steps:
             - name: Checkout Repository
               uses: actions/checkout@v4
+
+            - name: Cache Rust Target Files
+              uses: actions/cache@v4
+              with:
+                  path: target
+                  key: ${{ runner.os }}-${{ runner.arch }}-cargo-target-${{ hashFiles('**/Cargo.lock') }}
 
             - name: Set up Rust Nightly
               uses: dtolnay/rust-toolchain@nightly
@@ -71,12 +75,6 @@ jobs:
                   ls ${{ github.workspace }}/__llvm18
                   echo "LLVM_SYS_181_PREFIX${{ github.workspace }}/__llvm18"
                   echo "LLVM_SYS_181_PREFIX=${{ github.workspace }}/__llvm18" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-            - name: Rust Cache
-              uses: Swatinem/rust-cache@v2
-              with:
-                  shared-key: "llvm-18.1.8"
-                  cache-on-failure: true
 
             - name: Install cargo-nextest
               uses: baptiste0928/cargo-install@v3.3.0
