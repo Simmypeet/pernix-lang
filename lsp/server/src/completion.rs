@@ -7,9 +7,13 @@ use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
 use pernixc_source_file::{calculate_path_id, get_source_file_by_id};
 use tower_lsp::lsp_types::{CompletionParams, CompletionResponse};
 
-use crate::conversion::to_pernix_editor_location;
+use crate::{
+    completion::qualified_identifier::qualified_identifier_completion,
+    conversion::to_pernix_editor_location,
+};
 
 pub mod keyword;
+pub mod qualified_identifier;
 
 /// Handles completion requests from the LSP client.
 #[extend]
@@ -57,6 +61,16 @@ pub async fn handle_completion(
         byte_index,
         &mut completions,
     );
+
+    self.qualified_identifier_completion(
+        byte_index,
+        source_id,
+        content,
+        &token_tree,
+        target_id,
+        &mut completions,
+    )
+    .await?;
 
     Ok(Some(CompletionResponse::Array(completions)))
 }
