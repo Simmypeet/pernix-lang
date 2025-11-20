@@ -7,15 +7,19 @@ use tower_lsp::{
     lsp_types::{
         DidChangeTextDocumentParams, DidChangeWatchedFilesParams,
         DidOpenTextDocumentParams, DidSaveTextDocumentParams, FileChangeType,
-        HoverProviderCapability, InitializeParams, InitializeResult,
-        InitializedParams, MessageType, OneOf, Registration,
-        ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind,
-        Url, WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities,
+        GotoDefinitionParams, GotoDefinitionResponse, HoverProviderCapability,
+        InitializeParams, InitializeResult, InitializedParams, MessageType,
+        OneOf, Registration, ServerCapabilities, TextDocumentSyncCapability,
+        TextDocumentSyncKind, Url, WorkspaceFoldersServerCapabilities,
+        WorkspaceServerCapabilities,
     },
     Client, LanguageServer,
 };
 
-use crate::{analyzer::Analyzer, hover::handle_hover};
+use crate::{
+    analyzer::Analyzer, goto_definition::handle_goto_definition,
+    hover::handle_hover,
+};
 
 /// A diagnostic with its source file uri.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,6 +32,8 @@ pub struct DiagnosticsWithUrl {
 }
 
 pub mod analyzer;
+pub mod conversion;
+pub mod goto_definition;
 pub mod hover;
 pub mod pointing;
 pub mod workspace;
@@ -79,6 +85,8 @@ impl LanguageServer for Server {
                     file_operations: None,
                 }),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
+                definition_provider: Some(OneOf::Left(true)),
+
                 semantic_tokens_provider: None,
 
                 ..ServerCapabilities::default()
@@ -229,6 +237,24 @@ impl LanguageServer for Server {
 
         Ok(engine
             .handle_hover(analyzer.current_target_id(), params)
+            .await
+            .unwrap_or_default())
+    }
+
+    async fn goto_definition(
+        &self,
+        params: GotoDefinitionParams,
+    ) -> jsonrpc::Result<Option<GotoDefinitionResponse>> {
+        let analyzer = self.analyzer.read().await;
+        let Some(analyzer) = analyzer.as_ref() else {
+            return Ok(None);
+        };
+
+        let engine = analyzer.engine().await;
+        let engine = engine.tracked();
+
+        Ok(engine
+            .handle_goto_definition(analyzer.current_target_id(), params)
             .await
             .unwrap_or_default())
     }
