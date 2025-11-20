@@ -47,6 +47,18 @@ pub enum Node {
     SkipFragment(ID<pernixc_lexical::tree::Branch>, GlobalSourceID),
 }
 
+/// Specifies whether the range check is inclusive or exclusive.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
+)]
+pub enum RangeInclusion {
+    /// The range check is exclusive.
+    Exclusive,
+
+    /// The range check is inclusive.
+    Inclusive,
+}
+
 impl Node {
     /// Retrieves the token that contains the given byte index, if any.
     ///
@@ -59,10 +71,14 @@ impl Node {
         mut self: &Self,
         token_tree: &pernixc_lexical::tree::Tree,
         byte_index: pernixc_source_file::ByteIndex,
+        range_inclusion: RangeInclusion,
     ) -> Option<token::Kind<RelativeLocation>> {
         let span = self.span();
         let abs_span = token_tree.absolute_span_of(&span);
-        if !abs_span.range().contains(&byte_index) {
+        if !abs_span
+            .range_maybe_inclusive(range_inclusion.is_inclusive())
+            .contains(&byte_index)
+        {
             return None;
         }
 
@@ -89,7 +105,12 @@ impl Node {
                         let abs_span = token_tree.absolute_span_of(&span);
 
                         // found the node, continue recursing into this node
-                        if abs_span.range().contains(&byte_index) {
+                        if abs_span
+                            .range_maybe_inclusive(
+                                range_inclusion.is_inclusive(),
+                            )
+                            .contains(&byte_index)
+                        {
                             self = node;
                             continue 'recurse;
                         } else if byte_index < abs_span.start {
@@ -116,11 +137,15 @@ impl Node {
         mut self: &Self,
         token_tree: &pernixc_lexical::tree::Tree,
         byte_index: pernixc_source_file::ByteIndex,
+        range_inclusion: RangeInclusion,
     ) -> Option<T> {
         // check if self contains the byte index
         let span = self.span();
         let abs_span = token_tree.absolute_span_of(&span);
-        if !abs_span.range().contains(&byte_index) {
+        if abs_span
+            .range_maybe_inclusive(range_inclusion.is_inclusive())
+            .contains(&byte_index)
+        {
             return None;
         }
 
@@ -153,7 +178,12 @@ impl Node {
                         let abs_span = token_tree.absolute_span_of(&span);
 
                         // found the node, attempt to cast to T
-                        if abs_span.range().contains(&byte_index) {
+                        if abs_span
+                            .range_maybe_inclusive(
+                                range_inclusion.is_inclusive(),
+                            )
+                            .contains(&byte_index)
+                        {
                             if let Some(casted) = T::from_node(node) {
                                 current_node = Some(casted);
                             }

@@ -1,9 +1,11 @@
 //! Offers completion suggestions when user completing qualified identifier
 
+use log::info;
 use pernixc_diagnostic::ByteIndex;
 use pernixc_extend::extend;
+use pernixc_parser::concrete_tree::RangeInclusion;
 use pernixc_semantic_element::import::get_import_map;
-use pernixc_source_file::GlobalSourceID;
+use pernixc_source_file::{GlobalSourceID, SourceElement};
 use pernixc_symbol::{
     kind::get_kind, member::get_members, parent::get_closest_module_id,
     source_file_module::get_source_file_module,
@@ -92,6 +94,7 @@ fn kind_to_completion_item_kind(
 /// Provides completion suggestions for qualified identifiers at the given
 /// byte index.
 #[extend]
+#[allow(clippy::too_many_lines)]
 pub async fn qualified_identifier_completion(
     self: &pernixc_query::TrackedEngine,
     byte_index: ByteIndex,
@@ -113,12 +116,25 @@ pub async fn qualified_identifier_completion(
         syntax_tree.inner_tree().clone(),
     );
 
+    // use inclusive range so that when the user is completing right after the
+    // last character of the qualified identifier, we still get the correct
+    // qualified identifier
     let (Some(qualified_identifier), Some(token)) = (
         node.get_deepest_ast::<pernixc_syntax::QualifiedIdentifier>(
-            token_tree, byte_index,
+            token_tree,
+            byte_index,
+            RangeInclusion::Inclusive,
         ),
-        node.get_pointing_token(token_tree, byte_index),
+        node.get_pointing_token(
+            token_tree,
+            byte_index,
+            RangeInclusion::Inclusive,
+        ),
     ) else {
+        info!(
+            "No qualified identifier at byte index {byte_index:?} for \
+             completion"
+        );
         return Ok(());
     };
 
@@ -132,6 +148,10 @@ pub async fn qualified_identifier_completion(
         )
         .await?
     else {
+        info!(
+            "No resolution for qualified identifier completion at byte index \
+             {byte_index:?}"
+        );
         return Ok(());
     };
 
@@ -147,6 +167,12 @@ pub async fn qualified_identifier_completion(
             fail_at_cursor.parent_scope
         }
     };
+
+    info!(
+        "Qualified identifier completion at byte index {byte_index:?}: \
+         prior_scope={prior_scope:?}, nearest_module={nearest_module:?}, \
+         resolved_path={resolved_path:?}"
+    );
 
     if let Some(symbol) = prior_scope {
         // suggest members of the resolved symbol

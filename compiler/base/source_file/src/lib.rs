@@ -574,6 +574,18 @@ impl<L> Span<L> {
     {
         self.start.clone()..self.end.clone()
     }
+
+    /// Gets the byte range of the span, with an option to make the end
+    pub fn range_maybe_inclusive(&self, inclusive: bool) -> Range<L>
+    where
+        L: Clone + std::ops::Add<usize, Output = L>,
+    {
+        if inclusive {
+            self.start.clone()..(self.end.clone() + 1)
+        } else {
+            self.start.clone()..self.end.clone()
+        }
+    }
 }
 
 /// Represents an element that is located within a source file.

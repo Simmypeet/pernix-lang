@@ -4,7 +4,7 @@
 use std::{path::Path, sync::Arc};
 
 use pernixc_extend::extend;
-use pernixc_parser::concrete_tree;
+use pernixc_parser::concrete_tree::{self, RangeInclusion};
 use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
 use pernixc_resolution::qualified_identifier::{
     resolve_in, resolve_simple_qualified_identifier_root,
@@ -55,11 +55,16 @@ pub async fn get_pointing_qualified_identifier(
     let node = concrete_tree::Node::Branch(syntax.inner_tree().clone());
 
     // resolve the qualified name
-    let pointing_token = node.get_pointing_token(&token_tree, byte_index)?;
+    let pointing_token = node.get_pointing_token(
+        &token_tree,
+        byte_index,
+        RangeInclusion::Exclusive,
+    )?;
     let qualified_name = node
         .get_deepest_ast::<pernixc_syntax::QualifiedIdentifier>(
             &token_tree,
             byte_index,
+            RangeInclusion::Exclusive,
         )?;
 
     let token_abs_span = token_tree.absolute_span_of(&pointing_token.span);
@@ -121,6 +126,7 @@ pub enum Resolution {
 
     /// The resolution failed at the cursor position.
     FailAtCursor(FailAtCursor),
+
 }
 
 /// Resolves a qualified identifier to its symbol ID.
