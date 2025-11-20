@@ -166,6 +166,19 @@ pub async fn qualified_identifier_completion(
         crate::pointing::Resolution::FailAtCursor(fail_at_cursor) => {
             fail_at_cursor.parent_scope
         }
+        crate::pointing::Resolution::NoMatchFound(symbol) => {
+            // check if the cursor is at the end of the qualified identifier,
+            // only then suggest members of the symbol
+            let qual_span = qualified_identifier.span();
+            let qual_abs_span = token_tree.absolute_span_of(&qual_span);
+
+            if byte_index == qual_abs_span.end {
+                Some(symbol)
+            } else {
+                // cursor is not at the end, no suggestions
+                return Ok(());
+            }
+        }
     };
 
     info!(

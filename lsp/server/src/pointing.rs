@@ -127,6 +127,8 @@ pub enum Resolution {
     /// The resolution failed at the cursor position.
     FailAtCursor(FailAtCursor),
 
+    /// The symbol resolve to the end without matching the cursor position.
+    NoMatchFound(Global<pernixc_symbol::ID>),
 }
 
 /// Resolves a qualified identifier to its symbol ID.
@@ -211,7 +213,7 @@ pub async fn resolve_qualified_identifier_path(
     }
 
     // no match at the cursor position
-    Ok(None)
+    Ok(Some(Resolution::NoMatchFound(current_symbol_id)))
 }
 
 /// Resolves the symbol at the given LSP position in the specified URI.
@@ -269,7 +271,8 @@ pub async fn symbol_at(
 
     match resolved_symbol_id {
         Resolution::Success(success) => Ok(Some(success.pointing_symbol)),
-        Resolution::FailAtCursor(_) => Ok(None),
+
+        Resolution::NoMatchFound(_) | Resolution::FailAtCursor(_) => Ok(None),
     }
 }
 
