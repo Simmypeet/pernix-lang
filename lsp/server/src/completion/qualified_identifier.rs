@@ -3,7 +3,6 @@
 use log::info;
 use pernixc_diagnostic::ByteIndex;
 use pernixc_extend::extend;
-use pernixc_parser::concrete_tree::RangeInclusion;
 use pernixc_semantic_element::import::get_import_map;
 use pernixc_source_file::{GlobalSourceID, SourceElement};
 use pernixc_symbol::{
@@ -14,7 +13,7 @@ use pernixc_target::TargetID;
 use tower_lsp::lsp_types::CompletionItemKind;
 
 use crate::pointing::{
-    get_symbol_scope_at_byte_index, resolve_qualified_identifier_path,
+    self, get_symbol_scope_at_byte_index, resolve_qualified_identifier_path,
 };
 
 #[extend]
@@ -116,29 +115,27 @@ pub async fn qualified_identifier_completion(
         syntax_tree.inner_tree().clone(),
     );
 
-    // use inclusive range so that when the user is completing right after the
-    // last character of the qualified identifier, we still get the correct
-    // qualified identifier
-    let (Some(qualified_identifier), Some(token)) = (
+    let (Some(qualified_identifier), token) = (
         node.get_deepest_ast::<pernixc_syntax::QualifiedIdentifier>(
-            token_tree,
-            byte_index,
-            RangeInclusion::Inclusive,
-        ),
-        node.get_pointing_token(
-            token_tree,
-            byte_index,
-            RangeInclusion::Inclusive,
-        ),
+            token_tree, byte_index,
+        )
+        .or_else(|| {
+            // try again by checking one byte before, to handle the case
+            // where the cursor is at the end of the identifier
+            byte_index.checked_sub(1).and_then(|byte_index| {
+                node.get_deepest_ast::<pernixc_syntax::QualifiedIdentifier>(
+                    token_tree, byte_index,
+                )
+            })
+        }),
+        node.get_pointing_token(token_tree, byte_index),
     ) else {
-        info!(
-            "No qualified identifier at byte index {byte_index:?} for \
-             completion"
-        );
+        info!(" No qualified identifier found at byte index {byte_index} ");
         return Ok(());
     };
 
-    let token_abs_span = token_tree.absolute_span_of(&token.span);
+    let token_abs_span =
+        token.map(|token| token_tree.absolute_span_of(&token.span));
 
     let Some(resolved_path) = self
         .resolve_qualified_identifier_path(
@@ -149,43 +146,49 @@ pub async fn qualified_identifier_completion(
         .await?
     else {
         info!(
-            "No resolution for qualified identifier completion at byte index \
-             {byte_index:?}"
+            " Qualified identifier at byte index {byte_index} could not be \
+             resolved "
         );
         return Ok(());
     };
+
+    info!(
+        " Qualified identifier at byte index {byte_index} resolved to \
+         {resolved_path:?} "
+    );
 
     // determine the nearest module id for import suggestions
     let nearest_module =
         target_id.make_global(self.get_closest_module_id(current_site).await);
 
     let prior_scope = match resolved_path {
-        crate::pointing::Resolution::Success(success_resolution) => {
+        pointing::Resolution::Success(success_resolution) => {
             success_resolution.parent_scope
         }
-        crate::pointing::Resolution::FailAtCursor(fail_at_cursor) => {
-            fail_at_cursor.parent_scope
-        }
-        crate::pointing::Resolution::NoMatchFound(symbol) => {
+        pointing::Resolution::FailAtCursor(fail_at_cursor) => fail_at_cursor,
+        pointing::Resolution::FailedAtLastSegment(_)
+        | pointing::Resolution::NoMatchFound(_) => {
             // check if the cursor is at the end of the qualified identifier,
             // only then suggest members of the symbol
             let qual_span = qualified_identifier.span();
             let qual_abs_span = token_tree.absolute_span_of(&qual_span);
 
             if byte_index == qual_abs_span.end {
-                Some(symbol)
+                match resolved_path {
+                    pointing::Resolution::FailedAtLastSegment(global) => global,
+                    pointing::Resolution::NoMatchFound(global) => Some(global),
+
+                    pointing::Resolution::Success(_)
+                    | pointing::Resolution::FailAtCursor(_) => {
+                        unreachable!()
+                    }
+                }
             } else {
                 // cursor is not at the end, no suggestions
                 return Ok(());
             }
         }
     };
-
-    info!(
-        "Qualified identifier completion at byte index {byte_index:?}: \
-         prior_scope={prior_scope:?}, nearest_module={nearest_module:?}, \
-         resolved_path={resolved_path:?}"
-    );
 
     if let Some(symbol) = prior_scope {
         // suggest members of the resolved symbol
