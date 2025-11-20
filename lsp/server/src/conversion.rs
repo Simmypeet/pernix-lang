@@ -12,3 +12,11 @@ pub fn to_lsp_position(self: EditorLocation) -> tower_lsp::lsp_types::Position {
         character: self.column as u32,
     }
 }
+
+/// Converts the given LSP position to a Pernix editor location.
+#[extend]
+pub fn to_pernix_editor_location(
+    self: tower_lsp::lsp_types::Position,
+) -> EditorLocation {
+    EditorLocation { line: self.line as usize, column: self.character as usize }
+}

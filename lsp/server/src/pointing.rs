@@ -10,8 +10,7 @@ use pernixc_resolution::qualified_identifier::{
     resolve_in, resolve_simple_qualified_identifier_root,
 };
 use pernixc_source_file::{
-    calculate_path_id, get_source_file_by_id, ByteIndex, GlobalSourceID,
-    SourceFile, Span,
+    calculate_path_id, get_source_file_by_id, ByteIndex, GlobalSourceID, Span,
 };
 use pernixc_symbol::{
     member::try_get_members, scope_span::get_scope_span,
@@ -20,6 +19,8 @@ use pernixc_symbol::{
 use pernixc_syntax::QualifiedIdentifier;
 use pernixc_target::{Global, TargetID};
 use tower_lsp::lsp_types;
+
+use crate::conversion::to_pernix_editor_location;
 
 /// Returns a tuple of the qualified identifier and its span that points to the
 /// given byte index in the source file.
@@ -180,7 +181,9 @@ pub async fn symbol_at(
         target_id.make_global(self.get_source_file_module(source_id).await);
 
     // determine the byte position
-    let byte_index = source_file.lsp_position_to_byte_index(*position);
+    let byte_index = source_file.get_byte_index_from_editor_location(
+        &position.to_pernix_editor_location(),
+    );
 
     // get the most specific symbol scope at the byte index
     let symbol_scope_id = self
@@ -252,26 +255,4 @@ pub async fn get_symbol_scope_at_byte_index(
     }
 
     current_scope_id
-}
-
-/// Converts an LSP position to a byte index in the source file.
-#[extend]
-pub fn lsp_position_to_byte_index(
-    self: &SourceFile,
-    position: tower_lsp::lsp_types::Position,
-) -> pernixc_source_file::ByteIndex {
-    let line_starting_byte =
-        self.get_starting_byte_index_of_line(position.line as usize).unwrap();
-
-    let line_str = self.get_line(position.line as usize).unwrap();
-
-    let mut byte_index = line_starting_byte;
-    for (i, ch) in line_str.char_indices() {
-        if i >= position.character as usize {
-            break;
-        }
-        byte_index += ch.len_utf8();
-    }
-
-    byte_index
 }
