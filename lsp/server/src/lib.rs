@@ -5,6 +5,7 @@ use tokio::sync::RwLock;
 use tower_lsp::{
     jsonrpc,
     lsp_types::{
+        CompletionOptions, CompletionParams, CompletionResponse,
         DidChangeTextDocumentParams, DidChangeWatchedFilesParams,
         DidOpenTextDocumentParams, DidSaveTextDocumentParams, FileChangeType,
         GotoDefinitionParams, GotoDefinitionResponse, HoverProviderCapability,
@@ -17,8 +18,8 @@ use tower_lsp::{
 };
 
 use crate::{
-    analyzer::Analyzer, goto_definition::handle_goto_definition,
-    hover::handle_hover,
+    analyzer::Analyzer, completion::handle_completion,
+    goto_definition::handle_goto_definition, hover::handle_hover,
 };
 
 /// A diagnostic with its source file uri.
@@ -32,6 +33,7 @@ pub struct DiagnosticsWithUrl {
 }
 
 pub mod analyzer;
+pub mod completion;
 pub mod conversion;
 pub mod goto_definition;
 pub mod hover;
@@ -72,7 +74,14 @@ impl LanguageServer for Server {
                     TextDocumentSyncKind::INCREMENTAL,
                 )),
 
-                completion_provider: None,
+                completion_provider: Some(CompletionOptions {
+                    resolve_provider: Some(false),
+                    trigger_characters: Some(vec![
+                        ".".to_string(),
+                        ":".to_string(),
+                    ]),
+                    ..Default::default()
+                }),
                 execute_command_provider: None,
 
                 workspace: Some(WorkspaceServerCapabilities {
@@ -280,6 +289,24 @@ impl LanguageServer for Server {
         info!("Did save: {}", params.text_document.uri.path());
 
         analyzer.check(&self.client, None).await;
+    }
+
+    async fn completion(
+        &self,
+        params: CompletionParams,
+    ) -> jsonrpc::Result<Option<CompletionResponse>> {
+        let analyzer = self.analyzer.read().await;
+        let Some(analyzer) = analyzer.as_ref() else {
+            return Ok(None);
+        };
+
+        let engine = analyzer.engine().await;
+        let engine = engine.tracked();
+
+        Ok(engine
+            .handle_completion(analyzer.current_target_id(), params)
+            .await
+            .unwrap_or_default())
     }
 }
 
