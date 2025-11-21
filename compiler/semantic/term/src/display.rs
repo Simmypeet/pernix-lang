@@ -166,6 +166,25 @@ pub trait Display: Send + Sync {
     }
 
     /// Writes the value asynchronously into the given buffer, using the given
+    /// formatting configuration.
+    fn write_async_with_configuration<W: std::fmt::Write + Send>(
+        &self,
+        engine: &TrackedEngine,
+        buffer: &mut W,
+        configuration: &Configuration,
+    ) -> impl std::future::Future<Output = std::fmt::Result> {
+        async move {
+            let mut formatter = Formatter {
+                buffer,
+                forall_lifetime_names: HashMap::default(),
+                configuration,
+            };
+
+            self.fmt(engine, &mut formatter).await
+        }
+    }
+
+    /// Writes the value asynchronously into the given buffer, using the given
     /// inference variable mappings.
     fn write_async_with_mapping<W: std::fmt::Write + Send>(
         &self,
