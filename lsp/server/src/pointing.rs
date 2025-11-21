@@ -10,8 +10,7 @@ use pernixc_resolution::qualified_identifier::{
     resolve_in, resolve_simple_qualified_identifier_root,
 };
 use pernixc_source_file::{
-    calculate_path_id, get_source_file_by_id, ByteIndex, GlobalSourceID,
-    SourceFile, Span,
+    calculate_path_id, get_source_file_by_id, ByteIndex, GlobalSourceID, Span,
 };
 use pernixc_symbol::{
     member::try_get_members, scope_span::get_scope_span,
@@ -20,6 +19,8 @@ use pernixc_symbol::{
 use pernixc_syntax::QualifiedIdentifier;
 use pernixc_target::{Global, TargetID};
 use tower_lsp::lsp_types;
+
+use crate::conversion::to_pernix_editor_location;
 
 /// Returns a tuple of the qualified identifier and its span that points to the
 /// given byte index in the source file.
@@ -90,32 +91,69 @@ pub async fn get_pointing_qualified_identifier(
     None
 }
 
+/// The resolution succeeded at the cursor position.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SuccessResolution {
+    /// The symbol being pointed at.
+    pub pointing_symbol: Global<pernixc_symbol::ID>,
+
+    /// The parent scope of the pointing symbol (None if the cursor is pointing
+    /// to the first root of the qualified identifier).
+    pub parent_scope: Option<Global<pernixc_symbol::ID>>,
+}
+
+/// The result of resolving a qualified identifier at the cursor position.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Resolution {
+    /// The resolution succeeded at the cursor position.
+    Success(SuccessResolution),
+
+    /// The resolution failed at the cursor position. The parent scope is
+    /// provided to allow for completion suggestions.
+    FailAtCursor(Option<Global<pernixc_symbol::ID>>),
+
+    /// The resolution failed at the last segment of the qualified identifier.
+    /// The optional symbol is provided to allow for completion suggestions.
+    FailedAtLastSegment(Option<Global<pernixc_symbol::ID>>),
+
+    /// The symbol resolve to the end without matching the cursor position.
+    NoMatchFound(Global<pernixc_symbol::ID>),
+}
+
 /// Resolves a qualified identifier to its symbol ID.
 #[extend]
 pub async fn resolve_qualified_identifier_path(
     self: &TrackedEngine,
     current_site: Global<pernixc_symbol::ID>,
     qualified_identifier: &QualifiedIdentifier,
-    pointing_span: Span<ByteIndex>,
-) -> Result<Option<Global<pernixc_symbol::ID>>, CyclicError> {
+    pointing_span: Option<Span<ByteIndex>>,
+) -> Result<Option<Resolution>, CyclicError> {
     let Some(root_syn) = qualified_identifier.root() else {
         return Ok(None);
     };
 
-    let root = self
+    let Some(root) = self
         .resolve_simple_qualified_identifier_root(current_site, &root_syn)
-        .await;
+        .await
+    else {
+        if qualified_identifier.subsequences().next().is_none() {
+            return Ok(Some(Resolution::FailedAtLastSegment(None)));
+        }
+
+        return Ok(None);
+    };
 
     let root_match = match root_syn {
         pernixc_syntax::QualifiedIdentifierRoot::Target(token)
         | pernixc_syntax::QualifiedIdentifierRoot::This(token) => {
-            self.to_absolute_span(&token.span).await == pointing_span
+            Some(self.to_absolute_span(&token.span).await) == pointing_span
         }
         pernixc_syntax::QualifiedIdentifierRoot::GenericIdentifier(
             generic_identifier,
         ) => {
             if let Some(identifier) = generic_identifier.identifier() {
-                self.to_absolute_span(&identifier.span).await == pointing_span
+                Some(self.to_absolute_span(&identifier.span).await)
+                    == pointing_span
             } else {
                 false
             }
@@ -124,16 +162,24 @@ pub async fn resolve_qualified_identifier_path(
 
     // shows as pointing to the root
     if root_match {
-        return Ok(Some(root));
+        return Ok(Some(Resolution::Success(SuccessResolution {
+            pointing_symbol: root,
+            parent_scope: None,
+        })));
     }
 
     let mut current_symbol_id = root;
-    for subsequence in qualified_identifier.subsequences() {
+
+    let mut subsequences = qualified_identifier.subsequences();
+
+    while let Some(subsequence) = subsequences.next() {
         let Some(identifier) =
             subsequence.generic_identifier().and_then(|x| x.identifier())
         else {
             return Ok(None);
         };
+
+        let identifier_span = self.to_absolute_span(&identifier.span).await;
 
         let Some(resolved_id) = self
             .resolve_in(
@@ -143,20 +189,37 @@ pub async fn resolve_qualified_identifier_path(
             )
             .await?
         else {
+            // if we fail to resolve at the cursor position, return the prior
+            // scope
+            if Some(identifier_span) == pointing_span {
+                return Ok(Some(Resolution::FailAtCursor(Some(
+                    current_symbol_id,
+                ))));
+            }
+
+            if subsequences.next().is_none() {
+                // failed at the last segment
+                return Ok(Some(Resolution::FailedAtLastSegment(Some(
+                    current_symbol_id,
+                ))));
+            }
+
             return Ok(None);
         };
 
-        let identifier_span = self.to_absolute_span(&identifier.span).await;
-
         // shows as pointing to this subsequence
-        if identifier_span == pointing_span {
-            return Ok(Some(resolved_id));
+        if Some(identifier_span) == pointing_span {
+            return Ok(Some(Resolution::Success(SuccessResolution {
+                pointing_symbol: resolved_id,
+                parent_scope: Some(current_symbol_id),
+            })));
         }
 
         current_symbol_id = resolved_id;
     }
 
-    Ok(Some(current_symbol_id))
+    // no match at the cursor position
+    Ok(Some(Resolution::NoMatchFound(current_symbol_id)))
 }
 
 /// Resolves the symbol at the given LSP position in the specified URI.
@@ -180,7 +243,9 @@ pub async fn symbol_at(
         target_id.make_global(self.get_source_file_module(source_id).await);
 
     // determine the byte position
-    let byte_index = source_file.lsp_position_to_byte_index(*position);
+    let byte_index = source_file.get_byte_index_from_editor_location(
+        &position.to_pernix_editor_location(),
+    );
 
     // get the most specific symbol scope at the byte index
     let symbol_scope_id = self
@@ -203,14 +268,20 @@ pub async fn symbol_at(
         .resolve_qualified_identifier_path(
             symbol_scope_id,
             &qualified_identifier,
-            pointing_span,
+            Some(pointing_span),
         )
         .await?
     else {
         return Ok(None);
     };
 
-    Ok(Some(resolved_symbol_id))
+    match resolved_symbol_id {
+        Resolution::Success(success) => Ok(Some(success.pointing_symbol)),
+
+        Resolution::FailedAtLastSegment(_)
+        | Resolution::NoMatchFound(_)
+        | Resolution::FailAtCursor(_) => Ok(None),
+    }
 }
 
 /// Retrieves the most specific symbol scope that contains the given byte
@@ -252,26 +323,4 @@ pub async fn get_symbol_scope_at_byte_index(
     }
 
     current_scope_id
-}
-
-/// Converts an LSP position to a byte index in the source file.
-#[extend]
-pub fn lsp_position_to_byte_index(
-    self: &SourceFile,
-    position: tower_lsp::lsp_types::Position,
-) -> pernixc_source_file::ByteIndex {
-    let line_starting_byte =
-        self.get_starting_byte_index_of_line(position.line as usize).unwrap();
-
-    let line_str = self.get_line(position.line as usize).unwrap();
-
-    let mut byte_index = line_starting_byte;
-    for (i, ch) in line_str.char_indices() {
-        if i >= position.character as usize {
-            break;
-        }
-        byte_index += ch.len_utf8();
-    }
-
-    byte_index
 }
