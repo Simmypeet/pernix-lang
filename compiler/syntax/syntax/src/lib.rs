@@ -201,7 +201,6 @@ abstract_tree::abstract_tree! {
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct QualifiedIdentifierSubsequent {
-        pub scope_separator: ScopeSeparator = ast::<ScopeSeparator>(),
         pub generic_identifier: GenericIdentifier
             = ast::<GenericIdentifier>(),
     }
@@ -223,7 +222,8 @@ abstract_tree::abstract_tree! {
     pub struct QualifiedIdentifier {
         pub root: QualifiedIdentifierRoot = ast::<QualifiedIdentifierRoot>(),
         pub subsequences: #[multi] QualifiedIdentifierSubsequent
-            = ast::<QualifiedIdentifierSubsequent>().repeat()
+            = ast::<QualifiedIdentifierSubsequent>()
+                .repeat_with_commit(ast::<ScopeSeparator>())
     }
 }
 

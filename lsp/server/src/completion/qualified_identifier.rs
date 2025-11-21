@@ -6,7 +6,9 @@ use pernixc_extend::extend;
 use pernixc_semantic_element::import::get_import_map;
 use pernixc_source_file::{GlobalSourceID, SourceElement};
 use pernixc_symbol::{
-    kind::get_kind, member::{get_members, try_get_members}, parent::get_closest_module_id,
+    kind::get_kind,
+    member::{get_members, try_get_members},
+    parent::get_closest_module_id,
     source_file_module::get_source_file_module,
 };
 use pernixc_target::TargetID;

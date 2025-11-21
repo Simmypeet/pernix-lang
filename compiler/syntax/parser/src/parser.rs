@@ -40,6 +40,19 @@ pub trait Parser {
         Repeat(self)
     }
 
+    /// Repeats this parser under the condition that in each iteration, the
+    /// `commit` parser succeedds. Once the commit succeeds, the main parser
+    /// should be successful as well.
+    fn repeat_with_commit<C: Parser>(
+        self,
+        commit: C,
+    ) -> RepeatWithCommit<C, Self>
+    where
+        Self: Sized,
+    {
+        RepeatWithCommit { commit, parser: self }
+    }
+
     /// Repeats the given parser until all of the tokens are consumed in the
     /// branch.
     ///
@@ -422,6 +435,52 @@ implements_choice!(
     A1 B1 C1 D1 E1 F1 G1 H1 I1 J1 K1 L1 M1 N1 O1 P1 Q1 R1 S1 T1 U1 V1 W1 X1 Y1
     Z1
 );
+
+/// See [`Parser::repeat_with_commit`] for more information.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RepeatWithCommit<C, T> {
+    /// The commit parser. This parser is used in each iteration to determine
+    /// whether to continue parsing or not.
+    pub commit: C,
+
+    /// The main parser to be used in each iteration af
+    pub parser: T,
+}
+
+impl<C: Parser, T: Parser> Parser for RepeatWithCommit<C, T> {
+    fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
+        let mut checkpoint = state.checkpoint();
+
+        loop {
+            if self.commit.parse(state) == Ok(()) {
+                // successfully parsed the commit, so parse the main parser.
+                // the main parser should succeed after a commit
+                self.parser.parse(state)?;
+
+                // checkpoint for the next iteration
+                checkpoint = state.checkpoint();
+            } else {
+                // failed to parse the commit, so stop parsing
+                state.restore(checkpoint);
+                break;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl<C: Parser, T: Output<Extract = One>> Output for RepeatWithCommit<C, T> {
+    type Extract = Multiple;
+    type Output<'a> = T::Output<'a>;
+
+    fn output<'a>(
+        &self,
+        node: &'a crate::concrete_tree::Node,
+    ) -> Option<Self::Output<'a>> {
+        T::output(&self.parser, node)
+    }
+}
 
 /// See [`Parser::repeat`] for more information.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
