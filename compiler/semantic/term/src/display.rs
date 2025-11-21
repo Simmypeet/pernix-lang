@@ -58,6 +58,11 @@ pub struct Configuration<'y> {
     /// Mapping for elided lifetime IDs to their names.
     #[get_copy = "pub"]
     edlided_lifetimes: Option<&'y HashMap<ElidedLifetimeID, SharedStr>>,
+
+    /// Whether to only display the last segment of qualified identifiers.
+    #[get_copy = "pub"]
+    #[builder(default = false)]
+    short_qualified_identifiers: bool,
 }
 
 impl Configuration<'_> {
