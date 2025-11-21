@@ -29,6 +29,7 @@ pernixc_symbol = { path = "../../compiler/semantic/symbol" }
 pernixc_syntax = { path = "../../compiler/syntax/syntax" }
 pernixc_parser = { path = "../../compiler/syntax/parser" }
 pernixc_resolution = { path = "../../compiler/semantic/resolution" }
+pernixc_semantic_element = { path = "../../compiler/semantic/semantic_element" }
 
 
 [lints]

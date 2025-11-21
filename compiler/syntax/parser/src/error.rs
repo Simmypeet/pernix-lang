@@ -7,7 +7,7 @@ use pernixc_lexical::{
     kind,
     tree::{
         Branch, DelimiterKind, FragmentKind, OffsetMode, RelativeLocation,
-        ROOT_BRANCH_ID,
+        RelativeSpan, ROOT_BRANCH_ID,
     },
 };
 use pernixc_query::{runtime::executor, TrackedEngine};
@@ -96,6 +96,120 @@ fn found_node_string(
                     source_id,
                 }),
             )
+        }
+    }
+}
+
+impl Cursor {
+    /// Retrieves the relative span of the cursor in the given token tree.
+    #[must_use]
+    pub fn to_relative_span(
+        &self,
+        token_tree: &pernixc_lexical::tree::Tree,
+    ) -> Span<RelativeLocation> {
+        let branch = &token_tree[self.branch_id];
+        let is_at_end = self.node_index == branch.nodes.len();
+        let is_at_root = self.branch_id == ROOT_BRANCH_ID;
+
+        match (is_at_end, is_at_root) {
+            (false, _) => match &branch.nodes[self.node_index] {
+                pernixc_lexical::tree::Node::Leaf(token) => token.span,
+                pernixc_lexical::tree::Node::Branch(id) => RelativeSpan {
+                    start: RelativeLocation {
+                        offset: 0,
+                        mode: OffsetMode::Start,
+                        relative_to: *id,
+                    },
+                    end: RelativeLocation {
+                        offset: 0,
+                        mode: OffsetMode::End,
+                        relative_to: *id,
+                    },
+                    source_id: token_tree.source_id(),
+                },
+            },
+
+            (true, false) => {
+                match &branch.kind.as_fragment().unwrap().fragment_kind {
+                    FragmentKind::Delimiter(delimiter) => delimiter.close.span,
+                    FragmentKind::Indentation(_) => {
+                        let mut branch_id: ID<Branch> = self.branch_id;
+                        let mut branch: &Branch = branch;
+                        let mut parent_branch: &Branch;
+
+                        loop {
+                            let Some(parent_branch_id) = branch.parent() else {
+                                break Span {
+                                    start: RelativeLocation {
+                                        offset: 0,
+                                        mode: OffsetMode::End,
+                                        relative_to: ROOT_BRANCH_ID,
+                                    },
+                                    end: RelativeLocation {
+                                        offset: 0,
+                                        mode: OffsetMode::End,
+                                        relative_to: ROOT_BRANCH_ID,
+                                    },
+                                    source_id: token_tree.source_id(),
+                                };
+                            };
+
+                            parent_branch = &token_tree[parent_branch_id];
+
+                            let node_index = parent_branch
+                                .nodes
+                                .iter()
+                                .position(|x| {
+                                    x.as_branch()
+                                        .is_some_and(|x| *x == branch_id)
+                                })
+                                .unwrap();
+
+                            let node = branch.nodes.get(node_index);
+
+                            if let Some(node) = node {
+                                break match node {
+                                    pernixc_lexical::tree::Node::Leaf(
+                                        token,
+                                    ) => token.span,
+                                    pernixc_lexical::tree::Node::Branch(id) => {
+                                        RelativeSpan {
+                                            start: RelativeLocation {
+                                                offset: 0,
+                                                mode: OffsetMode::Start,
+                                                relative_to: *id,
+                                            },
+                                            end: RelativeLocation {
+                                                offset: 0,
+                                                mode: OffsetMode::End,
+                                                relative_to: *id,
+                                            },
+                                            source_id: token_tree.source_id(),
+                                        }
+                                    }
+                                };
+                            }
+
+                            branch_id = parent_branch_id;
+                            branch = parent_branch;
+                        }
+                    }
+                }
+            }
+
+            (true, true) => Span {
+                start: RelativeLocation {
+                    offset: 0,
+                    mode: OffsetMode::End,
+                    relative_to: ROOT_BRANCH_ID,
+                },
+                end: RelativeLocation {
+                    offset: 0,
+                    mode: OffsetMode::End,
+                    relative_to: ROOT_BRANCH_ID,
+                },
+                source_id: token_tree.source_id(),
+            },
         }
     }
 }

@@ -248,20 +248,20 @@ pub async fn resolve_simple_qualified_identifier_root(
     self: &TrackedEngine,
     current_site: Global<pernixc_symbol::ID>,
     root: &QualifiedIdentifierRoot,
-) -> Global<pernixc_symbol::ID> {
+) -> Option<Global<pernixc_symbol::ID>> {
     match root {
-        QualifiedIdentifierRoot::Target(_) => Global::new(
+        QualifiedIdentifierRoot::Target(_) => Some(Global::new(
             current_site.target_id,
             self.get_target_root_module_id(current_site.target_id).await,
-        ),
+        )),
 
         QualifiedIdentifierRoot::This(_) => {
             let Some((this_symbol, _)) = search_this(self, current_site).await
             else {
-                return current_site;
+                return Some(current_site);
             };
 
-            this_symbol
+            Some(this_symbol)
         }
 
         QualifiedIdentifierRoot::GenericIdentifier(generic_identifier) => {
@@ -274,7 +274,7 @@ pub async fn resolve_simple_qualified_identifier_root(
             let identifier =
                 generic_identifier.identifier().ok_or(Error::Abort).unwrap();
 
-            let id = match self
+            match self
                 .get_members(current_module_id)
                 .await
                 .member_ids_by_name
@@ -289,9 +289,7 @@ pub async fn resolve_simple_qualified_identifier_root(
                     .get(&identifier.kind.0)
                     .copied()
                     .map(|x| x.id),
-            };
-
-            id.unwrap_or(current_site)
+            }
         }
     }
 }

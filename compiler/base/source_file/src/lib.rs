@@ -351,6 +351,28 @@ impl SourceFile {
         Ok(Self::new(string, path))
     }
 
+    /// Gets the byte index from the given editor location.
+    #[must_use]
+    pub fn get_byte_index_from_editor_location(
+        &self,
+        editor_location: &EditorLocation,
+    ) -> ByteIndex {
+        let line_starting_byte =
+            self.get_starting_byte_index_of_line(editor_location.line).unwrap();
+
+        let line_str = self.get_line(editor_location.line).unwrap();
+
+        let mut byte_index = line_starting_byte;
+        for (i, ch) in line_str.char_indices() {
+            if i >= editor_location.column {
+                break;
+            }
+            byte_index += ch.len_utf8();
+        }
+
+        byte_index
+    }
+
     /// Gets the [`Location`] of the given byte index.
     #[must_use]
     #[allow(clippy::missing_panics_doc)]
@@ -551,6 +573,18 @@ impl<L> Span<L> {
         L: Clone,
     {
         self.start.clone()..self.end.clone()
+    }
+
+    /// Gets the byte range of the span, with an option to make the end
+    pub fn range_maybe_inclusive(&self, inclusive: bool) -> Range<L>
+    where
+        L: Clone + std::ops::Add<usize, Output = L>,
+    {
+        if inclusive {
+            self.start.clone()..(self.end.clone() + 1)
+        } else {
+            self.start.clone()..self.end.clone()
+        }
     }
 }
 
