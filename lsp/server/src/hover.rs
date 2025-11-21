@@ -2,11 +2,15 @@
 
 use pernixc_extend::extend;
 use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
-use pernixc_symbol::name::get_qualified_name;
+use pernixc_symbol::{kind::get_kind, name::get_qualified_name};
 use pernixc_target::TargetID;
 use tower_lsp::lsp_types::MarkupContent;
 
-use crate::pointing::symbol_at;
+use crate::{hover::r#enum::format_enum_signature, pointing::symbol_at};
+
+pub mod r#enum;
+pub mod generic_parameters;
+pub mod markdown;
 
 /// Handles hover requests from the LSP client.
 #[extend]
@@ -26,13 +30,41 @@ pub async fn handle_hover(
         return Ok(None);
     };
 
+    let kind = self.get_kind(symbol).await;
     Ok(Some(tower_lsp::lsp_types::Hover {
         contents: tower_lsp::lsp_types::HoverContents::Markup(MarkupContent {
             kind: tower_lsp::lsp_types::MarkupKind::Markdown,
-            value: format!(
-                "Pointing at `{}`",
-                self.get_qualified_name(symbol).await
-            ),
+            value: match kind {
+                pernixc_symbol::kind::Kind::Enum => {
+                    self.format_enum_signature(symbol).await?
+                }
+
+                pernixc_symbol::kind::Kind::Module
+                | pernixc_symbol::kind::Kind::Struct
+                | pernixc_symbol::kind::Kind::Trait
+                | pernixc_symbol::kind::Kind::Type
+                | pernixc_symbol::kind::Kind::Constant
+                | pernixc_symbol::kind::Kind::Function
+                | pernixc_symbol::kind::Kind::ExternFunction
+                | pernixc_symbol::kind::Kind::Variant
+                | pernixc_symbol::kind::Kind::TraitType
+                | pernixc_symbol::kind::Kind::TraitFunction
+                | pernixc_symbol::kind::Kind::TraitConstant
+                | pernixc_symbol::kind::Kind::Effect
+                | pernixc_symbol::kind::Kind::EffectOperation
+                | pernixc_symbol::kind::Kind::Marker
+                | pernixc_symbol::kind::Kind::PositiveImplementation
+                | pernixc_symbol::kind::Kind::NegativeImplementation
+                | pernixc_symbol::kind::Kind::ImplementationType
+                | pernixc_symbol::kind::Kind::ImplementationFunction
+                | pernixc_symbol::kind::Kind::ImplementationConstant => {
+                    format!(
+                        "```pnx\n{} {}\n```",
+                        kind.kind_str(),
+                        self.get_qualified_name(symbol).await
+                    )
+                }
+            },
         }),
         range: None,
     }))
