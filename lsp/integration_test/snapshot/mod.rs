@@ -13,7 +13,7 @@ use tower_lsp::lsp_types::{
     GotoDefinitionParams, PartialResultParams, WorkDoneProgressParams,
 };
 use tracing_subscriber::{
-    layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer,
+    EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt,
 };
 
 use crate::fixture_with_cursor::FixtureWithCursor;
@@ -70,8 +70,11 @@ pub async fn test_file(main_file: PathBuf) {
         .expect("Failed to canonicalize main file path");
 
     // NOTE: Define each directory to a specific functionality to test here
-    let goto_path = PathBuf::from(project_path)
-        .join("lsp/integration_test/snapshot/goto_definition");
+    let mut goto_path = PathBuf::from(project_path);
+    goto_path.push("lsp");
+    goto_path.push("integration_test");
+    goto_path.push("snapshot");
+    goto_path.push("goto_definition");
 
     // NOTE: Match the prefix paths to the test functions here
     if main_file.starts_with(&goto_path) {
