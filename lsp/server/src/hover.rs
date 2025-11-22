@@ -1,15 +1,15 @@
 //! Handles the implementation of hover functionality for the LSP server.
 
 use pernixc_extend::extend;
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
 use pernixc_symbol::{kind::get_kind, name::get_qualified_name};
 use pernixc_target::TargetID;
 use tower_lsp::lsp_types::MarkupContent;
 
 use crate::{
     hover::{
-        r#enum::format_enum_signature, r#struct::format_struct_signature,
-        r#type::format_type_signature,
+        r#enum::format_enum_signature, function::format_function_signature,
+        r#struct::format_struct_signature, r#type::format_type_signature,
     },
     pointing::symbol_at,
 };
@@ -17,6 +17,7 @@ use crate::{
 mod associate_symbols;
 
 pub mod r#enum;
+pub mod function;
 pub mod markdown;
 pub mod r#struct;
 pub mod r#type;
@@ -58,20 +59,27 @@ pub async fn handle_hover(
                     self.format_type_signature(symbol).await?
                 }
 
+                pernixc_symbol::kind::Kind::Function
+                | pernixc_symbol::kind::Kind::ExternFunction
+                | pernixc_symbol::kind::Kind::TraitFunction
+                | pernixc_symbol::kind::Kind::EffectOperation
+                | pernixc_symbol::kind::Kind::ImplementationFunction => {
+                    self.format_function_signature(
+                        symbol,
+                        symbol.target_id == target_id,
+                    )
+                    .await?
+                }
+
                 pernixc_symbol::kind::Kind::Module
                 | pernixc_symbol::kind::Kind::Trait
                 | pernixc_symbol::kind::Kind::Constant
-                | pernixc_symbol::kind::Kind::Function
-                | pernixc_symbol::kind::Kind::ExternFunction
                 | pernixc_symbol::kind::Kind::Variant
-                | pernixc_symbol::kind::Kind::TraitFunction
                 | pernixc_symbol::kind::Kind::TraitConstant
                 | pernixc_symbol::kind::Kind::Effect
-                | pernixc_symbol::kind::Kind::EffectOperation
                 | pernixc_symbol::kind::Kind::Marker
                 | pernixc_symbol::kind::Kind::PositiveImplementation
                 | pernixc_symbol::kind::Kind::NegativeImplementation
-                | pernixc_symbol::kind::Kind::ImplementationFunction
                 | pernixc_symbol::kind::Kind::ImplementationConstant => {
                     format!(
                         "```pnx\n{} {}\n```",
