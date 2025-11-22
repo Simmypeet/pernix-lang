@@ -6,11 +6,14 @@ use std::{
 };
 
 use insta::assert_snapshot;
-use pernix_server::goto_definition::handle_goto_definition;
+use pernix_server::{
+    goto_definition::handle_goto_definition, hover::handle_hover,
+};
 use pernixc_query::TrackedEngine;
 use pernixc_target::TargetID;
 use tower_lsp::lsp_types::{
-    GotoDefinitionParams, PartialResultParams, WorkDoneProgressParams,
+    GotoDefinitionParams, HoverParams, PartialResultParams,
+    WorkDoneProgressParams,
 };
 use tracing_subscriber::{
     EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt,
@@ -76,12 +79,41 @@ pub async fn test_file(main_file: PathBuf) {
     goto_path.push("snapshot");
     goto_path.push("goto_definition");
 
+    let mut hover_path = PathBuf::from(project_path);
+    hover_path.push("lsp");
+    hover_path.push("integration_test");
+    hover_path.push("snapshot");
+    hover_path.push("hover");
+
     // NOTE: Match the prefix paths to the test functions here
     if main_file.starts_with(&goto_path) {
         test_goto_definition(main_file).await;
+    } else if main_file.starts_with(&hover_path) {
+        test_hover(main_file).await;
     } else {
         panic!("No test defined for path: {}", main_file.display());
     }
+}
+
+/// Tests the "hover" LSP functionality.
+pub async fn test_hover(main_file: PathBuf) {
+    let (tracked_engine, fixture, target_id) =
+        create_engine_test_for_fixture_with_cursor(&main_file).await;
+
+    let response = tracked_engine
+        .handle_hover(target_id, HoverParams {
+            text_document_position_params: fixture
+                .cursor_text_document_position_params(),
+            work_done_progress_params: WorkDoneProgressParams {
+                work_done_token: None,
+            },
+        })
+        .await
+        .expect("encountered cyclic dependency");
+
+    let snapshot_str = response.unwrap_or_else(|| "no hover found".to_string());
+
+    test_snapshot_string(&main_file, &snapshot_str);
 }
 
 /// Tests the "go to definition" LSP functionality.
@@ -111,6 +143,7 @@ pub async fn test_goto_definition(main_file: PathBuf) {
         },
     );
 
+    dbg!(&snapshot_str);
     test_snapshot_string(&main_file, &snapshot_str);
 }
 

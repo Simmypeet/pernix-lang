@@ -1,0 +1,6 @@
+public function test[T](arg: int32, (first, second): (T, T)) -> T:
+    pass
+
+
+public function callTest():
+    tes<cursor>t()

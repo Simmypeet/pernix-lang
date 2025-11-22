@@ -108,7 +108,7 @@ impl Executor<pernixc_source_file::Key> for FixtureWithCursor {
             Err(err) => {
                 return Ok(Err(pernixc_source_file::Error(
                     err.to_string().into(),
-                )))
+                )));
             }
         };
 
