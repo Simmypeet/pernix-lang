@@ -1,0 +1,7 @@
+public enum Result[T, E]:
+    Ok(T)
+    Error(E)
+
+
+public function test():
+    Resu<cursor>lt::Ok()

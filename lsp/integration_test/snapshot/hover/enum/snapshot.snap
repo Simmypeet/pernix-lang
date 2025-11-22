@@ -1,0 +1,9 @@
+---
+source: lsp/integration_test/snapshot/mod.rs
+expression: string
+---
+```pernix
+public enum Result[T, E]:
+    Ok(T)
+    Error(E)
+```
