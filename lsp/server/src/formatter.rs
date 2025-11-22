@@ -20,8 +20,11 @@ use crate::formatter::{
     generic_parameters::format_generic_parameters,
 };
 
-pub mod accessbility;
-pub mod generic_parameters;
+mod accessbility;
+mod generic_parameters;
+mod irrefutable_pattern;
+
+pub use irrefutable_pattern::format_pattern;
 
 /// Represents errors that can occur during formatting.
 #[derive(Debug, Clone, Copy, thiserror::Error)]
