@@ -1,0 +1,7 @@
+public enum Option[T]:
+    Some(T)
+    None
+
+
+public function test():
+    Option::Non<cursor>e
