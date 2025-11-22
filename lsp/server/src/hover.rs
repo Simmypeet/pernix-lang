@@ -6,13 +6,20 @@ use pernixc_symbol::{kind::get_kind, name::get_qualified_name};
 use pernixc_target::TargetID;
 use tower_lsp::lsp_types::MarkupContent;
 
-use crate::{hover::r#enum::format_enum_signature, pointing::symbol_at};
+use crate::{
+    hover::{
+        r#enum::format_enum_signature, r#struct::format_struct_signature,
+        r#type::format_type_signature,
+    },
+    pointing::symbol_at,
+};
 
 pub mod accessibility;
 pub mod r#enum;
 pub mod generic_parameters;
 pub mod markdown;
 pub mod r#struct;
+pub mod r#type;
 
 /// Handles hover requests from the LSP client.
 #[extend]
@@ -45,14 +52,21 @@ pub async fn handle_hover(
                     self.format_struct_signature(symbol).await?
                 }
 
+                pernixc_symbol::kind::Kind::Type
+                | pernixc_symbol::kind::Kind::ImplementationType => {
+                    self.format_type_signature(symbol, true).await?
+                }
+
+                pernixc_symbol::kind::Kind::TraitType => {
+                    self.format_type_signature(symbol, false).await?
+                }
+
                 pernixc_symbol::kind::Kind::Module
                 | pernixc_symbol::kind::Kind::Trait
-                | pernixc_symbol::kind::Kind::Type
                 | pernixc_symbol::kind::Kind::Constant
                 | pernixc_symbol::kind::Kind::Function
                 | pernixc_symbol::kind::Kind::ExternFunction
                 | pernixc_symbol::kind::Kind::Variant
-                | pernixc_symbol::kind::Kind::TraitType
                 | pernixc_symbol::kind::Kind::TraitFunction
                 | pernixc_symbol::kind::Kind::TraitConstant
                 | pernixc_symbol::kind::Kind::Effect
@@ -60,7 +74,6 @@ pub async fn handle_hover(
                 | pernixc_symbol::kind::Kind::Marker
                 | pernixc_symbol::kind::Kind::PositiveImplementation
                 | pernixc_symbol::kind::Kind::NegativeImplementation
-                | pernixc_symbol::kind::Kind::ImplementationType
                 | pernixc_symbol::kind::Kind::ImplementationFunction
                 | pernixc_symbol::kind::Kind::ImplementationConstant => {
                     format!(
