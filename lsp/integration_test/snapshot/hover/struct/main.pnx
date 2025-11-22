@@ -1,0 +1,7 @@
+public struct Test['a, T, U]:
+    public publicField: T
+    internal privateField: U
+    internal internalField: &'a int32
+
+
+public type AliasType = Te<cursor>st[int32, string, float64]

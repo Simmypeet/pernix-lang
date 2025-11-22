@@ -1,0 +1,10 @@
+---
+source: lsp/integration_test/snapshot/mod.rs
+expression: string
+---
+```pernix
+public struct Test['a, T, U]:
+    public publicField: T
+    internal privateField: U
+    internal internalField: &'a int32
+```
