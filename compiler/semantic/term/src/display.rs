@@ -167,10 +167,10 @@ pub trait Display: Send + Sync {
 
     /// Writes the value asynchronously into the given buffer, using the given
     /// formatting configuration.
-    fn write_async_with_configuration<W: std::fmt::Write + Send>(
+    fn write_async_with_configuration(
         &self,
         engine: &TrackedEngine,
-        buffer: &mut W,
+        buffer: &mut (dyn std::fmt::Write + Send),
         configuration: &Configuration,
     ) -> impl std::future::Future<Output = std::fmt::Result> {
         async move {

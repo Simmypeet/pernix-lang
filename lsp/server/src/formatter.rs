@@ -49,6 +49,7 @@ pub struct Formatter<'x, 'y> {
     buffer: &'x mut (dyn std::fmt::Write + Send),
     engine: &'y pernixc_query::TrackedEngine,
     current_identiation_level: usize,
+    first_line: bool,
 }
 
 impl<'x, 'y> Formatter<'x, 'y> {
@@ -57,7 +58,7 @@ impl<'x, 'y> Formatter<'x, 'y> {
         buffer: &'x mut (dyn std::fmt::Write + Send),
         engine: &'y pernixc_query::TrackedEngine,
     ) -> Self {
-        Self { buffer, engine, current_identiation_level: 0 }
+        Self { buffer, engine, current_identiation_level: 0, first_line: true }
     }
 }
 
@@ -112,13 +113,17 @@ impl Formatter<'_, '_> {
         &mut self,
         format: impl AsyncFnOnce(LinedFormatter) -> Result<(), Error>,
     ) -> Result<(), Error> {
+        if !self.first_line {
+            writeln!(self.buffer).unwrap();
+        }
+
+        self.first_line = false;
+
         for _ in 0..self.current_identiation_level {
             write!(self.buffer, "{}", Self::TAB).unwrap();
         }
 
         format(LinedFormatter { formatter: self }).await?;
-
-        writeln!(self.buffer).unwrap();
 
         Ok(())
     }
@@ -183,7 +188,7 @@ impl LinedFormatter<'_, '_, '_> {
         &mut self,
         f: impl AsyncFnOnce(&mut Formatter) -> Result<(), Error>,
     ) -> Result<(), Error> {
-        writeln!(self.buffer, ":").unwrap();
+        write!(self.buffer, ":").unwrap();
 
         self.current_identiation_level += 1;
         f(self.formatter).await?;

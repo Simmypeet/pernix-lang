@@ -85,7 +85,7 @@ pub async fn format_enum_signature(
         .await
         .assert_no_fmt_error()?;
 
-    string.push_str("```");
+    string.push_str("\n```");
 
     Ok(string)
 }
