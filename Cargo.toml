@@ -44,6 +44,7 @@ members = [
 
     "compiler/codegen/llvm",
 
+    "lsp/integration_test",
     "lsp/server",
 
     "compiler/driver",
@@ -86,6 +87,7 @@ ouroboros = "0.18.0"
 take_mut = "0.2.2"
 rayon = { version = "1.8.0" }
 clap = { version = "4.4.0", features = ["derive"] }
+walkdir = "2.5.0"
 bitflags = "2.4.1"
 drain_filter_polyfill = "0.1.3"
 typestate = "0.8.0"

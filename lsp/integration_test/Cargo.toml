@@ -1,0 +1,31 @@
+[package]
+name = "pernix_lsp_integration_test"
+description = "Integration tests for Pernix LSP server"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[[test]]
+name = "snapshot_integration_test"
+path = "snapshot/mod.rs"
+
+
+[dev-dependencies]
+pernix_server = { path = "../server" }
+pernixc_query = { path = "../../compiler/base/query" }
+pernixc_register = { path = "../../compiler/base/register" }
+pernixc_source_file = { path = "../../compiler/base/source_file" }
+pernixc_target = { path = "../../compiler/base/target" }
+tower-lsp = { workspace = true }
+walkdir = { workspace = true }
+serde_json = { workspace = true }
+insta = { workspace = true }
+stacker = { workspace = true }
+tokio = { workspace = true }
+tracing-subscriber = { workspace = true }
+test-generator = { workspace = true }
+
+[lints]
+workspace = true

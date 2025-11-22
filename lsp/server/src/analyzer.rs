@@ -1,9 +1,12 @@
 //! Contains the analyzer implementation.
 
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use pernixc_diagnostic::ByteIndex;
-use pernixc_query::{runtime::executor, Engine, TrackedEngine};
+use pernixc_query::{
+    runtime::executor::{self, Executor},
+    Engine, TrackedEngine,
+};
 use pernixc_source_file::{
     get_source_file_by_id, EditorLocation, GlobalSourceID, SourceFile,
 };
@@ -59,16 +62,24 @@ impl Analyzer {
 }
 
 impl Analyzer {
-    /// Creates a new analyzer for the given workspace URL.
-    pub async fn new(workspace_url: Url) -> Result<Self, NewWorkspaceError> {
-        let workspace = workspace::Workspace::new(&workspace_url)?;
-
-        let target_name = workspace.target_name().to_string();
+    /// Creates a new [`Engine`] setup for LSP services.
+    ///
+    /// # Arguments
+    ///
+    /// - `target_name`: The name of the target to create the engine for.
+    /// - `root_source_file`: The root source file path of the target.
+    /// - `source_file_loader_overide`: An executor to override the default
+    ///   source file loader.
+    pub async fn create_engine<E: Executor<pernixc_source_file::Key>>(
+        target_name: String,
+        root_source_file: PathBuf,
+        source_file_loader_overide: Arc<E>,
+    ) -> Arc<Engine> {
         let local_target_id = TargetID::from_target_name(&target_name);
 
         let command = pernixc_target::Command::Check(Check {
             input: Input {
-                file: workspace.root_source_file().to_path_buf(),
+                file: root_source_file,
                 target_name: Some(target_name),
                 library_paths: Vec::new(),
                 incremental_path: None,
@@ -86,7 +97,7 @@ impl Analyzer {
         assert!(engine
             .runtime
             .executor
-            .register(Arc::new(LoadSourceFileExecutor))
+            .register(source_file_loader_overide)
             .is_some());
 
         engine
@@ -130,6 +141,22 @@ impl Analyzer {
 
         let mut engine = Arc::new(engine);
         pernixc_corelib::initialize_corelib(&mut engine).await;
+
+        engine
+    }
+
+    /// Creates a new analyzer for the given workspace URL.
+    pub async fn new(workspace_url: Url) -> Result<Self, NewWorkspaceError> {
+        let workspace = workspace::Workspace::new(&workspace_url)?;
+
+        let target_name = workspace.target_name().to_string();
+        let local_target_id = TargetID::from_target_name(&target_name);
+        let engine = Self::create_engine(
+            target_name,
+            workspace.root_source_file().to_path_buf(),
+            Arc::new(LoadSourceFileExecutor),
+        )
+        .await;
 
         Ok(Self {
             engine: RwLock::new(engine),
