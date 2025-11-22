@@ -35,6 +35,7 @@ pub struct DiagnosticsWithUrl {
 pub mod analyzer;
 pub mod completion;
 pub mod conversion;
+pub mod formatter;
 pub mod goto_definition;
 pub mod hover;
 pub mod pointing;
