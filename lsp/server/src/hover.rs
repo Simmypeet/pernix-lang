@@ -51,12 +51,9 @@ pub async fn handle_hover(
                 }
 
                 pernixc_symbol::kind::Kind::Type
-                | pernixc_symbol::kind::Kind::ImplementationType => {
-                    self.format_type_signature(symbol, true).await?
-                }
-
-                pernixc_symbol::kind::Kind::TraitType => {
-                    self.format_type_signature(symbol, false).await?
+                | pernixc_symbol::kind::Kind::ImplementationType
+                | pernixc_symbol::kind::Kind::TraitType => {
+                    self.format_type_signature(symbol).await?
                 }
 
                 pernixc_symbol::kind::Kind::Module
