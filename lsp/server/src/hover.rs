@@ -9,6 +9,7 @@ use crate::{
     hover::{
         r#enum::format_enum_signature, function::format_function_signature,
         r#struct::format_struct_signature, r#type::format_type_signature,
+        variant::format_variant_signature,
     },
     pointing::symbol_at,
 };
@@ -20,6 +21,7 @@ pub mod function;
 pub mod markdown;
 pub mod r#struct;
 pub mod r#type;
+mod variant;
 
 /// Handles hover requests from the LSP client.
 #[extend]
@@ -58,7 +60,6 @@ pub async fn handle_hover(
         pernixc_symbol::kind::Kind::Function
         | pernixc_symbol::kind::Kind::ExternFunction
         | pernixc_symbol::kind::Kind::TraitFunction
-        | pernixc_symbol::kind::Kind::EffectOperation
         | pernixc_symbol::kind::Kind::ImplementationFunction => {
             self.format_function_signature(
                 symbol,
@@ -67,10 +68,14 @@ pub async fn handle_hover(
             .await?
         }
 
+        pernixc_symbol::kind::Kind::Variant => {
+            self.format_variant_signature(symbol).await?
+        }
+
         pernixc_symbol::kind::Kind::Module
         | pernixc_symbol::kind::Kind::Trait
+        | pernixc_symbol::kind::Kind::EffectOperation
         | pernixc_symbol::kind::Kind::Constant
-        | pernixc_symbol::kind::Kind::Variant
         | pernixc_symbol::kind::Kind::TraitConstant
         | pernixc_symbol::kind::Kind::Effect
         | pernixc_symbol::kind::Kind::Marker
