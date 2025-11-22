@@ -1,0 +1,11 @@
+public struct A:
+    pass
+
+
+implements A:
+    public function implementedFunction() -> int32:
+        return 42
+
+
+public function testFunction():
+    A::implementedFunct<cursor>ion()

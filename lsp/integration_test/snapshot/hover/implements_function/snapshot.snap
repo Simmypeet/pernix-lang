@@ -1,0 +1,8 @@
+---
+source: lsp/integration_test/snapshot/mod.rs
+expression: string
+---
+```pernix
+implements A:
+    public function implementedFunction() -> int32
+```

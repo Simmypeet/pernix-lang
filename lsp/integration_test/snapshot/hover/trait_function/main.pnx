@@ -1,0 +1,7 @@
+public trait SomeTrait[T]:
+    public function traitFunction[U](arg: T) -> U:
+        pass
+
+
+public function testFunction():
+    SomeTrait::traitFunct<cursor>ion()
