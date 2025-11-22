@@ -8,8 +8,8 @@ use std::{
     ops::Deref,
     pin::Pin,
     sync::{
-        atomic::{AtomicBool, AtomicU64},
         Arc,
+        atomic::{AtomicBool, AtomicU64},
     },
 };
 
@@ -26,12 +26,11 @@ use tokio::sync::Notify;
 use tracing::instrument;
 
 use crate::{
-    fingerprint,
+    Engine, Key, fingerprint,
     runtime::{
         executor::{self, CyclicError},
         persistence::serde::{DynamicDeserialize, DynamicSerialize},
     },
-    Engine, Key,
 };
 
 mod input;
@@ -164,15 +163,15 @@ impl TrackedEngine {
         &self,
         key: &K,
     ) -> Result<K::Value, CyclicError> {
-        if let Some(cache) = self.cache.as_ref() {
-            if let Some(value) = cache.get(key as &dyn Dynamic) {
-                let value = (&**value.value() as &dyn Any)
-                    .downcast_ref::<K::Value>()
-                    .expect("Failed to downcast value")
-                    .clone();
+        if let Some(cache) = self.cache.as_ref()
+            && let Some(value) = cache.get(key as &dyn Dynamic)
+        {
+            let value = (&**value.value() as &dyn Any)
+                .downcast_ref::<K::Value>()
+                .expect("Failed to downcast value")
+                .clone();
 
-                return Ok(value);
-            }
+            return Ok(value);
         }
 
         let current_version = self

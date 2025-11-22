@@ -671,9 +671,8 @@ fn serialize_enum_variants(
             Fields::Named(fields) => {
                 // Struct variant: MyEnum::Variant { field1: T1, field2: T2, ... }
                 let field_count = count_non_skipped_fields(fields);
-                let field_bindings = fields.named.iter().map(|field| {
-                    let field_name = field.ident.as_ref().unwrap();
-                    field_name
+                let field_bindings = fields.named.iter().map(|field| { 
+                    field.ident.as_ref().unwrap()
                 });
                 let field_serializations = fields.named.iter().filter_map(|field| {
                     if has_serde_skip_attr(field) {
@@ -1527,11 +1526,10 @@ fn deserialize_enum_variants(
 /// ```
 fn has_serde_skip_attr(field: &Field) -> bool {
     field.attrs.iter().any(|attr| {
-        if attr.path().is_ident("serde") {
-            if let Ok(list) = attr.meta.require_list() {
+        if attr.path().is_ident("serde")
+            && let Ok(list) = attr.meta.require_list() {
                 return list.tokens.to_string().contains("skip");
             }
-        }
         false
     })
 }

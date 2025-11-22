@@ -8,8 +8,8 @@ use pernixc_ir::{
     control_flow_graph::{Block, Point},
     instruction::{Instruction, RegisterAssignment},
     value::{
-        register::{Assignment, Register},
         TypeOf, Value,
+        register::{Assignment, Register},
     },
 };
 use pernixc_lexical::tree::RelativeSpan;
@@ -21,7 +21,7 @@ use pernixc_semantic_element::{
 use pernixc_symbol::{kind::get_kind, parent::scope_walker};
 use pernixc_target::Global;
 use pernixc_term::{
-    generic_parameters::{get_generic_parameters, LifetimeParameterID},
+    generic_parameters::{LifetimeParameterID, get_generic_parameters},
     inference,
     lifetime::{ElidedLifetimeID, Lifetime},
     predicate::Predicate,
@@ -29,10 +29,10 @@ use pernixc_term::{
 };
 use pernixc_transitive_closure::TransitiveClosure;
 use pernixc_type_system::{
-    environment::get_active_premise, normalizer::Normalizer, UnrecoverableError,
+    UnrecoverableError, environment::get_active_premise, normalizer::Normalizer,
 };
 
-use crate::{context, NonStaticUniversalRegion, Region, UniversalRegion};
+use crate::{NonStaticUniversalRegion, Region, UniversalRegion, context};
 
 mod array;
 mod borrow;
@@ -635,16 +635,19 @@ impl<N: Normalizer> Builder<'_, N> {
         subset_result: &mut Intermediate,
     ) -> Result<(), UnrecoverableError> {
         for region in self.get_new_regions(instruction).await? {
-            assert!(self
-                .latest_change_points_by_region
-                .insert(region, None)
-                .is_none());
+            assert!(
+                self.latest_change_points_by_region
+                    .insert(region, None)
+                    .is_none()
+            );
 
             if let Region::Universal(universal_region) = region {
-                assert!(subset_result
-                    .entry_block_ids_by_universal_regions
-                    .insert(universal_region, instruction_point.block_id)
-                    .is_none());
+                assert!(
+                    subset_result
+                        .entry_block_ids_by_universal_regions
+                        .insert(universal_region, instruction_point.block_id)
+                        .is_none()
+                );
             }
         }
 
@@ -653,10 +656,9 @@ impl<N: Normalizer> Builder<'_, N> {
         self.handle_chages(changes, subset_result, instruction_point);
 
         for region in self.get_removing_regions(instruction).await? {
-            assert!(self
-                .latest_change_points_by_region
-                .remove(&region)
-                .is_some());
+            assert!(
+                self.latest_change_points_by_region.remove(&region).is_some()
+            );
         }
 
         Ok(())
@@ -671,13 +673,20 @@ impl<N: Normalizer> Builder<'_, N> {
     ) {
         if let Some((borrow_register_id, local_region)) = changes.borrow_created
         {
-            assert!(!self
-                .latest_change_points_by_region
-                .contains_key(&Region::Local(local_region)));
-            assert!(subset_result
-                .created_borrows
-                .insert(borrow_register_id, (local_region, instruction_point))
-                .is_none());
+            assert!(
+                !self
+                    .latest_change_points_by_region
+                    .contains_key(&Region::Local(local_region))
+            );
+            assert!(
+                subset_result
+                    .created_borrows
+                    .insert(
+                        borrow_register_id,
+                        (local_region, instruction_point)
+                    )
+                    .is_none()
+            );
         }
 
         // add subset relations
@@ -789,16 +798,18 @@ impl<N: Normalizer> Builder<'_, N> {
 
             // update the latest location
             if latest_from.is_some() {
-                assert!(self
-                    .latest_change_points_by_region
-                    .insert(from, Some(instruction_point.instruction_index))
-                    .is_some());
+                assert!(
+                    self.latest_change_points_by_region
+                        .insert(from, Some(instruction_point.instruction_index))
+                        .is_some()
+                );
             }
             if latest_to.is_some() {
-                assert!(self
-                    .latest_change_points_by_region
-                    .insert(to, Some(instruction_point.instruction_index))
-                    .is_some());
+                assert!(
+                    self.latest_change_points_by_region
+                        .insert(to, Some(instruction_point.instruction_index))
+                        .is_some()
+                );
             }
         }
     }
@@ -990,9 +1001,11 @@ impl<'a, N: Normalizer> Walker<'a, N> {
                 for (region, latest_point) in
                     merging_builder.latest_change_points_by_region
                 {
-                    assert!(builder
-                        .latest_change_points_by_region
-                        .contains_key(&region));
+                    assert!(
+                        builder
+                            .latest_change_points_by_region
+                            .contains_key(&region)
+                    );
 
                     let from_region_at = RegionAt::new_location_sensitive(
                         region,
@@ -1141,11 +1154,12 @@ impl<'a, N: Normalizer> Walker<'a, N> {
         }
 
         // mark as done
-        assert!(self
-            .walk_results_by_block_id
-            .insert(block_id, Some(builder.clone()))
-            .unwrap()
-            .is_none());
+        assert!(
+            self.walk_results_by_block_id
+                .insert(block_id, Some(builder.clone()))
+                .unwrap()
+                .is_none()
+        );
 
         Ok(Some(builder))
     }
@@ -1188,12 +1202,12 @@ impl Subset {
             RegionAt::Local(region) => region.point.as_mut(),
         };
 
-        if let Some(region_point) = region_point {
-            if let RegionPoint::InBlock(in_block) = region_point {
-                // update to the correct pos
-                *region_point = self.change_logs_by_region[&to_region]
-                    .get_most_updated_point(*in_block);
-            }
+        if let Some(region_point) = region_point
+            && let RegionPoint::InBlock(in_block) = region_point
+        {
+            // update to the correct pos
+            *region_point = self.change_logs_by_region[&to_region]
+                .get_most_updated_point(*in_block);
         }
 
         self.entry_block_ids_by_universal_regions
@@ -1312,7 +1326,7 @@ pub async fn analyze<N: Normalizer>(
             subset_result
                 .created_borrows
                 .iter()
-                .map(|x| RegionAt::new_location_insensitive(x.1 .0)),
+                .map(|x| RegionAt::new_location_insensitive(x.1.0)),
         )
     {
         all_regions.insert(region_at);

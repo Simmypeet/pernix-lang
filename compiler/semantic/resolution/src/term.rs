@@ -6,29 +6,29 @@ use std::{fmt::Debug, ops::Deref};
 use pernixc_extend::extend;
 use pernixc_handler::Handler;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor};
 use pernixc_semantic_element::type_alias::get_type_alias;
 use pernixc_source_file::SourceElement;
-use pernixc_symbol::kind::{get_kind, Kind};
+use pernixc_symbol::kind::{Kind, get_kind};
 use pernixc_syntax::{GenericIdentifier, LifetimeIdentifier};
 use pernixc_target::Global;
 use pernixc_term::{
     generic_arguments::{GenericArguments, MemberSymbol, Symbol, TraitMember},
-    generic_parameters::{get_generic_parameters, GenericKind},
+    generic_parameters::{GenericKind, get_generic_parameters},
     instantiation::Instantiation,
     lifetime::Lifetime,
-    r#type::{Array, Phantom, Pointer, Primitive, Qualifier, Reference, Type},
     tuple,
+    r#type::{Array, Phantom, Pointer, Primitive, Qualifier, Reference, Type},
 };
 
 use crate::{
+    Config, ElidedTermProvider, Error,
     diagnostic::{
         Diagnostic, ExpectType, LifetimeParameterNotFound,
         MismatchedGenericArgumentCount, MisorderedGenericArgument,
         MoreThanOneUnpackedInTupleType, UnexpectedInference,
     },
-    qualified_identifier::{resolve_qualified_identifier, Resolution},
-    Config, ElidedTermProvider, Error,
+    qualified_identifier::{Resolution, resolve_qualified_identifier},
 };
 
 /// Resolves the generic arguments resides within the given
@@ -517,8 +517,8 @@ pub async fn resolve_qualified_identifier_type(
             });
 
     // try to resolve the simple identifier in the extra namespace
-    if is_simple_identifier {
-        if let Some(extra_type) = config.extra_namespace.and_then(|x| {
+    if is_simple_identifier
+        && let Some(extra_type) = config.extra_namespace.and_then(|x| {
             x.types
                 .get(
                     syntax_tree
@@ -532,9 +532,9 @@ pub async fn resolve_qualified_identifier_type(
                         .as_str(),
                 )
                 .cloned()
-        }) {
-            return Ok(extra_type);
-        }
+        })
+    {
+        return Ok(extra_type);
     }
 
     let resolution = match self
@@ -544,7 +544,7 @@ pub async fn resolve_qualified_identifier_type(
         Ok(resolution) => resolution,
 
         Err(Error::Abort) => {
-            return Ok(Type::Error(pernixc_term::error::Error))
+            return Ok(Type::Error(pernixc_term::error::Error));
         }
 
         Err(Error::Cyclic(cyclic)) => return Err(cyclic),

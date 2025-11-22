@@ -4,7 +4,7 @@ use std::{any::Any, sync::Arc};
 
 use enum_as_inner::EnumAsInner;
 use pernixc_symbol::{
-    kind::{get_kind, Kind},
+    kind::{Kind, get_kind},
     parent::scope_walker,
 };
 use pernixc_target::Global;
@@ -15,10 +15,10 @@ use pernixc_term::{
 };
 
 use crate::{
+    Error, Satisfied, Succeeded,
     environment::{BoxedFuture, Call, Environment, Query},
     normalizer::Normalizer,
     resolution::{self, Implementation},
-    Error, Satisfied, Succeeded,
 };
 
 /// An enumeration of ways a positive trait predicate can be satisfied.
@@ -89,21 +89,19 @@ impl Query for PositiveTrait {
                     self.generic_arguments.clone(),
                 ))
                 .await?
-            {
-                if environment.tracked_engine().get_kind(result.result.id).await
+                && environment.tracked_engine().get_kind(result.result.id).await
                     == Kind::PositiveImplementation
-                {
-                    return Ok(Some(Arc::new(Succeeded::with_constraints(
-                        PositiveSatisfied::Implementation(Implementation {
-                            instantiation: result.result.instantiation.clone(),
-                            id: result.result.id,
-                            is_not_general_enough: result
-                                .result
-                                .is_not_general_enough,
-                        }),
-                        result.constraints.clone(),
-                    ))));
-                }
+            {
+                return Ok(Some(Arc::new(Succeeded::with_constraints(
+                    PositiveSatisfied::Implementation(Implementation {
+                        instantiation: result.result.instantiation.clone(),
+                        id: result.result.id,
+                        is_not_general_enough: result
+                            .result
+                            .is_not_general_enough,
+                    }),
+                    result.constraints.clone(),
+                ))));
             }
 
             // look for the premise that matches
@@ -175,21 +173,19 @@ impl Query for NegativeTrait {
                     self.generic_arguments.clone(),
                 ))
                 .await?
-            {
-                if environment.tracked_engine().get_kind(result.result.id).await
+                && environment.tracked_engine().get_kind(result.result.id).await
                     == Kind::NegativeImplementation
-                {
-                    return Ok(Some(Arc::new(Succeeded::with_constraints(
-                        NegativeSatisfied::Implementation(Implementation {
-                            instantiation: result.result.instantiation.clone(),
-                            id: result.result.id,
-                            is_not_general_enough: result
-                                .result
-                                .is_not_general_enough,
-                        }),
-                        result.constraints.clone(),
-                    ))));
-                }
+            {
+                return Ok(Some(Arc::new(Succeeded::with_constraints(
+                    NegativeSatisfied::Implementation(Implementation {
+                        instantiation: result.result.instantiation.clone(),
+                        id: result.result.id,
+                        is_not_general_enough: result
+                            .result
+                            .is_not_general_enough,
+                    }),
+                    result.constraints.clone(),
+                ))));
             }
 
             // look for the premise that matches

@@ -5,10 +5,10 @@ use std::sync::Arc;
 use pernixc_term::matching::Matching;
 
 use crate::{
+    Error, Satisfied, Succeeded,
     environment::{BoxedFuture, Environment, Query},
     normalizer::Normalizer,
     term::Term,
-    Error, Satisfied, Succeeded,
 };
 
 /// A query for checking strict equality
@@ -52,51 +52,45 @@ impl<T: Term> Query for Equality<T, T> {
                 let trait_member_term: T =
                     equality_predicate.lhs.clone().into();
 
-                if self.lhs.as_trait_member().is_some() {
-                    if let Some(mut result) = equals_without_mapping(
+                if self.lhs.as_trait_member().is_some()
+                    && let Some(mut result) = equals_without_mapping(
                         &self.lhs,
                         &trait_member_term,
                         environment,
                     )
                     .await?
-                    {
-                        if let Some(inner_result) = environment
-                            .query(&Self::new(
-                                equality_predicate.rhs.clone(),
-                                self.rhs.clone(),
-                            ))
-                            .await?
-                        {
-                            result.constraints.extend(
-                                inner_result.constraints.iter().cloned(),
-                            );
-                            return Ok(Some(Arc::new(result)));
-                        }
-                    }
+                    && let Some(inner_result) = environment
+                        .query(&Self::new(
+                            equality_predicate.rhs.clone(),
+                            self.rhs.clone(),
+                        ))
+                        .await?
+                {
+                    result
+                        .constraints
+                        .extend(inner_result.constraints.iter().cloned());
+                    return Ok(Some(Arc::new(result)));
                 }
 
-                if self.rhs.as_trait_member().is_some() {
-                    if let Some(mut result) = equals_without_mapping(
+                if self.rhs.as_trait_member().is_some()
+                    && let Some(mut result) = equals_without_mapping(
                         &trait_member_term,
                         &self.rhs,
                         environment,
                     )
                     .await?
-                    {
-                        if let Some(inner_result) = environment
-                            .query(&Self::new(
-                                self.lhs.clone(),
-                                equality_predicate.rhs.clone(),
-                            ))
-                            .await?
-                        {
-                            result.constraints.extend(
-                                inner_result.constraints.iter().cloned(),
-                            );
+                    && let Some(inner_result) = environment
+                        .query(&Self::new(
+                            self.lhs.clone(),
+                            equality_predicate.rhs.clone(),
+                        ))
+                        .await?
+                {
+                    result
+                        .constraints
+                        .extend(inner_result.constraints.iter().cloned());
 
-                            return Ok(Some(Arc::new(result)));
-                        }
-                    }
+                    return Ok(Some(Arc::new(result)));
                 }
             }
 
@@ -153,24 +147,20 @@ async fn equals_by_normalization<T: Term>(
 ) -> Result<Option<Succeeded<Satisfied>>, super::Error> {
     if let Some(Succeeded { result: eq, mut constraints }) =
         lhs.normalize(environment).await?
-    {
-        if let Some(result) =
+        && let Some(result) =
             environment.query(&Equality::new(eq, rhs.clone())).await?
-        {
-            constraints.extend(result.constraints.iter().cloned());
-            return Ok(Some(Succeeded::satisfied_with(constraints)));
-        }
+    {
+        constraints.extend(result.constraints.iter().cloned());
+        return Ok(Some(Succeeded::satisfied_with(constraints)));
     }
 
     if let Some(Succeeded { result: eq, mut constraints }) =
         rhs.normalize(environment).await?
-    {
-        if let Some(result) =
+        && let Some(result) =
             environment.query(&Equality::new(lhs.clone(), eq)).await?
-        {
-            constraints.extend(result.constraints.iter().cloned());
-            return Ok(Some(Succeeded::satisfied_with(constraints)));
-        }
+    {
+        constraints.extend(result.constraints.iter().cloned());
+        return Ok(Some(Succeeded::satisfied_with(constraints)));
     }
 
     Ok(None)

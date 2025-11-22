@@ -5,7 +5,7 @@ use std::{borrow::Cow, sync::Arc};
 use pernixc_bind::binder::{self, Binder, UnrecoverableError};
 use pernixc_diagnostic::{ByteIndex, Rendered, Report};
 use pernixc_handler::Storage;
-use pernixc_ir::{value, FunctionIR};
+use pernixc_ir::{FunctionIR, value};
 use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
@@ -14,7 +14,7 @@ use pernixc_symbol::{
 };
 use pernixc_target::{Global, TargetID};
 use pernixc_tokio::scoped;
-use pernixc_type_system::environment::{get_active_premise, Environment};
+use pernixc_type_system::environment::{Environment, get_active_premise};
 
 /// A collection of all diagnostics related to IRs.
 #[derive(
@@ -102,9 +102,9 @@ pub async fn ir_with_diagnostic_executor(
                 return Ok((
                     Arc::new(pernixc_ir::FunctionIR::default()),
                     storage.into_vec().into(),
-                ))
+                ));
             }
-        };
+        }
     }
 
     // finalize the binder to an ir
@@ -117,7 +117,7 @@ pub async fn ir_with_diagnostic_executor(
             return Ok((
                 Arc::new(pernixc_ir::FunctionIR::default()),
                 storage.into_vec().into(),
-            ))
+            ));
         }
     };
 
@@ -154,7 +154,7 @@ pub async fn ir_with_diagnostic_executor(
             return Ok((
                 Arc::new(pernixc_ir::FunctionIR::default()),
                 storage.into_vec().into(),
-            ))
+            ));
         }
     }
 
@@ -181,7 +181,7 @@ pub async fn ir_with_diagnostic_executor(
             return Ok((
                 Arc::new(pernixc_ir::FunctionIR::default()),
                 storage.into_vec().into(),
-            ))
+            ));
         }
     }
 

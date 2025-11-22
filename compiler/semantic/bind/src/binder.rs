@@ -7,6 +7,7 @@ use pernixc_arena::ID;
 use pernixc_extend::extend;
 use pernixc_handler::Handler;
 use pernixc_ir::{
+    IR,
     address::{Address, Memory},
     alloca::Alloca,
     control_flow_graph::Block,
@@ -14,20 +15,19 @@ use pernixc_ir::{
     pattern::{Irrefutable, NameBindingPoint, Wildcard},
     scope,
     value::{
-        literal::{Literal, Unreachable},
-        register::{load::Load, Assignment, Register},
         Environment as ValueEnvironment, TypeOf, Value,
+        literal::{Literal, Unreachable},
+        register::{Assignment, Register, load::Load},
     },
-    IR,
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::{
-    runtime::executor::{self, CyclicError},
     TrackedEngine,
+    runtime::executor::{self, CyclicError},
 };
 use pernixc_resolution::{
-    self, generic_parameter_namespace::get_generic_parameter_namespace,
-    ExtraNamespace,
+    self, ExtraNamespace,
+    generic_parameter_namespace::get_generic_parameter_namespace,
 };
 use pernixc_semantic_element::parameter::get_parameters;
 use pernixc_serialize::Serialize;
@@ -43,8 +43,8 @@ use pernixc_term::{
 };
 pub use pernixc_type_system::UnrecoverableError;
 use pernixc_type_system::{
-    environment::{get_active_premise, Environment as TyEnvironment, Premise},
     Succeeded,
+    environment::{Environment as TyEnvironment, Premise, get_active_premise},
 };
 
 use crate::{
@@ -355,9 +355,10 @@ impl Binder<'_> {
                 let inference =
                     self.inference_context.next_type_inference_variable();
 
-                assert!(self
-                    .inference_context
-                    .register(inference, constraint::Type::All(true)));
+                assert!(
+                    self.inference_context
+                        .register(inference, constraint::Type::All(true))
+                );
 
                 Type::Inference(inference)
             },
@@ -386,9 +387,10 @@ impl Binder<'_> {
                 let inference =
                     self.inference_context.next_type_inference_variable();
 
-                assert!(self
-                    .inference_context
-                    .register(inference, constraint::Type::All(true)));
+                assert!(
+                    self.inference_context
+                        .register(inference, constraint::Type::All(true))
+                );
 
                 Type::Inference(inference)
             },
@@ -536,9 +538,9 @@ impl Binder<'_> {
     ) -> inference::Variable<Constant> {
         let infer_var =
             self.inference_context.next_constant_inference_variable();
-        assert!(self
-            .inference_context
-            .register(infer_var, constraint::Constant));
+        assert!(
+            self.inference_context.register(infer_var, constraint::Constant)
+        );
 
         infer_var
     }
@@ -570,13 +572,11 @@ impl Binder<'_> {
     /// `table`, and `inference_context` normalizer.
     #[must_use]
     pub fn create_environment(&self) -> TyEnvironment<'_, InferenceContext> {
-        let environment = TyEnvironment::new(
+        TyEnvironment::new(
             Cow::Borrowed(&self.environment.premise),
             Cow::Borrowed(self.engine),
             &self.inference_context,
-        );
-
-        environment
+        )
     }
 
     /// Simplifies the type and possibly reports overflow error as a type

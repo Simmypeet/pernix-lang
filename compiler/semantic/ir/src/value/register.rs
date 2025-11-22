@@ -8,7 +8,7 @@ use std::borrow::Cow;
 use enum_as_inner::EnumAsInner;
 use pernixc_arena::ID;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_symbol::MemberID;
@@ -18,16 +18,17 @@ use pernixc_term::{
     generic_parameters::get_generic_parameters, lifetime::Lifetime,
     r#type::Type,
 };
-use pernixc_type_system::{normalizer::Normalizer, Error, Succeeded};
+use pernixc_type_system::{Error, Succeeded, normalizer::Normalizer};
 
 use crate::{
+    Values,
     address::Address,
     transform::{
         self, ConstantTermSource, LifetimeTermSource, Transformer,
         TypeTermSource,
     },
     value::{Environment, TypeOf, Value},
-    visitor, Values,
+    visitor,
 };
 
 pub mod array;
@@ -136,40 +137,40 @@ impl TypeOf<ID<Register>> for Values {
 
         match &register.assignment {
             Assignment::Tuple(tuple) => {
-                return self.type_of(tuple, environment).await
+                return self.type_of(tuple, environment).await;
             }
             Assignment::Load(load) => {
-                return self.type_of(load, environment).await
+                return self.type_of(load, environment).await;
             }
             Assignment::Borrow(borrow) => {
-                return self.type_of(borrow, environment).await
+                return self.type_of(borrow, environment).await;
             }
             Assignment::Prefix(prefix) => {
-                return self.type_of(prefix, environment).await
+                return self.type_of(prefix, environment).await;
             }
             Assignment::Struct(st) => {
-                return self.type_of(st, environment).await
+                return self.type_of(st, environment).await;
             }
             Assignment::Variant(variant) => {
-                return self.type_of(variant, environment).await
+                return self.type_of(variant, environment).await;
             }
             Assignment::FunctionCall(function_call) => {
-                return self.type_of(function_call, environment).await
+                return self.type_of(function_call, environment).await;
             }
             Assignment::Binary(binary) => {
                 return self.type_of(binary, environment).await;
             }
             Assignment::Phi(phi_node) => {
-                return self.type_of(phi_node, environment).await
+                return self.type_of(phi_node, environment).await;
             }
             Assignment::Array(array) => {
-                return self.type_of(array, environment).await
+                return self.type_of(array, environment).await;
             }
             Assignment::Cast(cast) => {
-                return self.type_of(cast, environment).await
+                return self.type_of(cast, environment).await;
             }
             Assignment::VariantNumber(variant) => {
-                return self.type_of(variant, environment).await
+                return self.type_of(variant, environment).await;
             }
             Assignment::Do(d) => return self.type_of(d, environment).await,
         }
@@ -323,10 +324,10 @@ impl visitor::Visitor for RegisterVisitor {
     }
 
     fn visit_address(&mut self, address: Cow<Address>) {
-        if let Address::Index(index) = &*address {
-            if let Value::Register(register_id) = &index.indexing_value {
-                self.registers.push(*register_id);
-            }
+        if let Address::Index(index) = &*address
+            && let Value::Register(register_id) = &index.indexing_value
+        {
+            self.registers.push(*register_id);
         }
     }
 }

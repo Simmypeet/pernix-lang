@@ -4,10 +4,10 @@ use std::{collections::BTreeMap, hash::Hash};
 
 use pernixc_arena::ID;
 use pernixc_extend::extend;
-use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
-use pernixc_symbol::{parent::get_parent, MemberID};
+use pernixc_symbol::{MemberID, parent::get_parent};
 use pernixc_target::Global;
 
 use super::{
@@ -18,8 +18,8 @@ use crate::{
     constant::Constant,
     generic_arguments::GenericArguments,
     generic_parameters::{
-        get_generic_parameters, ConstantParameterID, GenericKind,
-        GenericParameters, LifetimeParameterID, TypeParameterID,
+        ConstantParameterID, GenericKind, GenericParameters,
+        LifetimeParameterID, TypeParameterID, get_generic_parameters,
     },
     lifetime::Lifetime,
     r#type::Type,
@@ -104,9 +104,9 @@ impl Instantiation {
         for (term, term_id) in terms.zip(term_parameter_order) {
             let parameter_id = MemberID::new(generic_id, term_id);
 
-            assert!(T::get_mut(self)
-                .insert(parameter_id.into(), term)
-                .is_none());
+            assert!(
+                T::get_mut(self).insert(parameter_id.into(), term).is_none()
+            );
         }
     }
 
@@ -292,13 +292,7 @@ impl Instantiation {
                         LifetimeParameterID::new(global_id, x),
                     );
 
-                    let inst = self
-                        .lifetimes
-                        .get(&lifetime_parameter)
-                        .cloned()
-                        .unwrap();
-
-                    inst
+                    self.lifetimes.get(&lifetime_parameter).cloned().unwrap()
                 })
                 .collect(),
             types: parameters
@@ -309,10 +303,7 @@ impl Instantiation {
                     let type_parameter =
                         Type::Parameter(TypeParameterID::new(global_id, x));
 
-                    let inst =
-                        self.types.get(&type_parameter).cloned().unwrap();
-
-                    inst
+                    self.types.get(&type_parameter).cloned().unwrap()
                 })
                 .collect(),
             constants: parameters
@@ -324,13 +315,7 @@ impl Instantiation {
                         ConstantParameterID::new(global_id, x),
                     );
 
-                    let inst = self
-                        .constants
-                        .get(&constant_parameter)
-                        .cloned()
-                        .unwrap();
-
-                    inst
+                    self.constants.get(&constant_parameter).cloned().unwrap()
                 })
                 .collect(),
         }

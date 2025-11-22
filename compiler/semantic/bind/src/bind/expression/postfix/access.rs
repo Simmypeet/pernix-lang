@@ -8,7 +8,7 @@ use pernixc_semantic_element::fields::get_fields;
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
     accessibility::is_accessible_from_globally,
-    kind::{get_kind, Kind},
+    kind::{Kind, get_kind},
 };
 use pernixc_syntax::expression::postfix::AccessKind;
 use pernixc_term::{
@@ -18,16 +18,17 @@ use pernixc_term::{
 
 use crate::{
     bind::{
+        Expression, LValue,
         expression::postfix::{
+            BindState,
             access::diagnostic::{
                 CannotIndexPastUnpackedTuple, FieldNotFound,
                 TooLargeTupleIndex, TupleIndexOutOfBounds,
                 UnexpectedTypeForAccess,
             },
             diagnostic::Diagnostic,
-            reduce_address_reference, BindState,
+            reduce_address_reference,
         },
-        Expression, LValue,
     },
     binder::{BindingError, Error},
     pattern::bind::diagnostic::FieldIsNotAccessible,
@@ -50,10 +51,7 @@ pub(super) async fn bind_access(
 
     let lvalue = match current_state {
         BindState::Initial(unit) => {
-            let lvalue =
-                binder.bind_as_lvalue(&unit, true, None, handler).await?;
-
-            lvalue
+            binder.bind_as_lvalue(&unit, true, None, handler).await?
         }
 
         BindState::Bound(Expression::LValue(lvalue)) => lvalue,

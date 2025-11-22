@@ -3,7 +3,7 @@
 use std::ops::Deref;
 
 use pernixc_arena::ID;
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_symbol::parent::get_parent;
@@ -16,12 +16,12 @@ use pernixc_term::{
 };
 
 use crate::{
+    Values,
     transform::Transformer,
     value::{
-        register::{transform_generic_arguments, Register},
         TypeOf, Value,
+        register::{Register, transform_generic_arguments},
     },
-    Values,
 };
 
 /// Represents a variant value.
@@ -77,10 +77,10 @@ pub(super) async fn transform_variant<
     span: Option<pernixc_lexical::tree::RelativeSpan>,
     engine: &TrackedEngine,
 ) -> Result<(), CyclicError> {
-    if let Some(value) = variant.associated_value.as_mut() {
-        if let Some(literal) = value.as_literal_mut() {
-            literal.transform(transformer).await?;
-        }
+    if let Some(value) = variant.associated_value.as_mut()
+        && let Some(literal) = value.as_literal_mut()
+    {
+        literal.transform(transformer).await?;
     }
 
     transform_generic_arguments(

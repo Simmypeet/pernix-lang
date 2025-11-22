@@ -13,7 +13,7 @@ use pernixc_query::TrackedEngine;
 use pernixc_symbol::{get_target_root_module_id, member::get_members};
 use pernixc_target::{Global, OptimizationLevel, TargetID};
 
-use crate::{diagnostic::pernix_diagnostic_to_codespan_diagnostic, ReportTerm};
+use crate::{ReportTerm, diagnostic::pernix_diagnostic_to_codespan_diagnostic};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum MachineCodeKind {
@@ -84,7 +84,8 @@ pub(super) async fn emit_as_machine_code(
     // for some reason, the boolean value needs to be stored in a variable
     // otherwise the borrow checker will complain about the lifetime of
     // `inkwell_context`, which is probably a bug in the rust compiler.
-    let result = if let (Some(module), false) = (result, has_error) {
+
+    if let (Some(module), false) = (result, has_error) {
         if let Err(error) = module.verify() {
             let ir = module.print_to_string().to_string();
             panic!(
@@ -178,9 +179,7 @@ pub(super) async fn emit_as_machine_code(
         }
 
         false
-    };
-
-    result
+    }
 }
 
 fn linker_command(obj: &Path, out: &Path) -> std::process::Command {

@@ -15,9 +15,9 @@ use pernixc_ir::{
     },
     scope::Scope,
     value::{
+        Value,
         literal::{self, Literal, Unit, Unreachable},
         register::{Assignment, Phi},
-        Value,
     },
 };
 use pernixc_lexical::tree::RelativeSpan;
@@ -164,10 +164,10 @@ impl Binder<'_> {
                 continue;
             };
 
-            if let Some(label_str) = label_str {
-                if block_state.label.as_deref() != Some(label_str) {
-                    continue;
-                }
+            if let Some(label_str) = label_str
+                && block_state.label.as_deref() != Some(label_str)
+            {
+                continue;
             }
 
             return Some(scope_id);
@@ -255,16 +255,18 @@ impl Bind<BlockState> for Binder<'_> {
 
             // add the missing values
             for block_id in missing_value_block_ids.iter().copied() {
-                assert!(block_state
-                    .incoming_values
-                    .insert(
-                        block_id,
-                        Value::Literal(Literal::Error(literal::Error {
-                            r#type: express_type.clone(),
-                            span: Some(block_state.span),
-                        })),
-                    )
-                    .is_none());
+                assert!(
+                    block_state
+                        .incoming_values
+                        .insert(
+                            block_id,
+                            Value::Literal(Literal::Error(literal::Error {
+                                r#type: express_type.clone(),
+                                span: Some(block_state.span),
+                            })),
+                        )
+                        .is_none()
+                );
             }
 
             if !missing_value_block_ids.is_empty() {
