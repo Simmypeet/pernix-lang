@@ -91,7 +91,12 @@ pub async fn test_file(main_file: PathBuf) {
     } else if main_file.starts_with(&hover_path) {
         test_hover(main_file).await;
     } else {
-        panic!("No test defined for path: {}", main_file.display());
+        panic!(
+            "No test defined for path: {}, available directories: {}, {}",
+            main_file.display(),
+            goto_path.display(),
+            hover_path.display()
+        );
     }
 }
 
