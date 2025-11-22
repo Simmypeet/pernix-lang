@@ -14,6 +14,8 @@ use crate::{
     pointing::symbol_at,
 };
 
+mod associate_symbols;
+
 pub mod r#enum;
 pub mod markdown;
 pub mod r#struct;
