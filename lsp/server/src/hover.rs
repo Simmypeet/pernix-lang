@@ -12,6 +12,7 @@ pub mod accessibility;
 pub mod r#enum;
 pub mod generic_parameters;
 pub mod markdown;
+pub mod r#struct;
 
 /// Handles hover requests from the LSP client.
 #[extend]
@@ -40,8 +41,11 @@ pub async fn handle_hover(
                     self.format_enum_signature(symbol).await?
                 }
 
+                pernixc_symbol::kind::Kind::Struct => {
+                    self.format_struct_signature(symbol).await?
+                }
+
                 pernixc_symbol::kind::Kind::Module
-                | pernixc_symbol::kind::Kind::Struct
                 | pernixc_symbol::kind::Kind::Trait
                 | pernixc_symbol::kind::Kind::Type
                 | pernixc_symbol::kind::Kind::Constant
