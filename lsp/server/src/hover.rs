@@ -4,7 +4,6 @@ use pernixc_extend::extend;
 use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
 use pernixc_symbol::{kind::get_kind, name::get_qualified_name};
 use pernixc_target::TargetID;
-use tower_lsp::lsp_types::MarkupContent;
 
 use crate::{
     hover::{
@@ -28,7 +27,7 @@ pub async fn handle_hover(
     self: &TrackedEngine,
     target_id: TargetID,
     params: tower_lsp::lsp_types::HoverParams,
-) -> Result<Option<tower_lsp::lsp_types::Hover>, CyclicError> {
+) -> Result<Option<String>, CyclicError> {
     let Some(symbol) = self
         .symbol_at(
             &params.text_document_position_params.position,
@@ -41,54 +40,48 @@ pub async fn handle_hover(
     };
 
     let kind = self.get_kind(symbol).await;
-    Ok(Some(tower_lsp::lsp_types::Hover {
-        contents: tower_lsp::lsp_types::HoverContents::Markup(MarkupContent {
-            kind: tower_lsp::lsp_types::MarkupKind::Markdown,
-            value: match kind {
-                pernixc_symbol::kind::Kind::Enum => {
-                    self.format_enum_signature(symbol).await?
-                }
+    Ok(Some(match kind {
+        pernixc_symbol::kind::Kind::Enum => {
+            self.format_enum_signature(symbol).await?
+        }
 
-                pernixc_symbol::kind::Kind::Struct => {
-                    self.format_struct_signature(symbol).await?
-                }
+        pernixc_symbol::kind::Kind::Struct => {
+            self.format_struct_signature(symbol).await?
+        }
 
-                pernixc_symbol::kind::Kind::Type
-                | pernixc_symbol::kind::Kind::ImplementationType
-                | pernixc_symbol::kind::Kind::TraitType => {
-                    self.format_type_signature(symbol).await?
-                }
+        pernixc_symbol::kind::Kind::Type
+        | pernixc_symbol::kind::Kind::ImplementationType
+        | pernixc_symbol::kind::Kind::TraitType => {
+            self.format_type_signature(symbol).await?
+        }
 
-                pernixc_symbol::kind::Kind::Function
-                | pernixc_symbol::kind::Kind::ExternFunction
-                | pernixc_symbol::kind::Kind::TraitFunction
-                | pernixc_symbol::kind::Kind::EffectOperation
-                | pernixc_symbol::kind::Kind::ImplementationFunction => {
-                    self.format_function_signature(
-                        symbol,
-                        symbol.target_id == target_id,
-                    )
-                    .await?
-                }
+        pernixc_symbol::kind::Kind::Function
+        | pernixc_symbol::kind::Kind::ExternFunction
+        | pernixc_symbol::kind::Kind::TraitFunction
+        | pernixc_symbol::kind::Kind::EffectOperation
+        | pernixc_symbol::kind::Kind::ImplementationFunction => {
+            self.format_function_signature(
+                symbol,
+                symbol.target_id == target_id,
+            )
+            .await?
+        }
 
-                pernixc_symbol::kind::Kind::Module
-                | pernixc_symbol::kind::Kind::Trait
-                | pernixc_symbol::kind::Kind::Constant
-                | pernixc_symbol::kind::Kind::Variant
-                | pernixc_symbol::kind::Kind::TraitConstant
-                | pernixc_symbol::kind::Kind::Effect
-                | pernixc_symbol::kind::Kind::Marker
-                | pernixc_symbol::kind::Kind::PositiveImplementation
-                | pernixc_symbol::kind::Kind::NegativeImplementation
-                | pernixc_symbol::kind::Kind::ImplementationConstant => {
-                    format!(
-                        "```pnx\n{} {}\n```",
-                        kind.kind_str(),
-                        self.get_qualified_name(symbol).await
-                    )
-                }
-            },
-        }),
-        range: None,
+        pernixc_symbol::kind::Kind::Module
+        | pernixc_symbol::kind::Kind::Trait
+        | pernixc_symbol::kind::Kind::Constant
+        | pernixc_symbol::kind::Kind::Variant
+        | pernixc_symbol::kind::Kind::TraitConstant
+        | pernixc_symbol::kind::Kind::Effect
+        | pernixc_symbol::kind::Kind::Marker
+        | pernixc_symbol::kind::Kind::PositiveImplementation
+        | pernixc_symbol::kind::Kind::NegativeImplementation
+        | pernixc_symbol::kind::Kind::ImplementationConstant => {
+            format!(
+                "```pnx\n{} {}\n```",
+                kind.kind_str(),
+                self.get_qualified_name(symbol).await
+            )
+        }
     }))
 }
