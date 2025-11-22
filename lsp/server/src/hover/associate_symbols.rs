@@ -11,7 +11,6 @@ use crate::{
     hover::markdown::PERNIX_FENCE,
 };
 
-/// Formats the signature of the given enum into a string.
 #[extend]
 pub async fn format_associate_symbol(
     self: &TrackedEngine,

@@ -1,5 +1,3 @@
-//! Formats the signature of a struct for hover information.
-
 use std::fmt::Write;
 
 use pernixc_extend::extend;
@@ -13,7 +11,6 @@ use crate::{
     hover::associate_symbols::format_associate_symbol,
 };
 
-/// Formats the signature of the given enum into a string.
 #[extend]
 pub async fn format_type_signature(
     self: &TrackedEngine,
@@ -30,7 +27,6 @@ async fn write_type_signature(
     let has_definition = match engine.get_kind(type_id).await {
         Kind::Type | Kind::ImplementationType => true,
         Kind::TraitType => false,
-
         _ => unreachable!(),
     };
 

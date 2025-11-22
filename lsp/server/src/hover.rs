@@ -16,11 +16,11 @@ use crate::{
 
 mod associate_symbols;
 
-pub mod r#enum;
-pub mod function;
-pub mod markdown;
-pub mod r#struct;
-pub mod r#type;
+mod r#enum;
+mod function;
+mod markdown;
+mod r#struct;
+mod r#type;
 mod variant;
 
 /// Handles hover requests from the LSP client.

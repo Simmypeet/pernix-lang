@@ -1,9 +1,7 @@
-//! Format enum signature for hover display
-
 use std::fmt::Write;
 
 use pernixc_extend::extend;
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
 use pernixc_semantic_element::variant::get_variant_associated_type;
 use pernixc_symbol::{
     member::get_members, name::get_name,
@@ -12,11 +10,10 @@ use pernixc_symbol::{
 use pernixc_target::Global;
 
 use crate::{
-    formatter::{assert_no_fmt_error, Formatter, WriteSignatureOptions},
+    formatter::{Formatter, WriteSignatureOptions, assert_no_fmt_error},
     hover::markdown::PERNIX_FENCE,
 };
 
-/// Formats the signature of the given enum into a string.
 #[extend]
 pub async fn format_enum_signature(
     self: &TrackedEngine,
