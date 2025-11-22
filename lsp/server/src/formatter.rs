@@ -6,6 +6,9 @@ use std::ops::{Deref, DerefMut};
 use bon::Builder;
 use pernixc_extend::extend;
 use pernixc_query::runtime::executor::CyclicError;
+use pernixc_semantic_element::{
+    implements::get_implements, implements_arguments::get_implements_argument,
+};
 use pernixc_symbol::{kind::get_kind, name::get_name};
 use pernixc_target::Global;
 use pernixc_term::{
@@ -180,6 +183,39 @@ impl LinedFormatter<'_, '_, '_> {
         }
 
         Ok(())
+    }
+
+    /// Writes the implements signature for the given implementation ID.
+    pub async fn write_implements_signature(
+        &mut self,
+        implementation_id: Global<pernixc_symbol::ID>,
+    ) -> Result<bool, Error> {
+        let (Some(implements_id), Some(implements_arguments)) = (
+            self.engine.get_implements(implementation_id).await?,
+            self.engine.get_implements_argument(implementation_id).await?,
+        ) else {
+            return Ok(false);
+        };
+
+        let implements_name = self.engine.get_name(implements_id).await;
+
+        write!(self.buffer, " implements {implements_name}").unwrap();
+
+        if !implements_arguments.is_empty() {
+            let configuration = pernixc_term::display::Configuration::builder()
+                .short_qualified_identifiers(true)
+                .build();
+
+            implements_arguments
+                .write_async_with_configuration(
+                    self.engine,
+                    self.buffer,
+                    &configuration,
+                )
+                .await?;
+        }
+
+        Ok(true)
     }
 
     /// Indents the formatter for the duration of the given async function.
