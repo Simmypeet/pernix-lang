@@ -202,7 +202,7 @@ impl LinedFormatter<'_, '_, '_> {
 
         let implements_name = self.engine.get_name(implements_id).await;
 
-        write!(self.buffer, " implements {implements_name}").unwrap();
+        write!(self.buffer, "implements {implements_name}").unwrap();
 
         if !implements_arguments.is_empty() {
             let configuration = pernixc_term::display::Configuration::builder()

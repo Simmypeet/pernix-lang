@@ -4,7 +4,9 @@ use std::fmt::Write;
 
 use pernixc_extend::extend;
 use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
-use pernixc_semantic_element::parameter::get_parameters;
+use pernixc_semantic_element::{
+    parameter::get_parameters, return_type::get_return_type,
+};
 use pernixc_symbol::{
     kind::{Kind, get_kind},
     linkage::{C, Linkage, get_linkage},
@@ -13,33 +15,25 @@ use pernixc_symbol::{
 use pernixc_target::Global;
 
 use crate::{
-    formatter::{
-        self, Formatter, LinedFormatter, WriteSignatureOptions,
-        assert_no_fmt_error,
-    },
-    hover::markdown::PERNIX_FENCE,
+    formatter::{self, LinedFormatter, WriteSignatureOptions},
+    hover::associate_symbols::format_associate_symbol,
 };
 
 /// Formats the signature of the given enum into a string.
 #[extend]
 pub async fn format_function_signature(
     self: &TrackedEngine,
-    type_id: Global<pernixc_symbol::ID>,
+    function_id: Global<pernixc_symbol::ID>,
     is_local: bool,
 ) -> Result<String, CyclicError> {
-    let mut string = format!("```{PERNIX_FENCE}\n");
-    let mut formatter = Formatter::new(&mut string, self);
-
-    formatter
-        .new_line(async |mut x| {
-            write_function_signature(self, &mut x, type_id, is_local).await
-        })
-        .await
-        .assert_no_fmt_error()?;
-
-    string.push_str("\n```");
-
-    Ok(string)
+    self.format_associate_symbol(
+        function_id,
+        async |engine, formatter, function_id| {
+            write_function_signature(engine, formatter, function_id, is_local)
+                .await
+        },
+    )
+    .await
 }
 
 async fn write_function_signature(
@@ -75,6 +69,7 @@ async fn write_function_signature(
 
     let mut is_first = true;
 
+    write!(formatter, "(")?;
     if let Some(parameters_syn) = parameters_syn {
         for (parameter, parameter_syn) in
             parameters.parameters_as_order().map(|x| x.1).zip(
@@ -86,21 +81,21 @@ async fn write_function_signature(
             )
         {
             if !is_first {
-                write!(formatter, ", ").unwrap();
+                write!(formatter, ", ")?;
             }
             is_first = false;
 
             let pattern = parameter_syn.and_then(|x| x.irrefutable_pattern());
             formatter::format_pattern(formatter, pattern.as_ref())?;
 
-            write!(formatter, ": ").unwrap();
+            write!(formatter, ": ")?;
 
             formatter.write_type(&parameter.r#type).await?;
         }
     } else {
         for parameter in parameters.parameters_as_order().map(|x| x.1) {
             if !is_first {
-                write!(formatter, ", ").unwrap();
+                write!(formatter, ", ")?;
             }
             is_first = false;
 
@@ -110,11 +105,17 @@ async fn write_function_signature(
 
     if is_vargs {
         if !is_first {
-            write!(formatter, ", ").unwrap();
+            write!(formatter, ", ")?;
         }
 
-        write!(formatter, "...").unwrap();
+        write!(formatter, "...")?;
     }
+    write!(formatter, ")")?;
+
+    let return_type = engine.get_return_type(function_id).await?;
+
+    write!(formatter, " -> ")?;
+    formatter.write_type(&return_type).await?;
 
     Ok(())
 }
