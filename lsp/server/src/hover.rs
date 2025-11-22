@@ -16,6 +16,7 @@ use crate::{
 
 pub mod accessibility;
 pub mod r#enum;
+pub mod function;
 pub mod generic_parameters;
 pub mod markdown;
 pub mod r#struct;
