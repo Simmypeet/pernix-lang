@@ -59,30 +59,32 @@ fn main(resource: &str) {
             )
             .build()
             .expect("Failed to create Tokio runtime")
-            .block_on(test_goto_definition(&file_path));
+            .block_on(test_file(file_path));
     });
 }
 
 /// Dispatches the test based on the file path.
-pub async fn test_file(path: &Path) {
+pub async fn test_file(main_file: PathBuf) {
     let project_path = env!("PERNIXC_CARGO_WORKSPACE_DIR");
+    let main_file = std::fs::canonicalize(main_file)
+        .expect("Failed to canonicalize main file path");
 
     // NOTE: Define each directory to a specific functionality to test here
     let goto_path = PathBuf::from(project_path)
         .join("lsp/integration_test/snapshot/goto_definition");
 
     // NOTE: Match the prefix paths to the test functions here
-    if path.starts_with(&goto_path) {
-        test_goto_definition(path).await;
+    if main_file.starts_with(&goto_path) {
+        test_goto_definition(main_file).await;
     } else {
-        panic!("No test defined for path: {}", path.display());
+        panic!("No test defined for path: {}", main_file.display());
     }
 }
 
 /// Tests the "go to definition" LSP functionality.
-pub async fn test_goto_definition(path: &Path) {
+pub async fn test_goto_definition(main_file: PathBuf) {
     let (tracked_engine, fixture, target_id) =
-        create_engine_test_for_fixture_with_cursor(path).await;
+        create_engine_test_for_fixture_with_cursor(&main_file).await;
 
     let response = tracked_engine
         .handle_goto_definition(target_id, GotoDefinitionParams {
@@ -106,17 +108,15 @@ pub async fn test_goto_definition(path: &Path) {
         },
     );
 
-    test_snapshot_string(path, &snapshot_str);
+    test_snapshot_string(&main_file, &snapshot_str);
 }
 
 /// Creates a tracked engine for testing with the given fixture file.
 pub async fn create_engine_test_for_fixture_with_cursor(
     main_file: &Path,
 ) -> (TrackedEngine, Arc<FixtureWithCursor>, TargetID) {
-    let canonicalized_path = std::fs::canonicalize(main_file)
-        .expect("Failed to canonicalize test file path");
     let parent_directory =
-        canonicalized_path.parent().expect("Test file has no parent directory");
+        main_file.parent().expect("Test file has no parent directory");
 
     // Load the fixture from the parent directory
     let fixture =
@@ -129,7 +129,7 @@ pub async fn create_engine_test_for_fixture_with_cursor(
     let target_id = TargetID::from_target_name(&target_name);
     let engine = pernix_server::analyzer::Analyzer::create_engine(
         "lsp_test".to_string(),
-        canonicalized_path.clone(),
+        main_file.to_path_buf(),
         fixture.clone(),
     )
     .await;
