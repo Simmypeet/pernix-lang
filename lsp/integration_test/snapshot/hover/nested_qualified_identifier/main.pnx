@@ -1,0 +1,10 @@
+public struct Pair[T, U]:
+    public first: T
+    public second: U
+
+
+public struct Fizz:
+    pass
+
+
+public type Test = Pair[Fi<cursor>zz, int32]
