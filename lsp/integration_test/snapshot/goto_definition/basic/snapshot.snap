@@ -1,0 +1,17 @@
+---
+source: lsp/integration_test/snapshot/mod.rs
+expression: snapshot_str
+---
+{
+  "uri": "file:///project/lsp/integration_test/snapshot/goto_definition/basic/main.pnx",
+  "range": {
+    "start": {
+      "line": 0,
+      "character": 12
+    },
+    "end": {
+      "line": 0,
+      "character": 18
+    }
+  }
+}

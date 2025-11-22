@@ -1353,10 +1353,18 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 name = "pernix_lsp_integration_test"
 version = "0.1.0-beta.2"
 dependencies = [
+ "insta",
  "pernix_server",
  "pernixc_query",
  "pernixc_register",
  "pernixc_source_file",
+ "pernixc_target",
+ "serde_json",
+ "stacker",
+ "test-generator",
+ "tokio",
+ "tower-lsp",
+ "tracing-subscriber",
  "walkdir",
 ]
 
