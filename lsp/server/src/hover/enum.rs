@@ -8,8 +8,7 @@ use pernixc_semantic_element::{
     variant::get_variant_associated_type, where_clause::get_where_clause,
 };
 use pernixc_symbol::{
-    accessibility::get_accessibility, get_target_root_module_id,
-    member::get_members, name::get_name, parent::get_closest_module_id,
+    accessibility::get_accessibility, member::get_members, name::get_name,
     variant_declaration_order::get_variant_declaration_order,
 };
 use pernixc_target::Global;
@@ -19,6 +18,7 @@ use pernixc_term::{
 };
 
 use crate::hover::{
+    accessibility::get_accessiblity_str,
     generic_parameters::format_generic_parameters, markdown::PERNIX_FENCE,
 };
 
@@ -34,24 +34,7 @@ pub async fn format_enum_signature(
     let where_clause = self.get_where_clause(enum_id).await;
 
     let mut string_buffer = format!("```{PERNIX_FENCE}\n");
-
-    let root_module_id =
-        self.get_target_root_module_id(enum_id.target_id).await;
-    let nearest_moodule_id = self.get_closest_module_id(enum_id).await;
-
-    let accessibility_str = match accessibility {
-        pernixc_symbol::accessibility::Accessibility::Public => "public",
-        pernixc_symbol::accessibility::Accessibility::Scoped(id) => {
-            if id == root_module_id {
-                "internal"
-            } else if id == nearest_moodule_id {
-                "private"
-            } else {
-                // should not happen
-                ""
-            }
-        }
-    };
+    let accessibility_str = self.get_accessiblity_str(enum_id).await?;
 
     write!(string_buffer, "{accessibility_str} enum {name}").unwrap();
     self.format_generic_parameters(&mut string_buffer, &generic_parameters)

@@ -8,6 +8,7 @@ use tower_lsp::lsp_types::MarkupContent;
 
 use crate::{hover::r#enum::format_enum_signature, pointing::symbol_at};
 
+pub mod accessibility;
 pub mod r#enum;
 pub mod generic_parameters;
 pub mod markdown;
