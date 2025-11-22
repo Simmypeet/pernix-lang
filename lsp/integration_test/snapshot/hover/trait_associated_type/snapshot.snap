@@ -1,0 +1,8 @@
+---
+source: lsp/integration_test/snapshot/mod.rs
+expression: string
+---
+```pernix
+public trait Iterator[T]:
+    public type Item
+```
