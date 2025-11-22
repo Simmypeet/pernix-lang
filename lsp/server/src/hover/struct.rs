@@ -3,12 +3,12 @@
 use std::fmt::Write;
 
 use pernixc_extend::extend;
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
 use pernixc_semantic_element::fields::get_fields;
 use pernixc_target::Global;
 
 use crate::{
-    formatter::{assert_no_fmt_error, Formatter, WriteSignatureOptions},
+    formatter::{Formatter, WriteSignatureOptions, assert_no_fmt_error},
     hover::markdown::PERNIX_FENCE,
 };
 
@@ -33,6 +33,7 @@ pub async fn format_struct_signature(
 
             x.indent(async |x| {
                 let fields = self.get_fields(struct_id).await?;
+
                 let configuration =
                     pernixc_term::display::Configuration::builder()
                         .short_qualified_identifiers(true)
@@ -40,7 +41,11 @@ pub async fn format_struct_signature(
 
                 for (_, field) in fields.fields_as_order() {
                     x.new_line(async |mut x| {
-                        write!(x, "{}: ", field.name).unwrap();
+                        x.format_accessibility(field.accessibility, struct_id)
+                            .await?;
+
+                        write!(x, " {}: ", field.name).unwrap();
+
                         x.write_type(&field.r#type).await?;
 
                         Ok(())

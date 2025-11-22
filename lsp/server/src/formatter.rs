@@ -9,7 +9,10 @@ use pernixc_query::runtime::executor::CyclicError;
 use pernixc_semantic_element::{
     implements::get_implements, implements_arguments::get_implements_argument,
 };
-use pernixc_symbol::{kind::get_kind, name::get_name};
+use pernixc_symbol::{
+    accessibility::Accessibility, get_target_root_module_id, kind::get_kind,
+    name::get_name, parent::get_closest_module_id,
+};
 use pernixc_target::Global;
 use pernixc_term::{
     display::Display, generic_parameters::get_generic_parameters,
@@ -184,6 +187,36 @@ impl LinedFormatter<'_, '_, '_> {
                 .format_generic_parameters(self.buffer, &generic_parameters)
                 .await;
         }
+
+        Ok(())
+    }
+
+    /// Formats the accessibility to the buffer.
+    pub async fn format_accessibility(
+        &mut self,
+        accessibility: Accessibility<pernixc_symbol::ID>,
+        current_site: Global<pernixc_symbol::ID>,
+    ) -> Result<(), Error> {
+        let root_module_id =
+            self.engine.get_target_root_module_id(current_site.target_id).await;
+        let nearest_moodule_id =
+            self.engine.get_closest_module_id(current_site).await;
+
+        let accessibility_str = match accessibility {
+            pernixc_symbol::accessibility::Accessibility::Public => "public",
+            pernixc_symbol::accessibility::Accessibility::Scoped(id) => {
+                if id == root_module_id {
+                    "internal"
+                } else if id == nearest_moodule_id {
+                    "private"
+                } else {
+                    // should not happen
+                    ""
+                }
+            }
+        };
+
+        write!(self.buffer, "{accessibility_str}")?;
 
         Ok(())
     }
