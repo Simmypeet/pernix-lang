@@ -9,7 +9,7 @@ use pernixc_term::{
     r#type::Type,
 };
 
-use crate::formatter::{Formatter, LinedFormatter};
+use crate::formatter::Formatter;
 
 impl Formatter<'_, '_> {
     async fn format_outlives_clause<
@@ -105,6 +105,7 @@ impl Formatter<'_, '_> {
         };
 
         self.new_line(async |mut x| {
+            write!(x.buffer, "tuple ").unwrap();
             x.write_term(&first.0).await?;
 
             for predicate in tuple_type_clause {
@@ -139,7 +140,7 @@ impl Formatter<'_, '_> {
             write!(x.buffer, "{name}").unwrap();
             x.write_term(first_arguments).await?;
 
-            for (is_negative, id, arguments) in bounds.skip(1) {
+            for (is_negative, id, arguments) in bounds {
                 write!(x.buffer, " + ").unwrap();
 
                 let name = x.engine.get_name(id).await;
@@ -154,9 +155,7 @@ impl Formatter<'_, '_> {
         })
         .await
     }
-}
 
-impl LinedFormatter<'_, '_, '_> {
     /// Formats a where clause if it exists.
     pub async fn format_where_clause(
         &mut self,
@@ -166,61 +165,69 @@ impl LinedFormatter<'_, '_, '_> {
             return Ok(false);
         }
 
-        write!(self.buffer, " where").unwrap();
-        self.indent(async |x| {
-            x.format_outlives_clause(
-                where_clause
-                    .iter()
-                    .filter_map(|x| x.predicate.as_type_outlives()),
-            )
-            .await?;
-            x.format_outlives_clause(
-                where_clause
-                    .iter()
-                    .filter_map(|x| x.predicate.as_lifetime_outlives()),
-            )
-            .await?;
-            x.trait_type_compatible_clause(
-                where_clause
-                    .iter()
-                    .filter_map(|x| x.predicate.as_trait_type_compatible()),
-            )
-            .await?;
-            x.constant_type_clause(
-                where_clause
-                    .iter()
-                    .filter_map(|x| x.predicate.as_constant_type()),
-            )
-            .await?;
-            x.tuple_type_clause(
-                where_clause.iter().filter_map(|x| x.predicate.as_tuple_type()),
-            )
-            .await?;
-            x.qualified_identifier_bound(
-                "trait",
-                where_clause.iter().filter_map(|x| match &x.predicate {
-                    Predicate::PositiveTrait(x) => {
-                        Some((false, x.trait_id, &x.generic_arguments))
-                    }
-                    Predicate::NegativeTrait(x) => {
-                        Some((true, x.trait_id, &x.generic_arguments))
-                    }
-                    _ => None,
-                }),
-            )
-            .await?;
-            x.qualified_identifier_bound(
-                "marker",
-                where_clause.iter().filter_map(|x| match &x.predicate {
-                    Predicate::PositiveMarker(x) => {
-                        Some((false, x.marker_id, &x.generic_arguments))
-                    }
-                    Predicate::NegativeMarker(x) => {
-                        Some((true, x.marker_id, &x.generic_arguments))
-                    }
-                    _ => None,
-                }),
-            )
+        self.new_line(async |mut x| {
+            write!(x.buffer, " where").unwrap();
+
+            x.indent(async |x| {
+                x.format_outlives_clause(
+                    where_clause
+                        .iter()
+                        .filter_map(|x| x.predicate.as_type_outlives()),
+                )
+                .await?;
+                x.format_outlives_clause(
+                    where_clause
+                        .iter()
+                        .filter_map(|x| x.predicate.as_lifetime_outlives()),
+                )
+                .await?;
+                x.trait_type_compatible_clause(
+                    where_clause
+                        .iter()
+                        .filter_map(|x| x.predicate.as_trait_type_compatible()),
+                )
+                .await?;
+                x.constant_type_clause(
+                    where_clause
+                        .iter()
+                        .filter_map(|x| x.predicate.as_constant_type()),
+                )
+                .await?;
+                x.tuple_type_clause(
+                    where_clause
+                        .iter()
+                        .filter_map(|x| x.predicate.as_tuple_type()),
+                )
+                .await?;
+                x.qualified_identifier_bound(
+                    "trait",
+                    where_clause.iter().filter_map(|x| match &x.predicate {
+                        Predicate::PositiveTrait(x) => {
+                            Some((false, x.trait_id, &x.generic_arguments))
+                        }
+                        Predicate::NegativeTrait(x) => {
+                            Some((true, x.trait_id, &x.generic_arguments))
+                        }
+                        _ => None,
+                    }),
+                )
+                .await?;
+                x.qualified_identifier_bound(
+                    "marker",
+                    where_clause.iter().filter_map(|x| match &x.predicate {
+                        Predicate::PositiveMarker(x) => {
+                            Some((false, x.marker_id, &x.generic_arguments))
+                        }
+                        Predicate::NegativeMarker(x) => {
+                            Some((true, x.marker_id, &x.generic_arguments))
+                        }
+                        _ => None,
+                    }),
+                )
+                .await?;
+
+                Ok(())
+            })
             .await?;
 
             Ok(())
