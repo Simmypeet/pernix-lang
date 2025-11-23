@@ -14,7 +14,7 @@ use pernixc_semantic_element::{
 };
 use pernixc_symbol::{
     get_target_root_module_id,
-    kind::{get_kind, Kind},
+    kind::{Kind, get_kind},
     name::get_name,
 };
 use pernixc_target::Global;

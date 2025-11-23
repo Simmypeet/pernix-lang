@@ -6,8 +6,8 @@ use pernixc_stable_hash::StableHash;
 use crate::{
     constant::Constant,
     lifetime::Lifetime,
-    r#type::Type,
     sub_term::TermLocation,
+    r#type::Type,
     visitor::{self, Recursive},
 };
 

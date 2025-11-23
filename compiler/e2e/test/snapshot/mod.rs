@@ -10,7 +10,7 @@ use insta::assert_snapshot;
 use pernixc_target::{Arguments, Check, Command, Input};
 use pretty_assertions::assert_str_eq;
 use tracing_subscriber::{
-    layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer,
+    EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt,
 };
 
 #[test_generator::test_resources("compiler/e2e/test/snapshot/**/main.pnx")]

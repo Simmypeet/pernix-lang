@@ -9,7 +9,7 @@ use derive_more::Deref;
 use enum_as_inner::EnumAsInner;
 use fnv::FnvHasher;
 use getset::CopyGetters;
-use pernixc_arena::{state, Arena, ID};
+use pernixc_arena::{Arena, ID, state};
 use pernixc_handler::Handler;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::{
@@ -708,10 +708,9 @@ impl Converter<'_, '_> {
                     .as_leaf()
                     .unwrap();
 
-                assert!(colon
-                    .kind
-                    .as_punctuation()
-                    .is_some_and(|x| **x == ':'));
+                assert!(
+                    colon.kind.as_punctuation().is_some_and(|x| **x == ':')
+                );
                 assert!(colon.span.start.relative_to == ROOT_BRANCH_ID);
                 assert!(colon.span.end.relative_to == ROOT_BRANCH_ID);
 
@@ -1116,10 +1115,12 @@ impl Converter<'_, '_> {
         let colon = iter.next().unwrap();
         let new_line = iter.next().unwrap();
 
-        assert!(colon
-            .as_leaf()
-            .and_then(|x| x.kind.as_punctuation())
-            .is_some_and(|x| **x == ':'));
+        assert!(
+            colon
+                .as_leaf()
+                .and_then(|x| x.kind.as_punctuation())
+                .is_some_and(|x| **x == ':')
+        );
         assert!(new_line.as_leaf().is_some_and(|x| x.kind.is_new_line()));
         assert!(iter.next().is_none());
 

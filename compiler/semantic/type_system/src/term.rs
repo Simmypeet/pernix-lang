@@ -4,27 +4,27 @@ use std::{fmt::Debug, hash::Hash};
 
 use pernixc_semantic_element::type_alias::get_type_alias;
 use pernixc_symbol::{
-    kind::{get_kind, Kind},
+    kind::{Kind, get_kind},
     member::get_members,
     name::get_name,
     parent::get_parent,
 };
 use pernixc_target::Global;
 use pernixc_term::{
+    Never,
     constant::Constant,
     generic_arguments::TraitMember,
-    generic_parameters::{get_generic_parameters, GenericParameter},
+    generic_parameters::{GenericParameter, get_generic_parameters},
     inference,
     lifetime::Lifetime,
     predicate::{Compatible, Outlives, Predicate},
-    r#type::Type,
     tuple::{Element, Tuple},
-    Never,
+    r#type::Type,
 };
 
 use crate::{
-    environment::Environment, normalizer::Normalizer, resolution, Error,
-    Satisfiability, Succeeded,
+    Error, Satisfiability, Succeeded, environment::Environment,
+    normalizer::Normalizer, resolution,
 };
 
 /// A trait implemented by all three fundamental terms of the language:
@@ -80,8 +80,9 @@ pub trait Term:
     fn normalize(
         &self,
         environment: &Environment<impl Normalizer>,
-    ) -> impl std::future::Future<Output = Result<Option<Succeeded<Self>>, Error>>
-           + Send;
+    ) -> impl std::future::Future<
+        Output = Result<Option<Succeeded<Self>>, Error>,
+    > + Send;
 
     #[doc(hidden)]
     fn as_trait_member(&self) -> Option<&Self::TraitMember>;

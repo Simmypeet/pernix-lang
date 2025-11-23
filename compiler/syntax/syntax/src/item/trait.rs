@@ -1,15 +1,15 @@
 use pernixc_parser::{
     abstract_tree::{self, AbstractTree},
     expect,
-    parser::{ast, Parser as _},
+    parser::{Parser as _, ast},
 };
 
 use crate::{
-    item::{
-        constant, function, generic_parameters::GenericParameters, r#type,
-        Body, TrailingWhereClause,
-    },
     AccessModifier, Identifier, Keyword,
+    item::{
+        Body, TrailingWhereClause, constant, function,
+        generic_parameters::GenericParameters, r#type,
+    },
 };
 
 #[cfg(any(test, feature = "arbitrary"))]

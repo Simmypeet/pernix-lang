@@ -2,7 +2,7 @@
 
 use proc_macro::TokenStream;
 use syn::{
-    parenthesized, parse_quote, Attribute, Data, DataStruct, Fields, Meta,
+    Attribute, Data, DataStruct, Fields, Meta, parenthesized, parse_quote,
 };
 
 /// Derives the `Key` trait for structs and enums to be used in the query
@@ -1023,7 +1023,7 @@ pub fn executor(
                  Result<ValueType, CyclicError>",
             )
             .to_compile_error()
-            .into()
+            .into();
         }
     };
 
@@ -1388,7 +1388,7 @@ pub fn query(
                  Result<ValueType, CyclicError>",
             )
             .to_compile_error()
-            .into()
+            .into();
         }
     };
 

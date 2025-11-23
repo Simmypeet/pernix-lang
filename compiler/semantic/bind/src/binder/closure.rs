@@ -4,24 +4,24 @@
 use pernixc_handler::Handler;
 use pernixc_hash::HashMap;
 use pernixc_ir::{
-    capture::{self, builder::CapturesWithNameBindingPoint, Captures},
+    IR,
+    capture::{self, Captures, builder::CapturesWithNameBindingPoint},
     instruction::{self, ScopePush},
     value::{
+        Value,
         register::{
+            Assignment, Borrow,
             do_with::CaptureArguments,
             load::{Load, Purpose},
-            Assignment, Borrow,
         },
-        Value,
     },
-    IR,
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_term::r#type::Type;
 use pernixc_type_system::UnrecoverableError;
 
 use crate::{
-    binder::{block, r#loop, stack::Stack, type_check::Expected, Binder},
+    binder::{Binder, block, r#loop, stack::Stack, type_check::Expected},
     diagnostic::{
         Diagnostic, MismatchedClosureReturnType,
         NotAllFlowPathsReturnAValueInClosure,
@@ -246,9 +246,11 @@ impl Binder<'_> {
                 }
             };
 
-            assert!(capture_arguments
-                .insert(capture_id, Value::Register(value))
-                .is_none());
+            assert!(
+                capture_arguments
+                    .insert(capture_id, Value::Register(value))
+                    .is_none()
+            );
         }
 
         CaptureArguments::new_with_arguments(captures, capture_arguments)

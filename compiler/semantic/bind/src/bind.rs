@@ -83,5 +83,5 @@ pub trait Bind<T> {
         guidance: &'c Guidance<'t>,
         handler: &'h dyn Handler<Diagnostic>,
     ) -> impl std::future::Future<Output = Result<Expression, Error>>
-           + use<'s, 'c, 't, 'h, T, Self>;
+    + use<'s, 'c, 't, 'h, T, Self>;
 }

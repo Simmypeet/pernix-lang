@@ -14,7 +14,7 @@ use pernixc_target::{
 };
 use test_generator::test_resources;
 use tracing_subscriber::{
-    layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer,
+    EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt,
 };
 
 #[test_resources("compiler/e2e/test/run/**/main.pnx")]

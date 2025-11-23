@@ -5,19 +5,19 @@ use std::ops::Deref;
 use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
 use pernixc_hash::HashMap;
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
-use pernixc_type_system::{normalizer::Normalizer, Error, Succeeded};
+use pernixc_type_system::{Error, Succeeded, normalizer::Normalizer};
 
 use crate::{
+    IR, Values,
     capture::{Capture, Captures},
     closure_parameters::ClosureParameters,
     handling_scope::HandlingScope,
     transform::{self, Transformer},
-    value::{register::Register, Environment, TypeOf, Value},
-    Values, IR,
+    value::{Environment, TypeOf, Value, register::Register},
 };
 
 /// Representing the capture initialization. This contains all the values
@@ -149,10 +149,11 @@ impl HandlerClause {
         effect_operation_id: pernixc_symbol::ID,
         closure: OperationHandler,
     ) {
-        assert!(self
-            .effect_operation_handler_closures
-            .insert(effect_operation_id, closure)
-            .is_none());
+        assert!(
+            self.effect_operation_handler_closures
+                .insert(effect_operation_id, closure)
+                .is_none()
+        );
     }
 }
 

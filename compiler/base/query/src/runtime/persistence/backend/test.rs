@@ -1,6 +1,6 @@
 use crate::runtime::persistence::backend::{
-    redb::RedbBackend, Backend, BackgroundWriter, Table, WriteTransaction,
-    Writer,
+    Backend, BackgroundWriter, Table, WriteTransaction, Writer,
+    redb::RedbBackend,
 };
 
 async fn basic_template<B: Backend>() {
@@ -30,10 +30,9 @@ async fn basic_template<B: Backend>() {
         assert_eq!(buffer, b"test_value");
 
         let mut buffer = Vec::new();
-        assert!(db
-            .read(Table::ValueMetadata, (0, 0), &mut buffer)
-            .await
-            .unwrap());
+        assert!(
+            db.read(Table::ValueMetadata, (0, 0), &mut buffer).await.unwrap()
+        );
         assert_eq!(buffer, b"test_meta");
     }
 
@@ -45,10 +44,9 @@ async fn basic_template<B: Backend>() {
         assert_eq!(buffer, b"test_value");
 
         let mut buffer = Vec::new();
-        assert!(db
-            .read(Table::ValueMetadata, (0, 0), &mut buffer)
-            .await
-            .unwrap());
+        assert!(
+            db.read(Table::ValueMetadata, (0, 0), &mut buffer).await.unwrap()
+        );
         assert_eq!(buffer, b"test_meta");
     }
 }

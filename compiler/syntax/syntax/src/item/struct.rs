@@ -1,14 +1,14 @@
 use pernixc_parser::{
     abstract_tree, expect,
-    parser::{ast, Parser as _},
+    parser::{Parser as _, ast},
 };
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
 use crate::{
-    item::{generic_parameters::GenericParameters, Body},
-    r#type::Type,
     AccessModifier, Identifier, Keyword, Punctuation,
+    item::{Body, generic_parameters::GenericParameters},
+    r#type::Type,
 };
 
 #[cfg(any(test, feature = "arbitrary"))]

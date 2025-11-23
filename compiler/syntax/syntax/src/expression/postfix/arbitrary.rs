@@ -13,8 +13,8 @@ use crate::{
         arbitrary::{Call, Expression},
         unit::arbitrary::Unit,
     },
-    r#type::arbitrary::Type,
     reference,
+    r#type::arbitrary::Type,
 };
 
 reference! {

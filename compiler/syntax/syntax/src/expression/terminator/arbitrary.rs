@@ -8,9 +8,9 @@ use proptest::{
 use crate::{
     arbitrary::{IndentDisplay, Label, QualifiedIdentifier},
     expression::{arbitrary::Expression, binary::arbitrary::Binary},
-    r#type::arbitrary::Type,
     reference,
     statement::arbitrary::Statement,
+    r#type::arbitrary::Type,
 };
 
 reference! {

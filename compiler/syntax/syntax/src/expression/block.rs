@@ -2,14 +2,14 @@ use enum_as_inner::EnumAsInner;
 use pernixc_lexical::tree::DelimiterKind;
 use pernixc_parser::{
     abstract_tree, expect,
-    parser::{ast, Parser as _},
+    parser::{Parser as _, ast},
 };
 
 use crate::{
-    expression::{binary::Binary, Expression},
+    Identifier, Keyword, Label, Passable, Punctuation, QualifiedIdentifier,
+    expression::{Expression, binary::Binary},
     pattern::{Irrefutable, Refutable},
     statement::Statements,
-    Identifier, Keyword, Label, Passable, Punctuation, QualifiedIdentifier,
 };
 
 #[cfg(any(test, feature = "arbitrary"))]

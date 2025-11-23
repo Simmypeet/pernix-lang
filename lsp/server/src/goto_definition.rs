@@ -1,7 +1,7 @@
 //! Handles "go to definition" requests from the LSP client.
 
 use pernixc_extend::extend;
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
 use pernixc_source_file::{get_source_file_by_id, get_source_file_path};
 use pernixc_symbol::{source_map::to_absolute_span, span::get_span};
 use pernixc_target::TargetID;

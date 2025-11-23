@@ -13,8 +13,8 @@ use enum_as_inner::EnumAsInner;
 use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 use pernixc_hash::HashSet;
 use pernixc_serialize::{
-    binary::{de::BinaryDeserializer, ser::BinarySerializer},
     Deserialize as _, Serialize as _,
+    binary::{de::BinaryDeserializer, ser::BinarySerializer},
 };
 use pernixc_stable_type_id::StableTypeID;
 use rand::Rng;
@@ -22,13 +22,13 @@ use redb::Result;
 use tracing::instrument;
 
 use crate::{
+    Engine, Key,
     database::ValueMetadata,
     runtime::persistence::{
         backend::{Backend, Table},
         background::SaveTask,
         serde::{DynamicDeserialize, DynamicSerialize},
     },
-    Engine, Key,
 };
 
 pub mod serde;

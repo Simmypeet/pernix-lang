@@ -7,7 +7,7 @@ use pernixc_ir::{address::Address, typer::Typer, value::TypeOf};
 use pernixc_stable_hash::StableHash;
 use pernixc_type_system::UnrecoverableError;
 
-use crate::binder::{inference_context::InferenceContext, Binder};
+use crate::binder::{Binder, inference_context::InferenceContext};
 
 /// The struct that implements the [`Typer`] interface for the binder.
 pub struct BinderTyper<'x> {

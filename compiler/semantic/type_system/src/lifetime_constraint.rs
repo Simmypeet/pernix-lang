@@ -7,10 +7,10 @@ use pernixc_query::runtime::executor;
 use pernixc_term::{lifetime::Lifetime, predicate::Outlives};
 
 use crate::{
+    Error,
     diagnostic::{Diagnostic, UnsatisfiedPredicate},
     environment::Environment,
     normalizer::Normalizer,
-    Error,
 };
 
 /// Contains constraints related to lifetimes.

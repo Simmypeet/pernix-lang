@@ -12,16 +12,16 @@ use pernixc_term::{
     constant::Constant,
     lifetime::Lifetime,
     matching,
-    r#type::Type,
     sub_term::{SubTerm, TermLocation},
+    r#type::Type,
 };
 
 use crate::{
+    Error, Satisfied, Succeeded,
     environment::{BoxedFuture, Environment, Query},
     equality::Equality,
     normalizer::Normalizer,
     term::Term,
-    Error, Satisfied, Succeeded,
 };
 
 /// A query for performing unification.
@@ -61,9 +61,9 @@ pub trait Element {
         to: &Self,
         from_logs: &[Log],
         to_logs: &[Log],
-        predicate: &(impl Predicate<Lifetime>
-              + Predicate<Type>
-              + Predicate<Constant>),
+        predicate: &(
+             impl Predicate<Lifetime> + Predicate<Type> + Predicate<Constant>
+         ),
     ) -> Result<Option<Succeeded<Satisfied>>, Error>;
 
     /// Converts the term into a [`Log`] record as a rewitten term.
@@ -90,9 +90,9 @@ impl Element for Type {
         to: &Self,
         from_logs: &[Log],
         to_logs: &[Log],
-        predicate: &(impl Predicate<Lifetime>
-              + Predicate<Self>
-              + Predicate<Constant>),
+        predicate: &(
+             impl Predicate<Lifetime> + Predicate<Self> + Predicate<Constant>
+         ),
     ) -> Result<Option<Succeeded<Satisfied>>, Error> {
         predicate.unifiable(from, to, from_logs, to_logs)
     }
@@ -196,16 +196,16 @@ pub trait PredicateA:
 }
 
 impl<
-        T: Predicate<Lifetime>
-            + Predicate<Type>
-            + Predicate<Constant>
-            + Hash
-            + Ord
-            + Clone
-            + Send
-            + Sync
-            + 'static,
-    > PredicateA for T
+    T: Predicate<Lifetime>
+        + Predicate<Type>
+        + Predicate<Constant>
+        + Hash
+        + Ord
+        + Clone
+        + Send
+        + Sync
+        + 'static,
+> PredicateA for T
 {
 }
 
@@ -276,10 +276,12 @@ async fn substructural_unify<T: Term>(
         };
 
         constraints.extend(new.constraints.iter().cloned());
-        assert!(result
-            .lifetimes
-            .insert(from_location, new.result.clone())
-            .is_none());
+        assert!(
+            result
+                .lifetimes
+                .insert(from_location, new.result.clone())
+                .is_none()
+        );
     }
 
     for matching::Matching {
@@ -307,10 +309,9 @@ async fn substructural_unify<T: Term>(
         };
 
         constraints.extend(new.constraints.iter().cloned());
-        assert!(result
-            .types
-            .insert(from_location, new.result.clone())
-            .is_none());
+        assert!(
+            result.types.insert(from_location, new.result.clone()).is_none()
+        );
     }
 
     for matching::Matching {
@@ -338,10 +339,12 @@ async fn substructural_unify<T: Term>(
         };
 
         constraints.extend(new.constraints.iter().cloned());
-        assert!(result
-            .constants
-            .insert(from_location, new.result.clone())
-            .is_none());
+        assert!(
+            result
+                .constants
+                .insert(from_location, new.result.clone())
+                .is_none()
+        );
     }
 
     Ok(Some(Succeeded::with_constraints(

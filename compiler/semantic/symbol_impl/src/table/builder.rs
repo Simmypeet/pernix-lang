@@ -7,8 +7,8 @@ use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
 use pernixc_source_file::SourceFile;
 use pernixc_symbol::{
-    accessibility::Accessibility, calculate_qualified_name_id,
-    get_target_root_module_id, kind::Kind, linkage, member::Member, ID,
+    ID, accessibility::Accessibility, calculate_qualified_name_id,
+    get_target_root_module_id, kind::Kind, linkage, member::Member,
 };
 use pernixc_syntax::AccessModifier;
 use pernixc_target::TargetID;
@@ -269,16 +269,17 @@ impl Builder {
         id: pernixc_symbol::ID,
         member: MemberBuilder,
     ) {
-        assert!(self
-            .members
-            .insert(
-                id,
-                Arc::new(Member {
-                    member_ids_by_name: member.member_ids_by_name,
-                    unnameds: member.unnameds,
-                }),
-            )
-            .is_none());
+        assert!(
+            self.members
+                .insert(
+                    id,
+                    Arc::new(Member {
+                        member_ids_by_name: member.member_ids_by_name,
+                        unnameds: member.unnameds,
+                    }),
+                )
+                .is_none()
+        );
 
         self.storage.as_vec_mut().extend(
             member
@@ -346,10 +347,11 @@ impl Builder {
             pernixc_syntax::item::generic_parameters::GenericParameters,
         >,
     ) {
-        assert!(self
-            .generic_parameter_syntaxes
-            .insert(id, generic_parameters)
-            .is_none());
+        assert!(
+            self.generic_parameter_syntaxes
+                .insert(id, generic_parameters)
+                .is_none()
+        );
     }
 
     pub fn insert_where_clause_syntax(
@@ -373,10 +375,11 @@ impl Builder {
         id: pernixc_symbol::ID,
         qualified_identifier: pernixc_syntax::QualifiedIdentifier,
     ) {
-        assert!(self
-            .implements_qualified_identifier_syntaxes
-            .insert(id, qualified_identifier)
-            .is_none());
+        assert!(
+            self.implements_qualified_identifier_syntaxes
+                .insert(id, qualified_identifier)
+                .is_none()
+        );
     }
 
     pub fn insert_implements_access_modifier_syntax(
@@ -384,10 +387,11 @@ impl Builder {
         id: pernixc_symbol::ID,
         access_modifier: Option<pernixc_syntax::AccessModifier>,
     ) {
-        assert!(self
-            .implements_access_modifier_syntaxes
-            .insert(id, access_modifier)
-            .is_none());
+        assert!(
+            self.implements_access_modifier_syntaxes
+                .insert(id, access_modifier)
+                .is_none()
+        );
     }
 
     pub fn insert_function_signature_syntax(
@@ -396,10 +400,11 @@ impl Builder {
         parameters: Option<pernixc_syntax::item::function::Parameters>,
         return_type: Option<pernixc_syntax::item::function::ReturnType>,
     ) {
-        assert!(self
-            .function_signature_syntaxes
-            .insert(id, (parameters, return_type))
-            .is_none());
+        assert!(
+            self.function_signature_syntaxes
+                .insert(id, (parameters, return_type))
+                .is_none()
+        );
     }
 
     pub fn insert_function_body_syntax(
@@ -419,10 +424,11 @@ impl Builder {
             pernixc_syntax::item::function::EffectAnnotation,
         >,
     ) {
-        assert!(self
-            .function_effect_annotation_syntaxes
-            .insert(id, effect_annotation)
-            .is_none());
+        assert!(
+            self.function_effect_annotation_syntaxes
+                .insert(id, effect_annotation)
+                .is_none()
+        );
     }
 
     pub fn insert_function_unsafe_keyword(
@@ -430,10 +436,9 @@ impl Builder {
         id: pernixc_symbol::ID,
         unsafe_keyword: Option<pernixc_syntax::Keyword>,
     ) {
-        assert!(self
-            .function_unsafe_keywords
-            .insert(id, unsafe_keyword)
-            .is_none());
+        assert!(
+            self.function_unsafe_keywords.insert(id, unsafe_keyword).is_none()
+        );
     }
 
     pub fn insert_type_alias_syntax(
@@ -449,10 +454,11 @@ impl Builder {
         id: pernixc_symbol::ID,
         type_annotation: Option<pernixc_syntax::r#type::Type>,
     ) {
-        assert!(self
-            .constant_type_annotation_syntaxes
-            .insert(id, type_annotation)
-            .is_none());
+        assert!(
+            self.constant_type_annotation_syntaxes
+                .insert(id, type_annotation)
+                .is_none()
+        );
     }
 
     pub fn insert_constant_expression_syntax(
@@ -460,10 +466,9 @@ impl Builder {
         id: pernixc_symbol::ID,
         expression: Option<pernixc_syntax::expression::Expression>,
     ) {
-        assert!(self
-            .constant_expression_syntaxes
-            .insert(id, expression)
-            .is_none());
+        assert!(
+            self.constant_expression_syntaxes.insert(id, expression).is_none()
+        );
     }
 
     pub fn insert_struct_field_syntax(
@@ -489,10 +494,11 @@ impl Builder {
         id: pernixc_symbol::ID,
         associated_type: Option<pernixc_syntax::r#type::Type>,
     ) {
-        assert!(self
-            .variant_associated_type_syntaxes
-            .insert(id, associated_type)
-            .is_none());
+        assert!(
+            self.variant_associated_type_syntaxes
+                .insert(id, associated_type)
+                .is_none()
+        );
     }
 
     pub fn insert_function_linkage(
@@ -534,10 +540,9 @@ impl Builder {
         id: pernixc_symbol::ID,
         external_submodule: Arc<ExternalSubmodule>,
     ) {
-        assert!(self
-            .external_submodules
-            .insert(id, external_submodule)
-            .is_none());
+        assert!(
+            self.external_submodules.insert(id, external_submodule).is_none()
+        );
     }
 }
 

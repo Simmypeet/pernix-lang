@@ -3,12 +3,12 @@ use pernixc_lexical::tree::DelimiterKind;
 use pernixc_parser::{
     abstract_tree,
     expect::{self, Ext as _},
-    parser::{ast, Parser},
+    parser::{Parser, ast},
 };
 
 use crate::{
-    expression::{Call, Expression},
     Ellipsis, Identifier, Keyword, Punctuation, QualifiedIdentifier,
+    expression::{Call, Expression},
 };
 
 #[cfg(any(test, feature = "arbitrary"))]

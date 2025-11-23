@@ -3,7 +3,7 @@
 use flexstr::SharedStr;
 use pernixc_diagnostic::{Highlight, Report};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
@@ -49,14 +49,18 @@ impl Report for AlreadyBoundName {
                     .span(engine.to_absolute_span(&self.new_binding_span).await)
                     .build(),
             )
-            .related(vec![Highlight::builder()
-                .span(
-                    engine
-                        .to_absolute_span(&self.already_bound_identifier_span)
-                        .await,
-                )
-                .message("the name is already bound here")
-                .build()])
+            .related(vec![
+                Highlight::builder()
+                    .span(
+                        engine
+                            .to_absolute_span(
+                                &self.already_bound_identifier_span,
+                            )
+                            .await,
+                    )
+                    .message("the name is already bound here")
+                    .build(),
+            ])
             .build())
     }
 }

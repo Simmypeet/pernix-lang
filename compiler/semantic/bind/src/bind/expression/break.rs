@@ -2,8 +2,8 @@ use pernixc_handler::Handler;
 use pernixc_ir::{
     instruction::{Jump, Terminator, UnconditionalJump},
     value::{
-        literal::{Literal, Unreachable},
         Value,
+        literal::{Literal, Unreachable},
     },
 };
 use pernixc_source_file::SourceElement;
@@ -11,7 +11,7 @@ use pernixc_term::r#type::Type;
 
 use crate::{
     bind::{Bind, Expression, Guidance},
-    binder::{type_check::Expected, Binder, Error},
+    binder::{Binder, Error, type_check::Expected},
     diagnostic::{Diagnostic, LoopControlFlow},
     infer::constraint,
 };

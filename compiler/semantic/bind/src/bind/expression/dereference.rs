@@ -6,8 +6,8 @@ use pernixc_term::r#type::{Qualifier, Type};
 
 use crate::{
     bind::{
-        expression::dereference::diagnostic::{CannotDereference, Diagnostic},
         Bind, Expression, LValue,
+        expression::dereference::diagnostic::{CannotDereference, Diagnostic},
     },
     binder::{Binder, BindingError, Error},
 };

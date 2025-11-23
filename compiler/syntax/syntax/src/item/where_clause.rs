@@ -1,11 +1,11 @@
 use pernixc_parser::{
     abstract_tree, expect,
-    parser::{ast, Parser as _},
+    parser::{Parser as _, ast},
 };
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
-use crate::{predicate::Predicate, Keyword, Passable};
+use crate::{Keyword, Passable, predicate::Predicate};
 
 #[cfg(any(test, feature = "arbitrary"))]
 pub mod arbitrary;

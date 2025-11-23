@@ -11,8 +11,8 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
 use crate::{
-    database::{self, Dynamic, DynamicValue, TrackedEngine},
     Engine, Key,
+    database::{self, Dynamic, DynamicValue, TrackedEngine},
 };
 
 /// A unit struct for signaling cyclic dependencies in query execution.
@@ -79,8 +79,8 @@ pub trait Executor<K: Key>: Any + Send + Sync + std::fmt::Debug {
         engine: &'t TrackedEngine,
         key: &'k K,
     ) -> impl std::future::Future<Output = Result<K::Value, CyclicError>>
-           + Send
-           + use<'s, 't, 'k, Self, K>;
+    + Send
+    + use<'s, 't, 'k, Self, K>;
 }
 
 fn invoke_executor<'a, E: Executor<K> + 'static, K: Key + 'static>(

@@ -8,12 +8,12 @@ use pernixc_stable_hash::StableHash;
 use pernixc_target::{Global, TargetID};
 
 use crate::{
+    ID,
     name::get_qualified_name,
     parent::{
-        get_closest_module_id, symbol_hierarchy_relationship,
-        HierarchyRelationship,
+        HierarchyRelationship, get_closest_module_id,
+        symbol_hierarchy_relationship,
     },
-    ID,
 };
 
 /// The key type used with [`TrackedEngine`] to access the accessibility of a

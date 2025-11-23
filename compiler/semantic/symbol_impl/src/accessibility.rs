@@ -1,17 +1,17 @@
 use std::sync::Arc;
 
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
 use pernixc_symbol::{
+    ID,
     accessibility::{
-        accessibility_hierarchy_relationship, get_accessibility, Accessibility,
-        Key,
+        Accessibility, Key, accessibility_hierarchy_relationship,
+        get_accessibility,
     },
     get_target_root_module_id,
-    kind::{get_kind, Kind},
+    kind::{Kind, get_kind},
     member::get_members,
-    parent::{get_closest_module_id, get_parent, HierarchyRelationship},
+    parent::{HierarchyRelationship, get_closest_module_id, get_parent},
     syntax::get_implements_member_access_modifier,
-    ID,
 };
 use pernixc_target::Global;
 

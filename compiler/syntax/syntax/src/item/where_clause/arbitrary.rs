@@ -2,7 +2,7 @@ use proptest::prelude::{Arbitrary, BoxedStrategy, Strategy};
 
 use crate::{
     arbitrary::{
-        write_indent_line_for_indent_display, IndentDisplay, Passable,
+        IndentDisplay, Passable, write_indent_line_for_indent_display,
     },
     predicate::arbitrary::Predicate,
     reference,

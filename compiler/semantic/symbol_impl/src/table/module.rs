@@ -14,8 +14,8 @@ use tokio::task::JoinHandle;
 use crate::{
     diagnostic::{Diagnostic, RecursiveFileRequest},
     table::{
-        builder::{Builder, MemberBuilder},
         ExternalSubmodule, ModuleKind,
+        builder::{Builder, MemberBuilder},
     },
 };
 

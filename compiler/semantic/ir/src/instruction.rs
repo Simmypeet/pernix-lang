@@ -12,14 +12,14 @@ use pernixc_stable_hash::StableHash;
 use pernixc_term::r#type::{Qualifier, Type};
 
 use super::{
+    Values,
     address::{self, Address},
     control_flow_graph::Block,
     scope::Scope,
     value::{
-        register::{Assignment, Register},
         Value,
+        register::{Assignment, Register},
     },
-    Values,
 };
 use crate::transform::{self, Transformer};
 

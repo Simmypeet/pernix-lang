@@ -1,7 +1,7 @@
 use proptest::prelude::Arbitrary;
 
 use crate::{
-    item::generic_parameters::{arbitrary, GenericParameters},
+    item::generic_parameters::{GenericParameters, arbitrary},
     test::verify_ref,
 };
 

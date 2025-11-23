@@ -9,9 +9,9 @@ use pernixc_semantic_element::{
 use pernixc_symbol::parent::get_parent;
 use pernixc_target::Global;
 use pernixc_term::instantiation::get_instantiation;
-use pernixc_type_system::{normalizer::Normalizer, UnrecoverableError};
+use pernixc_type_system::{UnrecoverableError, normalizer::Normalizer};
 
-use crate::{context::Context, subset::Changes, Region};
+use crate::{Region, context::Context, subset::Changes};
 
 impl<N: Normalizer> Context<'_, N> {
     #[allow(clippy::too_many_lines)]

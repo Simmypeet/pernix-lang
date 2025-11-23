@@ -10,9 +10,9 @@ use pernixc_term::r#type::Type;
 use pernixc_type_system::Succeeded;
 
 use crate::{
-    transform::Transformer,
-    value::{register::Register, TypeOf, Value},
     Values,
+    transform::Transformer,
+    value::{TypeOf, Value, register::Register},
 };
 
 /// Represents an element of a [`Tuple`].

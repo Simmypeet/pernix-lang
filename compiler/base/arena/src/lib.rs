@@ -12,7 +12,7 @@ use std::{
 
 use pernixc_hash::HashMap;
 use pernixc_serialize::{
-    de::Deserializer, ser::Serializer, Deserialize, Serialize,
+    Deserialize, Serialize, de::Deserializer, ser::Serializer,
 };
 use pernixc_stable_hash::StableHash;
 use state::{Generator, Rebind, State};

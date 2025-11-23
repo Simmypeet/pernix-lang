@@ -4,8 +4,8 @@ use proptest::prelude::{Arbitrary, BoxedStrategy, Just, Strategy as _};
 use crate::{
     arbitrary::{IndentDisplay, QualifiedIdentifier, ReferenceOf},
     expression::{arbitrary::Expression, postfix::arbitrary::Postfix},
-    r#type::arbitrary::Type,
     reference,
+    r#type::arbitrary::Type,
 };
 
 reference! {

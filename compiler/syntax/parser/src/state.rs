@@ -199,11 +199,12 @@ impl<'a, 'cache> State<'a, 'cache> {
     pub(crate) fn restore_result(&mut self, checkpoint: ResultCheckpoint) {
         assert!(self.events.len() >= checkpoint.event_index.0);
 
-        assert!(checkpoint.event_index.1.is_none_or(|saved_count| self.events
-            [checkpoint.event_index.0 - 1]
-            .as_take()
-            .or(self.events[checkpoint.event_index.0 - 1].as_error())
-            .is_some_and(|current_count| *current_count >= saved_count)));
+        assert!(checkpoint.event_index.1.is_none_or(|saved_count| {
+            self.events[checkpoint.event_index.0 - 1]
+                .as_take()
+                .or(self.events[checkpoint.event_index.0 - 1].as_error())
+                .is_some_and(|current_count| *current_count >= saved_count)
+        }));
 
         self.events.truncate(checkpoint.event_index.0);
         self.emitted_erorrs.truncate(checkpoint.emitted_error_count);
@@ -542,10 +543,12 @@ impl<'a, 'cache> State<'a, 'cache> {
             before.event_index.1.is_some(),
             after.event_index.1.is_some()
         );
-        assert!(before
-            .event_index
-            .1
-            .is_none_or(|x| { after.event_index.1.is_none_or(|y| x <= y) }));
+        assert!(
+            before
+                .event_index
+                .1
+                .is_none_or(|x| { after.event_index.1.is_none_or(|y| x <= y) })
+        );
 
         // remove the emitted errors
         self.emitted_erorrs

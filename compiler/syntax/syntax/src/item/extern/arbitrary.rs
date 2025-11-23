@@ -2,8 +2,8 @@ use proptest::prelude::{Arbitrary, BoxedStrategy, Strategy as _};
 
 use crate::{
     arbitrary::{
-        write_indent_line_for_indent_display, AccessModifier, IndentDisplay,
-        Passable,
+        AccessModifier, IndentDisplay, Passable,
+        write_indent_line_for_indent_display,
     },
     item::{arbitrary::TrailingWhereClause, function::arbitrary::Signature},
     reference,

@@ -11,7 +11,7 @@ use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::{
-    get_invocation_arguments, get_target_seed, Global, TargetID,
+    Global, TargetID, get_invocation_arguments, get_target_seed,
 };
 
 pub mod accessibility;

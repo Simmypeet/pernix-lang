@@ -14,6 +14,7 @@ use pernixc_term::{
 };
 
 use crate::{
+    OverflowError, Satisfied, Succeeded,
     environment::Environment,
     equality::Equality,
     lifetime_constraint::LifetimeConstraint,
@@ -21,7 +22,6 @@ use crate::{
     normalizer::Normalizer,
     term::Term,
     unification::{self, Log, Unification},
-    OverflowError, Satisfied, Succeeded,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]

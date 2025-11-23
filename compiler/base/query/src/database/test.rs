@@ -1,6 +1,6 @@
 use std::sync::{
-    atomic::{AtomicI32, AtomicUsize},
     Arc,
+    atomic::{AtomicI32, AtomicUsize},
 };
 
 use dashmap::DashSet;
@@ -9,15 +9,15 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
 use crate::{
+    Engine, Key,
     database::TrackedEngine,
     runtime::{
         executor::{CyclicError, Executor},
         persistence::{
-            serde::{DynamicRegistry as _, SelfRegistry},
             Persistence,
+            serde::{DynamicRegistry as _, SelfRegistry},
         },
     },
-    Engine, Key,
 };
 
 #[derive(

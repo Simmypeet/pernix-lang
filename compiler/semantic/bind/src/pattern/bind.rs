@@ -32,7 +32,7 @@ use pernixc_term::{
 };
 
 use crate::{
-    binder::{type_check::Expected, Binder, UnrecoverableError},
+    binder::{Binder, UnrecoverableError, type_check::Expected},
     infer::constraint,
     pattern::bind::diagnostic::{
         AlreadyBoundFieldPattern, Diagnostic, ExpectedAssociatedPattern,

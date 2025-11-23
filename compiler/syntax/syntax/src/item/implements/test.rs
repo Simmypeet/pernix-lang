@@ -1,7 +1,7 @@
 use proptest::prelude::*;
 
 use crate::{
-    item::implements::{arbitrary, Implements},
+    item::implements::{Implements, arbitrary},
     test::verify_ref,
 };
 

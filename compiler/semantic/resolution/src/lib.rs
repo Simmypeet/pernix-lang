@@ -6,7 +6,7 @@ use flexstr::SharedStr;
 use pernixc_handler::Handler;
 use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;

@@ -9,7 +9,7 @@ use pernixc_semantic_element::{
     variance::Variance,
 };
 use pernixc_symbol::{
-    kind::{get_kind, Kind},
+    kind::{Kind, get_kind},
     parent::get_parent,
 };
 use pernixc_target::Global;
@@ -20,11 +20,11 @@ use pernixc_term::{
     predicate::{PositiveTrait, Predicate},
 };
 use pernixc_type_system::{
-    lifetime_constraint::LifetimeConstraint, normalizer::Normalizer,
-    UnrecoverableError,
+    UnrecoverableError, lifetime_constraint::LifetimeConstraint,
+    normalizer::Normalizer,
 };
 
-use crate::{context::Context, subset::Changes, Region};
+use crate::{Region, context::Context, subset::Changes};
 
 impl<N: Normalizer> Context<'_, N> {
     #[allow(clippy::too_many_lines)]
@@ -77,10 +77,9 @@ impl<N: Normalizer> Context<'_, N> {
                     let subtypable =
                         subtypable.expect("should've been checked");
 
-                    assert!(subtypable
-                        .result
-                        .forall_lifetime_errors
-                        .is_empty());
+                    assert!(
+                        subtypable.result.forall_lifetime_errors.is_empty()
+                    );
 
                     lifetime_constraints
                         .extend(subtypable.constraints.iter().cloned());

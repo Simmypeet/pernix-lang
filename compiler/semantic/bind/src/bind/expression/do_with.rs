@@ -9,23 +9,22 @@ use pernixc_ir::{
     handling_scope::{HandlerClause, HandlingScope},
     pattern::{Irrefutable, NameBindingPoint, Wildcard},
     value::{
-        register::{
-            self,
-            do_with::{Do, OperationHandler},
-            Assignment,
-        },
         Value,
+        register::{
+            self, Assignment,
+            do_with::{Do, OperationHandler},
+        },
     },
 };
 use pernixc_lexical::tree::{RelativeLocation, RelativeSpan};
 use pernixc_resolution::{
-    qualified_identifier::{resolve_qualified_identifier, Resolution},
     Config,
+    qualified_identifier::{Resolution, resolve_qualified_identifier},
 };
 use pernixc_semantic_element::parameter::get_parameters;
 use pernixc_source_file::{SourceElement, Span};
 use pernixc_symbol::{
-    kind::{get_kind, Kind},
+    kind::{Kind, get_kind},
     member::get_members,
 };
 use pernixc_syntax::QualifiedIdentifier;
@@ -40,7 +39,7 @@ use pernixc_type_system::UnrecoverableError;
 use crate::{
     bind::{Bind, Expression, Guidance},
     binder::{
-        inference_context::ErasedLifetimeProvider, Binder, BindingError, Error,
+        Binder, BindingError, Error, inference_context::ErasedLifetimeProvider,
     },
     diagnostic::{
         Diagnostic, DuplicatedEffectHandler, DuplicatedEffectOperationHandler,

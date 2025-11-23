@@ -949,8 +949,8 @@ use std::{
     hash::{BuildHasher, Hash},
     ops::Range,
     sync::{
-        atomic::{AtomicBool, AtomicUsize},
         Arc,
+        atomic::{AtomicBool, AtomicUsize},
     },
 };
 
@@ -1479,12 +1479,12 @@ impl<D: Deserializer<E>, T: Deserialize<D, E>, E> Deserialize<D, E>
 }
 
 impl<
-        D: Deserializer<E>,
-        K: Deserialize<D, E> + Eq + Hash,
-        V: Deserialize<D, E>,
-        BH: BuildHasher + Clone + Default,
-        E,
-    > Deserialize<D, E> for DashMap<K, V, BH>
+    D: Deserializer<E>,
+    K: Deserialize<D, E> + Eq + Hash,
+    V: Deserialize<D, E>,
+    BH: BuildHasher + Clone + Default,
+    E,
+> Deserialize<D, E> for DashMap<K, V, BH>
 {
     fn deserialize(
         deserializer: &mut D,
@@ -1519,12 +1519,12 @@ impl<
 }
 
 impl<
-        D: Deserializer<E>,
-        K: Deserialize<D, E> + Eq + Hash,
-        V: Deserialize<D, E>,
-        BH: BuildHasher + Clone + Default,
-        E,
-    > Deserialize<D, E> for ReadOnlyView<K, V, BH>
+    D: Deserializer<E>,
+    K: Deserialize<D, E> + Eq + Hash,
+    V: Deserialize<D, E>,
+    BH: BuildHasher + Clone + Default,
+    E,
+> Deserialize<D, E> for ReadOnlyView<K, V, BH>
 {
     fn deserialize(
         deserializer: &mut D,
@@ -1559,11 +1559,11 @@ impl<
 }
 
 impl<
-        D: Deserializer<E>,
-        T: Deserialize<D, E> + Eq + Hash,
-        BH: BuildHasher + Clone + Default,
-        E,
-    > Deserialize<D, E> for DashSet<T, BH>
+    D: Deserializer<E>,
+    T: Deserialize<D, E> + Eq + Hash,
+    BH: BuildHasher + Clone + Default,
+    E,
+> Deserialize<D, E> for DashSet<T, BH>
 {
     fn deserialize(
         deserializer: &mut D,
@@ -1588,13 +1588,13 @@ impl<
 }
 
 impl<
-        D: Deserializer<E>,
-        const SIZE: usize,
-        const PAD1: usize,
-        const PAD2: usize,
-        HEAP,
-        E,
-    > Deserialize<D, E> for FlexStr<SIZE, PAD1, PAD2, HEAP>
+    D: Deserializer<E>,
+    const SIZE: usize,
+    const PAD1: usize,
+    const PAD2: usize,
+    HEAP,
+    E,
+> Deserialize<D, E> for FlexStr<SIZE, PAD1, PAD2, HEAP>
 where
     HEAP: for<'a> From<&'a str>,
 {

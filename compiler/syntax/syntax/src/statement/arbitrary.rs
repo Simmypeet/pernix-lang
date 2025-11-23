@@ -5,13 +5,13 @@ use proptest::{
 
 use crate::{
     arbitrary::{
-        write_indent_line_for_indent_display, IndentDisplay, Passable,
-        QualifiedIdentifier,
+        IndentDisplay, Passable, QualifiedIdentifier,
+        write_indent_line_for_indent_display,
     },
     expression::arbitrary::Expression,
     pattern::arbitrary::Irrefutable,
-    r#type::arbitrary::Type,
     reference,
+    r#type::arbitrary::Type,
 };
 
 reference! {

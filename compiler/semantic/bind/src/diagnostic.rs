@@ -5,7 +5,7 @@ use std::fmt::Write;
 use flexstr::SharedStr;
 use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
@@ -22,7 +22,7 @@ use pernixc_term::{
     effect,
     generic_arguments::GenericArguments,
     generic_parameters::{
-        get_generic_parameters, ConstantParameterID, TypeParameterID,
+        ConstantParameterID, TypeParameterID, get_generic_parameters,
     },
     r#type::Type,
 };
@@ -1079,13 +1079,15 @@ impl Report for DuplicatedEffectHandler {
                     .build(),
             )
             .severity(pernixc_diagnostic::Severity::Error)
-            .related(vec![Highlight::builder()
-                .span(engine.to_absolute_span(&self.first_span).await)
-                .message(format!(
-                    "the first handler for \
-                     `{qualified_name}{generic_arguments}` is defined here"
-                ))
-                .build()])
+            .related(vec![
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.first_span).await)
+                    .message(format!(
+                        "the first handler for \
+                         `{qualified_name}{generic_arguments}` is defined here"
+                    ))
+                    .build(),
+            ])
             .help_message(format!(
                 "the effect `{qualified_name}{generic_arguments}` is already \
                  handled by the first handler; consider removing the second \
@@ -1175,14 +1177,16 @@ impl Report for DuplicatedEffectOperationHandler {
                     .build(),
             )
             .severity(pernixc_diagnostic::Severity::Error)
-            .related(vec![Highlight::builder()
-                .span(engine.to_absolute_span(&self.first_span).await)
-                .message(format!(
-                    "the first handler for operation `{}` of effect `{}` is \
-                     defined here",
-                    self.operation_name, qualified_name
-                ))
-                .build()])
+            .related(vec![
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.first_span).await)
+                    .message(format!(
+                        "the first handler for operation `{}` of effect `{}` \
+                         is defined here",
+                        self.operation_name, qualified_name
+                    ))
+                    .build(),
+            ])
             .help_message(format!(
                 "the operation `{}` of effect `{}` is already handled by the \
                  first handler; consider removing the second handler",

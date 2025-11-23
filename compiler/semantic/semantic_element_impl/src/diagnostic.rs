@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use pernixc_diagnostic::Report;
-use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor};
 use pernixc_semantic_element::{
     effect_annotation::Key as DoEffectKey, fields::Key as FieldsKey,
     import::Key as ImportKey, type_alias::Key as TypeAliasKey,
@@ -13,7 +13,7 @@ use pernixc_semantic_element::{
 use pernixc_source_file::ByteIndex;
 use pernixc_symbol::{
     get_all_symbol_ids,
-    kind::{get_kind, Kind},
+    kind::{Kind, get_kind},
 };
 use pernixc_target::{Global, TargetID};
 use pernixc_term::generic_parameters::Key as GenericParametersKey;

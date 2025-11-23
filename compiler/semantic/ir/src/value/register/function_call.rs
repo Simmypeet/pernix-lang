@@ -16,12 +16,12 @@ use pernixc_term::{
 use pernixc_type_system::Error;
 
 use crate::{
+    Values,
     handling_scope::HandlerClauseID,
     transform::{
         ConstantTermSource, LifetimeTermSource, Transformer, TypeTermSource,
     },
-    value::{register::Register, TypeOf, Value},
-    Values,
+    value::{TypeOf, Value, register::Register},
 };
 
 /// Specifies how an effectful operation's capability arguments are supplied.

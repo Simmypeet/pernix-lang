@@ -4,16 +4,16 @@ use pernixc_arena::ID;
 use pernixc_handler::Handler;
 use pernixc_hash::{HashMap, HashSet};
 use pernixc_ir::value::{
-    register::{Assignment, Struct},
     Value,
+    register::{Assignment, Struct},
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_resolution::qualified_identifier::{Generic, Resolution};
-use pernixc_semantic_element::fields::{get_fields, Field, Fields};
+use pernixc_semantic_element::fields::{Field, Fields, get_fields};
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
     accessibility::is_accessible_from_globally,
-    kind::{get_kind, Kind},
+    kind::{Kind, get_kind},
 };
 use pernixc_target::Global;
 use pernixc_term::{
@@ -22,11 +22,11 @@ use pernixc_term::{
 
 use crate::{
     bind::{
+        Bind, Expression, Guidance,
         expression::r#struct::diagnostic::{
             Diagnostic, DuplicatedFieldInitialization, ExpectedStructSymbol,
             FieldIsNotAccessible, FieldNotFound, UninitializedFields,
         },
-        Bind, Expression, Guidance,
     },
     binder::{Binder, BindingError, Error},
 };

@@ -8,13 +8,13 @@ use pernixc_term::{
     lifetime::Lifetime,
     r#type::{Qualifier, Type},
 };
-use pernixc_type_system::{normalizer::Normalizer, Error, Succeeded};
+use pernixc_type_system::{Error, Succeeded, normalizer::Normalizer};
 
 use crate::{
+    Values,
     address::Address,
     transform::{LifetimeTermSource, Transformer},
     value::{Environment, TypeOf},
-    Values,
 };
 
 /// Obtains a reference at the given address.

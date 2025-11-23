@@ -1,12 +1,12 @@
-use pernixc_arena::{OrderedArena, ID};
+use pernixc_arena::{ID, OrderedArena};
 use pernixc_handler::Handler;
 use pernixc_hash::HashMap;
 use pernixc_ir::value::{
-    register::{
-        load::Load, Assignment, EffectHandlerArgument, FunctionCall, Register,
-        Variant,
-    },
     Value,
+    register::{
+        Assignment, EffectHandlerArgument, FunctionCall, Register, Variant,
+        load::Load,
+    },
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_resolution::qualified_identifier::Resolution;
@@ -18,8 +18,8 @@ use pernixc_semantic_element::{
 };
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
-    kind::{get_kind, Kind},
-    linkage::{get_linkage, Linkage, C},
+    kind::{Kind, get_kind},
+    linkage::{C, Linkage, get_linkage},
     parent::get_parent,
     r#unsafe::is_function_unsafe,
 };
@@ -28,8 +28,8 @@ use pernixc_term::{
     effect,
     generic_parameters::get_generic_parameters,
     instantiation::{
-        get_instantiation, get_instantiation_for_associated_symbol,
-        Instantiation,
+        Instantiation, get_instantiation,
+        get_instantiation_for_associated_symbol,
     },
     lifetime::{ElidedLifetimeID, Lifetime},
     r#type::Qualifier,
@@ -38,15 +38,15 @@ use pernixc_type_system::{deduction, environment::Environment};
 
 use crate::{
     bind::{
+        LValue,
         expression::function_call::diagnostic::{
             Diagnostic, ExtraneousArgumentsToAssociatedValue,
             MismatchedArgumentsCount, MismatchedImplementationArguments,
             SymbolIsNotCallable, UnsafeFunctionCallOutsideUnsafeScope,
             VariantAssociatedValueExpected, VariantDoesntHaveAssociatedValue,
         },
-        LValue,
     },
-    binder::{inference_context, UnrecoverableError},
+    binder::{UnrecoverableError, inference_context},
     diagnostic::UnhandledEffects,
 };
 
@@ -201,7 +201,7 @@ async fn get_function_instantiation(
                 Err(deduction::Error::CyclicDependency(cyclic)) => {
                     return Err(Error::Unrecoverable(
                         UnrecoverableError::CyclicDependency(cyclic),
-                    ))
+                    ));
                 }
 
                 Err(deduction::Error::Overflow(overflow)) => {

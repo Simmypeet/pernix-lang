@@ -6,12 +6,12 @@ use pernixc_ir::{
         self, ConditionalJump, Instruction, Jump, Store, Terminator,
     },
     value::{
+        Value,
         literal::{self, Boolean, Literal},
         register::{
-            load::Load, ArithmeticOperator, Assignment, Binary, BinaryOperator,
-            BitwiseOperator, Phi,
+            ArithmeticOperator, Assignment, Binary, BinaryOperator,
+            BitwiseOperator, Phi, load::Load,
         },
-        Value,
     },
 };
 use pernixc_lexical::tree::RelativeLocation;
@@ -21,7 +21,7 @@ use pernixc_term::r#type::{Primitive, Qualifier, Type};
 
 use crate::{
     bind::{Bind, Expression, Guidance, LValue},
-    binder::{type_check::Expected, Binder, BindingError, Error},
+    binder::{Binder, BindingError, Error, type_check::Expected},
     diagnostic::{
         AssignToNonMutable, BinaryOperatorKind, Diagnostic,
         InvalidTypeInBinaryOperator,
@@ -334,7 +334,7 @@ impl Binder<'_> {
                     }
 
                     Err(Error::Unrecoverable(internal_error)) => {
-                        return Err(Error::Unrecoverable(internal_error))
+                        return Err(Error::Unrecoverable(internal_error));
                     }
                 };
 
@@ -718,10 +718,12 @@ async fn bind_short_circuit_binary(
             {
                 true_branch_value
             } else {
-                assert!(binder
-                    .current_block()
-                    .predecessors()
-                    .contains(&false_branch_last_block_id));
+                assert!(
+                    binder
+                        .current_block()
+                        .predecessors()
+                        .contains(&false_branch_last_block_id)
+                );
 
                 false_branch_value
             }

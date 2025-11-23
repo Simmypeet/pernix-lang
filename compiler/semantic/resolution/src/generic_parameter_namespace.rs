@@ -3,14 +3,14 @@
 
 use std::{collections::hash_map::Entry, sync::Arc};
 
-use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor};
 use pernixc_symbol::{kind::get_kind, parent::scope_walker};
 use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
     generic_parameters::{
-        get_generic_parameters, ConstantParameterID, LifetimeParameterID,
-        TypeParameterID,
+        ConstantParameterID, LifetimeParameterID, TypeParameterID,
+        get_generic_parameters,
     },
     lifetime::Lifetime,
     r#type::Type,

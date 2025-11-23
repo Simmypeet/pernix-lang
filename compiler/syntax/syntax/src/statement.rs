@@ -1,14 +1,14 @@
 use enum_as_inner::EnumAsInner;
 use pernixc_parser::{
     abstract_tree, expect,
-    parser::{ast, Parser as _},
+    parser::{Parser as _, ast},
 };
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
 use crate::{
-    expression::Expression, pattern::Irrefutable, r#type::Type, Keyword,
-    Passable, Punctuation,
+    Keyword, Passable, Punctuation, expression::Expression,
+    pattern::Irrefutable, r#type::Type,
 };
 
 #[cfg(any(test, feature = "arbitrary"))]

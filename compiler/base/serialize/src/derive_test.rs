@@ -1,8 +1,8 @@
 //! Tests for the Serialize derive macro.
 
 use crate::{
-    binary::{de::BinaryDeserializer, ser::BinarySerializer},
     Deserialize, Serialize,
+    binary::{de::BinaryDeserializer, ser::BinarySerializer},
 };
 
 #[derive(Serialize, Debug, PartialEq)]
@@ -1337,7 +1337,7 @@ fn struct_with_skip_round_trip() {
 
     assert_eq!(expected, deserialized);
     assert_ne!(original, deserialized); // Original and deserialized should
-                                        // differ due to skipped field
+    // differ due to skipped field
 }
 
 #[test]

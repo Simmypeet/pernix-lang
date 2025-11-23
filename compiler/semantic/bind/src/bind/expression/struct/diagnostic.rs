@@ -3,8 +3,8 @@ use pernixc_arena::ID;
 use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_hash::HashSet;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{runtime::executor, TrackedEngine};
-use pernixc_semantic_element::fields::{get_fields, Field};
+use pernixc_query::{TrackedEngine, runtime::executor};
+use pernixc_semantic_element::fields::{Field, get_fields};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
@@ -261,10 +261,12 @@ impl Report for DuplicatedFieldInitialization {
                     .span(duplicate_span)
                     .build(),
             )
-            .related(vec![Highlight::builder()
-                .message("field was first initialized here".to_string())
-                .span(prior_span)
-                .build()])
+            .related(vec![
+                Highlight::builder()
+                    .message("field was first initialized here".to_string())
+                    .span(prior_span)
+                    .build(),
+            ])
             .build())
     }
 }

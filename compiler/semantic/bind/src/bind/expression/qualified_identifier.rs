@@ -2,15 +2,15 @@ use std::ops::Deref;
 
 use pernixc_handler::Handler;
 use pernixc_ir::value::{
+    Value,
     literal::{self, Literal},
     register::{Assignment, Variant},
-    Value,
 };
 use pernixc_resolution::qualified_identifier::Resolution;
 use pernixc_semantic_element::variant::get_variant_associated_type;
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
-    kind::{get_kind, Kind},
+    kind::{Kind, get_kind},
     parent::get_parent,
 };
 use pernixc_syntax::QualifiedIdentifierRoot;
@@ -22,11 +22,11 @@ use pernixc_term::{
 
 use crate::{
     bind::{
+        Bind, Expression, Guidance, LValue,
         expression::qualified_identifier::diagnostic::{
             Diagnostic, ExpectedAssociatedValue,
             SymbolCannotBeUsedAsAnExpression,
         },
-        Bind, Expression, Guidance, LValue,
     },
     binder::{Binder, BindingError, Error},
 };

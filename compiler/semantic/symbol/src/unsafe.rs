@@ -1,7 +1,7 @@
 //! Contains the query definition for retrieving whether the function
 //! is marked as unsafe or not
 
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
 use pernixc_target::Global;
 
 use crate::syntax::get_function_unsafe_keyword;

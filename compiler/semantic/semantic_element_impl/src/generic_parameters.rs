@@ -3,15 +3,15 @@ use std::{ops::Deref, sync::Arc};
 use pernixc_handler::{Handler, Storage};
 use pernixc_query::runtime::executor;
 use pernixc_resolution::{
-    generic_parameter_namespace::get_generic_parameter_namespace,
-    term::resolve_type, Config,
+    Config, generic_parameter_namespace::get_generic_parameter_namespace,
+    term::resolve_type,
 };
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
-    kind::{get_kind, Kind},
+    MemberID,
+    kind::{Kind, get_kind},
     parent::get_parent,
     syntax::get_generic_parameters_syntax,
-    MemberID,
 };
 use pernixc_syntax::item::generic_parameters::GenericParameter as GenericParameterSyn;
 use pernixc_target::Global;

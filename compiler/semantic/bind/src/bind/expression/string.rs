@@ -1,7 +1,7 @@
 use pernixc_handler::Handler;
 use pernixc_ir::value::{
-    literal::{self, Literal},
     Value,
+    literal::{self, Literal},
 };
 use pernixc_source_file::SourceElement;
 

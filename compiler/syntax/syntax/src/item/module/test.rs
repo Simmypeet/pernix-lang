@@ -1,7 +1,7 @@
 use proptest::prelude::Arbitrary;
 
 use crate::{
-    item::module::{arbitrary, Module},
+    item::module::{Module, arbitrary},
     test::verify_ref,
 };
 

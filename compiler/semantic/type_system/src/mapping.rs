@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use getset::Getters;
 use pernixc_term::{
-    constant::Constant, lifetime::Lifetime, r#type::Type, sub_term::SubTerm,
+    constant::Constant, lifetime::Lifetime, sub_term::SubTerm, r#type::Type,
 };
 
 use super::unification::{self, Unifier};

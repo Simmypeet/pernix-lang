@@ -11,7 +11,7 @@ use pernixc_semantic_element::{
 };
 use pernixc_symbol::{
     final_implements::is_implements_final,
-    kind::{get_kind, Kind},
+    kind::{Kind, get_kind},
     parent::scope_walker,
 };
 use pernixc_target::Global;
@@ -21,12 +21,12 @@ use pernixc_term::{
 };
 
 use crate::{
+    Error, Succeeded,
     deduction::{self, Deduction},
     environment::{BoxedFuture, Environment, Query},
     lifetime_constraint::LifetimeConstraint,
     normalizer::Normalizer,
     order::{self, Order},
-    Error, Succeeded,
 };
 
 /// A result of a implementation resolution query.
@@ -134,11 +134,11 @@ impl Query for Resolve {
                     Ok(unification) => unification,
 
                     Err(deduction::Error::Overflow(error)) => {
-                        return Err(error.into())
+                        return Err(error.into());
                     }
 
                     Err(deduction::Error::CyclicDependency(cyclic)) => {
-                        return Err(cyclic.into())
+                        return Err(cyclic.into());
                     }
 
                     Err(
@@ -329,15 +329,15 @@ async fn is_in_active_implementation(
                             .is_not_general_enough,
                     },
                     constraints: result.constraints,
-                }))
+                }));
             }
 
             Err(deduction::Error::CyclicDependency(err)) => {
-                return Err(Error::CyclicDependency(err))
+                return Err(Error::CyclicDependency(err));
             }
 
             Err(deduction::Error::Overflow(err)) => {
-                return Err(Error::Overflow(err))
+                return Err(Error::Overflow(err));
             }
 
             _ => {}

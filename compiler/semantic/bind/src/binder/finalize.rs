@@ -1,9 +1,9 @@
 use pernixc_handler::Handler;
 use pernixc_hash::HashSet;
 use pernixc_ir::{
+    FunctionIR, IR,
     instruction::{Instruction, ScopePop},
     value::Environment as ValueEnvironment,
-    FunctionIR, IR,
 };
 use pernixc_semantic_element::return_type::get_return_type;
 use pernixc_symbol::kind::get_kind;

@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use pernixc_hash::HashSet;
-use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor};
 use pernixc_semantic_element::{
     implemented::InTargetKey, implements::get_implements,
 };
 use pernixc_symbol::get_all_implements_ids;
-use pernixc_target::{get_all_target_ids, Global, TargetID};
+use pernixc_target::{Global, TargetID, get_all_target_ids};
 use pernixc_tokio::scoped;
 
 #[pernixc_query::executor(key(InTargetKey), name(InTargetExecutor))]

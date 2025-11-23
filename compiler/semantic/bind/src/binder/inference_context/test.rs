@@ -1,10 +1,10 @@
-use std::sync::{atomic::AtomicU64, Arc};
+use std::sync::{Arc, atomic::AtomicU64};
 
 use pernixc_query::Engine;
 use pernixc_term::{
     inference,
-    r#type::{Primitive, Type},
     tuple::{Element, Tuple},
+    r#type::{Primitive, Type},
 };
 use pernixc_type_system::environment::Premise;
 

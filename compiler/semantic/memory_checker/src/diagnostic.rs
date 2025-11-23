@@ -3,7 +3,7 @@
 use pernixc_diagnostic::{ByteIndex, Highlight, Report, Severity};
 use pernixc_ir::value::register::load;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_symbol::source_map::to_absolute_span;
@@ -183,17 +183,19 @@ impl Report for UseAfterMove {
             .message("the value is used after it has been moved")
             .severity(Severity::Error)
             .primary_highlight(Highlight::builder().span(use_span).build())
-            .related(vec![Highlight::builder()
-                .span(move_span)
-                .message(match self.load_purpose {
-                    load::Purpose::General => {
-                        "the value was moved here".to_string()
-                    }
-                    load::Purpose::Capture => "the value was moved here for \
-                                               closure capture"
-                        .to_string(),
-                })
-                .build()])
+            .related(vec![
+                Highlight::builder()
+                    .span(move_span)
+                    .message(match self.load_purpose {
+                        load::Purpose::General => {
+                            "the value was moved here".to_string()
+                        }
+                        load::Purpose::Capture => "the value was moved here \
+                                                   for closure capture"
+                            .to_string(),
+                    })
+                    .build(),
+            ])
             .build())
     }
 }

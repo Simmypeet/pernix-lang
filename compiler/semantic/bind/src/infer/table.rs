@@ -2,7 +2,7 @@
 
 use std::{
     clone::Clone,
-    collections::{hash_map::Entry, HashMap},
+    collections::{HashMap, hash_map::Entry},
     fmt::Debug,
     hash::Hash,
 };

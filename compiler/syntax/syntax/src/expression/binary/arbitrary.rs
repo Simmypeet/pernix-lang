@@ -10,9 +10,9 @@ use crate::{
         arbitrary::Expression, block::arbitrary::Block,
         prefix::arbitrary::Prefixable,
     },
-    r#type::arbitrary::Type,
     reference,
     statement::arbitrary::Statement,
+    r#type::arbitrary::Type,
 };
 
 reference! {

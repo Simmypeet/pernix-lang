@@ -11,8 +11,8 @@ use pernixc_term::{
     },
     lifetime::Lifetime,
     predicate::Outlives,
-    r#type::{Primitive, Qualifier, Reference, Type},
     tuple::{Element, Tuple},
+    r#type::{Primitive, Qualifier, Reference, Type},
 };
 
 use crate::{
@@ -99,9 +99,9 @@ fn basic_subtyping(#[case] variance: Variance) {
             }
         };
 
-        assert!(expected_constraints
-            .iter()
-            .all(|x| result.constraints.contains(x)));
+        assert!(
+            expected_constraints.iter().all(|x| result.constraints.contains(x))
+        );
     };
 
     tokio::runtime::Builder::new_multi_thread()
@@ -226,9 +226,9 @@ fn subtyping_with_adt(#[case] variance: Variance) {
             Variance::Bivariant => vec![],
         };
 
-        assert!(expected_constraint
-            .iter()
-            .all(|x| result.constraints.contains(x)));
+        assert!(
+            expected_constraint.iter().all(|x| result.constraints.contains(x))
+        );
     };
 
     tokio::runtime::Builder::new_multi_thread()

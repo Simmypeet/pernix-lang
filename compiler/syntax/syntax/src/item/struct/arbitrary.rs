@@ -4,8 +4,8 @@ use proptest::prelude::{Arbitrary, BoxedStrategy, Strategy as _};
 use crate::{
     arbitrary::{AccessModifier, IndentDisplay},
     item::{arbitrary::Body, generic_parameters::arbitrary::GenericParameters},
-    r#type::arbitrary::Type,
     reference,
+    r#type::arbitrary::Type,
 };
 
 reference! {

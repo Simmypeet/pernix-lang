@@ -9,11 +9,11 @@ use pernixc_term::{
 };
 
 use crate::{
+    Error, Succeeded,
     environment::{BoxedFuture, Environment, Query},
     normalizer::Normalizer,
     subtype::Subtype,
     term::Term,
-    Error, Succeeded,
 };
 
 /// A trait used for retrieving equivalences of a term based on the equality

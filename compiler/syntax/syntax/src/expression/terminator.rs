@@ -1,12 +1,12 @@
 use enum_as_inner::EnumAsInner;
 use pernixc_parser::{
     abstract_tree, expect,
-    parser::{ast, Parser as _},
+    parser::{Parser as _, ast},
 };
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
-use crate::{expression::binary::Binary, Keyword, Label};
+use crate::{Keyword, Label, expression::binary::Binary};
 
 #[cfg(any(test, feature = "arbitrary"))]
 pub mod arbitrary;

@@ -3,7 +3,7 @@ use std::fmt::Write;
 use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_ir::address::{self, Offset};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;

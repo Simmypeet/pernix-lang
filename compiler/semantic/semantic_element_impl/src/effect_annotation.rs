@@ -4,17 +4,17 @@ use pernixc_arena::OrderedArena;
 use pernixc_handler::{Handler, Storage};
 use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
 use pernixc_resolution::{
+    Config, ExtraNamespace,
     forall_lifetimes::create_forall_lifetimes,
     generic_parameter_namespace::get_generic_parameter_namespace,
-    qualified_identifier::{resolve_qualified_identifier, Resolution},
-    Config, ExtraNamespace,
+    qualified_identifier::{Resolution, resolve_qualified_identifier},
 };
 use pernixc_semantic_element::effect_annotation;
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
-    kind::{get_kind, Kind},
+    kind::{Kind, get_kind},
     parent::get_parent_global,
     syntax::get_function_effect_annotation_syntax,
 };
@@ -29,10 +29,10 @@ use pernixc_term::{
     r#type::Type,
 };
 use pernixc_type_system::{
-    environment::{get_active_premise, Environment},
+    Satisfied, Succeeded, UnrecoverableError,
+    environment::{Environment, get_active_premise},
     normalizer,
     unification::{self, Log, Unification},
-    Satisfied, Succeeded, UnrecoverableError,
 };
 
 use crate::{
@@ -270,7 +270,7 @@ async fn detect_duplicating_group<
         for group in &mut groups {
             let first = &group.first().unwrap().0;
 
-            if effect_equivalent(&env, first, effect.0, effect.1 .0, handler)
+            if effect_equivalent(&env, first, effect.0, effect.1.0, handler)
                 .await?
             {
                 group.push(effect);

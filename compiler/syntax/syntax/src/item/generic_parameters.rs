@@ -3,14 +3,14 @@ use pernixc_lexical::tree::DelimiterKind;
 use pernixc_parser::{
     abstract_tree::{self, AbstractTree},
     expect,
-    parser::{ast, Parser as _},
+    parser::{Parser as _, ast},
 };
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
 use crate::{
-    expression::Expression, predicate::TypeBound, r#type::Type, Identifier,
-    Keyword, LifetimeParameter, Punctuation,
+    Identifier, Keyword, LifetimeParameter, Punctuation,
+    expression::Expression, predicate::TypeBound, r#type::Type,
 };
 
 #[cfg(any(test, feature = "arbitrary"))]

@@ -1,15 +1,15 @@
 use pernixc_lexical::tree::DelimiterKind;
 use pernixc_parser::{
     abstract_tree, expect,
-    parser::{ast, Parser as _},
+    parser::{Parser as _, ast},
 };
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
 use super::Body;
 use crate::{
-    item::generic_parameters::GenericParameters, r#type::Type, AccessModifier,
-    Identifier, Keyword,
+    AccessModifier, Identifier, Keyword,
+    item::generic_parameters::GenericParameters, r#type::Type,
 };
 
 #[cfg(any(test, feature = "arbitrary"))]

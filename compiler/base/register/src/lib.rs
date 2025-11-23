@@ -4,11 +4,11 @@ use std::sync::Arc;
 
 pub use inventory::submit;
 use pernixc_query::{
+    Key,
     runtime::{
         executor::{self, Executor, Registry},
-        persistence::{self, serde::DynamicRegistry, Persistence},
+        persistence::{self, Persistence, serde::DynamicRegistry},
     },
-    Key,
 };
 use pernixc_serialize::{Deserialize, Serialize};
 

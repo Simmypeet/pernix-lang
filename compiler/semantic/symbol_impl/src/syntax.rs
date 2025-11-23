@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
 use pernixc_symbol::{
     name::get_qualified_name,
     syntax::{

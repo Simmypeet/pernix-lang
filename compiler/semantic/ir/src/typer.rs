@@ -2,11 +2,11 @@
 
 use std::ops::Deref;
 
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
 use pernixc_target::Global;
 
 use crate::{
-    capture::Captures, closure_parameters::ClosureParameters, scope, Values,
+    Values, capture::Captures, closure_parameters::ClosureParameters, scope,
 };
 
 /// Represents the environment in which the analysis takes place.
@@ -58,5 +58,5 @@ pub trait Typer<V> {
         value: &'v V,
         env: &'e E,
     ) -> impl std::future::Future<Output = Result<Self::Type<'s>, Self::Error>>
-           + use<'s, 'v, 'e, Self, V, E>;
+    + use<'s, 'v, 'e, Self, V, E>;
 }

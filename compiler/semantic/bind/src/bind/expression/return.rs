@@ -2,8 +2,8 @@ use pernixc_handler::Handler;
 use pernixc_ir::{
     instruction::{self, Instruction, ScopePop, Terminator},
     value::{
-        literal::{self, Literal, Unit},
         Value,
+        literal::{self, Literal, Unit},
     },
 };
 use pernixc_semantic_element::return_type::get_return_type;
@@ -13,7 +13,7 @@ use pernixc_term::r#type::Type;
 
 use crate::{
     bind::{Bind, Expression, Guidance},
-    binder::{stack::Scope, Binder, BindingError, Error},
+    binder::{Binder, BindingError, Error, stack::Scope},
     diagnostic::{Diagnostic, ReturnIsNotAllowed},
     infer::constraint,
 };

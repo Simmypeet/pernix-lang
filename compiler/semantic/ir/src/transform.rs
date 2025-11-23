@@ -4,7 +4,7 @@
 
 use pernixc_arena::ID;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
 use pernixc_term::{
     constant::Constant,
     generic_parameters::{

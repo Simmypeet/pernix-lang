@@ -3,18 +3,18 @@
 use flexstr::SharedStr;
 use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor};
 use pernixc_semantic_element::import::get_import_map;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{
-    kind::{get_kind, Kind},
+    kind::{Kind, get_kind},
     member::try_get_members,
     name::get_qualified_name,
     source_map::to_absolute_span,
 };
-use pernixc_target::{get_target_map, Global};
+use pernixc_target::{Global, get_target_map};
 use pernixc_term::generic_parameters::GenericKind;
 
 /// Enumeration of all kinds of diagnostic generated during resolution.
@@ -540,11 +540,7 @@ fn suggest<'a>(
     }
 
     // Only return suggestion if confidence is reasonable
-    if best_score > 0.4 {
-        best_candidate
-    } else {
-        None
-    }
+    if best_score > 0.4 { best_candidate } else { None }
 }
 
 impl Report for SymbolNotFound {

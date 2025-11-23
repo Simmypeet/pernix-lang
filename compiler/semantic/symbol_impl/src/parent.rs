@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use pernixc_hash::HashMap;
 use pernixc_query::TrackedEngine;
-use pernixc_symbol::{get_target_root_module_id, parent::Key, ID};
+use pernixc_symbol::{ID, get_target_root_module_id, parent::Key};
 use pernixc_target::TargetID;
 
-use crate::table::{get_table_of_symbol, MapKey, Table};
+use crate::table::{MapKey, Table, get_table_of_symbol};
 
 /// The executor for the [`Parent`] component.
 

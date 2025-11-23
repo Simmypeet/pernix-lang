@@ -1,14 +1,14 @@
 use std::collections::BTreeSet;
 
 use pernixc_hash::HashSet;
-use pernixc_ir::value::{register::tuple::Tuple, TypeOf};
+use pernixc_ir::value::{TypeOf, register::tuple::Tuple};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_term::predicate::{self, Predicate};
 use pernixc_type_system::{
-    normalizer::Normalizer, Succeeded, UnrecoverableError,
+    Succeeded, UnrecoverableError, normalizer::Normalizer,
 };
 
-use crate::{context::Context, subset::Changes, Region};
+use crate::{Region, context::Context, subset::Changes};
 
 impl<N: Normalizer> Context<'_, N> {
     #[allow(clippy::too_many_lines)]

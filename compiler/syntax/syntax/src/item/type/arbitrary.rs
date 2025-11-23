@@ -7,8 +7,8 @@ use crate::{
         arbitrary::TrailingWhereClause,
         generic_parameters::arbitrary::GenericParameters,
     },
-    r#type::arbitrary::Type as TypeTerm,
     reference,
+    r#type::arbitrary::Type as TypeTerm,
 };
 
 reference! {

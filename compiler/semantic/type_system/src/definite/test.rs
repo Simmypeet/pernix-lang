@@ -16,10 +16,10 @@ use proptest::{
 
 use super::Definite;
 use crate::{
+    Error,
     environment::{Environment, Premise},
     normalizer,
     term::Term,
-    Error,
 };
 
 #[derive(
@@ -152,9 +152,10 @@ impl Arbitrary for Box<dyn Property<Type>> {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let leaf =
-            prop_oneof![TriviallySatisfiable::<r#type::Primitive>::arbitrary()
-                .prop_map(|x| Box::new(x) as _),];
+        let leaf = prop_oneof![
+            TriviallySatisfiable::<r#type::Primitive>::arbitrary()
+                .prop_map(|x| Box::new(x) as _),
+        ];
 
         leaf.prop_recursive(16, 32, 2, move |inner| {
             let const_strat = args
@@ -177,8 +178,10 @@ impl Arbitrary for Box<dyn Property<Constant>> {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        prop_oneof![TriviallySatisfiable::<constant::Primitive>::arbitrary()
-            .prop_map(|x| Box::new(x) as _),]
+        prop_oneof![
+            TriviallySatisfiable::<constant::Primitive>::arbitrary()
+                .prop_map(|x| Box::new(x) as _),
+        ]
         .boxed()
     }
 }

@@ -8,13 +8,13 @@ use pernixc_query::runtime::executor::CyclicError;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_term::r#type::Type;
-use pernixc_type_system::{normalizer::Normalizer, Error, Succeeded};
+use pernixc_type_system::{Error, Succeeded, normalizer::Normalizer};
 
 use crate::{
+    Values,
     control_flow_graph::Block,
     transform::{Transformer, TypeTermSource},
-    value::{register::Register, Environment, TypeOf, Value},
-    Values,
+    value::{Environment, TypeOf, Value, register::Register},
 };
 
 /// Represents a phi node in the SSA form.

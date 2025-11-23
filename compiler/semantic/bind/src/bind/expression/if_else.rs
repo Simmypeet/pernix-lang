@@ -7,9 +7,9 @@ use pernixc_ir::{
     control_flow_graph::Block,
     instruction::{ConditionalJump, Jump, Terminator, UnconditionalJump},
     value::{
+        Value,
         literal::{self, Literal, Unreachable},
         register::{Assignment, Phi},
-        Value,
     },
 };
 use pernixc_source_file::SourceElement;
@@ -19,7 +19,7 @@ use pernixc_term::r#type::{Primitive, Type};
 use crate::{
     bind::{Bind, Expression, Guidance},
     binder::{
-        type_check::Expected, Binder, BindingError, Error, UnrecoverableError,
+        Binder, BindingError, Error, UnrecoverableError, type_check::Expected,
     },
     diagnostic::{Diagnostic, IfMissingElseBranch},
     infer::constraint,
@@ -131,7 +131,7 @@ impl Binder<'_> {
                             | Err(Error::Binding(_)) => {}
 
                             Err(Error::Unrecoverable(abort)) => {
-                                return Err(abort)
+                                return Err(abort);
                             }
                         }
 
@@ -252,7 +252,7 @@ impl Bind<&pernixc_syntax::expression::block::IfElse> for Binder<'_> {
                                 Ok(_) | Err(Error::Binding(_)) => None,
 
                                 Err(Error::Unrecoverable(abort)) => {
-                                    return Err(abort.into())
+                                    return Err(abort.into());
                                 }
                             }
                         }
@@ -326,10 +326,11 @@ impl Bind<&pernixc_syntax::expression::block::IfElse> for Binder<'_> {
                         {
                             then_value.unwrap()
                         } else {
-                            assert!(self
-                                .current_block()
-                                .predecessors()
-                                .contains(&successor_else_block_id));
+                            assert!(
+                                self.current_block()
+                                    .predecessors()
+                                    .contains(&successor_else_block_id)
+                            );
                             else_value.unwrap()
                         }
                     }

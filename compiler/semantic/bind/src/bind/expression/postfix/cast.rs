@@ -1,6 +1,6 @@
 use pernixc_ir::value::{
-    register::{Assignment, Cast},
     Value,
+    register::{Assignment, Cast},
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_source_file::SourceElement;
@@ -8,19 +8,19 @@ use pernixc_term::r#type::{Primitive, Type};
 
 use crate::{
     bind::{
+        Expression,
         expression::{
             diagnostic::{UnsafeOperation, UnsafeRequired},
             postfix::{
+                BindState,
                 cast::diagnostic::{
                     InvalidCastType, InvalidPointerTypeCasting, PointerKind,
                 },
                 diagnostic::Diagnostic,
-                BindState,
             },
         },
-        Expression,
     },
-    binder::{type_check::Expected, BindingError, Error},
+    binder::{BindingError, Error, type_check::Expected},
     infer::{self, constraint},
 };
 

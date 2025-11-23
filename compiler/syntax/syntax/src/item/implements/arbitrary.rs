@@ -87,11 +87,11 @@ pub struct MemberTemplate<S, B> {
 }
 
 impl<
-        So: std::fmt::Debug + AbstractTree + 'static,
-        Bo: std::fmt::Debug + AbstractTree + 'static,
-        S: std::fmt::Debug,
-        B: std::fmt::Debug,
-    > Input<&super::MemberTemplate<So, Bo>, ()> for &MemberTemplate<S, B>
+    So: std::fmt::Debug + AbstractTree + 'static,
+    Bo: std::fmt::Debug + AbstractTree + 'static,
+    S: std::fmt::Debug,
+    B: std::fmt::Debug,
+> Input<&super::MemberTemplate<So, Bo>, ()> for &MemberTemplate<S, B>
 where
     for<'x, 'y> &'x S: Input<&'y So, ()>,
     for<'x, 'y> &'x B: Input<&'y Bo, ()>,

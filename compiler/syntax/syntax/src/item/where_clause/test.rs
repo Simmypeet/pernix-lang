@@ -1,7 +1,7 @@
 use proptest::prelude::Arbitrary;
 
 use crate::{
-    item::where_clause::{arbitrary, WhereClause},
+    item::where_clause::{WhereClause, arbitrary},
     test::verify_ref,
 };
 

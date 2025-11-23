@@ -5,8 +5,8 @@ use pernixc_lexical::tree::RelativeSpan;
 use pernixc_semantic_element::variance::Variance;
 use pernixc_term::r#type::Type;
 use pernixc_type_system::{
-    lifetime_constraint::LifetimeConstraint, normalizer::Normalizer, Succeeded,
-    UnrecoverableError,
+    Succeeded, UnrecoverableError, lifetime_constraint::LifetimeConstraint,
+    normalizer::Normalizer,
 };
 
 use crate::context::Context;
@@ -33,11 +33,13 @@ impl<N: Normalizer> Context<'_, N> {
         };
 
         assert!(succeeded.result.forall_lifetime_errors.is_empty());
-        assert!(succeeded
-            .result
-            .forall_lifetime_instantiations
-            .lifetimes_by_forall
-            .is_empty());
+        assert!(
+            succeeded
+                .result
+                .forall_lifetime_instantiations
+                .lifetimes_by_forall
+                .is_empty()
+        );
 
         set.extend(succeeded.constraints.iter().cloned());
 

@@ -3,8 +3,8 @@
 use pernixc_arena::ID;
 use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{runtime::executor, TrackedEngine};
-use pernixc_semantic_element::fields::{get_fields, Field};
+use pernixc_query::{TrackedEngine, runtime::executor};
+use pernixc_semantic_element::fields::{Field, get_fields};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
@@ -369,12 +369,14 @@ impl Report for AlreadyBoundFieldPattern {
                     .span(span)
                     .build(),
             )
-            .related(vec![Highlight::builder()
-                .message(format!(
-                    "the field `{field_name}` is first bound here"
-                ))
-                .span(first_bound_span)
-                .build()])
+            .related(vec![
+                Highlight::builder()
+                    .message(format!(
+                        "the field `{field_name}` is first bound here"
+                    ))
+                    .span(first_bound_span)
+                    .build(),
+            ])
             .build())
     }
 }

@@ -2,7 +2,7 @@
 
 use std::{collections::HashMap, hash::Hasher, path::PathBuf, sync::Arc};
 
-use clap::{builder::styling, Args, Subcommand};
+use clap::{Args, Subcommand, builder::styling};
 use derive_new::new;
 use enum_as_inner::EnumAsInner;
 use flexstr::SharedStr;

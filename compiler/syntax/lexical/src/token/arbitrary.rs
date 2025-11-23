@@ -104,14 +104,8 @@ impl<T: Display> Display for Token<T> {
     }
 }
 
-impl<
-        't,
-        'u,
-        T: Debug + Display,
-        U: Debug,
-        L: Debug + Location<C>,
-        C: Clone,
-    > Input<&'u super::Token<U, L>, (&SourceMap, C)> for &'t Token<T>
+impl<'t, 'u, T: Debug + Display, U: Debug, L: Debug + Location<C>, C: Clone>
+    Input<&'u super::Token<U, L>, (&SourceMap, C)> for &'t Token<T>
 where
     &'t T: Input<&'u U, ()>,
 {
@@ -163,7 +157,7 @@ where
             (x, y) => {
                 return Err(TestCaseError::fail(format!(
                     "expected {x:?} got {y:?}",
-                )))
+                )));
             }
         }
 

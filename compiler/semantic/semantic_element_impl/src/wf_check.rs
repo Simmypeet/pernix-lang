@@ -7,7 +7,7 @@ use diagnostic::Diagnostic;
 use enum_as_inner::EnumAsInner;
 use pernixc_handler::{Handler, Storage};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor};
 use pernixc_resolution::qualified_identifier::Resolution;
 use pernixc_semantic_element::{
     implements_arguments::get_implements_argument, variance::Variance,
@@ -15,7 +15,7 @@ use pernixc_semantic_element::{
 };
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
-    kind::{get_kind, Kind},
+    kind::{Kind, get_kind},
     parent::get_parent,
 };
 use pernixc_target::Global;
@@ -29,16 +29,16 @@ use pernixc_term::{
     visitor::RecursiveIterator,
 };
 use pernixc_type_system::{
-    deduction,
+    OverflowError, Succeeded, deduction,
     diagnostic::{
         ImplementationIsNotGeneralEnough as ImplementationIsNotGeneralEnoughDiag,
         UnsatisfiedPredicate,
     },
-    environment::{get_active_premise, Environment},
+    environment::{Environment, get_active_premise},
     lifetime_constraint::LifetimeConstraint,
     normalizer,
     predicate::{marker, r#trait},
-    resolution, OverflowError, Succeeded,
+    resolution,
 };
 
 use crate::{
@@ -300,11 +300,7 @@ impl Checker<'_> {
                             .get_kind(parent)
                             .await;
 
-                        if parent_kind.is_adt() {
-                            Some(parent)
-                        } else {
-                            None
-                        }
+                        if parent_kind.is_adt() { Some(parent) } else { None }
                     }
 
                     Kind::TraitConstant

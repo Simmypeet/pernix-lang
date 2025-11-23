@@ -13,9 +13,9 @@ use crate::{
     item::{arbitrary::Body, generic_parameters::arbitrary::GenericParameters},
     pattern::arbitrary::Irrefutable,
     predicate::arbitrary::HigherRankedLifetimes,
-    r#type::arbitrary::Type,
     reference,
     statement::arbitrary::Statement,
+    r#type::arbitrary::Type,
 };
 
 reference! {

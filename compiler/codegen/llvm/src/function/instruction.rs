@@ -1,10 +1,10 @@
 use std::{cmp::Ordering, ops::Deref};
 
 use inkwell::{
+    AddressSpace, FloatPredicate, IntPredicate,
     attributes::AttributeLoc,
     types::BasicTypeEnum,
     values::{BasicMetadataValueEnum, BasicValueEnum, PointerValue},
-    AddressSpace, FloatPredicate, IntPredicate,
 };
 use pernixc_arena::ID;
 use pernixc_ir::{
@@ -14,17 +14,17 @@ use pernixc_ir::{
         TuplePack,
     },
     value::{
+        Value,
         register::{
             self, Assignment, BinaryOperator, Register, RelationalOperator,
         },
-        Value,
     },
 };
 use pernixc_semantic_element::{
     elided_lifetime::get_elided_lifetimes, fields::get_fields,
 };
 use pernixc_symbol::{
-    kind::{get_kind, Kind},
+    kind::{Kind, get_kind},
     member::get_members,
     name::get_name,
     parent::get_parent,
@@ -34,8 +34,8 @@ use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
     generic_parameters::{
-        get_generic_parameters, ConstantParameterID, LifetimeParameterID,
-        TypeParameterID,
+        ConstantParameterID, LifetimeParameterID, TypeParameterID,
+        get_generic_parameters,
     },
     lifetime::{ElidedLifetimeID, Lifetime},
     r#type::{Primitive, Type},
@@ -1858,10 +1858,9 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             )
             .await?;
 
-        assert!(self
-            .register_map
-            .insert(register_assignment.id, value)
-            .is_none());
+        assert!(
+            self.register_map.insert(register_assignment.id, value).is_none()
+        );
 
         Ok(())
     }

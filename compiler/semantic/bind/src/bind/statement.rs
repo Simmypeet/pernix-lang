@@ -5,8 +5,8 @@ use pernixc_ir::{
     instruction::{Instruction, RegisterDiscard},
     pattern::{Irrefutable, NameBindingPoint, Wildcard},
     value::{
-        literal::{self, Literal},
         Value,
+        literal::{self, Literal},
     },
 };
 use pernixc_source_file::SourceElement;
@@ -14,7 +14,7 @@ use pernixc_term::r#type::{Qualifier, Type};
 
 use crate::{
     bind::{Bind, Expression, Guidance},
-    binder::{type_check::Expected, Binder, Error, UnrecoverableError},
+    binder::{Binder, Error, UnrecoverableError, type_check::Expected},
     diagnostic::Diagnostic,
     infer::constraint,
 };
@@ -180,7 +180,7 @@ impl Binder<'_> {
                     )
                 }
                 Error::Unrecoverable(internal_error) => {
-                    return Err(internal_error)
+                    return Err(internal_error);
                 }
             },
         };

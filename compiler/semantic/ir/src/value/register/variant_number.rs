@@ -6,13 +6,13 @@ use pernixc_stable_hash::StableHash;
 use pernixc_symbol::member::get_members;
 use pernixc_target::Global;
 use pernixc_term::r#type::{Primitive, Type};
-use pernixc_type_system::{normalizer::Normalizer, Succeeded};
+use pernixc_type_system::{Succeeded, normalizer::Normalizer};
 
 use crate::{
+    Values,
     address::Address,
     transform::Transformer,
     value::{Environment, TypeOf},
-    Values,
 };
 
 /// Returns the variant number of the given address to the enum.

@@ -8,9 +8,9 @@ use pernixc_term::r#type::Type;
 
 use crate::{
     binder::{
+        Binder, UnrecoverableError,
         inference_context::UnifyError,
         type_check::diagnostic::{CyclicInference, MismatchedType},
-        Binder, UnrecoverableError,
     },
     diagnostic::Diagnostic,
     infer::constraint::{self, Constraint},

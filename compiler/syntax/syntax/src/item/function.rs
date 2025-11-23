@@ -3,15 +3,15 @@ use pernixc_lexical::tree::DelimiterKind;
 use pernixc_parser::{
     abstract_tree,
     expect::{self, Ext as _},
-    parser::{ast, Parser as _},
+    parser::{Parser as _, ast},
 };
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
 use crate::{
-    item::generic_parameters::GenericParameters, pattern::Irrefutable,
-    predicate::HigherRankedLifetimes, r#type::Type, statement::Statement,
     AccessModifier, Identifier, Keyword, Punctuation, QualifiedIdentifier,
+    item::generic_parameters::GenericParameters, pattern::Irrefutable,
+    predicate::HigherRankedLifetimes, statement::Statement, r#type::Type,
 };
 
 #[cfg(any(test, feature = "arbitrary"))]
