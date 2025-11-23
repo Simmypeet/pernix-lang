@@ -38,7 +38,7 @@ jobs:
                       ~/.cargo/registry/cache/
                       ~/.cargo/git/db/
                       target/
-                  key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+                  key: ${{ runner.os }}-${{ runner.arch }}-cargo
 
             - name: Build LLVM on Unix-like
               if: runner.os != 'Windows'

@@ -45,7 +45,7 @@ jobs:
                       ~/.cargo/registry/cache/
                       ~/.cargo/git/db/
                       target/
-                  key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+                  key: ${{ runner.os }}-${{ runner.arch }}-cargo
 
             - name: Install Cargo Nextest
               run: cargo install cargo-nextest
