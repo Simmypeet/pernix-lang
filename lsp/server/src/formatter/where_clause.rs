@@ -159,7 +159,7 @@ impl Formatter<'_, '_> {
     /// Formats a where clause if it exists.
     pub async fn format_where_clause(
         &mut self,
-        where_clause: Arc<[pernixc_semantic_element::where_clause::Predicate]>,
+        where_clause: &[pernixc_semantic_element::where_clause::Predicate],
     ) -> Result<bool, super::Error> {
         if where_clause.is_empty() {
             return Ok(false);

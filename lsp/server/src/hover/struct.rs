@@ -34,7 +34,7 @@ pub async fn format_struct_signature(
                 let predicates = self.get_where_clause(struct_id).await?;
 
                 let wher_clause_formatted =
-                    x.format_where_clause(predicates).await?;
+                    x.format_where_clause(&predicates).await?;
 
                 let fields = self.get_fields(struct_id).await?;
 
