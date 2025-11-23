@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use pernixc_hash::HashMap;
 use pernixc_symbol::name::get_name;
 use pernixc_target::Global;

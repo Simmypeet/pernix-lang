@@ -2,7 +2,9 @@ use std::fmt::Write;
 
 use pernixc_extend::extend;
 use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
-use pernixc_semantic_element::variant::get_variant_associated_type;
+use pernixc_semantic_element::{
+    variant::get_variant_associated_type, where_clause::get_where_clause,
+};
 use pernixc_symbol::{
     member::get_members, name::get_name,
     variant_declaration_order::get_variant_declaration_order,
@@ -33,6 +35,10 @@ pub async fn format_enum_signature(
             .await?;
 
             x.indent(async |x| {
+                let where_clause = self.get_where_clause(enum_id).await?;
+                let has_where_clause =
+                    x.format_where_clause(&where_clause).await?;
+
                 let variant_member = self.get_members(enum_id).await;
                 let mut variant_id_with_order =
                     Vec::with_capacity(variant_member.member_ids_by_name.len());
@@ -50,6 +56,11 @@ pub async fn format_enum_signature(
 
                 // sort by declaration order
                 variant_id_with_order.sort_by_key(|(_, order)| *order);
+
+                // if has where clause and has variants, add a space
+                if has_where_clause && !variant_id_with_order.is_empty() {
+                    x.immediate_line()?;
+                }
 
                 for (variant_id, _) in variant_id_with_order {
                     let variant_name = self.get_name(variant_id).await;

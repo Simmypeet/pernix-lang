@@ -1,8 +1,10 @@
-use std::fmt::Write;
+use std::{fmt::Write, ops::Not};
 
 use pernixc_extend::extend;
 use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
-use pernixc_semantic_element::type_alias::get_type_alias;
+use pernixc_semantic_element::{
+    type_alias::get_type_alias, where_clause::get_where_clause,
+};
 use pernixc_symbol::kind::{Kind, get_kind};
 use pernixc_target::Global;
 
@@ -41,6 +43,18 @@ async fn write_type_signature(
         write!(formatter, " = ").unwrap();
         let r#type = engine.get_type_alias(type_id).await?;
         formatter.write_type(&r#type).await?;
+    }
+
+    let where_clauses = engine.get_where_clause(type_id).await?;
+
+    if where_clauses.is_empty().not() {
+        formatter
+            .indent(async |x| {
+                x.format_where_clause(&where_clauses).await?;
+
+                Ok(())
+            })
+            .await?;
     }
 
     Ok(())

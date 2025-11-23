@@ -1,9 +1,10 @@
-use std::fmt::Write;
+use std::{fmt::Write, ops::Not};
 
 use pernixc_extend::extend;
 use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
 use pernixc_semantic_element::{
     parameter::get_parameters, return_type::get_return_type,
+    where_clause::get_where_clause,
 };
 use pernixc_symbol::{
     kind::{Kind, get_kind},
@@ -113,6 +114,17 @@ async fn write_function_signature(
 
     write!(formatter, " -> ")?;
     formatter.write_type(&return_type).await?;
+
+    let where_clause = engine.get_where_clause(function_id).await?;
+    if where_clause.is_empty().not() {
+        formatter
+            .indent(async |x| {
+                x.format_where_clause(&where_clause).await?;
+
+                Ok(())
+            })
+            .await?;
+    }
 
     Ok(())
 }
