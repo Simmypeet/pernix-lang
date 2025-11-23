@@ -3,7 +3,7 @@
 use std::{path::Path, sync::Arc};
 
 use pernixc_handler::Storage;
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::calculate_path_id;
 use pernixc_stable_hash::StableHash;
@@ -64,7 +64,10 @@ pub async fn parse_executor(
     let tree = tree::Tree::from_source(
         source_file.content(),
         key.target_id.make_global(
-            engine.calculate_path_id(&key.path, key.target_id).await,
+            engine.calculate_path_id(&key.path, key.target_id).await.expect(
+                "should be sucessful since the source file is loaded \
+                 successfully",
+            ),
         ),
         &storage,
     );

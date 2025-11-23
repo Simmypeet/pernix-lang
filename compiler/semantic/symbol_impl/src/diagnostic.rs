@@ -10,18 +10,18 @@ use pernixc_diagnostic::{Highlight, Report};
 use pernixc_hash::HashSet;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::{
-    runtime::executor::{self, CyclicError},
     TrackedEngine,
+    runtime::executor::{self, CyclicError},
 };
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{
+    ID,
     kind::Kind,
     name::{get_name, get_qualified_name},
     source_map::to_absolute_span,
     span::get_span,
-    ID,
 };
 use pernixc_target::{Global, TargetID};
 use pernixc_tokio::{join_list::JoinList, scoped};
@@ -277,7 +277,7 @@ fn populate_file_errors(
     file_errors_list: &mut JoinList<Result<FileError, CyclicError>>,
     map: &Map,
 ) {
-    for path in map.paths_by_source_id.values() {
+    for path in map.paths_by_source_id.values().chain(map.failed_paths.keys()) {
         let external_submodule_opt = path.1.clone();
         let path_key = path.0.clone();
         let engine = engine.clone();
