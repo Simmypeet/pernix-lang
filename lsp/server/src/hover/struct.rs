@@ -1,8 +1,10 @@
-use std::fmt::Write;
+use std::{fmt::Write, ops::Not};
 
 use pernixc_extend::extend;
 use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
-use pernixc_semantic_element::fields::get_fields;
+use pernixc_semantic_element::{
+    fields::get_fields, where_clause::get_where_clause,
+};
 use pernixc_target::Global;
 
 use crate::{
@@ -29,12 +31,24 @@ pub async fn format_struct_signature(
             .await?;
 
             x.indent(async |x| {
+                let predicates = self.get_where_clause(struct_id).await?;
+
+                let wher_clause_formatted =
+                    x.format_where_clause(predicates).await?;
+
                 let fields = self.get_fields(struct_id).await?;
 
                 let configuration =
                     pernixc_term::display::Configuration::builder()
                         .short_qualified_identifiers(true)
                         .build();
+
+                if wher_clause_formatted
+                    && fields.field_ids_by_name.is_empty().not()
+                {
+                    // add space for fields after where clause
+                    x.immediate_line()?;
+                }
 
                 for (_, field) in fields.fields_as_order() {
                     x.new_line(async |mut x| {
