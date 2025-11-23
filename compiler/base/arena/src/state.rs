@@ -231,11 +231,11 @@ impl<T, F, V> State<T> for PartialHash<F, V> {
 }
 
 impl<
-        T,
-        R: std::hash::Hash,
-        F: std::default::Default + FnOnce(&T) -> R,
-        V: std::hash::Hasher + std::default::Default,
-    > Generator<T> for PartialHash<F, V>
+    T,
+    R: std::hash::Hash,
+    F: std::default::Default + FnOnce(&T) -> R,
+    V: std::hash::Hasher + std::default::Default,
+> Generator<T> for PartialHash<F, V>
 {
     fn next_id(&mut self, items: &HashMap<Self::ID, T>, value: &T) -> Self::ID {
         let mapper = F::default();

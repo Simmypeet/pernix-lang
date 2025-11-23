@@ -76,9 +76,9 @@ fn sequences() {
     let buf = with_serializer(|s| vec![100u32, 200, 300].serialize(s, &()));
 
     assert_eq!(buf[0], 3); // length
-                           // 100 = 0x64 (single byte, since 100 < 128)
-                           // 200 = 0xC8 -> varint: 0xC8 (200 & 0x7F | 0x80), 0x01 (200 >> 7)
-                           // 300 = 0x12C -> varint: 0xAC ((300 & 0x7F) | 0x80), 0x02 (300 >> 7)
+    // 100 = 0x64 (single byte, since 100 < 128)
+    // 200 = 0xC8 -> varint: 0xC8 (200 & 0x7F | 0x80), 0x01 (200 >> 7)
+    // 300 = 0x12C -> varint: 0xAC ((300 & 0x7F) | 0x80), 0x02 (300 >> 7)
     assert_eq!(&buf[1..], &[100, 200, 1, 172, 2]);
 
     // Test empty Vec
@@ -90,8 +90,8 @@ fn sequences() {
         vec!["hello".to_string(), "world".to_string()].serialize(s, &())
     });
     assert_eq!(buf[0], 2); // length of vec
-                           // First string: length (5) + "hello"
-                           // Second string: length (5) + "world"
+    // First string: length (5) + "hello"
+    // Second string: length (5) + "world"
     assert_eq!(buf[1], 5); // length of "hello"
     assert_eq!(&buf[2..7], b"hello");
     assert_eq!(buf[7], 5); // length of "world"
@@ -143,8 +143,8 @@ fn structs() {
     // Should serialize as: u8 + u8 + u16 varint + u16
     assert_eq!(buf[0], 1); // u8 as-is
     assert_eq!(buf[1], 2); // u8 as-is
-                           // 300 = 0x12C -> varint: 0xAC (low 7 bits + continuation) | 0x02 (high
-                           // bits)
+    // 300 = 0x12C -> varint: 0xAC (low 7 bits + continuation) | 0x02 (high
+    // bits)
     assert_eq!(buf[2], 0xAC); // 300 as varint (first byte)
     assert_eq!(buf[3], 0x02); // 300 as varint (second byte)
     assert_eq!(buf[4], 4); // 4 as varint (single byte)
@@ -212,7 +212,7 @@ fn complex_nested() {
 
     // First element: Some variant
     assert_eq!(buf[1], 1); // Some variant index
-                           // Then tuple: string + vec
+    // Then tuple: string + vec
     assert_eq!(buf[2], 4); // "key1" length
     assert_eq!(&buf[3..7], b"key1");
     assert_eq!(buf[7], 3); // vec length

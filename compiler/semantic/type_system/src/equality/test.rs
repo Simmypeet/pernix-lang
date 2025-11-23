@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use pernixc_query::{database::SetInputResult, Engine};
+use pernixc_query::{Engine, database::SetInputResult};
 use pernixc_symbol::kind::Kind;
 use pernixc_target::{Global, TargetID};
 use pernixc_term::{
@@ -22,6 +22,7 @@ use proptest::{
 };
 
 use crate::{
+    Error,
     environment::{Environment, Premise},
     equality::Equality,
     normalizer,
@@ -30,7 +31,6 @@ use crate::{
         create_engine, purge_trait_associated_type,
         purge_trait_associated_type_in_generic_arguments,
     },
-    Error,
 };
 
 #[tokio::test]
@@ -108,24 +108,28 @@ async fn symmetric() {
         normalizer::NO_OP,
     );
 
-    assert!(environment
-        .query(&Equality::new(
-            Type::TraitMember(trait_member.clone()),
-            equivalence.clone(),
-        ))
-        .await
-        .unwrap()
-        .unwrap()
-        .constraints
-        .is_empty());
+    assert!(
+        environment
+            .query(&Equality::new(
+                Type::TraitMember(trait_member.clone()),
+                equivalence.clone(),
+            ))
+            .await
+            .unwrap()
+            .unwrap()
+            .constraints
+            .is_empty()
+    );
 
-    assert!(environment
-        .query(&Equality::new(equivalence, Type::TraitMember(trait_member)))
-        .await
-        .unwrap()
-        .unwrap()
-        .constraints
-        .is_empty());
+    assert!(
+        environment
+            .query(&Equality::new(equivalence, Type::TraitMember(trait_member)))
+            .await
+            .unwrap()
+            .unwrap()
+            .constraints
+            .is_empty()
+    );
 
     environment.assert_call_stack_empty();
 }
@@ -182,23 +186,27 @@ async fn not_equal() {
         normalizer::NO_OP,
     );
 
-    assert!(environment
-        .query(&Equality::new(
-            Type::TraitMember(trait_member.clone()),
-            Type::Primitive(Primitive::Float32),
-        ))
-        .await
-        .unwrap()
-        .is_none());
+    assert!(
+        environment
+            .query(&Equality::new(
+                Type::TraitMember(trait_member.clone()),
+                Type::Primitive(Primitive::Float32),
+            ))
+            .await
+            .unwrap()
+            .is_none()
+    );
 
-    assert!(environment
-        .query(&Equality::new(
-            Type::Primitive(Primitive::Float32),
-            Type::TraitMember(trait_member),
-        ))
-        .await
-        .unwrap()
-        .is_none());
+    assert!(
+        environment
+            .query(&Equality::new(
+                Type::Primitive(Primitive::Float32),
+                Type::TraitMember(trait_member),
+            ))
+            .await
+            .unwrap()
+            .is_none()
+    );
 
     environment.assert_call_stack_empty();
 }
@@ -271,27 +279,31 @@ async fn transitivity() {
         normalizer::NO_OP,
     );
 
-    assert!(environment
-        .query(&Equality::new(
-            Type::TraitMember(first_trait_member.clone()),
-            equivalence.clone(),
-        ))
-        .await
-        .unwrap()
-        .unwrap()
-        .constraints
-        .is_empty());
+    assert!(
+        environment
+            .query(&Equality::new(
+                Type::TraitMember(first_trait_member.clone()),
+                equivalence.clone(),
+            ))
+            .await
+            .unwrap()
+            .unwrap()
+            .constraints
+            .is_empty()
+    );
 
-    assert!(environment
-        .query(&Equality::new(
-            equivalence,
-            Type::TraitMember(first_trait_member),
-        ))
-        .await
-        .unwrap()
-        .unwrap()
-        .constraints
-        .is_empty());
+    assert!(
+        environment
+            .query(&Equality::new(
+                equivalence,
+                Type::TraitMember(first_trait_member),
+            ))
+            .await
+            .unwrap()
+            .unwrap()
+            .constraints
+            .is_empty()
+    );
 
     environment.assert_call_stack_empty();
 }
@@ -385,21 +397,25 @@ async fn congruence() {
         },
     });
 
-    assert!(environment
-        .query(&Equality::new(lhs.clone(), rhs.clone()))
-        .await
-        .unwrap()
-        .unwrap()
-        .constraints
-        .is_empty());
+    assert!(
+        environment
+            .query(&Equality::new(lhs.clone(), rhs.clone()))
+            .await
+            .unwrap()
+            .unwrap()
+            .constraints
+            .is_empty()
+    );
 
-    assert!(environment
-        .query(&Equality::new(rhs, lhs))
-        .await
-        .unwrap()
-        .unwrap()
-        .constraints
-        .is_empty());
+    assert!(
+        environment
+            .query(&Equality::new(rhs, lhs))
+            .await
+            .unwrap()
+            .unwrap()
+            .constraints
+            .is_empty()
+    );
 
     environment.assert_call_stack_empty();
 }
@@ -423,13 +439,15 @@ async fn symbol() {
         normalizer::NO_OP,
     );
 
-    assert!(environment
-        .query(&Equality::new(symbol.clone(), symbol))
-        .await
-        .unwrap()
-        .unwrap()
-        .constraints
-        .is_empty());
+    assert!(
+        environment
+            .query(&Equality::new(symbol.clone(), symbol))
+            .await
+            .unwrap()
+            .unwrap()
+            .constraints
+            .is_empty()
+    );
 
     environment.assert_call_stack_empty();
 }

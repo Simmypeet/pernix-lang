@@ -8,14 +8,14 @@ use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::runtime::executor::CyclicError;
 use pernixc_term::{
     lifetime::Lifetime,
-    r#type::Type,
     sub_term::TermLocation,
+    r#type::Type,
     visitor::{self, MutableRecursive},
 };
 use pernixc_type_system::environment::Environment;
 
 use crate::{
-    binder::{inference_context::InferenceContext, Binder},
+    binder::{Binder, inference_context::InferenceContext},
     diagnostic::{
         ConstantAnnotationRequired, Diagnostic, TypeAnnotationRequired,
     },
@@ -98,7 +98,7 @@ impl Transformer<Type> for ReplaceInference<'_> {
                 );
             }
             Err(pernixc_type_system::Error::CyclicDependency(err)) => {
-                return Err(err)
+                return Err(err);
             }
         }
 
@@ -138,7 +138,7 @@ impl Transformer<pernixc_term::constant::Constant> for ReplaceInference<'_> {
                 );
             }
             Err(pernixc_type_system::Error::CyclicDependency(err)) => {
-                return Err(err)
+                return Err(err);
             }
         }
 

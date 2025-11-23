@@ -1,18 +1,18 @@
 use pernixc_handler::Handler;
 use pernixc_ir::value::{
-    literal::{Literal, Numeric},
     Value,
+    literal::{Literal, Numeric},
 };
 use pernixc_source_file::SourceElement;
 use pernixc_term::r#type::{Primitive, Type};
 
 use crate::{
     bind::{
+        Bind, Expression, Guidance,
         expression::numeric::diagnostic::{
             Diagnostic, FloatingPointLiteralHasIntegralSuffix,
             InvalidNumericSuffix,
         },
-        Bind, Expression, Guidance,
     },
     binder::{Binder, BindingError, Error},
     infer::constraint,

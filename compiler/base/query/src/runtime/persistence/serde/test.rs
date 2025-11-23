@@ -1,14 +1,14 @@
 use pernixc_serialize::{
-    binary::{de::BinaryDeserializer, ser::BinarySerializer},
     Deserialize, Serialize,
+    binary::{de::BinaryDeserializer, ser::BinarySerializer},
 };
 use pernixc_stable_hash::StableHash;
 use pernixc_stable_type_id::Identifiable;
 
 use crate::{
+    Key,
     database::DynamicKey,
     runtime::persistence::serde::{DynamicRegistry, SelfRegistry},
-    Key,
 };
 
 // Basic equality-based merge (default behavior)
@@ -129,17 +129,17 @@ pub struct GenericKey<
 >(T);
 
 impl<
-        T: Identifiable
-            + Clone
-            + Eq
-            + std::hash::Hash
-            + std::fmt::Debug
-            + Send
-            + Sync
-            + 'static
-            + Default
-            + StableHash,
-    > Default for GenericKey<T>
+    T: Identifiable
+        + Clone
+        + Eq
+        + std::hash::Hash
+        + std::fmt::Debug
+        + Send
+        + Sync
+        + 'static
+        + Default
+        + StableHash,
+> Default for GenericKey<T>
 {
     fn default() -> Self { Self(T::default()) }
 }
@@ -172,17 +172,17 @@ pub struct GenericBoolKey<
 >(T);
 
 impl<
-        T: Identifiable
-            + Clone
-            + Eq
-            + std::hash::Hash
-            + std::fmt::Debug
-            + Send
-            + Sync
-            + 'static
-            + Default
-            + StableHash,
-    > Default for GenericBoolKey<T>
+    T: Identifiable
+        + Clone
+        + Eq
+        + std::hash::Hash
+        + std::fmt::Debug
+        + Send
+        + Sync
+        + 'static
+        + Default
+        + StableHash,
+> Default for GenericBoolKey<T>
 {
     fn default() -> Self { Self(T::default()) }
 }
@@ -215,17 +215,17 @@ pub struct GenericI32Key<
 >(T);
 
 impl<
-        T: Identifiable
-            + Clone
-            + Eq
-            + std::hash::Hash
-            + std::fmt::Debug
-            + Send
-            + Sync
-            + 'static
-            + Default
-            + StableHash,
-    > Default for GenericI32Key<T>
+    T: Identifiable
+        + Clone
+        + Eq
+        + std::hash::Hash
+        + std::fmt::Debug
+        + Send
+        + Sync
+        + 'static
+        + Default
+        + StableHash,
+> Default for GenericI32Key<T>
 {
     fn default() -> Self { Self(T::default()) }
 }

@@ -12,8 +12,8 @@ use crate::{
     arbitrary::{IndentDisplay, IntoSeparated, LifetimeParameter},
     expression::arbitrary::Expression,
     predicate::arbitrary::TypeBound,
-    r#type::arbitrary::Type,
     reference,
+    r#type::arbitrary::Type,
 };
 
 #[derive(Debug, Clone)]

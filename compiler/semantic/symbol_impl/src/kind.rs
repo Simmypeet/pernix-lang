@@ -2,20 +2,20 @@ use std::{fmt::Debug, hash::Hash, sync::Arc};
 
 use pernixc_extend::extend;
 use pernixc_query::{
-    runtime::executor::{self, CyclicError},
     TrackedEngine,
+    runtime::executor::{self, CyclicError},
 };
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_stable_type_id::Identifiable;
 use pernixc_symbol::{
-    kind::{Key, Kind},
     AllAdtIDKey, AllFunctionWithBodyIDKey, AllImplementsIDKey, ID,
+    kind::{Key, Kind},
 };
 use pernixc_target::TargetID;
 use pernixc_tokio::scoped;
 
-use crate::table::{self, get_table_of_symbol, MapKey};
+use crate::table::{self, MapKey, get_table_of_symbol};
 
 #[pernixc_query::executor(key(Key), name(Executor))]
 #[allow(clippy::unnecessary_wraps)]
@@ -69,17 +69,17 @@ pub struct FilterKey<T> {
 }
 
 impl<
-        T: Debug
-            + Clone
-            + Eq
-            + Hash
-            + StableHash
-            + Identifiable
-            + Filter
-            + Send
-            + Sync
-            + 'static,
-    > pernixc_query::Key for FilterKey<T>
+    T: Debug
+        + Clone
+        + Eq
+        + Hash
+        + StableHash
+        + Identifiable
+        + Filter
+        + Send
+        + Sync
+        + 'static,
+> pernixc_query::Key for FilterKey<T>
 {
     type Value = Arc<[ID]>;
 }
@@ -91,17 +91,17 @@ pernixc_register::register!(FilterKey<EqualsFilter>, FilterExecutor);
 pub struct FilterExecutor;
 
 impl<
-        T: Debug
-            + Clone
-            + Eq
-            + Hash
-            + StableHash
-            + Identifiable
-            + Filter
-            + Send
-            + Sync
-            + 'static,
-    > executor::Executor<FilterKey<T>> for FilterExecutor
+    T: Debug
+        + Clone
+        + Eq
+        + Hash
+        + StableHash
+        + Identifiable
+        + Filter
+        + Send
+        + Sync
+        + 'static,
+> executor::Executor<FilterKey<T>> for FilterExecutor
 {
     async fn execute(
         &self,

@@ -1,0 +1,7 @@
+---
+source: lsp/integration_test/snapshot/mod.rs
+expression: string
+---
+```pernix
+public function test[T](arg: int32, (first, second): (T, T)) -> T
+```

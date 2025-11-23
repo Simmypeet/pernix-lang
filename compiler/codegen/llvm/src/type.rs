@@ -8,16 +8,16 @@ use std::{
 
 use getset::Getters;
 use inkwell::{
-    types::{BasicType, BasicTypeEnum, IntType, PointerType, StructType},
     AddressSpace,
+    types::{BasicType, BasicTypeEnum, IntType, PointerType, StructType},
 };
 use pernixc_arena::ID;
 use pernixc_semantic_element::{
-    fields::{get_fields, Field},
+    fields::{Field, get_fields},
     variant::get_variant_associated_type,
 };
 use pernixc_symbol::{
-    kind::{get_kind, Kind},
+    kind::{Kind, get_kind},
     member::get_members,
     name::get_name,
     variant_declaration_order::get_variant_declaration_order,
@@ -30,8 +30,8 @@ use pernixc_term::{
     generic_parameters::get_generic_parameters,
     instantiation::Instantiation,
     lifetime::Lifetime,
-    r#type::{Primitive, Tuple, Type},
     sub_term::TermLocation,
+    r#type::{Primitive, Tuple, Type},
     visitor::MutableRecursive,
 };
 use pernixc_type_system::{
@@ -682,16 +682,20 @@ impl<'ctx> Context<'_, 'ctx> {
                     1
                 );
 
-                assert!(repr.set_body(
-                    &[
-                        max_abi_aligned_ty,
-                        self.context()
-                            .i8_type()
-                            .array_type(extra_bytes_needed.try_into().unwrap())
-                            .into(),
-                    ],
-                    false,
-                ));
+                assert!(
+                    repr.set_body(
+                        &[
+                            max_abi_aligned_ty,
+                            self.context()
+                                .i8_type()
+                                .array_type(
+                                    extra_bytes_needed.try_into().unwrap()
+                                )
+                                .into(),
+                        ],
+                        false,
+                    )
+                );
             }
 
             // make sure it can accommodate the largest variant. the size might
@@ -718,11 +722,12 @@ impl<'ctx> Context<'_, 'ctx> {
 
         let ty = Rc::new(enum_ty);
 
-        assert!(self
-            .type_map_mut()
-            .enum_signatures
-            .insert(symbol, ty.clone())
-            .is_none());
+        assert!(
+            self.type_map_mut()
+                .enum_signatures
+                .insert(symbol, ty.clone())
+                .is_none()
+        );
 
         ty
     }

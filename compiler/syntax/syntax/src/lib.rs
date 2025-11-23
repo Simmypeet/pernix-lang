@@ -14,9 +14,9 @@ use pernixc_lexical::{
 use pernixc_parser::{
     abstract_tree::{self, AbstractTree},
     expect::{self, Ext as _},
-    parser::{ast, Parser as _},
+    parser::{Parser as _, ast},
 };
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::TargetID;

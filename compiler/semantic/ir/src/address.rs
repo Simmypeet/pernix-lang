@@ -8,7 +8,7 @@ use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::runtime::executor::CyclicError;
 use pernixc_semantic_element::{
     fields::{self, get_fields},
-    parameter::{get_parameters, Parameter},
+    parameter::{Parameter, get_parameters},
     variant::get_variant_associated_type,
 };
 use pernixc_serialize::{Deserialize, Serialize};
@@ -18,18 +18,18 @@ use pernixc_term::{
     generic_arguments::Symbol,
     generic_parameters::get_generic_parameters,
     instantiation::Instantiation,
-    r#type::{self, Qualifier, Type},
     tuple,
+    r#type::{self, Qualifier, Type},
 };
-use pernixc_type_system::{normalizer::Normalizer, Error, Succeeded};
+use pernixc_type_system::{Error, Succeeded, normalizer::Normalizer};
 
 use crate::{
+    Values,
     alloca::Alloca,
     capture::Capture,
     closure_parameters::ClosureParameter,
     transform::Transformer,
     value::{Environment, TypeOf, Value},
-    Values,
 };
 
 /// The address points to a field in a struct.

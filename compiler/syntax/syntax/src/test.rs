@@ -11,8 +11,8 @@ use proptest::{
 };
 
 use crate::{
-    arbitrary::{self, IndentDisplay, IndentDisplayItem},
     QualifiedIdentifier,
+    arbitrary::{self, IndentDisplay, IndentDisplayItem},
 };
 
 pub fn parse_token_tree(

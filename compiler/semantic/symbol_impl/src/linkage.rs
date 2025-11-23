@@ -1,4 +1,4 @@
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
 use pernixc_symbol::linkage::{Key, Linkage};
 
 use crate::table::get_table_of_symbol;

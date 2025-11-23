@@ -1,0 +1,6 @@
+public type A = int32
+public type Another[T: 'static] = int32
+
+
+public function useAnother(a: An<cursor>other):
+    pass

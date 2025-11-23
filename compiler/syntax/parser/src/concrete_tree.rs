@@ -132,7 +132,7 @@ impl Node {
             match self {
                 // no more to recurse into
                 Self::SkipFragment(_, _) | Self::Leaf(_) => {
-                    return current_node
+                    return current_node;
                 }
 
                 Self::Branch(tree) => {

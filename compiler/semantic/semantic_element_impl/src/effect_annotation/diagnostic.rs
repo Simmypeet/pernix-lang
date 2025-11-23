@@ -1,6 +1,6 @@
 use pernixc_diagnostic::{ByteIndex, Highlight, Report};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor};
 use pernixc_resolution::diagnostic::ForallLifetimeRedefinition;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;

@@ -9,15 +9,14 @@ use clap::Parser;
 use codespan_reporting::{
     diagnostic::Diagnostic,
     term::{
-        self,
+        self, StylesWriter,
         termcolor::{self, StandardStream},
-        StylesWriter,
     },
 };
 use pernixc_target::Arguments;
 use tracing_chrome::{ChromeLayerBuilder, FlushGuard};
 use tracing_subscriber::{
-    layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer,
+    EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt,
 };
 
 #[global_allocator]

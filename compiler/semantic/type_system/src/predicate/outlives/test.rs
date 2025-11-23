@@ -1,6 +1,6 @@
 use std::{borrow::Cow, fmt::Debug, future::Future, pin::Pin, sync::Arc};
 
-use pernixc_query::{database::SetInputResult, Engine};
+use pernixc_query::{Engine, database::SetInputResult};
 use pernixc_semantic_element::variance::{Variance, Variances};
 use pernixc_symbol::kind::Kind;
 use pernixc_target::Global;
@@ -20,11 +20,11 @@ use proptest::{
 };
 
 use crate::{
+    Error,
     environment::{Environment, Premise},
     equality, normalizer,
     term::Term,
     test::purge_trait_associated_type,
-    Error,
 };
 
 #[derive(

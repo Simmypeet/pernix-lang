@@ -1,0 +1,23 @@
+public trait Another[T]:
+    pass
+
+
+public trait Fizz[T]:
+    pass
+
+
+public struct Test[
+    'a, 
+    'b,
+    T: 'a + 'b + Another + tuple + const, 
+    U: 'a + 'b + Fizz + tuple + const
+]:
+    where:
+        'b: 'a  + 'static
+
+    public publicField: T
+    internal privateField: U
+    internal internalField: &'a int32
+
+
+public type AliasType = Te<cursor>st[int32, string, float64]

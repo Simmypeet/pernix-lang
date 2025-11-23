@@ -10,15 +10,15 @@ use pernixc_symbol::name::get_qualified_name;
 use pernixc_target::Global;
 
 use crate::{
+    Never,
     error::Error,
-    generic_parameters::{get_generic_parameters, ConstantParameterID},
+    generic_parameters::{ConstantParameterID, get_generic_parameters},
     inference,
     lifetime::Lifetime,
     matching::{Match, Matching, Substructural},
-    r#type::Type,
     sub_term::{self, Location, SubTerm, TermLocation},
     tuple::SubTupleLocation,
-    Never,
+    r#type::Type,
 };
 
 #[cfg(any(test, feature = "arbitrary"))]
@@ -220,7 +220,7 @@ impl Location<Constant, Constant> for SubConstantLocation {
     fn assign_sub_term(self, term: &mut Constant, sub_term: Constant) {
         let reference = match (self, term) {
             (Self::Tuple(location), Constant::Tuple(tuple)) => {
-                return tuple.assign_sub_term(location, sub_term)
+                return tuple.assign_sub_term(location, sub_term);
             }
 
             (Self::Struct(location), Constant::Struct(constant)) => {

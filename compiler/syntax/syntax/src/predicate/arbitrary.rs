@@ -11,7 +11,7 @@ use crate::{
         IndentDisplay, IntoSeparated, Lifetime, LifetimeParameter,
         QualifiedIdentifier,
     },
-    r#type, reference,
+    reference, r#type,
 };
 
 reference! {

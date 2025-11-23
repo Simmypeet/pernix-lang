@@ -1,7 +1,7 @@
 use enum_as_inner::EnumAsInner;
 use pernixc_parser::{abstract_tree, expect, parser::ast};
 
-use crate::{expression::postfix::Postfix, Keyword, Punctuation, ReferenceOf};
+use crate::{Keyword, Punctuation, ReferenceOf, expression::postfix::Postfix};
 
 #[cfg(any(test, feature = "arbitrary"))]
 pub mod arbitrary;

@@ -7,12 +7,12 @@ use pernixc_query::runtime::executor::CyclicError;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_term::{constant::Constant, r#type::Type};
-use pernixc_type_system::{normalizer::Normalizer, Error, Succeeded};
+use pernixc_type_system::{Error, Succeeded, normalizer::Normalizer};
 
 use crate::{
-    transform::{Transformer, TypeTermSource},
-    value::{register::Register, Environment, TypeOf, Value},
     Values,
+    transform::{Transformer, TypeTermSource},
+    value::{Environment, TypeOf, Value, register::Register},
 };
 
 /// Represents an array of values.

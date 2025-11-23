@@ -4,26 +4,26 @@ use std::sync::Arc;
 
 use pernixc_handler::{Handler, Storage};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor};
 use pernixc_resolution::{
+    Config, ExtraNamespace,
     forall_lifetimes::create_forall_lifetimes,
     generic_parameter_namespace::get_generic_parameter_namespace,
     qualified_identifier::{
-        resolve_qualified_identifier, resolve_type_bound, Generic, Resolution,
+        Generic, Resolution, resolve_qualified_identifier, resolve_type_bound,
     },
     term::{resolve_lifetime, resolve_type},
-    Config, ExtraNamespace,
 };
 use pernixc_semantic_element::where_clause;
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
-    kind::{get_kind, Kind},
+    kind::{Kind, get_kind},
     syntax::{get_generic_parameters_syntax, get_where_clause_syntax},
 };
 use pernixc_target::Global;
 use pernixc_term::{
     generic_arguments::{MemberSymbol, TraitMember},
-    generic_parameters::{get_generic_parameters, TypeParameterID},
+    generic_parameters::{TypeParameterID, get_generic_parameters},
     lifetime::Lifetime,
     predicate::{self, Compatible, NegativeMarker, PositiveMarker},
     r#type::Type,

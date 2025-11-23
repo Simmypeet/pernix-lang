@@ -1,16 +1,16 @@
 //! Contains the diagnostics related to accessibility of symbols.
 
 use pernixc_diagnostic::{Highlight, Report, Severity};
-use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{
+    ID,
     accessibility::{accessibility_description, get_accessibility},
     name::{get_name, get_qualified_name},
     source_map::to_absolute_span,
     span::get_span,
-    ID,
 };
 use pernixc_target::TargetID;
 

@@ -7,7 +7,7 @@ use pernixc_term::r#type::Type;
 
 use crate::{
     bind::{Bind, Expression, Guidance},
-    binder::{type_check::Expected, Binder, Error, UnrecoverableError},
+    binder::{Binder, Error, UnrecoverableError, type_check::Expected},
     diagnostic::Diagnostic,
 };
 
@@ -130,7 +130,7 @@ impl Binder<'_> {
                             }
 
                             Err(Error::Unrecoverable(abort)) => {
-                                return Err(abort)
+                                return Err(abort);
                             }
                         }
                     }

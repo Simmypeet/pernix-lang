@@ -12,8 +12,8 @@ use pernixc_term::{
     instantiation::Instantiation,
     lifetime::Lifetime,
     predicate::{self, PositiveTrait},
-    r#type::{Primitive, Qualifier, Reference, Type},
     tuple::{self, Tuple},
+    r#type::{Primitive, Qualifier, Reference, Type},
 };
 
 use crate::{

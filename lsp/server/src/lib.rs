@@ -3,18 +3,18 @@
 use log::{error, info};
 use tokio::sync::RwLock;
 use tower_lsp::{
-    jsonrpc,
+    Client, LanguageServer, jsonrpc,
     lsp_types::{
         CompletionOptions, CompletionParams, CompletionResponse,
         DidChangeTextDocumentParams, DidChangeWatchedFilesParams,
         DidOpenTextDocumentParams, DidSaveTextDocumentParams, FileChangeType,
-        GotoDefinitionParams, GotoDefinitionResponse, HoverProviderCapability,
-        InitializeParams, InitializeResult, InitializedParams, MessageType,
-        OneOf, Registration, ServerCapabilities, TextDocumentSyncCapability,
+        GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverContents,
+        HoverProviderCapability, InitializeParams, InitializeResult,
+        InitializedParams, MarkupContent, MarkupKind, MessageType, OneOf,
+        Registration, ServerCapabilities, TextDocumentSyncCapability,
         TextDocumentSyncKind, Url, WorkspaceFoldersServerCapabilities,
         WorkspaceServerCapabilities,
     },
-    Client, LanguageServer,
 };
 
 use crate::{
@@ -35,6 +35,7 @@ pub struct DiagnosticsWithUrl {
 pub mod analyzer;
 pub mod completion;
 pub mod conversion;
+pub mod formatter;
 pub mod goto_definition;
 pub mod hover;
 pub mod pointing;
@@ -244,10 +245,19 @@ impl LanguageServer for Server {
         let engine = analyzer.engine().await;
         let engine = engine.tracked();
 
-        Ok(engine
-            .handle_hover(analyzer.current_target_id(), params)
-            .await
-            .unwrap_or_default())
+        let Ok(hover_contents) =
+            engine.handle_hover(analyzer.current_target_id(), params).await
+        else {
+            return Ok(None);
+        };
+
+        Ok(hover_contents.map(|hover_contents| Hover {
+            contents: HoverContents::Markup(MarkupContent {
+                kind: MarkupKind::Markdown,
+                value: hover_contents,
+            }),
+            range: None,
+        }))
     }
 
     async fn goto_definition(

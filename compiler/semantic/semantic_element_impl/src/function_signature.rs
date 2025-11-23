@@ -4,10 +4,11 @@ use pernixc_arena::{Arena, ID};
 use pernixc_handler::Storage;
 use pernixc_hash::HashSet;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor};
 use pernixc_resolution::{
+    Config, ElidedTermProvider, ExtraNamespace,
     generic_parameter_namespace::get_generic_parameter_namespace,
-    term::resolve_type, Config, ElidedTermProvider, ExtraNamespace,
+    term::resolve_type,
 };
 use pernixc_semantic_element::{
     elided_lifetime,
@@ -26,23 +27,23 @@ use pernixc_symbol::{
 use pernixc_target::Global;
 use pernixc_term::{
     generic_arguments::GenericArguments,
-    generic_parameters::{get_generic_parameters, LifetimeParameter},
+    generic_parameters::{LifetimeParameter, get_generic_parameters},
     lifetime::{ElidedLifetime, ElidedLifetimeID, Lifetime},
     predicate::{Outlives, Predicate},
-    r#type::Type,
     tuple,
+    r#type::Type,
     visitor::RecursiveIterator,
 };
 use pernixc_type_system::{
-    environment::{get_active_premise, Environment},
+    environment::{Environment, get_active_premise},
     normalizer,
 };
 
 use crate::{
+    Build,
     build::{self, Output},
     function_signature::diagnostic::Diagnostic,
     occurrences::Occurrences,
-    Build,
 };
 
 pub mod diagnostic;
@@ -446,10 +447,10 @@ impl AllLifetimeParameters {
     }
 
     fn exclude_late_bound_in_lifetime(&mut self, lifetime: &Lifetime) {
-        if let Lifetime::Parameter(lifetime) = lifetime {
-            if lifetime.parent_id == self.current_function_id {
-                self.lifetimes.remove(&lifetime.id);
-            }
+        if let Lifetime::Parameter(lifetime) = lifetime
+            && lifetime.parent_id == self.current_function_id
+        {
+            self.lifetimes.remove(&lifetime.id);
         }
     }
 

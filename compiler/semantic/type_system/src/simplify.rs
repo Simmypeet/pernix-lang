@@ -9,12 +9,12 @@ use pernixc_semantic_element::variance::Variance;
 use pernixc_term::{r#type::Type, visitor::AsyncMutable};
 
 use crate::{
+    Error, Succeeded,
     diagnostic::Diagnostic,
     environment::{BoxedFuture, Environment, Query},
     lifetime_constraint::LifetimeConstraint,
     normalizer::Normalizer,
     term::Term,
-    Error, Succeeded,
 };
 
 struct Visitor<'e, N: Normalizer> {

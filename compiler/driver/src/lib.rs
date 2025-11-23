@@ -4,11 +4,11 @@ use std::{path::PathBuf, process::ExitCode, sync::Arc};
 
 use codespan_reporting::{
     diagnostic::{Diagnostic, Label, LabelStyle},
-    term::{termcolor::WriteColor, StylesWriter},
+    term::{StylesWriter, termcolor::WriteColor},
 };
-use pernixc_query::{runtime::persistence::Persistence, Engine, TrackedEngine};
+use pernixc_query::{Engine, TrackedEngine, runtime::persistence::Persistence};
 use pernixc_source_file::GlobalSourceID;
-use pernixc_symbol_impl::source_map::{create_source_map, SourceMap};
+use pernixc_symbol_impl::source_map::{SourceMap, create_source_map};
 use pernixc_target::{Arguments, Build, Command, Run, TargetID, TargetKind};
 use tracing::instrument;
 

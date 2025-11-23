@@ -1,5 +1,5 @@
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
 use pernixc_symbol::scope_span::Key;
 
 use crate::table::get_table_of_symbol;

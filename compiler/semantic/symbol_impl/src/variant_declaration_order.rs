@@ -1,6 +1,6 @@
 //! Defines the query to get the declaration order of a variant in an enum.
 
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
 use pernixc_symbol::variant_declaration_order::Key;
 
 use crate::table::get_table_of_symbol;

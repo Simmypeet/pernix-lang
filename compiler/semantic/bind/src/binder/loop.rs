@@ -12,9 +12,9 @@ use pernixc_ir::{
     control_flow_graph::Block,
     scope::Scope,
     value::{
+        Value,
         literal::{self, Literal, Unreachable},
         register::{Assignment, Phi},
-        Value,
     },
 };
 use pernixc_lexical::tree::RelativeSpan;
@@ -129,11 +129,12 @@ impl Binder<'_> {
             keyword_span,
         };
 
-        assert!(self
-            .loop_context
-            .loop_states_by_scope_id
-            .insert(scope_id, loop_state)
-            .is_none());
+        assert!(
+            self.loop_context
+                .loop_states_by_scope_id
+                .insert(scope_id, loop_state)
+                .is_none()
+        );
     }
 
     /// Pops the loop state for the given scope ID from the loop context.
@@ -162,10 +163,10 @@ impl Binder<'_> {
                 continue;
             };
 
-            if let Some(label) = label.as_ref() {
-                if get_loop_state.label.as_deref() != Some(&label.kind) {
-                    continue;
-                }
+            if let Some(label) = label.as_ref()
+                && get_loop_state.label.as_deref() != Some(&label.kind)
+            {
+                continue;
             }
 
             loop_scope_id = Some(scope.scope_id());
@@ -275,14 +276,14 @@ impl Bind<LoopState> for Binder<'_> {
             }) => {
                 // set the current block to the exit block
                 let value = if let Some(break_type) = break_type {
-                    assert!(self
-                        .current_block()
-                        .predecessors()
-                        .iter()
-                        .copied()
-                        .all(
-                            |block_id| incoming_values.contains_key(&block_id)
-                        ));
+                    assert!(
+                        self.current_block()
+                            .predecessors()
+                            .iter()
+                            .copied()
+                            .all(|block_id| incoming_values
+                                .contains_key(&block_id))
+                    );
 
                     // filter out the incoming values that are unreachable
                     #[allow(clippy::needless_collect)]
@@ -324,9 +325,9 @@ impl Bind<LoopState> for Binder<'_> {
                     }
                 } else {
                     assert!(incoming_values.is_empty());
-                    assert!(self
-                        .current_block()
-                        .is_unreachable_or_terminated());
+                    assert!(
+                        self.current_block().is_unreachable_or_terminated()
+                    );
 
                     Value::Literal(Literal::Unreachable(Unreachable {
                         r#type: {

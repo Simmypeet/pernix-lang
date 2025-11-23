@@ -7,11 +7,11 @@ use pernixc_hash::HashMap;
 use pernixc_term::{lifetime::Lifetime, r#type::Qualifier};
 
 use crate::{
+    IR, Values,
     address::{Address, Memory, Reference},
     capture::{Capture, CaptureMode, Captures, ReferenceCaptureMode},
     instruction::{self, Instruction},
     value::register::Assignment,
-    Values, IR,
 };
 
 /// A structure used for pruning the closure captures.

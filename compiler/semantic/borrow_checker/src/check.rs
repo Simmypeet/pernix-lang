@@ -3,8 +3,8 @@ use pernixc_ir::{
     control_flow_graph::Point,
     instruction::{AccessMode, Instruction, Read},
     value::{
-        register::{load::Load, Assignment},
         TypeOf,
+        register::{Assignment, load::Load},
     },
 };
 use pernixc_lexical::tree::RelativeSpan;
@@ -17,9 +17,9 @@ use pernixc_term::{
     r#type::Qualifier,
 };
 use pernixc_type_system::{
+    UnrecoverableError,
     diagnostic::{PredicateSatisfiabilityOverflow, UnsatisfiedPredicate},
     normalizer::Normalizer,
-    UnrecoverableError,
 };
 
 use crate::{

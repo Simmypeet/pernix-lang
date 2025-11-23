@@ -6,18 +6,18 @@ use pernixc_handler::{Handler, Storage};
 use pernixc_hash::{DashMap, HashSet, ReadOnlyView};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::{
-    runtime::executor::{self, CyclicError, Future},
     TrackedEngine,
+    runtime::executor::{self, CyclicError, Future},
 };
 use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_source_file::{calculate_path_id, SourceFile};
+use pernixc_source_file::{SourceFile, calculate_path_id};
 use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{
-    accessibility::Accessibility, kind::Kind, linkage, member::Member,
-    AllSymbolIDKey, ID,
+    AllSymbolIDKey, ID, accessibility::Accessibility, kind::Kind, linkage,
+    member::Member,
 };
 use pernixc_syntax::QualifiedIdentifier;
-use pernixc_target::{get_invocation_arguments, Global, TargetID};
+use pernixc_target::{Global, TargetID, get_invocation_arguments};
 
 use crate::{
     diagnostic::{Diagnostic, SourceFileLoadFail},
@@ -542,6 +542,11 @@ pub struct Map {
             (Arc<Path>, Option<Arc<ExternalSubmodule>>),
         >,
     >,
+
+    /// Paths that failed to resolve to a source file.
+    #[allow(clippy::type_complexity)]
+    pub failed_paths:
+        Arc<ReadOnlyView<(Arc<Path>, Option<Arc<ExternalSubmodule>>), ()>>,
 }
 
 pernixc_register::register!(MapKey, MapExecutor);
@@ -562,6 +567,9 @@ pub async fn map_executor(
                 pernixc_arena::ID<SourceFile>,
                 (Arc<Path>, Option<Arc<ExternalSubmodule>>),
             >,
+        >,
+        failed_paths: Arc<
+            DashMap<(Arc<Path>, Option<Arc<ExternalSubmodule>>), ()>,
         >,
         current_external_submodule: Option<Arc<ExternalSubmodule>>,
     ) -> impl Future<'x, ()> {
@@ -593,14 +601,18 @@ pub async fn map_executor(
             };
 
             // Calculate the source file ID for this path
-            let source_file_id =
-                engine.calculate_path_id(&path, current_target_id).await;
-
-            // Add the path to source file mapping
-            paths_by_source_id.insert(
-                source_file_id,
-                (path, current_external_submodule.clone()),
-            );
+            if let Ok(source_file_id) =
+                engine.calculate_path_id(&path, current_target_id).await
+            {
+                // Add the path to source file mapping
+                paths_by_source_id.insert(
+                    source_file_id,
+                    (path, current_external_submodule.clone()),
+                );
+            } else {
+                failed_paths
+                    .insert((path, current_external_submodule.clone()), ());
+            }
 
             // Add all symbols from this table to the symbol map
             for (symbol_id, _kind) in kinds.iter() {
@@ -623,6 +635,7 @@ pub async fn map_executor(
 
                 let keys_by_symbol_id = keys_by_symbol_id.clone();
                 let paths_by_source_id = paths_by_source_id.clone();
+                let failed_paths = failed_paths.clone();
 
                 handles.push(tokio::spawn(async move {
                     traverse_table(
@@ -630,6 +643,7 @@ pub async fn map_executor(
                         &submodule_key,
                         keys_by_symbol_id,
                         paths_by_source_id,
+                        failed_paths,
                         Some(external_submodule),
                     )
                     .await
@@ -654,6 +668,7 @@ pub async fn map_executor(
 
     let keys_by_symbol_id = Arc::new(DashMap::default());
     let paths_by_source_id = Arc::new(DashMap::default());
+    let failed_paths = Arc::new(DashMap::default());
 
     // Start traversal from the root
     traverse_table(
@@ -661,6 +676,7 @@ pub async fn map_executor(
         &Key::Root(target_id),
         keys_by_symbol_id.clone(),
         paths_by_source_id.clone(),
+        failed_paths.clone(),
         None,
     )
     .await?;
@@ -673,6 +689,11 @@ pub async fn map_executor(
         ),
         paths_by_source_id: Arc::new(
             Arc::try_unwrap(paths_by_source_id)
+                .expect("Failed to convert DashMap to ReadOnlyView")
+                .into_read_only(),
+        ),
+        failed_paths: Arc::new(
+            Arc::try_unwrap(failed_paths)
                 .expect("Failed to convert DashMap to ReadOnlyView")
                 .into_read_only(),
         ),

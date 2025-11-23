@@ -2,12 +2,12 @@
 
 use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor};
 use pernixc_resolution::diagnostic::{
     self as resolution_diagnostic, ForallLifetimeRedefinition,
 };
 use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_source_file::{get_source_file_path, ByteIndex};
+use pernixc_source_file::{ByteIndex, get_source_file_path};
 use pernixc_stable_hash::StableHash;
 use pernixc_stable_type_id::Identifiable;
 use pernixc_symbol::{

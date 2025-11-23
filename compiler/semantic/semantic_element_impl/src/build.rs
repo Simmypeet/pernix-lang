@@ -180,7 +180,7 @@ pub trait Build: pernixc_query::Key {
     ) -> impl std::future::Future<
         Output = Result<Output<Self>, executor::CyclicError>,
     > + use<'x, 'y, Self>
-           + Send;
+    + Send;
 }
 
 /// Registers the necessary executors for the given type.

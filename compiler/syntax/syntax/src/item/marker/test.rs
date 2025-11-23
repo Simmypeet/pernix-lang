@@ -1,6 +1,6 @@
 use proptest::{prelude::Arbitrary, proptest};
 
-use super::{arbitrary, Marker};
+use super::{Marker, arbitrary};
 use crate::test::verify_ref;
 
 proptest! {

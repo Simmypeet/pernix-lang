@@ -1,5 +1,5 @@
 use std::{
-    collections::{hash_map::Entry, VecDeque},
+    collections::{VecDeque, hash_map::Entry},
     num::NonZero,
 };
 
@@ -17,19 +17,19 @@ use pernixc_ir::{
     pattern::{NameBindingPoint, Refutable, Wildcard},
     scope::Scope,
     value::{
+        Value,
         literal::{self, Literal, Numeric},
         register::{
-            load::Load, Assignment, Binary, BinaryOperator, Phi,
-            RelationalOperator, VariantNumber,
+            Assignment, Binary, BinaryOperator, Phi, RelationalOperator,
+            VariantNumber, load::Load,
         },
-        Value,
     },
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
-    kind::{get_kind, Kind},
+    kind::{Kind, get_kind},
     member::get_members,
     parent::get_parent,
     variant_declaration_order::get_variant_declaration_order,
@@ -42,7 +42,7 @@ use pernixc_term::{
 };
 
 use crate::{
-    bind::{expression::group::BindGroupTarget, Bind, Expression, Guidance},
+    bind::{Bind, Expression, Guidance, expression::group::BindGroupTarget},
     binder::{Binder, Error},
     diagnostic::{
         Diagnostic, FoundPackTuplePatternInMatchArmPattern, NonExhaustiveMatch,
@@ -975,7 +975,7 @@ impl Bind<&pernixc_syntax::expression::block::Match> for Binder<'_> {
                     )
                 }
                 Error::Unrecoverable(abrupt_error) => {
-                    return Err(Error::Unrecoverable(abrupt_error))
+                    return Err(Error::Unrecoverable(abrupt_error));
                 }
             },
         };

@@ -1,6 +1,6 @@
 use crate::ron::ser::{
-    to_ron_string, to_ron_string_compact, to_ron_string_with_config, RonConfig,
-    RonSerializer,
+    RonConfig, RonSerializer, to_ron_string, to_ron_string_compact,
+    to_ron_string_with_config,
 };
 
 #[test]
@@ -124,7 +124,9 @@ fn tuples_pretty() {
     insta::assert_snapshot!(
         to_ron_string_with_config(&triple, config.clone()).unwrap()
     );
-    insta::assert_snapshot!(to_ron_string_with_config(&nested, config).unwrap());
+    insta::assert_snapshot!(
+        to_ron_string_with_config(&nested, config).unwrap()
+    );
 }
 
 // ========================================================================
@@ -190,11 +192,9 @@ fn enum_tuple_variants_pretty() {
     insta::assert_snapshot!(
         to_ron_string_with_config(&circle, config.clone()).unwrap()
     );
-    insta::assert_snapshot!(to_ron_string_with_config(
-        &rectangle,
-        config.clone()
-    )
-    .unwrap());
+    insta::assert_snapshot!(
+        to_ron_string_with_config(&rectangle, config.clone()).unwrap()
+    );
     insta::assert_snapshot!(
         to_ron_string_with_config(&triangle, config).unwrap()
     );
@@ -236,16 +236,12 @@ fn maps_pretty() {
     nested_map.insert("outer".to_string(), inner_map);
 
     let config = RonConfig::Pretty("    ".to_string());
-    insta::assert_snapshot!(to_ron_string_with_config(
-        &empty_map,
-        config.clone()
-    )
-    .unwrap());
-    insta::assert_snapshot!(to_ron_string_with_config(
-        &simple_map,
-        config.clone()
-    )
-    .unwrap());
+    insta::assert_snapshot!(
+        to_ron_string_with_config(&empty_map, config.clone()).unwrap()
+    );
+    insta::assert_snapshot!(
+        to_ron_string_with_config(&simple_map, config.clone()).unwrap()
+    );
     insta::assert_snapshot!(
         to_ron_string_with_config(&nested_map, config).unwrap()
     );

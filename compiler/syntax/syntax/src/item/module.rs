@@ -2,20 +2,20 @@ use enum_as_inner::EnumAsInner;
 use pernixc_lexical::tree::DelimiterKind;
 use pernixc_parser::{
     abstract_tree, expect,
-    parser::{ast, Parser as _},
+    parser::{Parser as _, ast},
 };
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::{StableHash, Value};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use super::{
-    constant::Constant, function::Function, implements::Implements,
-    marker::Marker, r#enum::Enum, r#extern::Extern, r#struct::Struct,
-    r#trait::Trait, r#type::Type,
+    constant::Constant, r#enum::Enum, r#extern::Extern, function::Function,
+    implements::Implements, marker::Marker, r#struct::Struct, r#trait::Trait,
+    r#type::Type,
 };
 use crate::{
-    item::effect::Effect, AccessModifier, Identifier, Keyword, Passable,
-    SimplePath,
+    AccessModifier, Identifier, Keyword, Passable, SimplePath,
+    item::effect::Effect,
 };
 
 #[cfg(any(test, feature = "arbitrary"))]

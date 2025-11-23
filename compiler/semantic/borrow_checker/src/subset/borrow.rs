@@ -2,9 +2,9 @@ use pernixc_arena::ID;
 use pernixc_hash::HashSet;
 use pernixc_ir::value::register::{Borrow, Register};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_type_system::{normalizer::Normalizer, UnrecoverableError};
+use pernixc_type_system::{UnrecoverableError, normalizer::Normalizer};
 
-use crate::{context::Context, subset::Changes, Region};
+use crate::{Region, context::Context, subset::Changes};
 
 impl<N: Normalizer> Context<'_, N> {
     pub(super) async fn get_changes_of_borrow(

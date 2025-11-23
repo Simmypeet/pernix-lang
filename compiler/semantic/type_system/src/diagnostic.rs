@@ -4,7 +4,7 @@ use bon::Builder;
 use pernixc_diagnostic::{Highlight, Report};
 use pernixc_handler::Handler;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
@@ -228,10 +228,12 @@ impl Report for PredicateSatisfiabilityOverflow {
                 Some(span) => {
                     let declaration_span = engine.to_absolute_span(span).await;
 
-                    vec![Highlight::builder()
-                        .span(declaration_span)
-                        .message("the required predicate was declared here")
-                        .build()]
+                    vec![
+                        Highlight::builder()
+                            .span(declaration_span)
+                            .message("the required predicate was declared here")
+                            .build(),
+                    ]
                 }
                 None => Vec::new(),
             })
@@ -293,10 +295,12 @@ impl Report for UnsatisfiedPredicate {
                 Some(span) => {
                     let declaration_span = engine.to_absolute_span(span).await;
 
-                    vec![Highlight::builder()
-                        .span(declaration_span)
-                        .message("the required predicate was declared here")
-                        .build()]
+                    vec![
+                        Highlight::builder()
+                            .span(declaration_span)
+                            .message("the required predicate was declared here")
+                            .build(),
+                    ]
                 }
                 None => Vec::new(),
             })

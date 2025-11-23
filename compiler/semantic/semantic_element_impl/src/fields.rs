@@ -3,15 +3,16 @@ use std::{borrow::Cow, sync::Arc};
 use pernixc_arena::Arena;
 use pernixc_handler::{Handler, Storage};
 use pernixc_hash::HashMap;
-use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor};
 use pernixc_resolution::{
+    Config, ExtraNamespace,
     generic_parameter_namespace::get_generic_parameter_namespace,
-    term::resolve_type, Config, ExtraNamespace,
+    term::resolve_type,
 };
 use pernixc_semantic_element::fields::{Field, Fields};
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
-    accessibility::{get_accessibility, Accessibility},
+    accessibility::{Accessibility, get_accessibility},
     get_target_root_module_id,
     parent::get_closest_module_id,
     syntax::get_fields_syntax,
@@ -19,7 +20,7 @@ use pernixc_symbol::{
 use pernixc_target::Global;
 use pernixc_term::r#type::Type;
 use pernixc_type_system::{
-    environment::{get_active_premise, Environment},
+    environment::{Environment, get_active_premise},
     normalizer,
 };
 
@@ -242,7 +243,7 @@ async fn is_more_accessible(
 ) -> Result<bool, executor::CyclicError> {
     use pernixc_symbol::{
         accessibility::Accessibility,
-        parent::{symbol_hierarchy_relationship, HierarchyRelationship},
+        parent::{HierarchyRelationship, symbol_hierarchy_relationship},
     };
 
     match (first, second) {

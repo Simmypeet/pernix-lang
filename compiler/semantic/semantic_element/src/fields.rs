@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use flexstr::SharedStr;
-use pernixc_arena::Arena;
+use pernixc_arena::{Arena, ID};
 use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::Value;
@@ -65,4 +65,16 @@ pub struct Fields {
 
     /// The order in which the fields are declared.
     pub field_declaration_order: Vec<pernixc_arena::ID<Field>>,
+}
+
+impl Fields {
+    /// Returns an iterator over the fields in the order they were declared.
+    pub fn fields_as_order(
+        &self,
+    ) -> impl Iterator<Item = (ID<Field>, &'_ Field)> + '_ {
+        self.field_declaration_order.iter().map(move |field_id| {
+            let field = self.fields.get(*field_id).unwrap();
+            (*field_id, field)
+        })
+    }
 }

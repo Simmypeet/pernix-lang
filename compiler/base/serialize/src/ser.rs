@@ -1008,12 +1008,12 @@ impl<S: Serializer<E>, T: Serialize<S, E>, E> Serialize<S, E> for Range<T> {
 }
 
 impl<
-        S: Serializer<E>,
-        K: Serialize<S, E> + Eq + Hash,
-        V: Serialize<S, E>,
-        BH: BuildHasher + Clone,
-        E,
-    > Serialize<S, E> for DashMap<K, V, BH>
+    S: Serializer<E>,
+    K: Serialize<S, E> + Eq + Hash,
+    V: Serialize<S, E>,
+    BH: BuildHasher + Clone,
+    E,
+> Serialize<S, E> for DashMap<K, V, BH>
 {
     fn serialize(
         &self,
@@ -1031,12 +1031,12 @@ impl<
 }
 
 impl<
-        S: Serializer<E>,
-        K: Serialize<S, E> + Eq + Hash,
-        V: Serialize<S, E>,
-        BH: BuildHasher + Clone,
-        E,
-    > Serialize<S, E> for ReadOnlyView<K, V, BH>
+    S: Serializer<E>,
+    K: Serialize<S, E> + Eq + Hash,
+    V: Serialize<S, E>,
+    BH: BuildHasher + Clone,
+    E,
+> Serialize<S, E> for ReadOnlyView<K, V, BH>
 {
     fn serialize(
         &self,
@@ -1054,11 +1054,11 @@ impl<
 }
 
 impl<
-        S: Serializer<E>,
-        T: Serialize<S, E> + Eq + Hash,
-        BH: BuildHasher + Clone,
-        E,
-    > Serialize<S, E> for DashSet<T, BH>
+    S: Serializer<E>,
+    T: Serialize<S, E> + Eq + Hash,
+    BH: BuildHasher + Clone,
+    E,
+> Serialize<S, E> for DashSet<T, BH>
 {
     fn serialize(
         &self,
@@ -1076,13 +1076,13 @@ impl<
 }
 
 impl<
-        S: Serializer<E>,
-        const SIZE: usize,
-        const PAD1: usize,
-        const PAD2: usize,
-        HEAP,
-        E,
-    > Serialize<S, E> for FlexStr<SIZE, PAD1, PAD2, HEAP>
+    S: Serializer<E>,
+    const SIZE: usize,
+    const PAD1: usize,
+    const PAD2: usize,
+    HEAP,
+    E,
+> Serialize<S, E> for FlexStr<SIZE, PAD1, PAD2, HEAP>
 where
     HEAP: Deref<Target = str>,
 {

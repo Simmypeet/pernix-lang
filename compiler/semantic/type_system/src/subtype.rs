@@ -1,7 +1,7 @@
 //! Defines the [`Subtype`] query.
 
 use std::{
-    collections::{btree_map::Entry, BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, btree_map::Entry},
     sync::Arc,
 };
 
@@ -12,19 +12,19 @@ use pernixc_term::{
     lifetime::{Forall, Lifetime},
     matching::{Match, Matching},
     predicate::{self, Outlives},
-    r#type::Type,
     sub_term::{SubLifetimeLocation, SubTypeLocation, TermLocation},
+    r#type::Type,
     visitor,
 };
 
 use crate::{
+    Succeeded,
     environment::{BoxedFuture, Environment, Query},
     equality::Equality,
     lifetime_constraint::LifetimeConstraint,
     normalizer::Normalizer,
     term::Term,
     variance::get_variance_of,
-    Succeeded,
 };
 
 /// A query for subtyping.
@@ -194,11 +194,13 @@ impl Impl for Lifetime {
             (self_lifetime, Self::Forall(forall_source)) => {
                 let mut subtypable = Subtypable::default();
 
-                assert!(subtypable
-                    .forall_lifetime_instantiations
-                    .lifetimes_by_forall
-                    .insert(forall_source, self_lifetime)
-                    .is_none());
+                assert!(
+                    subtypable
+                        .forall_lifetime_instantiations
+                        .lifetimes_by_forall
+                        .insert(forall_source, self_lifetime)
+                        .is_none()
+                );
 
                 return Ok(Some(Arc::new(Succeeded::new(subtypable))));
             }
@@ -357,32 +359,28 @@ async fn subtypable_with_normalization(
 ) -> Result<Option<Succeeded<Subtypable>>, crate::Error> {
     if let Some(Succeeded { result: eq, mut constraints }) =
         target.normalize(environment).await?
-    {
-        if let Some(result) = environment
+        && let Some(result) = environment
             .query(&Subtype::new(eq, source.clone(), current_variance))
             .await?
-        {
-            constraints.extend(result.constraints.iter().cloned());
-            return Ok(Some(Succeeded::with_constraints(
-                result.result.clone(),
-                constraints,
-            )));
-        }
+    {
+        constraints.extend(result.constraints.iter().cloned());
+        return Ok(Some(Succeeded::with_constraints(
+            result.result.clone(),
+            constraints,
+        )));
     }
 
     if let Some(Succeeded { result: eq, mut constraints }) =
         source.normalize(environment).await?
-    {
-        if let Some(result) = environment
+        && let Some(result) = environment
             .query(&Subtype::new(target.clone(), eq, current_variance))
             .await?
-        {
-            constraints.extend(result.constraints.iter().cloned());
-            return Ok(Some(Succeeded::with_constraints(
-                result.result.clone(),
-                constraints,
-            )));
-        }
+    {
+        constraints.extend(result.constraints.iter().cloned());
+        return Ok(Some(Succeeded::with_constraints(
+            result.result.clone(),
+            constraints,
+        )));
     }
 
     Ok(None)

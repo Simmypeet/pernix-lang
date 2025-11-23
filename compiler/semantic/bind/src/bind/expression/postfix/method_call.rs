@@ -15,7 +15,7 @@ use pernixc_semantic_element::{
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
     accessibility::symbol_accessible,
-    kind::{get_kind, Kind},
+    kind::{Kind, get_kind},
     member::{get_members, try_get_members},
     parent::{get_closest_module_id, get_parent, scope_walker},
 };
@@ -23,8 +23,8 @@ use pernixc_target::Global;
 use pernixc_term::{
     generic_arguments::{GenericArguments, Symbol},
     generic_parameters::{
-        get_generic_parameters, ConstantParameterID, GenericParameters,
-        LifetimeParameterID, TypeParameterID,
+        ConstantParameterID, GenericParameters, LifetimeParameterID,
+        TypeParameterID, get_generic_parameters,
     },
     instantiation::Instantiation,
     lifetime::Lifetime,
@@ -34,20 +34,21 @@ use pernixc_term::{
 
 use crate::{
     bind::{
+        Bind, Expression, Guidance, LValue,
         expression::{
             function_call::{MethodReceiver, MethodReceiverKind},
             postfix::{
+                BindState,
                 diagnostic::Diagnostic,
                 method_call::diagnostic::{
                     AmbiguousMethodCall, MethodCallNotFound,
                 },
-                reduce_address_reference, BindState,
+                reduce_address_reference,
             },
         },
-        Bind, Expression, Guidance, LValue,
     },
     binder::{
-        type_check::Expected, Binder, BindingError, Error, UnrecoverableError,
+        Binder, BindingError, Error, UnrecoverableError, type_check::Expected,
     },
     infer::constraint,
 };
@@ -114,7 +115,7 @@ pub(super) async fn bind_method_call(
             return Ok((
                 Expression::RValue(value),
                 current_span.join(&method_call.span()),
-            ))
+            ));
         }
         Err(lvalue) => lvalue,
     };

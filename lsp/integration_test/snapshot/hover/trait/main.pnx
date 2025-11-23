@@ -1,0 +1,6 @@
+public trait Test[T: 'static]:
+    pass
+
+
+public function test():
+    Tes<cursor>t[int32]

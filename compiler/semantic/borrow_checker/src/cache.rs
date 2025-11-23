@@ -4,9 +4,9 @@ use pernixc_arena::ID;
 use pernixc_handler::Handler;
 use pernixc_hash::{HashMap, HashSet};
 use pernixc_ir::{
-    control_flow_graph::Point,
-    value::{register::Register, Environment, TypeOf},
     IR,
+    control_flow_graph::Point,
+    value::{Environment, TypeOf, register::Register},
 };
 use pernixc_query::TrackedEngine;
 use pernixc_semantic_element::{parameter::get_parameters, variance::Variance};
@@ -14,10 +14,10 @@ use pernixc_symbol::kind::get_kind;
 use pernixc_target::Global;
 use pernixc_term::{r#type::Type, visitor::RecursiveIterator};
 use pernixc_type_system::{
-    normalizer::Normalizer, variance::get_variance_of, UnrecoverableError,
+    UnrecoverableError, normalizer::Normalizer, variance::get_variance_of,
 };
 
-use crate::{diagnostic::Diagnostic, Region, UniversalRegion};
+use crate::{Region, UniversalRegion, diagnostic::Diagnostic};
 
 /// The cache for `type_of` register operation.
 #[derive(Debug, Clone, PartialEq, Eq)]

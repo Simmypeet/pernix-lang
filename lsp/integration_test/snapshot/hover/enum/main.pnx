@@ -1,0 +1,7 @@
+public enum Result[T: 'static, E: 'static]:
+    Ok(T)
+    Error(E)
+
+
+public function test():
+    Resu<cursor>lt::Ok()

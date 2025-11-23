@@ -29,8 +29,16 @@ jobs:
             - name: Checkout Repository
               uses: actions/checkout@v4
 
-            - name: Set up Rust Nightly
-              uses: dtolnay/rust-toolchain@nightly
+            - name: Rust Cache
+              uses: actions/cache@v3
+              with:
+                  path: |
+                      ~/.cargo/bin/
+                      ~/.cargo/registry/index/
+                      ~/.cargo/registry/cache/
+                      ~/.cargo/git/db/
+                      target/
+                  key: ${{ runner.os }}-${{ runner.arch }}-cargo
 
             - name: Build LLVM on Unix-like
               if: runner.os != 'Windows'
@@ -62,19 +70,6 @@ jobs:
                   ls ${{ github.workspace }}/__llvm18
                   echo "LLVM_SYS_181_PREFIX${{ github.workspace }}/__llvm18"
                   echo "LLVM_SYS_181_PREFIX=${{ github.workspace }}/__llvm18" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-            - name: Cache Rust Target Files
-              uses: actions/cache@v4
-              with:
-                  path: |
-                      target
-                      ~/.cargo/registry/index
-                      ~/.cargo/registry/cache
-                      ~/.cargo/git
-                  key: ${{ runner.os }}-${{ runner.arch }}-rust-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-llvm-18.1.8
-                  restore-keys: |
-                      ${{ runner.os }}-${{ runner.arch }}-rust-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-
-                      ${{ runner.os }}-${{ runner.arch }}-rust-
 
             - name: Build Pernix Compiler
               run: |

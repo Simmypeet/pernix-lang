@@ -1,10 +1,10 @@
 use std::collections::BTreeSet;
 
 use inkwell::{
+    AddressSpace,
     module::Linkage,
     types::BasicType,
     values::{FunctionValue, PointerValue},
-    AddressSpace,
 };
 use pernixc_semantic_element::{
     elided_lifetime::get_elided_lifetimes, fields::get_fields,
@@ -13,7 +13,7 @@ use pernixc_semantic_element::{
     variant::get_variant_associated_type,
 };
 use pernixc_symbol::{
-    kind::{get_kind, Kind},
+    kind::{Kind, get_kind},
     member::get_members,
     name::get_by_qualified_name,
     variant_declaration_order::get_variant_declaration_order,
@@ -23,11 +23,11 @@ use pernixc_term::{
     constant::Constant,
     display::Display,
     generic_arguments::Symbol,
-    generic_parameters::{get_generic_parameters, LifetimeParameterID},
+    generic_parameters::{LifetimeParameterID, get_generic_parameters},
     instantiation::Instantiation,
     lifetime::{ElidedLifetimeID, Lifetime},
-    r#type::{Array, Type},
     tuple::Tuple,
+    r#type::{Array, Type},
 };
 use pernixc_type_system::{
     environment::{Environment, Premise},
@@ -408,11 +408,12 @@ impl<'ctx> Context<'_, 'ctx> {
                     symbol_ty.write_to_string(self.engine()).await.unwrap()
                 ));
 
-                assert!(self
-                    .function_map_mut()
-                    .adt_drop
-                    .insert(symbol_ty.clone(), Some(function_value))
-                    .is_none());
+                assert!(
+                    self.function_map_mut()
+                        .adt_drop
+                        .insert(symbol_ty.clone(), Some(function_value))
+                        .is_none()
+                );
 
                 Some(
                     Box::pin(self.build_member_drop_adt(
@@ -510,11 +511,15 @@ impl<'ctx> Context<'_, 'ctx> {
                         "memberDrop({symbol_ty_string})"
                     ));
 
-                assert!(self
-                    .function_map_mut()
-                    .adt_drop
-                    .insert(symbol_ty.clone(), Some(main_drop_function_value))
-                    .is_none());
+                assert!(
+                    self.function_map_mut()
+                        .adt_drop
+                        .insert(
+                            symbol_ty.clone(),
+                            Some(main_drop_function_value)
+                        )
+                        .is_none()
+                );
 
                 let member_drop = Box::pin(
                     self.build_member_drop_adt(
@@ -620,11 +625,12 @@ impl<'ctx> Context<'_, 'ctx> {
             Some(Linkage::Private),
         );
 
-        assert!(self
-            .function_map_mut()
-            .array_drop
-            .insert(array_tup_ty.clone(), Some(function_value))
-            .is_none());
+        assert!(
+            self.function_map_mut()
+                .array_drop
+                .insert(array_tup_ty.clone(), Some(function_value))
+                .is_none()
+        );
 
         let element_llvm_ty = self.get_type(array_tup_ty.0.clone()).await;
         let array_llvm_ty = element_llvm_ty

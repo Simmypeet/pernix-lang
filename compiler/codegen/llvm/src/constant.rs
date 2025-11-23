@@ -45,11 +45,12 @@ impl<'ctx> Context<'_, 'ctx> {
             &self.context().const_string(value.as_bytes(), false),
         );
 
-        assert!(self
-            .constant_map_mut()
-            .global_values_by_string
-            .insert(value.to_string(), global)
-            .is_none());
+        assert!(
+            self.constant_map_mut()
+                .global_values_by_string
+                .insert(value.to_string(), global)
+                .is_none()
+        );
 
         global
     }

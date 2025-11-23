@@ -1,0 +1,9 @@
+---
+source: lsp/integration_test/snapshot/mod.rs
+expression: string
+---
+```pernix
+public effect Test[T]:
+    where:
+        T: 'static
+```

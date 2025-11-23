@@ -13,32 +13,32 @@ use std::{
 use derive_new::new;
 use enum_as_inner::EnumAsInner;
 use inkwell::{
+    AddressSpace,
     attributes::{Attribute, AttributeLoc},
     basic_block::BasicBlock,
     module::Linkage,
     types::{AnyType, BasicMetadataTypeEnum, BasicType, BasicTypeEnum},
     values::FunctionValue,
-    AddressSpace,
 };
 use pernixc_arena::ID;
 use pernixc_ir::{
+    IR,
     address::{Address, Memory},
     control_flow_graph::Block,
     get_ir,
     value::{
-        register::Register, Environment as ValueEnvironment, TypeOf, Value,
+        Environment as ValueEnvironment, TypeOf, Value, register::Register,
     },
-    IR,
 };
 use pernixc_query::TrackedEngine;
 use pernixc_semantic_element::{
     implements::get_implements,
     implements_arguments::get_implements_argument,
-    parameter::{get_parameters, Parameter, Parameters},
+    parameter::{Parameter, Parameters, get_parameters},
     return_type::get_return_type,
 };
 use pernixc_symbol::{
-    kind::{get_kind, Kind},
+    kind::{Kind, get_kind},
     linkage::get_linkage,
     name::{get_name, get_qualified_name},
     parent::get_parent,
@@ -47,7 +47,7 @@ use pernixc_target::{Global, TargetID};
 use pernixc_term::{
     display::Display, generic_arguments::Symbol,
     generic_parameters::get_generic_parameters, instantiation::Instantiation,
-    r#type::Type, tuple::Tuple,
+    tuple::Tuple, r#type::Type,
 };
 use pernixc_type_system::{
     environment::{Environment, Premise},
@@ -612,11 +612,12 @@ impl<'ctx> Context<'_, 'ctx> {
             .await,
         );
 
-        assert!(self
-            .function_map_mut()
-            .llvm_functions_by_key
-            .insert(key.clone(), llvm_function_signatue.clone())
-            .is_none());
+        assert!(
+            self.function_map_mut()
+                .llvm_functions_by_key
+                .insert(key.clone(), llvm_function_signatue.clone())
+                .is_none()
+        );
 
         // build intrinsic function
         if key.callable_id.target_id == TargetID::CORE {

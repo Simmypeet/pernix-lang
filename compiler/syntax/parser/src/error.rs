@@ -6,14 +6,14 @@ use pernixc_hash::HashSet;
 use pernixc_lexical::{
     kind,
     tree::{
-        Branch, DelimiterKind, FragmentKind, OffsetMode, RelativeLocation,
-        RelativeSpan, ROOT_BRANCH_ID,
+        Branch, DelimiterKind, FragmentKind, OffsetMode, ROOT_BRANCH_ID,
+        RelativeLocation, RelativeSpan,
     },
 };
-use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::{
-    get_source_file_path, AbsoluteSpan, GlobalSourceID, Span,
+    AbsoluteSpan, GlobalSourceID, Span, get_source_file_path,
 };
 use pernixc_stable_hash::StableHash;
 

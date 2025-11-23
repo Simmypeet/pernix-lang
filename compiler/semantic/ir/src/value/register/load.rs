@@ -5,13 +5,13 @@ use pernixc_query::runtime::executor::CyclicError;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_term::r#type::Type;
-use pernixc_type_system::{normalizer::Normalizer, Error, Succeeded};
+use pernixc_type_system::{Error, Succeeded, normalizer::Normalizer};
 
 use crate::{
+    Values,
     address::Address,
     transform::Transformer,
     value::{Environment, TypeOf},
-    Values,
 };
 
 /// Indicates how a load is being used. This is used for improving diagnostics

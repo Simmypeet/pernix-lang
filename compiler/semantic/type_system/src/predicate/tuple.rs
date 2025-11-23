@@ -6,9 +6,9 @@ use pernixc_semantic_element::variance::Variance;
 use pernixc_term::{predicate::Tuple, r#type::Type};
 
 use crate::{
+    Error, Satisfied, Succeeded,
     environment::{BoxedFuture, Environment, Query},
     normalizer::Normalizer,
-    Error, Satisfied, Succeeded,
 };
 
 impl Query for Tuple<Type> {

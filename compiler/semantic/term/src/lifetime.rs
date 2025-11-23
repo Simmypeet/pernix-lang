@@ -12,14 +12,14 @@ use pernixc_symbol::MemberID;
 use pernixc_target::Global;
 
 use crate::{
+    Never,
     constant::Constant,
     error::Error,
-    generic_parameters::{get_generic_parameters, LifetimeParameterID},
+    generic_parameters::{LifetimeParameterID, get_generic_parameters},
     inference,
     matching::{Match, Matching, Substructural},
-    r#type::Type,
     sub_term::{Location, SubTerm},
-    Never,
+    r#type::Type,
 };
 
 #[cfg(any(test, feature = "arbitrary"))]

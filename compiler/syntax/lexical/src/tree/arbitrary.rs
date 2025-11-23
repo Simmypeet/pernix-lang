@@ -32,10 +32,12 @@ impl Input<ID<super::Branch>, (usize, &SourceMap, &Tree)> for &Indentation {
         (prev_size, source_map, tree): (usize, &SourceMap, &Tree),
     ) -> proptest::test_runner::TestCaseResult {
         let branch = &tree[branch_id];
-        prop_assert!(branch
-            .kind
-            .as_fragment()
-            .is_some_and(|x| x.fragment_kind.is_indentation()));
+        prop_assert!(
+            branch
+                .kind
+                .as_fragment()
+                .is_some_and(|x| x.fragment_kind.is_indentation())
+        );
 
         let mut i = 0;
 
@@ -123,10 +125,12 @@ impl Input<ID<super::Branch>, (usize, &SourceMap, &Tree)> for &Indentation {
             }
 
             if line_no != self.block.lines.len() - 1 {
-                prop_assert!(&branch.nodes[i]
-                    .as_leaf()
-                    .and_then(|x| x.kind.as_new_line())
-                    .is_some());
+                prop_assert!(
+                    &branch.nodes[i]
+                        .as_leaf()
+                        .and_then(|x| x.kind.as_new_line())
+                        .is_some()
+                );
 
                 i += 1;
             }
@@ -559,7 +563,7 @@ fn get_indentation_level(tokens: &[Node]) -> (usize, Option<usize>) {
                     Some(get_indentation_level_from_prior_insignificant(
                         a.open_insignificant.as_ref(),
                     )),
-                )
+                );
             }
 
             Node::Fragment(Fragment::Indentation(a)) => {
@@ -568,7 +572,7 @@ fn get_indentation_level(tokens: &[Node]) -> (usize, Option<usize>) {
                     Some(get_indentation_level_from_prior_insignificant(
                         a.colon_insignificant.as_ref(),
                     )),
-                )
+                );
             }
         }
     }

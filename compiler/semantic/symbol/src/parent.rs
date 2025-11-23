@@ -8,8 +8,8 @@ use pernixc_stable_hash::StableHash;
 use pernixc_target::{Global, TargetID};
 
 use crate::{
-    kind::{get_kind, Kind},
     ID,
+    kind::{Kind, get_kind},
 };
 
 /// Describes the relationship between two symbols in the hierarchy.

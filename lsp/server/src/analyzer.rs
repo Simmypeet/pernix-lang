@@ -4,11 +4,11 @@ use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use pernixc_diagnostic::ByteIndex;
 use pernixc_query::{
-    runtime::executor::{self, Executor},
     Engine, TrackedEngine,
+    runtime::executor::{self, Executor},
 };
 use pernixc_source_file::{
-    get_source_file_by_id, EditorLocation, GlobalSourceID, SourceFile,
+    EditorLocation, GlobalSourceID, SourceFile, get_source_file_by_id,
 };
 use pernixc_target::{Arguments, Check, Input, TargetID};
 use tokio::sync::{RwLock, RwLockReadGuard};
@@ -70,10 +70,12 @@ impl Analyzer {
     /// - `root_source_file`: The root source file path of the target.
     /// - `source_file_loader_overide`: An executor to override the default
     ///   source file loader.
+    /// - `target_seed`: An optional seed for the target.
     pub async fn create_engine<E: Executor<pernixc_source_file::Key>>(
         target_name: String,
         root_source_file: PathBuf,
         source_file_loader_overide: Arc<E>,
+        target_seed: Option<u64>,
     ) -> Arc<Engine> {
         let local_target_id = TargetID::from_target_name(&target_name);
 
@@ -84,7 +86,7 @@ impl Analyzer {
                 library_paths: Vec::new(),
                 incremental_path: None,
                 chrome_tracing: false,
-                target_seed: None,
+                target_seed,
             },
         });
 
@@ -94,11 +96,13 @@ impl Analyzer {
             &mut engine.runtime.executor,
         );
 
-        assert!(engine
-            .runtime
-            .executor
-            .register(source_file_loader_overide)
-            .is_some());
+        assert!(
+            engine
+                .runtime
+                .executor
+                .register(source_file_loader_overide)
+                .is_some()
+        );
 
         engine
             .input_session(async |x| {
@@ -136,6 +140,14 @@ impl Analyzer {
                     Arc::new(Arguments { command }),
                 )
                 .await;
+
+                if let Some(target_seed) = target_seed {
+                    x.set_input(
+                        pernixc_target::SeedKey(local_target_id),
+                        target_seed,
+                    )
+                    .await;
+                }
             })
             .await;
 
@@ -155,6 +167,7 @@ impl Analyzer {
             target_name,
             workspace.root_source_file().to_path_buf(),
             Arc::new(LoadSourceFileExecutor),
+            None,
         )
         .await;
 
@@ -391,11 +404,7 @@ async fn to_lsp_diagnostic(
             });
         }
 
-        if result.is_empty() {
-            None
-        } else {
-            Some(result)
-        }
+        if result.is_empty() { None } else { Some(result) }
     };
 
     let mut message = diagnostic.message.clone();

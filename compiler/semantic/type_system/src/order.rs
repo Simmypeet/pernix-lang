@@ -8,7 +8,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
 };
 
-use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor};
 use pernixc_semantic_element::implements_arguments::get_implements_argument;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
@@ -19,12 +19,12 @@ use pernixc_term::{
 };
 
 use crate::{
+    Error, OverflowError, Satisfied, Succeeded,
     environment::{Environment, Premise},
     mapping::Mapping,
     normalizer::{self, Normalizer},
     term::Term,
     unification::{self, Log, Unification},
-    Error, OverflowError, Satisfied, Succeeded,
 };
 
 /// The order in terms of specificity of the generic arguments.

@@ -12,8 +12,8 @@ use proptest::{
 use crate::{
     arbitrary::{IndentDisplay, IntoSeparated, QualifiedIdentifier},
     expression::arbitrary::{Call, Expression},
-    r#type::arbitrary::Type,
     reference,
+    r#type::arbitrary::Type,
 };
 
 reference! {

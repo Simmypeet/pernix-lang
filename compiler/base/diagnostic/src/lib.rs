@@ -3,7 +3,7 @@
 use std::future::Future;
 
 use bon::Builder;
-use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor};
 use pernixc_serialize::{Deserialize, Serialize};
 // re-export
 pub use pernixc_source_file::ByteIndex;
@@ -27,8 +27,8 @@ pub trait Report {
         &'s self,
         parameter: &'e TrackedEngine,
     ) -> impl Future<Output = Result<Rendered<ByteIndex>, executor::CyclicError>>
-           + Send
-           + use<'s, 'e, Self>;
+    + Send
+    + use<'s, 'e, Self>;
 }
 
 /// Enumeration of the severity levels of a diagnostic.

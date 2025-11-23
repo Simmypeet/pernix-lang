@@ -12,11 +12,11 @@ use pernixc_term::{
 };
 
 use crate::{
+    Error, Satisfiability, Satisfied, Succeeded,
     environment::{BoxedFuture, Environment, Query},
     lifetime_constraint::LifetimeConstraint,
     normalizer::Normalizer,
     term::Term,
-    Error, Satisfiability, Satisfied, Succeeded,
 };
 
 struct Visitor<'a, 'e, N: Normalizer> {
@@ -142,11 +142,13 @@ impl Impl for Type {
                 environment,
             };
 
-            assert!(query
-                .operand
-                .accept_one_level_async(&mut visitor)
-                .await
-                .is_ok());
+            assert!(
+                query
+                    .operand
+                    .accept_one_level_async(&mut visitor)
+                    .await
+                    .is_ok()
+            );
 
             if visitor.outlives? == Some(Satisfied) {
                 return Ok(Some(Arc::new(Satisfied)));

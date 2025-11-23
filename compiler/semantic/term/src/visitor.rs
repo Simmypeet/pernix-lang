@@ -7,15 +7,15 @@ use super::sub_term::{
     TermLocation,
 };
 use crate::{
+    Never, TermRef,
     constant::{self, Constant},
     generic_arguments::{
         GenericArguments, SubMemberSymbolLocation, SubSymbolLocation,
         SubTraitMemberLocation,
     },
     lifetime::Lifetime,
-    r#type::{self, SubFunctionSignatureLocation, Type},
     tuple::{SubTupleLocation, Tuple},
-    Never, TermRef,
+    r#type::{self, SubFunctionSignatureLocation, Type},
 };
 
 /// Represents a visitor that visits a term recursively.
@@ -136,13 +136,13 @@ macro_rules! implements_visit_recursive {
 }
 
 impl<
-        'b,
-        T: Element,
-        V: Recursive<'b, T>
-            + Recursive<'b, Lifetime>
-            + Recursive<'b, Type>
-            + Recursive<'b, Constant>,
-    > Visitor<'b, T> for RecursiveVisitorAdapter<'_, V>
+    'b,
+    T: Element,
+    V: Recursive<'b, T>
+        + Recursive<'b, Lifetime>
+        + Recursive<'b, Type>
+        + Recursive<'b, Constant>,
+> Visitor<'b, T> for RecursiveVisitorAdapter<'_, V>
 {
     fn visit(&mut self, term: &'b T, location: T::Location) -> bool {
         implements_visit_recursive!(self, accept_one_level, term, location)
@@ -156,12 +156,12 @@ struct RecursiveVisitorAdapterMut<'a, V> {
 }
 
 impl<
-        T: Element,
-        V: MutableRecursive<T>
-            + MutableRecursive<Lifetime>
-            + MutableRecursive<Type>
-            + MutableRecursive<Constant>,
-    > Mutable<T> for RecursiveVisitorAdapterMut<'_, V>
+    T: Element,
+    V: MutableRecursive<T>
+        + MutableRecursive<Lifetime>
+        + MutableRecursive<Type>
+        + MutableRecursive<Constant>,
+> Mutable<T> for RecursiveVisitorAdapterMut<'_, V>
 {
     fn visit(&mut self, term: &mut T, location: T::Location) -> bool {
         implements_visit_recursive!(self, accept_one_level_mut, term, location)
@@ -327,10 +327,10 @@ pub fn accept_recursive<
     let mut adapter =
         RecursiveVisitorAdapter { visitor, current_locations: Vec::new() };
 
-    if let Ok(result) = element.accept_one_level(&mut adapter) {
-        if !result {
-            return false;
-        }
+    if let Ok(result) = element.accept_one_level(&mut adapter)
+        && !result
+    {
+        return false;
     }
 
     !element.accept_single_recursive(visitor, std::iter::empty())

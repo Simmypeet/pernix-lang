@@ -4,7 +4,7 @@ use enum_as_inner::EnumAsInner;
 use pernixc_diagnostic::{ByteIndex, Highlight, Rendered, Report, Severity};
 use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_symbol::source_map::to_absolute_span;
@@ -214,10 +214,12 @@ impl Report for VariableDoesNotLiveLongEnough {
         &self,
         engine: &TrackedEngine,
     ) -> Result<Rendered<ByteIndex>, CyclicError> {
-        let mut related = vec![Highlight::builder()
-            .span(engine.to_absolute_span(&self.borrow_span).await)
-            .message("the borrow starts here".to_string())
-            .build()];
+        let mut related = vec![
+            Highlight::builder()
+                .span(engine.to_absolute_span(&self.borrow_span).await)
+                .message("the borrow starts here".to_string())
+                .build(),
+        ];
 
         if let Some(span) = self.usage.as_local() {
             related.push(
@@ -291,15 +293,15 @@ impl Report for MutablyAccessWhileImmutablyBorrowed {
             .as_ref()
             .is_some_and(|x| x == &self.mutable_access_span);
 
-        if let Some(span) = &self.immutable_borrow_span {
-            if !in_loop {
-                related.push(
-                    Highlight::builder()
-                        .span(engine.to_absolute_span(span).await)
-                        .message("the borrow starts here".to_string())
-                        .build(),
-                );
-            }
+        if let Some(span) = &self.immutable_borrow_span
+            && !in_loop
+        {
+            related.push(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(span).await)
+                    .message("the borrow starts here".to_string())
+                    .build(),
+            );
         }
 
         if let Some(span) = self.usage.as_local() {
@@ -381,15 +383,15 @@ impl Report for AccessWhileMutablyBorrowed {
             .as_ref()
             .is_some_and(|x| x == &self.access_span);
 
-        if let Some(span) = &self.mutable_borrow_span {
-            if !in_loop {
-                related.push(
-                    Highlight::builder()
-                        .span(engine.to_absolute_span(span).await)
-                        .message("the mutable borrow starts here".to_string())
-                        .build(),
-                );
-            }
+        if let Some(span) = &self.mutable_borrow_span
+            && !in_loop
+        {
+            related.push(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(span).await)
+                    .message("the mutable borrow starts here".to_string())
+                    .build(),
+            );
         }
 
         if let Some(span) = self.borrow_usage.as_local() {

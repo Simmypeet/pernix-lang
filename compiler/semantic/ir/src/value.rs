@@ -10,13 +10,13 @@ use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 use pernixc_term::r#type::Type;
 use pernixc_type_system::{
-    environment::Environment as TyEnvironment, normalizer::Normalizer, Error,
-    Succeeded,
+    Error, Succeeded, environment::Environment as TyEnvironment,
+    normalizer::Normalizer,
 };
 
 use crate::{
-    capture::Captures, closure_parameters::ClosureParameters,
-    value::register::Register, Values,
+    Values, capture::Captures, closure_parameters::ClosureParameters,
+    value::register::Register,
 };
 pub mod literal;
 pub mod register;
@@ -102,7 +102,7 @@ pub trait TypeOf<V> {
         value: V,
         environment: &'e Environment<'n, N>,
     ) -> impl std::future::Future<Output = Result<Succeeded<Type>, Error>>
-           + use<'s, 'e, 'n, Self, V, N>;
+    + use<'s, 'e, 'n, Self, V, N>;
 }
 
 impl TypeOf<&Value> for Values {

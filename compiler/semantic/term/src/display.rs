@@ -58,6 +58,11 @@ pub struct Configuration<'y> {
     /// Mapping for elided lifetime IDs to their names.
     #[get_copy = "pub"]
     edlided_lifetimes: Option<&'y HashMap<ElidedLifetimeID, SharedStr>>,
+
+    /// Whether to only display the last segment of qualified identifiers.
+    #[get_copy = "pub"]
+    #[builder(default = false)]
+    short_qualified_identifiers: bool,
 }
 
 impl Configuration<'_> {
@@ -154,6 +159,25 @@ pub trait Display: Send + Sync {
                 buffer,
                 forall_lifetime_names: HashMap::default(),
                 configuration: &Configuration::builder().build(),
+            };
+
+            self.fmt(engine, &mut formatter).await
+        }
+    }
+
+    /// Writes the value asynchronously into the given buffer, using the given
+    /// formatting configuration.
+    fn write_async_with_configuration(
+        &self,
+        engine: &TrackedEngine,
+        buffer: &mut (dyn std::fmt::Write + Send),
+        configuration: &Configuration,
+    ) -> impl std::future::Future<Output = std::fmt::Result> {
+        async move {
+            let mut formatter = Formatter {
+                buffer,
+                forall_lifetime_names: HashMap::default(),
+                configuration,
             };
 
             self.fmt(engine, &mut formatter).await

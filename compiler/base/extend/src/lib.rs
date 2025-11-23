@@ -2,17 +2,16 @@
 use std::mem;
 
 use proc_macro2::{Span, TokenStream};
-use quote::{format_ident, quote, ToTokens};
+use quote::{ToTokens, format_ident, quote};
 use syn::{
-    parse_quote,
+    Error, FnArg, GenericParam, Generics, ItemFn, Lifetime, PredicateLifetime,
+    PredicateType, Receiver, Result, Type, TypeArray, TypeParam, TypePath,
+    Visibility, WhereClause, WherePredicate, parse_quote,
     punctuated::Punctuated,
     spanned::Spanned,
     token::{Colon, Comma, Where},
     visit::{self, Visit},
     visit_mut::{self, VisitMut},
-    Error, FnArg, GenericParam, Generics, ItemFn, Lifetime, PredicateLifetime,
-    PredicateType, Receiver, Result, Type, TypeArray, TypeParam, TypePath,
-    Visibility, WhereClause, WherePredicate,
 };
 
 /// Converts a regular function into an extension function.
@@ -157,11 +156,11 @@ fn expand(attr: &TokenStream, input: TokenStream) -> Result<TokenStream> {
 
 fn simplify_self_param(self_param: &mut Receiver) {
     self_param.colon_token = None;
-    if let Type::Reference(ty) = *self_param.ty.clone() {
-        if ty.elem == parse_quote!(Self) {
-            self_param.reference = Some((ty.and_token, ty.lifetime));
-            self_param.mutability = ty.mutability;
-        }
+    if let Type::Reference(ty) = *self_param.ty.clone()
+        && ty.elem == parse_quote!(Self)
+    {
+        self_param.reference = Some((ty.and_token, ty.lifetime));
+        self_param.mutability = ty.mutability;
     }
 }
 

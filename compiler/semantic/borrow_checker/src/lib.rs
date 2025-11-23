@@ -209,7 +209,7 @@
 
 use enum_as_inner::EnumAsInner;
 use pernixc_handler::Handler;
-use pernixc_ir::{value::Environment, IR};
+use pernixc_ir::{IR, value::Environment};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_term::{
@@ -217,7 +217,7 @@ use pernixc_term::{
     inference,
     lifetime::{ElidedLifetimeID, Lifetime},
 };
-use pernixc_type_system::{normalizer::Normalizer, UnrecoverableError};
+use pernixc_type_system::{UnrecoverableError, normalizer::Normalizer};
 
 use crate::diagnostic::Diagnostic;
 

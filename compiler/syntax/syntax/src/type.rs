@@ -3,7 +3,7 @@
 use pernixc_lexical::tree::DelimiterKind;
 use pernixc_parser::{
     abstract_tree, expect,
-    parser::{ast, Parser},
+    parser::{Parser, ast},
 };
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;

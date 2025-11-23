@@ -9,7 +9,7 @@ use pernixc_term::r#type::Type;
 
 use crate::{
     bind::{Bind, Expression, Guidance},
-    binder::{r#loop::LoopKind, Binder, BindingError, Error},
+    binder::{Binder, BindingError, Error, r#loop::LoopKind},
     diagnostic::Diagnostic,
 };
 

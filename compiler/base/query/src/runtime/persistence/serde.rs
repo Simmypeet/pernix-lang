@@ -115,14 +115,14 @@ use std::any::Any;
 use getset::{CopyGetters, Getters};
 use pernixc_hash::HashMap;
 use pernixc_serialize::{
+    Deserialize, Serialize,
     de::{Deserializer, StructAccess},
     ser::Serializer,
-    Deserialize, Serialize,
 };
 use pernixc_stable_type_id::StableTypeID;
 use smallbox::smallbox;
 
-use crate::{database::DynamicKey, Key};
+use crate::{Key, database::DynamicKey};
 
 /// A trait for types that can provide dynamic serialization capabilities.
 ///
@@ -325,10 +325,10 @@ fn dynamic_key_deserializer<
 }
 
 impl<
-        S: Serializer<E>,
-        D: Deserializer<E>,
-        E: DynamicSerialize<S> + DynamicDeserialize<D>,
-    > Registry<S, D, E>
+    S: Serializer<E>,
+    D: Deserializer<E>,
+    E: DynamicSerialize<S> + DynamicDeserialize<D>,
+> Registry<S, D, E>
 {
     /// Registers a key type and its associated value type for both
     /// serialization and deserialization.

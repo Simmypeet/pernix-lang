@@ -12,8 +12,8 @@ use pernixc_ir::{
     },
     scope::Scope,
     value::{
-        register::{load::Load, Assignment, Borrow},
         Value,
+        register::{Assignment, Borrow, load::Load},
     },
 };
 use pernixc_lexical::tree::{RelativeLocation, RelativeSpan};
@@ -26,8 +26,8 @@ use pernixc_term::{
     generic_parameters::get_generic_parameters,
     instantiation::Instantiation,
     lifetime::Lifetime,
-    r#type::{Qualifier, Reference, Type},
     tuple,
+    r#type::{Qualifier, Reference, Type},
 };
 
 use crate::{

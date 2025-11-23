@@ -4,7 +4,7 @@ use pernixc_diagnostic::ByteIndex;
 use pernixc_extend::extend;
 use pernixc_lexical::tree::RelativeLocation;
 use pernixc_query::TrackedEngine;
-use pernixc_source_file::{get_source_file_path, Span};
+use pernixc_source_file::{Span, get_source_file_path};
 
 /// Converts the given relative span to an absolute span.
 ///

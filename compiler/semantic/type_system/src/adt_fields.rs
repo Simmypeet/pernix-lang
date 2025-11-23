@@ -2,9 +2,9 @@
 
 use std::{ops::Deref, sync::Arc};
 
-use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor};
 use pernixc_symbol::{
-    kind::{get_kind, Kind},
+    kind::{Kind, get_kind},
     member::get_members,
 };
 use pernixc_target::Global;

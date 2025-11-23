@@ -157,11 +157,9 @@ impl super::WriteTransaction for WriteTransaction {
     }
 
     fn commit(self) -> Result<(), std::io::Error> {
-        let result = self.write_batch.commit().map_err(|e| {
+        self.write_batch.commit().map_err(|e| {
             std::io::Error::other(format!("Failed to commit write batch: {e}"))
-        });
-
-        result
+        })
     }
 }
 

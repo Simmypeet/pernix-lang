@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 
-use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor};
 use pernixc_semantic_element::variance::Variance;
-use pernixc_symbol::kind::{get_kind, Kind};
+use pernixc_symbol::kind::{Kind, get_kind};
 use pernixc_term::{
     constant::Constant,
     lifetime::Lifetime,
@@ -14,10 +14,10 @@ use pernixc_term::{
 };
 
 use crate::{
+    Error, Satisfiability, Satisfied, Succeeded,
     adt_fields::get_instantiated_adt_fields,
     environment::{BoxedFuture, Call, DynArc, Environment, Query},
     normalizer::Normalizer,
-    Error, Satisfiability, Satisfied, Succeeded,
 };
 
 #[derive(Debug)]
@@ -181,11 +181,9 @@ impl Query for ConstantType {
                     environment,
                 };
 
-                assert!(self
-                    .0
-                    .accept_one_level_async(&mut visitor)
-                    .await
-                    .is_ok());
+                assert!(
+                    self.0.accept_one_level_async(&mut visitor).await.is_ok()
+                );
 
                 if let Some(mut result) = visitor.constant_type? {
                     // look for the fields of the term as well (if it's an ADT)

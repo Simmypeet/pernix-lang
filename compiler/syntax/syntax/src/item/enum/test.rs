@@ -1,7 +1,7 @@
 use proptest::prelude::Arbitrary;
 
 use crate::{
-    item::r#enum::{arbitrary, Enum},
+    item::r#enum::{Enum, arbitrary},
     test::verify_ref,
 };
 

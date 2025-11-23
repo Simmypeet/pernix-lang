@@ -4,10 +4,10 @@ use pernixc_term::{lifetime::Lifetime, r#type::Qualifier};
 
 use crate::{
     bind::{
+        LValue,
         expression::borrow::diagnostic::{
             Diagnostic, MismatchedQualifierForReferenceOf,
         },
-        LValue,
     },
     binder::Binder,
 };

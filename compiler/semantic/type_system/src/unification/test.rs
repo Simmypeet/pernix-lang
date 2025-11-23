@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use pernixc_query::{database::SetInputResult, Engine};
+use pernixc_query::{Engine, database::SetInputResult};
 use pernixc_symbol::kind::Kind;
 use pernixc_target::Global;
 use pernixc_term::{
@@ -14,9 +14,9 @@ use pernixc_term::{
     },
     lifetime::Lifetime,
     predicate::{Compatible, Predicate},
-    r#type::Type,
     sub_term::Location,
     tuple::{self, Tuple},
+    r#type::Type,
 };
 use proptest::{
     arbitrary::Arbitrary,
@@ -28,6 +28,7 @@ use proptest::{
 
 use super::{Log, Predicate as _, Unification, Unifier};
 use crate::{
+    Error, Satisfied, Succeeded,
     environment::{Environment, Premise},
     equality::Equality,
     normalizer,
@@ -36,7 +37,6 @@ use crate::{
         purge_trait_associated_type,
         purge_trait_associated_type_in_generic_arguments,
     },
-    Error, Satisfied, Succeeded,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -110,9 +110,9 @@ pub struct Basic<Param, T> {
 }
 
 impl<
-        Param: Debug + Clone + 'static,
-        T: Debug + Clone + Term + From<Param> + 'static,
-    > Property<T> for Basic<Param, T>
+    Param: Debug + Clone + 'static,
+    T: Debug + Clone + Term + From<Param> + 'static,
+> Property<T> for Basic<Param, T>
 {
     fn apply(&self, _: &mut Arc<Engine>, _: &mut Premise) -> BoxedFuture<'_> {
         Box::pin(async move { Ok(()) })
@@ -126,13 +126,13 @@ impl<
 }
 
 impl<
-        Param: Debug + Arbitrary<Strategy = BoxedStrategy<Param>> + Clone + 'static,
-        T: Debug
-            + Term
-            + From<Param>
-            + Arbitrary<Strategy = BoxedStrategy<T>>
-            + 'static,
-    > Arbitrary for Basic<Param, T>
+    Param: Debug + Arbitrary<Strategy = BoxedStrategy<Param>> + Clone + 'static,
+    T: Debug
+        + Term
+        + From<Param>
+        + Arbitrary<Strategy = BoxedStrategy<T>>
+        + 'static,
+> Arbitrary for Basic<Param, T>
 {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;

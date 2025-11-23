@@ -7,14 +7,14 @@ use proptest::{
 
 use crate::{
     arbitrary::{
-        write_indent_line_for_indent_display, AccessModifier, IndentDisplay,
-        IntoSeparated, Passable, SimplePath,
+        AccessModifier, IndentDisplay, IntoSeparated, Passable, SimplePath,
+        write_indent_line_for_indent_display,
     },
     item::{
         constant::arbitrary::Constant, effect::arbitrary::Effect,
+        r#enum::arbitrary::Enum, r#extern::arbitrary::Extern,
         function::arbitrary::Function, implements::arbitrary::Implements,
-        marker::arbitrary::Marker, r#enum::arbitrary::Enum,
-        r#extern::arbitrary::Extern, r#struct::arbitrary::Struct,
+        marker::arbitrary::Marker, r#struct::arbitrary::Struct,
         r#trait::arbitrary::Trait, r#type::arbitrary::Type,
     },
     reference,

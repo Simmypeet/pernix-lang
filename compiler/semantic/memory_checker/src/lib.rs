@@ -9,18 +9,18 @@ use diagnostic::{
 use pernixc_arena::ID;
 use pernixc_handler::{Handler, Storage};
 use pernixc_ir::{
+    IR, Values,
     address::{self, Address, Memory},
     control_flow_graph::{Block, ControlFlowGraph},
     instruction::{Instruction, Jump, Terminator, UnconditionalJump},
     scope,
     value::{
-        register::{
-            load::{self, Load},
-            Assignment, Borrow,
-        },
         Environment as ValueEnvironment, TypeOf,
+        register::{
+            Assignment, Borrow,
+            load::{self, Load},
+        },
     },
-    Values, IR,
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
@@ -33,8 +33,8 @@ use pernixc_term::{
     r#type::Qualifier,
 };
 use pernixc_type_system::{
-    environment::Environment as TyEnvironment, normalizer::Normalizer,
-    UnrecoverableError,
+    UnrecoverableError, environment::Environment as TyEnvironment,
+    normalizer::Normalizer,
 };
 use state::{SetStateSucceeded, Stack, Summary};
 
@@ -890,11 +890,12 @@ impl<N: Normalizer> Checker<'_, N> {
         let result = WalkResult { stack, looped_blocks };
 
         // mark as done
-        assert!(self
-            .walk_results_by_block_id
-            .insert(block_id, Some(result.clone()))
-            .unwrap()
-            .is_none());
+        assert!(
+            self.walk_results_by_block_id
+                .insert(block_id, Some(result.clone()))
+                .unwrap()
+                .is_none()
+        );
 
         Ok(Some(result))
     }

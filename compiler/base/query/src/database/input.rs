@@ -1,8 +1,9 @@
 use std::{any::Any, sync::atomic::AtomicBool};
 
 use crate::{
+    Engine, Key,
     database::{Completion, Dynamic, DynamicKey, InputMetadata, ValueMetadata},
-    fingerprint, Engine, Key,
+    fingerprint,
 };
 
 /// A lock that allows setting input values in the query database.
@@ -311,10 +312,6 @@ impl SetInputLock<'_> {
         let updated =
             self.update_version.load(std::sync::atomic::Ordering::Relaxed);
 
-        if updated {
-            self.current_version + 1
-        } else {
-            self.current_version
-        }
+        if updated { self.current_version + 1 } else { self.current_version }
     }
 }

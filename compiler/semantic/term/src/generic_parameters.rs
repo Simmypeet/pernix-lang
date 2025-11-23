@@ -438,6 +438,14 @@ impl GenericParameters {
                 .collect(),
         }
     }
+
+    /// Checks whether there are no generic parameters defined.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.lifetimes.is_empty()
+            && self.types.is_empty()
+            && self.constants.is_empty()
+    }
 }
 
 /// An ID to a type parameter.

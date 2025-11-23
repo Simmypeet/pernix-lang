@@ -5,10 +5,10 @@ use pernixc_target::TargetID;
 use pernixc_test_input::Input;
 use proptest::{prop_assert, proptest, test_runner::TestCaseResult};
 
-use super::{arbitrary, Tree, ROOT_BRANCH_ID};
+use super::{ROOT_BRANCH_ID, Tree, arbitrary};
 use crate::{
     error::Error,
-    tree::{arbitrary::arbitrary_nodes, Branch, BranchKind, DelimiterKind},
+    tree::{Branch, BranchKind, DelimiterKind, arbitrary::arbitrary_nodes},
 };
 
 #[test]
@@ -45,11 +45,13 @@ fn basic_delimiter() {
         let branch = &tree[branch];
 
         assert_eq!(branch.nodes.len(), 1);
-        assert!(branch
-            .kind
-            .as_fragment()
-            .and_then(|x| x.fragment_kind.as_delimiter())
-            .is_some_and(|x| x.delimiter == DelimiterKind::Brace));
+        assert!(
+            branch
+                .kind
+                .as_fragment()
+                .and_then(|x| x.fragment_kind.as_delimiter())
+                .is_some_and(|x| x.delimiter == DelimiterKind::Brace)
+        );
 
         assert_eq!(
             **branch.nodes[0].as_leaf().unwrap().kind.as_punctuation().unwrap(),
@@ -103,10 +105,12 @@ fn basic_indentation() {
         let branch = &tree[branch];
 
         assert_eq!(branch.nodes.len(), 1);
-        assert!(branch
-            .kind
-            .as_fragment()
-            .is_some_and(|x| x.fragment_kind.is_indentation()));
+        assert!(
+            branch
+                .kind
+                .as_fragment()
+                .is_some_and(|x| x.fragment_kind.is_indentation())
+        );
 
         assert_eq!(
             **branch.nodes[0].as_leaf().unwrap().kind.as_punctuation().unwrap(),
@@ -168,10 +172,12 @@ fn nested_single_pop_indentation() {
         let branch = &tree[branch];
 
         assert_eq!(branch.nodes.len(), 4);
-        assert!(branch
-            .kind
-            .as_fragment()
-            .is_some_and(|x| x.fragment_kind.is_indentation()));
+        assert!(
+            branch
+                .kind
+                .as_fragment()
+                .is_some_and(|x| x.fragment_kind.is_indentation())
+        );
 
         assert_eq!(
             **branch.nodes[0].as_leaf().unwrap().kind.as_punctuation().unwrap(),
@@ -183,10 +189,12 @@ fn nested_single_pop_indentation() {
             let branch = &tree[branch];
 
             assert_eq!(branch.nodes.len(), 1);
-            assert!(branch
-                .kind
-                .as_fragment()
-                .is_some_and(|x| x.fragment_kind.is_indentation()));
+            assert!(
+                branch
+                    .kind
+                    .as_fragment()
+                    .is_some_and(|x| x.fragment_kind.is_indentation())
+            );
 
             assert_eq!(
                 **branch.nodes[0]
@@ -261,10 +269,12 @@ fn nested_multi_pop_indentation() {
         let branch = &tree[branch];
 
         assert_eq!(branch.nodes.len(), 4);
-        assert!(branch
-            .kind
-            .as_fragment()
-            .is_some_and(|x| x.fragment_kind.is_indentation()));
+        assert!(
+            branch
+                .kind
+                .as_fragment()
+                .is_some_and(|x| x.fragment_kind.is_indentation())
+        );
 
         assert_eq!(
             **branch.nodes[0].as_leaf().unwrap().kind.as_punctuation().unwrap(),
@@ -276,20 +286,24 @@ fn nested_multi_pop_indentation() {
             let branch = &tree[branch];
 
             assert_eq!(branch.nodes.len(), 1);
-            assert!(branch
-                .kind
-                .as_fragment()
-                .is_some_and(|x| x.fragment_kind.is_indentation()));
+            assert!(
+                branch
+                    .kind
+                    .as_fragment()
+                    .is_some_and(|x| x.fragment_kind.is_indentation())
+            );
 
             {
                 let branch = *branch.nodes[0].as_branch().unwrap();
                 let branch = &tree[branch];
 
                 assert_eq!(branch.nodes.len(), 1);
-                assert!(branch
-                    .kind
-                    .as_fragment()
-                    .is_some_and(|x| x.fragment_kind.is_indentation()));
+                assert!(
+                    branch
+                        .kind
+                        .as_fragment()
+                        .is_some_and(|x| x.fragment_kind.is_indentation())
+                );
 
                 assert_eq!(
                     **branch.nodes[0]
@@ -353,32 +367,35 @@ fn indentation_pop_in_delimiter() {
         let branch = &tree[branch];
 
         assert_eq!(branch.nodes.len(), 1);
-        assert!(branch
-            .kind
-            .as_fragment()
-            .is_some_and(|x| x.fragment_kind.is_indentation()));
+        assert!(
+            branch
+                .kind
+                .as_fragment()
+                .is_some_and(|x| x.fragment_kind.is_indentation())
+        );
 
         {
             let branch = *branch.nodes[0].as_branch().unwrap();
             let branch = &tree[branch];
 
             assert_eq!(branch.nodes.len(), 1);
-            assert!(branch
-                .kind
-                .as_fragment()
-                .is_some_and(|x| x.fragment_kind.as_delimiter().is_some_and(
-                    |x| x.delimiter == DelimiterKind::Parenthesis
-                )));
+            assert!(branch.kind.as_fragment().is_some_and(|x| {
+                x.fragment_kind
+                    .as_delimiter()
+                    .is_some_and(|x| x.delimiter == DelimiterKind::Parenthesis)
+            }));
 
             {
                 let branch = *branch.nodes[0].as_branch().unwrap();
                 let branch = &tree[branch];
 
                 assert_eq!(branch.nodes.len(), 1);
-                assert!(branch
-                    .kind
-                    .as_fragment()
-                    .is_some_and(|x| x.fragment_kind.is_indentation()));
+                assert!(
+                    branch
+                        .kind
+                        .as_fragment()
+                        .is_some_and(|x| x.fragment_kind.is_indentation())
+                );
 
                 assert_eq!(
                     **branch.nodes[0]
@@ -434,10 +451,12 @@ fn indentation_pop_all_at_end() {
         let branch = &tree[branch];
 
         assert_eq!(branch.nodes.len(), 3);
-        assert!(branch
-            .kind
-            .as_fragment()
-            .is_some_and(|x| x.fragment_kind.is_indentation()));
+        assert!(
+            branch
+                .kind
+                .as_fragment()
+                .is_some_and(|x| x.fragment_kind.is_indentation())
+        );
 
         assert_eq!(
             **branch.nodes[0].as_leaf().unwrap().kind.as_punctuation().unwrap(),
@@ -450,10 +469,12 @@ fn indentation_pop_all_at_end() {
             let branch = &tree[branch];
 
             assert_eq!(branch.nodes.len(), 1);
-            assert!(branch
-                .kind
-                .as_fragment()
-                .is_some_and(|x| x.fragment_kind.is_indentation()));
+            assert!(
+                branch
+                    .kind
+                    .as_fragment()
+                    .is_some_and(|x| x.fragment_kind.is_indentation())
+            );
 
             assert_eq!(
                 **branch.nodes[0]
@@ -522,10 +543,11 @@ fn unclosed_delimiter() {
         let branch = &tree[branch];
 
         assert_eq!(branch.nodes.len(), 0);
-        assert!(branch.kind.as_fragment().is_some_and(|x| x
-            .fragment_kind
-            .as_delimiter()
-            .is_some_and(|x| x.delimiter == DelimiterKind::Brace)));
+        assert!(branch.kind.as_fragment().is_some_and(|x| {
+            x.fragment_kind
+                .as_delimiter()
+                .is_some_and(|x| x.delimiter == DelimiterKind::Brace)
+        }));
     }
 
     let errors = storage.into_vec();
@@ -578,9 +600,9 @@ fn stable_hash_id() {
     let second_hash = get_hash(SECOND_STABLE_HASH_ID);
     let third_hash = get_hash(THIRD_STABLE_HASH_ID);
 
-    assert!([first_hash, second_hash, third_hash]
-        .iter()
-        .all(|&x| x == first_hash));
+    assert!(
+        [first_hash, second_hash, third_hash].iter().all(|&x| x == first_hash)
+    );
 }
 
 fn verify_tree(input: &arbitrary::Nodes) -> TestCaseResult {

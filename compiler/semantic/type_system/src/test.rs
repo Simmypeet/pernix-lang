@@ -5,8 +5,8 @@ use pernixc_term::{
     constant::Constant,
     generic_arguments::GenericArguments,
     lifetime::Lifetime,
-    r#type::Type,
     sub_term::TermLocation,
+    r#type::Type,
     visitor::{self, MutableRecursive},
 };
 

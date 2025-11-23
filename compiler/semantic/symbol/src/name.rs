@@ -6,11 +6,11 @@ use pernixc_extend::extend;
 use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
-use pernixc_target::{get_target_map, Global};
+use pernixc_target::{Global, get_target_map};
 
 use crate::{
-    get_target_root_module_id, kind::get_kind, member::get_members,
-    parent::get_parent, ID,
+    ID, get_target_root_module_id, kind::get_kind, member::get_members,
+    parent::get_parent,
 };
 
 /// The key type used with [`TrackedEngine`] to access the name of a symbol.

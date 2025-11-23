@@ -13,11 +13,11 @@ use pernixc_handler::Handler;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
 use pernixc_resolution::{
-    qualified_identifier::{resolve_qualified_identifier, Resolution},
+    Config, ElidedTermProvider,
+    qualified_identifier::{Resolution, resolve_qualified_identifier},
     term::{
         resolve_generic_arguments, resolve_type, verify_generic_arguments_for,
     },
-    Config, ElidedTermProvider,
 };
 use pernixc_source_file::SourceElement;
 use pernixc_target::Global;
@@ -30,15 +30,16 @@ use pernixc_term::{
     visitor::RecursiveIterator,
 };
 use pernixc_type_system::{
+    Satisfied, Succeeded, UnrecoverableError,
     environment::{Environment, Premise},
     mapping::Mapping,
     normalizer::Normalizer,
-    unification, Satisfied, Succeeded, UnrecoverableError,
+    unification,
 };
 
 use crate::{
     binder::{
-        self, inference_context::sealed::Sealed, Binder, BindingError, Error,
+        self, Binder, BindingError, Error, inference_context::sealed::Sealed,
     },
     diagnostic::Diagnostic,
     infer::{
@@ -278,11 +279,7 @@ impl sealed::Sealed for Type {
     }
 
     fn as_inference(&self) -> Option<&inference::Variable<Self>> {
-        if let Self::Inference(var) = self {
-            Some(var)
-        } else {
-            None
-        }
+        if let Self::Inference(var) = self { Some(var) } else { None }
     }
 
     fn inference_table(
@@ -298,11 +295,7 @@ impl sealed::Sealed for Type {
     }
 
     fn try_from_term_ref(kind: pernixc_term::TermRef<'_>) -> Option<&'_ Self> {
-        if let pernixc_term::TermRef::Type(ty) = kind {
-            Some(ty)
-        } else {
-            None
-        }
+        if let pernixc_term::TermRef::Type(ty) = kind { Some(ty) } else { None }
     }
 
     fn from_cyclic_inference_error(
@@ -332,11 +325,7 @@ impl sealed::Sealed for Constant {
     }
 
     fn as_inference(&self) -> Option<&inference::Variable<Self>> {
-        if let Self::Inference(var) = self {
-            Some(var)
-        } else {
-            None
-        }
+        if let Self::Inference(var) = self { Some(var) } else { None }
     }
 
     fn inference_table(
@@ -754,12 +743,12 @@ impl Binder<'_> {
             Err(pernixc_resolution::Error::Cyclic(error)) => {
                 return Err(binder::Error::Unrecoverable(
                     UnrecoverableError::CyclicDependency(error),
-                ))
+                ));
             }
             Err(pernixc_resolution::Error::Abort) => {
                 return Err(binder::Error::Binding(BindingError(
                     syntax_tree.span(),
-                )))
+                )));
             }
         };
 
@@ -768,15 +757,17 @@ impl Binder<'_> {
             constant_inferences.created_inferences;
 
         for inference in created_type_inferences {
-            assert!(self
-                .inference_context
-                .register(inference, constraint::Type::All(false)));
+            assert!(
+                self.inference_context
+                    .register(inference, constraint::Type::All(false))
+            );
         }
 
         for inference in created_constant_inferences {
-            assert!(self
-                .inference_context
-                .register(inference, constraint::Constant));
+            assert!(
+                self.inference_context
+                    .register(inference, constraint::Constant)
+            );
         }
 
         Ok(resolution)
@@ -833,15 +824,17 @@ impl Binder<'_> {
             constant_inferences.created_inferences;
 
         for inference in created_type_inferences {
-            assert!(self
-                .inference_context
-                .register(inference, constraint::Type::All(false)));
+            assert!(
+                self.inference_context
+                    .register(inference, constraint::Type::All(false))
+            );
         }
 
         for inference in created_constant_inferences {
-            assert!(self
-                .inference_context
-                .register(inference, constraint::Constant));
+            assert!(
+                self.inference_context
+                    .register(inference, constraint::Constant)
+            );
         }
 
         Ok(resolution)
@@ -900,15 +893,17 @@ impl Binder<'_> {
             constant_inferences.created_inferences;
 
         for inference in created_type_inferences {
-            assert!(self
-                .inference_context
-                .register(inference, constraint::Type::All(false)));
+            assert!(
+                self.inference_context
+                    .register(inference, constraint::Type::All(false))
+            );
         }
 
         for inference in created_constant_inferences {
-            assert!(self
-                .inference_context
-                .register(inference, constraint::Constant));
+            assert!(
+                self.inference_context
+                    .register(inference, constraint::Constant)
+            );
         }
 
         Ok(resolution)
@@ -967,15 +962,17 @@ impl Binder<'_> {
             constant_inferences.created_inferences;
 
         for inference in created_type_inferences {
-            assert!(self
-                .inference_context
-                .register(inference, constraint::Type::All(false)));
+            assert!(
+                self.inference_context
+                    .register(inference, constraint::Type::All(false))
+            );
         }
 
         for inference in created_constant_inferences {
-            assert!(self
-                .inference_context
-                .register(inference, constraint::Constant));
+            assert!(
+                self.inference_context
+                    .register(inference, constraint::Constant)
+            );
         }
 
         Ok(arg)

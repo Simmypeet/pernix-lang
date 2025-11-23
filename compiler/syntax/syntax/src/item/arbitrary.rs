@@ -9,7 +9,7 @@ use proptest::{
 use super::where_clause::arbitrary::WhereClause;
 use crate::{
     arbitrary::{
-        write_indent_line_for_indent_display, IndentDisplay, Passable,
+        IndentDisplay, Passable, write_indent_line_for_indent_display,
     },
     reference,
 };

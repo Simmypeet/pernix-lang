@@ -16,13 +16,13 @@ use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
     accessibility::symbol_accessible,
     get_target_root_module_id,
-    kind::{get_kind, Kind},
+    kind::{Kind, get_kind},
     member::get_members,
     name::get_name,
     span::get_span,
 };
-use pernixc_syntax::{item::module::ImportItemsKind, SimplePathRoot};
-use pernixc_target::{get_linked_targets, get_target_map, Global};
+use pernixc_syntax::{SimplePathRoot, item::module::ImportItemsKind};
+use pernixc_target::{Global, get_linked_targets, get_target_map};
 
 use crate::{
     build::Build,

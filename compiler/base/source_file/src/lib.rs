@@ -5,7 +5,7 @@ use std::{
     cmp::Ordering,
     fmt::Debug,
     fs::File,
-    hash::{BuildHasher, BuildHasherDefault, Hash, Hasher},
+    hash::{Hash, Hasher},
     io::Read,
     ops::Range,
     path::{Path, PathBuf},
@@ -13,8 +13,8 @@ use std::{
 };
 
 use dashmap::{
-    mapref::one::{MappedRef, Ref, RefMut},
     DashMap,
+    mapref::one::{MappedRef, Ref, RefMut},
 };
 use flexstr::SharedStr;
 use fnv::FnvHasher;
@@ -22,14 +22,17 @@ use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
 use pernixc_extend::extend;
 use pernixc_query::{
-    runtime::{self, executor::CyclicError},
     TrackedEngine,
+    runtime::{self, executor::CyclicError},
 };
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::{StableHash, Value};
 use pernixc_stable_type_id::Identifiable;
-use pernixc_target::{get_target_seed, Global, TargetID};
+use pernixc_target::{
+    Global, TargetID, get_invocation_arguments, get_target_seed,
+};
 use rayon::{iter::ParallelIterator, slice::ParallelSlice};
+use siphasher::sip::SipHasher24;
 
 /// Represents an source file input for the compiler.
 #[derive(Clone, PartialEq, Eq, Hash, Getters, Serialize, Deserialize)]
@@ -154,11 +157,7 @@ impl SourceFile {
             index += 1;
         }
 
-        if index == location.column {
-            Some(range.end)
-        } else {
-            None
-        }
+        if index == location.column { Some(range.end) } else { None }
     }
 
     /// Replaces the content of the source file in the given range with the
@@ -698,10 +697,11 @@ impl SourceMap {
         let hash = finalize_hash(hasher);
 
         // insert the source file into the map
-        assert!(self
-            .source_files_by_id
-            .insert(target_id.make_global(hash), source)
-            .is_none());
+        assert!(
+            self.source_files_by_id
+                .insert(target_id.make_global(hash), source)
+                .is_none()
+        );
 
         hash
     }
@@ -901,7 +901,23 @@ impl runtime::executor::Executor<Key> for Executor {
     }
 }
 
+/// An error that occurs when calculating the source file path ID.
+#[derive(Debug, thiserror::Error)]
+pub enum CalculatePathError {
+    /// Failed to canonicalize the path.
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+
+    /// The given path is not in the target directory.
+    #[error("the given path is not in the target directory")]
+    NotInTargetDirectory,
+}
+
 /// Calculates the ID of the source file based on their path.
+///
+/// The path will be canonicalized before calculating the ID. Therefore,
+/// two different path strings that point to the same file will ultimately
+/// yield the same source file ID.
 ///
 /// Internally this uses a hash function to derive a stable ID for the source
 /// file.
@@ -910,11 +926,49 @@ pub async fn calculate_path_id(
     self: &TrackedEngine,
     path: &Path,
     target_id: TargetID,
-) -> ID<SourceFile> {
-    ID::new(
-        BuildHasherDefault::<siphasher::sip::SipHasher24>::default()
-            .hash_one((self.get_target_seed(target_id).await, path)),
-    )
+) -> Result<ID<SourceFile>, std::io::Error> {
+    let hasher = SipHasher24::default();
+    let this_canonical_path = std::fs::canonicalize(path)?;
+
+    let target_args = self.get_invocation_arguments(target_id).await;
+
+    let target_root_file =
+        std::fs::canonicalize(&target_args.command.input().file)?;
+    let target_directory =
+        target_root_file.parent().unwrap_or_else(|| std::path::Path::new(""));
+
+    // skip the prefix components to avoid absolute path issues (e.g. \\?\ on
+    // Windows)
+    let this_components =
+        this_canonical_path.components().skip(1).collect::<Vec<_>>();
+    let target_components =
+        target_directory.components().skip(1).collect::<Vec<_>>();
+
+    if target_components.len() > this_components.len() {
+        return Err(std::io::Error::other(
+            "the given path is not in the target directory",
+        ));
+    }
+
+    for (a, b) in target_components.iter().zip(this_components.iter()) {
+        if a != b {
+            return Err(std::io::Error::other(
+                "the given path is not in the target directory",
+            ));
+        }
+    }
+
+    let mut hasher = SipHasher24::default();
+
+    // hash only the relative path from the target directory
+    for component in this_components.iter().skip(target_components.len()) {
+        component.as_os_str().hash(&mut hasher);
+    }
+
+    let target_seed = self.get_target_seed(target_id).await;
+    target_seed.hash(&mut hasher);
+
+    Ok(ID::new(hasher.finish()))
 }
 
 /// A query for retrieving the a path of the given sourcce file ID.

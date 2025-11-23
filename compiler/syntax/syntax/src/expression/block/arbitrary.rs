@@ -9,17 +9,17 @@ use proptest::{
 
 use crate::{
     arbitrary::{
-        write_indent_line, write_indent_line_for_indent_display, IndentDisplay,
-        IntoSeparated, Label, Passable, QualifiedIdentifier,
+        IndentDisplay, IntoSeparated, Label, Passable, QualifiedIdentifier,
+        write_indent_line, write_indent_line_for_indent_display,
     },
     expression::{
         arbitrary::Expression, binary::arbitrary::Binary,
         terminator::arbitrary::Terminator,
     },
     pattern::arbitrary::{Irrefutable, Refutable},
-    r#type::arbitrary::Type,
     reference,
     statement::arbitrary::{Statement, Statements},
+    r#type::arbitrary::Type,
 };
 
 reference! {

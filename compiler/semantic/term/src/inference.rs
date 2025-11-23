@@ -3,7 +3,7 @@
 use std::{fmt::Debug, marker::PhantomData};
 
 use pernixc_serialize::{
-    de::Deserializer, ser::Serializer, Deserialize, Serialize,
+    Deserialize, Serialize, de::Deserializer, ser::Serializer,
 };
 use pernixc_stable_hash::StableHash;
 

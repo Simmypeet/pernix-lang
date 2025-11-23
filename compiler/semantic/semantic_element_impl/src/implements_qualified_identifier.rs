@@ -7,12 +7,12 @@ use pernixc_hash::{HashMap, HashSet};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::runtime::executor::{self, CyclicError};
 use pernixc_resolution::{
+    Config,
     generic_parameter_namespace::get_generic_parameter_namespace,
     qualified_identifier::{
-        resolve_qualified_identifier, MemberGeneric, Resolution,
+        MemberGeneric, Resolution, resolve_qualified_identifier,
     },
-    term::{resolution_to_type, ResolutionToTypeError},
-    Config,
+    term::{ResolutionToTypeError, resolution_to_type},
 };
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::SourceElement;
@@ -20,7 +20,7 @@ use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{
     accessibility::symbol_accessible,
     final_implements::is_implements_final,
-    kind::{get_kind, Kind},
+    kind::{Kind, get_kind},
     member::get_members,
     name::get_name,
     syntax::{
@@ -33,8 +33,8 @@ use pernixc_term::{
     constant::Constant,
     generic_arguments::{GenericArguments, Symbol},
     generic_parameters::{
-        get_generic_parameters, ConstantParameter, LifetimeParameter,
-        TypeParameter,
+        ConstantParameter, LifetimeParameter, TypeParameter,
+        get_generic_parameters,
     },
     lifetime::Lifetime,
     r#type::Type,
@@ -218,7 +218,7 @@ async fn check_valid_resolution(
                         Ok(ty) => ty,
                         Err(ResolutionToTypeError::Failed(_)) => unreachable!(),
                         Err(ResolutionToTypeError::Cyclic(cyclic)) => {
-                            return Err(cyclic)
+                            return Err(cyclic);
                         }
                     };
 
@@ -534,10 +534,10 @@ struct UsedParameterCollector {
 
 impl UsedParameterCollector {
     fn handle_lifetime(&mut self, lifetime: &Lifetime) {
-        if let Lifetime::Parameter(param) = lifetime {
-            if param.parent_id == self.current_symbol_id {
-                self.used_lifetime_ids.insert(param.id);
-            }
+        if let Lifetime::Parameter(param) = lifetime
+            && param.parent_id == self.current_symbol_id
+        {
+            self.used_lifetime_ids.insert(param.id);
         }
     }
 
@@ -642,52 +642,46 @@ async fn check_unused_generic_parameters(
 
     // Check for unused lifetime parameters
     for (param_id, param) in generic_parameters.lifetime_parameters_as_order() {
-        if !collector.used_lifetime_ids.contains(&param_id) {
-            if let Some(span) = param.span {
-                storage.receive(
-                    diagnostic::Diagnostic::UnusedGenericParameter(
-                        diagnostic::UnusedGenericParameter {
-                            implementation_id: implements_id,
-                            unused_parameter_span: span,
-                            parameter_name: param.name.clone(),
-                        },
-                    ),
-                );
-            }
+        if !collector.used_lifetime_ids.contains(&param_id)
+            && let Some(span) = param.span
+        {
+            storage.receive(diagnostic::Diagnostic::UnusedGenericParameter(
+                diagnostic::UnusedGenericParameter {
+                    implementation_id: implements_id,
+                    unused_parameter_span: span,
+                    parameter_name: param.name.clone(),
+                },
+            ));
         }
     }
 
     // Check for unused type parameters
     for (param_id, param) in generic_parameters.type_parameters_as_order() {
-        if !collector.used_type_ids.contains(&param_id) {
-            if let Some(span) = param.span {
-                storage.receive(
-                    diagnostic::Diagnostic::UnusedGenericParameter(
-                        diagnostic::UnusedGenericParameter {
-                            implementation_id: implements_id,
-                            unused_parameter_span: span,
-                            parameter_name: param.name.clone(),
-                        },
-                    ),
-                );
-            }
+        if !collector.used_type_ids.contains(&param_id)
+            && let Some(span) = param.span
+        {
+            storage.receive(diagnostic::Diagnostic::UnusedGenericParameter(
+                diagnostic::UnusedGenericParameter {
+                    implementation_id: implements_id,
+                    unused_parameter_span: span,
+                    parameter_name: param.name.clone(),
+                },
+            ));
         }
     }
 
     // Check for unused constant parameters
     for (param_id, param) in generic_parameters.constant_parameters_as_order() {
-        if !collector.used_constant_ids.contains(&param_id) {
-            if let Some(span) = param.span {
-                storage.receive(
-                    diagnostic::Diagnostic::UnusedGenericParameter(
-                        diagnostic::UnusedGenericParameter {
-                            implementation_id: implements_id,
-                            unused_parameter_span: span,
-                            parameter_name: param.name.clone(),
-                        },
-                    ),
-                );
-            }
+        if !collector.used_constant_ids.contains(&param_id)
+            && let Some(span) = param.span
+        {
+            storage.receive(diagnostic::Diagnostic::UnusedGenericParameter(
+                diagnostic::UnusedGenericParameter {
+                    implementation_id: implements_id,
+                    unused_parameter_span: span,
+                    parameter_name: param.name.clone(),
+                },
+            ));
         }
     }
 

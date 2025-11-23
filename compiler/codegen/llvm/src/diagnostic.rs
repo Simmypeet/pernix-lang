@@ -1,7 +1,7 @@
 //! Contains the diagnostics used in the code generation process.
 
 use pernixc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
 use pernixc_symbol::{source_map::to_absolute_span, span::get_span};
 use pernixc_target::Global;
 

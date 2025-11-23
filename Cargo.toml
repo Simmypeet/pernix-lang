@@ -153,7 +153,7 @@ inkwell = { git = "https://github.com/Simmypeet/inkwell", rev = "4366f7b37b4e732
 version = "0.1.0-beta.2"
 authors = ["Simmypeet"]
 description = "The Pernix Programming Language Compiler"
-edition = "2021"
+edition = "2024"
 rust-version = "1.88.0"
 
 [workspace.lints.rust]

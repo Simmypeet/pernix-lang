@@ -223,13 +223,14 @@ impl<C: Constraint> Table<C> {
             }
 
             Log::AssignToKnown(assign_to_known_log) => {
-                assert!(self
-                    .constraints
-                    .insert_with_id(
-                        assign_to_known_log.constraint_id,
-                        assign_to_known_log.old_constraint,
-                    )
-                    .is_ok());
+                assert!(
+                    self.constraints
+                        .insert_with_id(
+                            assign_to_known_log.constraint_id,
+                            assign_to_known_log.old_constraint,
+                        )
+                        .is_ok()
+                );
 
                 for inference_variable in assign_to_known_log.changed_variables
                 {
@@ -244,13 +245,14 @@ impl<C: Constraint> Table<C> {
 
             Log::UnifyConstraint(unify_constraint_log) => {
                 // bring rhs back
-                assert!(self
-                    .constraints
-                    .insert_with_id(
-                        unify_constraint_log.rhs,
-                        unify_constraint_log.old_rhs_constraint,
-                    )
-                    .is_ok());
+                assert!(
+                    self.constraints
+                        .insert_with_id(
+                            unify_constraint_log.rhs,
+                            unify_constraint_log.old_rhs_constraint,
+                        )
+                        .is_ok()
+                );
                 // restore lhs to old constraint
                 self.constraints[unify_constraint_log.lhs] =
                     unify_constraint_log.old_lhs_constraint;

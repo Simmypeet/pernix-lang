@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use pernixc_handler::Handler;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
 use pernixc_semantic_element::{
     implied_predicate::get_implied_predicates, variance::Variance,
     where_clause::get_where_clause,
@@ -21,6 +21,7 @@ use pernixc_term::{
 };
 
 use crate::{
+    Succeeded, UnrecoverableError,
     diagnostic::{
         Diagnostic, ImplementationIsNotGeneralEnough,
         PredicateSatisfiabilityOverflow, UnsatisfiedPredicate,
@@ -29,7 +30,6 @@ use crate::{
     lifetime_constraint::LifetimeConstraint,
     normalizer::Normalizer,
     predicate::{marker, r#trait},
-    Succeeded, UnrecoverableError,
 };
 
 impl<N: Normalizer> Environment<'_, N> {
@@ -170,7 +170,7 @@ impl<N: Normalizer> Environment<'_, N> {
                         }
 
                         Err(crate::Error::CyclicDependency(error)) => {
-                            return Err(error.into())
+                            return Err(error.into());
                         }
                     }
                 }
@@ -216,7 +216,7 @@ impl<N: Normalizer> Environment<'_, N> {
                         Err(crate::Error::CyclicDependency(error)) => {
                             return Err(UnrecoverableError::CyclicDependency(
                                 error,
-                            ))
+                            ));
                         }
                     }
                 }

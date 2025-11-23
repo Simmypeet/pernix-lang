@@ -1,18 +1,18 @@
 use pernixc_handler::Handler;
 use pernixc_ir::value::{
+    Value,
     literal::{self, Literal},
     register::{self, Assignment},
-    Value,
 };
 use pernixc_source_file::SourceElement;
-use pernixc_term::{r#type::Type, tuple};
+use pernixc_term::{tuple, r#type::Type};
 
 use crate::{
     bind::{
+        Bind, Expression, Guidance,
         expression::parenthesized::diagnostic::{
             Diagnostic, MoreThanOneUnpackedInTupleExpression,
         },
-        Bind, Expression, Guidance,
     },
     binder::{BindingError, Error},
 };

@@ -2,8 +2,8 @@ use pernixc_handler::Handler;
 use pernixc_ir::{
     instruction::{Jump, Terminator, UnconditionalJump},
     value::{
-        literal::{Literal, Unreachable},
         Value,
+        literal::{Literal, Unreachable},
     },
 };
 use pernixc_source_file::SourceElement;

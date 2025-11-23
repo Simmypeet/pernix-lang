@@ -6,11 +6,14 @@ use std::{
 };
 
 use insta::assert_snapshot;
-use pernix_server::goto_definition::handle_goto_definition;
+use pernix_server::{
+    goto_definition::handle_goto_definition, hover::handle_hover,
+};
 use pernixc_query::TrackedEngine;
 use pernixc_target::TargetID;
 use tower_lsp::lsp_types::{
-    GotoDefinitionParams, PartialResultParams, WorkDoneProgressParams,
+    GotoDefinitionParams, HoverParams, PartialResultParams, Url,
+    WorkDoneProgressParams,
 };
 use tracing_subscriber::{
     EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt,
@@ -76,12 +79,66 @@ pub async fn test_file(main_file: PathBuf) {
     goto_path.push("snapshot");
     goto_path.push("goto_definition");
 
+    let mut hover_path = PathBuf::from(project_path);
+    hover_path.push("lsp");
+    hover_path.push("integration_test");
+    hover_path.push("snapshot");
+    hover_path.push("hover");
+
     // NOTE: Match the prefix paths to the test functions here
-    if main_file.starts_with(&goto_path) {
+    if is_child(&goto_path, &main_file) {
         test_goto_definition(main_file).await;
+    } else if is_child(&hover_path, &main_file) {
+        test_hover(main_file).await;
     } else {
-        panic!("No test defined for path: {}", main_file.display());
+        panic!(
+            "No test defined for path: {}, available directories: {}, {}",
+            main_file.display(),
+            goto_path.display(),
+            hover_path.display()
+        );
     }
+}
+
+/// `starts_with` seems not to be enough for path comparison in Windows due to
+/// NT extended paths (it's always Windows!), so we implement our own function
+/// here.
+fn is_child(parent: &Path, child: &Path) -> bool {
+    let parent_components = parent.components().skip(1).collect::<Vec<_>>();
+    let child_components = child.components().skip(1).collect::<Vec<_>>();
+
+    if parent_components.len() > child_components.len() {
+        return false;
+    }
+
+    for (p, c) in parent_components.iter().zip(child_components.iter()) {
+        if p != c {
+            return false;
+        }
+    }
+
+    true
+}
+
+/// Tests the "hover" LSP functionality.
+pub async fn test_hover(main_file: PathBuf) {
+    let (tracked_engine, fixture, target_id) =
+        create_engine_test_for_fixture_with_cursor(&main_file).await;
+
+    let response = tracked_engine
+        .handle_hover(target_id, HoverParams {
+            text_document_position_params: fixture
+                .cursor_text_document_position_params(),
+            work_done_progress_params: WorkDoneProgressParams {
+                work_done_token: None,
+            },
+        })
+        .await
+        .expect("encountered cyclic dependency");
+
+    let snapshot_str = response.unwrap_or_else(|| "no hover found".to_string());
+
+    test_snapshot_string(&main_file, &snapshot_str);
 }
 
 /// Tests the "go to definition" LSP functionality.
@@ -134,6 +191,7 @@ pub async fn create_engine_test_for_fixture_with_cursor(
         "lsp_test".to_string(),
         main_file.to_path_buf(),
         fixture.clone(),
+        Some(0), // fixed target seed for deterministic results
     )
     .await;
 
@@ -154,12 +212,15 @@ pub fn test_snapshot_string(main_file: &Path, string: &str) {
     settings.remove_snapshot_suffix();
 
     let file_stem = env!("PERNIXC_CARGO_WORKSPACE_DIR");
+    let file_stem = std::fs::canonicalize(file_stem).unwrap();
+    let file_stem_url = Url::from_file_path(&file_stem).unwrap();
+    let file_stem_path = file_stem_url.path();
 
     // Convert windows paths to Unix Paths.
     settings.add_filter(r"\\\\?([\w\d.])", "/$1");
 
     // Strip project directory from paths.
-    settings.add_filter(file_stem, "/project/");
+    settings.add_filter(file_stem_path, "/project");
 
     let _guard = settings.bind_to_scope();
     assert_snapshot!("snapshot", string);

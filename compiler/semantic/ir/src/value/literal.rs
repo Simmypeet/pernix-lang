@@ -10,15 +10,15 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_term::{
     lifetime::Lifetime,
-    r#type::{Array, Primitive, Qualifier, Reference, Type},
     tuple,
+    r#type::{Array, Primitive, Qualifier, Reference, Type},
 };
 use pernixc_type_system::normalizer::Normalizer;
 
 use crate::{
+    Values,
     transform::{Transformer, TypeTermSource},
     value::{Environment, TypeOf},
-    Values,
 };
 
 /// Represents a numeric literal value.

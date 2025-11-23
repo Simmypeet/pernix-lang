@@ -2,11 +2,11 @@
 //! [`BorrowModel`] and vice versa.
 
 use pernixc_ir::{
-    transform::{Element, Transformable, Transformer},
     IR,
+    transform::{Element, Transformable, Transformer},
 };
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
 use pernixc_term::{
     constant::Constant,
     lifetime::Lifetime,
@@ -52,7 +52,10 @@ impl MutableRecursive<Constant> for ToBorrowTransformer {
     }
 }
 
-fn transform_lifetime(lt: &mut Lifetime, gen: &mut LocalRegionGenerator) {
+fn transform_lifetime(
+    lt: &mut Lifetime,
+    region_gen: &mut LocalRegionGenerator,
+) {
     match lt {
         Lifetime::Inference(_) => {
             panic!("should have no prior inference lifetime")
@@ -63,7 +66,7 @@ fn transform_lifetime(lt: &mut Lifetime, gen: &mut LocalRegionGenerator) {
         | Lifetime::Forall(_)
         | Lifetime::Static => {}
         Lifetime::Erased => {
-            *lt = Lifetime::Inference(gen.next());
+            *lt = Lifetime::Inference(region_gen.next());
         }
     }
 }

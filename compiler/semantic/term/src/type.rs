@@ -14,7 +14,7 @@ use crate::{
         MemberSymbol, SubMemberSymbolLocation, SubSymbolLocation,
         SubTraitMemberLocation, Symbol, TraitMember,
     },
-    generic_parameters::{get_generic_parameters, TypeParameterID},
+    generic_parameters::{TypeParameterID, get_generic_parameters},
     inference,
     lifetime::Lifetime,
     matching::{Match, Matching, Substructural},
@@ -518,7 +518,7 @@ impl Location<Type, Type> for SubTypeLocation {
             (Self::Array, Type::Array(array)) => &mut *array.r#type,
 
             (Self::Tuple(location), Type::Tuple(tuple)) => {
-                return tuple.assign_sub_term(location, sub_term)
+                return tuple.assign_sub_term(location, sub_term);
             }
 
             (

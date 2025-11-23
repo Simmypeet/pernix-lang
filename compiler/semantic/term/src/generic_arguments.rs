@@ -427,9 +427,14 @@ impl crate::display::Display for Symbol {
         engine: &pernixc_query::TrackedEngine,
         formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
-        let qualified_name = engine.get_qualified_name(self.id).await;
+        if formatter.configuration().short_qualified_identifiers() {
+            let name = engine.get_name(self.id).await;
+            write!(formatter, "{name}")?;
+        } else {
+            let qualified_name = engine.get_qualified_name(self.id).await;
+            write!(formatter, "{qualified_name}")?;
+        }
 
-        write!(formatter, "{qualified_name}")?;
         self.generic_arguments.fmt(engine, formatter).await
     }
 }

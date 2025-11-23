@@ -1,17 +1,17 @@
 use pernixc_parser::{
     abstract_tree::{self, AbstractTree},
     expect,
-    parser::{ast, Parser as _},
+    parser::{Parser as _, ast},
 };
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
 use crate::{
-    item::{
-        constant, function, generic_parameters::GenericParameters, r#type,
-        TrailingWhereClause,
-    },
     AccessModifier, Keyword, QualifiedIdentifier,
+    item::{
+        TrailingWhereClause, constant, function,
+        generic_parameters::GenericParameters, r#type,
+    },
 };
 
 #[cfg(any(test, feature = "arbitrary"))]

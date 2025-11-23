@@ -4,7 +4,7 @@ use std::{
     any::Any,
     borrow::Cow,
     cmp::Ordering,
-    collections::{hash_map::Entry, BTreeSet, HashMap},
+    collections::{BTreeSet, HashMap, hash_map::Entry},
     hash::{Hash, Hasher},
     pin::Pin,
     sync::Arc,
@@ -15,9 +15,9 @@ use getset::{CopyGetters, Getters};
 use parking_lot::RwLock;
 use pernixc_extend::extend;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor};
 use pernixc_semantic_element::{
-    implied_predicate::{get_implied_predicates, ImpliedPredicate},
+    implied_predicate::{ImpliedPredicate, get_implied_predicates},
     where_clause::get_where_clause,
 };
 use pernixc_serialize::{Deserialize, Serialize};
@@ -30,7 +30,7 @@ use pernixc_term::{
     r#type::Type,
 };
 
-use crate::{normalizer::Normalizer, OverflowError};
+use crate::{OverflowError, normalizer::Normalizer};
 
 /// Contains the premise of the semantic logic.
 #[derive(
@@ -113,18 +113,18 @@ pub async fn get_active_premise_predicates_with_span(
         let global_id = current_site.target_id.make_global(id);
         let symbol_kind = self.get_kind(global_id).await;
 
-        if symbol_kind.has_where_clause() {
-            if let Ok(where_clause) = self.get_where_clause(global_id).await {
-                for predicate in where_clause.iter() {
-                    let Some(span) = predicate.span else {
-                        continue;
-                    };
+        if symbol_kind.has_where_clause()
+            && let Ok(where_clause) = self.get_where_clause(global_id).await
+        {
+            for predicate in where_clause.iter() {
+                let Some(span) = predicate.span else {
+                    continue;
+                };
 
-                    spans_by_predicate
-                        .entry(predicate.predicate.clone())
-                        .or_default()
-                        .push(span);
-                }
+                spans_by_predicate
+                    .entry(predicate.predicate.clone())
+                    .or_default()
+                    .push(span);
             }
         }
     }
@@ -536,10 +536,9 @@ impl<N: Normalizer> Environment<'_, N> {
         match query.query(self, parameter, in_progress).await {
             Ok(result) => {
                 // remember the result
-                assert!(self
-                    .context
-                    .write()
-                    .mark_as_done(query, result.clone()));
+                assert!(
+                    self.context.write().mark_as_done(query, result.clone())
+                );
 
                 Ok(result)
             }
@@ -589,11 +588,13 @@ fn check_definite_predicate<T: Clone + Into<Predicate>, N: Normalizer>(
     'outer: for predicate_i in predicates {
         // remove the predicate before checking
         if remove_on_check {
-            assert!(environment
-                .premise
-                .to_mut()
-                .predicates
-                .remove(&predicate_i.clone().into()));
+            assert!(
+                environment
+                    .premise
+                    .to_mut()
+                    .predicates
+                    .remove(&predicate_i.clone().into())
+            );
         }
 
         match definite_check(predicate_i, environment) {
@@ -602,14 +603,16 @@ fn check_definite_predicate<T: Clone + Into<Predicate>, N: Normalizer>(
                 definite_predicates.push(predicate_i.clone().into());
 
                 if remove_on_check {
-                    assert!(environment
-                        .premise
-                        .to_mut()
-                        .predicates
-                        .insert(predicate_i.clone().into()));
+                    assert!(
+                        environment
+                            .premise
+                            .to_mut()
+                            .predicates
+                            .insert(predicate_i.clone().into())
+                    );
                 }
                 continue 'outer; // no more checking for this
-                                 // predicate.
+                // predicate.
             }
 
             Ok(false) => {
@@ -621,28 +624,32 @@ fn check_definite_predicate<T: Clone + Into<Predicate>, N: Normalizer>(
                 overflow_predicates.push((predicate_i.clone().into(), error));
 
                 if remove_on_check {
-                    assert!(environment
-                        .premise
-                        .to_mut()
-                        .predicates
-                        .insert(predicate_i.clone().into()));
+                    assert!(
+                        environment
+                            .premise
+                            .to_mut()
+                            .predicates
+                            .insert(predicate_i.clone().into())
+                    );
                 }
                 continue 'outer; // no more checking for this
-                                 // predicate.
+                // predicate.
             }
         }
 
         if remove_on_check {
-            assert!(environment
-                .premise
-                .to_mut()
-                .predicates
-                .insert(predicate_i.clone().into()));
+            assert!(
+                environment
+                    .premise
+                    .to_mut()
+                    .predicates
+                    .insert(predicate_i.clone().into())
+            );
         }
     }
 }
 
-#[allow(unused)]
+#[allow(unused, clippy::too_many_lines)]
 fn check_ambiguous_predicates<T: Clone + Into<Predicate>, N: Normalizer>(
     environment: &mut Environment<N>,
     remove_on_check: bool,
@@ -655,11 +662,13 @@ fn check_ambiguous_predicates<T: Clone + Into<Predicate>, N: Normalizer>(
     'outer: for (i, predicate_i) in predicates.iter().enumerate() {
         // remove the predicate before checking
         if remove_on_check {
-            assert!(environment
-                .premise
-                .to_mut()
-                .predicates
-                .remove(&predicate_i.clone().into()));
+            assert!(
+                environment
+                    .premise
+                    .to_mut()
+                    .predicates
+                    .remove(&predicate_i.clone().into())
+            );
         }
 
         // check in the ambiguity set
@@ -673,14 +682,16 @@ fn check_ambiguous_predicates<T: Clone + Into<Predicate>, N: Normalizer>(
                     ambiguous_predicates_set.push(predicate_i.clone());
 
                     if remove_on_check {
-                        assert!(environment
-                            .premise
-                            .to_mut()
-                            .predicates
-                            .insert(predicate_i.clone().into()));
+                        assert!(
+                            environment
+                                .premise
+                                .to_mut()
+                                .predicates
+                                .insert(predicate_i.clone().into())
+                        );
                     }
                     continue 'outer; // no more checking for this
-                                     // predicate.
+                    // predicate.
                 }
 
                 Ok(false) => {
@@ -693,14 +704,16 @@ fn check_ambiguous_predicates<T: Clone + Into<Predicate>, N: Normalizer>(
                         .push((predicate_i.clone().into(), error));
 
                     if remove_on_check {
-                        assert!(environment
-                            .premise
-                            .to_mut()
-                            .predicates
-                            .insert(predicate_i.clone().into()));
+                        assert!(
+                            environment
+                                .premise
+                                .to_mut()
+                                .predicates
+                                .insert(predicate_i.clone().into())
+                        );
                     }
                     continue 'outer; // no more checking for this
-                                     // predicate.
+                    // predicate.
                 }
             }
         }
@@ -708,11 +721,13 @@ fn check_ambiguous_predicates<T: Clone + Into<Predicate>, N: Normalizer>(
         // create a new set
         for predicate_j in predicates.iter().skip(i + 1) {
             if remove_on_check {
-                assert!(environment
-                    .premise
-                    .to_mut()
-                    .predicates
-                    .remove(&predicate_j.clone().into()));
+                assert!(
+                    environment
+                        .premise
+                        .to_mut()
+                        .predicates
+                        .remove(&predicate_j.clone().into())
+                );
             }
 
             match ambiguity_check(predicate_i, predicate_j, environment) {
@@ -721,19 +736,23 @@ fn check_ambiguous_predicates<T: Clone + Into<Predicate>, N: Normalizer>(
                     ambiguous_predicates.push(vec![predicate_i.clone()]);
 
                     if remove_on_check {
-                        assert!(environment
-                            .premise
-                            .to_mut()
-                            .predicates
-                            .insert(predicate_j.clone().into()));
-                        assert!(environment
-                            .premise
-                            .to_mut()
-                            .predicates
-                            .insert(predicate_i.clone().into()));
+                        assert!(
+                            environment
+                                .premise
+                                .to_mut()
+                                .predicates
+                                .insert(predicate_j.clone().into())
+                        );
+                        assert!(
+                            environment
+                                .premise
+                                .to_mut()
+                                .predicates
+                                .insert(predicate_i.clone().into())
+                        );
                     }
                     continue 'outer; // no more checking for this
-                                     // predicate.
+                    // predicate.
                 }
 
                 Ok(false) => {
@@ -746,37 +765,45 @@ fn check_ambiguous_predicates<T: Clone + Into<Predicate>, N: Normalizer>(
                         .push((predicate_i.clone().into(), error));
 
                     if remove_on_check {
-                        assert!(environment
-                            .premise
-                            .to_mut()
-                            .predicates
-                            .insert(predicate_j.clone().into()));
-                        assert!(environment
-                            .premise
-                            .to_mut()
-                            .predicates
-                            .insert(predicate_i.clone().into()));
+                        assert!(
+                            environment
+                                .premise
+                                .to_mut()
+                                .predicates
+                                .insert(predicate_j.clone().into())
+                        );
+                        assert!(
+                            environment
+                                .premise
+                                .to_mut()
+                                .predicates
+                                .insert(predicate_i.clone().into())
+                        );
                     }
                     continue 'outer; // no more checking for this
-                                     // predicate.
+                    // predicate.
                 }
             }
 
             if remove_on_check {
-                assert!(environment
-                    .premise
-                    .to_mut()
-                    .predicates
-                    .insert(predicate_j.clone().into()));
+                assert!(
+                    environment
+                        .premise
+                        .to_mut()
+                        .predicates
+                        .insert(predicate_j.clone().into())
+                );
             }
         }
 
         if remove_on_check {
-            assert!(environment
-                .premise
-                .to_mut()
-                .predicates
-                .insert(predicate_i.clone().into()));
+            assert!(
+                environment
+                    .premise
+                    .to_mut()
+                    .predicates
+                    .insert(predicate_i.clone().into())
+            );
         }
     }
 }

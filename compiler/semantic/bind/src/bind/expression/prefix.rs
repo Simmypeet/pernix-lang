@@ -1,7 +1,7 @@
 use pernixc_handler::Handler;
 use pernixc_ir::value::{
-    register::{Assignment, Prefix, PrefixOperator},
     Value,
+    register::{Assignment, Prefix, PrefixOperator},
 };
 use pernixc_source_file::SourceElement;
 use pernixc_syntax::expression::prefix::Operator as PrefixOperatorSyntax;
@@ -9,7 +9,7 @@ use pernixc_term::r#type::{Primitive, Qualifier, Type};
 
 use crate::{
     bind::{Bind, Expression, Guidance},
-    binder::{type_check::Expected, BindingError, Error},
+    binder::{BindingError, Error, type_check::Expected},
     infer::constraint,
 };
 

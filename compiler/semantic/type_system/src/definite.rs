@@ -5,10 +5,10 @@ use std::{collections::BTreeSet, sync::Arc};
 use pernixc_term::{generic_arguments::GenericArguments, visitor};
 
 use crate::{
+    Error, Satisfiability, Satisfied, Succeeded,
     environment::{BoxedFuture, Environment, Query},
     normalizer::Normalizer,
     term::Term,
-    Error, Satisfiability, Satisfied, Succeeded,
 };
 
 #[derive(Debug)]
@@ -89,11 +89,9 @@ impl<T: Term> Query for Definite<T> {
                     environment,
                 };
 
-                assert!(self
-                    .0
-                    .accept_one_level_async(&mut visitor)
-                    .await
-                    .is_ok());
+                assert!(
+                    self.0.accept_one_level_async(&mut visitor).await.is_ok()
+                );
 
                 if let Some(result) = visitor.definite? {
                     return Ok(Some(Arc::new(result)));

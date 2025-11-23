@@ -1,14 +1,14 @@
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
 use pernixc_ir::{
-    value::{
-        register::{self, Register},
-        Environment as ValueEnvironment, TypeOf, Value,
-    },
     IR,
+    value::{
+        Environment as ValueEnvironment, TypeOf, Value,
+        register::{self, Register},
+    },
 };
 use pernixc_symbol::{
-    kind::{get_kind, Kind},
+    kind::{Kind, get_kind},
     name::get_by_qualified_name,
     parent::get_parent,
 };

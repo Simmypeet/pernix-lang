@@ -81,10 +81,12 @@ impl Report for MethodCallNotFound {
                     .build(),
             )
             .severity(Severity::Error)
-            .related(vec![Highlight::builder()
-                .span(parameter.to_absolute_span(&self.receiver_span).await)
-                .message(expression_message)
-                .build()])
+            .related(vec![
+                Highlight::builder()
+                    .span(parameter.to_absolute_span(&self.receiver_span).await)
+                    .message(expression_message)
+                    .build(),
+            ])
             .build())
     }
 }
@@ -153,10 +155,12 @@ impl Report for AmbiguousMethodCall {
 
         expression_message.push('`');
 
-        let mut related = vec![Highlight::builder()
-            .span(parameter.to_absolute_span(&self.receiver_span).await)
-            .message(expression_message)
-            .build()];
+        let mut related = vec![
+            Highlight::builder()
+                .span(parameter.to_absolute_span(&self.receiver_span).await)
+                .message(expression_message)
+                .build(),
+        ];
 
         for candidate in &self.candidates {
             let qualified_name = parameter.get_qualified_name(*candidate).await;

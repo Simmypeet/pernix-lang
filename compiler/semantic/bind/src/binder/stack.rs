@@ -89,11 +89,7 @@ impl Stack {
     /// Pops the latest scope from the stack.
     #[must_use]
     pub fn pop_scope(&mut self) -> Option<Scope> {
-        if self.scopes.len() > 1 {
-            self.scopes.pop()
-        } else {
-            None
-        }
+        if self.scopes.len() > 1 { self.scopes.pop() } else { None }
     }
 
     /// Gets the current latest scope in the stack.

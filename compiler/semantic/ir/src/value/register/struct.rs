@@ -4,7 +4,7 @@ use std::ops::Deref;
 
 use pernixc_arena::ID;
 use pernixc_hash::HashMap;
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
 use pernixc_semantic_element::fields::Field;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
@@ -17,12 +17,12 @@ use pernixc_term::{
 };
 
 use crate::{
+    Values,
     transform::Transformer,
     value::{
-        register::{transform_generic_arguments, Register},
         TypeOf, Value,
+        register::{Register, transform_generic_arguments},
     },
-    Values,
 };
 
 /// Represents a struct value.

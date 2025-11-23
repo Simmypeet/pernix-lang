@@ -12,21 +12,21 @@ use pernixc_ir::{
     value::register::load,
 };
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
 use pernixc_semantic_element::{
     fields::{self, get_fields},
     variant::get_variant_associated_type,
 };
-use pernixc_symbol::kind::{get_kind, Kind};
+use pernixc_symbol::kind::{Kind, get_kind};
 use pernixc_target::Global;
 use pernixc_term::{
     generic_arguments::Symbol,
     instantiation::get_instantiation,
-    r#type::{self, Qualifier, Type},
     tuple,
+    r#type::{self, Qualifier, Type},
 };
 use pernixc_type_system::{
-    environment::Environment, normalizer::Normalizer, UnrecoverableError,
+    UnrecoverableError, environment::Environment, normalizer::Normalizer,
 };
 
 use crate::diagnostic::Diagnostic;
@@ -1205,7 +1205,7 @@ impl Scope {
                                 Offset::Unpacked => {
                                     return x.elements.iter().find_map(|x| {
                                         x.is_unpacked.then_some(&x.state)
-                                    })
+                                    });
                                 }
                             })
                             .map(|x| &x.state)
@@ -1421,7 +1421,7 @@ impl Scope {
                                     .find_map(|x| {
                                         x.is_unpacked.then(|| x.term.clone())
                                     })
-                                    .unwrap()
+                                    .unwrap();
                             }
                         };
 

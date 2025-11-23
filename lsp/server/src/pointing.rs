@@ -5,12 +5,12 @@ use std::{path::Path, sync::Arc};
 
 use pernixc_extend::extend;
 use pernixc_parser::concrete_tree;
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
 use pernixc_resolution::qualified_identifier::{
     resolve_in, resolve_simple_qualified_identifier_root,
 };
 use pernixc_source_file::{
-    calculate_path_id, get_source_file_by_id, ByteIndex, GlobalSourceID, Span,
+    ByteIndex, GlobalSourceID, Span, calculate_path_id, get_source_file_by_id,
 };
 use pernixc_symbol::{
     member::try_get_members, scope_span::get_scope_span,
@@ -234,7 +234,9 @@ pub async fn symbol_at(
     let source_file_path: Arc<Path> = Arc::from(source_file_path);
 
     let source_id = target_id.make_global(
-        self.calculate_path_id(&source_file_path, target_id).await,
+        self.calculate_path_id(&source_file_path, target_id)
+            .await
+            .expect("lsp URL should've been valid"),
     );
     let source_file = self.get_source_file_by_id(source_id).await;
 

@@ -6,7 +6,7 @@ use pernixc_ir::{
     address::{Address, Memory},
     control_flow_graph::{ControlFlowGraph, Point},
     instruction::{AccessMode, Instruction},
-    value::{register::Register, Environment},
+    value::{Environment, register::Register},
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
@@ -14,13 +14,14 @@ use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
     lifetime::Lifetime,
-    r#type::{Qualifier, Type},
     sub_term::TermLocation,
+    r#type::{Qualifier, Type},
     visitor::{self, Recursive},
 };
-use pernixc_type_system::{normalizer::Normalizer, UnrecoverableError};
+use pernixc_type_system::{UnrecoverableError, normalizer::Normalizer};
 
 use crate::{
+    Region,
     context::Context,
     diagnostic::{
         AccessWhileMutablyBorrowed, Diagnostic, MovedOutWhileBorrowed,
@@ -28,7 +29,6 @@ use crate::{
         VariableDoesNotLiveLongEnough,
     },
     subset::Subset,
-    Region,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -200,9 +200,9 @@ impl<'a, N: Normalizer> Checker<'a, N> {
                         .point_reachable(x.assigned_at, invalidate_at)
                         .unwrap()
                     && x.assigned_at != invalidate_at // the mutable borrow will
-                                                      // be
-                                                      // invalidated right away
-                                                      // without this cond
+                // be
+                // invalidated right away
+                // without this cond
             });
 
         let live_usages = self

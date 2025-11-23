@@ -20,9 +20,9 @@ use proptest::{
 };
 
 use crate::{
-    abstract_tree::{abstract_tree, AbstractTree, First, Second, Tag},
+    abstract_tree::{AbstractTree, First, Second, Tag, abstract_tree},
     expect::{self, Expected},
-    parser::{ast, Parser as _},
+    parser::{Parser as _, ast},
 };
 
 abstract_tree! {
@@ -239,9 +239,9 @@ fn mutable_int32_reference() {
 
     assert!(tree.ampersand().is_some_and(|x| *x.kind == '&'));
     assert!(tree.mut_keyword().is_some_and(|x| x.kind == expect::Keyword::Mut));
-    assert!(tree
-        .int32_keyword()
-        .is_some_and(|x| x.kind == expect::Keyword::Int32));
+    assert!(
+        tree.int32_keyword().is_some_and(|x| x.kind == expect::Keyword::Int32)
+    );
 }
 
 #[test]
@@ -256,9 +256,9 @@ fn int32_reference() {
 
     assert!(tree.ampersand().is_some_and(|x| *x.kind == '&'));
     assert!(tree.mut_keyword().is_none());
-    assert!(tree
-        .int32_keyword()
-        .is_some_and(|x| x.kind == expect::Keyword::Int32));
+    assert!(
+        tree.int32_keyword().is_some_and(|x| x.kind == expect::Keyword::Int32)
+    );
 }
 
 #[test]
@@ -274,10 +274,12 @@ fn int32_reference_error() {
     let error = &errors[0];
 
     // found bool at the error
-    assert!(token_tree[error.at.branch_id].nodes[error.at.node_index]
-        .as_leaf()
-        .and_then(|x| x.kind.as_keyword())
-        .is_some_and(|x| *x == expect::Keyword::Bool));
+    assert!(
+        token_tree[error.at.branch_id].nodes[error.at.node_index]
+            .as_leaf()
+            .and_then(|x| x.kind.as_keyword())
+            .is_some_and(|x| *x == expect::Keyword::Bool)
+    );
 
     // expected either `int32` or `bool`
     assert_eq!(
@@ -770,13 +772,15 @@ fn error_choice_choose_most_progress() {
         std::iter::once(Expected::Punctuation(';')).collect()
     );
 
-    assert!(token_tree[errors[0].at.branch_id]
-        .nodes
-        .get(errors[0].at.node_index)
-        .is_some_and(|x| x
-            .as_leaf()
-            .and_then(|x| x.kind.as_punctuation())
-            .is_some_and(|x| x.0 == '?')));
+    assert!(
+        token_tree[errors[0].at.branch_id]
+            .nodes
+            .get(errors[0].at.node_index)
+            .is_some_and(|x| x
+                .as_leaf()
+                .and_then(|x| x.kind.as_punctuation())
+                .is_some_and(|x| x.0 == '?'))
+    );
 
     assert_eq!(tree.a().map(|x| x.kind.0), Some('+'));
     assert_eq!(tree.b().map(|x| x.kind.0), Some('-'));
@@ -807,9 +811,11 @@ fn repeat_all_error_recovery() {
     assert_eq!(tree.inner_tree().nodes.len(), 4);
 
     // `None` ast_info means an error node
-    assert!(tree.inner_tree().nodes[2]
-        .as_branch()
-        .is_some_and(|x| x.ast_info.is_none()));
+    assert!(
+        tree.inner_tree().nodes[2]
+            .as_branch()
+            .is_some_and(|x| x.ast_info.is_none())
+    );
 
     // 2 successful parses, 1 partially successful parse, 1 error node
     let types = tree.types().collect::<Vec<_>>();

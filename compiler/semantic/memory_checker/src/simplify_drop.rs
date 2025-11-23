@@ -9,19 +9,19 @@
 use pernixc_handler::Handler;
 use pernixc_hash::HashSet;
 use pernixc_ir::{
+    Values,
     address::{self, Address, Field, Index, Variant},
     instruction::{Drop, DropUnpackTuple, Instruction},
     value::{
-        literal::{Literal, Unreachable},
         Environment, TypeOf, Value,
+        literal::{Literal, Unreachable},
     },
-    Values,
 };
 use pernixc_semantic_element::{
     fields::get_fields, variant::get_variant_associated_type,
 };
 use pernixc_symbol::{
-    kind::{get_kind, Kind},
+    kind::{Kind, get_kind},
     member::get_members,
     name::get_by_qualified_name,
 };
@@ -31,7 +31,7 @@ use pernixc_term::{
     predicate::{PositiveTrait, Predicate},
     r#type::{Primitive, Type},
 };
-use pernixc_type_system::{normalizer::Normalizer, UnrecoverableError};
+use pernixc_type_system::{UnrecoverableError, normalizer::Normalizer};
 
 use crate::diagnostic::Diagnostic;
 

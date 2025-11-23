@@ -1,7 +1,7 @@
 use proptest::prelude::Arbitrary;
 
 use crate::{
-    pattern::{arbitrary, Irrefutable, Refutable},
+    pattern::{Irrefutable, Refutable, arbitrary},
     test::verify_ref_display,
 };
 

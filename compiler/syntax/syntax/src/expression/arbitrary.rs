@@ -15,9 +15,9 @@ use super::{
 };
 use crate::{
     arbitrary::{IndentDisplay, IntoSeparated, QualifiedIdentifier},
-    r#type::arbitrary::Type,
     reference,
     statement::arbitrary::Statement,
+    r#type::arbitrary::Type,
 };
 
 reference! {

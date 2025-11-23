@@ -1,7 +1,7 @@
 //! Contains the definition of [`ClosureParameters`].
 
 use derive_more::Index;
-use pernixc_arena::{OrderedArena, ID};
+use pernixc_arena::{ID, OrderedArena};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_semantic_element::parameter::Parameters;
 use pernixc_serialize::{Deserialize, Serialize};

@@ -10,7 +10,7 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 
-use crate::{kind::get_kind, ID};
+use crate::{ID, kind::get_kind};
 
 /// Stores the members of a symbol in a form of `::Member`
 #[derive(

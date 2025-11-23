@@ -3,7 +3,7 @@
 use std::{path::Path, sync::Arc};
 
 use pernixc_extend::extend;
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
 use pernixc_source_file::{calculate_path_id, get_source_file_by_id};
 use tower_lsp::lsp_types::{CompletionParams, CompletionResponse};
 
@@ -26,7 +26,9 @@ pub async fn handle_completion(
         params.text_document_position.text_document.uri.to_file_path().unwrap(),
     );
     let source_id = target_id.make_global(
-        self.calculate_path_id(&source_file_path, target_id).await,
+        self.calculate_path_id(&source_file_path, target_id)
+            .await
+            .expect("lsp URL should've been valid"),
     );
     let source_file = self.get_source_file_by_id(source_id).await;
     let syntax_tree = self

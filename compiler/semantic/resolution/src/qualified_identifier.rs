@@ -4,7 +4,7 @@ use std::ops::Deref;
 
 use enum_as_inner::EnumAsInner;
 use pernixc_extend::extend;
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
 use pernixc_semantic_element::{
     implemented::get_implemented, implements::get_implements,
     implements_arguments::get_implements_argument, import::get_import_map,
@@ -15,7 +15,7 @@ use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{
     accessibility::symbol_accessible,
     get_target_root_module_id,
-    kind::{get_kind, Kind},
+    kind::{Kind, get_kind},
     member::get_members,
     parent::{get_closest_module_id, scope_walker},
 };
@@ -23,19 +23,19 @@ use pernixc_syntax::{
     Identifier, QualifiedIdentifier, QualifiedIdentifierRoot, SimplePath,
     SimplePathRoot,
 };
-use pernixc_target::{get_linked_targets, get_target_map, Global};
+use pernixc_target::{Global, get_linked_targets, get_target_map};
 use pernixc_term::{
     generic_arguments::GenericArguments,
     generic_parameters::get_generic_parameters, r#type::Type,
 };
 
 use crate::{
+    Config, Diagnostic, Error, Handler,
     diagnostic::{
         NoGenericArgumentsRequired, SymbolIsNotAccessible, SymbolNotFound,
         ThisNotFound,
     },
     term::resolve_generic_arguments_for_internal,
-    Config, Diagnostic, Error, Handler,
 };
 
 /// Repersents a resolution to a symbol that can be supplied with generic

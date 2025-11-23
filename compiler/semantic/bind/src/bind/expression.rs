@@ -5,9 +5,9 @@ use pernixc_ir::{
     address::{Address, Memory, Reference},
     instruction::{Instruction, Store},
     value::{
-        literal::{self, Literal},
-        register::{load::Load, Assignment, Borrow},
         Value,
+        literal::{self, Literal},
+        register::{Assignment, Borrow, load::Load},
     },
 };
 use pernixc_lexical::tree::RelativeLocation;
@@ -20,7 +20,7 @@ use pernixc_term::{
 use crate::{
     bind::{Bind, Expression, Guidance, LValue},
     binder::{
-        type_check::Expected, Binder, BindingError, Error, UnrecoverableError,
+        Binder, BindingError, Error, UnrecoverableError, type_check::Expected,
     },
     diagnostic::{Diagnostic, ExpectedLValue},
     infer::constraint,

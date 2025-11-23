@@ -3,14 +3,14 @@ use std::{borrow::Cow, sync::Arc};
 use pernixc_handler::Storage;
 use pernixc_query::runtime::executor;
 use pernixc_resolution::{
-    generic_parameter_namespace::get_generic_parameter_namespace,
-    term::resolve_type, Config,
+    Config, generic_parameter_namespace::get_generic_parameter_namespace,
+    term::resolve_type,
 };
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::syntax::get_type_alias_syntax;
 use pernixc_term::r#type::Type;
 use pernixc_type_system::{
-    environment::{get_active_premise, Environment},
+    environment::{Environment, get_active_premise},
     normalizer,
 };
 

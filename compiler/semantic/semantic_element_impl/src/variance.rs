@@ -2,23 +2,23 @@ use std::sync::Arc;
 
 use pernixc_arena::ID;
 use pernixc_hash::HashMap;
-use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_query::{TrackedEngine, runtime::executor};
 use pernixc_semantic_element::{
     fields::get_fields,
-    variance::{get_variances, Variance, Variances},
+    variance::{Variance, Variances, get_variances},
     variant::get_variant_associated_type,
 };
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{
     get_all_adt_ids,
-    kind::{get_kind, Kind},
+    kind::{Kind, get_kind},
     member::get_members,
 };
 use pernixc_target::{Global, TargetID};
 use pernixc_term::{
     generic_parameters::{
-        get_generic_parameters, LifetimeParameter, TypeParameter,
+        LifetimeParameter, TypeParameter, get_generic_parameters,
     },
     lifetime::Lifetime,
     r#type::{Qualifier, Type},

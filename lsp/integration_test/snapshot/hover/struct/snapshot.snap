@@ -1,0 +1,18 @@
+---
+source: lsp/integration_test/snapshot/mod.rs
+expression: string
+---
+```pernix
+public struct Test['a, 'b, T, U]:
+    where:
+        T: 'a + 'b
+        U: 'a + 'b
+        'b: 'a + 'static
+        const T + U
+        tuple T + U
+        trait Another[T] + Fizz[U]
+
+    public publicField: T
+    internal privateField: U
+    internal internalField: &'a int32
+```

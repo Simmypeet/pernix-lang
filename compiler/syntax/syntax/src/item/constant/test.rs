@@ -1,7 +1,7 @@
 use proptest::prelude::Arbitrary;
 
 use crate::{
-    item::constant::{arbitrary, Constant},
+    item::constant::{Constant, arbitrary},
     test::verify_ref,
 };
 

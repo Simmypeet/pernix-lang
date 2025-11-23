@@ -1372,6 +1372,7 @@ dependencies = [
 name = "pernix_server"
 version = "0.1.0-beta.2"
 dependencies = [
+ "bon",
  "env_logger",
  "getset",
  "log",
@@ -1379,6 +1380,7 @@ dependencies = [
  "pernixc_corelib",
  "pernixc_diagnostic",
  "pernixc_extend",
+ "pernixc_hash",
  "pernixc_lexical",
  "pernixc_parser",
  "pernixc_query",
@@ -1389,6 +1391,7 @@ dependencies = [
  "pernixc_symbol",
  "pernixc_syntax",
  "pernixc_target",
+ "pernixc_term",
  "serde",
  "serde_json",
  "thiserror 2.0.15",

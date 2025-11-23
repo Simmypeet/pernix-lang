@@ -2,19 +2,19 @@ use getset::{CopyGetters, Getters};
 use pernixc_handler::Handler;
 use pernixc_hash::HashSet;
 use pernixc_ir::{
+    IR,
     address::Address,
     value::{Environment, TypeOf},
-    IR,
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_target::Global;
 use pernixc_term::{r#type::Qualifier, visitor::RecursiveIterator};
-use pernixc_type_system::{normalizer::Normalizer, UnrecoverableError};
+use pernixc_type_system::{UnrecoverableError, normalizer::Normalizer};
 
 use crate::{
+    Region,
     cache::{RegionVariances, RegisterInfos},
     diagnostic::Diagnostic,
-    Region,
 };
 
 /// A struct holding all relevant information for borrow checking

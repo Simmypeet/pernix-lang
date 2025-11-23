@@ -1,7 +1,7 @@
 use proptest::prelude::Arbitrary;
 
 use crate::{
-    expression::{arbitrary, Expression},
+    expression::{Expression, arbitrary},
     test::verify_ref,
 };
 
