@@ -8,10 +8,13 @@ public trait Fizz[T]:
 
 public struct Test[
     'a, 
-    'b: 'a + 'static, 
+    'b,
     T: 'a + 'b + Another + tuple + const, 
     U: 'a + 'b + Fizz + tuple + const
 ]:
+    where:
+        'b: 'a  + 'static
+
     public publicField: T
     internal privateField: U
     internal internalField: &'a int32
