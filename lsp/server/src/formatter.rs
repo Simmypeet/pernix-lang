@@ -137,6 +137,17 @@ impl Formatter<'_, '_> {
 
         Ok(())
     }
+
+    /// Immediately starts a new line without any indentation.
+    pub fn immediate_line(&mut self) -> Result<(), Error> {
+        if !self.first_line {
+            writeln!(self.buffer).unwrap();
+        }
+
+        self.first_line = false;
+
+        Ok(())
+    }
 }
 
 /// A new type wrapper around [`Formatter`] that adds functionality for writing
