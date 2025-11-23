@@ -4,7 +4,7 @@ expression: string
 ---
 ```pernix
 public struct Test['a, 'b, T, U]:
-     where:
+    where:
         T: 'a + 'b
         U: 'a + 'b
         'b: 'a + 'static

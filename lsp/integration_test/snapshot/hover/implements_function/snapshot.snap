@@ -5,6 +5,6 @@ expression: string
 ```pernix
 implements A:
     public function implementedFunction[T]() -> int32:
-         where:
+        where:
             T: 'static
 ```

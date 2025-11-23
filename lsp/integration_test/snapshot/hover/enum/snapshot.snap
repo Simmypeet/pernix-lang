@@ -4,7 +4,7 @@ expression: string
 ---
 ```pernix
 public enum Result[T, E]:
-     where:
+    where:
         T: 'static
         E: 'static
 

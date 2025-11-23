@@ -164,7 +164,7 @@ impl Formatter<'_, '_> {
         }
 
         self.new_line(async |mut x| {
-            write!(x.buffer, " where").unwrap();
+            write!(x.buffer, "where").unwrap();
 
             x.indent(async |x| {
                 x.format_outlives_clause(

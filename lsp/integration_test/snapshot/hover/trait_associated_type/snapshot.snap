@@ -5,6 +5,6 @@ expression: string
 ```pernix
 public trait Iterator[T]:
     public type Item[U]:
-         where:
+        where:
             U: 'static
 ```
