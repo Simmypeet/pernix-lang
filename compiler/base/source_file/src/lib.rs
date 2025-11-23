@@ -28,7 +28,9 @@ use pernixc_query::{
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::{StableHash, Value};
 use pernixc_stable_type_id::Identifiable;
-use pernixc_target::{Global, TargetID, get_target_seed};
+use pernixc_target::{
+    Global, TargetID, get_invocation_arguments, get_target_seed,
+};
 use rayon::{iter::ParallelIterator, slice::ParallelSlice};
 use siphasher::sip::SipHasher24;
 
@@ -899,6 +901,18 @@ impl runtime::executor::Executor<Key> for Executor {
     }
 }
 
+/// An error that occurs when calculating the source file path ID.
+#[derive(Debug, thiserror::Error)]
+pub enum CalculatePathError {
+    /// Failed to canonicalize the path.
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+
+    /// The given path is not in the target directory.
+    #[error("the given path is not in the target directory")]
+    NotInTargetDirectory,
+}
+
 /// Calculates the ID of the source file based on their path.
 ///
 /// The path will be canonicalized before calculating the ID. Therefore,
@@ -913,17 +927,44 @@ pub async fn calculate_path_id(
     path: &Path,
     target_id: TargetID,
 ) -> Result<ID<SourceFile>, std::io::Error> {
-    let mut hasher = SipHasher24::default();
-    let canonical_path = std::fs::canonicalize(path)?;
+    let hasher = SipHasher24::default();
+    let this_canonical_path = std::fs::canonicalize(path)?;
 
-    // skip the platform specific prefix on Windows
-    // e.g., \\?\C:\path\to\file.rs -> C:\path\to\file.rs
-    // on unix systems, this is a no-op
-    for component in canonical_path.components().skip(1) {
+    let target_args = self.get_invocation_arguments(target_id).await;
+
+    let target_root_file =
+        std::fs::canonicalize(&target_args.command.input().file)?;
+    let target_directory =
+        target_root_file.parent().unwrap_or_else(|| std::path::Path::new(""));
+
+    // skip the prefix components to avoid absolute path issues (e.g. \\?\ on
+    // Windows)
+    let this_components =
+        this_canonical_path.components().skip(1).collect::<Vec<_>>();
+    let target_components =
+        target_directory.components().skip(1).collect::<Vec<_>>();
+
+    if target_components.len() > this_components.len() {
+        return Err(std::io::Error::other(
+            "the given path is not in the target directory",
+        ));
+    }
+
+    for (a, b) in target_components.iter().zip(this_components.iter()) {
+        if a != b {
+            return Err(std::io::Error::other(
+                "the given path is not in the target directory",
+            ));
+        }
+    }
+
+    let mut hasher = SipHasher24::default();
+
+    // hash only the relative path from the target directory
+    for component in this_components.iter().skip(target_components.len()) {
         component.as_os_str().hash(&mut hasher);
     }
 
-    // finish with the target seed to avoid collisions across targets
     let target_seed = self.get_target_seed(target_id).await;
     target_seed.hash(&mut hasher);
 
