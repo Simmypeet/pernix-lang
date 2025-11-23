@@ -8,6 +8,7 @@ use pernixc_target::TargetID;
 use crate::{
     hover::{
         r#enum::format_enum_signature, function::format_function_signature,
+        simple_signature_with_where_clause::format_simple_signature_with_where_clause,
         r#struct::format_struct_signature, r#type::format_type_signature,
         variant::format_variant_signature,
     },
@@ -19,6 +20,7 @@ mod associate_symbols;
 mod r#enum;
 mod function;
 mod markdown;
+mod simple_signature_with_where_clause;
 mod r#struct;
 mod r#type;
 mod variant;
@@ -72,13 +74,25 @@ pub async fn handle_hover(
             self.format_variant_signature(symbol).await?
         }
 
+        pernixc_symbol::kind::Kind::Trait => {
+            self.format_simple_signature_with_where_clause(symbol, "trait")
+                .await?
+        }
+
+        pernixc_symbol::kind::Kind::Marker => {
+            self.format_simple_signature_with_where_clause(symbol, "marker")
+                .await?
+        }
+
+        pernixc_symbol::kind::Kind::Effect => {
+            self.format_simple_signature_with_where_clause(symbol, "effect")
+                .await?
+        }
+
         pernixc_symbol::kind::Kind::Module
-        | pernixc_symbol::kind::Kind::Trait
         | pernixc_symbol::kind::Kind::EffectOperation
         | pernixc_symbol::kind::Kind::Constant
         | pernixc_symbol::kind::Kind::TraitConstant
-        | pernixc_symbol::kind::Kind::Effect
-        | pernixc_symbol::kind::Kind::Marker
         | pernixc_symbol::kind::Kind::PositiveImplementation
         | pernixc_symbol::kind::Kind::NegativeImplementation
         | pernixc_symbol::kind::Kind::ImplementationConstant => {

@@ -1,0 +1,5 @@
+public marker Test[T: 'static]:
+    pass
+
+
+implements Te<cursor>st[int32]

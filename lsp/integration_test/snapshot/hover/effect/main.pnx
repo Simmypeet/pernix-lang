@@ -1,0 +1,7 @@
+
+public effect Test[T: 'static]:
+    someOp()
+
+
+public function test() do Te<cursor>st[int32]:
+    pass
