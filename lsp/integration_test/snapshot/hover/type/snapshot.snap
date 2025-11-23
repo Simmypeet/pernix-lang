@@ -4,6 +4,6 @@ expression: string
 ---
 ```pernix
 public type Another[T] = int32:
-     where:
+    where:
         T: 'static
 ```
