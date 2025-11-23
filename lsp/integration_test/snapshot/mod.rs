@@ -86,9 +86,9 @@ pub async fn test_file(main_file: PathBuf) {
     hover_path.push("hover");
 
     // NOTE: Match the prefix paths to the test functions here
-    if main_file.starts_with(&goto_path) {
+    if is_child(&goto_path, &main_file) {
         test_goto_definition(main_file).await;
-    } else if main_file.starts_with(&hover_path) {
+    } else if is_child(&hover_path, &main_file) {
         test_hover(main_file).await;
     } else {
         panic!(
@@ -98,6 +98,26 @@ pub async fn test_file(main_file: PathBuf) {
             hover_path.display()
         );
     }
+}
+
+/// `starts_with` seems not to be enough for path comparison in Windows due to
+/// NT extended paths (it's always Windows!), so we implement our own function
+/// here.
+fn is_child(parent: &Path, child: &Path) -> bool {
+    let parent_components = parent.components().collect::<Vec<_>>();
+    let child_components = child.components().collect::<Vec<_>>();
+
+    if parent_components.len() > child_components.len() {
+        return false;
+    }
+
+    for (p, c) in parent_components.iter().zip(child_components.iter()) {
+        if p != c {
+            return false;
+        }
+    }
+
+    true
 }
 
 /// Tests the "hover" LSP functionality.
