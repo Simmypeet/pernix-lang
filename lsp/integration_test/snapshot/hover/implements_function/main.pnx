@@ -3,7 +3,7 @@ public struct A:
 
 
 implements A:
-    public function implementedFunction() -> int32:
+    public function implementedFunction[T: 'static]() -> int32:
         return 42
 
 

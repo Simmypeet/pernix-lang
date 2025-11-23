@@ -4,6 +4,10 @@ expression: string
 ---
 ```pernix
 public enum Result[T, E]:
+     where:
+        T: 'static
+        E: 'static
+
     Ok(T)
     Error(E)
 ```

@@ -1,5 +1,5 @@
 public type A = int32
-public type Another = A
+public type Another[T: 'static] = int32
 
 
 public function useAnother(a: An<cursor>other):

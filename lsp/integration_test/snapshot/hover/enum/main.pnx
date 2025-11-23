@@ -1,4 +1,4 @@
-public enum Result[T, E]:
+public enum Result[T: 'static, E: 'static]:
     Ok(T)
     Error(E)
 

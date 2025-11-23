@@ -1,4 +1,17 @@
-public struct Test['a, T, U]:
+public trait Another[T]:
+    pass
+
+
+public trait Fizz[T]:
+    pass
+
+
+public struct Test[
+    'a, 
+    'b: 'a + 'static, 
+    T: 'a + 'b + Another + tuple + const, 
+    U: 'a + 'b + Fizz + tuple + const
+]:
     public publicField: T
     internal privateField: U
     internal internalField: &'a int32

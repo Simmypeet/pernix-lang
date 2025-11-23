@@ -1,5 +1,5 @@
-public trait Iterator[T]:
-    public type Item
+public trait Iterator[T: 'static]:
+    public type Item[U: 'static]
 
 
 public function getIteratorItem[T](a: Iterator[T]::I<cursor>tem):

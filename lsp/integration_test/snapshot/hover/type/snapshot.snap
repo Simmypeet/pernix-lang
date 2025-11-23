@@ -3,5 +3,7 @@ source: lsp/integration_test/snapshot/mod.rs
 expression: string
 ---
 ```pernix
-public type Another = int32
+public type Another[T] = int32:
+     where:
+        T: 'static
 ```
