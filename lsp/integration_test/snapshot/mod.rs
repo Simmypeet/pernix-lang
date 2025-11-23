@@ -12,7 +12,7 @@ use pernix_server::{
 use pernixc_query::TrackedEngine;
 use pernixc_target::TargetID;
 use tower_lsp::lsp_types::{
-    GotoDefinitionParams, HoverParams, PartialResultParams,
+    GotoDefinitionParams, HoverParams, PartialResultParams, Url,
     WorkDoneProgressParams,
 };
 use tracing_subscriber::{
@@ -104,8 +104,8 @@ pub async fn test_file(main_file: PathBuf) {
 /// NT extended paths (it's always Windows!), so we implement our own function
 /// here.
 fn is_child(parent: &Path, child: &Path) -> bool {
-    let parent_components = parent.components().collect::<Vec<_>>();
-    let child_components = child.components().collect::<Vec<_>>();
+    let parent_components = parent.components().skip(1).collect::<Vec<_>>();
+    let child_components = child.components().skip(1).collect::<Vec<_>>();
 
     if parent_components.len() > child_components.len() {
         return false;
@@ -168,7 +168,6 @@ pub async fn test_goto_definition(main_file: PathBuf) {
         },
     );
 
-    dbg!(&snapshot_str);
     test_snapshot_string(&main_file, &snapshot_str);
 }
 
@@ -213,12 +212,15 @@ pub fn test_snapshot_string(main_file: &Path, string: &str) {
     settings.remove_snapshot_suffix();
 
     let file_stem = env!("PERNIXC_CARGO_WORKSPACE_DIR");
+    let file_stem = std::fs::canonicalize(file_stem).unwrap();
+    let file_stem_url = Url::from_file_path(&file_stem).unwrap();
+    let file_stem_path = file_stem_url.path();
 
     // Convert windows paths to Unix Paths.
     settings.add_filter(r"\\\\?([\w\d.])", "/$1");
 
     // Strip project directory from paths.
-    settings.add_filter(file_stem, "/project/");
+    settings.add_filter(file_stem_path, "/project");
 
     let _guard = settings.bind_to_scope();
     assert_snapshot!("snapshot", string);
