@@ -23,6 +23,7 @@ pernixc_lexical = { path = "../../compiler/syntax/lexical" }
 pernixc_target = { path = "../../compiler/base/target" }
 pernixc_query = { path = "../../compiler/base/query" }
 pernixc_extend = { path = "../../compiler/base/extend" }
+pernixc_hash = { path = "../../compiler/base/hash" }
 pernixc_check = { path = "../../compiler/semantic/check" }
 pernixc_corelib = { path = "../../compiler/semantic/corelib" }
 pernixc_register = { path = "../../compiler/base/register" }

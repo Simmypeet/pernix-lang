@@ -26,6 +26,7 @@ use crate::formatter::{
 mod accessbility;
 mod generic_parameters;
 mod irrefutable_pattern;
+mod where_clause;
 
 pub use irrefutable_pattern::format_pattern;
 
@@ -275,11 +276,29 @@ impl LinedFormatter<'_, '_, '_> {
         &mut self,
         ty: &pernixc_term::r#type::Type,
     ) -> Result<(), std::fmt::Error> {
+        self.write_term(ty).await
+    }
+
+    /// Writes the given lifetime using the formatter's engine and the standard
+    /// configuration.
+    pub async fn write_lifetime(
+        &mut self,
+        lifetime: &pernixc_term::lifetime::Lifetime,
+    ) -> Result<(), std::fmt::Error> {
+        self.write_term(lifetime).await
+    }
+
+    /// Writes the given term using the formatter's engine and the standard
+    /// configuration.
+    pub async fn write_term<T: pernixc_term::display::Display>(
+        &mut self,
+        term: &T,
+    ) -> Result<(), std::fmt::Error> {
         let configuration = pernixc_term::display::Configuration::builder()
             .short_qualified_identifiers(true)
             .build();
 
-        ty.write_async_with_configuration(
+        term.write_async_with_configuration(
             self.engine,
             self.buffer,
             &configuration,

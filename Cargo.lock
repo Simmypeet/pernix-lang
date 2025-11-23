@@ -1380,6 +1380,7 @@ dependencies = [
  "pernixc_corelib",
  "pernixc_diagnostic",
  "pernixc_extend",
+ "pernixc_hash",
  "pernixc_lexical",
  "pernixc_parser",
  "pernixc_query",
