@@ -28,6 +28,15 @@ jobs:
             - name: Checkout code
               uses: actions/checkout@v5
 
+            - name: Rust Cache
+              uses: Swatinem/rust-cache@v2
+
+            - name: Install Cargo Insta
+              run: cargo install cargo-insta
+
+            - name: Install Cargo Nextest
+              run: cargo install cargo-nextest
+
             - name: Install Dependencies
               run: sudo apt update && sudo apt install -y libtinfo5
 
@@ -39,18 +48,3 @@ jobs:
 
             - name: llvm-config
               run: llvm-config --version --bindir --libdir
-
-            - name: Install Rust Nightly
-              uses: dtolnay/rust-toolchain@nightly
-              with:
-                  components: clippy, rustfmt
-
-            - name: Install Cargo Insta
-              uses: baptiste0928/cargo-install@v3
-              with:
-                  crate: cargo-insta
-
-            - name: Install Cargo Nextest
-              uses: baptiste0928/cargo-install@v3
-              with:
-                  crate: cargo-nextest
