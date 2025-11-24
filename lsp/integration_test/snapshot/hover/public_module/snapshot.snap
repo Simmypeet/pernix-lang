@@ -2,6 +2,6 @@
 source: lsp/integration_test/snapshot/mod.rs
 expression: string
 ---
-```pernixc
+```pernix
 public module lspTest::something
 ```
