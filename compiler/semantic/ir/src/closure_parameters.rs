@@ -58,17 +58,24 @@ impl ClosureParameters {
 impl ClosureParameters {
     /// Creates closure parameters from original parameters and an
     /// instantiation.
+    /// 
+    /// The parameters will be taken up to the number of spans provided by
+    /// `span_iterator`. Since each parameter must have a span, the number of
+    /// spans provided must be at least equal to the number of parameters.
     #[must_use]
     pub fn from_original_parameters_and_instantiation(
         parameters: &Parameters,
         inst: &Instantiation,
+        span_iterator: impl Iterator<Item = RelativeSpan>,
     ) -> Self {
         let mut closure_parameters = Self::default();
 
-        for (_, parameter) in parameters.parameters_as_order() {
+        for ((_, parameter), span) in
+            parameters.parameters_as_order().zip(span_iterator)
+        {
             let closure_parameter = ClosureParameter {
                 r#type: inst.clone_and_instantiate(&parameter.r#type),
-                span: parameter.span.expect("local target should've included span"),
+                span,
             };
 
             closure_parameters.0.insert(closure_parameter);

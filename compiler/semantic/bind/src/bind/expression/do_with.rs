@@ -195,6 +195,7 @@ async fn build_with_blocks(
                 ClosureParameters::from_original_parameters_and_instantiation(
                     &effect_operation_parameters,
                     &instantiation,
+                    handler_block.parameters.iter().map(SourceElement::span),
                 );
 
             let ir = binder
