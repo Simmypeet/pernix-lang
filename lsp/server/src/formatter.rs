@@ -23,7 +23,8 @@ use crate::formatter::{
     generic_parameters::format_generic_parameters,
 };
 
-mod accessbility;
+pub mod accessbility;
+
 mod generic_parameters;
 mod irrefutable_pattern;
 mod where_clause;

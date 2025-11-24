@@ -8,6 +8,7 @@ use pernixc_target::TargetID;
 use crate::{
     hover::{
         r#enum::format_enum_signature, function::format_function_signature,
+        module::format_module_signature,
         simple_signature_with_where_clause::format_simple_signature_with_where_clause,
         r#struct::format_struct_signature, r#type::format_type_signature,
         variant::format_variant_signature,
@@ -20,6 +21,7 @@ mod associate_symbols;
 mod r#enum;
 mod function;
 mod markdown;
+mod module;
 mod simple_signature_with_where_clause;
 mod r#struct;
 mod r#type;
@@ -89,8 +91,11 @@ pub async fn handle_hover(
                 .await?
         }
 
-        pernixc_symbol::kind::Kind::Module
-        | pernixc_symbol::kind::Kind::EffectOperation
+        pernixc_symbol::kind::Kind::Module => {
+            self.format_module_signature(symbol).await
+        }
+
+        pernixc_symbol::kind::Kind::EffectOperation
         | pernixc_symbol::kind::Kind::Constant
         | pernixc_symbol::kind::Kind::TraitConstant
         | pernixc_symbol::kind::Kind::PositiveImplementation

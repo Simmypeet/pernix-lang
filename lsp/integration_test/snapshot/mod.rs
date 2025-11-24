@@ -185,10 +185,10 @@ pub async fn create_engine_test_for_fixture_with_cursor(
         ));
 
     // Create the analyzer engine for the test
-    let target_name = "lsp_test".to_string();
+    let target_name = "lspTest".to_string();
     let target_id = TargetID::from_target_name(&target_name);
     let engine = pernix_server::analyzer::Analyzer::create_engine(
-        "lsp_test".to_string(),
+        target_name,
         main_file.to_path_buf(),
         fixture.clone(),
         Some(0), // fixed target seed for deterministic results

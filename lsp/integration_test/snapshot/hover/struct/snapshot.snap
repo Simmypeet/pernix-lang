@@ -5,8 +5,8 @@ expression: string
 ```pernix
 public struct Test['a, 'b, T, U]:
     where:
-        T: 'a + 'b
         U: 'a + 'b
+        T: 'a + 'b
         'b: 'a + 'static
         const T + U
         tuple T + U

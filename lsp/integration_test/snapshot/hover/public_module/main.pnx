@@ -1,0 +1,5 @@
+public module something:
+    public type Test
+
+
+public type Test = som<cursor>ething::Test

@@ -1,0 +1,6 @@
+public module outer:
+    private module inner:
+        type Test = int32
+
+
+public type Test = outer::inn<cursor>er::Test
