@@ -1,0 +1,7 @@
+---
+source: lsp/integration_test/snapshot/mod.rs
+expression: string
+---
+```pernixc
+private module lspTest::outer::inner
+```
