@@ -1968,6 +1968,7 @@ dependencies = [
  "derive_more",
  "enum-as-inner",
  "flexstr",
+ "pernixc_arena",
  "pernixc_diagnostic",
  "pernixc_extend",
  "pernixc_hash",

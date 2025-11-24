@@ -13,6 +13,7 @@ arbitrary = ["dep:proptest", "pernixc_target/arbitrary"]
 pernixc_serialize = { path = "../../base/serialize" }
 pernixc_stable_hash = { path = "../../base/stable_hash" }
 pernixc_target = { path = "../../base/target" }
+pernixc_arena = { path = "../../base/arena" }
 pernixc_query = { path = "../../base/query" }
 pernixc_extend = { path = "../../base/extend" }
 pernixc_hash = { path = "../../base/hash" }

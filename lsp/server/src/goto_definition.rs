@@ -2,8 +2,13 @@
 
 use pernixc_extend::extend;
 use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
-use pernixc_source_file::{get_source_file_by_id, get_source_file_path};
-use pernixc_symbol::{source_map::to_absolute_span, span::get_span};
+use pernixc_source_file::{Span, get_source_file_by_id, get_source_file_path};
+use pernixc_symbol::{
+    kind::{Kind, get_kind},
+    module_kind::get_module_kind,
+    source_map::to_absolute_span,
+    span::get_span,
+};
 use pernixc_target::TargetID;
 use tower_lsp::lsp_types::{
     GotoDefinitionParams, GotoDefinitionResponse, Location, Range, Url,
@@ -29,11 +34,34 @@ pub async fn handle_goto_definition(
         return Ok(None);
     };
 
-    let Some(span) = self.get_span(symbol_at).await else {
-        return Ok(None);
+    let kind = self.get_kind(symbol_at).await;
+
+    // if it's a module, we have to handle the exteranl module file case
+    let absolute_span = if kind == Kind::Module {
+        let kind = self.get_module_kind(symbol_at).await;
+
+        match kind {
+            pernixc_symbol::module_kind::ModuleKind::ExteranlFile(None)
+            | pernixc_symbol::module_kind::ModuleKind::Inline => {
+                let Some(span) = self.get_span(symbol_at).await else {
+                    return Ok(None);
+                };
+
+                self.to_absolute_span(&span).await
+            }
+
+            pernixc_symbol::module_kind::ModuleKind::ExteranlFile(Some(id)) => {
+                Span { start: 0, end: 0, source_id: target_id.make_global(id) }
+            }
+        }
+    } else {
+        let Some(span) = self.get_span(symbol_at).await else {
+            return Ok(None);
+        };
+
+        self.to_absolute_span(&span).await
     };
 
-    let absolute_span = self.to_absolute_span(&span).await;
     let source_file = self.get_source_file_by_id(absolute_span.source_id).await;
 
     let start = source_file.get_location(absolute_span.start).unwrap();

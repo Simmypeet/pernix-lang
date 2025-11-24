@@ -1,0 +1,6 @@
+public module inlineModule:
+    public marker Test[T]
+
+
+implements inlineMo<cursor>dule::Test[int32]
+

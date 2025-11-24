@@ -1,0 +1,17 @@
+---
+source: lsp/integration_test/snapshot/mod.rs
+expression: string
+---
+{
+  "uri": "file:///project/lsp/integration_test/snapshot/goto_definition/to_inline_module/main.pnx",
+  "range": {
+    "start": {
+      "line": 0,
+      "character": 14
+    },
+    "end": {
+      "line": 0,
+      "character": 26
+    }
+  }
+}

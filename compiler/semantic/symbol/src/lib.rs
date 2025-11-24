@@ -19,6 +19,7 @@ pub mod final_implements;
 pub mod kind;
 pub mod linkage;
 pub mod member;
+pub mod module_kind;
 pub mod name;
 pub mod parent;
 pub mod scope_span;
