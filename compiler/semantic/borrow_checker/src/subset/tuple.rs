@@ -37,7 +37,7 @@ impl<N: Normalizer> Context<'_, N> {
                 self.type_environment()
                     .predicate_satisfied(
                         predicate,
-                        *self.values().span_of_value(&element.value).unwrap(),
+                        *self.values().span_of_value(&element.value),
                         None,
                         false,
                         &self.handler(),

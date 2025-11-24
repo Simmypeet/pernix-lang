@@ -114,7 +114,7 @@ impl Binder<'_> {
                                 constraint::Type::All(true),
                             ))
                         }),
-                        span: Some(syntax_tree.span()),
+                        span: syntax_tree.span(),
                     },
                 ),
             ))),
@@ -158,7 +158,7 @@ impl Binder<'_> {
                                 Value::Literal(Literal::Error(
                                     literal::Error {
                                         r#type: Type::Inference(ty_inference),
-                                        span: Some(semantic_error.0),
+                                        span: semantic_error.0,
                                     },
                                 )),
                                 variable_scope_id,

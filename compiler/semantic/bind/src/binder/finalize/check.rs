@@ -46,7 +46,7 @@ async fn check_register_assignment<N: Normalizer>(
                 .type_environment
                 .wf_check(
                     st.struct_id,
-                    register.span.unwrap(),
+                    register.span,
                     &instantiation,
                     false,
                     &handler,
@@ -75,7 +75,7 @@ async fn check_register_assignment<N: Normalizer>(
                 .type_environment
                 .wf_check(
                     enum_id,
-                    register.span.unwrap(),
+                    register.span,
                     &instantiation,
                     false,
                     &handler,
@@ -122,7 +122,7 @@ async fn check_register_assignment<N: Normalizer>(
                                                   * actual valuec */
                                 generic_arguments: trait_arguments,
                             }),
-                            register.span.unwrap(),
+                            register.span,
                             None,
                             false,
                             &handler,
@@ -133,7 +133,7 @@ async fn check_register_assignment<N: Normalizer>(
                         .type_environment
                         .wf_check(
                             function_call.callable_id,
-                            register.span.unwrap(),
+                            register.span,
                             &function_call.instantiation,
                             false,
                             &handler,
@@ -157,7 +157,7 @@ async fn check_register_assignment<N: Normalizer>(
                         .type_environment
                         .wf_check(
                             parent_implementation_id,
-                            register.span.unwrap(),
+                            register.span,
                             &function_call.instantiation,
                             false,
                             &handler,
@@ -168,7 +168,7 @@ async fn check_register_assignment<N: Normalizer>(
                         .type_environment
                         .wf_check(
                             function_call.callable_id,
-                            register.span.unwrap(),
+                            register.span,
                             &function_call.instantiation,
                             false,
                             &handler,
@@ -185,7 +185,7 @@ async fn check_register_assignment<N: Normalizer>(
                         .type_environment
                         .wf_check(
                             function_call.callable_id,
-                            register.span.unwrap(),
+                            register.span,
                             &function_call.instantiation,
                             false,
                             &handler,
@@ -212,8 +212,7 @@ async fn check_register_assignment<N: Normalizer>(
                     .map_err(|x| {
                         x.report_as_type_calculating_overflow(
                             *ir.values
-                                .span_of_value(&Value::Register(register_id))
-                                .unwrap(),
+                                .span_of_value(&Value::Register(register_id)),
                             &handler,
                         )
                     })?;
@@ -239,7 +238,7 @@ async fn check_register_assignment<N: Normalizer>(
                     .type_environment
                     .predicate_satisfied(
                         predicate,
-                        register.span.unwrap(),
+                        register.span,
                         None,
                         false,
                         &handler,
@@ -259,7 +258,7 @@ async fn check_register_assignment<N: Normalizer>(
                     .await
                     .map_err(|x| {
                         x.report_as_type_calculating_overflow(
-                            *ir.values.span_of_value(&element.value).unwrap(),
+                            *ir.values.span_of_value(&element.value),
                             &handler,
                         )
                     })?;
@@ -272,7 +271,7 @@ async fn check_register_assignment<N: Normalizer>(
                     .type_environment
                     .predicate_satisfied(
                         predicate,
-                        *ir.values.span_of_value(&element.value).unwrap(),
+                        *ir.values.span_of_value(&element.value),
                         None,
                         false,
                         &handler,

@@ -191,7 +191,7 @@ impl crate::visitor::Element for Binary {
 pub(super) async fn transform_binary<T: Transformer<Type>>(
     binary: &mut Binary,
     transformer: &mut T,
-    _span: Option<pernixc_lexical::tree::RelativeSpan>,
+    _span: pernixc_lexical::tree::RelativeSpan,
 ) -> Result<(), CyclicError> {
     if let Some(literal) = binary.lhs.as_literal_mut() {
         literal.transform(transformer).await?;

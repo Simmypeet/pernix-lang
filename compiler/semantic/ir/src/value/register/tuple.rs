@@ -80,7 +80,7 @@ pub(super) async fn transform_tuple<
 >(
     tuple: &mut Tuple,
     transformer: &mut T,
-    _span: Option<pernixc_lexical::tree::RelativeSpan>,
+    _span: pernixc_lexical::tree::RelativeSpan,
     _engine: &pernixc_query::TrackedEngine,
 ) -> Result<(), CyclicError> {
     for element in

@@ -121,13 +121,13 @@ impl TypeOf<&Value> for Values {
 impl Value {
     /// Creates a new error literal value with the given type and span.
     #[must_use]
-    pub const fn error(r#type: Type, span: Option<RelativeSpan>) -> Self {
+    pub const fn error(r#type: Type, span: RelativeSpan) -> Self {
         Self::Literal(Literal::Error(literal::Error { r#type, span }))
     }
 
     /// Creates a new unit literal value with the given optional span.
     #[must_use]
-    pub const fn unit(span: Option<RelativeSpan>) -> Self {
+    pub const fn unit(span: RelativeSpan) -> Self {
         Self::Literal(Literal::Unit(literal::Unit { span }))
     }
 }

@@ -51,11 +51,9 @@ impl Values {
     pub fn span_of_value<'s>(
         &'s self,
         value: &'s value::Value,
-    ) -> Option<&'s RelativeSpan> {
+    ) -> &'s RelativeSpan {
         match value {
-            value::Value::Register(id) => {
-                self.registers.get(*id).unwrap().span.as_ref()
-            }
+            value::Value::Register(id) => &self.registers[*id].span,
             value::Value::Literal(lit) => lit.span(),
         }
     }

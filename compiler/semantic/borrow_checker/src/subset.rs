@@ -470,7 +470,7 @@ impl<N: Normalizer> Builder<'_, N> {
                         let from = Region::try_from(x.operand).ok()?;
                         let to = Region::try_from(x.bound).ok()?;
 
-                        Some((from, to, return_inst.span.unwrap()))
+                        Some((from, to, return_inst.span))
                     })
                     .collect::<HashSet<_>>(),
             ));
@@ -507,58 +507,37 @@ impl<N: Normalizer> Builder<'_, N> {
             Assignment::Do(_do_expr) => Ok(Changes::default()),
 
             Assignment::Tuple(tuple) => {
-                self.context
-                    .get_changes_of_tuple(
-                        tuple,
-                        register.span.as_ref().unwrap(),
-                    )
-                    .await
+                self.context.get_changes_of_tuple(tuple, &register.span).await
             }
             Assignment::Borrow(borrow) => {
                 self.context
                     .get_changes_of_borrow(
                         borrow,
-                        register.span.as_ref().unwrap(),
+                        &register.span,
                         register_assignment.id,
                     )
                     .await
             }
             Assignment::FunctionCall(function_call) => {
                 self.context
-                    .get_changes_of_function_call(
-                        function_call,
-                        register.span.as_ref().unwrap(),
-                    )
+                    .get_changes_of_function_call(function_call, &register.span)
                     .await
             }
             Assignment::Struct(struct_lit) => {
                 self.context
-                    .get_changes_of_struct(
-                        struct_lit,
-                        register.span.as_ref().unwrap(),
-                    )
+                    .get_changes_of_struct(struct_lit, &register.span)
                     .await
             }
             Assignment::Variant(variant) => {
                 self.context
-                    .get_changes_of_variant(
-                        variant,
-                        register.span.as_ref().unwrap(),
-                    )
+                    .get_changes_of_variant(variant, &register.span)
                     .await
             }
             Assignment::Array(array) => {
-                self.context
-                    .get_changes_of_array(
-                        array,
-                        register.span.as_ref().unwrap(),
-                    )
-                    .await
+                self.context.get_changes_of_array(array, &register.span).await
             }
             Assignment::Phi(phi) => {
-                self.context
-                    .get_changes_of_phi(phi, register.span.as_ref().unwrap())
-                    .await
+                self.context.get_changes_of_phi(phi, &register.span).await
             }
         }?;
 
@@ -598,7 +577,7 @@ impl<N: Normalizer> Builder<'_, N> {
                     .await
                     .map_err(|x| {
                         x.report_as_type_calculating_overflow(
-                            tuple_pack.packed_tuple_span.unwrap(),
+                            tuple_pack.packed_tuple_span,
                             &self.context.handler(),
                         )
                     })?;
@@ -614,7 +593,7 @@ impl<N: Normalizer> Builder<'_, N> {
                                 .find_map(|x| x.is_unpacked.then_some(x.term))
                                 .unwrap()
                         }),
-                        tuple_pack.packed_tuple_span.as_ref().unwrap(),
+                        &tuple_pack.packed_tuple_span,
                     )
                     .await
             }

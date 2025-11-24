@@ -104,7 +104,7 @@ impl Bind<&pernixc_syntax::expression::unit::Numeric> for Binder<'_> {
                 .and_then(|x| x.digits())
                 .map(|x| x.kind.0),
             r#type: numeric_ty,
-            span: Some(syntax_tree.span()),
+            span: syntax_tree.span(),
         }))))
     }
 }

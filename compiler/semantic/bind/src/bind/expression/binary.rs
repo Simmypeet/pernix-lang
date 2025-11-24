@@ -288,7 +288,7 @@ impl Binder<'_> {
         self.push_instruction(Instruction::Store(Store {
             address: lhs_address.address.clone(),
             value: rhs_value,
-            span: Some(tree.span()),
+            span: tree.span(),
         }));
 
         Expression::LValue(LValue {
@@ -328,7 +328,7 @@ impl Binder<'_> {
                             None,
                             Value::Literal(Literal::Error(literal::Error {
                                 r#type: Type::Inference(inference),
-                                span: Some(span),
+                                span,
                             })),
                         );
                     }
@@ -637,7 +637,7 @@ async fn bind_short_circuit_binary(
         ) {
             Value::Literal(Literal::Boolean(Boolean {
                 value: true,
-                span: Some(syntax_tree.left.span()),
+                span: syntax_tree.left.span(),
             }))
         } else {
             binder
@@ -672,7 +672,7 @@ async fn bind_short_circuit_binary(
         ) {
             Value::Literal(Literal::Boolean(Boolean {
                 value: false,
-                span: Some(syntax_tree.left.span()),
+                span: syntax_tree.left.span(),
             }))
         } else {
             binder
@@ -705,7 +705,7 @@ async fn bind_short_circuit_binary(
             // unreachable
             Value::Literal(Literal::Unreachable(literal::Unreachable {
                 r#type: Type::Primitive(Primitive::Bool),
-                span: Some(syntax_tree.span()),
+                span: syntax_tree.span(),
             }))
         }
 

@@ -76,7 +76,7 @@ impl crate::visitor::Element for Prefix {
 pub(super) async fn transform_prefix<T: Transformer<Type>>(
     prefix: &mut Prefix,
     transformer: &mut T,
-    _span: Option<pernixc_lexical::tree::RelativeSpan>,
+    _span: pernixc_lexical::tree::RelativeSpan,
 ) -> Result<(), CyclicError> {
     if let Some(operand) = prefix.operand.as_literal_mut() {
         operand.transform(transformer).await?;

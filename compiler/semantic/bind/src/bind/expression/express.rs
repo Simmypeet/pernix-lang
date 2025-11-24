@@ -71,12 +71,12 @@ impl Bind<&pernixc_syntax::expression::terminator::Express> for Binder<'_> {
                         ExpressExpectedAValue { span: syntax_tree.span() },
                     ));
 
-                    Value::error(ty.clone(), Some(syntax_tree.span()))
+                    Value::error(ty.clone(), syntax_tree.span())
                 } else {
-                    Value::unit(Some(syntax_tree.span()))
+                    Value::unit(syntax_tree.span())
                 }
             } else {
-                Value::unit(Some(syntax_tree.span()))
+                Value::unit(syntax_tree.span())
             }
         };
 
@@ -96,7 +96,7 @@ impl Bind<&pernixc_syntax::expression::terminator::Express> for Binder<'_> {
                 r#type: Type::Inference(
                     self.create_type_inference(constraint::Type::All(true)),
                 ),
-                span: Some(syntax_tree.span()),
+                span: syntax_tree.span(),
             }));
 
         Ok(Expression::RValue(value))

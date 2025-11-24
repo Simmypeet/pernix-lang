@@ -64,7 +64,7 @@ pub(super) async fn bind_access(
             binder.push_instruction(Instruction::Store(Store {
                 address: Address::Memory(Memory::Alloca(alloca)),
                 value,
-                span: Some(current_span),
+                span: current_span,
             }));
 
             LValue {

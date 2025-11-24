@@ -362,7 +362,7 @@ impl Binder<'_> {
 
                 Type::Inference(inference)
             },
-            span: Some(span),
+            span,
         })
     }
 
@@ -394,7 +394,7 @@ impl Binder<'_> {
 
                 Type::Inference(inference)
             },
-            span: Some(span),
+            span,
         })
     }
 
@@ -422,7 +422,7 @@ impl Binder<'_> {
                         .then(|| x.variable_declarations().len())
                 })
                 .expect("scope not found"),
-            span: Some(span),
+            span,
         });
 
         self.stack
@@ -450,7 +450,7 @@ impl Binder<'_> {
                 .current_scope()
                 .variable_declarations()
                 .len(),
-            span: Some(span),
+            span,
         });
 
         self.stack.current_scope_mut().add_variable_declaration(alloca_id);
@@ -470,10 +470,8 @@ impl Binder<'_> {
     ) -> Result<ID<Alloca>, UnrecoverableError> {
         let ty = self.type_of_value(&value, handler).await?;
         let span = address_span.unwrap_or_else(|| match &value {
-            Value::Register(id) => {
-                self.ir.values.registers.get(*id).unwrap().span.unwrap()
-            }
-            Value::Literal(literal) => literal.span().copied().unwrap(),
+            Value::Register(id) => self.ir.values.registers[*id].span,
+            Value::Literal(literal) => *literal.span(),
         });
 
         let alloca_id = self.create_alloca_with_scope_id(ty, scope_id, span);
@@ -483,7 +481,7 @@ impl Binder<'_> {
             instruction::Instruction::Store(instruction::Store {
                 address: alloca_address,
                 value,
-                span: Some(store_span),
+                span: store_span,
             }),
         );
 
@@ -599,11 +597,8 @@ impl Binder<'_> {
         assignment: Assignment,
         span: RelativeSpan,
     ) -> ID<Register> {
-        let register_id = self
-            .ir
-            .values
-            .registers
-            .insert(Register { assignment, span: Some(span) });
+        let register_id =
+            self.ir.values.registers.insert(Register { assignment, span });
 
         let reachable = self.current_block_mut().add_instruction(
             instruction::Instruction::RegisterAssignment(
@@ -648,7 +643,7 @@ impl Binder<'_> {
             .map(|x| x.result)
             .map_err(|x| {
                 x.report_as_type_calculating_overflow(
-                    self.ir.values.registers[register_id].span.unwrap(),
+                    self.ir.values.registers[register_id].span,
                     &handler,
                 )
             })
@@ -670,7 +665,7 @@ impl Binder<'_> {
                 .await
                 .map_err(|x| {
                     x.report_as_type_calculating_overflow(
-                        literal.span().copied().unwrap(),
+                        *literal.span(),
                         &handler,
                     )
                 })?
@@ -739,8 +734,8 @@ impl Binder<'_> {
     #[must_use]
     pub fn span_of_value(&self, value: &Value) -> RelativeSpan {
         match value {
-            Value::Register(id) => self.ir.values.registers[*id].span.unwrap(),
-            Value::Literal(literal) => *literal.span().unwrap(),
+            Value::Register(id) => self.ir.values.registers[*id].span,
+            Value::Literal(literal) => *literal.span(),
         }
     }
 
@@ -823,8 +818,7 @@ impl Binder<'_> {
             Err(err) => Err(err.report_as_type_calculating_overflow(
                 self.values()
                     .span_of_memory(address.get_root_memory(), &environment)
-                    .await?
-                    .unwrap(),
+                    .await?,
                 &handler,
             )),
         }

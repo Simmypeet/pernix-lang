@@ -189,7 +189,7 @@ pub struct Return {
     pub value: Value,
 
     /// The span where the return instruction is generated.
-    pub span: Option<RelativeSpan>,
+    pub span: RelativeSpan,
 }
 
 impl Return {
@@ -249,7 +249,7 @@ pub struct Store {
     pub value: Value,
 
     /// The span where the store instruction is generated.
-    pub span: Option<RelativeSpan>,
+    pub span: RelativeSpan,
 }
 
 impl Store {
@@ -339,7 +339,7 @@ pub struct TuplePack {
     pub after_packed_element_count: usize,
 
     /// The span to the packed tuple pattern.
-    pub packed_tuple_span: Option<RelativeSpan>,
+    pub packed_tuple_span: RelativeSpan,
 }
 
 impl TuplePack {
@@ -573,7 +573,7 @@ pub struct Read {
     pub qualifier: Qualifier,
 
     /// The span where the read access is made.
-    pub span: Option<RelativeSpan>,
+    pub span: RelativeSpan,
 }
 
 /// Represents how a particular address is accessed in an instruction.
@@ -584,25 +584,25 @@ pub struct Read {
 pub enum AccessMode {
     Read(Read),
     /// The value is loaded/moved from the address.
-    Load(Option<RelativeSpan>),
+    Load(RelativeSpan),
 
     /// The address is written to.
-    Write(Option<RelativeSpan>),
+    Write(RelativeSpan),
 }
 
 impl AccessMode {
     /// Gets the span where the access is made.
     #[must_use]
-    pub const fn span(&self) -> Option<&RelativeSpan> {
+    pub const fn span(&self) -> &RelativeSpan {
         match self {
-            Self::Read(read) => read.span.as_ref(),
-            Self::Load(span) | Self::Write(span) => span.as_ref(),
+            Self::Read(read) => &read.span,
+            Self::Load(span) | Self::Write(span) => span,
         }
     }
 
     /// Converts the access mode to a span.
     #[must_use]
-    pub const fn into_span(self) -> Option<RelativeSpan> {
+    pub const fn into_span(self) -> RelativeSpan {
         match self {
             Self::Read(read) => read.span,
             Self::Load(span) | Self::Write(span) => span,

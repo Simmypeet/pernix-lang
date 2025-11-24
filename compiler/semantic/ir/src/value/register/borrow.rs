@@ -52,7 +52,7 @@ pub(super) async fn transform_borrow<
 >(
     borrow: &mut Borrow,
     transformer: &mut T,
-    span: Option<RelativeSpan>,
+    span: RelativeSpan,
 ) -> Result<(), CyclicError> {
     borrow.address.transform(transformer).await?;
 

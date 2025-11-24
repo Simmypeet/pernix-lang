@@ -279,7 +279,7 @@ impl<'a, N: Normalizer> Checker<'a, N> {
                     self.context.handler().receive(
                         Diagnostic::MovedOutWhileBorrowed(
                             MovedOutWhileBorrowed {
-                                borrow_span: borrow_register.span.unwrap(),
+                                borrow_span: borrow_register.span,
                                 usage: borrow_usage,
                                 moved_out_span: *moved_span,
                             },
@@ -331,11 +331,8 @@ impl<'a, N: Normalizer> Checker<'a, N> {
                 continue;
             }
 
-            let span = self
-                .values()
-                .span_of_memory(&drop, self.environment())
-                .await?
-                .unwrap();
+            let span =
+                self.values().span_of_memory(&drop, self.environment()).await?;
 
             self.invalidate_borrow(
                 *borrow_register_id,
@@ -347,7 +344,7 @@ impl<'a, N: Normalizer> Checker<'a, N> {
                         Diagnostic::VariableDoesNotLiveLongEnough(
                             VariableDoesNotLiveLongEnough {
                                 variable_span: span,
-                                borrow_span: borrow_register.span.unwrap(),
+                                borrow_span: borrow_register.span,
                                 usage: borrow_usage,
                             },
                         ),
@@ -453,12 +450,9 @@ impl<'a, N: Normalizer> Checker<'a, N> {
                         self.context.handler().receive(
                             Diagnostic::MutablyAccessWhileImmutablyBorrowed(
                                 MutablyAccessWhileImmutablyBorrowed {
-                                    mutable_access_span: access_mode
-                                        .span()
-                                        .copied()
-                                        .unwrap(),
+                                    mutable_access_span: *access_mode.span(),
                                     immutable_borrow_span: Some(
-                                        borrow_register.span.unwrap(),
+                                        borrow_register.span,
                                     ),
                                     usage: borrow_usage,
                                 },
@@ -469,12 +463,9 @@ impl<'a, N: Normalizer> Checker<'a, N> {
                         self.context.handler().receive(
                             Diagnostic::AccessWhileMutablyBorrowed(
                                 AccessWhileMutablyBorrowed {
-                                    access_span: access_mode
-                                        .span()
-                                        .copied()
-                                        .unwrap(),
+                                    access_span: *access_mode.span(),
                                     mutable_borrow_span: Some(
-                                        borrow_register.span.unwrap(),
+                                        borrow_register.span,
                                     ),
                                     borrow_usage,
                                 },

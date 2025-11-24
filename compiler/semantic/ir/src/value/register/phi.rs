@@ -57,7 +57,7 @@ impl crate::visitor::Element for Phi {
 pub(super) async fn transform_phi<T: Transformer<Type>>(
     phi: &mut Phi,
     transformer: &mut T,
-    span: Option<pernixc_lexical::tree::RelativeSpan>,
+    span: pernixc_lexical::tree::RelativeSpan,
 ) -> Result<(), CyclicError> {
     for value in phi.incoming_values.values_mut() {
         if let Some(literal) = value.as_literal_mut() {

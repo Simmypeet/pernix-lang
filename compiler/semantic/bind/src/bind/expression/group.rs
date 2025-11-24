@@ -74,7 +74,7 @@ impl Binder<'_> {
                         let Some(expr) = inline_expression.expression() else {
                             break 'result Value::error(
                                 type_hint.clone(),
-                                Some(inline_expression.span()),
+                                inline_expression.span(),
                             );
                         };
 
@@ -90,7 +90,7 @@ impl Binder<'_> {
                         let Some(expr) = inline_expression.expression() else {
                             break 'result Value::error(
                                 Type::unit(),
-                                Some(inline_expression.span()),
+                                inline_expression.span(),
                             );
                         };
 
@@ -115,10 +115,7 @@ impl Binder<'_> {
                                     |diag| {
                                         handler.receive(diag);
 
-                                        Value::error(
-                                            Type::unit(),
-                                            Some(expr.span()),
-                                        )
+                                        Value::error(Type::unit(), expr.span())
                                     },
                                 )
                             }
@@ -126,7 +123,7 @@ impl Binder<'_> {
                             // no need to type check lvalue
                             Ok(Expression::LValue(_))
                             | Err(Error::Binding(_)) => {
-                                Value::unit(Some(expr.span()))
+                                Value::unit(expr.span())
                             }
 
                             Err(Error::Unrecoverable(abort)) => {

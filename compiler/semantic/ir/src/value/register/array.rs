@@ -59,7 +59,7 @@ impl crate::visitor::Element for Array {
 pub(super) async fn transform_array<T: Transformer<Type>>(
     array: &mut Array,
     transformer: &mut T,
-    span: Option<pernixc_lexical::tree::RelativeSpan>,
+    span: pernixc_lexical::tree::RelativeSpan,
 ) -> Result<(), CyclicError> {
     for value in &mut array.elements {
         if let Some(literal) = value.as_literal_mut() {

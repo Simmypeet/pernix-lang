@@ -16,7 +16,7 @@ use crate::{
     capture::{Capture, Captures},
     closure_parameters::ClosureParameters,
     handling_scope::HandlingScope,
-    transform::{self, Transformer},
+    transform::{self, Element, Transformer},
     value::{Environment, TypeOf, Value, register::Register},
 };
 
@@ -317,27 +317,26 @@ impl crate::visitor::Element for DoWith {
     }
 }
 
-impl transform::Element for DoWith {
-    async fn transform<
-        T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
-    >(
-        &mut self,
-        transformer: &mut T,
-        engine: &TrackedEngine,
-    ) -> Result<(), CyclicError> {
-        self.do_block.transform(transformer, engine).await?;
-        self.handleer_chain.transform(transformer, engine).await?;
+pub(super) async fn transform_do_with<
+    T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
+>(
+    do_with: &mut DoWith,
+    transformer: &mut T,
+    engine: &TrackedEngine,
+    span: pernixc_lexical::tree::RelativeSpan,
+) -> Result<(), CyclicError> {
+    do_with.do_block.transform(transformer, engine).await?;
+    do_with.handleer_chain.transform(transformer, engine).await?;
 
-        transformer
-            .transform(
-                &mut self.return_type,
-                transform::TypeTermSource::DoReturnType,
-                None,
-            )
-            .await?;
+    transformer
+        .transform(
+            &mut do_with.return_type,
+            transform::TypeTermSource::DoReturnType,
+            span,
+        )
+        .await?;
 
-        Ok(())
-    }
+    Ok(())
 }
 
 impl DoWith {

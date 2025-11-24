@@ -51,7 +51,7 @@ impl crate::visitor::Element for VariantNumber {
 pub(super) async fn transform_variant_number<T: Transformer<Type>>(
     variant_number: &mut VariantNumber,
     transformer: &mut T,
-    _span: Option<pernixc_lexical::tree::RelativeSpan>,
+    _span: pernixc_lexical::tree::RelativeSpan,
 ) -> Result<(), CyclicError> {
     variant_number.address.transform(transformer).await
 }

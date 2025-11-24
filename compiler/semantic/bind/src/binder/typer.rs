@@ -59,8 +59,7 @@ impl Typer<Address> for BinderTyper<'_> {
             Err(err) => Err(err.report_as_type_calculating_overflow(
                 env.values()
                     .span_of_memory(value.get_root_memory(), &environment)
-                    .await?
-                    .unwrap(),
+                    .await?,
                 &self.handler,
             )),
         }

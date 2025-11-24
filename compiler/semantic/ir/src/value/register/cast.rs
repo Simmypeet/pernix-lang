@@ -53,7 +53,7 @@ impl crate::visitor::Element for Cast {
 pub(super) async fn transform_cast<T: Transformer<Type>>(
     cast: &mut Cast,
     transformer: &mut T,
-    span: Option<pernixc_lexical::tree::RelativeSpan>,
+    span: pernixc_lexical::tree::RelativeSpan,
 ) -> Result<(), CyclicError> {
     if let Some(literal) = cast.value.as_literal_mut() {
         literal.transform(transformer).await?;

@@ -181,7 +181,7 @@ pub struct Capture {
     pub capture_mode: CaptureMode,
 
     /// The span of the captured memory address.
-    pub span: Option<RelativeSpan>,
+    pub span: RelativeSpan,
 }
 
 impl Capture {

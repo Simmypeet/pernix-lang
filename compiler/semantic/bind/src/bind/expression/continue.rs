@@ -43,7 +43,7 @@ impl Bind<&pernixc_syntax::expression::terminator::Continue> for Binder<'_> {
             r#type: Type::Inference(
                 self.create_type_inference(constraint::Type::All(true)),
             ),
-            span: Some(syntax_tree.span()),
+            span: syntax_tree.span(),
         }));
 
         Ok(Expression::RValue(value))

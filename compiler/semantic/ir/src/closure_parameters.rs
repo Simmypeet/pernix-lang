@@ -28,7 +28,7 @@ pub struct ClosureParameter {
     pub r#type: Type,
 
     /// The span of the parameter.
-    pub span: Option<RelativeSpan>,
+    pub span: RelativeSpan,
 }
 
 /// Represents a collection of parameters taken by a closure.
@@ -68,7 +68,7 @@ impl ClosureParameters {
         for (_, parameter) in parameters.parameters_as_order() {
             let closure_parameter = ClosureParameter {
                 r#type: inst.clone_and_instantiate(&parameter.r#type),
-                span: parameter.span,
+                span: parameter.span.expect("local target should've included span"),
             };
 
             closure_parameters.0.insert(closure_parameter);

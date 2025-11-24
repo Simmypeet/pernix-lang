@@ -101,7 +101,7 @@ impl Bind<&pernixc_syntax::expression::unit::Parenthesized>
         let value = if elements.is_empty() {
             // return unit Tuple
             Value::Literal(Literal::Unit(literal::Unit {
-                span: Some(syntax_tree.span()),
+                span: syntax_tree.span(),
             }))
         } else {
             let create_register_assignmnet = self.create_register_assignment(

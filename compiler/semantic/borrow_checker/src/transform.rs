@@ -76,7 +76,7 @@ impl Transformer<Lifetime> for ToBorrowTransformer {
         &mut self,
         term: &mut Lifetime,
         _: <Lifetime as Transformable>::Source,
-        _: Option<RelativeSpan>,
+        _: RelativeSpan,
     ) -> Result<(), CyclicError> {
         transform_lifetime(term, &mut self.generator);
 
@@ -89,7 +89,7 @@ impl Transformer<Type> for ToBorrowTransformer {
         &mut self,
         term: &mut Type,
         _: <Type as Transformable>::Source,
-        _: Option<RelativeSpan>,
+        _: RelativeSpan,
     ) -> Result<(), CyclicError> {
         visitor::accept_recursive_mut(term, self);
 
@@ -102,7 +102,7 @@ impl Transformer<Constant> for ToBorrowTransformer {
         &mut self,
         term: &mut Constant,
         _: <Constant as Transformable>::Source,
-        _: Option<RelativeSpan>,
+        _: RelativeSpan,
     ) -> Result<(), CyclicError> {
         visitor::accept_recursive_mut(term, self);
 

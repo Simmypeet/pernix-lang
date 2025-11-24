@@ -837,7 +837,7 @@ impl<N: Normalizer> Traverser for LiveBorrowTraverser<'_, N> {
                         .context
                         .get_dereferenced_regions_in_address(
                             &address,
-                            write_span.as_ref().unwrap(),
+                            &write_span,
                         )
                         .await?;
 
@@ -846,8 +846,7 @@ impl<N: Normalizer> Traverser for LiveBorrowTraverser<'_, N> {
                         .any(|x| self.invalidated_regions.contains(x))
                     {
                         return Ok(ControlFlow::Break(
-                            std::iter::once(Usage::Local(write_span.unwrap()))
-                                .collect(),
+                            std::iter::once(Usage::Local(write_span)).collect(),
                         ));
                     }
 
@@ -856,7 +855,7 @@ impl<N: Normalizer> Traverser for LiveBorrowTraverser<'_, N> {
                             &address,
                             memory_root_ty,
                             self.context.type_environment(),
-                            write_span.unwrap(),
+                            write_span,
                             self.context.handler(),
                         )
                         .await?;
@@ -864,20 +863,17 @@ impl<N: Normalizer> Traverser for LiveBorrowTraverser<'_, N> {
                     continue;
                 }
 
-                AccessKind::Normal(AccessMode::Load(span)) => {
-                    (span.unwrap(), false)
-                }
+                AccessKind::Normal(AccessMode::Load(span)) => (span, false),
 
                 AccessKind::Normal(AccessMode::Read(read)) => {
-                    (read.span.unwrap(), false)
+                    (read.span, false)
                 }
 
                 AccessKind::Drop => (
                     self.context
                         .values()
                         .span_of_memory(memory_root, self.context.environment())
-                        .await?
-                        .unwrap(),
+                        .await?,
                     true,
                 ),
             };
@@ -946,13 +942,7 @@ impl<N: Normalizer> Traverser for LiveBorrowTraverser<'_, N> {
         if let Some(register_id) = invalidated_use_register {
             return Ok(ControlFlow::Break(
                 std::iter::once(Usage::Local(
-                    self.context
-                        .values()
-                        .registers
-                        .get(register_id)
-                        .unwrap()
-                        .span
-                        .unwrap(),
+                    self.context.values().registers[register_id].span,
                 ))
                 .collect(),
             ));
@@ -1067,7 +1057,7 @@ impl<N: Normalizer> Traverser for LiveLenderTraverser<'_, N> {
                         &store.address,
                         self.root_type.clone(),
                         self.context.type_environment(),
-                        store.span.unwrap(),
+                        store.span,
                         self.context.handler(),
                     )
                     .await?;

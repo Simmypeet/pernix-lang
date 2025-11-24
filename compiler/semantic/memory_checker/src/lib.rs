@@ -490,7 +490,7 @@ impl<N: Normalizer> Checker<'_, N> {
                 Instruction::Store(store) => {
                     let instructions = handle_store(
                         &store.address,
-                        store.span.unwrap(),
+                        store.span,
                         stack,
                         self.value_environment.type_environment,
                         handler,
@@ -523,7 +523,7 @@ impl<N: Normalizer> Checker<'_, N> {
                             handle_load(
                                 self.values,
                                 load,
-                                register.span.unwrap(),
+                                register.span,
                                 stack,
                                 self.value_environment,
                                 handler,
@@ -536,7 +536,7 @@ impl<N: Normalizer> Checker<'_, N> {
                         Assignment::Borrow(borrow) => {
                             handle_borrow(
                                 borrow,
-                                register.span.unwrap(),
+                                register.span,
                                 stack,
                                 handler,
                             );
@@ -567,7 +567,7 @@ impl<N: Normalizer> Checker<'_, N> {
                                 ),
                                 offset: address::Offset::Unpacked,
                             }),
-                            tuple_pack.packed_tuple_span.unwrap(),
+                            tuple_pack.packed_tuple_span,
                             load::Purpose::General,
                             self.value_environment.type_environment,
                             handler,
@@ -593,9 +593,7 @@ impl<N: Normalizer> Checker<'_, N> {
                         Summary::Uninitialized => {
                             handler.receive(
                                 UseBeforeInitialization {
-                                    use_span: tuple_pack
-                                        .packed_tuple_span
-                                        .unwrap(),
+                                    use_span: tuple_pack.packed_tuple_span,
                                 }
                                 .into(),
                             );
@@ -604,9 +602,7 @@ impl<N: Normalizer> Checker<'_, N> {
                         Summary::Moved(span) => {
                             handler.receive(
                                 UseAfterMove {
-                                    use_span: tuple_pack
-                                        .packed_tuple_span
-                                        .unwrap(),
+                                    use_span: tuple_pack.packed_tuple_span,
                                     move_span: *span.span(),
                                     load_purpose: span.purpose(),
                                 }
@@ -619,7 +615,7 @@ impl<N: Normalizer> Checker<'_, N> {
 
                     let instructions = handle_store(
                         &tuple_pack.store_address,
-                        tuple_pack.packed_tuple_span.unwrap(),
+                        tuple_pack.packed_tuple_span,
                         stack,
                         self.value_environment.type_environment,
                         handler,

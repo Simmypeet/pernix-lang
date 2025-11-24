@@ -732,7 +732,7 @@ impl Values {
         &self,
         address: &Memory,
         environment: &Environment<'_, N>,
-    ) -> Result<Option<RelativeSpan>, CyclicError> {
+    ) -> Result<RelativeSpan, CyclicError> {
         match address {
             Memory::Parameter(id) => {
                 let parameters = environment
@@ -740,7 +740,9 @@ impl Values {
                     .get_parameters(environment.current_site)
                     .await?;
 
-                Ok(parameters.parameters[*id].span)
+                Ok(parameters.parameters[*id]
+                    .span
+                    .expect("local target should've included span"))
             }
 
             Memory::Alloca(id) => Ok(self.allocas[*id].span),
