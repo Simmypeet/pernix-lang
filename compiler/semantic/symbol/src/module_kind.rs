@@ -22,6 +22,7 @@ use pernixc_target::Global;
     pernixc_query::Value,
 )]
 #[id(Global<crate::ID>)]
+#[extend(method(get_module_kind), no_cyclic)]
 pub enum ModuleKind {
     /// The module is defined inlined in the same place it was declared.
     ///
