@@ -1458,6 +1458,10 @@ impl Report for ResumeCallOutsideOperationHandler {
             .primary_highlight(
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.span).await)
+                    .message(
+                        "`resume` can not be used outside the oepration \
+                         handler (`with` construct)",
+                    )
                     .build(),
             )
             .severity(pernixc_diagnostic::Severity::Error)
