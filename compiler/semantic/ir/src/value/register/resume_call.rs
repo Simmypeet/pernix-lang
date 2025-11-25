@@ -10,10 +10,11 @@ use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
 use pernixc_type_system::Error;
 
 use crate::{
+    Values,
     handling_scope::HandlerClauseID,
     transform::{Transformer, TypeTermSource},
     value::{TypeOf, Value},
-    visitor, Values,
+    visitor,
 };
 
 /// Represents a `reumse(value)` expression found inside operation handler
@@ -47,7 +48,7 @@ pub(super) async fn transform_resume_call<
 >(
     resume_call: &mut ResumeCall,
     transformer: &mut T,
-    span: Option<pernixc_lexical::tree::RelativeSpan>,
+    span: pernixc_lexical::tree::RelativeSpan,
 ) -> Result<(), CyclicError> {
     if let Value::Literal(literal) = &mut resume_call.value {
         literal.transform(transformer).await?;
