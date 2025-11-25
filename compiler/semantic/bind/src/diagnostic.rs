@@ -94,6 +94,7 @@ diagnostic_enum! {
         NotAllFlowPathsReturnAValueInClosure(
             NotAllFlowPathsReturnAValueInClosure
         ),
+        ResumeCallOutsideOperationHandler(ResumeCallOutsideOperationHandler),
     }
 }
 
@@ -1433,6 +1434,33 @@ impl Report for NotAllFlowPathsReturnAValueInClosure {
             .help_message(
                 "consider adding a return expression to all control flow paths",
             )
+            .build())
+    }
+}
+
+/// The `resume` call is used outside of an operation handler clause.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, StableHash, Serialize, Deserialize,
+)]
+pub struct ResumeCallOutsideOperationHandler {
+    /// The span of the `resume` call expression.
+    pub span: RelativeSpan,
+}
+
+impl Report for ResumeCallOutsideOperationHandler {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
+    {
+        Ok(pernixc_diagnostic::Rendered::builder()
+            .message("`resume` can only be used inside an operation handler")
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .build(),
+            )
+            .severity(pernixc_diagnostic::Severity::Error)
             .build())
     }
 }

@@ -8,22 +8,39 @@ use pernixc_ir::{
     function_ir::IRContext,
     handling_scope::{
         HandlerClause, HandlerClauseID, HandlingScope, HandlingScopes,
+        OperationHandlerID,
     },
     ir::IR,
+    transform,
     value::register::do_with::{Do, OperationHandler},
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_target::Global;
-use pernixc_term::generic_arguments::GenericArguments;
+use pernixc_term::{generic_arguments::GenericArguments, r#type::Type};
 use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
 
-use crate::binder::Binder;
+use crate::{binder::Binder, infer::constraint};
 
 /// Context struct for managing effect handlers.
 #[derive(Debug, Clone, Default)]
 pub struct Context {
     handling_scopes: HandlingScopes,
     handler_gruop_stack: Vec<pernixc_arena::ID<HandlingScope>>,
+    operation_handler_stack: Vec<OperationHandlerID>,
+}
+
+impl transform::Element for Context {
+    async fn transform<
+        T: transform::Transformer<pernixc_term::lifetime::Lifetime>
+            + transform::Transformer<Type>
+            + transform::Transformer<pernixc_term::constant::Constant>,
+    >(
+        &mut self,
+        transformer: &mut T,
+        engine: &pernixc_query::TrackedEngine,
+    ) -> Result<(), pernixc_query::runtime::executor::CyclicError> {
+        self.handling_scopes.transform(transformer, engine).await
+    }
 }
 
 impl Binder<'_> {
@@ -44,6 +61,43 @@ impl Binder<'_> {
         ));
 
         Do::new(captures_args, ir_id)
+    }
+
+    /// Returns the handling scopes managed by the binder.
+    #[must_use]
+    pub const fn handling_scopes(&self) -> &HandlingScopes {
+        &self.effect_handler_context.handling_scopes
+    }
+
+    /// Returns the current operation handler ID, if any.
+    #[must_use]
+    pub fn current_operation_handler_id(&self) -> Option<OperationHandlerID> {
+        self.effect_handler_context.operation_handler_stack.last().copied()
+    }
+
+    /// Pushes a new operation handler ID onto the operation handler stack.
+    pub fn push_operation_handler(
+        &mut self,
+        operation_handler_id: OperationHandlerID,
+    ) {
+        self.effect_handler_context
+            .operation_handler_stack
+            .push(operation_handler_id);
+    }
+
+    /// Pops the topmost operation handler ID from the operation handler stack.
+    #[must_use]
+    pub fn pop_operation_handler(&mut self) -> OperationHandlerID {
+        self.effect_handler_context
+            .operation_handler_stack
+            .pop()
+            .expect("Operation handler stack underflow")
+    }
+
+    /// Gets the [`HandlerClause`] with the [`HandlerClauseID`].
+    #[must_use]
+    pub fn get_handler_clause(&self, id: HandlerClauseID) -> &HandlerClause {
+        self.effect_handler_context.handling_scopes.get_handler_clause(id)
     }
 
     /// Creates a new operation handler with the given IR, captures, and
@@ -70,15 +124,25 @@ impl Binder<'_> {
     }
 
     /// Insert a new effect handler group
-    pub fn insert_effect_handler_group(
+    ///
+    /// Returns the ID of the newly inserted handling scope and its (inferring)
+    /// return type.
+    pub fn insert_handling_scope(
         &mut self,
-    ) -> pernixc_arena::ID<HandlingScope> {
-        let handler_group =
-            self.effect_handler_context.handling_scopes.insert_handler_scope();
+        do_with_span: RelativeSpan,
+    ) -> (pernixc_arena::ID<HandlingScope>, Type) {
+        // create a fresh type variable for the return type
+        let return_type =
+            self.create_type_inference(constraint::Type::All(true));
+
+        let handler_group = self
+            .effect_handler_context
+            .handling_scopes
+            .insert_handler_scope(do_with_span, Type::Inference(return_type));
 
         self.effect_handler_context.handler_gruop_stack.push(handler_group);
 
-        handler_group
+        (handler_group, Type::Inference(return_type))
     }
 
     /// Insert a new effect handler into an existing handler group

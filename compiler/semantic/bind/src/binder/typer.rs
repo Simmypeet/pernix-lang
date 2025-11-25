@@ -13,6 +13,9 @@ use crate::binder::{Binder, inference_context::InferenceContext};
 pub struct BinderTyper<'x> {
     ty_environment:
         pernixc_type_system::environment::Environment<'x, InferenceContext>,
+
+    handling_scopes: &'x pernixc_ir::handling_scope::HandlingScopes,
+
     handler: &'x dyn Handler<crate::diagnostic::Diagnostic>,
 }
 
@@ -52,6 +55,7 @@ impl Typer<Address> for BinderTyper<'_> {
             .maybe_captures(env.captures())
             .current_site(env.current_site())
             .type_environment(&self.ty_environment)
+            .handling_scopes(self.handling_scopes)
             .build();
 
         match env.values().type_of(value, &environment).await {
@@ -109,7 +113,11 @@ impl Binder<'_> {
         &'s self,
         handler: &'s dyn Handler<crate::diagnostic::Diagnostic>,
     ) -> BinderTyper<'s> {
-        BinderTyper { ty_environment: self.create_environment(), handler }
+        BinderTyper {
+            ty_environment: self.create_environment(),
+            handler,
+            handling_scopes: self.handling_scopes(),
+        }
     }
 
     /// Creates a typer environment for the binder.

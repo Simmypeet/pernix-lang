@@ -168,6 +168,9 @@ impl Binder<'_> {
 
         self.ir.transform(&mut transformer, self.engine).await?;
         self.ir_map.transform(&mut transformer, self.engine).await?;
+        self.effect_handler_context
+            .transform(&mut transformer, self.engine)
+            .await?;
         self.closure_parameters_map
             .transform(&mut transformer, self.engine)
             .await?;

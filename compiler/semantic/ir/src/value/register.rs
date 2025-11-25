@@ -162,7 +162,7 @@ impl TypeOf<ID<Register>> for Values {
                 return self.type_of(function_call, environment).await;
             }
             Assignment::ResumeCall(d) => {
-                return self.type_of(d, environment).await
+                return self.type_of(d, environment).await;
             }
             Assignment::Binary(binary) => {
                 return self.type_of(binary, environment).await;
@@ -251,8 +251,7 @@ impl transform::Element for Register {
                 do_with::transform_do_with(d, transformer, engine).await
             }
             Assignment::ResumeCall(r) => {
-                resume_call::transform_resume_call(r, transformer, self.span)
-                    .await
+                resume_call::transform_resume_call(r, transformer).await
             }
         }
     }
