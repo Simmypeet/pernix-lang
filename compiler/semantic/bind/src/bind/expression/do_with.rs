@@ -190,7 +190,7 @@ async fn build_with_blocks(
             let ir = binder
                 .new_closure_binder(
                     async |x| {
-                        Box::pin(build_handler_block(
+                        Box::pin(build_operation_handler(
                             x,
                             &closure_parameters,
                             handler_block,
@@ -264,7 +264,7 @@ async fn build_do_block(
     Ok(())
 }
 
-async fn build_handler_block(
+async fn build_operation_handler(
     binder: &mut Binder<'_>,
     closure_parameters: &ClosureParameters,
     handler_block: OperationHanderBlock,
