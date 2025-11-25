@@ -7,11 +7,13 @@ use pernixc_arena::ID;
 use pernixc_extend::extend;
 use pernixc_handler::Handler;
 use pernixc_ir::{
-    IR,
     address::{Address, Memory},
     alloca::Alloca,
+    capture::CapturesMap,
+    closure_parameters::ClosureParametersMap,
     control_flow_graph::Block,
     instruction::{self, Instruction, ScopePop, ScopePush, Terminator},
+    ir::{IR, IRMap},
     pattern::{Irrefutable, NameBindingPoint, Wildcard},
     scope,
     value::{
@@ -138,6 +140,9 @@ pub struct Binder<'t> {
     /// determines the expected return type of the closure.
     expected_closure_return_type: Option<Type>,
 
+    ir_map: IRMap,
+    closure_parameters_map: ClosureParametersMap,
+    captures_map: CapturesMap,
     effect_handler_context: effect_handler::Context,
     block_context: block::Context,
     loop_context: r#loop::Context,
@@ -205,6 +210,9 @@ impl<'t> Binder<'t> {
 
             expected_closure_return_type: None,
 
+            ir_map: IRMap::default(),
+            closure_parameters_map: ClosureParametersMap::default(),
+            captures_map: CapturesMap::default(),
             effect_handler_context: effect_handler::Context::default(),
             block_context: block::Context::default(),
             loop_context: r#loop::Context::default(),

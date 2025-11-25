@@ -200,3 +200,37 @@ impl Capture {
         }
     }
 }
+
+/// A collection of all captures used in a function.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
+    StableHash,
+    Serialize,
+    Deserialize,
+    derive_more::Index,
+    derive_more::IndexMut,
+)]
+pub struct CapturesMap {
+    #[index]
+    #[index_mut]
+    arena: Arena<Captures>,
+}
+
+impl CapturesMap {
+    /// Creates a new empty [`CaptureMap`].
+    #[must_use]
+    pub fn new() -> Self { Self { arena: Arena::new() } }
+
+    /// Inserts a new [`Captures`] into the map and returns its ID.
+    #[must_use]
+    pub fn insert(
+        &mut self,
+        captures: Captures,
+    ) -> pernixc_arena::ID<Captures> {
+        self.arena.insert(captures)
+    }
+}

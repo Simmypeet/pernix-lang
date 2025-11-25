@@ -1,7 +1,9 @@
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
 use pernixc_ir::{
-    IR,
+    FunctionIR,
+    function_ir::IRContext,
+    ir::IR,
     value::{
         Environment as ValueEnvironment, TypeOf, Value,
         register::{self, Register},
@@ -20,7 +22,9 @@ use pernixc_term::{
     predicate::{PositiveMarker, PositiveTrait, Predicate},
     r#type::Qualifier,
 };
-use pernixc_type_system::normalizer::Normalizer;
+use pernixc_type_system::{
+    environment::Environment as TypeSystemEnvironment, normalizer::Normalizer,
+};
 
 use crate::{binder::UnrecoverableError, diagnostic::Diagnostic};
 
@@ -293,45 +297,53 @@ async fn check_register_assignment<N: Normalizer>(
     }
 }
 
-pub(super) async fn check_recursive<N: Normalizer>(
-    ir: &IR,
-    value_environment: &ValueEnvironment<'_, N>,
+pub(super) async fn check_all<N: Normalizer>(
+    function_ir: &FunctionIR,
+    ty_environment: &TypeSystemEnvironment<'_, N>,
+    current_site: Global<pernixc_symbol::ID>,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<(), UnrecoverableError> {
-    for do_ir in
-        ir.values.registers.items().filter_map(|x| x.assignment.as_do())
-    {
-        let (do_closure_ir, do_captures) = do_ir.do_closure();
+    for (_, ir_with_context) in function_ir.ir_with_contexts() {
+        let value_environment = match ir_with_context.context() {
+            IRContext::Root => ValueEnvironment::builder()
+                .type_environment(ty_environment)
+                .current_site(current_site)
+                .build(),
 
-        let inner_value_environment = ValueEnvironment::builder()
-            .captures(do_captures)
-            .current_site(value_environment.current_site)
-            .type_environment(value_environment.type_environment)
-            .build();
+            IRContext::OperationHandler(operation_handler_context) => {
+                let captures = function_ir
+                    .get_capture(operation_handler_context.captures_id());
+                let closure_parameters = function_ir.get_closure_parameters(
+                    operation_handler_context.closure_parameters_id(),
+                );
 
-        // recursively performs memory check in nested closures
-        Box::pin(check(do_closure_ir, &inner_value_environment, handler))
-            .await?;
+                ValueEnvironment::builder()
+                    .type_environment(ty_environment)
+                    .captures(captures)
+                    .closure_parameters(closure_parameters)
+                    .current_site(current_site)
+                    .build()
+            }
 
-        let (with_captures, with_irs) = do_ir.with_closures();
+            IRContext::Do(do_context) => {
+                let captures =
+                    function_ir.get_capture(do_context.captures_id());
 
-        // recursively performs memory check in nested closures
-        for (with_ir, with_closure_parameters) in with_irs {
-            let inner_value_environment = ValueEnvironment::builder()
-                .captures(with_captures)
-                .current_site(value_environment.current_site)
-                .type_environment(value_environment.type_environment)
-                .closure_parameters(with_closure_parameters)
-                .build();
+                ValueEnvironment::builder()
+                    .type_environment(ty_environment)
+                    .captures(captures)
+                    .current_site(current_site)
+                    .build()
+            }
+        };
 
-            Box::pin(check(with_ir, &inner_value_environment, handler)).await?;
-        }
+        check(ir_with_context.ir(), &value_environment, handler).await?;
     }
 
     Ok(())
 }
 
-pub(super) async fn check<N: Normalizer>(
+async fn check<N: Normalizer>(
     ir: &IR,
     value_environment: &ValueEnvironment<'_, N>,
     handler: &dyn Handler<Diagnostic>,
@@ -345,8 +357,6 @@ pub(super) async fn check<N: Normalizer>(
         check_register_assignment(ir, register_id, value_environment, handler)
             .await?;
     }
-
-    Box::pin(check_recursive(ir, value_environment, handler)).await?;
 
     Ok(())
 }

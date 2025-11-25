@@ -10,10 +10,7 @@ use pernixc_ir::{
     pattern::{Irrefutable, NameBindingPoint, Wildcard},
     value::{
         Value,
-        register::{
-            self, Assignment,
-            do_with::{Do, OperationHandler},
-        },
+        register::{self, Assignment},
     },
 };
 use pernixc_lexical::tree::{RelativeLocation, RelativeSpan};
@@ -88,7 +85,7 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
             self.create_type_inference(constraint::Type::All(true)),
         );
 
-        let mut do_closure = Box::pin(self.new_closure_binder(
+        let mut do_ir = Box::pin(self.new_closure_binder(
             async |x| {
                 build_do_block(x, &do_statements, handler).await?;
                 Ok(())
@@ -103,16 +100,13 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
         let mut do_captures = captures.captures().clone();
 
         // prune the captures
-        do_captures.prune_capture_ir(
-            std::iter::once(&mut do_closure),
-            PruneMode::Once,
-        );
+        do_captures
+            .prune_capture_ir(std::iter::once(&mut do_ir), PruneMode::Once);
 
         // pop the closure from the stack
         self.pop_handling_scope(effect_handlers.effect_handler_group_id);
 
-        let do_capture_arguments =
-            self.bind_capture_arguments(do_captures, do_kw.span());
+        let do_part = self.new_do(do_ir, do_captures, do_kw.span());
 
         let with = build_with_blocks(
             self,
@@ -126,7 +120,7 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
 
         let do_assignment = register::do_with::DoWith::new(
             effect_handlers.effect_handler_group_id,
-            Do::new(do_capture_arguments, do_closure),
+            do_part,
             with,
             expected_return_type,
         );
@@ -238,18 +232,24 @@ async fn build_with_blocks(
         PruneMode::Multiple,
     );
 
-    let mut with = register::do_with::HandlerChain::new(
-        binder.bind_capture_arguments(underlying_captures, with_span),
-    );
+    let (with_capture_id, with_capture_arguments) =
+        binder.bind_capture_arguments(underlying_captures, with_span);
+
+    let mut with = register::do_with::HandlerChain::new(with_capture_arguments);
 
     for ((effect_handler_id, effect_operation_id), (ir, closure_parameters)) in
         with_irs
     {
         let effect_handler = with.insert_handler_clause(effect_handler_id);
+        let operation_handler = binder.new_operation_handler(
+            ir,
+            with_capture_id,
+            closure_parameters,
+        );
 
         effect_handler.insert_effect_operation_handler_closure(
             effect_operation_id,
-            OperationHandler::new(ir, closure_parameters),
+            operation_handler,
         );
     }
 

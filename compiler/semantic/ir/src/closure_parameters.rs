@@ -1,7 +1,7 @@
 //! Contains the definition of [`ClosureParameters`].
 
 use derive_more::Index;
-use pernixc_arena::{ID, OrderedArena};
+use pernixc_arena::{Arena, ID, OrderedArena};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_semantic_element::parameter::Parameters;
 use pernixc_serialize::{Deserialize, Serialize};
@@ -58,7 +58,7 @@ impl ClosureParameters {
 impl ClosureParameters {
     /// Creates closure parameters from original parameters and an
     /// instantiation.
-    /// 
+    ///
     /// The parameters will be taken up to the number of spans provided by
     /// `span_iterator`. Since each parameter must have a span, the number of
     /// spans provided must be at least equal to the number of parameters.
@@ -124,5 +124,39 @@ impl transform::Element for ClosureParameters {
         }
 
         Ok(())
+    }
+}
+
+/// A collection of all closure parameters used in a function.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
+    StableHash,
+    Serialize,
+    Deserialize,
+    derive_more::Index,
+    derive_more::IndexMut,
+)]
+pub struct ClosureParametersMap {
+    #[index]
+    #[index_mut]
+    arena: Arena<ClosureParameters>,
+}
+
+impl ClosureParametersMap {
+    /// Creates a new empty [`ClosureParametersMap`].
+    #[must_use]
+    pub fn new() -> Self { Self { arena: Arena::new() } }
+
+    /// Inserts new closure parameters into the map and returns its ID.
+    #[must_use]
+    pub fn insert(
+        &mut self,
+        closure_parameters: ClosureParameters,
+    ) -> ID<ClosureParameters> {
+        self.arena.insert(closure_parameters)
     }
 }
