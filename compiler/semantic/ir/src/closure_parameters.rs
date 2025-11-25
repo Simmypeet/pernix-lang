@@ -160,3 +160,21 @@ impl ClosureParametersMap {
         self.arena.insert(closure_parameters)
     }
 }
+
+impl transform::Element for ClosureParametersMap {
+    async fn transform<
+        T: transform::Transformer<pernixc_term::lifetime::Lifetime>
+            + transform::Transformer<Type>
+            + transform::Transformer<pernixc_term::constant::Constant>,
+    >(
+        &mut self,
+        transformer: &mut T,
+        engine: &pernixc_query::TrackedEngine,
+    ) -> Result<(), pernixc_query::runtime::executor::CyclicError> {
+        for (_, closure_parameters) in &mut self.arena {
+            closure_parameters.transform(transformer, engine).await?;
+        }
+
+        Ok(())
+    }
+}

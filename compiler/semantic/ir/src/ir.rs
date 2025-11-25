@@ -80,6 +80,22 @@ pub struct IRMap {
     irs: Arena<IRWithContext>,
 }
 
+impl transform::Element for IRMap {
+    async fn transform<
+        T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
+    >(
+        &mut self,
+        transformer: &mut T,
+        engine: &TrackedEngine,
+    ) -> Result<(), CyclicError> {
+        for (_, ir_with_context) in &mut self.irs {
+            ir_with_context.ir.transform(transformer, engine).await?;
+        }
+
+        Ok(())
+    }
+}
+
 impl Default for IRMap {
     fn default() -> Self { Self::new() }
 }
@@ -102,6 +118,15 @@ impl IRMap {
     ) -> impl ExactSizeIterator<Item = (ID<IRWithContext>, &'_ IRWithContext)> + '_
     {
         self.irs.iter()
+    }
+
+    /// Returns a mutable iterator over all IRs with their IDs.
+    #[must_use]
+    pub fn ir_with_contexts_mut(
+        &mut self,
+    ) -> impl ExactSizeIterator<Item = (ID<IRWithContext>, &'_ mut IRWithContext)> + '_
+    {
+        self.irs.iter_mut()
     }
 }
 

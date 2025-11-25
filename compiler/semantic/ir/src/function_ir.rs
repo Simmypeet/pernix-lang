@@ -7,6 +7,7 @@ use pernixc_arena::ID;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
+use pernixc_type_system::normalizer::Normalizer;
 
 use crate::{
     IRWithContext,
@@ -14,6 +15,7 @@ use crate::{
     closure_parameters::{ClosureParameters, ClosureParametersMap},
     handling_scope::HandlingScopes,
     ir::{IR, IRMap},
+    value::Environment as ValueEnvironment,
 };
 
 /// An intermediate representation of a function.
@@ -207,5 +209,118 @@ impl FunctionIR {
     #[must_use]
     pub fn get_ir_mut(&mut self, id: ID<IRWithContext>) -> &mut IRWithContext {
         &mut self.ir_map[id]
+    }
+}
+
+impl FunctionIR {
+    /// Iterates over all IRs along with their [`ValueEnvironment`]
+    /// corresponding to each IR's context.
+    pub fn ir_with_value_environments<'s, N: Normalizer>(
+        &'s self,
+        ty_environment: &'s pernixc_type_system::environment::Environment<
+            's,
+            N,
+        >,
+        current_site: Global<pernixc_symbol::ID>,
+    ) -> impl Iterator<
+        Item = (
+            ID<IRWithContext>,
+            &'s IRWithContext,
+            crate::value::Environment<'s, N>,
+        ),
+    > + 's {
+        self.ir_map.ir_with_contexts().map(move |(ir_id, ir_with_context)| {
+            let environment = match ir_with_context.context() {
+                IRContext::Root => ValueEnvironment::builder()
+                    .type_environment(ty_environment)
+                    .current_site(current_site)
+                    .build(),
+
+                IRContext::OperationHandler(operation_handler_context) => {
+                    let captures = self
+                        .get_capture(operation_handler_context.captures_id());
+                    let closure_parameters = self.get_closure_parameters(
+                        operation_handler_context.closure_parameters_id(),
+                    );
+
+                    ValueEnvironment::builder()
+                        .type_environment(ty_environment)
+                        .current_site(current_site)
+                        .captures(captures)
+                        .closure_parameters(closure_parameters)
+                        .build()
+                }
+
+                IRContext::Do(do_context) => {
+                    let captures = self.get_capture(do_context.captures_id());
+
+                    ValueEnvironment::builder()
+                        .type_environment(ty_environment)
+                        .current_site(current_site)
+                        .captures(captures)
+                        .build()
+                }
+            };
+
+            (ir_id, ir_with_context, environment)
+        })
+    }
+
+    /// Iterates over all IRs along with their [`ValueEnvironment`]
+    /// corresponding to each IR's context, mutably.
+    pub fn ir_with_value_environments_mut<'s, N: Normalizer>(
+        &'s mut self,
+        ty_environment: &'s pernixc_type_system::environment::Environment<
+            's,
+            N,
+        >,
+        current_site: Global<pernixc_symbol::ID>,
+    ) -> impl Iterator<
+        Item = (
+            ID<IRWithContext>,
+            &'s mut IRWithContext,
+            crate::value::Environment<'s, N>,
+        ),
+    > + 's {
+        let captures_map = &self.captures_map;
+        let closure_parameters_map = &self.closure_parameters_map;
+
+        self.ir_map.ir_with_contexts_mut().map(
+            move |(ir_id, ir_with_context)| {
+                let environment = match ir_with_context.context() {
+                    IRContext::Root => ValueEnvironment::builder()
+                        .type_environment(ty_environment)
+                        .current_site(current_site)
+                        .build(),
+
+                    IRContext::OperationHandler(operation_handler_context) => {
+                        let captures = &captures_map
+                            [operation_handler_context.captures_id()];
+
+                        let closure_parameters = &closure_parameters_map
+                            [operation_handler_context.closure_parameters_id()];
+
+                        ValueEnvironment::builder()
+                            .type_environment(ty_environment)
+                            .current_site(current_site)
+                            .captures(captures)
+                            .closure_parameters(closure_parameters)
+                            .build()
+                    }
+
+                    IRContext::Do(do_context) => {
+                        let captures = &captures_map[do_context.captures_id()];
+
+                        ValueEnvironment::builder()
+                            .type_environment(ty_environment)
+                            .current_site(current_site)
+                            .captures(captures)
+                            .build()
+                    }
+                };
+
+                (ir_id, ir_with_context, environment)
+            },
+        )
     }
 }

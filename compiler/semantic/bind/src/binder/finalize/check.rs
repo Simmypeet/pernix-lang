@@ -2,7 +2,6 @@ use pernixc_arena::ID;
 use pernixc_handler::Handler;
 use pernixc_ir::{
     FunctionIR,
-    function_ir::IRContext,
     ir::IR,
     value::{
         Environment as ValueEnvironment, TypeOf, Value,
@@ -303,41 +302,10 @@ pub(super) async fn check_all<N: Normalizer>(
     current_site: Global<pernixc_symbol::ID>,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<(), UnrecoverableError> {
-    for (_, ir_with_context) in function_ir.ir_with_contexts() {
-        let value_environment = match ir_with_context.context() {
-            IRContext::Root => ValueEnvironment::builder()
-                .type_environment(ty_environment)
-                .current_site(current_site)
-                .build(),
-
-            IRContext::OperationHandler(operation_handler_context) => {
-                let captures = function_ir
-                    .get_capture(operation_handler_context.captures_id());
-                let closure_parameters = function_ir.get_closure_parameters(
-                    operation_handler_context.closure_parameters_id(),
-                );
-
-                ValueEnvironment::builder()
-                    .type_environment(ty_environment)
-                    .captures(captures)
-                    .closure_parameters(closure_parameters)
-                    .current_site(current_site)
-                    .build()
-            }
-
-            IRContext::Do(do_context) => {
-                let captures =
-                    function_ir.get_capture(do_context.captures_id());
-
-                ValueEnvironment::builder()
-                    .type_environment(ty_environment)
-                    .captures(captures)
-                    .current_site(current_site)
-                    .build()
-            }
-        };
-
-        check(ir_with_context.ir(), &value_environment, handler).await?;
+    for (_, ir, value_environment) in
+        function_ir.ir_with_value_environments(ty_environment, current_site)
+    {
+        check(ir.ir(), &value_environment, handler).await?;
     }
 
     Ok(())

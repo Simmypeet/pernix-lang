@@ -234,3 +234,21 @@ impl CapturesMap {
         self.arena.insert(captures)
     }
 }
+
+impl transform::Element for CapturesMap {
+    async fn transform<
+        T: transform::Transformer<pernixc_term::lifetime::Lifetime>
+            + transform::Transformer<Type>
+            + transform::Transformer<pernixc_term::constant::Constant>,
+    >(
+        &mut self,
+        transformer: &mut T,
+        engine: &TrackedEngine,
+    ) -> Result<(), CyclicError> {
+        for (_, captures) in &mut self.arena {
+            captures.transform(transformer, engine).await?;
+        }
+
+        Ok(())
+    }
+}
