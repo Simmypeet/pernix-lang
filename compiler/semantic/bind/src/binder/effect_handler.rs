@@ -86,12 +86,17 @@ impl Binder<'_> {
     }
 
     /// Pops the topmost operation handler ID from the operation handler stack.
-    #[must_use]
-    pub fn pop_operation_handler(&mut self) -> OperationHandlerID {
-        self.effect_handler_context
-            .operation_handler_stack
-            .pop()
-            .expect("Operation handler stack underflow")
+    pub fn pop_operation_handler(
+        &mut self,
+        operation_handler_id: OperationHandlerID,
+    ) {
+        assert_eq!(
+            self.effect_handler_context
+                .operation_handler_stack
+                .pop()
+                .expect("Operation handler stack underflow"),
+            operation_handler_id
+        );
     }
 
     /// Gets the [`HandlerClause`] with the [`HandlerClauseID`].

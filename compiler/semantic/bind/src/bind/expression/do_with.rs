@@ -6,7 +6,9 @@ use pernixc_ir::{
     address::{Address, Memory},
     capture::{builder::CapturesWithNameBindingPoint, pruning::PruneMode},
     closure_parameters::ClosureParameters,
-    handling_scope::{HandlerClause, HandlingScope},
+    handling_scope::{
+        HandlerClause, HandlerClauseID, HandlingScope, OperationHandlerID,
+    },
     pattern::{Irrefutable, NameBindingPoint, Wildcard},
     value::{
         Value,
@@ -106,6 +108,7 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
         let with = build_with_blocks(
             self,
             effect_handlers.with_blocks,
+            effect_handlers.handling_scope_id,
             &effect_handlers.return_type,
             span_of_multi_syntax(syntax_tree.with()).unwrap_or(do_kw.span),
             captures,
@@ -153,6 +156,7 @@ struct OperationHanderBlock {
 async fn build_with_blocks(
     binder: &mut Binder<'_>,
     with_blocks: Vec<HandlerClauseBlock>,
+    handling_scope_id: pernixc_arena::ID<HandlingScope>,
     expected_type: &Type,
     with_span: RelativeSpan,
     captures: CapturesWithNameBindingPoint,
@@ -190,6 +194,16 @@ async fn build_with_blocks(
             let ir = binder
                 .new_closure_binder(
                     async |x| {
+                        let operation_handler_id = OperationHandlerID::new(
+                            HandlerClauseID::new(
+                                handling_scope_id,
+                                with_block.handler_clause_id,
+                            ),
+                            effect_operation_id,
+                        );
+
+                        x.push_operation_handler(operation_handler_id);
+
                         Box::pin(build_operation_handler(
                             x,
                             &closure_parameters,
@@ -197,6 +211,8 @@ async fn build_with_blocks(
                             handler,
                         ))
                         .await?;
+
+                        x.pop_operation_handler(operation_handler_id);
 
                         Ok(())
                     },
