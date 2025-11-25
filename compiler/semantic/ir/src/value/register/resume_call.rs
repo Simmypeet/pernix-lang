@@ -2,7 +2,7 @@
 
 use std::ops::Deref;
 
-use getset::Getters;
+use getset::{CopyGetters, Getters};
 use pernixc_query::runtime::executor::CyclicError;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
@@ -11,8 +11,8 @@ use pernixc_type_system::Error;
 
 use crate::{
     Values,
-    handling_scope::HandlerClauseID,
-    transform::{Transformer, TypeTermSource},
+    handling_scope::{HandlerClauseID, OperationHandlerID},
+    transform::Transformer,
     value::{TypeOf, Value},
     visitor,
 };
@@ -31,16 +31,40 @@ use crate::{
     Serialize,
     Deserialize,
     Getters,
+    CopyGetters,
 )]
 pub struct ResumeCall {
     /// The value to be resumed.
     value: Value,
-    handler_clause_id: HandlerClauseID,
-    operation_symbol_id: pernixc_symbol::ID,
 
-    /// The return type of the `resume` calling.
-    #[get = "pub"]
-    return_type: Type,
+    /// The operation handler clause ID where this `resume` call is located.
+    #[get_copy = "pub"]
+    operation_handler_id: OperationHandlerID,
+}
+
+impl ResumeCall {
+    /// Creates a new [`ResumeCall`].
+    #[must_use]
+    pub const fn new(
+        value: Value,
+        operation_handler_id: OperationHandlerID,
+    ) -> Self {
+        Self { value, operation_handler_id }
+    }
+
+    /// Returns the handler clause ID where this `resume` call is located.
+    #[must_use]
+    pub fn handler_clause_id(&self) -> HandlerClauseID {
+        self.operation_handler_id.handler_clause_id()
+    }
+
+    /// Returns the handling scope ID where this `resume` call is located.
+    #[must_use]
+    pub const fn handling_scope_id(
+        &self,
+    ) -> pernixc_arena::ID<crate::handling_scope::HandlingScope> {
+        self.operation_handler_id.handling_scope_id()
+    }
 }
 
 pub(super) async fn transform_resume_call<
@@ -48,19 +72,12 @@ pub(super) async fn transform_resume_call<
 >(
     resume_call: &mut ResumeCall,
     transformer: &mut T,
-    span: pernixc_lexical::tree::RelativeSpan,
 ) -> Result<(), CyclicError> {
     if let Value::Literal(literal) = &mut resume_call.value {
         literal.transform(transformer).await?;
     }
 
-    transformer
-        .transform(
-            &mut resume_call.return_type,
-            TypeTermSource::ResumeCall,
-            span,
-        )
-        .await
+    Ok(())
 }
 
 impl visitor::Element for ResumeCall {
@@ -75,9 +92,12 @@ impl TypeOf<&ResumeCall> for Values {
         value: &ResumeCall,
         environment: &crate::value::Environment<'_, N>,
     ) -> Result<pernixc_type_system::Succeeded<Type>, Error> {
+        let handling_scope =
+            &environment.handling_scopes[value.handling_scope_id()];
+
         Ok(environment
             .type_environment
-            .simplify(value.return_type().clone())
+            .simplify(handling_scope.return_type().clone())
             .await?
             .deref()
             .clone())

@@ -229,34 +229,24 @@ impl transform::Element for HandlerChain {
 pub struct DoWith {
     /// The unique ID of this `do-with` expression within the function-level
     /// IR.
-    handler_group: pernixc_arena::ID<HandlingScope>,
+    handling_scope_id: pernixc_arena::ID<HandlingScope>,
 
     /// The closure for the `do` part of the expression.
     do_block: Do,
 
     /// The `with` handlers associated with this `do` expression.
     handleer_chain: HandlerChain,
-
-    /// The return type of the `do` expression.
-    #[get = "pub"]
-    return_type: pernixc_term::r#type::Type,
 }
 
 impl DoWith {
     /// Creates a new `Do` expression with the given components.
     #[must_use]
     pub const fn new(
-        handler_group: pernixc_arena::ID<HandlingScope>,
+        handling_scope_id: pernixc_arena::ID<HandlingScope>,
         closure: Do,
         with: HandlerChain,
-        return_type: pernixc_term::r#type::Type,
     ) -> Self {
-        Self {
-            handler_group,
-            do_block: closure,
-            handleer_chain: with,
-            return_type,
-        }
+        Self { handling_scope_id, do_block: closure, handleer_chain: with }
     }
 }
 
@@ -289,18 +279,9 @@ pub(super) async fn transform_do_with<
     do_with: &mut DoWith,
     transformer: &mut T,
     engine: &TrackedEngine,
-    span: pernixc_lexical::tree::RelativeSpan,
 ) -> Result<(), CyclicError> {
     do_with.do_block.transform(transformer, engine).await?;
     do_with.handleer_chain.transform(transformer, engine).await?;
-
-    transformer
-        .transform(
-            &mut do_with.return_type,
-            transform::TypeTermSource::DoReturnType,
-            span,
-        )
-        .await?;
 
     Ok(())
 }
@@ -311,9 +292,12 @@ impl TypeOf<&DoWith> for Values {
         do_with: &DoWith,
         environment: &Environment<'_, N>,
     ) -> Result<Succeeded<Type>, Error> {
+        let handling_scope =
+            &environment.handling_scopes[do_with.handling_scope_id];
+
         Ok(environment
             .type_environment
-            .simplify(do_with.return_type().clone())
+            .simplify(handling_scope.return_type().clone())
             .await?
             .deref()
             .clone())

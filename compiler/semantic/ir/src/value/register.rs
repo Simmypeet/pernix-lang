@@ -58,8 +58,8 @@ pub use function_call::{EffectHandlerArgument, FunctionCall};
 pub use load::{Load, Purpose as LoadPurpose};
 pub use phi::Phi;
 pub use prefix::{Prefix, PrefixOperator};
-pub use r#struct::Struct;
 pub use resume_call::ResumeCall;
+pub use r#struct::Struct;
 pub use tuple::{Tuple, TupleElement};
 pub use variant::Variant;
 pub use variant_number::VariantNumber;
@@ -248,8 +248,7 @@ impl transform::Element for Register {
                 .await
             }
             Assignment::Do(d) => {
-                do_with::transform_do_with(d, transformer, engine, self.span)
-                    .await
+                do_with::transform_do_with(d, transformer, engine).await
             }
             Assignment::ResumeCall(r) => {
                 resume_call::transform_resume_call(r, transformer, self.span)
