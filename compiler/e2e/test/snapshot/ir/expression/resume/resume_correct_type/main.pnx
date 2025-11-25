@@ -1,0 +1,11 @@
+public effect Test[T]:
+    operation(a: T) -> T
+
+
+public function main():
+    do:
+        return Test[int32]::operation(12)
+
+    with Test[int32]:
+        operation(a):
+            return resume(a)
