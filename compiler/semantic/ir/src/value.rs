@@ -59,6 +59,9 @@ pub struct Environment<'e, N> {
     /// here is used for accessing the closure parameters.
     pub closure_parameters: Option<&'e ClosureParameters>,
 
+    /// The handling scopes in the current context.
+    pub handling_scopes: &'e crate::handling_scope::HandlingScopes,
+
     /// The site where the IR binding is being taken place in.
     pub current_site: Global<pernixc_symbol::ID>,
 }
