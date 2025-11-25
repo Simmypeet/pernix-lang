@@ -74,7 +74,7 @@ impl Transformer<Lifetime> for ReplaceInference<'_> {
         &mut self,
         _term: &mut Lifetime,
         _source: <Lifetime as pernixc_ir::transform::Transformable>::Source,
-        _span: Option<RelativeSpan>,
+        _span: RelativeSpan,
     ) -> Result<(), CyclicError> {
         Ok(())
     }
@@ -85,17 +85,15 @@ impl Transformer<Type> for ReplaceInference<'_> {
         &mut self,
         term: &mut Type,
         source: TypeTermSource,
-        span: Option<RelativeSpan>,
+        span: RelativeSpan,
     ) -> Result<(), CyclicError> {
         match self.environment.simplify(std::mem::take(term)).await {
             Ok(simplified) => {
                 *term = simplified.result.clone();
             }
             Err(pernixc_type_system::Error::Overflow(overflow)) => {
-                overflow.report_as_type_calculating_overflow(
-                    span.unwrap(),
-                    &self.handler,
-                );
+                overflow
+                    .report_as_type_calculating_overflow(span, &self.handler);
             }
             Err(pernixc_type_system::Error::CyclicDependency(err)) => {
                 return Err(err);
@@ -106,10 +104,7 @@ impl Transformer<Type> for ReplaceInference<'_> {
             (term.is_inference(), source)
         {
             self.handler.receive(Diagnostic::TypeAnnotationRequired(
-                TypeAnnotationRequired {
-                    span: span.unwrap(),
-                    generic_parameter,
-                },
+                TypeAnnotationRequired { span, generic_parameter },
             ));
         }
 
@@ -125,17 +120,15 @@ impl Transformer<pernixc_term::constant::Constant> for ReplaceInference<'_> {
         &mut self,
         term: &mut pernixc_term::constant::Constant,
         source: <pernixc_term::constant::Constant as pernixc_ir::transform::Transformable>::Source,
-        span: Option<RelativeSpan>,
+        span: RelativeSpan,
     ) -> Result<(), CyclicError> {
         match self.environment.simplify(std::mem::take(term)).await {
             Ok(simplified) => {
                 *term = simplified.result.clone();
             }
             Err(pernixc_type_system::Error::Overflow(overflow)) => {
-                overflow.report_as_type_calculating_overflow(
-                    span.unwrap(),
-                    &self.handler,
-                );
+                overflow
+                    .report_as_type_calculating_overflow(span, &self.handler);
             }
             Err(pernixc_type_system::Error::CyclicDependency(err)) => {
                 return Err(err);
@@ -146,10 +139,7 @@ impl Transformer<pernixc_term::constant::Constant> for ReplaceInference<'_> {
             (term.is_inference(), source)
         {
             self.handler.receive(Diagnostic::ConstantAnnotationRequired(
-                ConstantAnnotationRequired {
-                    span: span.unwrap(),
-                    generic_parameter,
-                },
+                ConstantAnnotationRequired { span, generic_parameter },
             ));
         }
 
@@ -177,6 +167,11 @@ impl Binder<'_> {
         };
 
         self.ir.transform(&mut transformer, self.engine).await?;
+        self.ir_map.transform(&mut transformer, self.engine).await?;
+        self.closure_parameters_map
+            .transform(&mut transformer, self.engine)
+            .await?;
+        self.captures_map.transform(&mut transformer, self.engine).await?;
 
         Ok(())
     }

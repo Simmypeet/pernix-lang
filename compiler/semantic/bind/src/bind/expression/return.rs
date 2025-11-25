@@ -51,9 +51,9 @@ impl Bind<&pernixc_syntax::expression::terminator::Return> for Binder<'_> {
                 self.bind_value_or_error(&syn, Some(&return_type), handler)
                     .await?
             }
-            None => Value::Literal(Literal::Unit(Unit {
-                span: Some(syntax_tree.span()),
-            })),
+            None => {
+                Value::Literal(Literal::Unit(Unit { span: syntax_tree.span() }))
+            }
         };
 
         // pop all the needed scopes
@@ -75,7 +75,7 @@ impl Bind<&pernixc_syntax::expression::terminator::Return> for Binder<'_> {
         // insert the return instruction
         self.insert_terminator(Terminator::Return(instruction::Return {
             value,
-            span: Some(syntax_tree.span()),
+            span: syntax_tree.span(),
         }));
 
         let value =
@@ -83,7 +83,7 @@ impl Bind<&pernixc_syntax::expression::terminator::Return> for Binder<'_> {
                 r#type: Type::Inference(
                     self.create_type_inference(constraint::Type::All(true)),
                 ),
-                span: Some(syntax_tree.span()),
+                span: syntax_tree.span(),
             }));
 
         Ok(Expression::RValue(value))

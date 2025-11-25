@@ -80,8 +80,7 @@ pub(super) async fn simplify_drop<N: Normalizer>(
 ) -> Result<Vec<Instruction>, UnrecoverableError> {
     let span_of = values
         .span_of_memory(drop.address.get_root_memory(), environment)
-        .await?
-        .unwrap();
+        .await?;
 
     let ty = values
         .type_of(&drop.address, environment)
@@ -380,7 +379,7 @@ pub(super) async fn simplify_drop<N: Normalizer>(
                         indexing_value: Value::Literal(Literal::Unreachable(
                             Unreachable {
                                 r#type: Type::Primitive(Primitive::Usize),
-                                span: None,
+                                span: span_of,
                             },
                         )),
                     }),

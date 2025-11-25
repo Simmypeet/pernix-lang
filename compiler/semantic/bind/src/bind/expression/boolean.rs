@@ -27,7 +27,7 @@ impl Bind<&pernixc_syntax::expression::unit::Boolean>
 
         Ok(Expression::RValue(Value::Literal(Literal::Boolean(Boolean {
             value,
-            span: Some(syntax_tree.span()),
+            span: syntax_tree.span(),
         }))))
     }
 }

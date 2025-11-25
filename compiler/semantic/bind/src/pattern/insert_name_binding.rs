@@ -245,7 +245,7 @@ impl Binder<'_> {
                     self.push_instruction(Instruction::Store(Store {
                         address: Address::Memory(Memory::Alloca(alloca_id)),
                         value: load_value,
-                        span: Some(pattern.span),
+                        span: pattern.span,
                     }));
 
                     Address::Memory(Memory::Alloca(alloca_id))
@@ -392,7 +392,7 @@ impl Binder<'_> {
         self.push_instruction(Instruction::Store(Store {
             address: Address::Memory(Memory::Alloca(alloca_id)),
             value: Value::Register(register_id),
-            span: Some(pattern_span),
+            span: pattern_span,
         }));
 
         let _ = name_binding_point.insert(
@@ -596,27 +596,23 @@ impl Binder<'_> {
                             offset: address::Offset::FromStart(offset),
                         }),
                         value: Value::Register(moved_reg),
-                        span: Some(
-                            tuple_pat
-                                .elements
-                                .get(packed_position)
-                                .unwrap()
-                                .pattern
-                                .span(),
-                        ),
-                    }));
-                }
-
-                // use dedicated instruction to pack the unpacked element
-                self.push_instruction(Instruction::TuplePack(TuplePack {
-                    packed_tuple_span: Some(
-                        tuple_pat
+                        span: tuple_pat
                             .elements
                             .get(packed_position)
                             .unwrap()
                             .pattern
                             .span(),
-                    ),
+                    }));
+                }
+
+                // use dedicated instruction to pack the unpacked element
+                self.push_instruction(Instruction::TuplePack(TuplePack {
+                    packed_tuple_span: tuple_pat
+                        .elements
+                        .get(packed_position)
+                        .unwrap()
+                        .pattern
+                        .span(),
                     store_address: Address::Memory(Memory::Alloca(
                         packed_alloca,
                     )),
@@ -667,14 +663,12 @@ impl Binder<'_> {
                             ),
                         }),
                         value: Value::Register(moved_reg),
-                        span: Some(
-                            tuple_pat
-                                .elements
-                                .get(packed_position)
-                                .unwrap()
-                                .pattern
-                                .span(),
-                        ),
+                        span: tuple_pat
+                            .elements
+                            .get(packed_position)
+                            .unwrap()
+                            .pattern
+                            .span(),
                     }));
                 }
             } else {
@@ -704,14 +698,12 @@ impl Binder<'_> {
                             offset: address::Offset::FromStart(offset),
                         }),
                         value: Value::Register(moved_reg),
-                        span: Some(
-                            tuple_pat
-                                .elements
-                                .get(packed_position)
-                                .unwrap()
-                                .pattern
-                                .span(),
-                        ),
+                        span: tuple_pat
+                            .elements
+                            .get(packed_position)
+                            .unwrap()
+                            .pattern
+                            .span(),
                     }));
                 }
             }

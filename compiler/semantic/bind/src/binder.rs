@@ -7,11 +7,13 @@ use pernixc_arena::ID;
 use pernixc_extend::extend;
 use pernixc_handler::Handler;
 use pernixc_ir::{
-    IR,
     address::{Address, Memory},
     alloca::Alloca,
+    capture::CapturesMap,
+    closure_parameters::ClosureParametersMap,
     control_flow_graph::Block,
     instruction::{self, Instruction, ScopePop, ScopePush, Terminator},
+    ir::{IR, IRMap},
     pattern::{Irrefutable, NameBindingPoint, Wildcard},
     scope,
     value::{
@@ -138,6 +140,9 @@ pub struct Binder<'t> {
     /// determines the expected return type of the closure.
     expected_closure_return_type: Option<Type>,
 
+    ir_map: IRMap,
+    closure_parameters_map: ClosureParametersMap,
+    captures_map: CapturesMap,
     effect_handler_context: effect_handler::Context,
     block_context: block::Context,
     loop_context: r#loop::Context,
@@ -205,6 +210,9 @@ impl<'t> Binder<'t> {
 
             expected_closure_return_type: None,
 
+            ir_map: IRMap::default(),
+            closure_parameters_map: ClosureParametersMap::default(),
+            captures_map: CapturesMap::default(),
             effect_handler_context: effect_handler::Context::default(),
             block_context: block::Context::default(),
             loop_context: r#loop::Context::default(),
@@ -362,7 +370,7 @@ impl Binder<'_> {
 
                 Type::Inference(inference)
             },
-            span: Some(span),
+            span,
         })
     }
 
@@ -394,7 +402,7 @@ impl Binder<'_> {
 
                 Type::Inference(inference)
             },
-            span: Some(span),
+            span,
         })
     }
 
@@ -422,7 +430,7 @@ impl Binder<'_> {
                         .then(|| x.variable_declarations().len())
                 })
                 .expect("scope not found"),
-            span: Some(span),
+            span,
         });
 
         self.stack
@@ -450,7 +458,7 @@ impl Binder<'_> {
                 .current_scope()
                 .variable_declarations()
                 .len(),
-            span: Some(span),
+            span,
         });
 
         self.stack.current_scope_mut().add_variable_declaration(alloca_id);
@@ -470,10 +478,8 @@ impl Binder<'_> {
     ) -> Result<ID<Alloca>, UnrecoverableError> {
         let ty = self.type_of_value(&value, handler).await?;
         let span = address_span.unwrap_or_else(|| match &value {
-            Value::Register(id) => {
-                self.ir.values.registers.get(*id).unwrap().span.unwrap()
-            }
-            Value::Literal(literal) => literal.span().copied().unwrap(),
+            Value::Register(id) => self.ir.values.registers[*id].span,
+            Value::Literal(literal) => *literal.span(),
         });
 
         let alloca_id = self.create_alloca_with_scope_id(ty, scope_id, span);
@@ -483,7 +489,7 @@ impl Binder<'_> {
             instruction::Instruction::Store(instruction::Store {
                 address: alloca_address,
                 value,
-                span: Some(store_span),
+                span: store_span,
             }),
         );
 
@@ -599,11 +605,8 @@ impl Binder<'_> {
         assignment: Assignment,
         span: RelativeSpan,
     ) -> ID<Register> {
-        let register_id = self
-            .ir
-            .values
-            .registers
-            .insert(Register { assignment, span: Some(span) });
+        let register_id =
+            self.ir.values.registers.insert(Register { assignment, span });
 
         let reachable = self.current_block_mut().add_instruction(
             instruction::Instruction::RegisterAssignment(
@@ -648,7 +651,7 @@ impl Binder<'_> {
             .map(|x| x.result)
             .map_err(|x| {
                 x.report_as_type_calculating_overflow(
-                    self.ir.values.registers[register_id].span.unwrap(),
+                    self.ir.values.registers[register_id].span,
                     &handler,
                 )
             })
@@ -670,7 +673,7 @@ impl Binder<'_> {
                 .await
                 .map_err(|x| {
                     x.report_as_type_calculating_overflow(
-                        literal.span().copied().unwrap(),
+                        *literal.span(),
                         &handler,
                     )
                 })?
@@ -739,8 +742,8 @@ impl Binder<'_> {
     #[must_use]
     pub fn span_of_value(&self, value: &Value) -> RelativeSpan {
         match value {
-            Value::Register(id) => self.ir.values.registers[*id].span.unwrap(),
-            Value::Literal(literal) => *literal.span().unwrap(),
+            Value::Register(id) => self.ir.values.registers[*id].span,
+            Value::Literal(literal) => *literal.span(),
         }
     }
 
@@ -823,8 +826,7 @@ impl Binder<'_> {
             Err(err) => Err(err.report_as_type_calculating_overflow(
                 self.values()
                     .span_of_memory(address.get_root_memory(), &environment)
-                    .await?
-                    .unwrap(),
+                    .await?,
                 &handler,
             )),
         }

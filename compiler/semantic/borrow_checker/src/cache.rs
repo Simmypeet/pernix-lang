@@ -59,7 +59,7 @@ impl RegisterInfos {
                 let ty = ir.values.type_of(inst, environment).await.map_err(
                     |x| {
                         x.report_as_type_calculating_overflow(
-                            register.span.unwrap(),
+                            register.span,
                             &handler,
                         )
                     },

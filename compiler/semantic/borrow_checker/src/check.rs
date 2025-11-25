@@ -50,7 +50,7 @@ impl<N: Normalizer> Checker<'_, N> {
             load.address(),
             &AccessMode::Read(Read {
                 qualifier: Qualifier::Immutable,
-                span: Some(*register_span),
+                span: *register_span,
             }),
             point,
         )
@@ -198,12 +198,7 @@ impl<N: Normalizer> Checker<'_, N> {
 
                 match &register.assignment {
                     Assignment::Load(load) => {
-                        self.handle_load(
-                            load,
-                            register.span.as_ref().unwrap(),
-                            point,
-                        )
-                        .await
+                        self.handle_load(load, &register.span, point).await
                     }
                     Assignment::Borrow(borrow) => {
                         self.handle_access(

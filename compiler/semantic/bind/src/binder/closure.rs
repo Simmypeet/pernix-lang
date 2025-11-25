@@ -1,12 +1,14 @@
 //! Defines the logic for building nested binders, such as for closures,
 //! effect handlers, do blocks, etc.
 
+use pernixc_arena::ID;
 use pernixc_handler::Handler;
 use pernixc_hash::HashMap;
 use pernixc_ir::{
-    IR,
     capture::{self, Captures, builder::CapturesWithNameBindingPoint},
+    closure_parameters::ClosureParameters,
     instruction::{self, ScopePush},
+    ir::IR,
     value::{
         Value,
         register::{
@@ -77,7 +79,6 @@ impl Binder<'_> {
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<IR, UnrecoverableError> {
         // temporary move out the inference context for the inner binder
-        let inference_context = std::mem::take(&mut self.inference_context);
 
         let ir = IR::default();
         let current_block_id = ir.control_flow_graph.entry_block_id();
@@ -95,12 +96,20 @@ impl Binder<'_> {
             ir,
             current_block_id,
             stack,
-            inference_context,
             unreachable_register_ids: Vec::new(),
             expected_closure_return_type: Some(expected_type.clone()),
+
+            // temporarily move the states that presist across binders
+            inference_context: std::mem::take(&mut self.inference_context),
+            ir_map: std::mem::take(&mut self.ir_map),
+            closure_parameters_map: std::mem::take(
+                &mut self.closure_parameters_map,
+            ),
+            captures_map: std::mem::take(&mut self.captures_map),
             effect_handler_context: std::mem::take(
                 &mut self.effect_handler_context,
             ),
+
             block_context: block::Context::default(),
             loop_context: r#loop::Context::default(),
         };
@@ -119,9 +128,12 @@ impl Binder<'_> {
         // tidy the ir
         binder.tidy_ir();
 
-        // restore back the inference context and the handler groups
+        // restore back the states
         self.inference_context = binder.inference_context;
         self.effect_handler_context = binder.effect_handler_context;
+        self.ir_map = binder.ir_map;
+        self.closure_parameters_map = binder.closure_parameters_map;
+        self.captures_map = binder.captures_map;
 
         result.map(|()| binder.ir)
     }
@@ -214,13 +226,22 @@ impl Binder<'_> {
         Ok(())
     }
 
+    /// Insert the given closure parameters and return its ID.
+    pub fn insert_closure_parameters(
+        &mut self,
+        closure_parameters: ClosureParameters,
+    ) -> ID<ClosureParameters> {
+        self.closure_parameters_map.insert(closure_parameters)
+    }
+
     /// Given the captures, bind all the load/borrow operations for each capture
-    /// and create the [`CaptureArguments`] struct.
+    /// and create the [`CaptureArguments`] struct and return it along with the
+    /// ID of the inserted captures.
     pub fn bind_capture_arguments(
         &mut self,
         captures: Captures,
         capture_span: RelativeSpan,
-    ) -> CaptureArguments {
+    ) -> (ID<Captures>, CaptureArguments) {
         let mut capture_arguments = HashMap::default();
 
         for (capture_id, capture) in captures.captures_as_order() {
@@ -253,6 +274,8 @@ impl Binder<'_> {
             );
         }
 
-        CaptureArguments::new_with_arguments(captures, capture_arguments)
+        let capture_id = self.captures_map.insert(captures);
+
+        (capture_id, CaptureArguments::new_with_arguments(capture_arguments))
     }
 }

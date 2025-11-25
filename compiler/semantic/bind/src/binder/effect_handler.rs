@@ -1,8 +1,18 @@
 //! Contains logic related to effect handlers and handler groups.
 
-use pernixc_ir::handling_scope::{
-    HandlerClause, HandlerClauseID, HandlingScope, HandlingScopes,
+use pernixc_arena::ID;
+use pernixc_ir::{
+    IRWithContext,
+    capture::Captures,
+    closure_parameters::ClosureParameters,
+    function_ir::IRContext,
+    handling_scope::{
+        HandlerClause, HandlerClauseID, HandlingScope, HandlingScopes,
+    },
+    ir::IR,
+    value::register::do_with::{Do, OperationHandler},
 };
+use pernixc_lexical::tree::RelativeSpan;
 use pernixc_target::Global;
 use pernixc_term::generic_arguments::GenericArguments;
 use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
@@ -17,6 +27,48 @@ pub struct Context {
 }
 
 impl Binder<'_> {
+    /// Creates a new `do` expression with the given IR and captures.
+    #[must_use]
+    pub fn new_do(
+        &mut self,
+        ir: IR,
+        captures: Captures,
+        do_span: RelativeSpan,
+    ) -> Do {
+        let (capture_id, captures_args) =
+            self.bind_capture_arguments(captures, do_span);
+
+        let ir_id = self.ir_map.new_ir(IRWithContext::new(
+            ir,
+            IRContext::new_do_context(capture_id),
+        ));
+
+        Do::new(captures_args, ir_id)
+    }
+
+    /// Creates a new operation handler with the given IR, captures, and
+    /// closure parameters.
+    #[must_use]
+    pub fn new_operation_handler(
+        &mut self,
+        ir: IR,
+        captures_id: ID<Captures>,
+        closure_parameters: ClosureParameters,
+    ) -> OperationHandler {
+        let closure_parameters_id =
+            self.insert_closure_parameters(closure_parameters);
+
+        let ir_id = self.ir_map.new_ir(IRWithContext::new(
+            ir,
+            IRContext::new_operation_handler_context(
+                closure_parameters_id,
+                captures_id,
+            ),
+        ));
+
+        OperationHandler::new(ir_id)
+    }
+
     /// Insert a new effect handler group
     pub fn insert_effect_handler_group(
         &mut self,

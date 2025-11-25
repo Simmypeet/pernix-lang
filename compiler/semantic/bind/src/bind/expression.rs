@@ -295,7 +295,7 @@ impl Binder<'_> {
 
                             Ok(Value::Literal(Literal::Error(literal::Error {
                                 r#type: type_hint.clone(),
-                                span: Some(value_span),
+                                span: value_span,
                             })))
                         },
                         Ok,
@@ -336,7 +336,7 @@ impl Binder<'_> {
 
                 Ok(Value::Literal(Literal::Error(literal::Error {
                     r#type: type_hint.clone(),
-                    span: Some(span),
+                    span,
                 })))
             }
 
@@ -347,13 +347,13 @@ impl Binder<'_> {
 
                     Ok(Value::Literal(Literal::Error(literal::Error {
                         r#type: Type::Inference(inference),
-                        span: Some(semantic_error.0),
+                        span: semantic_error.0,
                     })))
                 },
                 |type_hint| {
                     Ok(Value::Literal(Literal::Error(literal::Error {
                         r#type: type_hint.clone(),
-                        span: Some(semantic_error.0),
+                        span: semantic_error.0,
                     })))
                 },
             ),
@@ -393,7 +393,7 @@ impl Binder<'_> {
                     // initialize
                     self.push_instruction(Instruction::Store(Store {
                         address: Address::Memory(Memory::Alloca(alloca_id)),
-                        span: Some(syntax_tree.span()),
+                        span: syntax_tree.span(),
                         value,
                     }));
 

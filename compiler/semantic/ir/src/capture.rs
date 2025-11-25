@@ -181,7 +181,7 @@ pub struct Capture {
     pub capture_mode: CaptureMode,
 
     /// The span of the captured memory address.
-    pub span: Option<RelativeSpan>,
+    pub span: RelativeSpan,
 }
 
 impl Capture {
@@ -198,5 +198,57 @@ impl Capture {
                 })
             }
         }
+    }
+}
+
+/// A collection of all captures used in a function.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
+    StableHash,
+    Serialize,
+    Deserialize,
+    derive_more::Index,
+    derive_more::IndexMut,
+)]
+pub struct CapturesMap {
+    #[index]
+    #[index_mut]
+    arena: Arena<Captures>,
+}
+
+impl CapturesMap {
+    /// Creates a new empty [`CaptureMap`].
+    #[must_use]
+    pub fn new() -> Self { Self { arena: Arena::new() } }
+
+    /// Inserts a new [`Captures`] into the map and returns its ID.
+    #[must_use]
+    pub fn insert(
+        &mut self,
+        captures: Captures,
+    ) -> pernixc_arena::ID<Captures> {
+        self.arena.insert(captures)
+    }
+}
+
+impl transform::Element for CapturesMap {
+    async fn transform<
+        T: transform::Transformer<pernixc_term::lifetime::Lifetime>
+            + transform::Transformer<Type>
+            + transform::Transformer<pernixc_term::constant::Constant>,
+    >(
+        &mut self,
+        transformer: &mut T,
+        engine: &TrackedEngine,
+    ) -> Result<(), CyclicError> {
+        for (_, captures) in &mut self.arena {
+            captures.transform(transformer, engine).await?;
+        }
+
+        Ok(())
     }
 }

@@ -133,18 +133,9 @@ pub async fn ir_with_diagnostic_executor(
         pernixc_type_system::normalizer::NO_OP,
     );
 
-    let value_environment = value::Environment::builder()
-        .current_site(id)
-        .type_environment(&ty_env)
-        .build();
-
     // do memory checking analysis
-    match pernixc_memory_checker::memory_check(
-        &mut ir.ir,
-        &value_environment,
-        &storage,
-    )
-    .await
+    match pernixc_memory_checker::memory_check(&mut ir, &ty_env, id, &storage)
+        .await
     {
         Ok(()) => {}
         Err(UnrecoverableError::CyclicDependency(error)) => {
@@ -165,8 +156,11 @@ pub async fn ir_with_diagnostic_executor(
 
     // do borrow checking analysis
     match pernixc_borrow_checker::borrow_check(
-        &ir.ir,
-        &value_environment,
+        ir.root_ir(),
+        &value::Environment::builder()
+            .current_site(id)
+            .type_environment(&ty_env)
+            .build(),
         &storage,
     )
     .await

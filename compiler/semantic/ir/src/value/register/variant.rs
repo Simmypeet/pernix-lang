@@ -74,7 +74,7 @@ pub(super) async fn transform_variant<
 >(
     variant: &mut Variant,
     transformer: &mut T,
-    span: Option<pernixc_lexical::tree::RelativeSpan>,
+    span: pernixc_lexical::tree::RelativeSpan,
     engine: &TrackedEngine,
 ) -> Result<(), CyclicError> {
     if let Some(value) = variant.associated_value.as_mut()

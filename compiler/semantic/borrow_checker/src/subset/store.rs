@@ -69,7 +69,7 @@ impl<N: Normalizer> Context<'_, N> {
             .await
             .map_err(|x| {
                 x.report_as_type_calculating_overflow(
-                    store_inst.span.unwrap(),
+                    store_inst.span,
                     &self.handler(),
                 )
             })?;
@@ -77,7 +77,7 @@ impl<N: Normalizer> Context<'_, N> {
         self.get_changes_of_store(
             &store_inst.address,
             value_ty,
-            &store_inst.span.unwrap(),
+            &store_inst.span,
         )
         .await
     }

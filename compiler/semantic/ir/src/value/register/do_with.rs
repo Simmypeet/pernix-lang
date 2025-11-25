@@ -12,22 +12,27 @@ use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
 use pernixc_type_system::{Error, Succeeded, normalizer::Normalizer};
 
 use crate::{
-    IR, Values,
-    capture::{Capture, Captures},
-    closure_parameters::ClosureParameters,
+    IRWithContext, Values,
+    capture::Capture,
     handling_scope::HandlingScope,
-    transform::{self, Transformer},
+    transform::{self, Element, Transformer},
     value::{Environment, TypeOf, Value, register::Register},
 };
 
 /// Representing the capture initialization. This contains all the values
 /// used to initialize the captures.
 #[derive(
-    Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize, Getters,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
+    StableHash,
+    Serialize,
+    Deserialize,
+    Getters,
 )]
 pub struct CaptureArguments {
-    /// The captures structure
-    captures: Captures,
     arguments: HashMap<pernixc_arena::ID<Capture>, Value>,
 }
 
@@ -35,18 +40,15 @@ impl CaptureArguments {
     /// Creates a new [`CaptureArguments`] with the given captures and has
     /// empty arguments.
     #[must_use]
-    pub fn new(captures: Captures) -> Self {
-        Self { captures, arguments: HashMap::default() }
-    }
+    pub fn new() -> Self { Self { arguments: HashMap::default() } }
 
     /// Creates a new [`CaptureArguments`] with the given captures and
     /// arguments.
     #[must_use]
     pub const fn new_with_arguments(
-        captures: Captures,
         arguments: HashMap<pernixc_arena::ID<Capture>, Value>,
     ) -> Self {
-        Self { captures, arguments }
+        Self { arguments }
     }
 
     /// Inserts a new capture argument mapping from the given capture ID to
@@ -73,15 +75,13 @@ impl transform::Element for CaptureArguments {
     >(
         &mut self,
         transformer: &mut T,
-        engine: &TrackedEngine,
+        _engine: &TrackedEngine,
     ) -> Result<(), CyclicError> {
         for value in
             self.arguments.values_mut().filter_map(|x| x.as_literal_mut())
         {
             value.transform(transformer).await?;
         }
-
-        self.captures.transform(transformer, engine).await?;
 
         Ok(())
     }
@@ -97,14 +97,17 @@ pub struct Do {
     capture_arguments: CaptureArguments,
 
     /// The IR containing the code body of the `do` closure.
-    ir: IR,
+    ir_id: ID<IRWithContext>,
 }
 
 impl Do {
     /// Creates a new `DoClosure` with the given capture structure and IR.
     #[must_use]
-    pub const fn new(capture_arguments: CaptureArguments, ir: IR) -> Self {
-        Self { capture_arguments, ir }
+    pub const fn new(
+        capture_arguments: CaptureArguments,
+        ir_id: ID<IRWithContext>,
+    ) -> Self {
+        Self { capture_arguments, ir_id }
     }
 }
 
@@ -117,7 +120,6 @@ impl transform::Element for Do {
         engine: &TrackedEngine,
     ) -> Result<(), CyclicError> {
         self.capture_arguments.transform(transformer, engine).await?;
-        Box::pin(self.ir.transform(transformer, engine)).await?;
 
         Ok(())
     }
@@ -157,52 +159,20 @@ impl HandlerClause {
     }
 }
 
-impl transform::Element for HandlerClause {
-    async fn transform<
-        T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
-    >(
-        &mut self,
-        transformer: &mut T,
-        engine: &TrackedEngine,
-    ) -> Result<(), CyclicError> {
-        for closure in self.effect_operation_handler_closures.values_mut() {
-            closure.transform(transformer, engine).await?;
-        }
-
-        Ok(())
-    }
-}
-
 /// The closure for handling a specific effect operation within an
 /// [`HandlerClause`].
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, StableHash, Serialize, Deserialize,
+)]
 pub struct OperationHandler {
     /// The IR containing the code body of the effect operation handler.
-    ir: IR,
-
-    /// The closure parameters for the effect operation handler.
-    closure_parameters: ClosureParameters,
+    ir_id: ID<IRWithContext>,
 }
 
 impl OperationHandler {
     /// Creates a new effect operation handler closure with the given IR.
     #[must_use]
-    pub const fn new(ir: IR, closure_parameters: ClosureParameters) -> Self {
-        Self { ir, closure_parameters }
-    }
-}
-
-impl transform::Element for OperationHandler {
-    async fn transform<
-        T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
-    >(
-        &mut self,
-        transformer: &mut T,
-        engine: &TrackedEngine,
-    ) -> Result<(), CyclicError> {
-        self.closure_parameters.transform(transformer, engine).await?;
-        Box::pin(self.ir.transform(transformer, engine)).await
-    }
+    pub const fn new(ir_id: ID<IRWithContext>) -> Self { Self { ir_id } }
 }
 
 /// Represents a group of `with` handlers following a `do` expression.
@@ -247,10 +217,6 @@ impl transform::Element for HandlerChain {
         engine: &TrackedEngine,
     ) -> Result<(), CyclicError> {
         self.capture_arguments.transform(transformer, engine).await?;
-
-        for handler_clause in self.handler_clauses.values_mut() {
-            handler_clause.transform(transformer, engine).await?;
-        }
 
         Ok(())
     }
@@ -317,71 +283,26 @@ impl crate::visitor::Element for DoWith {
     }
 }
 
-impl transform::Element for DoWith {
-    async fn transform<
-        T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
-    >(
-        &mut self,
-        transformer: &mut T,
-        engine: &TrackedEngine,
-    ) -> Result<(), CyclicError> {
-        self.do_block.transform(transformer, engine).await?;
-        self.handleer_chain.transform(transformer, engine).await?;
+pub(super) async fn transform_do_with<
+    T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
+>(
+    do_with: &mut DoWith,
+    transformer: &mut T,
+    engine: &TrackedEngine,
+    span: pernixc_lexical::tree::RelativeSpan,
+) -> Result<(), CyclicError> {
+    do_with.do_block.transform(transformer, engine).await?;
+    do_with.handleer_chain.transform(transformer, engine).await?;
 
-        transformer
-            .transform(
-                &mut self.return_type,
-                transform::TypeTermSource::DoReturnType,
-                None,
-            )
-            .await?;
-
-        Ok(())
-    }
-}
-
-impl DoWith {
-    /// Retrieves the mutable reference to the IR of the `do` closure and its
-    /// captures.
-    #[must_use]
-    pub const fn do_closure_mut(&mut self) -> (&mut IR, &Captures) {
-        (&mut self.do_block.ir, &self.do_block.capture_arguments.captures)
-    }
-
-    /// Retrieves the reference to the IR of the `do` closure and its captures.
-    #[must_use]
-    pub const fn do_closure(&self) -> (&IR, &Captures) {
-        (&self.do_block.ir, &self.do_block.capture_arguments.captures)
-    }
-
-    /// Retrieves the reference to each of the closure of effect handler.
-    pub fn with_closures(
-        &self,
-    ) -> (&Captures, impl Iterator<Item = (&IR, &ClosureParameters)>) {
-        (
-            &self.handleer_chain.capture_arguments.captures,
-            self.handleer_chain
-                .handler_clauses
-                .values()
-                .flat_map(|x| x.effect_operation_handler_closures.values())
-                .map(|x| (&x.ir, &x.closure_parameters)),
+    transformer
+        .transform(
+            &mut do_with.return_type,
+            transform::TypeTermSource::DoReturnType,
+            span,
         )
-    }
+        .await?;
 
-    /// Retrieves the mutable reference to each of the closure of effect
-    /// handler.
-    pub fn with_closures_mut(
-        &mut self,
-    ) -> (&Captures, impl Iterator<Item = (&mut IR, &ClosureParameters)>) {
-        (
-            &self.handleer_chain.capture_arguments.captures,
-            self.handleer_chain
-                .handler_clauses
-                .values_mut()
-                .flat_map(|x| x.effect_operation_handler_closures.values_mut())
-                .map(|x| (&mut x.ir, &x.closure_parameters)),
-        )
-    }
+    Ok(())
 }
 
 impl TypeOf<&DoWith> for Values {

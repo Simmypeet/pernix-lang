@@ -87,7 +87,7 @@ pub(super) async fn transform_function_call<
 >(
     function_call: &mut FunctionCall,
     transformer: &mut T,
-    span: Option<pernixc_lexical::tree::RelativeSpan>,
+    span: pernixc_lexical::tree::RelativeSpan,
 ) -> Result<(), CyclicError> {
     for argument in &mut function_call.arguments {
         if let Some(literal) = argument.as_literal_mut() {

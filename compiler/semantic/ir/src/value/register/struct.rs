@@ -62,7 +62,7 @@ pub(super) async fn transform_struct<
 >(
     st: &mut Struct,
     transformer: &mut T,
-    span: Option<pernixc_lexical::tree::RelativeSpan>,
+    span: pernixc_lexical::tree::RelativeSpan,
     engine: &TrackedEngine,
 ) -> Result<(), CyclicError> {
     for value in st.initializers_by_field_id.values_mut() {

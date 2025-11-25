@@ -24,10 +24,7 @@ impl Bind<&pernixc_syntax::expression::unit::String> for Binder<'_> {
         };
 
         Ok(Expression::RValue(Value::Literal(Literal::String(
-            literal::String {
-                value: string.kind.0,
-                span: Some(syntax_tree.span()),
-            },
+            literal::String { value: string.kind.0, span: syntax_tree.span() },
         ))))
     }
 }

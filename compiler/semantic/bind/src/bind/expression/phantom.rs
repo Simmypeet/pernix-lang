@@ -25,7 +25,7 @@ impl Bind<&pernixc_syntax::expression::unit::Phantom>
             r#type: Type::Phantom(r#type::Phantom(Box::new(Type::Inference(
                 self.create_type_inference(constraint::Type::All(false)),
             )))),
-            span: Some(syntax_tree.span()),
+            span: syntax_tree.span(),
         }))))
     }
 }

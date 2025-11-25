@@ -89,7 +89,7 @@ pub(super) async fn transform_load<
 >(
     load: &mut Load,
     transformer: &mut T,
-    _span: Option<pernixc_lexical::tree::RelativeSpan>,
+    _span: pernixc_lexical::tree::RelativeSpan,
 ) -> Result<(), CyclicError> {
     load.address.transform(transformer).await
 }

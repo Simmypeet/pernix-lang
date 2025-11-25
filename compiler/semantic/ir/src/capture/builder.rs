@@ -71,7 +71,7 @@ impl Builder {
             // needed.
             capture_mode: CaptureMode::ByValue,
 
-            span: Some(name_binding.span),
+            span: name_binding.span,
         };
 
         // insert a new capture and cooresponding name binding
@@ -159,7 +159,7 @@ impl Builder {
 
             let (drop_order, _) = DropOrder::get_drop_order(
                 &capture.parent_captured_address,
-                capture.span.unwrap(),
+                capture.span,
                 env,
                 typer,
             )

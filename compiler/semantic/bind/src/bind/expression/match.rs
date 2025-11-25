@@ -283,7 +283,7 @@ impl Binder<'_> {
                             r#type: self
                                 .type_of_register(numeric_value, handler)
                                 .await?,
-                            span: Some(match_info.span),
+                            span: match_info.span,
                         })),
                         operator: BinaryOperator::Relational(
                             RelationalOperator::Equal,
@@ -960,7 +960,7 @@ impl Bind<&pernixc_syntax::expression::block::Match> for Binder<'_> {
                                 Value::Literal(Literal::Error(
                                     literal::Error {
                                         r#type: Type::Inference(ty_inference),
-                                        span: Some(semantic_error.0),
+                                        span: semantic_error.0,
                                     },
                                 )),
                                 self.stack().current_scope().scope_id(),

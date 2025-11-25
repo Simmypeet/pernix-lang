@@ -102,7 +102,7 @@ impl Bind<&pernixc_syntax::QualifiedIdentifier> for Binder<'_> {
                     let associated_value =
                         Value::Literal(Literal::Error(literal::Error {
                             r#type: associated_type,
-                            span: Some(syntax_tree.span()),
+                            span: syntax_tree.span(),
                         }));
 
                     Some(associated_value)

@@ -639,17 +639,18 @@ impl<'ctx> Context<'_, 'ctx> {
                 .type_environment(&environment)
                 .build();
 
+            let root_ir = pernix_ir.root_ir();
             let mut builder = Builder::new(
                 self,
                 &key.instantiation,
                 &function_signature,
-                &pernix_ir.ir,
+                root_ir,
                 value_environment,
                 llvm_function_signatue.clone(),
             )
             .await;
 
-            for block_id in pernix_ir.ir.control_flow_graph.blocks().ids() {
+            for block_id in root_ir.control_flow_graph.blocks().ids() {
                 builder.build_basic_block(block_id).await;
             }
 
@@ -659,7 +660,7 @@ impl<'ctx> Context<'_, 'ctx> {
                 .inkwell_builder
                 .build_unconditional_branch(
                     builder.basic_block_map
-                        [&pernix_ir.ir.control_flow_graph.entry_block_id()],
+                        [&root_ir.control_flow_graph.entry_block_id()],
                 )
                 .unwrap();
         }

@@ -34,7 +34,7 @@ impl Bind<&pernixc_syntax::expression::unit::Character>
                 r#type: Type::Inference(
                     self.create_type_inference(constraint::Type::Integer),
                 ),
-                span: Some(syntax_tree.span()),
+                span: syntax_tree.span(),
             },
         ))))
     }

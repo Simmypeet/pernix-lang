@@ -259,11 +259,11 @@ impl Bind<LoopState> for Binder<'_> {
                         r#type: Type::Inference(self.create_type_inference(
                             constraint::Type::All(true),
                         )),
-                        span: Some(loop_state.whole_span),
+                        span: loop_state.whole_span,
                     }))
                 } else {
                     Value::Literal(Literal::Unit(literal::Unit {
-                        span: Some(loop_state.whole_span),
+                        span: loop_state.whole_span,
                     }))
                 };
 
@@ -302,7 +302,7 @@ impl Bind<LoopState> for Binder<'_> {
                         0 => {
                             Value::Literal(Literal::Unreachable(Unreachable {
                                 r#type: break_type,
-                                span: Some(loop_state.whole_span),
+                                span: loop_state.whole_span,
                             }))
                         }
 
@@ -335,7 +335,7 @@ impl Bind<LoopState> for Binder<'_> {
                                 constraint::Type::All(true),
                             ))
                         },
-                        span: Some(loop_state.whole_span),
+                        span: loop_state.whole_span,
                     }))
                 };
 

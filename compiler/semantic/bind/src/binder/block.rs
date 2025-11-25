@@ -262,7 +262,7 @@ impl Bind<BlockState> for Binder<'_> {
                             block_id,
                             Value::Literal(Literal::Error(literal::Error {
                                 r#type: express_type.clone(),
-                                span: Some(block_state.span),
+                                span: block_state.span,
                             })),
                         )
                         .is_none()
@@ -279,7 +279,7 @@ impl Bind<BlockState> for Binder<'_> {
                 // no incoming values, unreachable
                 0 => Value::Literal(Literal::Unreachable(Unreachable {
                     r#type: express_type,
-                    span: Some(block_state.span),
+                    span: block_state.span,
                 })),
 
                 // only one incoming value, just return it
@@ -307,12 +307,10 @@ impl Bind<BlockState> for Binder<'_> {
                     r#type: Type::Inference(
                         self.create_type_inference(constraint::Type::All(true)),
                     ),
-                    span: Some(block_state.span),
+                    span: block_state.span,
                 }))
             } else {
-                Value::Literal(Literal::Unit(Unit {
-                    span: Some(block_state.span),
-                }))
+                Value::Literal(Literal::Unit(Unit { span: block_state.span }))
             }
         };
 

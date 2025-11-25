@@ -33,5 +33,5 @@ pub struct Alloca {
     pub declaration_order: usize,
 
     /// The span of the allocation.
-    pub span: Option<RelativeSpan>,
+    pub span: RelativeSpan,
 }

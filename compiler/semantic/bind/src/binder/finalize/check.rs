@@ -1,7 +1,8 @@
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
 use pernixc_ir::{
-    IR,
+    FunctionIR,
+    ir::IR,
     value::{
         Environment as ValueEnvironment, TypeOf, Value,
         register::{self, Register},
@@ -20,7 +21,9 @@ use pernixc_term::{
     predicate::{PositiveMarker, PositiveTrait, Predicate},
     r#type::Qualifier,
 };
-use pernixc_type_system::normalizer::Normalizer;
+use pernixc_type_system::{
+    environment::Environment as TypeSystemEnvironment, normalizer::Normalizer,
+};
 
 use crate::{binder::UnrecoverableError, diagnostic::Diagnostic};
 
@@ -46,7 +49,7 @@ async fn check_register_assignment<N: Normalizer>(
                 .type_environment
                 .wf_check(
                     st.struct_id,
-                    register.span.unwrap(),
+                    register.span,
                     &instantiation,
                     false,
                     &handler,
@@ -75,7 +78,7 @@ async fn check_register_assignment<N: Normalizer>(
                 .type_environment
                 .wf_check(
                     enum_id,
-                    register.span.unwrap(),
+                    register.span,
                     &instantiation,
                     false,
                     &handler,
@@ -122,7 +125,7 @@ async fn check_register_assignment<N: Normalizer>(
                                                   * actual valuec */
                                 generic_arguments: trait_arguments,
                             }),
-                            register.span.unwrap(),
+                            register.span,
                             None,
                             false,
                             &handler,
@@ -133,7 +136,7 @@ async fn check_register_assignment<N: Normalizer>(
                         .type_environment
                         .wf_check(
                             function_call.callable_id,
-                            register.span.unwrap(),
+                            register.span,
                             &function_call.instantiation,
                             false,
                             &handler,
@@ -157,7 +160,7 @@ async fn check_register_assignment<N: Normalizer>(
                         .type_environment
                         .wf_check(
                             parent_implementation_id,
-                            register.span.unwrap(),
+                            register.span,
                             &function_call.instantiation,
                             false,
                             &handler,
@@ -168,7 +171,7 @@ async fn check_register_assignment<N: Normalizer>(
                         .type_environment
                         .wf_check(
                             function_call.callable_id,
-                            register.span.unwrap(),
+                            register.span,
                             &function_call.instantiation,
                             false,
                             &handler,
@@ -185,7 +188,7 @@ async fn check_register_assignment<N: Normalizer>(
                         .type_environment
                         .wf_check(
                             function_call.callable_id,
-                            register.span.unwrap(),
+                            register.span,
                             &function_call.instantiation,
                             false,
                             &handler,
@@ -212,8 +215,7 @@ async fn check_register_assignment<N: Normalizer>(
                     .map_err(|x| {
                         x.report_as_type_calculating_overflow(
                             *ir.values
-                                .span_of_value(&Value::Register(register_id))
-                                .unwrap(),
+                                .span_of_value(&Value::Register(register_id)),
                             &handler,
                         )
                     })?;
@@ -239,7 +241,7 @@ async fn check_register_assignment<N: Normalizer>(
                     .type_environment
                     .predicate_satisfied(
                         predicate,
-                        register.span.unwrap(),
+                        register.span,
                         None,
                         false,
                         &handler,
@@ -259,7 +261,7 @@ async fn check_register_assignment<N: Normalizer>(
                     .await
                     .map_err(|x| {
                         x.report_as_type_calculating_overflow(
-                            *ir.values.span_of_value(&element.value).unwrap(),
+                            *ir.values.span_of_value(&element.value),
                             &handler,
                         )
                     })?;
@@ -272,7 +274,7 @@ async fn check_register_assignment<N: Normalizer>(
                     .type_environment
                     .predicate_satisfied(
                         predicate,
-                        *ir.values.span_of_value(&element.value).unwrap(),
+                        *ir.values.span_of_value(&element.value),
                         None,
                         false,
                         &handler,
@@ -294,45 +296,22 @@ async fn check_register_assignment<N: Normalizer>(
     }
 }
 
-pub(super) async fn check_recursive<N: Normalizer>(
-    ir: &IR,
-    value_environment: &ValueEnvironment<'_, N>,
+pub(super) async fn check_all<N: Normalizer>(
+    function_ir: &FunctionIR,
+    ty_environment: &TypeSystemEnvironment<'_, N>,
+    current_site: Global<pernixc_symbol::ID>,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<(), UnrecoverableError> {
-    for do_ir in
-        ir.values.registers.items().filter_map(|x| x.assignment.as_do())
+    for (_, ir, value_environment) in
+        function_ir.ir_with_value_environments(ty_environment, current_site)
     {
-        let (do_closure_ir, do_captures) = do_ir.do_closure();
-
-        let inner_value_environment = ValueEnvironment::builder()
-            .captures(do_captures)
-            .current_site(value_environment.current_site)
-            .type_environment(value_environment.type_environment)
-            .build();
-
-        // recursively performs memory check in nested closures
-        Box::pin(check(do_closure_ir, &inner_value_environment, handler))
-            .await?;
-
-        let (with_captures, with_irs) = do_ir.with_closures();
-
-        // recursively performs memory check in nested closures
-        for (with_ir, with_closure_parameters) in with_irs {
-            let inner_value_environment = ValueEnvironment::builder()
-                .captures(with_captures)
-                .current_site(value_environment.current_site)
-                .type_environment(value_environment.type_environment)
-                .closure_parameters(with_closure_parameters)
-                .build();
-
-            Box::pin(check(with_ir, &inner_value_environment, handler)).await?;
-        }
+        check(ir.ir(), &value_environment, handler).await?;
     }
 
     Ok(())
 }
 
-pub(super) async fn check<N: Normalizer>(
+async fn check<N: Normalizer>(
     ir: &IR,
     value_environment: &ValueEnvironment<'_, N>,
     handler: &dyn Handler<Diagnostic>,
@@ -346,8 +325,6 @@ pub(super) async fn check<N: Normalizer>(
         check_register_assignment(ir, register_id, value_environment, handler)
             .await?;
     }
-
-    Box::pin(check_recursive(ir, value_environment, handler)).await?;
 
     Ok(())
 }

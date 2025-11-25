@@ -342,7 +342,7 @@ impl Bind<&pernixc_syntax::expression::unit::FunctionCall> for Binder<'_> {
 
                         Value::error(
                             expected_types.pop().unwrap(),
-                            Some(syntax_tree.span()),
+                            syntax_tree.span(),
                         )
                     }
 
@@ -578,8 +578,7 @@ impl Binder<'_> {
         match argument_values.len().cmp(&expected_types.len()) {
             std::cmp::Ordering::Less => {
                 for ty in expected_types.iter().skip(argument_values.len()) {
-                    argument_values
-                        .push(Value::error(ty.clone(), Some(call_span)));
+                    argument_values.push(Value::error(ty.clone(), call_span));
                 }
             }
             std::cmp::Ordering::Greater => {

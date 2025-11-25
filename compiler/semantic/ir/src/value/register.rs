@@ -124,7 +124,7 @@ pub struct Register {
     pub assignment: Assignment,
 
     /// The span where the value was defined.
-    pub span: Option<RelativeSpan>,
+    pub span: RelativeSpan,
 }
 
 impl TypeOf<ID<Register>> for Values {
@@ -240,7 +240,10 @@ impl transform::Element for Register {
                 )
                 .await
             }
-            Assignment::Do(d) => d.transform(transformer, engine).await,
+            Assignment::Do(d) => {
+                do_with::transform_do_with(d, transformer, engine, self.span)
+                    .await
+            }
         }
     }
 }
@@ -250,7 +253,7 @@ pub(super) async fn transform_generic_arguments<
 >(
     transformer: &mut T,
     symbol_id: Global<pernixc_symbol::ID>,
-    span: Option<RelativeSpan>,
+    span: RelativeSpan,
     engine: &TrackedEngine,
     generic_arg: &mut GenericArguments,
 ) -> Result<(), CyclicError> {

@@ -55,12 +55,12 @@ impl Bind<&pernixc_syntax::expression::terminator::Break> for Binder<'_> {
                         .await?
                         .is_some()
                     {
-                        Value::error(expected_ty, Some(syntax_tree.span()))
+                        Value::error(expected_ty, syntax_tree.span())
                     } else {
-                        Value::unit(Some(syntax_tree.span()))
+                        Value::unit(syntax_tree.span())
                     }
                 } else {
-                    Value::unit(Some(syntax_tree.span()))
+                    Value::unit(syntax_tree.span())
                 }
             }
         };
@@ -80,7 +80,7 @@ impl Bind<&pernixc_syntax::expression::terminator::Break> for Binder<'_> {
             r#type: Type::Inference(
                 self.create_type_inference(constraint::Type::All(true)),
             ),
-            span: Some(syntax_tree.span()),
+            span: syntax_tree.span(),
         }));
 
         Ok(Expression::RValue(value))

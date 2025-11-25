@@ -111,7 +111,7 @@ pub trait Transformer<T: Transformable> {
         &mut self,
         term: &mut T,
         source: T::Source,
-        span: Option<RelativeSpan>,
+        span: RelativeSpan,
     ) -> Result<(), CyclicError>;
 }
 

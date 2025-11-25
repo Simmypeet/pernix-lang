@@ -1,13 +1,16 @@
+use std::borrow::Cow;
+
 use pernixc_handler::Handler;
 use pernixc_hash::HashSet;
 use pernixc_ir::{
-    FunctionIR, IR,
+    FunctionIR, IRWithContext,
     instruction::{Instruction, ScopePop},
-    value::Environment as ValueEnvironment,
+    ir::IR,
 };
 use pernixc_semantic_element::return_type::get_return_type;
 use pernixc_symbol::kind::get_kind;
 use pernixc_term::r#type::Type;
+use pernixc_type_system::environment::Environment as TyEnvironment;
 
 use crate::{
     binder::{Binder, UnrecoverableError},
@@ -126,18 +129,26 @@ impl Binder<'_> {
         // transform inference types
         self.transform_inference(handler).await?;
 
-        let ty_env = self.create_environment();
-        let value_env = ValueEnvironment::builder()
-            .type_environment(&ty_env)
-            .maybe_captures(self.captures)
-            .current_site(self.current_site())
-            .build();
+        let current_site = self.current_site();
+        let ty_env = TyEnvironment::new(
+            Cow::Borrowed(&self.environment.premise),
+            Cow::Borrowed(self.engine),
+            &self.inference_context,
+        );
 
-        check::check(&self.ir, &value_env, handler).await?;
+        let root_ir_id =
+            self.ir_map.new_ir(IRWithContext::new_root_ir(self.ir));
 
-        Ok(FunctionIR {
-            ir: self.ir,
-            handler_groups: self.effect_handler_context.into_handler_groups(),
-        })
+        let function_ir = FunctionIR::new(
+            self.effect_handler_context.into_handler_groups(),
+            self.ir_map,
+            self.closure_parameters_map,
+            self.captures_map,
+            root_ir_id,
+        );
+
+        check::check_all(&function_ir, &ty_env, current_site, handler).await?;
+
+        Ok(function_ir)
     }
 }

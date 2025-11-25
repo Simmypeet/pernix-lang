@@ -53,7 +53,7 @@ impl<N: Normalizer> Context<'_, N> {
         variance: Variance,
         set: &mut BTreeSet<LifetimeConstraint>,
     ) -> Result<(), UnrecoverableError> {
-        let span = *self.values().span_of_value(source_value).unwrap();
+        let span = *self.values().span_of_value(source_value);
         let Succeeded { result: source, constraints } = self
             .values()
             .type_of(source_value, self.environment())
