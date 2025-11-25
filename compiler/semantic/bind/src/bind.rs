@@ -1,8 +1,12 @@
 //! Contains the code that binds the syntax tree into IR using binder.
 
 use enum_as_inner::EnumAsInner;
+use pernixc_arena::ID;
 use pernixc_handler::Handler;
-use pernixc_ir::{address::Address, value::Value};
+use pernixc_ir::{
+    address::Address,
+    value::{Value, register::Register},
+};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_term::r#type::{Qualifier, Type};
 
@@ -62,6 +66,14 @@ pub enum Expression {
     /// l-value. However, it's always possible to convert an l-value to an
     /// r-value by simply loading the value from the address.
     LValue(LValue),
+}
+
+impl Expression {
+    /// Creates a new r-value expression from the given register ID.
+    #[must_use]
+    pub const fn register_id_value(register_id: ID<Register>) -> Self {
+        Self::RValue(Value::Register(register_id))
+    }
 }
 
 /// The trait for binding the expression syntax tree.
