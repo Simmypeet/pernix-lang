@@ -191,7 +191,7 @@ impl Bind<&pernixc_syntax::expression::block::Block>
             pernixc_syntax::expression::block::Block::While(wh) => {
                 Box::pin(self.bind(wh, guidance, handler)).await
             }
-            pernixc_syntax::expression::block::Block::Do(d) => {
+            pernixc_syntax::expression::block::Block::DoWith(d) => {
                 Box::pin(self.bind(d, guidance, handler)).await
             }
         }

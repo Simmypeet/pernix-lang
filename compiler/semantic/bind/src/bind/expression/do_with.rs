@@ -63,11 +63,11 @@ fn span_of_multi_syntax<T: SourceElement<Location = RelativeLocation>>(
     span
 }
 
-impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
+impl Bind<&pernixc_syntax::expression::block::DoWith> for Binder<'_> {
     #[allow(unreachable_code, unused_variables)]
     async fn bind(
         &mut self,
-        syntax_tree: &pernixc_syntax::expression::block::Do,
+        syntax_tree: &pernixc_syntax::expression::block::DoWith,
         _: &Guidance<'_>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
@@ -446,7 +446,7 @@ async fn extract_effect_operations<
 #[allow(clippy::too_many_lines)]
 async fn extract_handler_chain(
     binder: &mut Binder<'_>,
-    syntax_tree: &pernixc_syntax::expression::block::Do,
+    syntax_tree: &pernixc_syntax::expression::block::DoWith,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<HandlerChain, Error> {
     // create a new handler group for this one

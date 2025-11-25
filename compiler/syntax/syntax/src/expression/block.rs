@@ -23,13 +23,13 @@ abstract_tree::abstract_tree! {
         Loop(Loop = ast::<Loop>()),
         Match(Match = ast::<Match>()),
         While(While = ast::<While>()),
-        Do(Do = ast::<Do>()),
+        DoWith(DoWith = ast::<DoWith>()),
     }
 }
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    pub struct Do {
+    pub struct DoWith {
         pub do_keyword: Keyword = expect::Keyword::Do,
         pub label: Label = ast::<Label>().optional(),
         pub statements: Statements = ast::<Statements>(),
