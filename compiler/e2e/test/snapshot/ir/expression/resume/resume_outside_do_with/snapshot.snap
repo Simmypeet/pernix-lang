@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: `resume` can only be used inside an operation handler
+  ╭─ compiler/e2e/test/snapshot/ir/expression/resume/resume_outside_do_with/main.pnx:2:5
+  │
+2 │     resume(32)
+  │     ^^^^^^^^^^ `resume` can not be used outside the oepration handler (`with` construct)
+
+error: Compilation aborted due to 1 error(s)
+
+
+
+stdout:
