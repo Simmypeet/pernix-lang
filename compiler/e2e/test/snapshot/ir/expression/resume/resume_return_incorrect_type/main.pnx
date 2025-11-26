@@ -1,0 +1,18 @@
+public effect Test[T]:
+    operation(test: T) -> int32
+
+
+
+public function expectInt32(..: int32):
+    pass
+
+
+public function main():
+    do:
+        return true
+    with Test[int32]:
+        operation(test):
+            # `resume(...)` expression returns int32, error!
+            expectInt32(resume(54))
+            return true
+        

@@ -6,7 +6,9 @@ use pernixc_ir::{
     address::{Address, Memory},
     capture::{builder::CapturesWithNameBindingPoint, pruning::PruneMode},
     closure_parameters::ClosureParameters,
-    handling_scope::{HandlerClause, HandlingScope},
+    handling_scope::{
+        HandlerClause, HandlerClauseID, HandlingScope, OperationHandlerID,
+    },
     pattern::{Irrefutable, NameBindingPoint, Wildcard},
     value::{
         Value,
@@ -43,7 +45,6 @@ use crate::{
         EffectExpected, MismatchedArgumentCountInEffectOperationHandler,
         UnhandledEffectOperations, UnknownEffectOperation,
     },
-    infer::constraint,
     pattern::insert_name_binding,
 };
 
@@ -62,11 +63,11 @@ fn span_of_multi_syntax<T: SourceElement<Location = RelativeLocation>>(
     span
 }
 
-impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
+impl Bind<&pernixc_syntax::expression::block::DoWith> for Binder<'_> {
     #[allow(unreachable_code, unused_variables)]
     async fn bind(
         &mut self,
-        syntax_tree: &pernixc_syntax::expression::block::Do,
+        syntax_tree: &pernixc_syntax::expression::block::DoWith,
         _: &Guidance<'_>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
@@ -81,16 +82,12 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
         let effect_handlers =
             extract_handler_chain(self, syntax_tree, handler).await?;
 
-        let expected_return_type = Type::Inference(
-            self.create_type_inference(constraint::Type::All(true)),
-        );
-
         let mut do_ir = Box::pin(self.new_closure_binder(
             async |x| {
                 build_do_block(x, &do_statements, handler).await?;
                 Ok(())
             },
-            expected_return_type.clone(),
+            effect_handlers.return_type.clone(),
             do_statements.span(),
             &captures,
             None,
@@ -104,14 +101,15 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
             .prune_capture_ir(std::iter::once(&mut do_ir), PruneMode::Once);
 
         // pop the closure from the stack
-        self.pop_handling_scope(effect_handlers.effect_handler_group_id);
+        self.pop_handling_scope(effect_handlers.handling_scope_id);
 
         let do_part = self.new_do(do_ir, do_captures, do_kw.span());
 
         let with = build_with_blocks(
             self,
             effect_handlers.with_blocks,
-            &expected_return_type,
+            effect_handlers.handling_scope_id,
+            &effect_handlers.return_type,
             span_of_multi_syntax(syntax_tree.with()).unwrap_or(do_kw.span),
             captures,
             handler,
@@ -119,10 +117,9 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
         .await?;
 
         let do_assignment = register::do_with::DoWith::new(
-            effect_handlers.effect_handler_group_id,
+            effect_handlers.handling_scope_id,
             do_part,
             with,
-            expected_return_type,
         );
 
         Ok(Expression::RValue(Value::Register(
@@ -136,7 +133,8 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
 
 struct HandlerChain {
     with_blocks: Vec<HandlerClauseBlock>,
-    effect_handler_group_id: pernixc_arena::ID<HandlingScope>,
+    handling_scope_id: pernixc_arena::ID<HandlingScope>,
+    return_type: Type,
 }
 
 struct HandlerClauseBlock {
@@ -158,6 +156,7 @@ struct OperationHanderBlock {
 async fn build_with_blocks(
     binder: &mut Binder<'_>,
     with_blocks: Vec<HandlerClauseBlock>,
+    handling_scope_id: pernixc_arena::ID<HandlingScope>,
     expected_type: &Type,
     with_span: RelativeSpan,
     captures: CapturesWithNameBindingPoint,
@@ -195,13 +194,25 @@ async fn build_with_blocks(
             let ir = binder
                 .new_closure_binder(
                     async |x| {
-                        Box::pin(build_handler_block(
+                        let operation_handler_id = OperationHandlerID::new(
+                            HandlerClauseID::new(
+                                handling_scope_id,
+                                with_block.handler_clause_id,
+                            ),
+                            effect_operation_id,
+                        );
+
+                        x.push_operation_handler(operation_handler_id);
+
+                        Box::pin(build_operation_handler(
                             x,
                             &closure_parameters,
                             handler_block,
                             handler,
                         ))
                         .await?;
+
+                        x.pop_operation_handler(operation_handler_id);
 
                         Ok(())
                     },
@@ -269,7 +280,7 @@ async fn build_do_block(
     Ok(())
 }
 
-async fn build_handler_block(
+async fn build_operation_handler(
     binder: &mut Binder<'_>,
     closure_parameters: &ClosureParameters,
     handler_block: OperationHanderBlock,
@@ -435,11 +446,12 @@ async fn extract_effect_operations<
 #[allow(clippy::too_many_lines)]
 async fn extract_handler_chain(
     binder: &mut Binder<'_>,
-    syntax_tree: &pernixc_syntax::expression::block::Do,
+    syntax_tree: &pernixc_syntax::expression::block::DoWith,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<HandlerChain, Error> {
     // create a new handler group for this one
-    let handler_group_id = binder.insert_effect_handler_group();
+    let (handling_scope_id, return_type) =
+        binder.insert_handling_scope(syntax_tree.span());
 
     let mut with_handlers = Vec::<HandlerClauseBlock>::new();
 
@@ -558,7 +570,7 @@ async fn extract_handler_chain(
             qualified_identifier: qualified_identifier.clone(),
             effect_id: effect.id,
             handler_clause_id: binder.insert_handler_clause_to_handling_scope(
-                handler_group_id,
+                handling_scope_id,
                 HandlerClause::new(effect.id, effect.generic_arguments.clone()),
             ),
             generic_arguments: effect.generic_arguments,
@@ -568,6 +580,7 @@ async fn extract_handler_chain(
 
     Ok(HandlerChain {
         with_blocks: with_handlers,
-        effect_handler_group_id: handler_group_id,
+        handling_scope_id,
+        return_type,
     })
 }

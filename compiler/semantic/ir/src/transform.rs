@@ -85,6 +85,9 @@ pub enum TypeTermSource {
 
     /// The type comes from an alloca instruction.
     Alloca(ID<Alloca>),
+
+    /// The type comes from a resume call instruction.
+    ResumeCall,
 }
 
 impl Transformable for Type {

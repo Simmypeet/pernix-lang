@@ -1,0 +1,10 @@
+public effect Test:
+    operation() -> int32
+
+
+public function main():
+    do:
+        resume(32)
+    with Test:
+        operation():
+            pass

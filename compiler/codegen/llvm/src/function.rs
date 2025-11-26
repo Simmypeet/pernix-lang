@@ -637,6 +637,7 @@ impl<'ctx> Context<'_, 'ctx> {
             let value_environment = ValueEnvironment::builder()
                 .current_site(key.callable_id)
                 .type_environment(&environment)
+                .handling_scopes(pernix_ir.handling_scopes())
                 .build();
 
             let root_ir = pernix_ir.root_ir();

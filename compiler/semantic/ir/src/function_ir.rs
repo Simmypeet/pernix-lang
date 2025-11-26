@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use getset::CopyGetters;
+use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
@@ -28,6 +28,7 @@ use crate::{
     Serialize,
     Deserialize,
     StableHash,
+    Getters,
     pernixc_query::Value,
 )]
 #[id(Global<pernixc_symbol::ID>)]
@@ -35,7 +36,8 @@ use crate::{
 #[extend(method(get_ir))]
 pub struct FunctionIR {
     /// The collection of all handler groups defined in the function body.
-    handler_groups: HandlingScopes,
+    #[get = "pub"]
+    handling_scopes: HandlingScopes,
 
     /// The collection of all IRs defined in the function.
     ir_map: IRMap,
@@ -193,7 +195,7 @@ impl FunctionIR {
         root_ir_id: ID<IRWithContext>,
     ) -> Self {
         Self {
-            handler_groups,
+            handling_scopes: handler_groups,
             ir_map,
             closure_parameters_map,
             captures_map,
@@ -234,6 +236,7 @@ impl FunctionIR {
                 IRContext::Root => ValueEnvironment::builder()
                     .type_environment(ty_environment)
                     .current_site(current_site)
+                    .handling_scopes(&self.handling_scopes)
                     .build(),
 
                 IRContext::OperationHandler(operation_handler_context) => {
@@ -248,6 +251,7 @@ impl FunctionIR {
                         .current_site(current_site)
                         .captures(captures)
                         .closure_parameters(closure_parameters)
+                        .handling_scopes(&self.handling_scopes)
                         .build()
                 }
 
@@ -258,6 +262,7 @@ impl FunctionIR {
                         .type_environment(ty_environment)
                         .current_site(current_site)
                         .captures(captures)
+                        .handling_scopes(&self.handling_scopes)
                         .build()
                 }
             };
@@ -284,6 +289,7 @@ impl FunctionIR {
     > + 's {
         let captures_map = &self.captures_map;
         let closure_parameters_map = &self.closure_parameters_map;
+        let handling_scopes = &self.handling_scopes;
 
         self.ir_map.ir_with_contexts_mut().map(
             move |(ir_id, ir_with_context)| {
@@ -291,6 +297,7 @@ impl FunctionIR {
                     IRContext::Root => ValueEnvironment::builder()
                         .type_environment(ty_environment)
                         .current_site(current_site)
+                        .handling_scopes(handling_scopes)
                         .build(),
 
                     IRContext::OperationHandler(operation_handler_context) => {
@@ -305,6 +312,7 @@ impl FunctionIR {
                             .current_site(current_site)
                             .captures(captures)
                             .closure_parameters(closure_parameters)
+                            .handling_scopes(handling_scopes)
                             .build()
                     }
 
@@ -315,6 +323,7 @@ impl FunctionIR {
                             .type_environment(ty_environment)
                             .current_site(current_site)
                             .captures(captures)
+                            .handling_scopes(handling_scopes)
                             .build()
                     }
                 };

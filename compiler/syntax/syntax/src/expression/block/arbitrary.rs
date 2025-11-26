@@ -30,7 +30,7 @@ reference! {
         Loop(Loop),
         Match(Match),
         While(While),
-        Do(Do),
+        DoWith(DoWith),
     }
 }
 
@@ -50,7 +50,7 @@ impl Arbitrary for Block {
             Loop::arbitrary_with(args.clone()).prop_map(Self::Loop),
             Match::arbitrary_with(args.clone()).prop_map(Self::Match),
             While::arbitrary_with(args.clone()).prop_map(Self::While),
-            Do::arbitrary_with(args).prop_map(Self::Do),
+            DoWith::arbitrary_with(args).prop_map(Self::DoWith),
         ]
         .boxed()
     }
@@ -68,7 +68,7 @@ impl IndentDisplay for Block {
             Self::Loop(loop_) => loop_.indent_fmt(f, indent),
             Self::Match(match_) => match_.indent_fmt(f, indent),
             Self::While(while_) => while_.indent_fmt(f, indent),
-            Self::Do(do_) => do_.indent_fmt(f, indent),
+            Self::DoWith(do_) => do_.indent_fmt(f, indent),
         }
     }
 }
@@ -870,14 +870,14 @@ impl IndentDisplay for With {
 
 reference! {
     #[derive(Debug, Clone)]
-    pub struct Do for super::Do {
+    pub struct DoWith for super::DoWith {
         pub label (Option<Label>),
         pub statements (Statements),
         pub with (Vec<With>),
     }
 }
 
-impl Arbitrary for Do {
+impl Arbitrary for DoWith {
     type Parameters = (
         Option<BoxedStrategy<Expression>>,
         Option<BoxedStrategy<Type>>,
@@ -901,7 +901,7 @@ impl Arbitrary for Do {
     }
 }
 
-impl IndentDisplay for Do {
+impl IndentDisplay for DoWith {
     fn indent_fmt(
         &self,
         f: &mut std::fmt::Formatter<'_>,

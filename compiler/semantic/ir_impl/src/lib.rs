@@ -160,6 +160,7 @@ pub async fn ir_with_diagnostic_executor(
         &value::Environment::builder()
             .current_site(id)
             .type_environment(&ty_env)
+            .handling_scopes(ir.handling_scopes())
             .build(),
         &storage,
     )

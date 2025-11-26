@@ -49,6 +49,7 @@ pub mod phantom;
 pub mod postfix;
 pub mod prefix;
 pub mod qualified_identifier;
+pub mod resume_call;
 pub mod r#return;
 pub mod scope;
 pub mod string;
@@ -158,6 +159,9 @@ impl Bind<&pernixc_syntax::expression::unit::Unit>
             pernixc_syntax::expression::unit::Unit::FunctionCall(
                 function_call,
             ) => self.bind(function_call, config, handler).await,
+            pernixc_syntax::expression::unit::Unit::ResumeCall(resume_call) => {
+                self.bind(resume_call, config, handler).await
+            }
         }
     }
 }
@@ -187,7 +191,7 @@ impl Bind<&pernixc_syntax::expression::block::Block>
             pernixc_syntax::expression::block::Block::While(wh) => {
                 Box::pin(self.bind(wh, guidance, handler)).await
             }
-            pernixc_syntax::expression::block::Block::Do(d) => {
+            pernixc_syntax::expression::block::Block::DoWith(d) => {
                 Box::pin(self.bind(d, guidance, handler)).await
             }
         }

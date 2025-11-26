@@ -22,12 +22,30 @@ abstract_tree::abstract_tree! {
         Parenthesized(Parenthesized = ast::<Parenthesized>()),
         Struct(Struct = ast::<Struct>()),
         FunctionCall(FunctionCall = ast::<FunctionCall>()),
+        ResumeCall(ResumeCall = ast::<ResumeCall>()),
         QualifiedIdentifier(QualifiedIdentifier = ast::<QualifiedIdentifier>()),
         Array(Array = ast::<Array>()),
         Phantom(Phantom = ast::<Phantom>()),
         String(String = ast::<String>()),
         Character(Character = ast::<Character>()),
         Panic(Panic = ast::<Panic>()),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct ResumeCall {
+        pub resume_keyword: Keyword = expect::Keyword::Resume,
+        pub single_call: SingleCall = ast::<SingleCall>(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #{fragment = expect::Fragment::Delimited(DelimiterKind::Parenthesis)}
+    pub struct SingleCall {
+        pub expression: Expression = ast::<Expression>(),
     }
 }
 

@@ -506,6 +506,9 @@ impl<N: Normalizer> Builder<'_, N> {
             // TODO: handle do-with subset relations
             Assignment::Do(_do_expr) => Ok(Changes::default()),
 
+            // TODO: handle resume-call subset relations
+            Assignment::ResumeCall(_resume_call) => Ok(Changes::default()),
+
             Assignment::Tuple(tuple) => {
                 self.context.get_changes_of_tuple(tuple, &register.span).await
             }

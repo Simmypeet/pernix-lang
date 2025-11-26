@@ -644,6 +644,7 @@ impl Binder<'_> {
                     .type_environment(&self.create_environment())
                     .maybe_captures(self.captures)
                     .maybe_closure_parameters(self.closure_parameters)
+                    .handling_scopes(self.handling_scopes())
                     .current_site(self.current_site())
                     .build(),
             )
@@ -818,6 +819,7 @@ impl Binder<'_> {
             .type_environment(&ty_environment)
             .maybe_captures(self.captures)
             .maybe_closure_parameters(self.closure_parameters)
+            .handling_scopes(self.handling_scopes())
             .current_site(self.current_site())
             .build();
 

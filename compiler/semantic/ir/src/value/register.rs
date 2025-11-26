@@ -40,6 +40,7 @@ pub mod function_call;
 pub mod load;
 pub mod phi;
 pub mod prefix;
+pub mod resume_call;
 pub mod r#struct;
 pub mod tuple;
 pub mod variant;
@@ -57,6 +58,7 @@ pub use function_call::{EffectHandlerArgument, FunctionCall};
 pub use load::{Load, Purpose as LoadPurpose};
 pub use phi::Phi;
 pub use prefix::{Prefix, PrefixOperator};
+pub use resume_call::ResumeCall;
 pub use r#struct::Struct;
 pub use tuple::{Tuple, TupleElement};
 pub use variant::Variant;
@@ -82,6 +84,7 @@ pub enum Assignment {
     Cast(Cast),
     VariantNumber(VariantNumber),
     Do(do_with::DoWith),
+    ResumeCall(ResumeCall),
 }
 
 impl visitor::Element for Assignment {
@@ -102,6 +105,7 @@ impl visitor::Element for Assignment {
                 variant_number.accept(visitor);
             }
             Self::Do(d) => d.accept(visitor),
+            Self::ResumeCall(resume_call) => resume_call.accept(visitor),
         }
     }
 }
@@ -156,6 +160,9 @@ impl TypeOf<ID<Register>> for Values {
             }
             Assignment::FunctionCall(function_call) => {
                 return self.type_of(function_call, environment).await;
+            }
+            Assignment::ResumeCall(d) => {
+                return self.type_of(d, environment).await;
             }
             Assignment::Binary(binary) => {
                 return self.type_of(binary, environment).await;
@@ -241,8 +248,10 @@ impl transform::Element for Register {
                 .await
             }
             Assignment::Do(d) => {
-                do_with::transform_do_with(d, transformer, engine, self.span)
-                    .await
+                do_with::transform_do_with(d, transformer, engine).await
+            }
+            Assignment::ResumeCall(r) => {
+                resume_call::transform_resume_call(r, transformer).await
             }
         }
     }
