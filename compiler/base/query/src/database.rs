@@ -1152,22 +1152,42 @@ impl Engine {
                 }
                 DependencyExecution::Multithread(items) => {
                     let value = scoped!(|handles| async move {
-                        for dep in items {
+                        // chunk the items to avoid spawning too many tasks
+                        // at once, targeting 4x the number of available
+                        let num_threads = std::thread::available_parallelism()
+                            .map(std::num::NonZero::get)
+                            .unwrap_or(1)
+                            * 4;
+
+                        let mut chunk_size = items.len().div_ceil(num_threads);
+                        if chunk_size == 0 {
+                            chunk_size = 1;
+                        }
+
+                        for deps in
+                            items.chunks(chunk_size).map(<[DynamicKey]>::to_vec)
+                        {
                             // everything here should be cheaply cloneable
                             let re_verify = re_verify.clone();
                             let key = key.clone();
                             let engine = self.clone();
-                            let dep = dep.clone();
 
                             handles.spawn(async move {
-                                engine
-                                    .reverify_single_dependency(
-                                        &re_verify,
-                                        &key,
-                                        current_version,
-                                        &dep,
-                                    )
-                                    .await
+                                for dep in deps {
+                                    if engine
+                                        .reverify_single_dependency(
+                                            &re_verify,
+                                            &key,
+                                            current_version,
+                                            &dep,
+                                        )
+                                        .await
+                                    {
+                                        return true;
+                                    }
+                                }
+
+                                false
                             });
                         }
 
