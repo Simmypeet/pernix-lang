@@ -16,6 +16,7 @@ getset = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 bon = { workspace = true }
+fuzzy-matcher = { workspace = true }
 
 pernixc_source_file = { path = "../../compiler/base/source_file" }
 pernixc_diagnostic = { path = "../../compiler/base/diagnostic" }
@@ -33,6 +34,8 @@ pernixc_parser = { path = "../../compiler/syntax/parser" }
 pernixc_resolution = { path = "../../compiler/semantic/resolution" }
 pernixc_semantic_element = { path = "../../compiler/semantic/semantic_element" }
 pernixc_term = { path = "../../compiler/semantic/term" }
+pernixc_serialize = { path = "../../compiler/base/serialize" }
+pernixc_stable_hash = { path = "../../compiler/base/stable_hash" }
 
 
 [lints]
