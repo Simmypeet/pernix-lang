@@ -68,6 +68,22 @@ impl Kind {
         )
     }
 
+    /// Checks if this kind of symbol can be a member of a module.
+    #[must_use]
+    pub const fn is_module_member(&self) -> bool {
+        matches!(
+            self,
+            Self::Module
+                | Self::Struct
+                | Self::Enum
+                | Self::Function
+                | Self::Constant
+                | Self::Effect
+                | Self::Trait
+                | Self::Marker
+        )
+    }
+
     /// Checks if this kind of symbol has a [`Implemented`] component.
     #[must_use]
     pub const fn has_implemented(&self) -> bool {
