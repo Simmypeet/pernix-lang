@@ -161,15 +161,39 @@ pub async fn all_rendered_executor(
         unsafe {
             engine.start_parallel();
         }
-        for id in all_ids.iter().map(|x| Global::new(id, *x)) {
+
+        // chunk the items to avoid spawning too many tasks
+        // at once, targeting 4x the number of available
+        let num_threads = std::thread::available_parallelism()
+            .map(std::num::NonZero::get)
+            .unwrap_or(1)
+            * 4;
+
+        let mut chunk_size = all_ids.len().div_ceil(num_threads);
+        if chunk_size == 0 {
+            chunk_size = 1;
+        }
+
+        for chunk in all_ids
+            .chunks(chunk_size)
+            .map(|x| x.iter().map(|x| Global::new(id, *x)).collect::<Vec<_>>())
+        {
             let engine = engine.clone();
-            handles.spawn(
-                async move { engine.query(&SingleRenderedKey(id)).await },
-            );
+            handles.spawn(async move {
+                let mut chunk_diagnostics = Vec::new();
+                for id in chunk {
+                    chunk_diagnostics
+                        .push(engine.query(&SingleRenderedKey(id)).await?);
+                }
+
+                Ok::<_, executor::CyclicError>(chunk_diagnostics)
+            });
         }
 
         while let Some(handle) = handles.next().await {
-            diagnostics.push(handle?);
+            for diag in handle? {
+                diagnostics.push(diag);
+            }
         }
 
         unsafe {
