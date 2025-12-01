@@ -369,14 +369,14 @@ pub async fn qualified_identifier_completion(
         completions.push(tower_lsp::lsp_types::CompletionItem {
             label: "this".to_string(),
             kind: Some(CompletionItemKind::KEYWORD),
-            sort_text: Some("30_qual_this".to_string()),
+            sort_text: Some("30_qual_root_this".to_string()),
             ..Default::default()
         });
 
         completions.push(tower_lsp::lsp_types::CompletionItem {
             label: "target".to_string(),
             kind: Some(CompletionItemKind::KEYWORD),
-            sort_text: Some("30_qual_target".to_string()),
+            sort_text: Some("30_qual_root_target".to_string()),
             ..Default::default()
         });
 
