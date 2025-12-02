@@ -7,7 +7,7 @@ use pernixc_semantic_element::{
 };
 use pernixc_symbol::get_all_implements_ids;
 use pernixc_target::{Global, TargetID, get_all_target_ids};
-use pernixc_tokio::scoped;
+use pernixc_tokio::{chunk::chunk_for_tasks, scoped};
 
 #[pernixc_query::executor(key(InTargetKey), name(InTargetExecutor))]
 pub async fn implemented_in_target_executor(
@@ -41,26 +41,37 @@ pub async fn implemented_in_target_executor(
         scoped!(|scoped| async move {
             let mut results = HashSet::default();
 
-            for implementation in
-                implementations.iter().map(|x| key.target_id.make_global(*x))
-            {
+            for implementation in implementations.chunk_for_tasks().map(|x| {
+                x.iter()
+                    .map(|x| key.target_id.make_global(*x))
+                    .collect::<Vec<_>>()
+            }) {
                 let engine = engine.clone();
 
                 scoped.spawn(async move {
-                    engine
-                        .get_implements(implementation)
-                        .await
-                        .map(|x| (implementation, x))
+                    let mut results = Vec::new();
+
+                    for implementation in implementation {
+                        let Some(implemented_id) = engine
+                            .get_implements(implementation)
+                            .await?
+                            .map(|x| (implementation, x))
+                        else {
+                            continue;
+                        };
+
+                        results.push(implemented_id);
+                    }
+
+                    Ok(results)
                 });
             }
 
             while let Some(result) = scoped.next().await {
-                let (implementation_id, Some(implemented_id)) = result? else {
-                    continue;
-                };
-
-                if implemented_id == key.implementable_id {
-                    results.insert(implementation_id);
+                for (implementation_id, implemented_id) in result? {
+                    if implemented_id == key.implementable_id {
+                        results.insert(implementation_id);
+                    }
                 }
             }
 
