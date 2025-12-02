@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use flexstr::SharedStr;
 use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
-use log::info;
+use log::error;
 use pernixc_diagnostic::ByteIndex;
 use pernixc_extend::extend;
 use pernixc_hash::HashSet;
@@ -85,29 +85,36 @@ pub async fn retrieve_qulaified_identifier_matching(
                 // at_cursor is covered by before_cursor
                 let token_span = node
                     .get_pointing_token(token_tree, at_cursor)
-                    .map(|token| token.span);
+                    .and_then(|token| {
+                        token.kind.is_identifier().then_some(token.span)
+                    });
 
                 Some((qual_at, token_span))
             } else {
                 // before_cursor is covered by at_cursor
                 let token_span = node
                     .get_pointing_token(token_tree, before_cursor.unwrap())
-                    .map(|token| token.span);
+                    .and_then(|token| {
+                        token.kind.is_identifier().then_some(token.span)
+                    });
 
                 Some((qual_before, token_span))
             }
         }
         (Some(qual_at), None) => {
-            let token_span = node
-                .get_pointing_token(token_tree, at_cursor)
-                .map(|token| token.span);
+            let token_span =
+                node.get_pointing_token(token_tree, at_cursor).and_then(
+                    |token| token.kind.is_identifier().then_some(token.span),
+                );
 
             Some((qual_at, token_span))
         }
         (None, Some(qual_before)) => {
             let token_span = node
                 .get_pointing_token(token_tree, before_cursor.unwrap())
-                .map(|token| token.span);
+                .and_then(|token| {
+                    token.kind.is_identifier().then_some(token.span)
+                });
 
             Some((qual_before, token_span))
         }
@@ -177,7 +184,7 @@ pub async fn qualified_identifier_completion(
         )
         .await
     else {
-        info!(" No qualified identifier found at byte index {byte_index} ");
+        error!(" No qualified identifier found at byte index {byte_index} ");
         return Ok(Vec::new());
     };
 
@@ -189,14 +196,14 @@ pub async fn qualified_identifier_completion(
         )
         .await?
     else {
-        info!(
+        error!(
             " Qualified identifier at byte index {byte_index} could not be \
              resolved "
         );
         return Ok(Vec::new());
     };
 
-    info!(
+    error!(
         " Qualified identifier at byte index {byte_index} resolved to \
          {resolved_path:?} "
     );
@@ -488,6 +495,8 @@ async fn create_completions(
     let mut completions = Vec::new();
     let target_id = nearest_module_id.target_id;
     let fuzzy_matcher = SkimMatcherV2::default();
+
+    error!("{nearest_module_id:?}, {prior_scope:?}, {str:?}");
 
     if let Some(symbol) = prior_scope {
         // suggest members of the resolved symbol
