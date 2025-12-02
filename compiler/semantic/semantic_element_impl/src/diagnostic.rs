@@ -17,7 +17,7 @@ use pernixc_symbol::{
 };
 use pernixc_target::{Global, TargetID};
 use pernixc_term::generic_parameters::Key as GenericParametersKey;
-use pernixc_tokio::scoped;
+use pernixc_tokio::{chunk::chunk_for_tasks, scoped};
 
 use crate::{
     build::DiagnosticKey as BuildDiagnosticKey,
@@ -162,20 +162,8 @@ pub async fn all_rendered_executor(
             engine.start_parallel();
         }
 
-        // chunk the items to avoid spawning too many tasks
-        // at once, targeting 4x the number of available
-        let num_threads = std::thread::available_parallelism()
-            .map(std::num::NonZero::get)
-            .unwrap_or(1)
-            * 4;
-
-        let mut chunk_size = all_ids.len().div_ceil(num_threads);
-        if chunk_size == 0 {
-            chunk_size = 1;
-        }
-
         for chunk in all_ids
-            .chunks(chunk_size)
+            .chunk_for_tasks()
             .map(|x| x.iter().map(|x| Global::new(id, *x)).collect::<Vec<_>>())
         {
             let engine = engine.clone();

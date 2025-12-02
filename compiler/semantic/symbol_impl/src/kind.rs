@@ -13,7 +13,7 @@ use pernixc_symbol::{
     kind::{Key, Kind},
 };
 use pernixc_target::TargetID;
-use pernixc_tokio::scoped;
+use pernixc_tokio::{chunk::chunk_for_tasks, scoped};
 
 use crate::table::{self, MapKey, get_table_of_symbol};
 
@@ -111,42 +111,50 @@ impl<
         let map = engine.query(&MapKey(key.target_id)).await?;
 
         scoped!(|handles| async move {
-            for x in map.keys_by_symbol_id.keys() {
+            let ids = map.keys_by_symbol_id.keys().copied().collect::<Vec<_>>();
+
+            for id_chunk in
+                ids.chunk_for_tasks().map(<[pernixc_symbol::ID]>::to_vec)
+            {
                 let map = map.clone();
                 let engine = engine.clone();
-                let id = *x;
                 let target_id = key.target_id;
                 let filter = key.filter.clone();
 
                 handles.spawn(async move {
-                    let node_key = map
-                        .keys_by_symbol_id
-                        .get(&id)
-                        .unwrap_or_else(|| panic!("invalid symbol ID: {id:?}"))
-                        .as_ref()
-                        .map_or_else(
-                            || table::Key::Root(target_id),
-                            |x| table::Key::Submodule {
-                                external_submodule: x.clone(),
-                                target_id,
-                            },
-                        );
+                    let mut results = Vec::new();
 
-                    let node = engine.query(&table::TableKey(node_key)).await?;
+                    for id in id_chunk {
+                        let node_key = map
+                            .keys_by_symbol_id
+                            .get(&id)
+                            .unwrap_or_else(|| {
+                                panic!("invalid symbol ID: {id:?}")
+                            })
+                            .as_ref()
+                            .map_or_else(
+                                || table::Key::Root(target_id),
+                                |x| table::Key::Submodule {
+                                    external_submodule: x.clone(),
+                                    target_id,
+                                },
+                            );
 
-                    if filter.filter(*node.kinds.get(&id).unwrap()).await {
-                        Ok(Some(id))
-                    } else {
-                        Ok(None)
+                        let node =
+                            engine.query(&table::TableKey(node_key)).await?;
+
+                        if filter.filter(*node.kinds.get(&id).unwrap()).await {
+                            results.push(id);
+                        }
                     }
+
+                    Ok(results)
                 });
             }
 
             let mut results = Vec::new();
             while let Some(symbol) = handles.next().await {
-                if let Some(symbol) = symbol? {
-                    results.push(symbol);
-                }
+                results.extend(symbol?);
             }
 
             Ok(Arc::from(results))
