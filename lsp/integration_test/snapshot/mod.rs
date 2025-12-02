@@ -225,6 +225,7 @@ pub async fn create_engine_test_for_fixture_with_cursor(
         target_name,
         main_file.to_path_buf(),
         fixture.clone(),
+        true,
         Some(0), // fixed target seed for deterministic results
     )
     .await;

@@ -9,7 +9,7 @@ use tower_lsp::lsp_types::{CompletionParams, CompletionResponse};
 
 use crate::{
     completion::qualified_identifier::qualified_identifier_completion,
-    conversion::to_pernix_editor_location,
+    conversion::to_pernix_editor_location, test_config::is_testing_lsp,
 };
 
 pub mod keyword;
@@ -64,7 +64,7 @@ pub async fn handle_completion(
         &mut completions,
     );
 
-    let qualified_identifier_completions = self
+    let mut qualified_identifier_completions = self
         .qualified_identifier_completion(
             byte_index,
             source_id,
@@ -73,6 +73,11 @@ pub async fn handle_completion(
             target_id,
         )
         .await?;
+
+    // in testing mode, sort completions to make snapshots stable
+    if self.is_testing_lsp().await {
+        qualified_identifier_completions.sort();
+    }
 
     completions.reserve(qualified_identifier_completions.len());
 

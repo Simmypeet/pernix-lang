@@ -39,6 +39,7 @@ pub mod formatter;
 pub mod goto_definition;
 pub mod hover;
 pub mod pointing;
+pub mod test_config;
 pub mod workspace;
 
 /// The language server protocal implementation for Pernix.
