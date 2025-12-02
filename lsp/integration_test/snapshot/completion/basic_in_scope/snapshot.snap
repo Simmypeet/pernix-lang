@@ -7,15 +7,5 @@ expression: string
     "label": "XomeStruct",
     "kind": 22,
     "sortText": "100"
-  },
-  {
-    "label": "this",
-    "kind": 14,
-    "sortText": "300"
-  },
-  {
-    "label": "target",
-    "kind": 14,
-    "sortText": "300"
   }
 ]

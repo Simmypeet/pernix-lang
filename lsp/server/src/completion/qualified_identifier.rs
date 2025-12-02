@@ -455,6 +455,7 @@ fn kind_to_completion_item_kind(
     }
 }
 
+#[allow(clippy::cognitive_complexity)]
 async fn create_completions(
     engine: &TrackedEngine,
     nearest_module_id: Global<ID>,
@@ -546,8 +547,26 @@ async fn create_completions(
             inserted_ids.insert(import.id);
         }
 
-        completions.push(Completion::ThisKeyword);
-        completions.push(Completion::TargetKeyword);
+        // this and target keywords
+        if let Some(str) = str {
+            if fuzzy_matcher.fuzzy_match("this", str).is_none() {
+                // skip adding this keyword
+            } else {
+                completions.push(Completion::ThisKeyword);
+            }
+        } else {
+            completions.push(Completion::ThisKeyword);
+        }
+
+        if let Some(str) = str {
+            if fuzzy_matcher.fuzzy_match("target", str).is_none() {
+                // skip adding target keyword
+            } else {
+                completions.push(Completion::TargetKeyword);
+            }
+        } else {
+            completions.push(Completion::TargetKeyword);
+        }
 
         // collects all other available symbols that might not be included
         // in the current module
