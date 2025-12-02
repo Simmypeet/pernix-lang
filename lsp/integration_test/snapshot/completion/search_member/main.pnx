@@ -1,0 +1,4 @@
+public module inner
+
+
+implements inner::<cursor>

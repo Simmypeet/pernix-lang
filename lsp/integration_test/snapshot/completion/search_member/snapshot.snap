@@ -1,0 +1,11 @@
+---
+source: lsp/integration_test/snapshot/mod.rs
+expression: string
+---
+[
+  {
+    "label": "XomeInnerPublicStruct",
+    "kind": 22,
+    "sortText": "100"
+  }
+]
