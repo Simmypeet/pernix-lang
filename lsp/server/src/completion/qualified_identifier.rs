@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use flexstr::SharedStr;
 use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
-use log::error;
+use log::{error, info};
 use pernixc_diagnostic::ByteIndex;
 use pernixc_extend::extend;
 use pernixc_hash::HashSet;
@@ -203,7 +203,7 @@ pub async fn qualified_identifier_completion(
         return Ok(Vec::new());
     };
 
-    error!(
+    info!(
         " Qualified identifier at byte index {byte_index} resolved to \
          {resolved_path:?} "
     );
@@ -495,8 +495,6 @@ async fn create_completions(
     let mut completions = Vec::new();
     let target_id = nearest_module_id.target_id;
     let fuzzy_matcher = SkimMatcherV2::default();
-
-    error!("{nearest_module_id:?}, {prior_scope:?}, {str:?}");
 
     if let Some(symbol) = prior_scope {
         // suggest members of the resolved symbol
