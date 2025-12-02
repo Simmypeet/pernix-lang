@@ -2,107 +2,35 @@
 
 use std::sync::Arc;
 
-use fuzzy_matcher::FuzzyMatcher;
+use flexstr::SharedStr;
+use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 use log::info;
 use pernixc_diagnostic::ByteIndex;
 use pernixc_extend::extend;
 use pernixc_hash::HashSet;
-use pernixc_query::TrackedEngine;
+use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
 use pernixc_semantic_element::import::get_import_map;
 use pernixc_source_file::{
     GlobalSourceID, SourceElement, Span, get_source_file_by_id,
 };
 use pernixc_symbol::{
-    get_target_root_module_id,
+    ID, get_target_root_module_id,
     kind::get_kind,
     member::{get_members, try_get_members},
-    name::{get_name, get_qualified_name},
-    parent::{get_closest_module_id, get_parent_global},
+    name::get_name,
+    parent::get_closest_module_id,
     source_file_module::get_source_file_module,
     source_map::to_absolute_span,
 };
 use pernixc_syntax::QualifiedIdentifier;
 use pernixc_target::{Global, TargetID};
-use tower_lsp::lsp_types::CompletionItemKind;
+use pernixc_tokio::{chunk::chunk_for_tasks, scoped};
+use tokio::sync::RwLock;
+use tower_lsp::lsp_types::{CompletionItem, CompletionItemKind};
 
 use crate::pointing::{
-    self, Resolution, get_symbol_scope_at_byte_index,
-    resolve_qualified_identifier_path,
+    self, get_symbol_scope_at_byte_index, resolve_qualified_identifier_path,
 };
-
-#[extend]
-fn allow_completion(self: pernixc_symbol::kind::Kind) -> bool {
-    match self {
-        pernixc_symbol::kind::Kind::Module
-        | pernixc_symbol::kind::Kind::Struct
-        | pernixc_symbol::kind::Kind::Trait
-        | pernixc_symbol::kind::Kind::Enum
-        | pernixc_symbol::kind::Kind::Type
-        | pernixc_symbol::kind::Kind::Constant
-        | pernixc_symbol::kind::Kind::Function
-        | pernixc_symbol::kind::Kind::ExternFunction
-        | pernixc_symbol::kind::Kind::Variant
-        | pernixc_symbol::kind::Kind::TraitType
-        | pernixc_symbol::kind::Kind::TraitFunction
-        | pernixc_symbol::kind::Kind::TraitConstant
-        | pernixc_symbol::kind::Kind::Effect
-        | pernixc_symbol::kind::Kind::EffectOperation
-        | pernixc_symbol::kind::Kind::Marker
-        | pernixc_symbol::kind::Kind::ImplementationType
-        | pernixc_symbol::kind::Kind::ImplementationFunction
-        | pernixc_symbol::kind::Kind::ImplementationConstant => true,
-
-        pernixc_symbol::kind::Kind::PositiveImplementation
-        | pernixc_symbol::kind::Kind::NegativeImplementation => false,
-    }
-}
-
-#[extend]
-fn kind_to_completion_item_kind(
-    self: pernixc_symbol::kind::Kind,
-) -> CompletionItemKind {
-    match self {
-        pernixc_symbol::kind::Kind::Module => CompletionItemKind::MODULE,
-        pernixc_symbol::kind::Kind::Struct => CompletionItemKind::STRUCT,
-
-        pernixc_symbol::kind::Kind::Trait
-        | pernixc_symbol::kind::Kind::Effect
-        | pernixc_symbol::kind::Kind::Marker => CompletionItemKind::INTERFACE,
-
-        pernixc_symbol::kind::Kind::Enum => CompletionItemKind::ENUM,
-        pernixc_symbol::kind::Kind::Type => CompletionItemKind::TYPE_PARAMETER,
-
-        pernixc_symbol::kind::Kind::Constant => CompletionItemKind::CONSTANT,
-
-        pernixc_symbol::kind::Kind::Function
-        | pernixc_symbol::kind::Kind::ExternFunction => {
-            CompletionItemKind::FUNCTION
-        }
-
-        pernixc_symbol::kind::Kind::Variant => CompletionItemKind::ENUM_MEMBER,
-
-        pernixc_symbol::kind::Kind::TraitType
-        | pernixc_symbol::kind::Kind::ImplementationType => {
-            CompletionItemKind::TYPE_PARAMETER
-        }
-
-        pernixc_symbol::kind::Kind::TraitConstant
-        | pernixc_symbol::kind::Kind::ImplementationConstant => {
-            CompletionItemKind::CONSTANT
-        }
-
-        pernixc_symbol::kind::Kind::TraitFunction
-        | pernixc_symbol::kind::Kind::EffectOperation
-        | pernixc_symbol::kind::Kind::ImplementationFunction => {
-            CompletionItemKind::METHOD
-        }
-
-        pernixc_symbol::kind::Kind::PositiveImplementation
-        | pernixc_symbol::kind::Kind::NegativeImplementation => {
-            CompletionItemKind::CLASS
-        }
-    }
-}
 
 /// Priority of searching matching qualified identifier completions
 ///
@@ -221,8 +149,7 @@ pub async fn qualified_identifier_completion(
     syntax_tree: pernixc_syntax::item::module::Content,
     token_tree: &pernixc_lexical::tree::Tree,
     target_id: TargetID,
-    completions: &mut Vec<tower_lsp::lsp_types::CompletionItem>,
-) -> Result<(), pernixc_query::runtime::executor::CyclicError> {
+) -> Result<Vec<Completion>, pernixc_query::runtime::executor::CyclicError> {
     let module =
         target_id.make_global(self.get_source_file_module(source_id).await);
 
@@ -247,7 +174,7 @@ pub async fn qualified_identifier_completion(
         .await
     else {
         info!(" No qualified identifier found at byte index {byte_index} ");
-        return Ok(());
+        return Ok(Vec::new());
     };
 
     let Some(resolved_path) = self
@@ -262,7 +189,7 @@ pub async fn qualified_identifier_completion(
             " Qualified identifier at byte index {byte_index} could not be \
              resolved "
         );
-        return Ok(());
+        return Ok(Vec::new());
     };
 
     info!(
@@ -271,7 +198,7 @@ pub async fn qualified_identifier_completion(
     );
 
     // determine the nearest module id for import suggestions
-    let nearest_module =
+    let nearest_module_id =
         target_id.make_global(self.get_closest_module_id(current_site).await);
 
     let prior_scope = match resolved_path {
@@ -298,163 +225,395 @@ pub async fn qualified_identifier_completion(
                 }
             } else {
                 // cursor is not at the end, no suggestions
-                return Ok(());
+                return Ok(Vec::new());
             }
         }
     };
 
-    if let Some(symbol) = prior_scope {
-        // suggest members of the resolved symbol
-        let Some(members) = self.try_get_members(symbol).await else {
-            return Ok(());
+    let pointing_string: Option<SharedStr> =
+        if let Some(token_span) = token_abs_span {
+            let source_file =
+                self.get_source_file_by_id(token_span.source_id).await;
+
+            Some(source_file.content()[token_span.range()].into())
+        } else {
+            None
         };
 
-        for (member_name, id) in &members.member_ids_by_name {
-            let kind = self.get_kind(target_id.make_global(*id)).await;
+    create_completions(
+        self,
+        nearest_module_id,
+        prior_scope,
+        pointing_string.as_ref(),
+    )
+    .await
+}
+
+/// A completion candidate when there're already some prior scope resolved.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MemberCompletion {
+    /// The completed symbol ID.
+    pub completion: Global<ID>,
+}
+
+/// A completion candidate when completing the root-level qualified identifier
+/// and the candidates are members of the current module.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ModuleCompletion {
+    /// The completed symbol ID.
+    pub completion: Global<ID>,
+}
+
+/// A completion candidate when completing the root-level qualified identifier
+/// and the candidates are imports of the current module.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ImportCompletion {
+    /// The completion string to be shown.
+    pub completion_string: SharedStr,
+
+    /// The symbol ID of the import.
+    pub symbol: Global<ID>,
+}
+
+/// A completion candidate when completing the root-level qualified identifier
+/// and the candidates are global symbols.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct GlobalCompletion {
+    /// The completed symbol ID.
+    pub completion: Global<ID>,
+}
+
+/// The completion suggestion.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
+pub enum Completion {
+    Member(MemberCompletion),
+    Module(ModuleCompletion),
+    Import(ImportCompletion),
+    Global(GlobalCompletion),
+    ThisKeyword,
+    TargetKeyword,
+}
+
+impl Completion {
+    /// Converts the completion suggestion to an LSP `CompletionItem`.
+    pub async fn to_lsp_completion(
+        self,
+        engine: &TrackedEngine,
+    ) -> Result<CompletionItem, CyclicError> {
+        match self {
+            Self::Member(member_completion) => {
+                let name = engine.get_name(member_completion.completion).await;
+
+                let kind = engine
+                    .get_kind(member_completion.completion)
+                    .await
+                    .kind_to_completion_item_kind();
+
+                Ok(CompletionItem {
+                    label: name.to_string(),
+                    kind: Some(kind),
+                    sort_text: Some("100".to_string()),
+                    ..Default::default()
+                })
+            }
+
+            Self::Module(module_completion) => {
+                let name = engine.get_name(module_completion.completion).await;
+
+                let kind = engine
+                    .get_kind(module_completion.completion)
+                    .await
+                    .kind_to_completion_item_kind();
+
+                Ok(CompletionItem {
+                    label: name.to_string(),
+                    kind: Some(kind),
+                    sort_text: Some("100".to_string()),
+                    ..Default::default()
+                })
+            }
+
+            Self::Import(import_completion) => {
+                let kind = engine
+                    .get_kind(import_completion.symbol)
+                    .await
+                    .kind_to_completion_item_kind();
+
+                Ok(CompletionItem {
+                    label: import_completion.completion_string.to_string(),
+                    kind: Some(kind),
+                    sort_text: Some("100".to_string()),
+                    ..Default::default()
+                })
+            }
+
+            Self::Global(global_completion) => {
+                let name = engine.get_name(global_completion.completion).await;
+
+                let kind = engine
+                    .get_kind(global_completion.completion)
+                    .await
+                    .kind_to_completion_item_kind();
+
+                Ok(CompletionItem {
+                    label: name.to_string(),
+                    kind: Some(kind),
+                    sort_text: Some("200".to_string()),
+                    ..Default::default()
+                })
+            }
+
+            Self::ThisKeyword => Ok(CompletionItem {
+                label: "this".to_string(),
+                kind: Some(CompletionItemKind::KEYWORD),
+                sort_text: Some("300".to_string()),
+                ..Default::default()
+            }),
+
+            Self::TargetKeyword => Ok(CompletionItem {
+                label: "target".to_string(),
+                kind: Some(CompletionItemKind::KEYWORD),
+                sort_text: Some("300".to_string()),
+                ..Default::default()
+            }),
+        }
+    }
+}
+
+#[extend]
+fn allow_completion(self: pernixc_symbol::kind::Kind) -> bool {
+    match self {
+        pernixc_symbol::kind::Kind::Module
+        | pernixc_symbol::kind::Kind::Struct
+        | pernixc_symbol::kind::Kind::Trait
+        | pernixc_symbol::kind::Kind::Enum
+        | pernixc_symbol::kind::Kind::Type
+        | pernixc_symbol::kind::Kind::Constant
+        | pernixc_symbol::kind::Kind::Function
+        | pernixc_symbol::kind::Kind::ExternFunction
+        | pernixc_symbol::kind::Kind::Variant
+        | pernixc_symbol::kind::Kind::TraitType
+        | pernixc_symbol::kind::Kind::TraitFunction
+        | pernixc_symbol::kind::Kind::TraitConstant
+        | pernixc_symbol::kind::Kind::Effect
+        | pernixc_symbol::kind::Kind::EffectOperation
+        | pernixc_symbol::kind::Kind::Marker
+        | pernixc_symbol::kind::Kind::ImplementationType
+        | pernixc_symbol::kind::Kind::ImplementationFunction
+        | pernixc_symbol::kind::Kind::ImplementationConstant => true,
+
+        pernixc_symbol::kind::Kind::PositiveImplementation
+        | pernixc_symbol::kind::Kind::NegativeImplementation => false,
+    }
+}
+
+#[extend]
+fn kind_to_completion_item_kind(
+    self: pernixc_symbol::kind::Kind,
+) -> CompletionItemKind {
+    match self {
+        pernixc_symbol::kind::Kind::Module => CompletionItemKind::MODULE,
+        pernixc_symbol::kind::Kind::Struct => CompletionItemKind::STRUCT,
+
+        pernixc_symbol::kind::Kind::Trait
+        | pernixc_symbol::kind::Kind::Effect
+        | pernixc_symbol::kind::Kind::Marker => CompletionItemKind::INTERFACE,
+
+        pernixc_symbol::kind::Kind::Enum => CompletionItemKind::ENUM,
+        pernixc_symbol::kind::Kind::Type => CompletionItemKind::TYPE_PARAMETER,
+
+        pernixc_symbol::kind::Kind::Constant => CompletionItemKind::CONSTANT,
+
+        pernixc_symbol::kind::Kind::Function
+        | pernixc_symbol::kind::Kind::ExternFunction => {
+            CompletionItemKind::FUNCTION
+        }
+
+        pernixc_symbol::kind::Kind::Variant => CompletionItemKind::ENUM_MEMBER,
+
+        pernixc_symbol::kind::Kind::TraitType
+        | pernixc_symbol::kind::Kind::ImplementationType => {
+            CompletionItemKind::TYPE_PARAMETER
+        }
+
+        pernixc_symbol::kind::Kind::TraitConstant
+        | pernixc_symbol::kind::Kind::ImplementationConstant => {
+            CompletionItemKind::CONSTANT
+        }
+
+        pernixc_symbol::kind::Kind::TraitFunction
+        | pernixc_symbol::kind::Kind::EffectOperation
+        | pernixc_symbol::kind::Kind::ImplementationFunction => {
+            CompletionItemKind::METHOD
+        }
+
+        pernixc_symbol::kind::Kind::PositiveImplementation
+        | pernixc_symbol::kind::Kind::NegativeImplementation => {
+            CompletionItemKind::CLASS
+        }
+    }
+}
+
+async fn create_completions(
+    engine: &TrackedEngine,
+    nearest_module_id: Global<ID>,
+    prior_scope: Option<Global<ID>>,
+    str: Option<&SharedStr>,
+) -> Result<Vec<Completion>, CyclicError> {
+    let mut completions = Vec::new();
+    let target_id = nearest_module_id.target_id;
+    let fuzzy_matcher = SkimMatcherV2::default();
+
+    if let Some(symbol) = prior_scope {
+        // suggest members of the resolved symbol
+        let Some(members) = engine.try_get_members(symbol).await else {
+            return Ok(Vec::default());
+        };
+
+        for id in members.member_ids_by_name.values().copied() {
+            let kind = engine.get_kind(target_id.make_global(id)).await;
 
             if !kind.allow_completion() {
                 continue;
             }
 
-            completions.push(tower_lsp::lsp_types::CompletionItem {
-                label: member_name.to_string(),
-                kind: Some(kind.kind_to_completion_item_kind()),
-                sort_text: Some(format!("10_member_{member_name}")),
-                ..Default::default()
-            });
+            if let Some(str) = str {
+                let name = engine.get_name(target_id.make_global(id)).await;
+
+                if fuzzy_matcher.fuzzy_match(&name, str).is_none() {
+                    continue;
+                }
+            }
+
+            completions.push(Completion::Member(MemberCompletion {
+                completion: target_id.make_global(id),
+            }));
         }
     } else {
         // suggest module members, imports, this keyword, target keyword,
         // etc.
 
-        let module_members = self.get_members(nearest_module).await;
-        let module_imports = self.get_import_map(nearest_module).await;
+        let module_members = engine.get_members(nearest_module_id).await;
+        let module_imports = engine.get_import_map(nearest_module_id).await;
 
+        // avoid duplicate completions from the later global symbol search
         let mut inserted_ids = HashSet::default();
 
-        for (member_name, id) in &module_members.member_ids_by_name {
-            let kind =
-                self.get_kind(nearest_module.target_id.make_global(*id)).await;
+        for id in module_members.member_ids_by_name.values().copied() {
+            let kind = engine
+                .get_kind(nearest_module_id.target_id.make_global(id))
+                .await;
 
             if !kind.allow_completion() {
                 continue;
             }
 
-            completions.push(tower_lsp::lsp_types::CompletionItem {
-                label: member_name.to_string(),
-                kind: Some(kind.kind_to_completion_item_kind()),
-                sort_text: Some(format!("10_member_{member_name}")),
-                ..Default::default()
-            });
+            if let Some(str) = str {
+                let name = engine
+                    .get_name(nearest_module_id.target_id.make_global(id))
+                    .await;
 
-            inserted_ids.insert(target_id.make_global(*id));
+                if fuzzy_matcher.fuzzy_match(&name, str).is_none() {
+                    continue;
+                }
+            }
+
+            completions.push(Completion::Module(ModuleCompletion {
+                completion: target_id.make_global(id),
+            }));
+
+            inserted_ids.insert(target_id.make_global(id));
         }
 
         for (import_name, import) in module_imports.iter() {
-            let kind = self.get_kind(import.id).await;
+            let kind = engine.get_kind(import.id).await;
             if !kind.allow_completion() {
                 continue;
             }
 
-            completions.push(tower_lsp::lsp_types::CompletionItem {
-                label: import_name.to_string(),
-                kind: Some(kind.kind_to_completion_item_kind()),
-                sort_text: Some(format!("20_import_{import_name}")),
-                ..Default::default()
-            });
+            if let Some(str) = str
+                && fuzzy_matcher.fuzzy_match(import_name, str).is_none()
+            {
+                continue;
+            }
+
+            completions.push(Completion::Import(ImportCompletion {
+                completion_string: import_name.clone(),
+                symbol: import.id,
+            }));
 
             inserted_ids.insert(import.id);
         }
 
-        completions.push(tower_lsp::lsp_types::CompletionItem {
-            label: "this".to_string(),
-            kind: Some(CompletionItemKind::KEYWORD),
-            sort_text: Some("30_qual_root_this".to_string()),
-            ..Default::default()
-        });
-
-        completions.push(tower_lsp::lsp_types::CompletionItem {
-            label: "target".to_string(),
-            kind: Some(CompletionItemKind::KEYWORD),
-            sort_text: Some("30_qual_root_target".to_string()),
-            ..Default::default()
-        });
-
-        let root_module_id = self.get_target_root_module_id(target_id).await;
-        inserted_ids.insert(target_id.make_global(root_module_id));
+        completions.push(Completion::ThisKeyword);
+        completions.push(Completion::TargetKeyword);
 
         // collects all other available symbols that might not be included
         // in the current module
-        self.get_other_available_symbols(
-            &resolved_path,
-            qualified_identifier,
-            target_id,
-            async |x| !inserted_ids.contains(&x),
-            completions,
-        )
-        .await;
-    }
-
-    Ok(())
-}
-
-/// Gets all the other available symbols that might not be readily in the scope.
-/// Usually this requires auto `import` insertions.
-#[extend]
-async fn get_other_available_symbols(
-    self: &TrackedEngine,
-    resolution: &Resolution,
-    qualified_identifier: QualifiedIdentifier,
-    target_id: TargetID,
-    check: impl AsyncFn(Global<pernixc_symbol::ID>) -> bool,
-    completions: &mut Vec<tower_lsp::lsp_types::CompletionItem>,
-) {
-    let string = match resolution {
-        Resolution::FailAtCursor(Some(_))
-        | Resolution::FailedAtLastSegment(Some(_))
-        | Resolution::Success(_)
-        | Resolution::NoMatchFound(_) => return,
-
-        Resolution::FailAtCursor(None)
-        | Resolution::FailedAtLastSegment(None) => {
-            let Some(qual) = qualified_identifier.root() else {
-                return;
-            };
-
-            let span = self.to_absolute_span(&qual.span()).await;
-            let source_file = self.get_source_file_by_id(span.source_id).await;
-
-            source_file.content()[span.range()].to_string()
-        }
-    };
-
-    self.collect_all_symbols_in_target(target_id, &string, check, completions)
-        .await;
-}
-
-async fn collect_module_id(
-    engine: &TrackedEngine,
-    current_module_id: Global<pernixc_symbol::ID>,
-    results: &mut Vec<pernixc_symbol::ID>,
-) {
-    let members = engine.get_members(current_module_id).await;
-
-    for id in members.member_ids_by_name.values().copied() {
-        results.push(id);
-
-        // recursively collect from child modules
-        let kind =
-            engine.get_kind(current_module_id.target_id.make_global(id)).await;
-
-        if kind == pernixc_symbol::kind::Kind::Module {
-            Box::pin(collect_module_id(
+        if let Some(str) = str {
+            completions = create_global_import_candidate(
                 engine,
-                current_module_id.target_id.make_global(id),
-                results,
-            ))
-            .await;
+                target_id,
+                inserted_ids,
+                str,
+                completions,
+            )
+            .await?;
         }
     }
+
+    Ok(completions)
+}
+
+async fn create_global_import_candidate(
+    engine: &TrackedEngine,
+    target_id: TargetID,
+    inserted: HashSet<Global<ID>>,
+    str: &SharedStr,
+    completion: Vec<Completion>,
+) -> Result<Vec<Completion>, CyclicError> {
+    let candidates = Arc::new(RwLock::new(completion));
+    let inserted = Arc::new(inserted);
+
+    let global_import_ids =
+        engine.get_global_import_suggestion_ids(target_id).await;
+
+    scoped!(|handles| async {
+        for chunk_id in global_import_ids
+            .chunk_for_tasks()
+            .map(<[pernixc_symbol::ID]>::to_vec)
+        {
+            let engine = engine.clone();
+            let str = str.clone();
+            let candidates = candidates.clone();
+            let inserted = inserted.clone();
+
+            handles.spawn(async move {
+                let fuzzy_matcher = SkimMatcherV2::default();
+
+                for id in chunk_id {
+                    if inserted.contains(&target_id.make_global(id)) {
+                        continue;
+                    }
+
+                    let name = engine.get_name(target_id.make_global(id)).await;
+
+                    if fuzzy_matcher.fuzzy_match(&name, &str).is_none() {
+                        continue;
+                    }
+
+                    candidates.write().await.push(Completion::Global(
+                        GlobalCompletion {
+                            completion: target_id.make_global(id),
+                        },
+                    ));
+                }
+            });
+        }
+    });
+
+    Ok(Arc::into_inner(candidates).unwrap().into_inner())
 }
 
 #[pernixc_query::query(
@@ -472,16 +631,12 @@ pub async fn get_global_import_suggestions(
     pernixc_query::runtime::executor::CyclicError,
 > {
     let root_module_id = engine.get_target_root_module_id(target_id).await;
-    let mut results = vec![root_module_id];
 
-    collect_module_id(
-        engine,
-        target_id.make_global(root_module_id),
-        &mut results,
-    )
-    .await;
-
-    Ok(results.into())
+    engine
+        .query(&ModuleImportSuggestionKey(
+            target_id.make_global(root_module_id),
+        ))
+        .await
 }
 
 pernixc_register::register!(
@@ -489,52 +644,53 @@ pernixc_register::register!(
     GlobalImportSuggestionExecutor
 );
 
-/// Collects all symbols in the target that match the given criteria.
-#[extend]
-pub async fn collect_all_symbols_in_target(
-    self: &TrackedEngine,
-    target_id: TargetID,
-    current: &str,
-    check: impl AsyncFn(Global<pernixc_symbol::ID>) -> bool,
-    completions: &mut Vec<tower_lsp::lsp_types::CompletionItem>,
-) {
-    // currently, we'll gather modules, structs, enums, functions, constants,
-    // traits, effects, and markers.
-    let imports = self.get_global_import_suggestion_ids(target_id).await;
-    let fuzzy_matcher = fuzzy_matcher::skim::SkimMatcherV2::default();
+#[pernixc_query::query(
+    key(ModuleImportSuggestionKey),
+    value(Arc<[pernixc_symbol::ID]>),
+    id(Global<ID>),
+    executor(ModuleImportSuggestionExecutor),
+)]
+async fn collect_module_id(
+    current_module_id: Global<pernixc_symbol::ID>,
+    engine: &TrackedEngine,
+) -> Result<Arc<[pernixc_symbol::ID]>, CyclicError> {
+    let members = engine.get_members(current_module_id).await;
+    let mut results = vec![current_module_id.id];
 
-    for id in imports.iter().copied().map(|x| target_id.make_global(x)) {
-        if !check(id).await {
-            continue;
+    scoped!(|handles| async {
+        for id in members.member_ids_by_name.values().copied() {
+            // recursively collect from child modules
+            let kind = engine
+                .get_kind(current_module_id.target_id.make_global(id))
+                .await;
+
+            if kind == pernixc_symbol::kind::Kind::Module {
+                let engine = engine.clone();
+
+                handles.spawn(async move {
+                    engine
+                        .query(&ModuleImportSuggestionKey(
+                            current_module_id.target_id.make_global(id),
+                        ))
+                        .await
+                });
+            } else {
+                results.push(id);
+            }
         }
 
-        let Some(parent_module) = self.get_parent_global(id).await else {
-            continue;
-        };
-
-        // add a completion item with import information
-        let kind = self.get_kind(id).await;
-
-        if !kind.allow_completion() {
-            continue;
+        while let Some(result) = handles.next().await {
+            let child_ids = result?;
+            results.extend(child_ids.iter().copied());
         }
 
-        let name = self.get_name(id).await;
+        Ok(())
+    })?;
 
-        // fuzzy match the current input
-        if fuzzy_matcher.fuzzy_match(&name.to_std_string(), current).is_none() {
-            continue;
-        }
-
-        let parent_module_qual_name =
-            self.get_qualified_name(parent_module).await;
-
-        completions.push(tower_lsp::lsp_types::CompletionItem {
-            label: name.to_std_string(),
-            kind: Some(kind.kind_to_completion_item_kind()),
-            sort_text: Some(format!("50_global_{current}")),
-            detail: Some(format!("from {parent_module_qual_name}")),
-            ..Default::default()
-        });
-    }
+    Ok(results.into())
 }
+
+pernixc_register::register!(
+    ModuleImportSuggestionKey,
+    ModuleImportSuggestionExecutor
+);

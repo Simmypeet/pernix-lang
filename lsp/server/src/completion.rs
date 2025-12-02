@@ -64,15 +64,21 @@ pub async fn handle_completion(
         &mut completions,
     );
 
-    self.qualified_identifier_completion(
-        byte_index,
-        source_id,
-        content,
-        &token_tree,
-        target_id,
-        &mut completions,
-    )
-    .await?;
+    let qualified_identifier_completions = self
+        .qualified_identifier_completion(
+            byte_index,
+            source_id,
+            content,
+            &token_tree,
+            target_id,
+        )
+        .await?;
+
+    completions.reserve(qualified_identifier_completions.len());
+
+    for completion in qualified_identifier_completions {
+        completions.push(completion.to_lsp_completion(self).await?);
+    }
 
     Ok(Some(CompletionResponse::Array(completions)))
 }

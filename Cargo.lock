@@ -1383,6 +1383,7 @@ version = "0.1.0-beta.2"
 dependencies = [
  "bon",
  "env_logger",
+ "flexstr",
  "fuzzy-matcher",
  "getset",
  "log",
@@ -1404,6 +1405,7 @@ dependencies = [
  "pernixc_syntax",
  "pernixc_target",
  "pernixc_term",
+ "pernixc_tokio",
  "serde",
  "serde_json",
  "thiserror 2.0.15",
