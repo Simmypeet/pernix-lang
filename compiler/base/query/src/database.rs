@@ -19,7 +19,7 @@ use getset::CopyGetters;
 use parking_lot::RwLock;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_type_id::StableTypeID;
-use pernixc_tokio::scoped;
+use pernixc_tokio::{chunk::chunk_for_tasks, scoped};
 use rand::Rng;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use tokio::sync::Notify;
@@ -1152,20 +1152,8 @@ impl Engine {
                 }
                 DependencyExecution::Multithread(items) => {
                     let value = scoped!(|handles| async move {
-                        // chunk the items to avoid spawning too many tasks
-                        // at once, targeting 4x the number of available
-                        let num_threads = std::thread::available_parallelism()
-                            .map(std::num::NonZero::get)
-                            .unwrap_or(1)
-                            * 4;
-
-                        let mut chunk_size = items.len().div_ceil(num_threads);
-                        if chunk_size == 0 {
-                            chunk_size = 1;
-                        }
-
                         for deps in
-                            items.chunks(chunk_size).map(<[DynamicKey]>::to_vec)
+                            items.chunk_for_tasks().map(<[DynamicKey]>::to_vec)
                         {
                             // everything here should be cheaply cloneable
                             let re_verify = re_verify.clone();
