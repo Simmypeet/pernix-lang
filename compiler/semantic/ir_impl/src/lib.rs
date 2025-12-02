@@ -13,7 +13,7 @@ use pernixc_symbol::{
     get_all_function_with_body_ids, syntax::get_function_body_syntax,
 };
 use pernixc_target::{Global, TargetID};
-use pernixc_tokio::scoped;
+use pernixc_tokio::{chunk::chunk_for_tasks, scoped};
 use pernixc_type_system::environment::{Environment, get_active_premise};
 
 /// A collection of all diagnostics related to IRs.
@@ -251,11 +251,20 @@ pub async fn all_ir_rendered_diagnostics_executor(
             engine.start_parallel();
         }
 
-        for id in all_function_ids.iter().map(|x| Global::new(id, *x)) {
+        for ids in all_function_ids
+            .chunk_for_tasks()
+            .map(|x| x.iter().map(|x| Global::new(id, *x)).collect::<Vec<_>>())
+        {
             let engine = engine.clone();
-            handles.spawn(
-                async move { engine.query(&SingleRenderedKey(id)).await },
-            );
+            handles.spawn(async move {
+                let mut chunk_diagnostics = Vec::new();
+                for id in ids {
+                    chunk_diagnostics
+                        .push(engine.query(&SingleRenderedKey(id)).await?);
+                }
+
+                Ok(chunk_diagnostics)
+            });
         }
 
         unsafe {
@@ -263,7 +272,9 @@ pub async fn all_ir_rendered_diagnostics_executor(
         }
 
         while let Some(handle) = handles.next().await {
-            diagnostics.push(handle?);
+            for diag in handle? {
+                diagnostics.push(diag);
+            }
         }
 
         Ok(diagnostics.into())

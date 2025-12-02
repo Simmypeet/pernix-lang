@@ -2085,6 +2085,7 @@ dependencies = [
 name = "pernixc_tokio"
 version = "0.1.0-beta.2"
 dependencies = [
+ "pernixc_extend",
  "tokio",
 ]
 

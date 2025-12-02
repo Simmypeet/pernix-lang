@@ -17,7 +17,7 @@ use pernixc_symbol::{
 };
 use pernixc_target::{Global, TargetID};
 use pernixc_term::generic_parameters::Key as GenericParametersKey;
-use pernixc_tokio::scoped;
+use pernixc_tokio::{chunk::chunk_for_tasks, scoped};
 
 use crate::{
     build::DiagnosticKey as BuildDiagnosticKey,
@@ -161,15 +161,27 @@ pub async fn all_rendered_executor(
         unsafe {
             engine.start_parallel();
         }
-        for id in all_ids.iter().map(|x| Global::new(id, *x)) {
+
+        for chunk in all_ids
+            .chunk_for_tasks()
+            .map(|x| x.iter().map(|x| Global::new(id, *x)).collect::<Vec<_>>())
+        {
             let engine = engine.clone();
-            handles.spawn(
-                async move { engine.query(&SingleRenderedKey(id)).await },
-            );
+            handles.spawn(async move {
+                let mut chunk_diagnostics = Vec::new();
+                for id in chunk {
+                    chunk_diagnostics
+                        .push(engine.query(&SingleRenderedKey(id)).await?);
+                }
+
+                Ok::<_, executor::CyclicError>(chunk_diagnostics)
+            });
         }
 
         while let Some(handle) = handles.next().await {
-            diagnostics.push(handle?);
+            for diag in handle? {
+                diagnostics.push(diag);
+            }
         }
 
         unsafe {

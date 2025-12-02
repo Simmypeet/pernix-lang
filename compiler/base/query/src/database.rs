@@ -19,7 +19,7 @@ use getset::CopyGetters;
 use parking_lot::RwLock;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_type_id::StableTypeID;
-use pernixc_tokio::scoped;
+use pernixc_tokio::{chunk::chunk_for_tasks, scoped};
 use rand::Rng;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use tokio::sync::Notify;
@@ -1152,22 +1152,30 @@ impl Engine {
                 }
                 DependencyExecution::Multithread(items) => {
                     let value = scoped!(|handles| async move {
-                        for dep in items {
+                        for deps in
+                            items.chunk_for_tasks().map(<[DynamicKey]>::to_vec)
+                        {
                             // everything here should be cheaply cloneable
                             let re_verify = re_verify.clone();
                             let key = key.clone();
                             let engine = self.clone();
-                            let dep = dep.clone();
 
                             handles.spawn(async move {
-                                engine
-                                    .reverify_single_dependency(
-                                        &re_verify,
-                                        &key,
-                                        current_version,
-                                        &dep,
-                                    )
-                                    .await
+                                for dep in deps {
+                                    if engine
+                                        .reverify_single_dependency(
+                                            &re_verify,
+                                            &key,
+                                            current_version,
+                                            &dep,
+                                        )
+                                        .await
+                                    {
+                                        return true;
+                                    }
+                                }
+
+                                false
                             });
                         }
 
