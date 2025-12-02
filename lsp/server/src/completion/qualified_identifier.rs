@@ -14,7 +14,9 @@ use pernixc_source_file::{
     GlobalSourceID, SourceElement, Span, get_source_file_by_id,
 };
 use pernixc_symbol::{
-    ID, get_target_root_module_id,
+    ID,
+    accessibility::symbol_accessible,
+    get_target_root_module_id,
     kind::get_kind,
     member::{get_members, try_get_members},
     name::get_name,
@@ -576,6 +578,7 @@ async fn create_completions(
                 target_id,
                 inserted_ids,
                 str,
+                nearest_module_id,
                 completions,
             )
             .await?;
@@ -590,6 +593,7 @@ async fn create_global_import_candidate(
     target_id: TargetID,
     inserted: HashSet<Global<ID>>,
     str: &SharedStr,
+    current_module_id: Global<pernixc_symbol::ID>,
     completion: Vec<Completion>,
 ) -> Result<Vec<Completion>, CyclicError> {
     let candidates = Arc::new(RwLock::new(completion));
@@ -613,6 +617,16 @@ async fn create_global_import_candidate(
 
                 for id in chunk_id {
                     if inserted.contains(&target_id.make_global(id)) {
+                        continue;
+                    }
+
+                    if !engine
+                        .symbol_accessible(
+                            current_module_id,
+                            target_id.make_global(id),
+                        )
+                        .await
+                    {
                         continue;
                     }
 
