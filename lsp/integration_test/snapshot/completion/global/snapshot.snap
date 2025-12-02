@@ -10,11 +10,17 @@ expression: string
   },
   {
     "label": "XomeStructOne",
+    "labelDetails": {
+      "description": "from lspTest::innerFirst"
+    },
     "kind": 22,
     "sortText": "200"
   },
   {
     "label": "XomeStructTwo",
+    "labelDetails": {
+      "description": "from lspTest::innerSecond"
+    },
     "kind": 22,
     "sortText": "200"
   }

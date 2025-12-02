@@ -19,8 +19,8 @@ use pernixc_symbol::{
     get_target_root_module_id,
     kind::get_kind,
     member::{get_members, try_get_members},
-    name::get_name,
-    parent::get_closest_module_id,
+    name::{get_name, get_qualified_name},
+    parent::{get_closest_module_id, get_parent_global},
     source_file_module::get_source_file_module,
     source_map::to_absolute_span,
 };
@@ -28,7 +28,9 @@ use pernixc_syntax::QualifiedIdentifier;
 use pernixc_target::{Global, TargetID};
 use pernixc_tokio::{chunk::chunk_for_tasks, scoped};
 use tokio::sync::RwLock;
-use tower_lsp::lsp_types::{CompletionItem, CompletionItemKind};
+use tower_lsp::lsp_types::{
+    CompletionItem, CompletionItemKind, CompletionItemLabelDetails,
+};
 
 use crate::pointing::{
     self, get_symbol_scope_at_byte_index, resolve_qualified_identifier_path,
@@ -358,10 +360,29 @@ impl Completion {
                     .await
                     .kind_to_completion_item_kind();
 
+                let detail = if let Some(parent_module_id) =
+                    engine.get_parent_global(global_completion.completion).await
+                {
+                    let qualified_name =
+                        engine.get_qualified_name(parent_module_id).await;
+
+                    Some(format!("from {qualified_name}"))
+                } else {
+                    None
+                };
+
                 Ok(CompletionItem {
                     label: name.to_string(),
                     kind: Some(kind),
                     sort_text: Some("200".to_string()),
+
+                    // include a text specifying that this will import a new
+                    // symbol at the top of the module
+                    label_details: Some(CompletionItemLabelDetails {
+                        detail: None,
+                        description: detail,
+                    }),
+
                     ..Default::default()
                 })
             }
