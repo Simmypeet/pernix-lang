@@ -6,16 +6,16 @@ expression: string
   {
     "label": "XomeStruct",
     "kind": 22,
-    "sortText": "10_member_XomeStruct"
+    "sortText": "100"
   },
   {
     "label": "this",
     "kind": 14,
-    "sortText": "30_qual_this"
+    "sortText": "300"
   },
   {
     "label": "target",
     "kind": 14,
-    "sortText": "30_qual_target"
+    "sortText": "300"
   }
 ]
