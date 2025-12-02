@@ -511,6 +511,14 @@ async fn create_completions(
                 continue;
             }
 
+            // check accessibility
+            if !engine
+                .symbol_accessible(nearest_module_id, target_id.make_global(id))
+                .await
+            {
+                continue;
+            }
+
             if let Some(str) = str {
                 let name = engine.get_name(target_id.make_global(id)).await;
 
