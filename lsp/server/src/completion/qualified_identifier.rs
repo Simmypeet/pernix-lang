@@ -216,24 +216,25 @@ pub async fn qualified_identifier_completion(
         pointing::Resolution::Success(success_resolution) => {
             success_resolution.parent_scope
         }
-        pointing::Resolution::FailAtCursor(fail_at_cursor) => fail_at_cursor,
-        pointing::Resolution::FailedAtLastSegment(_)
-        | pointing::Resolution::NoMatchFound(_) => {
+
+        pointing::Resolution::Failed(fail_at_cursor) => {
+            if fail_at_cursor.fail_at_cursor {
+                // only suggest members if the failure happened at the cursor
+                fail_at_cursor.prior_scope
+            } else {
+                // no suggestions
+                return Ok(Vec::new());
+            }
+        }
+
+        pointing::Resolution::NoMatchFound(no_match_found) => {
             // check if the cursor is at the end of the qualified identifier,
             // only then suggest members of the symbol
             let qual_span = qualified_identifier.span();
             let qual_abs_span = token_tree.absolute_span_of(&qual_span);
 
             if byte_index == qual_abs_span.end {
-                match resolved_path {
-                    pointing::Resolution::FailedAtLastSegment(global) => global,
-                    pointing::Resolution::NoMatchFound(global) => Some(global),
-
-                    pointing::Resolution::Success(_)
-                    | pointing::Resolution::FailAtCursor(_) => {
-                        unreachable!()
-                    }
-                }
+                Some(no_match_found)
             } else {
                 // cursor is not at the end, no suggestions
                 return Ok(Vec::new());
