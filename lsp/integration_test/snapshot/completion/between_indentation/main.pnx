@@ -1,0 +1,9 @@
+public struct XomeStruct:
+    pass
+
+
+public struct Test:
+    private test: target::<cursor>
+
+
+something
