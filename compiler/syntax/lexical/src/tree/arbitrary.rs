@@ -297,6 +297,18 @@ impl Arbitrary for IndentationLine {
                     proptest::option::weighted(0.5, indentation)
                 )
                 .prop_filter("filter out empty line", |(x, y)| !x.0.is_empty() || !y.is_none())
+                .prop_filter("remove possible scope sperator after colon",|(x, y)| {
+                    !(x.0
+                        .last()
+                        .is_some_and(|x| 
+                            x.as_leaf()
+                            .is_some_and(|x| 
+                                x.kind
+                                    .as_punctuation()
+                                    .is_some_and(|x| **x == ':'
+                            )))
+                    && y.is_some())
+                })
                 .prop_map(|(x, y)| Self::Normal(x, y)),
             1 => (1usize..=10usize).prop_map(Self::WhiteSpaces),
         ]
