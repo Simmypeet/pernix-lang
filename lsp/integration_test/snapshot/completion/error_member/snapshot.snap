@@ -1,0 +1,5 @@
+---
+source: lsp/integration_test/snapshot/mod.rs
+expression: string
+---
+[]
