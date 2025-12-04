@@ -300,9 +300,9 @@ impl Arbitrary for IndentationLine {
                 .prop_filter("remove possible scope sperator after colon",|(x, y)| {
                     !(x.0
                         .last()
-                        .is_some_and(|x| 
+                        .is_some_and(|x|
                             x.as_leaf()
-                            .is_some_and(|x| 
+                            .is_some_and(|x|
                                 x.kind
                                     .as_punctuation()
                                     .is_some_and(|x| **x == ':'
