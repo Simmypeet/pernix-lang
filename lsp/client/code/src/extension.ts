@@ -32,6 +32,7 @@ export function activate(context: ExtensionContext) {
         synchronize: {
             fileEvents: workspace.createFileSystemWatcher('**/.clientrc')
         },
+        traceOutputChannel
     };
 
 

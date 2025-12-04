@@ -39,7 +39,7 @@
         "vscode": "^1.85.0"
     },
     "dependencies": {
-        "vscode-languageclient": "^7.0.0"
+        "vscode-languageclient": "^9.0.1"
     },
     "devDependencies": {
         "@types/node": "^22.5.0",
