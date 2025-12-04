@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use flexstr::SharedStr;
 use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
-use log::{error, info};
+use log::info;
 use pernixc_diagnostic::ByteIndex;
 use pernixc_extend::extend;
 use pernixc_hash::HashSet;
@@ -184,7 +184,7 @@ pub async fn qualified_identifier_completion(
         )
         .await
     else {
-        error!(" No qualified identifier found at byte index {byte_index} ");
+        info!(" No qualified identifier found at byte index {byte_index} ");
         return Ok(Vec::new());
     };
 
@@ -196,7 +196,7 @@ pub async fn qualified_identifier_completion(
         )
         .await?
     else {
-        error!(
+        info!(
             " Qualified identifier at byte index {byte_index} could not be \
              resolved "
         );
