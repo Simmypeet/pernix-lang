@@ -1,0 +1,9 @@
+public struct XomeStruct:
+    pass
+
+
+public function main() -> target::<cursor>
+
+
+public function anotherFunction():
+    pass

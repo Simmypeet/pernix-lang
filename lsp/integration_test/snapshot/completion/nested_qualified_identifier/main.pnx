@@ -1,0 +1,8 @@
+public enum Option[T]:
+    Some(T)
+    None
+
+
+public struct XomeType:
+    private test: Option[target::<cursor>]
+

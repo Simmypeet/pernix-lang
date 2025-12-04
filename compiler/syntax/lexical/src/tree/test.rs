@@ -692,6 +692,11 @@ fn invalid_inner_indentation() {
 }
 
 proptest! {
+    #![proptest_config(proptest::test_runner::Config {
+        cases: 5_000,
+        ..Default::default()
+    })]
+
    #[test]
     fn tree(
         input in arbitrary_nodes()

@@ -1,0 +1,21 @@
+---
+source: lsp/integration_test/snapshot/mod.rs
+expression: string
+---
+[
+  {
+    "label": "main",
+    "kind": 3,
+    "sortText": "100"
+  },
+  {
+    "label": "anotherFunction",
+    "kind": 3,
+    "sortText": "100"
+  },
+  {
+    "label": "XomeStruct",
+    "kind": 22,
+    "sortText": "100"
+  }
+]

@@ -67,6 +67,21 @@ pub trait Parser {
         RepeatAll(self)
     }
 
+    /// Commits to parsing the `self` parser if the `commit` parser is
+    /// successful.
+    ///
+    /// This is similar to `optional`, but the `commit` parser is used to
+    /// determine whether to parse the main parser or not.
+    ///
+    /// Once the `commit` parser is successful, the main parser must be
+    /// successful as well.
+    fn commit_if<C: Parser>(self, commit: C) -> CommitIf<C, Self>
+    where
+        Self: Sized,
+    {
+        CommitIf { commit, parser: self }
+    }
+
     /// Repeats the `self` parser withe a `separator` parser in between. The
     /// parser will be ran until all of the tokens are consumed in the
     /// branch.
@@ -217,7 +232,7 @@ pub struct Ast<T>(pub PhantomData<T>);
 
 impl<T: AbstractTree> Parser for Ast<T> {
     fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
-        let result = state.start_ndoe::<T, _>(|state| {
+        let (result, _) = state.start_node::<T, _>(|state| {
             let parser = T::parser();
             parser.parse(state)
         });
@@ -245,6 +260,56 @@ impl<T: AbstractTree> Output for Ast<T> {
 /// Start parsing a node of the given AST type.
 #[must_use]
 pub const fn ast<A: AbstractTree>() -> Ast<A> { Ast(PhantomData) }
+
+/// See [`ast_always_step_into_fragment`] for more information.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct AstAlwaysStepIntoFragment<T>(pub PhantomData<T>);
+
+/// If the give AST steps into a fragment, once the parser steps into the
+/// fragment the parser will consider the parse successful even if the inner
+/// parser fails.
+#[must_use]
+pub const fn ast_always_step_into_fragment<A: AbstractTree>()
+-> AstAlwaysStepIntoFragment<A> {
+    AstAlwaysStepIntoFragment(PhantomData)
+}
+
+impl<T: AbstractTree> Parser for AstAlwaysStepIntoFragment<T> {
+    fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
+        let (result, stepped_into) = state.start_node::<T, _>(|state| {
+            let parser = T::parser();
+            parser.parse(state)
+        });
+
+        match result {
+            Some(Ok(())) => Ok(()),
+
+            Some(Err(Unexpected)) | None => {
+                // if we've stepped into a fragment, emit the error and count
+                // as successful parse
+                if stepped_into {
+                    state.emit_error();
+
+                    Ok(())
+                } else {
+                    Err(Unexpected)
+                }
+            }
+        }
+    }
+}
+
+impl<T: AbstractTree> Output for AstAlwaysStepIntoFragment<T> {
+    type Extract = One;
+    type Output<'x> = T;
+
+    fn output<'a>(
+        &self,
+        node: &'a crate::concrete_tree::Node,
+    ) -> Option<Self::Output<'a>> {
+        T::from_node(node)
+    }
+}
 
 /// See [`Parser::optional`] for more information.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -812,6 +877,44 @@ impl<T: Output> Output for NewLineSignificant<T> {
         node: &'a crate::concrete_tree::Node,
     ) -> Option<Self::Output<'a>> {
         T::output(&self.0, node)
+    }
+}
+
+/// See [`Parser::commit_if`] for more information.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+
+pub struct CommitIf<C, P> {
+    /// The commit parser that determines whether to continue with the
+    /// [`Self::parser`] or not.
+    pub commit: C,
+
+    /// The main parser to be used if the [`Self::commit`] parser is
+    /// successful.
+    pub parser: P,
+}
+
+impl<C: Parser, P: Parser> Parser for CommitIf<C, P> {
+    fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
+        let checkpoint = state.checkpoint();
+
+        if self.commit.parse(state) == Ok(()) {
+            self.parser.parse(state)
+        } else {
+            state.restore(checkpoint);
+            Ok(())
+        }
+    }
+}
+
+impl<C: Parser, P: Output<Extract = One>> Output for CommitIf<C, P> {
+    type Extract = One;
+    type Output<'a> = P::Output<'a>;
+
+    fn output<'a>(
+        &self,
+        node: &'a crate::concrete_tree::Node,
+    ) -> Option<Self::Output<'a>> {
+        P::output(&self.parser, node)
     }
 }
 

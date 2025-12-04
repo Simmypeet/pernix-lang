@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use flexstr::SharedStr;
 use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
-use log::{error, info};
+use log::info;
 use pernixc_diagnostic::ByteIndex;
 use pernixc_extend::extend;
 use pernixc_hash::HashSet;
@@ -79,8 +79,8 @@ pub async fn retrieve_qulaified_identifier_matching(
             let span_at = qual_at.span();
             let span_before = qual_before.span();
 
-            if span_at.start >= span_before.start
-                && span_at.end <= span_before.end
+            if span_at.start <= span_before.start
+                && span_at.end >= span_before.end
             {
                 // at_cursor is covered by before_cursor
                 let token_span = node
@@ -184,7 +184,7 @@ pub async fn qualified_identifier_completion(
         )
         .await
     else {
-        error!(" No qualified identifier found at byte index {byte_index} ");
+        info!(" No qualified identifier found at byte index {byte_index} ");
         return Ok(Vec::new());
     };
 
@@ -196,7 +196,7 @@ pub async fn qualified_identifier_completion(
         )
         .await?
     else {
-        error!(
+        info!(
             " Qualified identifier at byte index {byte_index} could not be \
              resolved "
         );
@@ -326,6 +326,7 @@ impl Completion {
                     label: name.to_string(),
                     kind: Some(kind),
                     sort_text: Some("100".to_string()),
+
                     ..Default::default()
                 })
             }
@@ -342,6 +343,7 @@ impl Completion {
                     label: name.to_string(),
                     kind: Some(kind),
                     sort_text: Some("100".to_string()),
+
                     ..Default::default()
                 })
             }
@@ -374,7 +376,7 @@ impl Completion {
                     let qualified_name =
                         engine.get_qualified_name(parent_module_id).await;
 
-                    Some(format!("from {qualified_name}"))
+                    Some(format!("(from {qualified_name})"))
                 } else {
                     None
                 };
@@ -386,9 +388,11 @@ impl Completion {
 
                     // include a text specifying that this will import a new
                     // symbol at the top of the module
-                    label_details: Some(CompletionItemLabelDetails {
-                        detail: None,
-                        description: detail,
+                    label_details: detail.map(|detail| {
+                        CompletionItemLabelDetails {
+                            detail: Some(detail),
+                            description: None,
+                        }
                     }),
 
                     ..Default::default()

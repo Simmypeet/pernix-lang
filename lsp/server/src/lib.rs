@@ -5,15 +5,15 @@ use tokio::sync::RwLock;
 use tower_lsp::{
     Client, LanguageServer, jsonrpc,
     lsp_types::{
-        CompletionOptions, CompletionParams, CompletionResponse,
-        DidChangeTextDocumentParams, DidChangeWatchedFilesParams,
-        DidOpenTextDocumentParams, DidSaveTextDocumentParams, FileChangeType,
-        GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverContents,
-        HoverProviderCapability, InitializeParams, InitializeResult,
-        InitializedParams, MarkupContent, MarkupKind, MessageType, OneOf,
-        Registration, ServerCapabilities, TextDocumentSyncCapability,
-        TextDocumentSyncKind, Url, WorkspaceFoldersServerCapabilities,
-        WorkspaceServerCapabilities,
+        CompletionItem, CompletionOptions, CompletionOptionsCompletionItem,
+        CompletionParams, CompletionResponse, DidChangeTextDocumentParams,
+        DidChangeWatchedFilesParams, DidOpenTextDocumentParams,
+        DidSaveTextDocumentParams, FileChangeType, GotoDefinitionParams,
+        GotoDefinitionResponse, Hover, HoverContents, HoverProviderCapability,
+        InitializeParams, InitializeResult, InitializedParams, MarkupContent,
+        MarkupKind, MessageType, OneOf, Registration, ServerCapabilities,
+        TextDocumentSyncCapability, TextDocumentSyncKind, Url,
+        WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities,
     },
 };
 
@@ -63,28 +63,32 @@ impl Server {
 impl LanguageServer for Server {
     async fn initialize(
         &self,
-        _: InitializeParams,
+        param: InitializeParams,
     ) -> jsonrpc::Result<InitializeResult> {
         info!("Pernix Language Server is initializing...");
+
+        let string = serde_json::to_string_pretty(&param);
+        info!("Initialize params: {}", string.unwrap_or_default());
 
         Ok(InitializeResult {
             server_info: None,
             offset_encoding: None,
             capabilities: ServerCapabilities {
-                inlay_hint_provider: Some(OneOf::Left(true)),
                 text_document_sync: Some(TextDocumentSyncCapability::Kind(
                     TextDocumentSyncKind::INCREMENTAL,
                 )),
 
                 completion_provider: Some(CompletionOptions {
-                    resolve_provider: Some(false),
+                    resolve_provider: Some(true),
                     trigger_characters: Some(vec![
                         ".".to_string(),
                         ":".to_string(),
                     ]),
+                    completion_item: Some(CompletionOptionsCompletionItem {
+                        label_details_support: Some(true),
+                    }),
                     ..Default::default()
                 }),
-                execute_command_provider: None,
 
                 workspace: Some(WorkspaceServerCapabilities {
                     workspace_folders: Some(
@@ -318,6 +322,13 @@ impl LanguageServer for Server {
             .handle_completion(analyzer.current_target_id(), params)
             .await
             .unwrap_or_default())
+    }
+
+    async fn completion_resolve(
+        &self,
+        params: CompletionItem,
+    ) -> jsonrpc::Result<CompletionItem> {
+        Ok(params)
     }
 }
 

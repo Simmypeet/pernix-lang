@@ -14,7 +14,7 @@ use pernixc_lexical::{
 use pernixc_parser::{
     abstract_tree::{self, AbstractTree},
     expect::{self, Ext as _},
-    parser::{Parser as _, ast},
+    parser::{Parser as _, ast, ast_always_step_into_fragment},
 };
 use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
 use pernixc_serialize::{Deserialize, Serialize};
@@ -152,7 +152,7 @@ abstract_tree::abstract_tree! {
     pub struct GenericIdentifier {
         pub identifier: Identifier = expect::Identifier,
         pub generic_arguments: GenericArguments
-            = ast::<GenericArguments>().optional()
+            = ast_always_step_into_fragment::<GenericArguments>().optional()
     }
 }
 
