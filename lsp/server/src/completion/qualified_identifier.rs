@@ -326,6 +326,7 @@ impl Completion {
                     label: name.to_string(),
                     kind: Some(kind),
                     sort_text: Some("100".to_string()),
+
                     ..Default::default()
                 })
             }
@@ -342,6 +343,7 @@ impl Completion {
                     label: name.to_string(),
                     kind: Some(kind),
                     sort_text: Some("100".to_string()),
+
                     ..Default::default()
                 })
             }
@@ -374,7 +376,7 @@ impl Completion {
                     let qualified_name =
                         engine.get_qualified_name(parent_module_id).await;
 
-                    Some(format!("from {qualified_name}"))
+                    Some(format!("(from {qualified_name})"))
                 } else {
                     None
                 };
@@ -386,9 +388,11 @@ impl Completion {
 
                     // include a text specifying that this will import a new
                     // symbol at the top of the module
-                    label_details: Some(CompletionItemLabelDetails {
-                        detail: None,
-                        description: detail,
+                    label_details: detail.map(|detail| {
+                        CompletionItemLabelDetails {
+                            detail: Some(detail),
+                            description: None,
+                        }
                     }),
 
                     ..Default::default()
