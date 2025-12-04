@@ -520,13 +520,7 @@ impl<C: Parser, T: Parser> Parser for RepeatWithCommit<C, T> {
             if self.commit.parse(state) == Ok(()) {
                 // successfully parsed the commit, so parse the main parser.
                 // the main parser should succeed after a commit
-                if self.parser.parse(state) == Err(Unexpected) {
-                    // must always succeed after commit
-                    state.emit_error();
-
-                    // stop parsing further
-                    break;
-                }
+                self.parser.parse(state)?;
 
                 // checkpoint for the next iteration
                 checkpoint = state.checkpoint();
@@ -904,15 +898,11 @@ impl<C: Parser, P: Parser> Parser for CommitIf<C, P> {
         let checkpoint = state.checkpoint();
 
         if self.commit.parse(state) == Ok(()) {
-            if self.parser.parse(state) == Err(Unexpected) {
-                // must always succeed after commit
-                state.emit_error();
-            }
+            self.parser.parse(state)
         } else {
             state.restore(checkpoint);
+            Ok(())
         }
-
-        Ok(())
     }
 }
 
