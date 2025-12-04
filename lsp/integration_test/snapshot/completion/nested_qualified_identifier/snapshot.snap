@@ -1,0 +1,16 @@
+---
+source: lsp/integration_test/snapshot/mod.rs
+expression: string
+---
+[
+  {
+    "label": "XomeType",
+    "kind": 22,
+    "sortText": "100"
+  },
+  {
+    "label": "Option",
+    "kind": 13,
+    "sortText": "100"
+  }
+]
