@@ -288,28 +288,31 @@ impl Arbitrary for IndentationLine {
 
         let token_stream = token_stream.unwrap_or_else(Nodes::arbitrary);
 
-        prop_oneof![
-            6 => (token_stream
-                    .prop_map(|mut x| {
-                        x.sanitize(true);
-                        x
-                    }),
-                    proptest::option::weighted(0.5, indentation)
-                )
-                .prop_filter("filter out empty line", |(x, y)| !x.0.is_empty() || !y.is_none())
-                .prop_filter("remove possible scope sperator after colon",|(x, y)| {
+        let normal_line = (
+            token_stream.prop_map(|mut x| {
+                x.sanitize(true);
+                x
+            }),
+            proptest::option::weighted(0.5, indentation),
+        )
+            .prop_filter("filter out empty line", |(x, y)| {
+                !x.0.is_empty() || !y.is_none()
+            })
+            .prop_filter(
+                "remove possible scope sperator after colon",
+                |(x, y)| {
                     !(x.0
                         .last()
-                        .is_some_and(|x|
-                            x.as_leaf()
-                            .is_some_and(|x|
-                                x.kind
-                                    .as_punctuation()
-                                    .is_some_and(|x| **x == ':'
-                            )))
-                    && y.is_some())
-                })
-                .prop_map(|(x, y)| Self::Normal(x, y)),
+                        .and_then(|x| x.as_leaf())
+                        .and_then(|x| x.kind.as_punctuation())
+                        .is_some_and(|x| **x == ':')
+                        && y.is_some())
+                },
+            )
+            .prop_map(|(x, y)| Self::Normal(x, y));
+
+        prop_oneof![
+            6 => normal_line,
             1 => (1usize..=10usize).prop_map(Self::WhiteSpaces),
         ]
         .boxed()
@@ -604,10 +607,47 @@ impl Nodes {
                 changed |= self.sanitize_in_indent_block();
             }
             changed |= self.remove_consecutive_identifiers();
+            changed |= self.remove_possible_scope_separator_then_indent();
             if !is_in_indent {
                 changed |= self.add_new_line_after_indentation();
             }
         }
+    }
+
+    pub fn remove_possible_scope_separator_then_indent(&mut self) -> bool {
+        let mut changed = false;
+
+        let mut i = 0;
+        while i < self.len() {
+            let current = &self[i];
+
+            if !matches!(
+                current,
+                Node::Leaf(token::arbitrary::Token {
+                    kind: kind::arbitrary::Kind::Punctuation(
+                        kind::arbitrary::Punctuation(':')
+                    ),
+                    ..
+                })
+            ) {
+                i += 1;
+                continue;
+            }
+
+            let Some(next) = self.get(i + 1) else {
+                break;
+            };
+
+            // if next is identiation, remove the indentation
+            if next.as_fragment().is_some_and(Fragment::is_indentation) {
+                changed = true;
+                self.remove(i + 1);
+            } else {
+                i += 1;
+            }
+        }
+
+        changed
     }
 
     pub fn add_new_line_after_indentation(&mut self) -> bool {
