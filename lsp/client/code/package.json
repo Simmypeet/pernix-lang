@@ -28,7 +28,24 @@
                 "scopeName": "source.pernix",
                 "path": "./syntaxes/pernix.tmLanguage.json"
             }
-        ]
+        ],
+        "configuration": {
+            "type": "object",
+            "title": "Pernix LSP Configuration",
+            "properties": {
+                "pernix.trace.server": {
+                    "type": "string",
+                    "scope": "window",
+                    "enum": [
+                        "off",
+                        "messages",
+                        "verbose"
+                    ],
+                    "default": "off",
+                    "description": "Traces the communication between VS Code and the language server."
+                }
+            }
+        }
     },
     "scripts": {
         "vscode:prepublish": "npm run build",
