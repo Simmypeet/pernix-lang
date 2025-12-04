@@ -309,13 +309,9 @@ impl Binder<'_> {
 
         let (lhs_address, lhs_value) = 'out: {
             if is_compound {
-                let lhs_lvalue = match Box::pin(self.bind_as_lvalue(
-                    &syntax_tree.left,
-                    false,
-                    None,
-                    handler,
-                ))
-                .await
+                let lhs_lvalue = match self
+                    .bind_as_lvalue(&syntax_tree.left, false, None, handler)
+                    .await
                 {
                     Ok(address) => address,
 
@@ -347,12 +343,8 @@ impl Binder<'_> {
             } else {
                 (
                     None,
-                    Box::pin(self.bind_value_or_error(
-                        &syntax_tree.left,
-                        None,
-                        handler,
-                    ))
-                    .await?,
+                    self.bind_value_or_error(&syntax_tree.left, None, handler)
+                        .await?,
                 )
             }
         };
@@ -367,19 +359,20 @@ impl Binder<'_> {
                         ArithmeticOperator::Add | ArithmeticOperator::Subtract
                     )
                 {
-                    Box::pin(self.bind_value_or_error(
+                    self.bind_value_or_error(
                         &syntax_tree.right,
                         Some(&Type::Primitive(Primitive::Isize)),
                         handler,
-                    ))
+                    )
                     .await?
                 } else {
-                    let rhs = Box::pin(self.bind_value_or_error(
-                        &syntax_tree.right,
-                        Some(&lhs_register_ty),
-                        handler,
-                    ))
-                    .await?;
+                    let rhs = self
+                        .bind_value_or_error(
+                            &syntax_tree.right,
+                            Some(&lhs_register_ty),
+                            handler,
+                        )
+                        .await?;
 
                     if self
                         .type_check_as_diagnostic(
@@ -409,12 +402,13 @@ impl Binder<'_> {
                 }
             }
             BinaryOperator::Relational(_) => {
-                let rhs = Box::pin(self.bind_value_or_error(
-                    &syntax_tree.right,
-                    Some(&lhs_register_ty),
-                    handler,
-                ))
-                .await?;
+                let rhs = self
+                    .bind_value_or_error(
+                        &syntax_tree.right,
+                        Some(&lhs_register_ty),
+                        handler,
+                    )
+                    .await?;
 
                 let valid = match self
                     .simplify_type(
@@ -477,12 +471,13 @@ impl Binder<'_> {
                 BitwiseOperator::And
                 | BitwiseOperator::Or
                 | BitwiseOperator::Xor => {
-                    let rhs = Box::pin(self.bind_value_or_error(
-                        &syntax_tree.right,
-                        Some(&lhs_register_ty),
-                        handler,
-                    ))
-                    .await?;
+                    let rhs = self
+                        .bind_value_or_error(
+                            &syntax_tree.right,
+                            Some(&lhs_register_ty),
+                            handler,
+                        )
+                        .await?;
 
                     if self
                         .type_check_as_diagnostic(
@@ -525,11 +520,11 @@ impl Binder<'_> {
                             constraint::Type::UnsignedInteger,
                         ));
 
-                    Box::pin(self.bind_value_or_error(
+                    self.bind_value_or_error(
                         &syntax_tree.right,
                         Some(&expected_type),
                         handler,
-                    ))
+                    )
                     .await?
                 }
             },
@@ -567,27 +562,27 @@ impl Bind<&BinaryTree> for Binder<'_> {
     ) -> Result<Expression, Error> {
         match syntax_tree.operator {
             BinaryOperatorSyn::Assign(_) => {
-                let lhs = Box::pin(self.bind_as_lvalue(
-                    &syntax_tree.left,
-                    false,
-                    None,
-                    handler,
-                ))
-                .await?;
-                let rhs = Box::pin(self.bind_value_or_error(
-                    &syntax_tree.right,
-                    Some(&self.type_of_address(&lhs.address, handler).await?),
-                    handler,
-                ))
-                .await?;
+                let lhs = self
+                    .bind_as_lvalue(&syntax_tree.left, false, None, handler)
+                    .await?;
+                let rhs = self
+                    .bind_value_or_error(
+                        &syntax_tree.right,
+                        Some(
+                            &self
+                                .type_of_address(&lhs.address, handler)
+                                .await?,
+                        ),
+                        handler,
+                    )
+                    .await?;
 
                 Ok(self.bind_assignment(syntax_tree, lhs, rhs, handler))
             }
 
             BinaryOperatorSyn::LogicalAnd(_)
             | BinaryOperatorSyn::LogicalOr(_) => {
-                Box::pin(bind_short_circuit_binary(self, syntax_tree, handler))
-                    .await
+                bind_short_circuit_binary(self, syntax_tree, handler).await
             }
 
             _ => self.bind_normal_binary(syntax_tree, handler).await,
@@ -761,13 +756,16 @@ impl Bind<&BinaryNode> for Binder<'_> {
         config: &Guidance<'_>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
-        match syntax_tree {
-            BinaryNode::Binary(binary) => {
-                self.bind(&**binary, config, handler).await
+        Box::pin(async move {
+            match syntax_tree {
+                BinaryNode::Binary(binary) => {
+                    self.bind(&**binary, config, handler).await
+                }
+                BinaryNode::Expression(prefixable) => {
+                    self.bind(prefixable, config, handler).await
+                }
             }
-            BinaryNode::Expression(prefixable) => {
-                self.bind(prefixable, config, handler).await
-            }
-        }
+        })
+        .await
     }
 }

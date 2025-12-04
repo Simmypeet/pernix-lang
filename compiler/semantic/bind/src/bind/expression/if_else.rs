@@ -167,7 +167,7 @@ impl Bind<&pernixc_syntax::expression::block::IfElse> for Binder<'_> {
             return Err(Error::Binding(BindingError(syntax_tree.span())));
         };
 
-        let condition = Box::pin(self.bind_value_or_error(
+        let condition = (self.bind_value_or_error(
             &binary,
             Some(&Type::Primitive(Primitive::Bool)),
             handler,
@@ -195,15 +195,15 @@ impl Bind<&pernixc_syntax::expression::block::IfElse> for Binder<'_> {
         // bind the then block
         self.set_current_block_id(then_block_id);
 
-        let (then_value, successor_then_block_id) =
-            Box::pin(self.bind_group_for_if_else(
+        let (then_value, successor_then_block_id) = (self
+            .bind_group_for_if_else(
                 &then_expr,
                 then_scope_id,
                 if_else_successor_block_id,
                 guidance,
                 handler,
             ))
-            .await?;
+        .await?;
 
         // bind the else block
         self.set_current_block_id(else_block_id);
@@ -214,90 +214,88 @@ impl Bind<&pernixc_syntax::expression::block::IfElse> for Binder<'_> {
             None
         };
 
-        let (else_value, successor_else_block_id) =
-            match syntax_tree.r#else().and_then(|x| x.group_or_if_else()) {
-                Some(GroupOrIfElse::Group(group)) => {
-                    Box::pin(self.bind_group_for_if_else(
-                        &group,
-                        else_scope_id,
-                        if_else_successor_block_id,
-                        &match guidance {
-                            Guidance::Expression(_) => {
-                                Guidance::Expression(then_type.as_ref())
-                            }
-                            Guidance::Statement => Guidance::Statement,
-                        },
-                        handler,
-                    ))
-                    .await?
-                }
-                Some(GroupOrIfElse::IfElse(if_else)) => {
-                    self.push_scope_with(else_scope_id, false);
+        let (else_value, successor_else_block_id) = match syntax_tree
+            .r#else()
+            .and_then(|x| x.group_or_if_else())
+        {
+            Some(GroupOrIfElse::Group(group)) => {
+                (self.bind_group_for_if_else(
+                    &group,
+                    else_scope_id,
+                    if_else_successor_block_id,
+                    &match guidance {
+                        Guidance::Expression(_) => {
+                            Guidance::Expression(then_type.as_ref())
+                        }
+                        Guidance::Statement => Guidance::Statement,
+                    },
+                    handler,
+                ))
+                .await?
+            }
+            Some(GroupOrIfElse::IfElse(if_else)) => {
+                self.push_scope_with(else_scope_id, false);
 
-                    let expression = match guidance {
-                        Guidance::Expression(ty_hint) => Some(
-                            Box::pin(self.bind_value_or_error(
-                                &if_else, *ty_hint, handler,
-                            ))
+                let expression = match guidance {
+                    Guidance::Expression(ty_hint) => Some(
+                        (self.bind_value_or_error(&if_else, *ty_hint, handler))
                             .await?,
-                        ),
-                        Guidance::Statement => {
-                            match Box::pin(self.bind(
-                                &if_else,
-                                &Guidance::Statement,
-                                handler,
-                            ))
-                            .await
-                            {
-                                Ok(_) | Err(Error::Binding(_)) => None,
+                    ),
+                    Guidance::Statement => {
+                        match Box::pin(self.bind(
+                            &if_else,
+                            &Guidance::Statement,
+                            handler,
+                        ))
+                        .await
+                        {
+                            Ok(_) | Err(Error::Binding(_)) => None,
 
-                                Err(Error::Unrecoverable(abort)) => {
-                                    return Err(abort.into());
-                                }
+                            Err(Error::Unrecoverable(abort)) => {
+                                return Err(abort.into());
                             }
                         }
-                    };
+                    }
+                };
 
-                    self.pop_scope(else_scope_id);
+                self.pop_scope(else_scope_id);
 
-                    (expression, self.current_block_id())
-                }
-                None => {
-                    self.push_scope_with(else_scope_id, false);
-                    self.pop_scope(else_scope_id);
+                (expression, self.current_block_id())
+            }
+            None => {
+                self.push_scope_with(else_scope_id, false);
+                self.pop_scope(else_scope_id);
 
-                    let value = if let Some(then_type) = &then_type {
-                        if self
-                            .type_check_as_diagnostic(
-                                then_type,
-                                Expected::Known(Type::unit()),
-                                syntax_tree.span(),
-                                handler,
-                            )
-                            .await?
-                            .is_some()
-                        {
-                            handler.receive(Diagnostic::IfMissingElseBranch(
-                                IfMissingElseBranch {
-                                    if_span: syntax_tree.span(),
-                                },
-                            ));
+                let value = if let Some(then_type) = &then_type {
+                    if self
+                        .type_check_as_diagnostic(
+                            then_type,
+                            Expected::Known(Type::unit()),
+                            syntax_tree.span(),
+                            handler,
+                        )
+                        .await?
+                        .is_some()
+                    {
+                        handler.receive(Diagnostic::IfMissingElseBranch(
+                            IfMissingElseBranch { if_span: syntax_tree.span() },
+                        ));
 
-                            Value::error(then_type.clone(), syntax_tree.span())
-                        } else {
-                            Value::Literal(Literal::Unit(literal::Unit {
-                                span: syntax_tree.span(),
-                            }))
-                        }
+                        Value::error(then_type.clone(), syntax_tree.span())
                     } else {
                         Value::Literal(Literal::Unit(literal::Unit {
                             span: syntax_tree.span(),
                         }))
-                    };
+                    }
+                } else {
+                    Value::Literal(Literal::Unit(literal::Unit {
+                        span: syntax_tree.span(),
+                    }))
+                };
 
-                    (Some(value), self.current_block_id())
-                }
-            };
+                (Some(value), self.current_block_id())
+            }
+        };
 
         self.insert_terminator(Terminator::Jump(Jump::Unconditional(
             UnconditionalJump { target: if_else_successor_block_id },

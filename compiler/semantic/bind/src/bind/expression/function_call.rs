@@ -347,11 +347,11 @@ impl Bind<&pernixc_syntax::expression::unit::FunctionCall> for Binder<'_> {
                     }
 
                     1 => {
-                        Box::pin(self.bind_value_or_error(
+                        self.bind_value_or_error(
                             &arguments[0],
                             Some(&expected_types.pop().unwrap()),
                             handler,
-                        ))
+                        )
                         .await?
                     }
 
@@ -370,11 +370,11 @@ impl Bind<&pernixc_syntax::expression::unit::FunctionCall> for Binder<'_> {
                             .into(),
                         );
 
-                        Box::pin(self.bind_value_or_error(
+                        self.bind_value_or_error(
                             &arguments[0],
                             Some(&expected_types.pop().unwrap()),
                             handler,
-                        ))
+                        )
                         .await?
                     }
                 };
@@ -544,8 +544,7 @@ impl Binder<'_> {
                 expected_types.get(i + usize::from(method_receiver.is_some()));
 
             argument_values.push(
-                Box::pin(self.bind_value_or_error(arg, expected_ty, handler))
-                    .await?,
+                self.bind_value_or_error(arg, expected_ty, handler).await?,
             );
         }
 

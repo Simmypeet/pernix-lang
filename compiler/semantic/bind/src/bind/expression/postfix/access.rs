@@ -350,7 +350,7 @@ async fn access_index(
         return Err(Error::Binding(BindingError(new_span)));
     };
 
-    let value = Box::pin(binder.bind_value_or_error(
+    let value = (binder.bind_value_or_error(
         &index_value,
         Some(&Type::Primitive(Primitive::Usize)),
         handler,

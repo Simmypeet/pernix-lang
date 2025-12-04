@@ -92,7 +92,7 @@ impl Bind<&pernixc_syntax::expression::unit::Struct>
 
         let fields = self.engine().get_fields(struct_id).await?;
 
-        let fields_initializers = Box::pin(collect_fields(
+        let fields_initializers = (collect_fields(
             self,
             struct_id,
             &instantiation,

@@ -55,7 +55,7 @@ impl Bind<&pernixc_syntax::expression::prefix::Prefix>
                     }
                 });
 
-                let operand = Box::pin(self.bind_value_or_error(
+                let operand = (self.bind_value_or_error(
                     &prefixable,
                     expected_type.as_ref(),
                     handler,
@@ -71,7 +71,7 @@ impl Bind<&pernixc_syntax::expression::prefix::Prefix>
             }
 
             PrefixOperatorSyntax::Dereference(_) => {
-                Box::pin(self.bind_dereference(
+                (self.bind_dereference(
                     &prefixable,
                     syntax_tree.span(),
                     handler,
@@ -86,13 +86,9 @@ impl Bind<&pernixc_syntax::expression::prefix::Prefix>
                     Qualifier::Immutable
                 };
 
-                let lvalue = Box::pin(self.bind_as_lvalue(
-                    &prefixable,
-                    true,
-                    None,
-                    handler,
-                ))
-                .await?;
+                let lvalue =
+                    (self.bind_as_lvalue(&prefixable, true, None, handler))
+                        .await?;
 
                 Ok(Expression::RValue(Value::Register(self.borrow_lvalue(
                     lvalue,
