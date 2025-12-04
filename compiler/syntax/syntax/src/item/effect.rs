@@ -6,7 +6,8 @@ use pernixc_parser::{
 use crate::{
     AccessModifier, Identifier, Keyword,
     item::{
-        Body, TrailingWhereClause, function,
+        Body, TrailingWhereClause,
+        function::{self, Arrow, ReturnType},
         generic_parameters::GenericParameters,
     },
 };
@@ -17,7 +18,7 @@ pub mod arbitrary;
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Signature {
-        pub effect_traieyword: Keyword = expect::Keyword::Effect,
+        pub effect_keyword: Keyword = expect::Keyword::Effect,
         pub identifier: Identifier = expect::Identifier,
         pub generic_parameters: GenericParameters
             = ast::<GenericParameters>().optional(),
@@ -31,8 +32,8 @@ abstract_tree::abstract_tree! {
         pub generic_parameters: GenericParameters
             = ast::<GenericParameters>().optional(),
         pub parameters: function::Parameters = ast::<function::Parameters>(),
-        pub return_type: function::ReturnType
-            = ast::<function::ReturnType>().optional(),
+        pub return_type: ReturnType = ast::<ReturnType>()
+            .commit_if(ast::<Arrow>()),
         pub trailing_where_clause: TrailingWhereClause
             = ast::<TrailingWhereClause>().optional(),
     }
