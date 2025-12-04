@@ -79,8 +79,8 @@ pub async fn retrieve_qulaified_identifier_matching(
             let span_at = qual_at.span();
             let span_before = qual_before.span();
 
-            if span_at.start >= span_before.start
-                && span_at.end <= span_before.end
+            if span_at.start <= span_before.start
+                && span_at.end >= span_before.end
             {
                 // at_cursor is covered by before_cursor
                 let token_span = node
