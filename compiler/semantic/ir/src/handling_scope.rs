@@ -146,6 +146,18 @@ impl transform::Element for HandlingScope {
     }
 }
 
+/// An interface for matching handler clause's generic arguments in the stack
+/// with the queried generic arguments.
+pub trait HandlerClauseMatcher {
+    /// Checks whether the given generic arguments match the handler clause's
+    #[allow(async_fn_in_trait)]
+    async fn matches_generic_arguments(
+        &mut self,
+        stack_generic_arguments: &GenericArguments,
+        searching_generic_arguments: &GenericArguments,
+    ) -> Result<bool, pernixc_type_system::Error>;
+}
+
 impl HandlingScope {
     /// Creates a new [`HandlingScope`] with the given return type.
     #[must_use]
@@ -168,7 +180,7 @@ impl HandlingScope {
         &self,
         effect_id: Global<pernixc_symbol::ID>,
         generic_arguments: &GenericArguments,
-        environment: &Environment<'_, impl Normalizer>,
+        matcher: &mut impl HandlerClauseMatcher,
     ) -> Result<
         Option<pernixc_arena::ID<HandlerClause>>,
         pernixc_type_system::Error,
@@ -179,14 +191,13 @@ impl HandlingScope {
                 continue;
             }
 
-            // if the generic argument subtypable, then match
-            if environment
-                .subtypes_generic_arguments(
+            // if the generic argument can be matched, return it
+            if matcher
+                .matches_generic_arguments(
                     &effect_handler.generic_arguments,
                     generic_arguments,
                 )
                 .await?
-                .is_some_and(|x| x.result.forall_lifetime_errors.is_empty())
             {
                 return Ok(Some(effect_handler_id));
             }
