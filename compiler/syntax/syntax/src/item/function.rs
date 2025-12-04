@@ -76,9 +76,26 @@ abstract_tree::abstract_tree! {
         Serialize,
         Deserialize,
     )]
-    pub struct ReturnType {
+    pub struct Arrow {
         pub dash = '-',
         pub greater_than = '>'.no_prior_insignificant(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Serialize,
+        Deserialize,
+    )]
+    pub struct ReturnType {
         pub r#type: Type = ast::<Type>(),
     }
 }
@@ -103,7 +120,8 @@ abstract_tree::abstract_tree! {
         pub generic_parameters: GenericParameters
             = ast::<GenericParameters>().optional(),
         pub parameters: Parameters = ast::<Parameters>(),
-        pub return_type: ReturnType = ast::<ReturnType>().optional(),
+        pub return_type: ReturnType = ast::<ReturnType>()
+            .commit_if(ast::<Arrow>()),
         pub effect_annotation: EffectAnnotation = ast::<EffectAnnotation>().optional(),
     }
 }
