@@ -1,0 +1,11 @@
+public effect Effect[T]:
+    doSomething(a: T)
+
+
+public function main():
+    do:
+        Effect::doSomething(42)
+    
+    with Effect[int32]:
+        doSomething(a):
+            pass
