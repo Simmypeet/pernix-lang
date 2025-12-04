@@ -43,7 +43,7 @@ impl Bind<&pernixc_syntax::expression::block::Scope> for Binder<'_> {
         // bind the block state as value
         let unit = Type::unit();
         Ok(Expression::RValue(
-            Box::pin(self.bind_value_or_error(
+            (self.bind_value_or_error(
                 block_state,
                 match guidance {
                     Guidance::Expression(_) => None,

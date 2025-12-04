@@ -1,0 +1,12 @@
+public effect Effect[T]:
+    doSomething(a: T)
+
+
+public function main():
+    do:
+        let a = 42
+        Effect::doSomething(&a)
+    
+    with Effect[&int32]:
+        doSomething(a):
+            pass

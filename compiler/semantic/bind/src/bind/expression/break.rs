@@ -36,12 +36,8 @@ impl Bind<&pernixc_syntax::expression::terminator::Break> for Binder<'_> {
 
         let value = match syntax_tree.binary() {
             Some(binary) => {
-                Box::pin(self.bind_value_or_error(
-                    &binary,
-                    expected_ty.as_ref(),
-                    handler,
-                ))
-                .await?
+                self.bind_value_or_error(&binary, expected_ty.as_ref(), handler)
+                    .await?
             }
             None => {
                 if let Some(expected_ty) = expected_ty {

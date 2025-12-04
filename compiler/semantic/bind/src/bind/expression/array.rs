@@ -21,18 +21,13 @@ impl Bind<&pernixc_syntax::expression::unit::Array> for Binder<'_> {
             self.create_type_inference(constraint::Type::All(false)),
         );
 
-        Box::pin(async {
-            for element in syntax_tree.expressions() {
-                let expression = self
-                    .bind_value_or_error(&element, Some(&array_ty), handler)
-                    .await?;
+        for element in syntax_tree.expressions() {
+            let expression = self
+                .bind_value_or_error(&element, Some(&array_ty), handler)
+                .await?;
 
-                values.push(expression);
-            }
-
-            Ok::<(), Error>(())
-        })
-        .await?;
+            values.push(expression);
+        }
 
         let register_id = self.create_register_assignment(
             pernixc_ir::value::register::Assignment::Array(

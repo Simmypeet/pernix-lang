@@ -347,11 +347,11 @@ impl Bind<&pernixc_syntax::expression::unit::FunctionCall> for Binder<'_> {
                     }
 
                     1 => {
-                        Box::pin(self.bind_value_or_error(
+                        self.bind_value_or_error(
                             &arguments[0],
                             Some(&expected_types.pop().unwrap()),
                             handler,
-                        ))
+                        )
                         .await?
                     }
 
@@ -370,11 +370,11 @@ impl Bind<&pernixc_syntax::expression::unit::FunctionCall> for Binder<'_> {
                             .into(),
                         );
 
-                        Box::pin(self.bind_value_or_error(
+                        self.bind_value_or_error(
                             &arguments[0],
                             Some(&expected_types.pop().unwrap()),
                             handler,
-                        ))
+                        )
                         .await?
                     }
                 };
@@ -544,8 +544,7 @@ impl Binder<'_> {
                 expected_types.get(i + usize::from(method_receiver.is_some()));
 
             argument_values.push(
-                Box::pin(self.bind_value_or_error(arg, expected_ty, handler))
-                    .await?,
+                self.bind_value_or_error(arg, expected_ty, handler).await?,
             );
         }
 
@@ -670,7 +669,7 @@ impl Binder<'_> {
     }
 
     async fn check_effect_units(
-        &self,
+        &mut self,
         available_capabilities: &OrderedArena<effect::Unit>,
         required_capabilities: &OrderedArena<effect::Unit>,
         instantiation: &Instantiation,
@@ -683,8 +682,6 @@ impl Binder<'_> {
     > {
         let mut effect_arguments = HashMap::default();
 
-        let environment = self.create_environment();
-
         // First, we'll traverse the capability handlers stack first, then we'll
 
         'next: for (required_id, required) in required_capabilities.iter() {
@@ -693,11 +690,7 @@ impl Binder<'_> {
 
             // traverse in the handler stack
             if let Some(effect_handler_id) = self
-                .search_handler_clause(
-                    required.id,
-                    &required.generic_arguments,
-                    &environment,
-                )
+                .search_handler_clause(required.id, &required.generic_arguments)
                 .await
                 .map_err(|x| {
                     x.report_as_type_calculating_overflow(span, &handler)
@@ -710,6 +703,8 @@ impl Binder<'_> {
 
                 continue 'next;
             }
+
+            let environment = self.create_environment();
 
             for (available_id, available) in available_capabilities.iter() {
                 if Self::effect_compatible(

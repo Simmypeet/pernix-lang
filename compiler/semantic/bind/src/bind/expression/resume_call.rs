@@ -83,7 +83,7 @@ impl Bind<&pernixc_syntax::expression::unit::ResumeCall> for Binder<'_> {
         handler_instantiation.instantiate(&mut return_type);
 
         // bind the resume value expression
-        let resume_value = Box::pin(self.bind_value_or_error(
+        let resume_value = (self.bind_value_or_error(
             &resume_val,
             Some(&return_type),
             handler,
