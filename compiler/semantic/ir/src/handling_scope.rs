@@ -153,8 +153,8 @@ pub trait HandlerClauseMatcher {
     #[allow(async_fn_in_trait)]
     async fn matches_generic_arguments(
         &mut self,
-        stack_generic_arguments: &GenericArguments,
         searching_generic_arguments: &GenericArguments,
+        stack_generic_arguments: &GenericArguments,
     ) -> Result<bool, pernixc_type_system::Error>;
 }
 
@@ -194,8 +194,8 @@ impl HandlingScope {
             // if the generic argument can be matched, return it
             if matcher
                 .matches_generic_arguments(
-                    &effect_handler.generic_arguments,
                     generic_arguments,
+                    &effect_handler.generic_arguments,
                 )
                 .await?
             {
