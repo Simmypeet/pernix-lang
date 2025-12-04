@@ -8,7 +8,6 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 use pernixc_term::{generic_arguments::GenericArguments, r#type::Type};
-use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
 
 use crate::transform::{self, TypeTermSource};
 
