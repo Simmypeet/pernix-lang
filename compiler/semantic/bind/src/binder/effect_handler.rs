@@ -7,7 +7,7 @@ use pernixc_ir::{
     closure_parameters::ClosureParameters,
     function_ir::IRContext,
     handling_scope::{
-        HandlerClause, HandlerClauseID, HandlingScope, HandlingScopes,
+        self, HandlerClause, HandlerClauseID, HandlingScope, HandlingScopes,
         OperationHandlerID,
     },
     ir::IR,
@@ -15,11 +15,18 @@ use pernixc_ir::{
     value::register::do_with::{Do, OperationHandler},
 };
 use pernixc_lexical::tree::RelativeSpan;
+use pernixc_query::TrackedEngine;
 use pernixc_target::Global;
 use pernixc_term::{generic_arguments::GenericArguments, r#type::Type};
-use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
+use pernixc_type_system::environment::Premise;
 
-use crate::{binder::Binder, infer::constraint};
+use crate::{
+    binder::{
+        Binder,
+        inference_context::{InferenceContext, Unifiable, UnifyError},
+    },
+    infer::constraint,
+};
 
 /// Context struct for managing effect handlers.
 #[derive(Debug, Clone, Default)]
@@ -40,6 +47,81 @@ impl transform::Element for Context {
         engine: &pernixc_query::TrackedEngine,
     ) -> Result<(), pernixc_query::runtime::executor::CyclicError> {
         self.handling_scopes.transform(transformer, engine).await
+    }
+}
+
+struct HandlerClauseMatcher<'x, 'y> {
+    infer_ctx: &'x mut InferenceContext,
+    premise: &'y Premise,
+    engine: &'y TrackedEngine,
+}
+
+impl handling_scope::HandlerClauseMatcher for HandlerClauseMatcher<'_, '_> {
+    async fn matches_generic_arguments(
+        &mut self,
+        target_generic_arguments: &GenericArguments,
+        handler_generic_arguments: &GenericArguments,
+    ) -> Result<bool, pernixc_type_system::Error> {
+        if handler_generic_arguments.lifetimes.len()
+            != target_generic_arguments.lifetimes.len()
+            || handler_generic_arguments.types.len()
+                != target_generic_arguments.types.len()
+            || handler_generic_arguments.constants.len()
+                != target_generic_arguments.constants.len()
+        {
+            return Ok(false);
+        }
+
+        let cp = self.infer_ctx.start_checkpoint();
+
+        for (a, b) in target_generic_arguments
+            .types
+            .iter()
+            .zip(&handler_generic_arguments.types)
+        {
+            if !self.unify_term(a, b).await? {
+                self.infer_ctx.restore(cp);
+                return Ok(false);
+            }
+        }
+
+        for (a, b) in target_generic_arguments
+            .constants
+            .iter()
+            .zip(&handler_generic_arguments.constants)
+        {
+            if !self.unify_term(a, b).await? {
+                self.infer_ctx.restore(cp);
+                return Ok(false);
+            }
+        }
+
+        // commit the checkpoint if all unifications succeeded
+        self.infer_ctx.commit_checkpoint(cp);
+
+        Ok(true)
+    }
+}
+
+impl HandlerClauseMatcher<'_, '_> {
+    async fn unify_term<T: Unifiable>(
+        &mut self,
+        a: &T,
+        b: &T,
+    ) -> Result<bool, pernixc_type_system::Error> {
+        match self.infer_ctx.unify(a, b, self.premise, self.engine).await {
+            Ok(()) => Ok(true),
+            Err(
+                UnifyError::CyclicTypeInference(_)
+                | UnifyError::CyclicConstantInference(_)
+                | UnifyError::IncompatibleTypes { .. }
+                | UnifyError::IncompatibleConstants { .. }
+                | UnifyError::UnsatisfiedConstraint(_)
+                | UnifyError::CombineConstraint(_),
+            ) => Ok(false),
+
+            Err(UnifyError::TypeSystem(e)) => Err(e),
+        }
     }
 }
 
@@ -174,10 +256,9 @@ impl Binder<'_> {
 
     /// Search for an effect handler from the handler stack
     pub async fn search_handler_clause(
-        &self,
+        &mut self,
         effect_id: Global<pernixc_symbol::ID>,
         generic_arguments: &GenericArguments,
-        environment: &Environment<'_, impl Normalizer>,
     ) -> Result<Option<HandlerClauseID>, pernixc_type_system::Error> {
         for (handler_id, handler_group) in self
             .effect_handler_context
@@ -191,7 +272,11 @@ impl Binder<'_> {
                 .search_handler_clause(
                     effect_id,
                     generic_arguments,
-                    environment,
+                    &mut HandlerClauseMatcher {
+                        premise: self.premise(),
+                        infer_ctx: &mut self.inference_context,
+                        engine: self.engine,
+                    },
                 )
                 .await?
             {
