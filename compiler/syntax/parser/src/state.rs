@@ -405,10 +405,10 @@ impl<'a, 'cache> State<'a, 'cache> {
     /// Starts a new node with the given [`AstInfo`] and pushes it onto the
     /// stack. If [`AstInfo::step_into_fragment`] is present, the parser shall
     /// step into the fragment as well.
-    pub fn start_ndoe<A: AbstractTree, T>(
+    pub fn start_node<A: AbstractTree, T>(
         &mut self,
         op: impl for<'x> FnOnce(&mut State<'a, 'x>) -> T,
-    ) -> Option<T> {
+    ) -> (Option<T>, bool) {
         // step into the fragment
         if let Some(some_step_info) = A::step_into_fragment() {
             let starting_node_index = self.cursor.node_index;
@@ -420,7 +420,7 @@ impl<'a, 'cache> State<'a, 'cache> {
                         node_index: self.branch.nodes.len(),
                     },
                 );
-                return None;
+                return (None, false);
             };
 
             // check if branch match the expected kind
@@ -446,7 +446,7 @@ impl<'a, 'cache> State<'a, 'cache> {
                     std::iter::once(some_step_info.into()),
                     Cursor { branch_id: self.branch_id(), node_index },
                 );
-                return None;
+                return (None, false);
             };
 
             // eat the token up until the fragment
@@ -484,7 +484,7 @@ impl<'a, 'cache> State<'a, 'cache> {
             // done event
             self.events.push(Event::FinishNode);
 
-            Some(result)
+            (Some(result), true)
         } else {
             // no step into fragment, just start the event
             self.events.push(Event::NewNode(AstInfo {
@@ -502,7 +502,7 @@ impl<'a, 'cache> State<'a, 'cache> {
             // done event
             self.events.push(Event::FinishNode);
 
-            Some(result)
+            (Some(result), false)
         }
     }
 
@@ -636,6 +636,7 @@ impl<'a, 'cache> State<'a, 'cache> {
         }
     }
 
+    /// Takes any current error and move it to the emitted errors list.
     pub(crate) fn emit_error(&mut self) {
         let error = self.try_take_error().expect("should have an error");
 

@@ -232,7 +232,7 @@ pub struct Ast<T>(pub PhantomData<T>);
 
 impl<T: AbstractTree> Parser for Ast<T> {
     fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
-        let result = state.start_ndoe::<T, _>(|state| {
+        let (result, _) = state.start_node::<T, _>(|state| {
             let parser = T::parser();
             parser.parse(state)
         });
@@ -260,6 +260,56 @@ impl<T: AbstractTree> Output for Ast<T> {
 /// Start parsing a node of the given AST type.
 #[must_use]
 pub const fn ast<A: AbstractTree>() -> Ast<A> { Ast(PhantomData) }
+
+/// See [`ast_always_step_into_fragment`] for more information.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct AstAlwaysStepIntoFragment<T>(pub PhantomData<T>);
+
+/// If the give AST steps into a fragment, once the parser steps into the
+/// fragment the parser will consider the parse successful even if the inner
+/// parser fails.
+#[must_use]
+pub const fn ast_always_step_into_fragment<A: AbstractTree>()
+-> AstAlwaysStepIntoFragment<A> {
+    AstAlwaysStepIntoFragment(PhantomData)
+}
+
+impl<T: AbstractTree> Parser for AstAlwaysStepIntoFragment<T> {
+    fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
+        let (result, stepped_into) = state.start_node::<T, _>(|state| {
+            let parser = T::parser();
+            parser.parse(state)
+        });
+
+        match result {
+            Some(Ok(())) => Ok(()),
+
+            Some(Err(Unexpected)) | None => {
+                // if we've stepped into a fragment, emit the error and count
+                // as successful parse
+                if stepped_into {
+                    state.emit_error();
+
+                    Ok(())
+                } else {
+                    Err(Unexpected)
+                }
+            }
+        }
+    }
+}
+
+impl<T: AbstractTree> Output for AstAlwaysStepIntoFragment<T> {
+    type Extract = One;
+    type Output<'x> = T;
+
+    fn output<'a>(
+        &self,
+        node: &'a crate::concrete_tree::Node,
+    ) -> Option<Self::Output<'a>> {
+        T::from_node(node)
+    }
+}
 
 /// See [`Parser::optional`] for more information.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -470,7 +520,13 @@ impl<C: Parser, T: Parser> Parser for RepeatWithCommit<C, T> {
             if self.commit.parse(state) == Ok(()) {
                 // successfully parsed the commit, so parse the main parser.
                 // the main parser should succeed after a commit
-                self.parser.parse(state)?;
+                if self.parser.parse(state) == Err(Unexpected) {
+                    // must always succeed after commit
+                    state.emit_error();
+
+                    // stop parsing further
+                    break;
+                }
 
                 // checkpoint for the next iteration
                 checkpoint = state.checkpoint();
@@ -848,11 +904,15 @@ impl<C: Parser, P: Parser> Parser for CommitIf<C, P> {
         let checkpoint = state.checkpoint();
 
         if self.commit.parse(state) == Ok(()) {
-            self.parser.parse(state)
+            if self.parser.parse(state) == Err(Unexpected) {
+                // must always succeed after commit
+                state.emit_error();
+            }
         } else {
             state.restore(checkpoint);
-            Ok(())
         }
+
+        Ok(())
     }
 }
 
