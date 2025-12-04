@@ -145,6 +145,7 @@ fjall = { version = "2.11.2" }
 sled = { version = "0.34.7" }
 stacker = "0.1.21"
 serde_json = { version = "1.0.96" }
+fuzzy-matcher = { version = "0.3.7" }
 
 [patch.crates-io]
 inkwell = { git = "https://github.com/Simmypeet/inkwell", rev = "4366f7b37b4e732b4c567494077f3d871e2a2a60" }

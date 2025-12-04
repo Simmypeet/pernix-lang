@@ -1,0 +1,27 @@
+---
+source: lsp/integration_test/snapshot/mod.rs
+expression: string
+---
+[
+  {
+    "label": "XomeStructThird",
+    "kind": 22,
+    "sortText": "100"
+  },
+  {
+    "label": "XomeStructOne",
+    "labelDetails": {
+      "description": "from lspTest::innerFirst"
+    },
+    "kind": 22,
+    "sortText": "200"
+  },
+  {
+    "label": "XomeStructTwo",
+    "labelDetails": {
+      "description": "from lspTest::innerSecond"
+    },
+    "kind": 22,
+    "sortText": "200"
+  }
+]

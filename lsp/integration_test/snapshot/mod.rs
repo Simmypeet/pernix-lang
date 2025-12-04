@@ -7,13 +7,14 @@ use std::{
 
 use insta::assert_snapshot;
 use pernix_server::{
-    goto_definition::handle_goto_definition, hover::handle_hover,
+    completion::handle_completion, goto_definition::handle_goto_definition,
+    hover::handle_hover,
 };
 use pernixc_query::TrackedEngine;
 use pernixc_target::TargetID;
 use tower_lsp::lsp_types::{
-    GotoDefinitionParams, HoverParams, PartialResultParams, Url,
-    WorkDoneProgressParams,
+    CompletionParams, GotoDefinitionParams, HoverParams, PartialResultParams,
+    Url, WorkDoneProgressParams,
 };
 use tracing_subscriber::{
     EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt,
@@ -85,11 +86,19 @@ pub async fn test_file(main_file: PathBuf) {
     hover_path.push("snapshot");
     hover_path.push("hover");
 
+    let mut completion_path = PathBuf::from(project_path);
+    completion_path.push("lsp");
+    completion_path.push("integration_test");
+    completion_path.push("snapshot");
+    completion_path.push("completion");
+
     // NOTE: Match the prefix paths to the test functions here
     if is_child(&goto_path, &main_file) {
         test_goto_definition(main_file).await;
     } else if is_child(&hover_path, &main_file) {
         test_hover(main_file).await;
+    } else if is_child(&completion_path, &main_file) {
+        test_completion(main_file).await;
     } else {
         panic!(
             "No test defined for path: {}, available directories: {}, {}",
@@ -137,6 +146,31 @@ pub async fn test_hover(main_file: PathBuf) {
         .expect("encountered cyclic dependency");
 
     let snapshot_str = response.unwrap_or_else(|| "no hover found".to_string());
+
+    test_snapshot_string(&main_file, &snapshot_str);
+}
+
+async fn test_completion(main_file: PathBuf) {
+    let (tracked_engine, fixture, target_id) =
+        create_engine_test_for_fixture_with_cursor(&main_file).await;
+
+    let response = tracked_engine
+        .handle_completion(target_id, CompletionParams {
+            text_document_position: fixture
+                .cursor_text_document_position_params(),
+            work_done_progress_params: WorkDoneProgressParams {
+                work_done_token: None,
+            },
+            partial_result_params: PartialResultParams {
+                partial_result_token: None,
+            },
+            context: None,
+        })
+        .await
+        .expect("encountered cyclic dependency");
+
+    let snapshot_str = serde_json::to_string_pretty(&response)
+        .expect("Failed to serialize completion response");
 
     test_snapshot_string(&main_file, &snapshot_str);
 }
@@ -191,6 +225,7 @@ pub async fn create_engine_test_for_fixture_with_cursor(
         target_name,
         main_file.to_path_buf(),
         fixture.clone(),
+        true,
         Some(0), // fixed target seed for deterministic results
     )
     .await;

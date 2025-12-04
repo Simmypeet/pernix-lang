@@ -549,7 +549,7 @@ impl std::fmt::Debug for Converter<'_, '_> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum LastWas {
     NewLine,
-    Colon,
+    Colon(bool),
     Any,
 }
 
@@ -611,11 +611,21 @@ impl Converter<'_, '_> {
                 x.as_leaf().map_or(LastWas::Any, |x| match x.kind {
                     kind::Kind::NewLine(_) => LastWas::NewLine,
                     kind::Kind::Punctuation(kind::Punctuation(':')) => {
-                        LastWas::Colon
+                        LastWas::Colon(x.prior_insignificant.is_some())
                     }
                     _ => LastWas::Any,
                 })
             });
+
+            let last_last_was_colon = self
+                .current_nodes
+                .len()
+                .checked_sub(2)
+                .and_then(|x| self.current_nodes.get(x))
+                .and_then(|x| x.as_leaf())
+                .and_then(|x| x.kind.as_punctuation())
+                .is_some_and(|x| x.0 == ':');
+
             let is_new_line = token.kind.is_new_line();
             let puncutation = token.kind.as_punctuation().map(|x| **x);
 
@@ -699,7 +709,16 @@ impl Converter<'_, '_> {
                 });
             }
             // check for the new indentation marker
-            else if last_was == Some(LastWas::Colon) && is_new_line {
+            else if matches!(last_was, Some(LastWas::Colon(_))) && is_new_line
+            /* if a scope separator `::` is immediately followed by a new
+             * line, it's not counted as a new indentation */
+                && !(
+                    matches!(
+                        last_was,
+                        Some(LastWas::Colon(false))
+                    ) && last_last_was_colon
+                )
+            {
                 // push the new indentation marker
                 let colon = self
                     .current_nodes

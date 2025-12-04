@@ -1,0 +1,8 @@
+private module inner
+
+
+public struct XomeStruct:
+    pass
+
+
+implements Xo<cursor>

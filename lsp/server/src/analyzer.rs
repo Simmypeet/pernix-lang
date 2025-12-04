@@ -14,7 +14,10 @@ use pernixc_target::{Arguments, Check, Input, TargetID};
 use tokio::sync::{RwLock, RwLockReadGuard};
 use tower_lsp::lsp_types::{DidChangeTextDocumentParams, Url};
 
-use crate::workspace::{self, NewWorkspaceError, Workspace};
+use crate::{
+    test_config::TestConfig,
+    workspace::{self, NewWorkspaceError, Workspace},
+};
 
 /// The struct that handles analysis of the workspace (e.g., checking errors).
 #[derive(Debug)]
@@ -75,6 +78,7 @@ impl Analyzer {
         target_name: String,
         root_source_file: PathBuf,
         source_file_loader_overide: Arc<E>,
+        is_testing_lsp: bool,
         target_seed: Option<u64>,
     ) -> Arc<Engine> {
         let local_target_id = TargetID::from_target_name(&target_name);
@@ -122,6 +126,8 @@ impl Analyzer {
                 )
                 .await;
 
+                x.set_input(TestConfig, is_testing_lsp).await;
+
                 x.set_input(
                     pernixc_target::MapKey,
                     Arc::new(
@@ -167,6 +173,7 @@ impl Analyzer {
             target_name,
             workspace.root_source_file().to_path_buf(),
             Arc::new(LoadSourceFileExecutor),
+            false,
             None,
         )
         .await;

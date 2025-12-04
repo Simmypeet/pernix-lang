@@ -1,22 +1,416 @@
 //! Offers completion suggestions when user completing qualified identifier
 
-use log::info;
+use std::sync::Arc;
+
+use flexstr::SharedStr;
+use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
+use log::{error, info};
 use pernixc_diagnostic::ByteIndex;
 use pernixc_extend::extend;
+use pernixc_hash::HashSet;
+use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
 use pernixc_semantic_element::import::get_import_map;
-use pernixc_source_file::{GlobalSourceID, SourceElement};
+use pernixc_source_file::{
+    GlobalSourceID, SourceElement, Span, get_source_file_by_id,
+};
 use pernixc_symbol::{
+    ID,
+    accessibility::symbol_accessible,
+    get_target_root_module_id,
     kind::get_kind,
     member::{get_members, try_get_members},
-    parent::get_closest_module_id,
+    name::{get_name, get_qualified_name},
+    parent::{get_closest_module_id, get_parent_global},
     source_file_module::get_source_file_module,
+    source_map::to_absolute_span,
 };
-use pernixc_target::TargetID;
-use tower_lsp::lsp_types::CompletionItemKind;
+use pernixc_syntax::QualifiedIdentifier;
+use pernixc_target::{Global, TargetID};
+use pernixc_tokio::{chunk::chunk_for_tasks, scoped};
+use tokio::sync::RwLock;
+use tower_lsp::lsp_types::{
+    CompletionItem, CompletionItemKind, CompletionItemLabelDetails,
+};
 
 use crate::pointing::{
     self, get_symbol_scope_at_byte_index, resolve_qualified_identifier_path,
 };
+
+/// Priority of searching matching qualified identifier completions
+///
+/// We'll retrieve the matching qualified identifier and two places:
+/// 1. The qualified identifier directly at the cursor
+/// 2. The qualified identifier one byte before the cursor (to handle the case
+///    where the cursor is at the end of the identifier)
+///
+/// If both exists, we'll prefer the one that is more specified (i.e is covered
+/// by another).
+///
+/// For example, `Outer[Inner<cursor>]`, this would both match `Outer[...]` and
+/// `Inner`, but we should prefer `Inner` as it is more specific because it is
+/// covered by `Outer`.
+#[extend]
+pub async fn retrieve_qulaified_identifier_matching(
+    self: &TrackedEngine,
+    byte_index: ByteIndex,
+    token_tree: &pernixc_lexical::tree::Tree,
+    syntax_tree: &pernixc_syntax::item::module::Content,
+) -> Option<QualifiedIdentifierMatching> {
+    let node = pernixc_parser::concrete_tree::Node::Branch(
+        syntax_tree.inner_tree().clone(),
+    );
+
+    let at_cursor = byte_index;
+    let before_cursor = byte_index.checked_sub(1);
+
+    let matching_at_cursor = node
+        .get_deepest_ast::<pernixc_syntax::QualifiedIdentifier>(
+            token_tree, at_cursor,
+        );
+
+    let matching_before_cursor = before_cursor.and_then(|byte_index| {
+        node.get_deepest_ast::<pernixc_syntax::QualifiedIdentifier>(
+            token_tree, byte_index,
+        )
+    });
+
+    let result = match (matching_at_cursor, matching_before_cursor) {
+        (Some(qual_at), Some(qual_before)) => {
+            let span_at = qual_at.span();
+            let span_before = qual_before.span();
+
+            if span_at.start >= span_before.start
+                && span_at.end <= span_before.end
+            {
+                // at_cursor is covered by before_cursor
+                let token_span = node
+                    .get_pointing_token(token_tree, at_cursor)
+                    .and_then(|token| {
+                        token.kind.is_identifier().then_some(token.span)
+                    });
+
+                Some((qual_at, token_span))
+            } else {
+                // before_cursor is covered by at_cursor
+                let token_span = node
+                    .get_pointing_token(token_tree, before_cursor.unwrap())
+                    .and_then(|token| {
+                        token.kind.is_identifier().then_some(token.span)
+                    });
+
+                Some((qual_before, token_span))
+            }
+        }
+        (Some(qual_at), None) => {
+            let token_span =
+                node.get_pointing_token(token_tree, at_cursor).and_then(
+                    |token| token.kind.is_identifier().then_some(token.span),
+                );
+
+            Some((qual_at, token_span))
+        }
+        (None, Some(qual_before)) => {
+            let token_span = node
+                .get_pointing_token(token_tree, before_cursor.unwrap())
+                .and_then(|token| {
+                    token.kind.is_identifier().then_some(token.span)
+                });
+
+            Some((qual_before, token_span))
+        }
+        (None, None) => None,
+    };
+
+    if let Some((qualified_identifier, token)) = result {
+        let abs_token_span = if let Some(token_span) = token {
+            Some(self.to_absolute_span(&token_span).await)
+        } else {
+            None
+        };
+
+        Some(QualifiedIdentifierMatching {
+            qualified_identifier,
+            hovering_token_span: abs_token_span,
+        })
+    } else {
+        None
+    }
+}
+
+/// The result of matching a qualified identifier at a given byte index.
+#[derive(Debug, Clone)]
+pub struct QualifiedIdentifierMatching {
+    /// The matched qualified identifier.
+    pub qualified_identifier: QualifiedIdentifier,
+
+    /// The span of the token that is being hovered. This could be `None` if
+    /// the cursor is exactly at the end of the qualified identifier or
+    /// is in between insignificant tokens (whitespaces, etc.).
+    pub hovering_token_span: Option<Span<ByteIndex>>,
+}
+
+/// Provides completion suggestions for qualified identifiers at the given
+/// byte index.
+#[extend]
+#[allow(clippy::too_many_lines)]
+pub async fn qualified_identifier_completion(
+    self: &pernixc_query::TrackedEngine,
+    byte_index: ByteIndex,
+    source_id: GlobalSourceID,
+    syntax_tree: pernixc_syntax::item::module::Content,
+    token_tree: &pernixc_lexical::tree::Tree,
+    target_id: TargetID,
+) -> Result<Vec<Completion>, pernixc_query::runtime::executor::CyclicError> {
+    let module =
+        target_id.make_global(self.get_source_file_module(source_id).await);
+
+    // get the current symbol scope at the byte index for symbol resolution
+    let current_site = self
+        .get_symbol_scope_at_byte_index(module, source_id, byte_index)
+        .await;
+
+    let node = pernixc_parser::concrete_tree::Node::Branch(
+        syntax_tree.inner_tree().clone(),
+    );
+
+    let Some(QualifiedIdentifierMatching {
+        qualified_identifier,
+        hovering_token_span: token_abs_span,
+    }) = self
+        .retrieve_qulaified_identifier_matching(
+            byte_index,
+            token_tree,
+            &syntax_tree,
+        )
+        .await
+    else {
+        error!(" No qualified identifier found at byte index {byte_index} ");
+        return Ok(Vec::new());
+    };
+
+    let Some(resolved_path) = self
+        .resolve_qualified_identifier_path(
+            current_site,
+            &qualified_identifier,
+            token_abs_span,
+        )
+        .await?
+    else {
+        error!(
+            " Qualified identifier at byte index {byte_index} could not be \
+             resolved "
+        );
+        return Ok(Vec::new());
+    };
+
+    info!(
+        " Qualified identifier at byte index {byte_index} resolved to \
+         {resolved_path:?} "
+    );
+
+    // determine the nearest module id for import suggestions
+    let nearest_module_id =
+        target_id.make_global(self.get_closest_module_id(current_site).await);
+
+    let prior_scope = match resolved_path {
+        pointing::Resolution::Success(success_resolution) => {
+            success_resolution.parent_scope
+        }
+
+        pointing::Resolution::Failed(fail_at_cursor) => {
+            if fail_at_cursor.fail_at_cursor {
+                // only suggest members if the failure happened at the cursor
+                fail_at_cursor.prior_scope
+            } else {
+                // no suggestions
+                return Ok(Vec::new());
+            }
+        }
+
+        pointing::Resolution::NoMatchFound(no_match_found) => {
+            // check if the cursor is at the end of the qualified identifier,
+            // only then suggest members of the symbol
+            let qual_span = qualified_identifier.span();
+            let qual_abs_span = token_tree.absolute_span_of(&qual_span);
+
+            if byte_index == qual_abs_span.end {
+                Some(no_match_found)
+            } else {
+                // cursor is not at the end, no suggestions
+                return Ok(Vec::new());
+            }
+        }
+    };
+
+    let pointing_string: Option<SharedStr> =
+        if let Some(token_span) = token_abs_span {
+            let source_file =
+                self.get_source_file_by_id(token_span.source_id).await;
+
+            Some(source_file.content()[token_span.range()].into())
+        } else {
+            None
+        };
+
+    create_completions(
+        self,
+        nearest_module_id,
+        prior_scope,
+        pointing_string.as_ref(),
+    )
+    .await
+}
+
+/// A completion candidate when there're already some prior scope resolved.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MemberCompletion {
+    /// The completed symbol ID.
+    pub completion: Global<ID>,
+}
+
+/// A completion candidate when completing the root-level qualified identifier
+/// and the candidates are members of the current module.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ModuleCompletion {
+    /// The completed symbol ID.
+    pub completion: Global<ID>,
+}
+
+/// A completion candidate when completing the root-level qualified identifier
+/// and the candidates are imports of the current module.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ImportCompletion {
+    /// The completion string to be shown.
+    pub completion_string: SharedStr,
+
+    /// The symbol ID of the import.
+    pub symbol: Global<ID>,
+}
+
+/// A completion candidate when completing the root-level qualified identifier
+/// and the candidates are global symbols.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct GlobalCompletion {
+    /// The completed symbol ID.
+    pub completion: Global<ID>,
+}
+
+/// The completion suggestion.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
+pub enum Completion {
+    Member(MemberCompletion),
+    Module(ModuleCompletion),
+    Import(ImportCompletion),
+    Global(GlobalCompletion),
+    ThisKeyword,
+    TargetKeyword,
+}
+
+impl Completion {
+    /// Converts the completion suggestion to an LSP `CompletionItem`.
+    pub async fn to_lsp_completion(
+        self,
+        engine: &TrackedEngine,
+    ) -> Result<CompletionItem, CyclicError> {
+        match self {
+            Self::Member(member_completion) => {
+                let name = engine.get_name(member_completion.completion).await;
+
+                let kind = engine
+                    .get_kind(member_completion.completion)
+                    .await
+                    .kind_to_completion_item_kind();
+
+                Ok(CompletionItem {
+                    label: name.to_string(),
+                    kind: Some(kind),
+                    sort_text: Some("100".to_string()),
+                    ..Default::default()
+                })
+            }
+
+            Self::Module(module_completion) => {
+                let name = engine.get_name(module_completion.completion).await;
+
+                let kind = engine
+                    .get_kind(module_completion.completion)
+                    .await
+                    .kind_to_completion_item_kind();
+
+                Ok(CompletionItem {
+                    label: name.to_string(),
+                    kind: Some(kind),
+                    sort_text: Some("100".to_string()),
+                    ..Default::default()
+                })
+            }
+
+            Self::Import(import_completion) => {
+                let kind = engine
+                    .get_kind(import_completion.symbol)
+                    .await
+                    .kind_to_completion_item_kind();
+
+                Ok(CompletionItem {
+                    label: import_completion.completion_string.to_string(),
+                    kind: Some(kind),
+                    sort_text: Some("100".to_string()),
+                    ..Default::default()
+                })
+            }
+
+            Self::Global(global_completion) => {
+                let name = engine.get_name(global_completion.completion).await;
+
+                let kind = engine
+                    .get_kind(global_completion.completion)
+                    .await
+                    .kind_to_completion_item_kind();
+
+                let detail = if let Some(parent_module_id) =
+                    engine.get_parent_global(global_completion.completion).await
+                {
+                    let qualified_name =
+                        engine.get_qualified_name(parent_module_id).await;
+
+                    Some(format!("from {qualified_name}"))
+                } else {
+                    None
+                };
+
+                Ok(CompletionItem {
+                    label: name.to_string(),
+                    kind: Some(kind),
+                    sort_text: Some("200".to_string()),
+
+                    // include a text specifying that this will import a new
+                    // symbol at the top of the module
+                    label_details: Some(CompletionItemLabelDetails {
+                        detail: None,
+                        description: detail,
+                    }),
+
+                    ..Default::default()
+                })
+            }
+
+            Self::ThisKeyword => Ok(CompletionItem {
+                label: "this".to_string(),
+                kind: Some(CompletionItemKind::KEYWORD),
+                sort_text: Some("300".to_string()),
+                ..Default::default()
+            }),
+
+            Self::TargetKeyword => Ok(CompletionItem {
+                label: "target".to_string(),
+                kind: Some(CompletionItemKind::KEYWORD),
+                sort_text: Some("300".to_string()),
+                ..Default::default()
+            }),
+        }
+    }
+}
 
 #[extend]
 fn allow_completion(self: pernixc_symbol::kind::Kind) -> bool {
@@ -92,177 +486,281 @@ fn kind_to_completion_item_kind(
     }
 }
 
-/// Provides completion suggestions for qualified identifiers at the given
-/// byte index.
-#[extend]
-#[allow(clippy::too_many_lines)]
-pub async fn qualified_identifier_completion(
-    self: &pernixc_query::TrackedEngine,
-    byte_index: ByteIndex,
-    source_id: GlobalSourceID,
-    syntax_tree: pernixc_syntax::item::module::Content,
-    token_tree: &pernixc_lexical::tree::Tree,
-    target_id: TargetID,
-    completions: &mut Vec<tower_lsp::lsp_types::CompletionItem>,
-) -> Result<(), pernixc_query::runtime::executor::CyclicError> {
-    let module =
-        target_id.make_global(self.get_source_file_module(source_id).await);
-
-    // get the current symbol scope at the byte index for symbol resolution
-    let current_site = self
-        .get_symbol_scope_at_byte_index(module, source_id, byte_index)
-        .await;
-
-    let node = pernixc_parser::concrete_tree::Node::Branch(
-        syntax_tree.inner_tree().clone(),
-    );
-
-    let (Some(qualified_identifier), token) = (
-        node.get_deepest_ast::<pernixc_syntax::QualifiedIdentifier>(
-            token_tree, byte_index,
-        )
-        .or_else(|| {
-            // try again by checking one byte before, to handle the case
-            // where the cursor is at the end of the identifier
-            byte_index.checked_sub(1).and_then(|byte_index| {
-                node.get_deepest_ast::<pernixc_syntax::QualifiedIdentifier>(
-                    token_tree, byte_index,
-                )
-            })
-        }),
-        node.get_pointing_token(token_tree, byte_index),
-    ) else {
-        info!(" No qualified identifier found at byte index {byte_index} ");
-        return Ok(());
-    };
-
-    let token_abs_span =
-        token.map(|token| token_tree.absolute_span_of(&token.span));
-
-    let Some(resolved_path) = self
-        .resolve_qualified_identifier_path(
-            current_site,
-            &qualified_identifier,
-            token_abs_span,
-        )
-        .await?
-    else {
-        info!(
-            " Qualified identifier at byte index {byte_index} could not be \
-             resolved "
-        );
-        return Ok(());
-    };
-
-    info!(
-        " Qualified identifier at byte index {byte_index} resolved to \
-         {resolved_path:?} "
-    );
-
-    // determine the nearest module id for import suggestions
-    let nearest_module =
-        target_id.make_global(self.get_closest_module_id(current_site).await);
-
-    let prior_scope = match resolved_path {
-        pointing::Resolution::Success(success_resolution) => {
-            success_resolution.parent_scope
-        }
-        pointing::Resolution::FailAtCursor(fail_at_cursor) => fail_at_cursor,
-        pointing::Resolution::FailedAtLastSegment(_)
-        | pointing::Resolution::NoMatchFound(_) => {
-            // check if the cursor is at the end of the qualified identifier,
-            // only then suggest members of the symbol
-            let qual_span = qualified_identifier.span();
-            let qual_abs_span = token_tree.absolute_span_of(&qual_span);
-
-            if byte_index == qual_abs_span.end {
-                match resolved_path {
-                    pointing::Resolution::FailedAtLastSegment(global) => global,
-                    pointing::Resolution::NoMatchFound(global) => Some(global),
-
-                    pointing::Resolution::Success(_)
-                    | pointing::Resolution::FailAtCursor(_) => {
-                        unreachable!()
-                    }
-                }
-            } else {
-                // cursor is not at the end, no suggestions
-                return Ok(());
-            }
-        }
-    };
+#[allow(clippy::cognitive_complexity)]
+async fn create_completions(
+    engine: &TrackedEngine,
+    nearest_module_id: Global<ID>,
+    prior_scope: Option<Global<ID>>,
+    str: Option<&SharedStr>,
+) -> Result<Vec<Completion>, CyclicError> {
+    let mut completions = Vec::new();
+    let target_id = nearest_module_id.target_id;
+    let fuzzy_matcher = SkimMatcherV2::default();
 
     if let Some(symbol) = prior_scope {
         // suggest members of the resolved symbol
-        let Some(members) = self.try_get_members(symbol).await else {
-            return Ok(());
+        let Some(members) = engine.try_get_members(symbol).await else {
+            return Ok(Vec::default());
         };
 
-        for (member_name, id) in &members.member_ids_by_name {
-            let kind = self.get_kind(target_id.make_global(*id)).await;
+        for id in members.member_ids_by_name.values().copied() {
+            let kind = engine.get_kind(target_id.make_global(id)).await;
 
             if !kind.allow_completion() {
                 continue;
             }
 
-            completions.push(tower_lsp::lsp_types::CompletionItem {
-                label: member_name.to_string(),
-                kind: Some(kind.kind_to_completion_item_kind()),
-                sort_text: Some(format!("10_member_{member_name}")),
-                ..Default::default()
-            });
+            // check accessibility
+            if !engine
+                .symbol_accessible(nearest_module_id, target_id.make_global(id))
+                .await
+            {
+                continue;
+            }
+
+            if let Some(str) = str {
+                let name = engine.get_name(target_id.make_global(id)).await;
+
+                if fuzzy_matcher.fuzzy_match(&name, str).is_none() {
+                    continue;
+                }
+            }
+
+            completions.push(Completion::Member(MemberCompletion {
+                completion: target_id.make_global(id),
+            }));
         }
     } else {
         // suggest module members, imports, this keyword, target keyword,
         // etc.
 
-        let module_members = self.get_members(nearest_module).await;
-        let module_imports = self.get_import_map(nearest_module).await;
+        let module_members = engine.get_members(nearest_module_id).await;
+        let module_imports = engine.get_import_map(nearest_module_id).await;
 
-        for (member_name, id) in &module_members.member_ids_by_name {
-            let kind =
-                self.get_kind(nearest_module.target_id.make_global(*id)).await;
+        // avoid duplicate completions from the later global symbol search
+        let mut inserted_ids = HashSet::default();
+
+        for id in module_members.member_ids_by_name.values().copied() {
+            let kind = engine
+                .get_kind(nearest_module_id.target_id.make_global(id))
+                .await;
 
             if !kind.allow_completion() {
                 continue;
             }
 
-            completions.push(tower_lsp::lsp_types::CompletionItem {
-                label: member_name.to_string(),
-                kind: Some(kind.kind_to_completion_item_kind()),
-                sort_text: Some(format!("10_member_{member_name}")),
-                ..Default::default()
-            });
+            if let Some(str) = str {
+                let name = engine
+                    .get_name(nearest_module_id.target_id.make_global(id))
+                    .await;
+
+                if fuzzy_matcher.fuzzy_match(&name, str).is_none() {
+                    continue;
+                }
+            }
+
+            completions.push(Completion::Module(ModuleCompletion {
+                completion: target_id.make_global(id),
+            }));
+
+            inserted_ids.insert(target_id.make_global(id));
         }
 
         for (import_name, import) in module_imports.iter() {
-            let kind = self.get_kind(import.id).await;
+            let kind = engine.get_kind(import.id).await;
             if !kind.allow_completion() {
                 continue;
             }
 
-            completions.push(tower_lsp::lsp_types::CompletionItem {
-                label: import_name.to_string(),
-                kind: Some(kind.kind_to_completion_item_kind()),
-                sort_text: Some(format!("20_import_{import_name}")),
-                ..Default::default()
-            });
+            if let Some(str) = str
+                && fuzzy_matcher.fuzzy_match(import_name, str).is_none()
+            {
+                continue;
+            }
+
+            completions.push(Completion::Import(ImportCompletion {
+                completion_string: import_name.clone(),
+                symbol: import.id,
+            }));
+
+            inserted_ids.insert(import.id);
         }
 
-        completions.push(tower_lsp::lsp_types::CompletionItem {
-            label: "this".to_string(),
-            kind: Some(CompletionItemKind::KEYWORD),
-            sort_text: Some("30_qual_this".to_string()),
-            ..Default::default()
-        });
+        // this and target keywords
+        if let Some(str) = str {
+            if fuzzy_matcher.fuzzy_match("this", str).is_none() {
+                // skip adding this keyword
+            } else {
+                completions.push(Completion::ThisKeyword);
+            }
+        } else {
+            completions.push(Completion::ThisKeyword);
+        }
 
-        completions.push(tower_lsp::lsp_types::CompletionItem {
-            label: "target".to_string(),
-            kind: Some(CompletionItemKind::KEYWORD),
-            sort_text: Some("30_qual_target".to_string()),
-            ..Default::default()
-        });
+        if let Some(str) = str {
+            if fuzzy_matcher.fuzzy_match("target", str).is_none() {
+                // skip adding target keyword
+            } else {
+                completions.push(Completion::TargetKeyword);
+            }
+        } else {
+            completions.push(Completion::TargetKeyword);
+        }
+
+        // collects all other available symbols that might not be included
+        // in the current module
+        if let Some(str) = str {
+            completions = create_global_import_candidate(
+                engine,
+                target_id,
+                inserted_ids,
+                str,
+                nearest_module_id,
+                completions,
+            )
+            .await?;
+        }
     }
 
-    Ok(())
+    Ok(completions)
 }
+
+async fn create_global_import_candidate(
+    engine: &TrackedEngine,
+    target_id: TargetID,
+    inserted: HashSet<Global<ID>>,
+    str: &SharedStr,
+    current_module_id: Global<pernixc_symbol::ID>,
+    completion: Vec<Completion>,
+) -> Result<Vec<Completion>, CyclicError> {
+    let candidates = Arc::new(RwLock::new(completion));
+    let inserted = Arc::new(inserted);
+
+    let global_import_ids =
+        engine.get_global_import_suggestion_ids(target_id).await;
+
+    scoped!(|handles| async {
+        for chunk_id in global_import_ids
+            .chunk_for_tasks()
+            .map(<[pernixc_symbol::ID]>::to_vec)
+        {
+            let engine = engine.clone();
+            let str = str.clone();
+            let candidates = candidates.clone();
+            let inserted = inserted.clone();
+
+            handles.spawn(async move {
+                let fuzzy_matcher = SkimMatcherV2::default();
+
+                for id in chunk_id {
+                    if inserted.contains(&target_id.make_global(id)) {
+                        continue;
+                    }
+
+                    if !engine
+                        .symbol_accessible(
+                            current_module_id,
+                            target_id.make_global(id),
+                        )
+                        .await
+                    {
+                        continue;
+                    }
+
+                    let name = engine.get_name(target_id.make_global(id)).await;
+
+                    if fuzzy_matcher.fuzzy_match(&name, &str).is_none() {
+                        continue;
+                    }
+
+                    candidates.write().await.push(Completion::Global(
+                        GlobalCompletion {
+                            completion: target_id.make_global(id),
+                        },
+                    ));
+                }
+            });
+        }
+    });
+
+    Ok(Arc::into_inner(candidates).unwrap().into_inner())
+}
+
+#[pernixc_query::query(
+    key(GlobalImportSuggestionKey),
+    value(Arc<[pernixc_symbol::ID]>),
+    id(TargetID),
+    executor(GlobalImportSuggestionExecutor),
+    extend(method(get_global_import_suggestion_ids), no_cyclic)
+)]
+pub async fn get_global_import_suggestions(
+    target_id: TargetID,
+    engine: &TrackedEngine,
+) -> Result<
+    Arc<[pernixc_symbol::ID]>,
+    pernixc_query::runtime::executor::CyclicError,
+> {
+    let root_module_id = engine.get_target_root_module_id(target_id).await;
+
+    engine
+        .query(&ModuleImportSuggestionKey(
+            target_id.make_global(root_module_id),
+        ))
+        .await
+}
+
+pernixc_register::register!(
+    GlobalImportSuggestionKey,
+    GlobalImportSuggestionExecutor
+);
+
+#[pernixc_query::query(
+    key(ModuleImportSuggestionKey),
+    value(Arc<[pernixc_symbol::ID]>),
+    id(Global<ID>),
+    executor(ModuleImportSuggestionExecutor),
+)]
+async fn collect_module_id(
+    current_module_id: Global<pernixc_symbol::ID>,
+    engine: &TrackedEngine,
+) -> Result<Arc<[pernixc_symbol::ID]>, CyclicError> {
+    let members = engine.get_members(current_module_id).await;
+    let mut results = vec![current_module_id.id];
+
+    scoped!(|handles| async {
+        for id in members.member_ids_by_name.values().copied() {
+            // recursively collect from child modules
+            let kind = engine
+                .get_kind(current_module_id.target_id.make_global(id))
+                .await;
+
+            if kind == pernixc_symbol::kind::Kind::Module {
+                let engine = engine.clone();
+
+                handles.spawn(async move {
+                    engine
+                        .query(&ModuleImportSuggestionKey(
+                            current_module_id.target_id.make_global(id),
+                        ))
+                        .await
+                });
+            } else {
+                results.push(id);
+            }
+        }
+
+        while let Some(result) = handles.next().await {
+            let child_ids = result?;
+            results.extend(child_ids.iter().copied());
+        }
+
+        Ok(())
+    })?;
+
+    Ok(results.into())
+}
+
+pernixc_register::register!(
+    ModuleImportSuggestionKey,
+    ModuleImportSuggestionExecutor
+);

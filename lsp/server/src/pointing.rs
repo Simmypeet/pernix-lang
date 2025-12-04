@@ -10,7 +10,8 @@ use pernixc_resolution::qualified_identifier::{
     resolve_in, resolve_simple_qualified_identifier_root,
 };
 use pernixc_source_file::{
-    ByteIndex, GlobalSourceID, Span, calculate_path_id, get_source_file_by_id,
+    ByteIndex, GlobalSourceID, SourceElement, Span, calculate_path_id,
+    get_source_file_by_id,
 };
 use pernixc_symbol::{
     member::try_get_members, scope_span::get_scope_span,
@@ -102,19 +103,24 @@ pub struct SuccessResolution {
     pub parent_scope: Option<Global<pernixc_symbol::ID>>,
 }
 
+/// The resolution failed before reaching or at the cursor position.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Failed {
+    /// The prior scope before the failure (None if failed at the first root).
+    pub prior_scope: Option<Global<pernixc_symbol::ID>>,
+
+    /// Whether the failure occurred exactly at the cursor position.
+    ///
+    /// This is beneficial to determine whether to suggest completions or not.
+    pub fail_at_cursor: bool,
+}
+
 /// The result of resolving a qualified identifier at the cursor position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
 pub enum Resolution {
-    /// The resolution succeeded at the cursor position.
     Success(SuccessResolution),
-
-    /// The resolution failed at the cursor position. The parent scope is
-    /// provided to allow for completion suggestions.
-    FailAtCursor(Option<Global<pernixc_symbol::ID>>),
-
-    /// The resolution failed at the last segment of the qualified identifier.
-    /// The optional symbol is provided to allow for completion suggestions.
-    FailedAtLastSegment(Option<Global<pernixc_symbol::ID>>),
+    Failed(Failed),
 
     /// The symbol resolve to the end without matching the cursor position.
     NoMatchFound(Global<pernixc_symbol::ID>),
@@ -136,11 +142,12 @@ pub async fn resolve_qualified_identifier_path(
         .resolve_simple_qualified_identifier_root(current_site, &root_syn)
         .await
     else {
-        if qualified_identifier.subsequences().next().is_none() {
-            return Ok(Some(Resolution::FailedAtLastSegment(None)));
-        }
+        let root_span = self.to_absolute_span(&root_syn.span()).await;
 
-        return Ok(None);
+        return Ok(Some(Resolution::Failed(Failed {
+            prior_scope: None,
+            fail_at_cursor: Some(root_span) == pointing_span,
+        })));
     };
 
     let root_match = match root_syn {
@@ -170,9 +177,7 @@ pub async fn resolve_qualified_identifier_path(
 
     let mut current_symbol_id = root;
 
-    let mut subsequences = qualified_identifier.subsequences();
-
-    while let Some(subsequence) = subsequences.next() {
+    for subsequence in qualified_identifier.subsequences() {
         let Some(identifier) =
             subsequence.generic_identifier().and_then(|x| x.identifier())
         else {
@@ -189,22 +194,11 @@ pub async fn resolve_qualified_identifier_path(
             )
             .await?
         else {
-            // if we fail to resolve at the cursor position, return the prior
-            // scope
-            if Some(identifier_span) == pointing_span {
-                return Ok(Some(Resolution::FailAtCursor(Some(
-                    current_symbol_id,
-                ))));
-            }
-
-            if subsequences.next().is_none() {
-                // failed at the last segment
-                return Ok(Some(Resolution::FailedAtLastSegment(Some(
-                    current_symbol_id,
-                ))));
-            }
-
-            return Ok(None);
+            // resolution failed at this segment
+            return Ok(Some(Resolution::Failed(Failed {
+                prior_scope: Some(current_symbol_id),
+                fail_at_cursor: Some(identifier_span) == pointing_span,
+            })));
         };
 
         // shows as pointing to this subsequence
@@ -280,9 +274,7 @@ pub async fn symbol_at(
     match resolved_symbol_id {
         Resolution::Success(success) => Ok(Some(success.pointing_symbol)),
 
-        Resolution::FailedAtLastSegment(_)
-        | Resolution::NoMatchFound(_)
-        | Resolution::FailAtCursor(_) => Ok(None),
+        Resolution::Failed(_) | Resolution::NoMatchFound(_) => Ok(None),
     }
 }
 

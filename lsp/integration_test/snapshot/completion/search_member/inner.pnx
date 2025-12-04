@@ -1,0 +1,6 @@
+public struct XomeInnerPublicStruct:
+    pass
+
+
+private struct XomeInnerPrivateStruct:
+    pass

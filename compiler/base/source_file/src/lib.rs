@@ -379,6 +379,25 @@ impl SourceFile {
         &self,
         byte_index: ByteIndex,
     ) -> Option<EditorLocation> {
+        // pointing at the end of the file
+        if byte_index == self.content.len() {
+            return Some(EditorLocation {
+                line: if self.lines.is_empty() {
+                    0
+                } else {
+                    self.lines.len() - 1
+                },
+                column: if self.lines.is_empty() {
+                    0
+                } else {
+                    let last_line_range = &self.lines[self.lines.len() - 1];
+                    let last_line_str = &self.content[last_line_range.clone()];
+
+                    last_line_str.chars().count()
+                },
+            });
+        }
+
         if !self.content.is_char_boundary(byte_index) {
             return None;
         }
