@@ -143,6 +143,7 @@ pretty_assertions = { version = "1.4.1" }
 trait-variant = { version = "0.1.2" }
 fjall = { version = "2.11.2" }
 sled = { version = "0.34.7" }
+rust-rocksdb = { version = "0.44.2", features = ["jemalloc"] }
 stacker = "0.1.21"
 serde_json = { version = "1.0.96" }
 fuzzy-matcher = { version = "0.3.7" }

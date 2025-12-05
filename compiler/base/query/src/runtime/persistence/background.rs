@@ -42,8 +42,7 @@ impl<B> Committer<B> {
     }
 
     pub fn return_buffer(&self, buffer: Vec<u8>) {
-        self.buffer_pool.write().push_back(buffer);
-    }
+        self.buffer_pool.write().push_back(buffer); }
 }
 
 pub struct Worker {

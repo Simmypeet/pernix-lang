@@ -28,6 +28,7 @@ thiserror = { workspace = true }
 static_assertions = { workspace = true }
 fjall = { workspace = true }
 sled = { workspace = true }
+rust-rocksdb = { workspace = true }
 
 [dev-dependencies]
 ron = { workspace = true }

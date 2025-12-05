@@ -67,3 +67,6 @@ async fn basic_fjall() { basic::<backend::fjall::FjallBackend>().await; }
 
 #[tokio::test]
 async fn basic_sled() { basic::<backend::sled::SledBackend>().await; }
+
+#[tokio::test]
+async fn basic_rocksdb() { basic::<backend::rocksdb::RocksDbBackend>().await; }

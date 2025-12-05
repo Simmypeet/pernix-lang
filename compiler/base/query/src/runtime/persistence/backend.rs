@@ -2,6 +2,7 @@ use std::path::Path;
 
 pub mod fjall;
 pub mod redb;
+pub mod rocksdb;
 pub mod sled;
 
 fn tuple_to_array_key(key: (u128, u128)) -> [u8; 32] {
