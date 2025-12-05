@@ -11,6 +11,7 @@ use fnv::FnvHasher;
 use getset::CopyGetters;
 use pernixc_arena::{Arena, ID, state};
 use pernixc_handler::Handler;
+use pernixc_hash::HashMap;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::{
     AbsoluteSpan, ByteIndex, GlobalSourceID, Location, SourceFile, Span,
@@ -371,6 +372,7 @@ impl Tree {
             delimiter_stack: Vec::new(),
             indentation_stack: Vec::new(),
             current_nodes: Vec::new(),
+            hash_occurences: HashMap::default(),
             tree: Self { source_id, arena: Arena::new() },
         };
 
@@ -528,6 +530,7 @@ struct Converter<'source, 'handler> {
 
     delimiter_stack: Vec<DelimiterMarker>,
     indentation_stack: Vec<IndentationMarker>,
+    hash_occurences: HashMap<u64, usize>,
 
     current_nodes: Vec<Node>,
     tree: Tree,
@@ -563,6 +566,7 @@ fn calculate_branch_hash<'a>(
     tokens: impl Iterator<Item = &'a Kind<RelativeLocation>>,
     node_kind: GeneralBranchKind,
     source: &str,
+    hash_occurences: &mut HashMap<u64, usize>,
     arena: &Arena<Branch, state::Default>,
 ) -> ID<Branch> {
     let mut hasher = FnvHasher::default();
@@ -581,12 +585,13 @@ fn calculate_branch_hash<'a>(
         str.hash(&mut hasher);
     }
 
-    let mut attempt = 0;
+    let occurrences = hash_occurences.entry(hasher.finish()).or_insert(0);
+
     loop {
         // for some reason, FnvHasher doesn't implement `Clone` trait.
         // this is the work around to clone
         let mut final_hasher = FnvHasher::with_key(hasher.finish());
-        attempt.hash(&mut final_hasher);
+        occurrences.hash(&mut final_hasher);
 
         let candidate_branch_id = ID::new(final_hasher.finish());
 
@@ -597,7 +602,7 @@ fn calculate_branch_hash<'a>(
             return candidate_branch_id;
         }
 
-        attempt += 1;
+        *occurrences += 1;
     }
 }
 
@@ -958,6 +963,7 @@ impl Converter<'_, '_> {
                 nodes.iter().filter_map(Node::as_leaf),
                 GeneralBranchKind::Delimited(expected_delimiter),
                 self.source,
+                &mut self.hash_occurences,
                 &self.tree,
             );
 
@@ -1077,6 +1083,7 @@ impl Converter<'_, '_> {
                 nodes.iter().filter_map(Node::as_leaf),
                 GeneralBranchKind::Indented,
                 self.source,
+                &mut self.hash_occurences,
                 &self.tree,
             );
 
@@ -1187,6 +1194,7 @@ impl Converter<'_, '_> {
             std::iter::empty(),
             GeneralBranchKind::Indented,
             self.source,
+            &mut self.hash_occurences,
             &self.tree,
         );
 
