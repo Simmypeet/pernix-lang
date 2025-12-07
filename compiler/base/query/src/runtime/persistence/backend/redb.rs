@@ -20,6 +20,7 @@ pub struct Impl {
 }
 
 #[derive(Debug, Clone)]
+#[allow(unused)]
 pub struct RedbBackend(Arc<Impl>);
 
 impl super::Backend for RedbBackend {
