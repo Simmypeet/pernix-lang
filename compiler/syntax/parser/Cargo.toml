@@ -8,16 +8,12 @@ rust-version.workspace = true
 
 [dependencies]
 pernixc_arena = { path = "../../base/arena" }
-pernixc_query = { path = "../../base/query" }
 pernixc_lexical = { path = "../lexical" }
 pernixc_source_file = { path = "../../base/source_file" }
 pernixc_target = { path = "../../base/target" }
 pernixc_handler = { path = "../../base/handler" }
 pernixc_diagnostic = { path = "../../base/diagnostic" }
-pernixc_serialize = { path = "../../base/serialize" }
-pernixc_stable_hash = { path = "../../base/stable_hash" }
 pernixc_hash = { path = "../../base/hash" }
-pernixc_stable_type_id = { path = "../../base/stable_type_id" }
 rayon = { workspace = true }
 getset = { workspace = true }
 enum-as-inner = { workspace = true }

@@ -1,5 +1,0 @@
----
-source: compiler/base/serialize/src/ron/ser/test.rs
-expression: to_ron_string_compact(&image).unwrap()
----
-Image{url:"https://example.com/pic.jpg",width:800,height:600}

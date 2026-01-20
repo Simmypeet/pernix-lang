@@ -1,9 +1,0 @@
----
-source: compiler/base/serialize/src/ron/ser/test.rs
-expression: "to_ron_string_with_config(&nested_map, config).unwrap()"
----
-{
-    "outer": {
-        "inner": 42,
-    },
-}

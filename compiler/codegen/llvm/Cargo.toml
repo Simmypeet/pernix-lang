@@ -9,7 +9,6 @@ rust-version.workspace = true
 [dependencies]
 pernixc_handler = { path = "../../base/handler" }
 pernixc_target = { path = "../../base/target" }
-pernixc_query = { path = "../../base/query" }
 pernixc_extend = { path = "../../base/extend" }
 pernixc_type_system = { path = "../../semantic/type_system" }
 pernixc_term = { path = "../../semantic/term" }

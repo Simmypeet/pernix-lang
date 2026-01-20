@@ -1,5 +1,0 @@
----
-source: compiler/base/serialize/src/ron/ser/test.rs
-expression: to_ron_string_compact(&person).unwrap()
----
-Person{name:"Alice",age:30,active:true}

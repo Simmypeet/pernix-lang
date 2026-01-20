@@ -18,10 +18,6 @@ pernixc_handler = { path = "../../base/handler" }
 pernixc_arena = { path = "../../base/arena" }
 pernixc_target = { path = "../../base/target" }
 pernixc_test_input = { path = "../../base/test_input" }
-pernixc_serialize = { path = "../../base/serialize" }
-pernixc_stable_hash = { path = "../../base/stable_hash" }
-pernixc_query = { path = "../../base/query" }
-pernixc_register = { path = "../../base/register" }
 codespan-reporting = { workspace = true }
 getset = { workspace = true }
 enum-as-inner = { workspace = true }

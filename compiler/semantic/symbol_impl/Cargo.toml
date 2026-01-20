@@ -8,10 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 pernixc_symbol = { path = "../symbol" }
-pernixc_serialize = { path = "../../base/serialize" }
-pernixc_stable_hash = { path = "../../base/stable_hash" }
 pernixc_target = { path = "../../base/target" }
-pernixc_query = { path = "../../base/query" }
 pernixc_extend = { path = "../../base/extend" }
 pernixc_handler = { path = "../../base/handler" }
 pernixc_hash = { path = "../../base/hash" }
@@ -22,8 +19,6 @@ pernixc_lexical = { path = "../../syntax/lexical" }
 pernixc_arena = { path = "../../base/arena" }
 pernixc_tokio = { path = "../../base/tokio" }
 pernixc_parser = { path = "../../syntax/parser" }
-pernixc_stable_type_id = { path = "../../base/stable_type_id" }
-pernixc_register = { path = "../../base/register" }
 codespan-reporting = { workspace = true }
 flexstr = { workspace = true }
 tokio = { workspace = true }

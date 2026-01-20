@@ -23,20 +23,16 @@ pernixc_source_file = { path = "../../compiler/base/source_file" }
 pernixc_diagnostic = { path = "../../compiler/base/diagnostic" }
 pernixc_lexical = { path = "../../compiler/syntax/lexical" }
 pernixc_target = { path = "../../compiler/base/target" }
-pernixc_query = { path = "../../compiler/base/query" }
 pernixc_extend = { path = "../../compiler/base/extend" }
 pernixc_hash = { path = "../../compiler/base/hash" }
 pernixc_check = { path = "../../compiler/semantic/check" }
 pernixc_corelib = { path = "../../compiler/semantic/corelib" }
-pernixc_register = { path = "../../compiler/base/register" }
 pernixc_symbol = { path = "../../compiler/semantic/symbol" }
 pernixc_syntax = { path = "../../compiler/syntax/syntax" }
 pernixc_parser = { path = "../../compiler/syntax/parser" }
 pernixc_resolution = { path = "../../compiler/semantic/resolution" }
 pernixc_semantic_element = { path = "../../compiler/semantic/semantic_element" }
 pernixc_term = { path = "../../compiler/semantic/term" }
-pernixc_serialize = { path = "../../compiler/base/serialize" }
-pernixc_stable_hash = { path = "../../compiler/base/stable_hash" }
 pernixc_tokio = { path = "../../compiler/base/tokio" }
 
 

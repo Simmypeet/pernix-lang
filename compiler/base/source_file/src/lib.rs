@@ -17,7 +17,6 @@ use dashmap::{
     mapref::one::{MappedRef, Ref, RefMut},
 };
 use flexstr::SharedStr;
-use fnv::FnvHasher;
 use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
 use pernixc_extend::extend;

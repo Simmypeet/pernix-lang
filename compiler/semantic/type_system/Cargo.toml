@@ -7,20 +7,16 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-pernixc_query = { path = "../../base/query" }
 pernixc_target = { path = "../../base/target" }
 pernixc_extend = { path = "../../base/extend" }
 pernixc_arena = { path = "../../base/arena" }
 pernixc_lexical = { path = "../../syntax/lexical" }
-pernixc_serialize = { path = "../../base/serialize" }
-pernixc_stable_hash = { path = "../../base/stable_hash" }
 pernixc_diagnostic = { path = "../../base/diagnostic" }
 pernixc_source_file = { path = "../../base/source_file" }
 pernixc_handler = { path = "../../base/handler" }
 pernixc_term = { path = "../term" }
 pernixc_symbol = { path = "../symbol" }
 pernixc_semantic_element = { path = "../semantic_element" }
-pernixc_register = { path = "../../base/register" }
 thiserror = { workspace = true }
 parking_lot = { workspace = true }
 enum-as-inner = { workspace = true }
@@ -34,7 +30,6 @@ bon = { workspace = true }
 [dev-dependencies]
 pernixc_symbol = { path = "../symbol", features = ["arbitrary"] }
 pernixc_term = { path = "../term", features = ["arbitrary"] }
-pernixc_query = { path = "../../base/query" }
 proptest = { workspace = true }
 tokio = { workspace = true }
 

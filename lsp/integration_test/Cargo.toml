@@ -14,8 +14,6 @@ path = "snapshot/mod.rs"
 
 [dev-dependencies]
 pernix_server = { path = "../server" }
-pernixc_query = { path = "../../compiler/base/query" }
-pernixc_register = { path = "../../compiler/base/register" }
 pernixc_source_file = { path = "../../compiler/base/source_file" }
 pernixc_target = { path = "../../compiler/base/target" }
 tower-lsp = { workspace = true }

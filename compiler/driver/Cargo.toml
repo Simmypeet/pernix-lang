@@ -13,12 +13,10 @@ pernixc_source_file = { path = "../base/source_file" }
 pernixc_diagnostic = { path = "../base/diagnostic" }
 pernixc_handler = { path = "../base/handler" }
 pernixc_target = { path = "../base/target" }
-pernixc_query = { path = "../base/query" }
 pernixc_corelib = { path = "../semantic/corelib" }
 pernixc_symbol = { path = "../semantic/symbol" }
 pernixc_symbol_impl = { path = "../semantic/symbol_impl" }
 pernixc_check = { path = "../semantic/check" }
-pernixc_register = { path = "../base/register" }
 pernixc_llvm = { path = "../codegen/llvm" }
 codespan-reporting = { workspace = true }
 inkwell = { workspace = true }

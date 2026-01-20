@@ -8,11 +8,8 @@ rust-version.workspace = true
 
 [dependencies]
 pernixc_arena = { path = "../../base/arena" }
-pernixc_query = { path = "../../base/query" }
 pernixc_target = { path = "../../base/target" }
 pernixc_source_file = { path = "../../base/source_file" }
-pernixc_stable_hash = { path = "../../base/stable_hash" }
-pernixc_serialize = { path = "../../base/serialize" }
 pernixc_handler = { path = "../../base/handler" }
 pernixc_extend = { path = "../../base/extend" }
 pernixc_diagnostic = { path = "../../base/diagnostic" }

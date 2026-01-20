@@ -1,8 +1,0 @@
----
-source: compiler/base/serialize/src/ron/ser/test.rs
-expression: "to_ron_string_with_config(&text, config.clone()).unwrap()"
----
-Text {
-    content: "Hello, world!",
-    urgent: false,
-}
