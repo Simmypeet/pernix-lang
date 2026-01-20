@@ -1,5 +1,5 @@
 [package]
-name = "pernixc_hash"
+name = "pernixc_qbice"
 version.workspace = true
 authors.workspace = true
 description.workspace = true
@@ -7,8 +7,8 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-fxhash = { workspace = true }
-dashmap = { workspace = true }
+qbice.workspace = true
+fxhash.workspace = true
 
 [lints]
 workspace = true

@@ -4,17 +4,18 @@
 //! secure has function, but with a performance cost.
 
 /// A type alias for a hash map that uses the `fnv` hash function.
-pub type HashMap<T, V> = std::collections::HashMap<T, V, fnv::FnvBuildHasher>;
+pub type HashMap<T, V> = std::collections::HashMap<T, V, fxhash::FxBuildHasher>;
 
 /// A type alias for a hash set that uses the `fnv` hash function.
-pub type HashSet<T> = std::collections::HashSet<T, fnv::FnvBuildHasher>;
+pub type HashSet<T> = std::collections::HashSet<T, fxhash::FxBuildHasher>;
 
 /// A type alias for a dash map that uses the `fnv` hash function.
-pub type DashMap<T, V> = dashmap::DashMap<T, V, fnv::FnvBuildHasher>;
+pub type DashMap<T, V> = dashmap::DashMap<T, V, fxhash::FxBuildHasher>;
 
 /// A type alias for a dash set that uses the `fnv` hash function.
-pub type DashSet<T> = dashmap::DashSet<T, fnv::FnvBuildHasher>;
+pub type DashSet<T> = dashmap::DashSet<T, fxhash::FxBuildHasher>;
 
 /// A type alias for a read-only view of a dash map that uses the `fnv` hash
 /// function.
-pub type ReadOnlyView<K, V> = dashmap::ReadOnlyView<K, V, fnv::FnvBuildHasher>;
+pub type ReadOnlyView<K, V> =
+    dashmap::ReadOnlyView<K, V, fxhash::FxBuildHasher>;

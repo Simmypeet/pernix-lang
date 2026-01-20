@@ -20,7 +20,7 @@ flexstr = { workspace = true }
 dashmap = { workspace = true }
 getset = { workspace = true }
 codespan-reporting = { workspace = true }
-fnv = { workspace = true }
+fxhash = { workspace = true }
 siphasher = { workspace = true }
 rayon = { workspace = true }
 

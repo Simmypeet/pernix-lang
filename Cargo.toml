@@ -20,6 +20,7 @@ members = [
     "compiler/base/query_derive",
     "compiler/base/tokio",
     "compiler/base/register",
+    "compiler/base/qbice",
     "compiler/base/transitive_closure",
 
     "compiler/syntax/lexical",
@@ -50,6 +51,7 @@ members = [
     "compiler/driver",
     "compiler/main",
     "compiler/e2e",
+
 
     # tidy-alphabetical-end
 ]
@@ -111,7 +113,7 @@ assert_cmd = "2.0.16"
 backtrace = "0.3.69"
 toml = { version = "0.9.8", features = ["display"] }
 codespan-reporting = { version = "0.13.1" }
-fnv = "1.0.7"
+fxhash = "0.2.1"
 macro_rules_attribute = { version = "0.2.0", features = ["verbose-expansions"] }
 smallbox = { version = "0.8.6" }
 quote = { version = "1.0.28", features = ["proc-macro"] }
@@ -146,6 +148,7 @@ sled = { version = "0.34.7" }
 stacker = "0.1.21"
 serde_json = { version = "1.0.96" }
 fuzzy-matcher = { version = "0.3.7" }
+qbice = { version = "0.3.0" }
 
 [patch.crates-io]
 inkwell = { git = "https://github.com/Simmypeet/inkwell", rev = "4366f7b37b4e732b4c567494077f3d871e2a2a60" }
