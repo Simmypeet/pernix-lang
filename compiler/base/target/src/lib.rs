@@ -6,11 +6,9 @@ use clap::{Args, Subcommand, builder::styling};
 use derive_new::new;
 use enum_as_inner::EnumAsInner;
 use flexstr::SharedStr;
-use pernixc_extend::extend;
 use pernixc_hash::HashSet;
-use pernixc_query::TrackedEngine;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use pernixc_qbice::TrackedEngine;
+use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use rand::Rng;
 use siphasher::sip128::Hasher128;
 
@@ -28,21 +26,25 @@ pub mod arbitrary;
     Ord,
     Hash,
     Default,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
-pub struct TargetID(u128);
+pub struct TargetID {
+    lo: u64,
+    hi: u64,
+}
 
 impl TargetID {
     /// Represents a `core` target which is included in every compilation.
-    pub const CORE: Self = Self(0);
+    pub const CORE: Self = Self { lo: 0, hi: 0 };
 
     /// A placeholder target ID commonly used for testings.
-    pub const TEST: Self = Self(1);
+    pub const TEST: Self = Self { lo: 1, hi: 0 };
 
     /// Creates a new [`TargetID`] from the given ID.
     #[must_use]
+    #[allow(clippy::cast_possible_truncation)]
     pub fn new(id: u128) -> Self {
         assert!(
             id != 0,
@@ -50,7 +52,7 @@ impl TargetID {
              to obtain the core target"
         );
 
-        Self(id)
+        Self { lo: id as u64, hi: (id >> 64) as u64 }
     }
 
     /// Creates a new [`TargetID`] from the given name.
@@ -63,7 +65,12 @@ impl TargetID {
 
         sip_hasher.write(name.as_bytes());
 
-        Self(sip_hasher.finish128().into())
+        let hash = sip_hasher.finish128();
+
+        let lo = hash.h1;
+        let hi = hash.h2;
+
+        Self { lo, hi }
     }
 
     /// Creates a new [`Global`] identifier from the given [`TargetID`] and the
@@ -85,8 +92,8 @@ impl TargetID {
     Ord,
     Hash,
     Default,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
     new,
 )]
@@ -108,8 +115,8 @@ pub struct Global<ID> {
     Ord,
     Hash,
     Args,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Input {
@@ -174,8 +181,8 @@ impl Input {
     Ord,
     Hash,
     Args,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Output {
@@ -196,8 +203,8 @@ pub struct Output {
     Ord,
     Hash,
     Args,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Run {
@@ -223,8 +230,8 @@ pub struct Run {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
     Args,
 )]
@@ -243,8 +250,8 @@ pub struct Check {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
     Args,
 )]
@@ -277,9 +284,9 @@ pub struct Build {
     Hash,
     Subcommand,
     EnumAsInner,
-    Serialize,
+    Encode,
+    Decode,
     StableHash,
-    Deserialize,
 )]
 pub enum Command {
     /// Compiles the program as an executable binary and runs it.
@@ -317,8 +324,8 @@ impl Command {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
     clap::ValueEnum,
 )]
@@ -347,8 +354,8 @@ pub enum OptimizationLevel {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
     clap::ValueEnum,
 )]
@@ -385,8 +392,8 @@ pub enum TargetKind {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
     clap::Parser,
 )]
@@ -407,16 +414,17 @@ pub struct Arguments {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
-    pernixc_query::Key,
+    qbice::Query,
 )]
 #[value(Arc<Arguments>)]
-#[extend(method(get_invocation_arguments), no_cyclic)]
-pub struct Key(pub TargetID);
-
-pernixc_register::register!(Key);
+#[extend(name = get_invocation_arguments, by_val)]
+pub struct Key {
+    /// The target ID of the compilation session.
+    pub target_id: TargetID,
+}
 
 #[must_use]
 const fn get_styles() -> clap::builder::Styles {
@@ -469,22 +477,35 @@ const fn get_styles() -> clap::builder::Styles {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
-    pernixc_query::Key,
+    qbice::Query,
 )]
-#[value(Arc<HashMap<SharedStr, TargetID>>)]
+#[value(Arc<HashMap<Interned<str>, TargetID>>)]
+#[extend(name = get_target_map)]
 pub struct MapKey;
 
-pernixc_register::register!(MapKey);
-
-/// Gets the map from the name of the target to its ID.
-#[extend]
-pub async fn get_target_map(
-    self: &TrackedEngine,
-) -> Arc<HashMap<SharedStr, TargetID>> {
-    self.query(&MapKey).await.expect("should have no cyclic dependencies")
+/// A query for retrieving the linked targets of a given target ID.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    qbice::Query,
+)]
+#[value(Arc<HashSet<TargetID>>)]
+#[extend(name = get_linked_targets, by_val)]
+pub struct LinkKey {
+    /// The target ID to retrieve the linked targets for.
+    pub target_id: TargetID,
 }
 
 /// A query for retrieving the linked targets of a given target ID.
@@ -497,46 +518,23 @@ pub async fn get_target_map(
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
-    pernixc_query::Key,
-)]
-#[value(Arc<HashSet<TargetID>>)]
-#[extend(method(get_linked_targets), no_cyclic)]
-pub struct LinkKey(pub TargetID);
-
-pernixc_register::register!(LinkKey);
-
-/// A query for retrieving the linked targets of a given target ID.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Serialize,
-    Deserialize,
-    StableHash,
-    pernixc_query::Key,
+    qbice::Query,
 )]
 #[value(u64)]
-#[extend(method(get_target_seed), no_cyclic)]
-pub struct SeedKey(pub TargetID);
+#[extend(name = get_target_seed, by_val)]
+pub struct SeedKey {
+    /// The target ID to retrieve the seed for.
+    pub target_id: TargetID,
+}
 
-pernixc_register::register!(SeedKey, SeedExecutor);
-
-/// Gets the initial random seed for ID generation.
-#[pernixc_query::executor(key(SeedKey), name(SeedExecutor))]
-#[allow(clippy::unnecessary_wraps, clippy::unused_async)]
-pub async fn target_seed_executor(
-    _: &SeedKey,
-    _: &TrackedEngine,
-) -> Result<u64, pernixc_query::runtime::executor::CyclicError> {
-    Ok(rand::rng().random())
+/// The executor that uses rabndom number generator to produce a target seed.
+#[qbice::executor(config = pernixc_qbice::Config)]
+#[allow(clippy::unused_async)]
+pub async fn target_seed_executor(_: &SeedKey, _: &TrackedEngine) -> u64 {
+    rand::rng().random()
 }
 
 /// A query for retrieving the `TargetID` that's currently being compiled in
@@ -551,22 +549,13 @@ pub async fn target_seed_executor(
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
-    pernixc_query::Key,
+    Encode,
+    Decode,
+    qbice::Query,
 )]
 #[value(TargetID)]
+#[extend(name = get_local_target_id, by_val)]
 pub struct LocalTargetIDKey;
-
-pernixc_register::register!(LocalTargetIDKey);
-
-/// Gets the `TargetID` that's currently being compiled in the current session.
-#[extend]
-async fn get_local_target_id(self: &TrackedEngine) -> TargetID {
-    self.query(&LocalTargetIDKey)
-        .await
-        .expect("should have no cyclic dependencies")
-}
 
 /// A query for retrieving all the target IDs, including the downstream
 /// dependencies.
@@ -580,23 +569,10 @@ async fn get_local_target_id(self: &TrackedEngine) -> TargetID {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
-    pernixc_query::Key,
+    Encode,
+    Decode,
+    qbice::Query,
 )]
 #[value(Arc<HashSet<TargetID>>)]
+#[extend(name = get_all_target_ids)]
 pub struct AllTargetIDsKey;
-
-pernixc_register::register!(AllTargetIDsKey);
-
-/// Retrieves all the target IDs possible in the current session.
-///
-/// This includes all the target IDs of all the downstream dependencies.
-#[extend]
-pub async fn get_all_target_ids(
-    self: &TrackedEngine,
-) -> Arc<HashSet<TargetID>> {
-    self.query(&AllTargetIDsKey)
-        .await
-        .expect("should have no cyclic dependencies")
-}

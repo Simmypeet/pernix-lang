@@ -12,6 +12,7 @@ arbitrary = ["dep:proptest"]
 [dependencies]
 pernixc_hash = { path = "../hash" }
 pernixc_extend = { path = "../extend" }
+pernixc_qbice.path = "../qbice"
 derive-new = { workspace = true }
 clap = { workspace = true }
 enum-as-inner = { workspace = true }
@@ -19,6 +20,7 @@ flexstr = { workspace = true }
 rand = { workspace = true }
 siphasher = { workspace = true }
 proptest = { workspace = true, optional = true }
+qbice.workspace = true
 
 [dev-dependencies]
 proptest = { workspace = true }

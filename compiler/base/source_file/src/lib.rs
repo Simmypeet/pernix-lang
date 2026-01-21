@@ -1002,12 +1002,15 @@ pub async fn calculate_path_id(
     Serialize,
     Deserialize,
     StableHash,
-    pernixc_query::Key,
+    qbice::Query,
 )]
 #[value(Arc<Path>)]
-#[extend(method(get_source_file_path), no_cyclic)]
+#[extend(name = get_source_file_path, by_val)]
 // we be implemented in the downstream crates
-pub struct FilePathKey(pub Global<pernixc_arena::ID<SourceFile>>);
+pub struct FilePathKey {
+    /// The ID of the source file.
+    pub id: Global<pernixc_arena::ID<SourceFile>>,
+}
 
 /// Obtains the [`Arc<SourceFile>`] by its associated ID.
 #[pernixc_extend::extend]

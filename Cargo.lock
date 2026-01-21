@@ -1719,6 +1719,7 @@ dependencies = [
  "pernixc_arena",
  "pernixc_extend",
  "pernixc_target",
+ "qbice",
  "rayon",
  "siphasher",
  "thiserror 2.0.18",
@@ -1791,7 +1792,9 @@ dependencies = [
  "flexstr",
  "pernixc_extend",
  "pernixc_hash",
+ "pernixc_qbice",
  "proptest",
+ "qbice",
  "rand",
  "siphasher",
 ]
@@ -2063,9 +2066,9 @@ dependencies = [
 
 [[package]]
 name = "qbice"
-version = "0.3.0"
+version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c840664ea295e3745285f5260c9bd7795a65e6cde6ffe95d931239a30ff51614"
+checksum = "1a31728a20434b7e84db9d6e865b76129e89e0cbea9fa1ae19626cf29b432ffe"
 dependencies = [
  "crossbeam",
  "dashmap 6.1.0",
@@ -2085,9 +2088,9 @@ dependencies = [
 
 [[package]]
 name = "qbice_derive"
-version = "0.1.0"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f8e614333b59f7e01a8f0d75d9c75b58169e174fb14ee7942808630daf7850b"
+checksum = "ba4e12c1755b62f60d0934c7de35f30f9e594a371d6befb558c43a9bbea4d916"
 dependencies = [
  "proc-macro2 1.0.105",
  "qbice_identifiable_derive_lib",
@@ -2118,9 +2121,9 @@ dependencies = [
 
 [[package]]
 name = "qbice_serialize"
-version = "0.1.1"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6734f923628b58fbb4d78170b27246c482d18a0cc3dd7bd72f93c4f0674954ae"
+checksum = "34e174127c37f75439308fb5f74fb1b7896dbe22ef6d3f9e5155f5941026d5dc"
 dependencies = [
  "dashmap 6.1.0",
  "qbice_serialize_derive",
@@ -2139,9 +2142,9 @@ dependencies = [
 
 [[package]]
 name = "qbice_stable_hash"
-version = "0.1.3"
+version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "55e9a46e52055650fb9db91b88f37a7f7593eaeb9fa62f464532537de9dfd16c"
+checksum = "b2c185032bc28a75a023681930f85397abb9a4b9e597627119f40f04dd57ca7c"
 dependencies = [
  "dashmap 6.1.0",
  "flexstr",
@@ -2153,9 +2156,9 @@ dependencies = [
 
 [[package]]
 name = "qbice_stable_hash_derive"
-version = "0.1.1"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33a0cdf5477748d1668f17152070c984fbdf4162cdd90c2c9771ba64d0277d6b"
+checksum = "84d190422d77261cdd525680282c5461fa584902b3af15e6365d65779ea2cce1"
 dependencies = [
  "proc-macro2 1.0.105",
  "quote 1.0.43",
@@ -2164,9 +2167,9 @@ dependencies = [
 
 [[package]]
 name = "qbice_stable_type_id"
-version = "0.1.3"
+version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7fdf71092cf5e63e552773041681fdeee08d860b7b8fa39dba31234ebf47efdf"
+checksum = "e6f9bba58f547cf17d3ad34007a612d0f684152f90bc5af80be561536ca1eb6f"
 dependencies = [
  "qbice_identifiable_derive",
  "qbice_serialize",
@@ -2175,9 +2178,9 @@ dependencies = [
 
 [[package]]
 name = "qbice_storage"
-version = "0.4.0"
+version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a13df0673922c19d03a8cd3ed7be44f5f71cbdd8327770e540f87ae93a9ff649"
+checksum = "bbf201c1b9233b997c7f4680d41a3a7dea53e584a8ccc4bf28f03288e4afade9"
 dependencies = [
  "crossbeam-channel",
  "crossbeam-deque",

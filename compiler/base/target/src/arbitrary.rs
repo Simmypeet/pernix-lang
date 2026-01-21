@@ -9,7 +9,9 @@ impl Arbitrary for TargetID {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        u128::arbitrary().prop_map(Self).boxed()
+        (proptest::num::u64::ANY, proptest::num::u64::ANY)
+            .prop_map(|(lo, hi)| Self { lo, hi })
+            .boxed()
     }
 }
 
