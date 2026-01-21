@@ -11,10 +11,7 @@ use std::{
 };
 
 use pernixc_hash::HashMap;
-use pernixc_serialize::{
-    Deserialize, Serialize, de::Deserializer, ser::Serializer,
-};
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode, StableHash, stable_hash::StableHasher};
 use state::{Generator, Rebind, State};
 
 use crate::state::FreeGenerator;
@@ -90,41 +87,73 @@ impl<T> std::hash::Hash for ID<T> {
 }
 
 impl<T> StableHash for ID<T> {
-    fn stable_hash<H: pernixc_stable_hash::StableHasher + ?Sized>(
-        &self,
-        state: &mut H,
-    ) {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
         self.index.stable_hash(state);
     }
 }
 
-impl<S: Serializer<E>, E, T> Serialize<S, E> for ID<T> {
-    fn serialize(
+impl<T> Encode for ID<T> {
+    fn encode<E: qbice::serialize::Encoder + ?Sized>(
         &self,
-        serializer: &mut S,
-        extension: &E,
-    ) -> Result<(), S::Error> {
-        self.index.serialize(serializer, extension)
+        encoder: &mut E,
+        plugin: &qbice::serialize::Plugin,
+        session: &mut qbice::serialize::session::Session,
+    ) -> std::io::Result<()> {
+        self.index.encode(encoder, plugin, session)
     }
 }
 
-impl<D: Deserializer<E>, E, T> Deserialize<D, E> for ID<T> {
-    fn deserialize(
-        deserializer: &mut D,
-        extension: &E,
-    ) -> Result<Self, D::Error> {
-        u64::deserialize(deserializer, extension).map(Self::new)
+impl<T> Decode for ID<T> {
+    fn decode<D: qbice::serialize::Decoder + ?Sized>(
+        decoder: &mut D,
+        plugin: &qbice::serialize::Plugin,
+        session: &mut qbice::serialize::session::Session,
+    ) -> std::io::Result<Self> {
+        let index = u64::decode(decoder, plugin, session)?;
+
+        Ok(Self::new(index))
     }
 }
 
 /// Represents a collection of items of type `T` that can be referenced by an
 /// [`ID`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(ser_bound(G: Serialize<__S, __E>, G::ID: Serialize<__S, __E>, T: Serialize<__S, __E>))]
-#[serde(de_bound(G: Deserialize<__D, __E>, G::ID: Deserialize<__D, __E>, T: Deserialize<__D, __E>))]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arena<T, G: State<T> = state::Serial> {
     generator: G,
     items: HashMap<G::ID, T>,
+}
+
+impl<T: Encode, G: Encode + State<T>> Encode for Arena<T, G>
+where
+    G::ID: Encode,
+{
+    fn encode<E: qbice::serialize::Encoder + ?Sized>(
+        &self,
+        encoder: &mut E,
+        plugin: &qbice::serialize::Plugin,
+        session: &mut qbice::serialize::session::Session,
+    ) -> std::io::Result<()> {
+        self.generator.encode(encoder, plugin, session)?;
+        self.items.encode(encoder, plugin, session)?;
+
+        Ok(())
+    }
+}
+
+impl<T: Decode, G: Decode + State<T>> Decode for Arena<T, G>
+where
+    G::ID: Decode,
+{
+    fn decode<D: qbice::serialize::Decoder + ?Sized>(
+        decoder: &mut D,
+        plugin: &qbice::serialize::Plugin,
+        session: &mut qbice::serialize::session::Session,
+    ) -> std::io::Result<Self> {
+        let generator = G::decode(decoder, plugin, session)?;
+        let items = HashMap::<G::ID, T>::decode(decoder, plugin, session)?;
+
+        Ok(Self { generator, items })
+    }
 }
 
 // skipcq: RS-W1111 this doesn't require G::ID to be `Default`
@@ -138,10 +167,7 @@ impl<T: StableHash, G: State<T> + StableHash> StableHash for Arena<T, G>
 where
     G::ID: StableHash,
 {
-    fn stable_hash<H: pernixc_stable_hash::StableHasher + ?Sized>(
-        &self,
-        state: &mut H,
-    ) {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
         self.generator.stable_hash(state);
         self.items.stable_hash(state);
     }
@@ -333,12 +359,43 @@ impl<'a, T, G: State<T>> IntoIterator for &'a mut Arena<T, G> {
 
 /// A wrapper around an [`Arena`] that also keeps track of the order in which
 /// items were inserted.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(ser_bound(G: Serialize<__S, __E>, G::ID: Serialize<__S, __E>, T: Serialize<__S, __E>))]
-#[serde(de_bound(G: Deserialize<__D, __E>, G::ID: Deserialize<__D, __E>, T: Deserialize<__D, __E>))]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OrderedArena<T, G: State<T> = state::Serial> {
     arena: Arena<T, G>,
     order: Vec<G::ID>,
+}
+
+impl<T: Encode, G: Encode + State<T>> Encode for OrderedArena<T, G>
+where
+    G::ID: Encode,
+{
+    fn encode<E: qbice::serialize::Encoder + ?Sized>(
+        &self,
+        encoder: &mut E,
+        plugin: &qbice::serialize::Plugin,
+        session: &mut qbice::serialize::session::Session,
+    ) -> std::io::Result<()> {
+        self.arena.encode(encoder, plugin, session)?;
+        self.order.encode(encoder, plugin, session)?;
+
+        Ok(())
+    }
+}
+
+impl<T: Decode, G: Decode + State<T>> Decode for OrderedArena<T, G>
+where
+    G::ID: Decode,
+{
+    fn decode<D: qbice::serialize::Decoder + ?Sized>(
+        decoder: &mut D,
+        plugin: &qbice::serialize::Plugin,
+        session: &mut qbice::serialize::session::Session,
+    ) -> std::io::Result<Self> {
+        let arena = Arena::<T, G>::decode(decoder, plugin, session)?;
+        let order = Vec::<G::ID>::decode(decoder, plugin, session)?;
+
+        Ok(Self { arena, order })
+    }
 }
 
 impl<T, G: State<T> + Default> Default for OrderedArena<T, G> {
@@ -350,10 +407,7 @@ where
     G::ID: StableHash,
     T: StableHash,
 {
-    fn stable_hash<H: pernixc_stable_hash::StableHasher + ?Sized>(
-        &self,
-        state: &mut H,
-    ) {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
         self.arena.stable_hash(state);
         self.order.stable_hash(state);
     }
