@@ -14,7 +14,6 @@ pernixc_target = { path = "../../base/target" }
 pernixc_lexical = { path = "../../syntax/lexical" }
 pernixc_term = { path = "../term" }
 pernixc_symbol = { path = "../symbol" }
-flexstr = { workspace = true }
 
 [lints]
 workspace = true

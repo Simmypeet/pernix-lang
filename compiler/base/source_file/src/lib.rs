@@ -16,25 +16,23 @@ use dashmap::{
     DashMap,
     mapref::one::{MappedRef, Ref, RefMut},
 };
-use flexstr::SharedStr;
 use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
 use pernixc_extend::extend;
-use pernixc_query::{
-    TrackedEngine,
-    runtime::{self, executor::CyclicError},
-};
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::{StableHash, Value};
-use pernixc_stable_type_id::Identifiable;
+use pernixc_qbice::TrackedEngine;
 use pernixc_target::{
     Global, TargetID, get_invocation_arguments, get_target_seed,
 };
+use qbice::{
+    Decode, Encode, StableHash,
+    stable_hash::{StableHasher, Value},
+    storage::intern::Interned,
+};
 use rayon::{iter::ParallelIterator, slice::ParallelSlice};
-use siphasher::sip::SipHasher24;
+use siphasher::{sip::SipHasher24, sip128::Hasher128};
 
 /// Represents an source file input for the compiler.
-#[derive(Clone, PartialEq, Eq, Hash, Getters, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, Getters, Encode, Decode)]
 pub struct SourceFile {
     content: String,
 
@@ -48,7 +46,7 @@ pub struct SourceFile {
 }
 
 /// Parallel hash function for the content of the source file.
-fn file_content_hash<H: pernixc_stable_hash::StableHasher + ?Sized>(
+fn file_content_hash<H: StableHasher + ?Sized>(
     content: &str,
     hasher: &mut H,
 ) -> H::Hash {
@@ -64,10 +62,7 @@ fn file_content_hash<H: pernixc_stable_hash::StableHasher + ?Sized>(
 }
 
 impl StableHash for SourceFile {
-    fn stable_hash<H: pernixc_stable_hash::StableHasher + ?Sized>(
-        &self,
-        state: &mut H,
-    ) {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
         let hash = file_content_hash(self.content(), state);
         hash.stable_hash(state);
 
@@ -443,8 +438,8 @@ pub type ByteIndex = usize;
     Hash,
     Getters,
     CopyGetters,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Span<L> {
@@ -666,7 +661,7 @@ fn get_line_byte_positions(text: &str) -> Vec<Range<usize>> {
 }
 
 /// A map of source files, accessing through the [`GlobalSourceID`].
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Encode, Decode)]
 pub struct SourceMap {
     source_files_by_id: DashMap<GlobalSourceID, SourceFile>,
 }
@@ -687,18 +682,20 @@ impl SourceMap {
         source: SourceFile,
     ) -> LocalSourceID {
         let patb = &source.path;
-        let mut hasher = FnvHasher::default();
+        let mut hasher = siphasher::sip128::SipHasher24::default();
         patb.hash(&mut hasher);
 
-        let finalize_hash = |hasher: FnvHasher| {
+        let finalize_hash = |hasher: siphasher::sip128::SipHasher24| {
             let mut attempt = 0;
             loop {
-                // for some reason, FnvHasher doesn't implement `Clone` trait.
-                // this is the work around to clone
-                let mut final_hasher = FnvHasher::with_key(hasher.finish());
+                let mut final_hasher = hasher;
                 attempt.hash(&mut final_hasher);
 
-                let candidate_branch_id = ID::new(final_hasher.finish());
+                let hash128 = final_hasher.finish128();
+                let lo = hash128.h1;
+                let hi = hash128.h2;
+
+                let candidate_branch_id = LocalSourceID { lo, hi };
 
                 // avoid hash collision
                 if !self
@@ -838,13 +835,29 @@ impl<'a> codespan_reporting::files::Files<'a> for SourceMap {
     }
 }
 
-/// A type alias for the [`ID`] type with a [`SourceFile`] as the inner type,
-/// used for identifying source files in the local target.
-pub type LocalSourceID = ID<SourceFile>;
+/// A type that uniquely identifies a source file within a single target.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    StableHash,
+    Encode,
+    Decode,
+)]
+pub struct LocalSourceID {
+    lo: u64,
+    hi: u64,
+}
 
 /// A type alias for the [`Global`] type with a [`LocalSourceID`] as the inner
 /// type, used for identifying source files across different targets.
-pub type GlobalSourceID = Global<ID<SourceFile>>;
+pub type GlobalSourceID = Global<LocalSourceID>;
 
 /// Query for loading source files content from the file system.
 ///
@@ -859,20 +872,19 @@ pub type GlobalSourceID = Global<ID<SourceFile>>;
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
-    Identifiable,
+    Encode,
+    Decode,
     StableHash,
+    qbice::Query,
 )]
+#[value(Result<Arc<SourceFile>, Error>)]
 pub struct Key {
     /// The path to load the source file.
-    pub path: Arc<Path>,
+    pub path: Interned<Path>,
 
     /// The target that requested the source file loading
     pub target_id: TargetID,
 }
-
-pernixc_register::register!(Key, Executor, skip_cache, always_recompute);
 
 /// The string formatted error from the [`std::io::Error`] when loading
 /// the source file.
@@ -884,40 +896,13 @@ pernixc_register::register!(Key, Executor, skip_cache, always_recompute);
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
     thiserror::Error,
 )]
-#[error("{0}")]
-pub struct Error(pub SharedStr);
-
-impl pernixc_query::Key for Key {
-    /// The [`Ok`] value represents the source file content, while the [`Err`]
-    /// is the string to report the error.
-    type Value = Result<Arc<SourceFile>, Error>;
-}
-
-/// An executor for the [`Key`] query that loads the source file from the file
-/// system.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct Executor;
-
-impl runtime::executor::Executor<Key> for Executor {
-    const ALWAYS_RECOMPUTE: bool = true;
-
-    async fn execute(
-        &self,
-        _: &TrackedEngine,
-        key: &Key,
-    ) -> Result<Result<Arc<SourceFile>, Error>, CyclicError> {
-        Ok(std::fs::File::open(key.path.as_ref())
-            .and_then(|file| {
-                Ok(Arc::new(SourceFile::load(file, key.path.to_path_buf())?))
-            })
-            .map_err(|x| Error(x.to_string().into())))
-    }
-}
+#[error("{}", self.0.as_ref())]
+pub struct Error(pub Interned<str>);
 
 /// An error that occurs when calculating the source file path ID.
 #[derive(Debug, thiserror::Error)]
@@ -999,14 +984,13 @@ pub async fn calculate_path_id(
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
     qbice::Query,
 )]
-#[value(Arc<Path>)]
+#[value(Interned<Path>)]
 #[extend(name = get_source_file_path, by_val)]
-// we be implemented in the downstream crates
 pub struct FilePathKey {
     /// The ID of the source file.
     pub id: Global<pernixc_arena::ID<SourceFile>>,
@@ -1021,7 +1005,8 @@ pub async fn get_source_file_by_id(
     let source_path = self.get_source_file_path(id).await;
     let target_id = id.target_id;
 
-    self.query(&Key { path: source_path, target_id }).await.unwrap().unwrap()
+    self.query(&Key { path: source_path, target_id }).await.unwrap()
 }
+
 #[cfg(test)]
 mod test;

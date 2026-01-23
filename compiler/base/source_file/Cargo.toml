@@ -10,8 +10,8 @@ rust-version.workspace = true
 pernixc_arena = { path = "../arena" }
 pernixc_target = { path = "../target" }
 pernixc_extend = { path = "../extend" }
+pernixc_qbice.path = "../qbice"
 thiserror = { workspace = true }
-flexstr = { workspace = true }
 dashmap = { workspace = true }
 getset = { workspace = true }
 codespan-reporting = { workspace = true }

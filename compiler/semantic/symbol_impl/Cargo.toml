@@ -20,7 +20,6 @@ pernixc_arena = { path = "../../base/arena" }
 pernixc_tokio = { path = "../../base/tokio" }
 pernixc_parser = { path = "../../syntax/parser" }
 codespan-reporting = { workspace = true }
-flexstr = { workspace = true }
 tokio = { workspace = true }
 
 

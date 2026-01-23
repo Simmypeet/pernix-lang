@@ -3,8 +3,10 @@
 use std::hash::BuildHasherDefault;
 
 use fxhash::FxHasher64;
+use linkme::distributed_slice;
 use qbice::{
     Identifiable,
+    program::Registration,
     stable_hash::{SeededStableHasherBuilder, Sip128Hasher},
     storage::kv_database::rocksdb::RocksDB,
 };
@@ -36,3 +38,12 @@ pub type Engine = qbice::Engine<Config>;
 /// Type alias for the tracked [`qbice::Engine`] with configuration set to
 /// [`Config`].
 pub type TrackedEngine = qbice::TrackedEngine<Config>;
+
+/// Distributed slice for registering all the executors required for Pernix
+/// compiler.
+///
+/// All of the executors required to run Pernix compiler should be registered
+/// to this distributed slice. This is to avoid having one main central place
+/// to register all the executor, which would be a merge conflict nightmare.
+#[distributed_slice]
+pub static PERNIX_PROGRAM: [Registration<Config>];

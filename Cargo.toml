@@ -41,6 +41,7 @@ members = [
     "compiler/driver",
     "compiler/main",
     "compiler/e2e",
+    "compiler/base/source_file_impl",
 
 
     # tidy-alphabetical-end
@@ -49,7 +50,6 @@ resolver = "2"
 
 [workspace.dependencies]
 mimalloc = { version = "0.1.47" }
-flexstr = { version = "0.9.2" }
 derive_more = { version = "2.0.1", features = [
     "display",
     "deref",
@@ -138,7 +138,8 @@ sled = { version = "0.34.7" }
 stacker = "0.1.21"
 serde_json = { version = "1.0.96" }
 fuzzy-matcher = { version = "0.3.7" }
-qbice = { version = "0.3.6" }
+qbice = { version = "0.3.8" }
+linkme = { version = "0.3.35" }
 
 [patch.crates-io]
 inkwell = { git = "https://github.com/Simmypeet/inkwell", rev = "4366f7b37b4e732b4c567494077f3d871e2a2a60" }

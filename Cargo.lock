@@ -1073,6 +1073,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkme"
+version = "0.3.35"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5e3283ed2d0e50c06dd8602e0ab319bb048b6325d0bba739db64ed8205179898"
+dependencies = [
+ "linkme-impl",
+]
+
+[[package]]
+name = "linkme-impl"
+version = "0.3.35"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5cec0ec4228b4853bb129c84dbf093a27e6c7a20526da046defc334a1b017f7"
+dependencies = [
+ "proc-macro2 1.0.105",
+ "quote 1.0.43",
+ "syn 2.0.114",
+]
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1300,7 +1320,6 @@ version = "0.1.0-beta.2"
 dependencies = [
  "bon",
  "env_logger",
- "flexstr",
  "fuzzy-matcher",
  "getset",
  "log",
@@ -1324,6 +1343,16 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tower-lsp",
+]
+
+[[package]]
+name = "pernix_source_file_impl"
+version = "0.1.0-beta.2"
+dependencies = [
+ "linkme",
+ "pernixc_qbice",
+ "pernixc_source_file",
+ "qbice",
 ]
 
 [[package]]
@@ -1363,7 +1392,6 @@ dependencies = [
  "derive_more",
  "drain_filter_polyfill",
  "enum-as-inner",
- "flexstr",
  "getset",
  "pernixc_arena",
  "pernixc_corelib",
@@ -1518,7 +1546,6 @@ dependencies = [
  "derive-new",
  "derive_more",
  "enum-as-inner",
- "flexstr",
  "getset",
  "pernixc_arena",
  "pernixc_diagnostic",
@@ -1560,7 +1587,6 @@ dependencies = [
  "codespan-reporting",
  "derive_more",
  "enum-as-inner",
- "flexstr",
  "fxhash",
  "getset",
  "pernixc_arena",
@@ -1626,7 +1652,6 @@ version = "0.1.0-beta.2"
 dependencies = [
  "derive_more",
  "enum-as-inner",
- "flexstr",
  "getset",
  "pernixc_arena",
  "pernixc_diagnostic",
@@ -1645,6 +1670,7 @@ name = "pernixc_qbice"
 version = "0.1.0-beta.2"
 dependencies = [
  "fxhash",
+ "linkme",
  "qbice",
 ]
 
@@ -1655,7 +1681,6 @@ dependencies = [
  "bon",
  "derive_more",
  "enum-as-inner",
- "flexstr",
  "pernixc_diagnostic",
  "pernixc_extend",
  "pernixc_handler",
@@ -1674,7 +1699,6 @@ dependencies = [
 name = "pernixc_semantic_element"
 version = "0.1.0-beta.2"
 dependencies = [
- "flexstr",
  "pernixc_arena",
  "pernixc_hash",
  "pernixc_lexical",
@@ -1690,7 +1714,6 @@ version = "0.1.0-beta.2"
 dependencies = [
  "derive_more",
  "enum-as-inner",
- "flexstr",
  "pernixc_arena",
  "pernixc_diagnostic",
  "pernixc_handler",
@@ -1713,11 +1736,11 @@ version = "0.1.0-beta.2"
 dependencies = [
  "codespan-reporting",
  "dashmap 6.1.0",
- "flexstr",
  "fxhash",
  "getset",
  "pernixc_arena",
  "pernixc_extend",
+ "pernixc_qbice",
  "pernixc_target",
  "qbice",
  "rayon",
@@ -1732,7 +1755,6 @@ dependencies = [
  "derive-new",
  "derive_more",
  "enum-as-inner",
- "flexstr",
  "pernixc_arena",
  "pernixc_diagnostic",
  "pernixc_extend",
@@ -1750,7 +1772,6 @@ name = "pernixc_symbol_impl"
 version = "0.1.0-beta.2"
 dependencies = [
  "codespan-reporting",
- "flexstr",
  "pernixc_arena",
  "pernixc_diagnostic",
  "pernixc_extend",
@@ -1789,7 +1810,6 @@ dependencies = [
  "clap",
  "derive-new",
  "enum-as-inner",
- "flexstr",
  "pernixc_extend",
  "pernixc_hash",
  "pernixc_qbice",
@@ -1807,7 +1827,6 @@ dependencies = [
  "derive-new",
  "derive_more",
  "enum-as-inner",
- "flexstr",
  "getset",
  "paste",
  "pernixc_arena",
@@ -2066,9 +2085,9 @@ dependencies = [
 
 [[package]]
 name = "qbice"
-version = "0.3.6"
+version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a31728a20434b7e84db9d6e865b76129e89e0cbea9fa1ae19626cf29b432ffe"
+checksum = "8a52a800fadf23d3962f9531bd77e79e888a4c2dc6c2732c9359baee6519c438"
 dependencies = [
  "crossbeam",
  "dashmap 6.1.0",
@@ -2088,9 +2107,9 @@ dependencies = [
 
 [[package]]
 name = "qbice_derive"
-version = "0.1.2"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba4e12c1755b62f60d0934c7de35f30f9e594a371d6befb558c43a9bbea4d916"
+checksum = "9e1e3daf0bd273faa38b6c8f5dabb2276557a36aa2b9f09c9cf64ba64ea6bea9"
 dependencies = [
  "proc-macro2 1.0.105",
  "qbice_identifiable_derive_lib",
@@ -2178,9 +2197,9 @@ dependencies = [
 
 [[package]]
 name = "qbice_storage"
-version = "0.4.4"
+version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbf201c1b9233b997c7f4680d41a3a7dea53e584a8ccc4bf28f03288e4afade9"
+checksum = "3d52b7f284a801cda5b49c0b00e641ba4584ce08f1b105fcf549126f2f4c6030"
 dependencies = [
  "crossbeam-channel",
  "crossbeam-deque",

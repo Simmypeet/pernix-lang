@@ -19,7 +19,6 @@ pernixc_source_file = { path = "../../base/source_file" }
 pernixc_syntax = { path = "../../syntax/syntax" }
 pernixc_lexical = { path = "../../syntax/lexical" }
 siphasher = { workspace = true }
-flexstr = { workspace = true }
 enum-as-inner = { workspace = true }
 derive_more = { workspace = true }
 derive-new = { workspace = true }

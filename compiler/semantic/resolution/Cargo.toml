@@ -18,7 +18,6 @@ pernixc_syntax = { path = "../../syntax/syntax" }
 pernixc_symbol = { path = "../symbol" }
 pernixc_term = { path = "../term" }
 pernixc_semantic_element = { path = "../semantic_element" }
-flexstr = { workspace = true }
 bon = { workspace = true }
 enum-as-inner = { workspace = true }
 derive_more = { workspace = true }

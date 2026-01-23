@@ -5,7 +5,6 @@ use std::{collections::HashMap, hash::Hasher, path::PathBuf, sync::Arc};
 use clap::{Args, Subcommand, builder::styling};
 use derive_new::new;
 use enum_as_inner::EnumAsInner;
-use flexstr::SharedStr;
 use pernixc_hash::HashSet;
 use pernixc_qbice::TrackedEngine;
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
@@ -157,17 +156,14 @@ pub struct Input {
 impl Input {
     /// Returns the target name of the input file.
     #[must_use]
-    pub fn target_name(&self) -> SharedStr {
-        self.target_name
-            .clone()
-            .unwrap_or_else(|| {
-                self.file
-                    .file_stem()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .into_owned()
-            })
-            .into()
+    pub fn target_name(&self) -> String {
+        self.target_name.clone().unwrap_or_else(|| {
+            self.file
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned()
+        })
     }
 }
 

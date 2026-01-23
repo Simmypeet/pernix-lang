@@ -28,7 +28,6 @@ paste = { workspace = true }
 thiserror = { workspace = true }
 derive-new = { workspace = true }
 proptest = { workspace = true, optional = true }
-flexstr = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

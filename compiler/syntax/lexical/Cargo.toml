@@ -28,7 +28,6 @@ derive_more = { workspace = true }
 bimap = { workspace = true }
 proptest = { workspace = true, optional = true }
 fxhash = { workspace = true }
-flexstr = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
