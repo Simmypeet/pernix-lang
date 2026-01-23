@@ -1471,7 +1471,9 @@ version = "0.1.0-beta.2"
 dependencies = [
  "bon",
  "derive-new",
+ "pernixc_qbice",
  "pernixc_source_file",
+ "qbice",
 ]
 
 [[package]]
