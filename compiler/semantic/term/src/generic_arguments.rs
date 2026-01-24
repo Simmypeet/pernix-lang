@@ -2,13 +2,12 @@
 
 use std::{fmt::Write, ops::Not};
 
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{
     name::{get_name, get_qualified_name},
     parent::get_parent,
 };
 use pernixc_target::Global;
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     constant::Constant,
@@ -32,8 +31,8 @@ pub mod arbitrary;
     Ord,
     Hash,
     Default,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct GenericArguments {
@@ -68,7 +67,7 @@ impl GenericArguments {
 impl crate::display::Display for GenericArguments {
     async fn fmt(
         &self,
-        engine: &pernixc_query::TrackedEngine,
+        engine: &pernixc_qbice::TrackedEngine,
         formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
         if !formatter.configuration().generic_arguments_will_be_displayed(self)
@@ -184,8 +183,8 @@ impl Element for Constant {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Symbol {
@@ -206,8 +205,8 @@ pub struct Symbol {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct MemberSymbol {
@@ -394,8 +393,8 @@ impl GenericArguments {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     derive_more::Deref,
     derive_more::DerefMut,
 )]
@@ -404,7 +403,7 @@ pub struct TraitMember(pub MemberSymbol);
 impl crate::display::Display for TraitMember {
     async fn fmt(
         &self,
-        engine: &pernixc_query::TrackedEngine,
+        engine: &pernixc_qbice::TrackedEngine,
         formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
         self.0.fmt(engine, formatter).await
@@ -424,12 +423,12 @@ impl GenericArguments {
 impl crate::display::Display for Symbol {
     async fn fmt(
         &self,
-        engine: &pernixc_query::TrackedEngine,
+        engine: &pernixc_qbice::TrackedEngine,
         formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
         if formatter.configuration().short_qualified_identifiers() {
             let name = engine.get_name(self.id).await;
-            write!(formatter, "{name}")?;
+            write!(formatter, "{}", &*name)?;
         } else {
             let qualified_name = engine.get_qualified_name(self.id).await;
             write!(formatter, "{qualified_name}")?;
@@ -442,7 +441,7 @@ impl crate::display::Display for Symbol {
 impl crate::display::Display for MemberSymbol {
     async fn fmt(
         &self,
-        engine: &pernixc_query::TrackedEngine,
+        engine: &pernixc_qbice::TrackedEngine,
         formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
         let parent_id = self
@@ -455,7 +454,7 @@ impl crate::display::Display for MemberSymbol {
         self.parent_generic_arguments.fmt(engine, formatter).await?;
 
         let name = engine.get_name(self.id).await;
-        write!(formatter, "::{name}")?;
+        write!(formatter, "::{}", &*name)?;
 
         self.member_generic_arguments.fmt(engine, formatter).await?;
 

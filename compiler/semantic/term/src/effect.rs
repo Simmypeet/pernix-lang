@@ -3,8 +3,7 @@
 
 use std::collections::BTreeSet;
 
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode, StableHash};
 
 use crate::generic_arguments::Symbol;
 
@@ -18,8 +17,8 @@ use crate::generic_arguments::Symbol;
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     derive_more::From,
     derive_more::Deref,
     derive_more::DerefMut,
@@ -38,8 +37,8 @@ pub struct Unit(pub Symbol);
     Hash,
     Default,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct Effect {
     /// The individual effects that compose this set of effects.

@@ -4,11 +4,10 @@ use std::{collections::BTreeMap, hash::Hash};
 
 use pernixc_arena::ID;
 use pernixc_extend::extend;
-use pernixc_query::{TrackedEngine, runtime::executor};
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::{MemberID, parent::get_parent};
 use pernixc_target::Global;
+use qbice::{Decode, Encode, StableHash};
 
 use super::{
     sub_term::TermLocation,
@@ -36,8 +35,8 @@ use crate::{
     Hash,
     Default,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 #[allow(missing_docs)]
 pub struct Instantiation {
@@ -371,17 +370,14 @@ pub async fn get_instantiation(
     self: &TrackedEngine,
     id: Global<pernixc_symbol::ID>,
     generic_arguments: GenericArguments,
-) -> Result<
-    Result<Instantiation, MismatchedGenericArgumentCountError>,
-    executor::CyclicError,
-> {
-    let generic_parameters = self.get_generic_parameters(id).await?;
+) -> Result<Instantiation, MismatchedGenericArgumentCountError> {
+    let generic_parameters = self.get_generic_parameters(id).await;
 
-    Ok(Instantiation::from_generic_arguments(
+    Instantiation::from_generic_arguments(
         generic_arguments,
         id,
         &generic_parameters,
-    ))
+    )
 }
 
 /// Retrieves the [`Instantiation`] for the given associated symbol ID with the
@@ -392,35 +388,27 @@ pub async fn get_instantiation_for_associated_symbol(
     id: Global<pernixc_symbol::ID>,
     parent_generic_arguments: GenericArguments,
     member_generic_arguments: GenericArguments,
-) -> Result<
-    Result<Instantiation, MismatchedGenericArgumentCountError>,
-    executor::CyclicError,
-> {
-    let member_generic_parameters = self.get_generic_parameters(id).await?;
-    let mut instantiation = match Instantiation::from_generic_arguments(
+) -> Result<Instantiation, MismatchedGenericArgumentCountError> {
+    let member_generic_parameters = self.get_generic_parameters(id).await;
+    let mut instantiation = Instantiation::from_generic_arguments(
         member_generic_arguments,
         id,
         &member_generic_parameters,
-    ) {
-        Ok(inst) => inst,
-        Err(err) => return Ok(Err(err)),
-    };
+    )?;
 
     let parent_id =
         id.target_id.make_global(self.get_parent(id).await.unwrap());
 
     let parent_generic_parameters =
-        self.get_generic_parameters(parent_id).await?;
+        self.get_generic_parameters(parent_id).await;
 
-    if let Err(err) = instantiation.append_from_generic_arguments(
+    instantiation.append_from_generic_arguments(
         parent_generic_arguments,
         parent_id,
         &parent_generic_parameters,
-    ) {
-        return Ok(Err(err));
-    }
+    )?;
 
-    Ok(Ok(instantiation))
+    Ok(instantiation)
 }
 
 /// A trait for retrieving the instantiation map from the [`Instantiation`]

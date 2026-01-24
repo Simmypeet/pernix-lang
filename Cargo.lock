@@ -1856,14 +1856,17 @@ dependencies = [
  "derive_more",
  "enum-as-inner",
  "getset",
+ "linkme",
  "paste",
  "pernixc_arena",
  "pernixc_extend",
  "pernixc_hash",
  "pernixc_lexical",
+ "pernixc_qbice",
  "pernixc_symbol",
  "pernixc_target",
  "proptest",
+ "qbice",
  "thiserror 2.0.18",
 ]
 

@@ -1,7 +1,6 @@
 use std::fmt::Write;
 
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode, StableHash};
 
 use super::contains_error;
 use crate::{instantiation::Instantiation, r#type::Type};
@@ -16,8 +15,8 @@ use crate::{instantiation::Instantiation, r#type::Type};
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct ConstantType(pub Type);
 
@@ -35,7 +34,7 @@ impl ConstantType {
 impl crate::display::Display for ConstantType {
     async fn fmt(
         &self,
-        engine: &pernixc_query::TrackedEngine,
+        engine: &pernixc_qbice::TrackedEngine,
         formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
         self.0.fmt(engine, formatter).await?;

@@ -3,8 +3,7 @@
 use std::fmt::Write;
 
 use enum_as_inner::EnumAsInner;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     matching::{Match, Matching, Substructural},
@@ -24,8 +23,8 @@ pub mod arbitrary;
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     derive_new::new,
 )]
 pub struct Element<Term> {
@@ -54,8 +53,8 @@ impl<Term> Element<Term> {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct Tuple<Term> {
     /// The elements of the tuple.
@@ -69,7 +68,7 @@ impl<Term> Default for Tuple<Term> {
 impl<T: crate::display::Display> crate::display::Display for Element<T> {
     async fn fmt(
         &self,
-        engine: &pernixc_query::TrackedEngine,
+        engine: &pernixc_qbice::TrackedEngine,
         formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
         if self.is_unpacked {
@@ -83,7 +82,7 @@ impl<T: crate::display::Display> crate::display::Display for Element<T> {
 impl<T: crate::display::Display> crate::display::Display for Tuple<T> {
     async fn fmt(
         &self,
-        engine: &pernixc_query::TrackedEngine,
+        engine: &pernixc_qbice::TrackedEngine,
         formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
         formatter.write_str("(")?;

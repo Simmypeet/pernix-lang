@@ -1,7 +1,6 @@
 use std::fmt::Write;
 
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode, StableHash};
 
 use super::contains_error;
 use crate::{
@@ -19,8 +18,8 @@ use crate::{
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct Tuple<T>(pub T);
 
@@ -46,7 +45,7 @@ impl<T> Tuple<T> {
 impl<T: crate::display::Display> crate::display::Display for Tuple<T> {
     async fn fmt(
         &self,
-        engine: &pernixc_query::TrackedEngine,
+        engine: &pernixc_qbice::TrackedEngine,
         formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
         self.0.fmt(engine, formatter).await?;

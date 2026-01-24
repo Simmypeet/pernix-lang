@@ -1,8 +1,7 @@
 //! Defines the various terms to be used with the type system.
 
 use enum_as_inner::EnumAsInner;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode, StableHash};
 
 pub mod constant;
 pub mod display;
@@ -34,8 +33,8 @@ pub enum Never {}
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 #[allow(missing_docs)]
 pub enum Term {

@@ -3,13 +3,11 @@
 use std::fmt::Write;
 
 use enum_as_inner::EnumAsInner;
-use flexstr::SharedStr;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::TrackedEngine;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::MemberID;
 use pernixc_target::Global;
+use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
 use crate::{
     Never,
@@ -35,8 +33,8 @@ pub mod arbitrary;
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     derive_new::new,
 )]
 pub struct NamedForall {
@@ -47,7 +45,7 @@ pub struct NamedForall {
     pub span: RelativeSpan,
 
     /// The name of the named for all lifetime.
-    pub shared_str: SharedStr,
+    pub shared_str: Interned<str>,
 }
 
 /// From which semantic element the forall lifetime was generated.
@@ -61,8 +59,8 @@ pub struct NamedForall {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub enum FromSemanticElement {
     /// The forall lifetime was generated from a `do Effect` annotation. Where
@@ -82,8 +80,8 @@ pub enum FromSemanticElement {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct GeneratedForall {
     /// The ID of the symbol from which the forall lifetime was generated.
@@ -108,8 +106,8 @@ pub struct GeneratedForall {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     EnumAsInner,
 )]
 #[allow(missing_docs)]
@@ -130,8 +128,8 @@ pub enum Forall {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct ElidedLifetime {
     /// The order in which the elided lifetime was encountered in the function
@@ -152,8 +150,8 @@ pub type ElidedLifetimeID = MemberID<pernixc_arena::ID<ElidedLifetime>>;
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     derive_more::From,
     EnumAsInner,
 )]
@@ -261,9 +259,9 @@ impl crate::display::Display for LifetimeParameterID {
         formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
         let generic_parameters =
-            engine.get_generic_parameters(self.parent_id).await.unwrap();
+            engine.get_generic_parameters(self.parent_id).await;
 
-        write!(formatter, "'{}", generic_parameters.lifetimes()[self.id].name)
+        write!(formatter, "'{}", &*generic_parameters.lifetimes()[self.id].name)
     }
 }
 
@@ -299,7 +297,7 @@ impl crate::display::Display for Lifetime {
                         Box::pin(lt.fmt(engine, formatter)).await
                     }
                     crate::display::InferenceRendering::Rendered(flex_str) => {
-                        write!(formatter, "{flex_str}")
+                        write!(formatter, "{}", flex_str.as_ref())
                     }
                 }
             }
