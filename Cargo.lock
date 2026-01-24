@@ -1778,10 +1778,12 @@ dependencies = [
  "pernixc_extend",
  "pernixc_hash",
  "pernixc_lexical",
+ "pernixc_qbice",
  "pernixc_source_file",
  "pernixc_syntax",
  "pernixc_target",
  "proptest",
+ "qbice",
  "siphasher",
 ]
 
@@ -2733,6 +2735,19 @@ dependencies = [
  "proc-macro2 1.0.105",
  "quote 1.0.43",
  "syn 2.0.114",
+]
+
+[[package]]
+name = "syntax_impl"
+version = "0.1.0-beta.2"
+dependencies = [
+ "linkme",
+ "pernixc_lexical",
+ "pernixc_parser",
+ "pernixc_qbice",
+ "pernixc_source_file",
+ "pernixc_syntax",
+ "qbice",
 ]
 
 [[package]]

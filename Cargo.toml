@@ -43,7 +43,7 @@ members = [
     "compiler/main",
     "compiler/e2e",
     "compiler/base/source_file_impl",
-    "compiler/syntax/lexical_impl",
+    "compiler/syntax/lexical_impl", "compiler/syntax/syntax_impl",
 
 
     # tidy-alphabetical-end

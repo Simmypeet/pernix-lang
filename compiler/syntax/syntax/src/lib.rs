@@ -299,7 +299,7 @@ abstract_tree::abstract_tree! {
 )]
 pub struct Key {
     /// The path to load the source file.
-    pub path: Arc<Path>,
+    pub path: Interned<Path>,
 
     /// The target ID that requested the source file parsing.
     pub target_id: TargetID,
@@ -320,63 +320,8 @@ pub struct Key {
     Decode,
     Query,
 )]
-#[value(Result<Arc<[pernixc_parser::error::Error]>, pernixc_source_file::Error>)]
+#[value(Result<Interned<[pernixc_parser::error::Error]>, pernixc_source_file::Error>)]
 pub struct DiagnosticKey(pub Key);
-
-/*
-
-
-pernixc_register::register!(Key, Executor, skip_cache);
-
-#[pernixc_query::executor(key(Key), name(Executor))]
-#[allow(clippy::type_complexity)]
-pub async fn parse_executor(
-    key: &Key,
-    engine: &TrackedEngine,
-) -> Result<
-    Result<
-        (Option<item::module::Content>, Arc<[pernixc_parser::error::Error]>),
-        pernixc_source_file::Error,
-    >,
-    CyclicError,
-> {
-    // load the token tree
-    let token_tree = match engine
-        .query(&pernixc_lexical::Key {
-            path: key.path.clone(),
-            target_id: key.target_id,
-        })
-        .await?
-    {
-        Ok(source_code) => source_code,
-        Err(error) => return Ok(Err(error)),
-    };
-
-    let (module, errors) = item::module::Content::parse(&token_tree.0);
-
-    Ok(Ok((module, Arc::from(errors.into_boxed_slice()))))
-}
-
-
-pernixc_register::register!(DiagnosticKey, DiagnosticExecutor);
-
-#[pernixc_query::executor(key(DiagnosticKey), name(DiagnosticExecutor))]
-#[allow(clippy::type_complexity)]
-pub async fn diagnostic_executor(
-    DiagnosticKey(key): &DiagnosticKey,
-    engine: &TrackedEngine,
-) -> Result<
-    Result<Arc<[pernixc_parser::error::Error]>, pernixc_source_file::Error>,
-    CyclicError,
-> {
-    let token_tree = match engine.query(key).await? {
-        Ok(token_tree) => token_tree,
-        Err(error) => return Ok(Err(error)),
-    };
-
-    Ok(Ok(token_tree.1))
-}
-*/
 
 #[cfg(test)]
 mod test;
