@@ -1,14 +1,12 @@
 //! Contains the query representing the `import` statement.
 
-use std::sync::Arc;
-
-use flexstr::SharedStr;
 use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeLocation;
-use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::Span;
-use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
+use qbice::{
+    Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned,
+};
 
 /// Represents a single symbol being imported into the current scope.
 #[derive(
@@ -20,9 +18,10 @@ use pernixc_target::Global;
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
+    Identifiable,
 )]
 pub struct Import {
     /// The ID of the symbol being imported.
@@ -42,11 +41,14 @@ pub struct Import {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
-    pernixc_query::Key,
+    Query,
 )]
-#[value(Arc<HashMap<SharedStr, Import>>)]
-#[extend(method(get_import_map), no_cyclic)]
-pub struct Key(pub Global<pernixc_symbol::ID>);
+#[value(Interned<HashMap<Interned<str>, Import>>)]
+#[extend(name = get_import_map, by_val)]
+pub struct Key {
+    /// The global ID of the module symbol.
+    pub symbol_id: Global<pernixc_symbol::ID>,
+}

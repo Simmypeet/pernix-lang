@@ -1719,13 +1719,17 @@ dependencies = [
 name = "pernixc_semantic_element"
 version = "0.1.0-beta.2"
 dependencies = [
+ "linkme",
  "pernixc_arena",
+ "pernixc_extend",
  "pernixc_hash",
  "pernixc_lexical",
+ "pernixc_qbice",
  "pernixc_source_file",
  "pernixc_symbol",
  "pernixc_target",
  "pernixc_term",
+ "qbice",
 ]
 
 [[package]]

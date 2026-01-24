@@ -1,11 +1,10 @@
 //! Contains the definition of [`Variance`] and [`Variances`] query.
-use std::sync::Arc;
-
 use pernixc_hash::HashMap;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 use pernixc_term::generic_parameters::{LifetimeParameter, TypeParameter};
+use qbice::{
+    Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned,
+};
 
 /// Representing a variance used by the sub-typing system to determine the
 /// relationship between two types.
@@ -20,8 +19,9 @@ use pernixc_term::generic_parameters::{LifetimeParameter, TypeParameter};
     Hash,
     Default,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
+    Identifiable,
 )]
 pub enum Variance {
     /// The term is covariant and can be changed to a subtype.
@@ -104,13 +104,10 @@ impl Variance {
     Eq,
     Default,
     StableHash,
-    Serialize,
-    Deserialize,
-    pernixc_query::Value,
+    Encode,
+    Decode,
+    Identifiable,
 )]
-#[id(Global<pernixc_symbol::ID>)]
-#[extend(method(get_variances))]
-#[value(Arc<Variances>)]
 pub struct Variances {
     /// Maps the lifetime parameter ID to its variance.
     pub variances_by_lifetime_ids:
@@ -119,4 +116,26 @@ pub struct Variances {
     /// Maps the type parameter ID to its variance.
     pub variances_by_type_ids:
         HashMap<pernixc_arena::ID<TypeParameter>, Variance>,
+}
+
+/// Query key for retrieving the variances of a symbol.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Query,
+)]
+#[value(Interned<Variances>)]
+#[extend(name = get_variances, by_val)]
+pub struct Key {
+    /// The global ID of the struct or enum symbol.
+    pub symbol_id: Global<pernixc_symbol::ID>,
 }

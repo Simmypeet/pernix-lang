@@ -7,7 +7,9 @@ use derive_new::new;
 use enum_as_inner::EnumAsInner;
 use pernixc_hash::HashSet;
 use pernixc_qbice::TrackedEngine;
-use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
+use qbice::{
+    Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
+};
 use rand::Rng;
 use siphasher::sip128::Hasher128;
 
@@ -94,6 +96,7 @@ impl TargetID {
     Encode,
     Decode,
     StableHash,
+    Identifiable,
     new,
 )]
 pub struct Global<ID> {

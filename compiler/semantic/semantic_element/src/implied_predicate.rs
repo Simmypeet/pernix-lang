@@ -4,14 +4,13 @@
 use std::sync::Arc;
 
 use pernixc_hash::HashSet;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 use pernixc_term::{
     lifetime::Lifetime,
     predicate::{Outlives, Predicate},
     r#type::Type,
 };
+use qbice::{Decode, Encode, Identifiable, Query, StableHash};
 
 /// The enumeration of all predicates that can be implied by the compiler.
 #[derive(
@@ -23,8 +22,9 @@ use pernixc_term::{
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
+    Identifiable,
 )]
 #[allow(missing_docs)]
 pub enum ImpliedPredicate {
@@ -57,10 +57,13 @@ impl From<ImpliedPredicate> for Predicate {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
-    pernixc_query::Key,
+    Encode,
+    Decode,
+    Query,
 )]
 #[value(Arc<HashSet<ImpliedPredicate>>)]
-#[extend(method(get_implied_predicates))]
-pub struct Key(pub Global<pernixc_symbol::ID>);
+#[extend(name = get_implied_predicates, by_val)]
+pub struct Key {
+    /// The global ID of the function symbol.
+    pub symbol_id: Global<pernixc_symbol::ID>,
+}

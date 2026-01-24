@@ -1,13 +1,12 @@
 //! Contains the [`Parameters`] definition.
 
-use std::sync::Arc;
-
 use pernixc_arena::{Arena, ID};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 use pernixc_term::r#type::Type;
+use qbice::{
+    Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned,
+};
 
 /// Represents a parameter in a function signature. `PATTERN: TYPE`
 #[derive(
@@ -19,8 +18,9 @@ use pernixc_term::r#type::Type;
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
+    Identifiable,
 )]
 pub struct Parameter {
     /// The type of the parameter.
@@ -38,19 +38,38 @@ pub struct Parameter {
     Eq,
     Default,
     StableHash,
-    Serialize,
-    Deserialize,
-    pernixc_query::Value,
+    Encode,
+    Decode,
+    Identifiable,
 )]
-#[id(Global<pernixc_symbol::ID>)]
-#[value(Arc<Parameters>)]
-#[extend(method(get_parameters))]
 pub struct Parameters {
     /// The parameters of the function.
     pub parameters: Arena<Parameter>,
 
     /// The order of the parameters.
     pub parameter_order: Vec<ID<Parameter>>,
+}
+
+/// Query key for retrieving the parameters of a function.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Query,
+)]
+#[value(Interned<Parameters>)]
+#[extend(name = get_parameters, by_val)]
+pub struct Key {
+    /// The global ID of the function symbol.
+    pub symbol_id: Global<pernixc_symbol::ID>,
 }
 
 impl Parameters {

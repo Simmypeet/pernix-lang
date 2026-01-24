@@ -1,12 +1,10 @@
 //! Contains the definition of [`WhereClause`] component.
 
-use std::sync::Arc;
-
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
-use pernixc_stable_type_id::Identifiable;
 use pernixc_target::Global;
+use qbice::{
+    Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned,
+};
 
 /// Represents a predicate introduced by either a where clause or implication.
 #[derive(
@@ -19,8 +17,8 @@ use pernixc_target::Global;
     Hash,
     Identifiable,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct Predicate {
     /// The predicate itself.
@@ -43,10 +41,13 @@ pub struct Predicate {
     Default,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
-    pernixc_query::Key,
+    Encode,
+    Decode,
+    Query,
 )]
-#[value(Arc<[Predicate]>)]
-#[extend(method(get_where_clause))]
-pub struct Key(pub Global<pernixc_symbol::ID>);
+#[value(Interned<[Predicate]>)]
+#[extend(name = get_where_clause, by_val)]
+pub struct Key {
+    /// The global ID of the symbol.
+    pub symbol_id: Global<pernixc_symbol::ID>,
+}

@@ -1,11 +1,8 @@
 //! Defines a query for retrieving type alias term from the type alias symbols.
 
-use std::sync::Arc;
-
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 use pernixc_term::r#type::Type;
+use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 
 /// A key for retrieving the type alias of various kinds of type alias symbols.
 #[derive(
@@ -19,10 +16,13 @@ use pernixc_term::r#type::Type;
     Hash,
     Default,
     StableHash,
-    Serialize,
-    Deserialize,
-    pernixc_query::Key,
+    Encode,
+    Decode,
+    Query,
 )]
-#[value(Arc<Type>)]
-#[extend(method(get_type_alias))]
-pub struct Key(pub Global<pernixc_symbol::ID>);
+#[value(Interned<Type>)]
+#[extend(name = get_type_alias, by_val)]
+pub struct Key {
+    /// The global ID of the type alias symbol.
+    pub symbol_id: Global<pernixc_symbol::ID>,
+}
