@@ -15,6 +15,7 @@ use proptest::{
     prop_assert, prop_assert_eq, prop_oneof,
     test_runner::TestCaseResult,
 };
+use qbice::storage::intern::Interned;
 use strum::IntoEnumIterator as _;
 
 pub use super::{Identifier, Keyword, Numeric, Punctuation};
@@ -173,7 +174,7 @@ impl Arbitrary for Identifier {
                     if Keyword::from_str(x.as_ref()).is_ok() {
                         None
                     } else {
-                        Some(Self(x.into()))
+                        Some(Self(Interned::new_duplicating_unsized(x)))
                     }
                 },
             )
@@ -265,7 +266,7 @@ impl Input<Self, ()> for &Punctuation {
 
 impl Display for Numeric {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.0.as_str())
+        f.write_str(self.0.as_ref())
     }
 }
 
@@ -275,7 +276,7 @@ impl Arbitrary for Numeric {
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (proptest::num::u64::ANY.prop_map(|x| x.to_string()))
-            .prop_map(|value| Self(value.into()))
+            .prop_map(|value| Self(Interned::new_duplicating_unsized(value)))
             .boxed()
     }
 }

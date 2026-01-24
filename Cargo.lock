@@ -1594,13 +1594,26 @@ dependencies = [
  "pernixc_arena",
  "pernixc_diagnostic",
  "pernixc_handler",
+ "pernixc_qbice",
  "pernixc_source_file",
  "pernixc_target",
  "pernixc_test_input",
  "proptest",
+ "qbice",
  "strum",
  "strum_macros",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "pernixc_lexical_impl"
+version = "0.1.0-beta.2"
+dependencies = [
+ "pernixc_handler",
+ "pernixc_lexical",
+ "pernixc_qbice",
+ "pernixc_source_file",
+ "qbice",
 ]
 
 [[package]]
@@ -2087,9 +2100,9 @@ dependencies = [
 
 [[package]]
 name = "qbice"
-version = "0.3.8"
+version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a52a800fadf23d3962f9531bd77e79e888a4c2dc6c2732c9359baee6519c438"
+checksum = "2802fdaef1f4616102ba8c1bd117309f6aa562a036422965eab2c2f521c27f87"
 dependencies = [
  "crossbeam",
  "dashmap 6.1.0",
@@ -2199,9 +2212,9 @@ dependencies = [
 
 [[package]]
 name = "qbice_storage"
-version = "0.4.5"
+version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d52b7f284a801cda5b49c0b00e641ba4584ce08f1b105fcf549126f2f4c6030"
+checksum = "a244c39ae3cb4b22d12d5911676d3adbd51ca7e166e90437fb264034e409d9f8"
 dependencies = [
  "crossbeam-channel",
  "crossbeam-deque",

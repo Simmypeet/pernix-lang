@@ -14,6 +14,7 @@ members = [
     "compiler/base/transitive_closure",
 
     "compiler/syntax/lexical",
+    "compiler/syntax/lexical_impl",
     "compiler/syntax/parser",
     "compiler/syntax/syntax",
 
@@ -42,6 +43,7 @@ members = [
     "compiler/main",
     "compiler/e2e",
     "compiler/base/source_file_impl",
+    "compiler/syntax/lexical_impl",
 
 
     # tidy-alphabetical-end
@@ -138,7 +140,7 @@ sled = { version = "0.34.7" }
 stacker = "0.1.21"
 serde_json = { version = "1.0.96" }
 fuzzy-matcher = { version = "0.3.7" }
-qbice = { version = "0.3.8" }
+qbice = { version = "0.3.9" }
 linkme = { version = "0.3.35" }
 
 [patch.crates-io]

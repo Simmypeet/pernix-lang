@@ -7,15 +7,17 @@ use std::{
 
 use derive_more::Deref;
 use enum_as_inner::EnumAsInner;
-use fnv::FnvHasher;
+use fxhash::FxHasher;
 use getset::CopyGetters;
 use pernixc_arena::{Arena, ID, state};
 use pernixc_handler::Handler;
-use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_qbice::Interner;
 use pernixc_source_file::{
     AbsoluteSpan, ByteIndex, GlobalSourceID, Location, SourceFile, Span,
 };
-use pernixc_stable_hash::StableHash;
+use qbice::{
+    Decode, Encode, Identifiable, StableHash, stable_hash::StableHasher,
+};
 use strum_macros::EnumIter;
 
 use crate::{
@@ -43,8 +45,8 @@ pub mod arbitrary;
     Ord,
     Hash,
     EnumIter,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub enum DelimiterKind {
@@ -87,8 +89,8 @@ impl DelimiterKind {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     EnumAsInner,
     StableHash,
 )]
@@ -110,8 +112,8 @@ pub enum FragmentKind {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Delimiter {
@@ -135,8 +137,8 @@ pub struct Delimiter {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Indentation {
@@ -165,8 +167,8 @@ pub struct Indentation {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub enum OffsetMode {
@@ -195,8 +197,8 @@ pub enum OffsetMode {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct RelativeLocation {
@@ -223,8 +225,8 @@ pub type RelativeSpan = Span<RelativeLocation>;
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     EnumAsInner,
     StableHash,
 )]
@@ -243,8 +245,8 @@ pub enum Node {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct FragmentBranch {
@@ -267,8 +269,8 @@ pub struct FragmentBranch {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     EnumAsInner,
     StableHash,
 )]
@@ -289,8 +291,8 @@ pub enum BranchKind {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Branch {
@@ -327,7 +329,7 @@ pub const ROOT_BRANCH_ID: ID<Branch> = ID::new(0);
 ///
 /// This is useful for easy traversal of the tree and for incremental
 /// compilation compatibility.
-#[derive(Debug, Clone, Deref, Serialize, Deserialize, CopyGetters)]
+#[derive(Debug, Clone, Deref, Encode, Decode, CopyGetters, Identifiable)]
 pub struct Tree {
     #[deref]
     arena: Arena<Branch, state::Default>,
@@ -338,10 +340,7 @@ pub struct Tree {
 }
 
 impl StableHash for Tree {
-    fn stable_hash<H: pernixc_stable_hash::StableHasher + ?Sized>(
-        &self,
-        state: &mut H,
-    ) {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
         self.source_id.stable_hash(state);
         self.arena.stable_hash(state);
     }
@@ -359,13 +358,14 @@ impl Tree {
     /// Creates a new [`Tree`] from the given source code and source ID.
     ///
     /// The `source_id` will be assigned to all the spans in the tree.
-    pub fn from_source(
+    pub fn from_source<I: Interner>(
         source: &str,
         source_id: GlobalSourceID,
+        interner: &I,
         handler: &dyn Handler<error::Error>,
     ) -> Self {
         let mut converter = Converter {
-            tokenizer: Tokenizer::new(source, source_id, handler),
+            tokenizer: Tokenizer::new(source, source_id, interner, handler),
             source,
             handler,
             delimiter_stack: Vec::new(),
@@ -384,7 +384,7 @@ impl Tree {
             );
         }
 
-        Converter::make_branch_relative(
+        Converter::<I>::make_branch_relative(
             &mut converter.tree.arena,
             ROOT_BRANCH_ID,
             0,
@@ -521,10 +521,10 @@ struct IndentationMarker {
     colon_index: usize,
 }
 
-struct Converter<'source, 'handler> {
-    tokenizer: Tokenizer<'source, 'handler>,
-    source: &'source str,
-    handler: &'handler dyn Handler<error::Error>,
+struct Converter<'a, I> {
+    tokenizer: Tokenizer<'a, I>,
+    source: &'a str,
+    handler: &'a dyn Handler<error::Error>,
 
     delimiter_stack: Vec<DelimiterMarker>,
     indentation_stack: Vec<IndentationMarker>,
@@ -533,7 +533,7 @@ struct Converter<'source, 'handler> {
     tree: Tree,
 }
 
-impl std::fmt::Debug for Converter<'_, '_> {
+impl<I> std::fmt::Debug for Converter<'_, I> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Converter")
             .field("tokenizer", &self.tokenizer)
@@ -565,7 +565,7 @@ fn calculate_branch_hash<'a>(
     source: &str,
     arena: &Arena<Branch, state::Default>,
 ) -> ID<Branch> {
-    let mut hasher = FnvHasher::default();
+    let mut hasher = FxHasher::default();
     node_kind.hash(&mut hasher);
 
     // hash the string content of the tokens
@@ -583,9 +583,7 @@ fn calculate_branch_hash<'a>(
 
     let mut attempt = 0;
     loop {
-        // for some reason, FnvHasher doesn't implement `Clone` trait.
-        // this is the work around to clone
-        let mut final_hasher = FnvHasher::with_key(hasher.finish());
+        let mut final_hasher = hasher.clone();
         attempt.hash(&mut final_hasher);
 
         let candidate_branch_id = ID::new(final_hasher.finish());
@@ -601,7 +599,7 @@ fn calculate_branch_hash<'a>(
     }
 }
 
-impl Converter<'_, '_> {
+impl<I: Interner> Converter<'_, I> {
     const TAB_INDENT_SIZE: usize = 4;
 
     #[allow(clippy::too_many_lines)]

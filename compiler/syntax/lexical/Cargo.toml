@@ -18,6 +18,8 @@ pernixc_handler = { path = "../../base/handler" }
 pernixc_arena = { path = "../../base/arena" }
 pernixc_target = { path = "../../base/target" }
 pernixc_test_input = { path = "../../base/test_input" }
+pernixc_qbice.path = "../../base/qbice"
+qbice.workspace = true
 codespan-reporting = { workspace = true }
 getset = { workspace = true }
 enum-as-inner = { workspace = true }

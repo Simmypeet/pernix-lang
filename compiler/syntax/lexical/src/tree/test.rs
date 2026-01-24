@@ -1,5 +1,6 @@
 use pernixc_arena::ID;
 use pernixc_handler::Storage;
+use pernixc_qbice::DuplicatingInterner;
 use pernixc_source_file::{SourceFile, SourceMap};
 use pernixc_target::TargetID;
 use pernixc_test_input::Input;
@@ -23,7 +24,14 @@ fn basic_delimiter() {
     let source_content = source_map.get(source_id).unwrap();
 
     let handler = pernixc_handler::Panic;
-    let tree = Tree::from_source(source_content.content(), source_id, &handler);
+    let interner = DuplicatingInterner;
+
+    let tree = Tree::from_source(
+        source_content.content(),
+        source_id,
+        &interner,
+        &handler,
+    );
 
     let root_branch = &tree[ROOT_BRANCH_ID];
 
@@ -83,7 +91,14 @@ fn basic_indentation() {
     let source_content = source_map.get(source_id).unwrap();
 
     let handler = pernixc_handler::Panic;
-    let tree = Tree::from_source(source_content.content(), source_id, &handler);
+    let interner = DuplicatingInterner;
+
+    let tree = Tree::from_source(
+        source_content.content(),
+        source_id,
+        &interner,
+        &handler,
+    );
 
     let root_branch = &tree[ROOT_BRANCH_ID];
 
@@ -150,7 +165,14 @@ fn nested_single_pop_indentation() {
     let source_content = source_map.get(source_id).unwrap();
 
     let handler = pernixc_handler::Panic;
-    let tree = Tree::from_source(source_content.content(), source_id, &handler);
+    let interner = DuplicatingInterner;
+
+    let tree = Tree::from_source(
+        source_content.content(),
+        source_id,
+        &interner,
+        &handler,
+    );
 
     let root_branch = &tree[ROOT_BRANCH_ID];
 
@@ -247,7 +269,14 @@ fn nested_multi_pop_indentation() {
     let source_content = source_map.get(source_id).unwrap();
 
     let handler = pernixc_handler::Panic;
-    let tree = Tree::from_source(source_content.content(), source_id, &handler);
+    let interner = DuplicatingInterner;
+
+    let tree = Tree::from_source(
+        source_content.content(),
+        source_id,
+        &interner,
+        &handler,
+    );
 
     let root_branch = &tree[ROOT_BRANCH_ID];
 
@@ -355,7 +384,14 @@ fn indentation_pop_in_delimiter() {
     let source_content = source_map.get(source_id).unwrap();
 
     let handler = pernixc_handler::Panic;
-    let tree = Tree::from_source(source_content.content(), source_id, &handler);
+    let interner = DuplicatingInterner;
+
+    let tree = Tree::from_source(
+        source_content.content(),
+        source_id,
+        &interner,
+        &handler,
+    );
 
     let root_branch = &tree[ROOT_BRANCH_ID];
 
@@ -439,7 +475,14 @@ fn indentation_pop_all_at_end() {
     let source_content = source_map.get(source_id).unwrap();
 
     let handler = pernixc_handler::Panic;
-    let tree = Tree::from_source(source_content.content(), source_id, &handler);
+    let interner = DuplicatingInterner;
+
+    let tree = Tree::from_source(
+        source_content.content(),
+        source_id,
+        &interner,
+        &handler,
+    );
 
     let root_branch = &tree[ROOT_BRANCH_ID];
 
@@ -504,7 +547,14 @@ fn unclosed_delimiter() {
     let source_content = source_map.get(source_id).unwrap();
 
     let storage = Storage::<Error>::new();
-    let tree = Tree::from_source(source_content.content(), source_id, &storage);
+    let interner = DuplicatingInterner;
+
+    let tree = Tree::from_source(
+        source_content.content(),
+        source_id,
+        &interner,
+        &storage,
+    );
 
     let root_branch = &tree[ROOT_BRANCH_ID];
 
@@ -586,8 +636,14 @@ fn stable_hash_id() {
         let source_content = source_map.get(source_id).unwrap();
 
         let storage = Storage::<Error>::new();
-        let tree =
-            Tree::from_source(source_content.content(), source_id, &storage);
+        let interner = DuplicatingInterner;
+
+        let tree = Tree::from_source(
+            source_content.content(),
+            source_id,
+            &interner,
+            &storage,
+        );
 
         let root_branch = &tree[ROOT_BRANCH_ID];
 
@@ -615,9 +671,12 @@ fn verify_tree(input: &arbitrary::Nodes) -> TestCaseResult {
     let id = TargetID::TEST.make_global(id);
 
     let storage = Storage::<Error>::new();
+    let interner = DuplicatingInterner;
+
     let tree = super::Tree::from_source(
         source_map.get(id).unwrap().content(),
         id,
+        &interner,
         &storage,
     );
 
@@ -647,7 +706,14 @@ fn empty_indentation() {
     let source_content = source_map.get(source_id).unwrap();
 
     let storage = Storage::<Error>::new();
-    let _ = Tree::from_source(source_content.content(), source_id, &storage);
+    let interner = DuplicatingInterner;
+
+    let _ = Tree::from_source(
+        source_content.content(),
+        source_id,
+        &interner,
+        &storage,
+    );
 
     let mut errs = storage.into_vec();
 
@@ -676,9 +742,16 @@ fn invalid_inner_indentation() {
     ));
 
     let source_content = source_map.get(source_id).unwrap();
-    let storage = Storage::<Error>::new();
 
-    let _ = Tree::from_source(source_content.content(), source_id, &storage);
+    let storage = Storage::<Error>::new();
+    let interner = DuplicatingInterner;
+
+    let _ = Tree::from_source(
+        source_content.content(),
+        source_id,
+        &interner,
+        &storage,
+    );
 
     let mut errs = storage.into_vec();
     assert_eq!(errs.len(), 1);

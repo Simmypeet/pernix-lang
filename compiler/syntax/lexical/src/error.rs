@@ -4,10 +4,9 @@
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use pernixc_diagnostic::{ByteIndex, Highlight, Rendered, Report, Severity};
-use pernixc_query::{TrackedEngine, runtime::executor};
-use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_qbice::TrackedEngine;
 use pernixc_source_file::AbsoluteSpan;
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode, Identifiable, StableHash};
 
 use crate::tree::DelimiterKind;
 
@@ -21,8 +20,8 @@ use crate::tree::DelimiterKind;
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct UndelimitedDelimiter {
@@ -34,11 +33,8 @@ pub struct UndelimitedDelimiter {
 }
 
 impl Report for UndelimitedDelimiter {
-    async fn report(
-        &self,
-        _: &TrackedEngine,
-    ) -> Result<Rendered<ByteIndex>, executor::CyclicError> {
-        Ok(Rendered {
+    async fn report(&self, _: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered {
             primary_highlight: Some(Highlight::new(
                 self.opening_span,
                 Some(format!("need to be cloesd with `{}` pair", match self
@@ -57,7 +53,7 @@ impl Report for UndelimitedDelimiter {
                     .to_string(),
             ),
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -71,8 +67,8 @@ impl Report for UndelimitedDelimiter {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct UnterminatedStringLiteral {
@@ -81,11 +77,8 @@ pub struct UnterminatedStringLiteral {
 }
 
 impl Report for UnterminatedStringLiteral {
-    async fn report(
-        &self,
-        _: &TrackedEngine,
-    ) -> Result<Rendered<ByteIndex>, executor::CyclicError> {
-        Ok(Rendered {
+    async fn report(&self, _: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered {
             primary_highlight: Some(Highlight::new(
                 self.span,
                 Some("need to be closed with a double quote".to_string()),
@@ -94,7 +87,7 @@ impl Report for UnterminatedStringLiteral {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -108,8 +101,8 @@ impl Report for UnterminatedStringLiteral {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct InvalidEscapeSequence {
@@ -118,17 +111,14 @@ pub struct InvalidEscapeSequence {
 }
 
 impl Report for InvalidEscapeSequence {
-    async fn report(
-        &self,
-        _: &TrackedEngine,
-    ) -> Result<Rendered<ByteIndex>, executor::CyclicError> {
-        Ok(Rendered {
+    async fn report(&self, _: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered {
             primary_highlight: Some(Highlight::new(self.span, None)),
             message: "found an invalid escape sequence".to_string(),
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -142,8 +132,8 @@ impl Report for InvalidEscapeSequence {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct AvailableIndentation {
@@ -163,8 +153,8 @@ pub struct AvailableIndentation {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct InvalidIndentation {
@@ -179,11 +169,8 @@ pub struct InvalidIndentation {
 }
 
 impl Report for InvalidIndentation {
-    async fn report(
-        &self,
-        _: &TrackedEngine,
-    ) -> Result<Rendered<ByteIndex>, executor::CyclicError> {
-        Ok(Rendered {
+    async fn report(&self, _: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered {
             primary_highlight: Some(Highlight::new(
                 self.span,
                 Some(format!("found {} space(s)", self.found_indentation)),
@@ -204,7 +191,7 @@ impl Report for InvalidIndentation {
                     )
                 })
                 .collect(),
-        })
+        }
     }
 }
 
@@ -218,8 +205,8 @@ impl Report for InvalidIndentation {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct ExpectIndentation {
@@ -231,11 +218,8 @@ pub struct ExpectIndentation {
 }
 
 impl Report for ExpectIndentation {
-    async fn report(
-        &self,
-        _: &TrackedEngine,
-    ) -> Result<Rendered<ByteIndex>, executor::CyclicError> {
-        Ok(Rendered {
+    async fn report(&self, _: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered {
             primary_highlight: Some(Highlight::new(
                 self.span,
                 Some("this is not indented".to_string()),
@@ -247,7 +231,7 @@ impl Report for ExpectIndentation {
                 self.indentation_start,
                 Some("this colon starts the indentation level".to_string()),
             )],
-        })
+        }
     }
 }
 
@@ -261,8 +245,8 @@ impl Report for ExpectIndentation {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct InvalidNewIndentationLevel {
@@ -280,11 +264,8 @@ pub struct InvalidNewIndentationLevel {
 }
 
 impl Report for InvalidNewIndentationLevel {
-    async fn report(
-        &self,
-        _: &TrackedEngine,
-    ) -> Result<Rendered<ByteIndex>, executor::CyclicError> {
-        Ok(Rendered {
+    async fn report(&self, _: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered {
             primary_highlight: Some(Highlight::new(
                 self.span,
                 Some(format!(
@@ -306,7 +287,7 @@ impl Report for InvalidNewIndentationLevel {
                     self.latest_indentation
                 )),
             )],
-        })
+        }
     }
 }
 
@@ -321,8 +302,8 @@ impl Report for InvalidNewIndentationLevel {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct UnexpectedClosingDelimiter {
@@ -334,11 +315,8 @@ pub struct UnexpectedClosingDelimiter {
 }
 
 impl Report for UnexpectedClosingDelimiter {
-    async fn report(
-        &self,
-        _: &TrackedEngine,
-    ) -> Result<Rendered<ByteIndex>, executor::CyclicError> {
-        Ok(Rendered {
+    async fn report(&self, _: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered {
             primary_highlight: Some(Highlight::new(
                 self.span,
                 Some(format!(
@@ -351,7 +329,7 @@ impl Report for UnexpectedClosingDelimiter {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -365,8 +343,8 @@ impl Report for UnexpectedClosingDelimiter {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct MismatchedClosingDelimiter {
@@ -384,13 +362,10 @@ pub struct MismatchedClosingDelimiter {
 }
 
 impl Report for MismatchedClosingDelimiter {
-    async fn report(
-        &self,
-        _: &TrackedEngine,
-    ) -> Result<Rendered<ByteIndex>, executor::CyclicError> {
+    async fn report(&self, _: &TrackedEngine) -> Rendered<ByteIndex> {
         let opening_delimiter_p = self.opening_delimiter.opening_character();
         let closing_delimiter_p = self.closing_delimiter.closing_character();
-        Ok(Rendered {
+        Rendered {
             primary_highlight: Some(Highlight::new(
                 self.span,
                 Some(format!(
@@ -410,7 +385,7 @@ impl Report for MismatchedClosingDelimiter {
                     "has an opening delimiter `{opening_delimiter_p}`",
                 )),
             )],
-        })
+        }
     }
 }
 
@@ -426,9 +401,10 @@ impl Report for MismatchedClosingDelimiter {
     Hash,
     EnumAsInner,
     From,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
+    Identifiable,
 )]
 #[allow(missing_docs)]
 pub enum Error {
@@ -460,10 +436,7 @@ impl Error {
 }
 
 impl Report for Error {
-    async fn report(
-        &self,
-        engine: &TrackedEngine,
-    ) -> Result<Rendered<ByteIndex>, executor::CyclicError> {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         match self {
             Self::UndelimitedDelimiter(err) => err.report(engine).await,
             Self::UnterminatedStringLiteral(err) => err.report(engine).await,

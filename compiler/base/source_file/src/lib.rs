@@ -5,9 +5,9 @@ use std::{
     cmp::Ordering,
     fmt::Debug,
     fs::File,
-    hash::{Hash, Hasher},
+    hash::Hash,
     io::Read,
-    ops::Range,
+    ops::{Not, Range},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -17,7 +17,6 @@ use dashmap::{
     mapref::one::{MappedRef, Ref, RefMut},
 };
 use getset::{CopyGetters, Getters};
-use pernixc_arena::ID;
 use pernixc_extend::extend;
 use pernixc_qbice::TrackedEngine;
 use pernixc_target::{
@@ -29,7 +28,10 @@ use qbice::{
     storage::intern::Interned,
 };
 use rayon::{iter::ParallelIterator, slice::ParallelSlice};
-use siphasher::{sip::SipHasher24, sip128::Hasher128};
+use siphasher::{
+    sip::SipHasher24,
+    sip128::{self, Hasher128},
+};
 
 /// Represents an source file input for the compiler.
 #[derive(Clone, PartialEq, Eq, Hash, Getters, Encode, Decode)]
@@ -929,21 +931,31 @@ pub async fn calculate_path_id(
     self: &TrackedEngine,
     path: &Path,
     target_id: TargetID,
-) -> Result<ID<SourceFile>, std::io::Error> {
+) -> Result<LocalSourceID, std::io::Error> {
     let hasher = SipHasher24::default();
-    let this_canonical_path = std::fs::canonicalize(path)?;
 
     let target_args = self.get_invocation_arguments(target_id).await;
 
-    let target_root_file =
-        std::fs::canonicalize(&target_args.command.input().file)?;
-    let target_directory =
-        target_root_file.parent().unwrap_or_else(|| std::path::Path::new(""));
+    if path.is_absolute().not() {
+        return Err(std::io::Error::other("the given path is not absolute"));
+    }
+
+    if target_args.command.input().file.is_absolute().not() {
+        return Err(std::io::Error::other(
+            "the target root file path is not absolute",
+        ));
+    }
+
+    let target_directory = target_args
+        .command
+        .input()
+        .file
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new(""));
 
     // skip the prefix components to avoid absolute path issues (e.g. \\?\ on
     // Windows)
-    let this_components =
-        this_canonical_path.components().skip(1).collect::<Vec<_>>();
+    let this_components = path.components().skip(1).collect::<Vec<_>>();
     let target_components =
         target_directory.components().skip(1).collect::<Vec<_>>();
 
@@ -961,7 +973,7 @@ pub async fn calculate_path_id(
         }
     }
 
-    let mut hasher = SipHasher24::default();
+    let mut hasher = sip128::SipHasher24::default();
 
     // hash only the relative path from the target directory
     for component in this_components.iter().skip(target_components.len()) {
@@ -971,7 +983,12 @@ pub async fn calculate_path_id(
     let target_seed = self.get_target_seed(target_id).await;
     target_seed.hash(&mut hasher);
 
-    Ok(ID::new(hasher.finish()))
+    let hash128 = hasher.finish128();
+
+    let lo = hash128.h1;
+    let hi = hash128.h2;
+
+    Ok(LocalSourceID { lo, hi })
 }
 
 /// A query for retrieving the a path of the given sourcce file ID.

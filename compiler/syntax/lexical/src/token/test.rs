@@ -1,4 +1,5 @@
 use pernixc_handler::Storage;
+use pernixc_qbice::DuplicatingInterner;
 use pernixc_source_file::{ByteIndex, SourceFile, SourceMap};
 use pernixc_target::TargetID;
 use pernixc_test_input::Input;
@@ -28,8 +29,10 @@ fn tokenize(
     let error_storage: Storage<Error> = Storage::new();
 
     let source_file = source_map.get_mut(id).unwrap();
+    let interner = DuplicatingInterner;
+
     let mut tokenizer =
-        Tokenizer::new(source_file.content(), id, &error_storage);
+        Tokenizer::new(source_file.content(), id, &interner, &error_storage);
 
     let token = tokenizer
         .next()
