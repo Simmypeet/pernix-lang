@@ -15,6 +15,8 @@ pub use pernixc_qbice::Interner as __Interner;
 pub use pernixc_source_file::SourceElement;
 #[doc(hidden)]
 pub use qbice::stable_type_id as __stable_type_id;
+#[doc(hidden)]
+pub use qbice::storage::intern::Interned as __Interned;
 use qbice::{Decode, Encode};
 
 use crate::{
@@ -296,7 +298,7 @@ macro_rules! abstract_tree {
         $(< $($generic_param),* >)?
         (
             #[doc(hidden)]
-            $crate::abstract_tree::__std::sync::Arc<$crate::concrete_tree::Tree>
+            $crate::abstract_tree::__Interned<$crate::concrete_tree::Tree>
             $( ,
                 #[doc(hidden)]
                 $crate::abstract_tree::__std::marker::PhantomData<(
@@ -386,9 +388,7 @@ macro_rules! abstract_tree {
             /// layered on top of.
             #[allow(dead_code)]
             $struct_vis fn inner_tree(&self)
-                -> &$crate::abstract_tree::__std::sync::Arc<
-                    $crate::concrete_tree::Tree
-                >
+                -> &$crate::abstract_tree::__Interned<$crate::concrete_tree::Tree>
             {
                 &self.0
             }
@@ -397,11 +397,11 @@ macro_rules! abstract_tree {
             #[allow(dead_code)]
             $struct_vis fn from_tree(
                 tree:
-                &$crate::abstract_tree::__std::sync::Arc<
+                &$crate::abstract_tree::__Interned<
                     $crate::concrete_tree::Tree
                 >
             ) -> Option<Self> {
-                tree.ast_info.clone().is_some_and(|x|
+                tree.ast_info().cloned().is_some_and(|x|
                     <Self as $crate::abstract_tree::__stable_type_id::Identifiable>::STABLE_TYPE_ID
                         == x.ast_type_id
                 )

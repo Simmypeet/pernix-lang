@@ -1,17 +1,18 @@
 //! Contains the definition of the [`State`].
 
-use std::{collections::HashSet, sync::Arc};
+use std::collections::HashSet;
 
 use enum_as_inner::EnumAsInner;
 use getset::CopyGetters;
 use pernixc_arena::ID;
 use pernixc_lexical::{kind::Kind, token::Token, tree::ROOT_BRANCH_ID};
+use pernixc_qbice::Interner;
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     abstract_tree::AbstractTree,
     cache::Cache,
-    concrete_tree::{self, AstInfo},
+    concrete_tree::{self, AstInfo, Tree},
     error::Error,
     expect::{self, Expected},
 };
@@ -123,7 +124,7 @@ impl Default for Cursor {
     }
 }
 
-impl<'a, 'cache, I> State<'a, 'cache, I> {
+impl<'a, 'cache, I: Interner> State<'a, 'cache, I> {
     /// Creates a new parser state machine that starts at the root of the
     /// token tree and the first node.
     #[must_use]
@@ -684,12 +685,19 @@ impl<'a, 'cache, I> State<'a, 'cache, I> {
 
         assert_eq!(first.ast_type_id, A::STABLE_TYPE_ID);
 
-        let tree =
-            Self::finalize_ast_node(self.tree, first, &mut events, &mut cursor);
+        let tree = Self::finalize_ast_node(
+            self.interner,
+            self.tree,
+            first,
+            &mut events,
+            &mut cursor,
+        );
 
         let tree = tree.map(|tree| {
-            A::from_node(&concrete_tree::Node::Branch(Arc::new(tree)))
-                .expect("should be able to convert the tree to the AST")
+            A::from_node(&concrete_tree::Node::Branch(
+                self.interner.intern(tree),
+            ))
+            .expect("should be able to convert the tree to the AST")
         });
 
         (tree, self.emitted_erorrs)
@@ -697,6 +705,7 @@ impl<'a, 'cache, I> State<'a, 'cache, I> {
 
     #[allow(clippy::too_many_lines)]
     pub(crate) fn finalize_ast_node(
+        interner: &I,
         tree: &pernixc_lexical::tree::Tree,
         ast_info: AstInfo,
         events: &mut impl Iterator<Item = Event>,
@@ -738,25 +747,26 @@ impl<'a, 'cache, I> State<'a, 'cache, I> {
 
             if !is_error && !error_nodes.is_empty() {
                 // if there are error nodes, create an error node
-                let error_node = concrete_tree::Node::Branch(Arc::new(
-                    concrete_tree::Tree {
-                        ast_info: None,
-                        nodes: std::mem::take(&mut error_nodes),
-                    },
-                ));
+                let error_node =
+                    concrete_tree::Node::Branch(interner.intern(Tree::new(
+                        None,
+                        std::mem::take(&mut error_nodes),
+                    )));
 
                 nodes.push(error_node);
             }
 
             match event {
                 Event::NewNode(ast_info) => {
-                    let Some(tree) =
-                        Self::finalize_ast_node(tree, ast_info, events, cursor)
-                    else {
+                    let Some(tree) = Self::finalize_ast_node(
+                        interner, tree, ast_info, events, cursor,
+                    ) else {
                         continue;
                     };
 
-                    nodes.push(concrete_tree::Node::Branch(Arc::new(tree)));
+                    nodes.push(concrete_tree::Node::Branch(
+                        interner.intern(tree),
+                    ));
                 }
 
                 Event::Take(take) => {
@@ -825,10 +835,7 @@ impl<'a, 'cache, I> State<'a, 'cache, I> {
                                 .collect();
 
                             let error_node = concrete_tree::Node::Branch(
-                                Arc::new(concrete_tree::Tree {
-                                    ast_info: None,
-                                    nodes: errors,
-                                }),
+                                interner.intern(Tree::new(None, errors)),
                             );
 
                             nodes.push(error_node);
@@ -842,10 +849,10 @@ impl<'a, 'cache, I> State<'a, 'cache, I> {
                     // done with the current node, pop the stack
                     // if node has no tokens, return None
                     return (finish_cursor.is_some() || !nodes.is_empty())
-                        .then_some(concrete_tree::Tree {
-                            ast_info: Some(ast_info),
+                        .then_some(concrete_tree::Tree::new(
+                            Some(ast_info),
                             nodes,
-                        });
+                        ));
                 }
 
                 Event::Inline(_) => {

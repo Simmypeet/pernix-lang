@@ -1680,6 +1680,7 @@ dependencies = [
  "proptest",
  "qbice",
  "rayon",
+ "siphasher",
 ]
 
 [[package]]
