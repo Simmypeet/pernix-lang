@@ -1010,14 +1010,14 @@ pub async fn calculate_path_id(
 #[extend(name = get_source_file_path, by_val)]
 pub struct FilePathKey {
     /// The ID of the source file.
-    pub id: Global<pernixc_arena::ID<SourceFile>>,
+    pub id: GlobalSourceID,
 }
 
 /// Obtains the [`Arc<SourceFile>`] by its associated ID.
 #[pernixc_extend::extend]
 pub async fn get_source_file_by_id(
     self: &TrackedEngine,
-    id: Global<pernixc_arena::ID<SourceFile>>,
+    id: GlobalSourceID,
 ) -> Arc<SourceFile> {
     let source_path = self.get_source_file_path(id).await;
     let target_id = id.target_id;

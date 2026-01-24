@@ -10,12 +10,11 @@ use pernixc_lexical::{
         RelativeLocation, RelativeSpan,
     },
 };
-use pernixc_query::{TrackedEngine, runtime::executor};
-use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_qbice::TrackedEngine;
 use pernixc_source_file::{
     AbsoluteSpan, GlobalSourceID, Span, get_source_file_path,
 };
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode, Identifiable, StableHash};
 
 use crate::{
     expect::{self, Expected},
@@ -25,7 +24,15 @@ use crate::{
 /// Represents an error of encountering an unexpected token at a certain
 /// possition at its possible expected tokens.
 #[derive(
-    Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, StableHash,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
+    Encode,
+    Decode,
+    StableHash,
+    Identifiable,
 )]
 pub struct Error {
     /// The tokens that are expected at the cursor position.
@@ -251,7 +258,6 @@ async fn found_string(
     let (token_tree, _) = engine
         .query(&pernixc_lexical::Key { path, target_id: source_id.target_id })
         .await
-        .expect("should have no cyclic errors")
         .expect("should have loaded the source file since the parser did");
 
     let branch = &token_tree[at.branch_id];
@@ -353,8 +359,7 @@ impl Report for Error {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let expected_string = self
             .expecteds
             .iter()
@@ -368,12 +373,12 @@ impl Report for Error {
         let message =
             format!("unexpected {found_string}, expected {expected_string}");
 
-        Ok(Rendered {
+        Rendered {
             primary_highlight: Some(Highlight::new(found_span, None)),
             message,
             severity: pernixc_diagnostic::Severity::Error,
             help_message: None,
             related: Vec::default(),
-        })
+        }
     }
 }

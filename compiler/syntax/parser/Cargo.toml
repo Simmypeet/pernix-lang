@@ -14,6 +14,8 @@ pernixc_target = { path = "../../base/target" }
 pernixc_handler = { path = "../../base/handler" }
 pernixc_diagnostic = { path = "../../base/diagnostic" }
 pernixc_hash = { path = "../../base/hash" }
+pernixc_qbice.path = "../../base/qbice"
+qbice.workspace = true
 rayon = { workspace = true }
 getset = { workspace = true }
 enum-as-inner = { workspace = true }

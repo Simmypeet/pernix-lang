@@ -3,13 +3,10 @@
 use std::{collections::HashSet, sync::Arc};
 
 use enum_as_inner::EnumAsInner;
-#[cfg(debug_assertions)]
-use flexstr::SharedStr;
 use getset::CopyGetters;
 use pernixc_arena::ID;
 use pernixc_lexical::{kind::Kind, token::Token, tree::ROOT_BRANCH_ID};
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     abstract_tree::AbstractTree,
@@ -22,7 +19,7 @@ use crate::{
 /// Represents the state machine of the parser. The parser will use this state
 /// machine to scan the token tree and produce a syntax tree.
 #[derive(Debug, CopyGetters)]
-pub struct State<'a, 'cache> {
+pub struct State<'a, 'cache, I> {
     /// The token tree that will be used to scan the source code.
     #[get_copy = "pub"]
     tree: &'a pernixc_lexical::tree::Tree,
@@ -56,6 +53,9 @@ pub struct State<'a, 'cache> {
 
     /// The memoize table
     cache: &'cache mut Cache,
+
+    /// The interner used by the parser.
+    interner: &'a I,
 }
 
 /// Represents a snapshot of the parser state at a certain point in time. This
@@ -105,8 +105,8 @@ pub struct Checkpoint {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Cursor {
@@ -123,13 +123,14 @@ impl Default for Cursor {
     }
 }
 
-impl<'a, 'cache> State<'a, 'cache> {
+impl<'a, 'cache, I> State<'a, 'cache, I> {
     /// Creates a new parser state machine that starts at the root of the
     /// token tree and the first node.
     #[must_use]
     pub(crate) fn new(
         tree: &'a pernixc_lexical::tree::Tree,
         cache: &'cache mut Cache,
+        interner: &'a I,
     ) -> Self {
         Self {
             events: Vec::with_capacity(
@@ -152,6 +153,7 @@ impl<'a, 'cache> State<'a, 'cache> {
                 source_id: tree.source_id(),
             },
             cache,
+            interner,
         }
     }
 
@@ -407,7 +409,7 @@ impl<'a, 'cache> State<'a, 'cache> {
     /// step into the fragment as well.
     pub fn start_node<A: AbstractTree, T>(
         &mut self,
-        op: impl for<'x> FnOnce(&mut State<'a, 'x>) -> T,
+        op: impl for<'x> FnOnce(&mut State<'a, 'x, I>) -> T,
     ) -> (Option<T>, bool) {
         // step into the fragment
         if let Some(some_step_info) = A::step_into_fragment() {
@@ -457,7 +459,7 @@ impl<'a, 'cache> State<'a, 'cache> {
                 ast_type_id: A::STABLE_TYPE_ID,
 
                 #[cfg(debug_assertions)]
-                ast_name: SharedStr::from(std::any::type_name::<A>()),
+                ast_name: std::any::type_name::<A>().to_string(),
 
                 step_into_fragment: Some((branch_id, self.tree.source_id())),
             }));
@@ -471,6 +473,7 @@ impl<'a, 'cache> State<'a, 'cache> {
                 new_line_significant: false,
                 current_error: std::mem::take(&mut self.current_error),
                 cache: self.cache,
+                interner: self.interner,
             };
 
             // operate on the inner fragment state
@@ -491,7 +494,7 @@ impl<'a, 'cache> State<'a, 'cache> {
                 ast_type_id: A::STABLE_TYPE_ID,
 
                 #[cfg(debug_assertions)]
-                ast_name: SharedStr::from(std::any::type_name::<A>()),
+                ast_name: std::any::type_name::<A>().to_string(),
 
                 step_into_fragment: None,
             }));

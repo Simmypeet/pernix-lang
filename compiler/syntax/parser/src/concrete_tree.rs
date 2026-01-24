@@ -4,17 +4,13 @@
 use std::sync::Arc;
 
 use enum_as_inner::EnumAsInner;
-#[cfg(debug_assertions)]
-use flexstr::SharedStr;
 use pernixc_arena::ID;
 use pernixc_lexical::{
     token,
     tree::{OffsetMode, RelativeLocation, RelativeSpan},
 };
-use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::{GlobalSourceID, SourceElement, Span};
-use pernixc_stable_hash::StableHash;
-use pernixc_stable_type_id::StableTypeID;
+use qbice::{Decode, Encode, StableHash, stable_type_id::StableTypeID};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use crate::abstract_tree::AbstractTree;
@@ -29,8 +25,8 @@ use crate::abstract_tree::AbstractTree;
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     EnumAsInner,
     StableHash,
 )]
@@ -211,20 +207,20 @@ impl Node {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 #[allow(missing_copy_implementations)]
 pub struct AstInfo {
-    /// The [`TypeId`] that implements the AST trait for this node. This type
-    /// ID is primarily used to cast the concrete [`Tree`] to the
+    /// The [`StableTypeID`] that implements the AST trait for this node. This
+    /// type ID is primarily used to cast the concrete [`Tree`] to the
     /// [`crate::abstract_tree::AbstractTree`].
     pub ast_type_id: StableTypeID,
 
     /// The name of the AST that created this tree node.
     #[cfg(debug_assertions)]
-    pub ast_name: SharedStr,
+    pub ast_name: String,
 
     /// The id of the branch that this node steps into before start parsing.
     pub step_into_fragment:
@@ -240,8 +236,8 @@ pub struct AstInfo {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Tree {

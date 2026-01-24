@@ -8,11 +8,14 @@ use std::marker::PhantomData;
 pub use pernixc_lexical::tree::RelativeLocation;
 #[doc(hidden)]
 pub use pernixc_lexical::tree::RelativeSpan;
-use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_qbice::Interner;
+#[doc(hidden)]
+pub use pernixc_qbice::Interner as __Interner;
 #[doc(hidden)]
 pub use pernixc_source_file::SourceElement;
 #[doc(hidden)]
-pub use pernixc_stable_type_id as __stable_type_id;
+pub use qbice::stable_type_id as __stable_type_id;
+use qbice::{Decode, Encode};
 
 use crate::{
     cache, error, expect,
@@ -179,7 +182,7 @@ pub trait AbstractTree:
     /// incremental parsing.
     #[must_use = "the parser is lazy and will not parse anything until it is \
                   used, consider using `parse()` to parse the tree immediately"]
-    fn parser() -> impl Parser;
+    fn parser<I: Interner>() -> impl Parser<I>;
 
     /// Returns the fragment that this tree must step into before parsing.
     ///
@@ -193,9 +196,10 @@ pub trait AbstractTree:
     #[must_use]
     fn parse(
         tree: &pernixc_lexical::tree::Tree,
+        interner: &impl Interner,
     ) -> (Option<Self>, Vec<error::Error>) {
         let mut cache = cache::Cache::default();
-        let mut state = state::State::new(tree, &mut cache);
+        let mut state = state::State::new(tree, &mut cache, interner);
 
         let parser = parser::ast::<Self>();
         let result = parser.parse(&mut state);
@@ -285,7 +289,7 @@ macro_rules! abstract_tree {
     } => {
         $( #[$struct_meta] )*
         #[derive($crate::abstract_tree::__stable_type_id::Identifiable)]
-        #[pernixc_stable_type_id($crate::abstract_tree::__stable_type_id)]
+        #[stable_type_id_crate($crate::abstract_tree::__stable_type_id)]
         $struct_vis
         struct
         $struct_name
@@ -325,8 +329,8 @@ macro_rules! abstract_tree {
             {
                 $(
                     #[allow(dead_code)]
-                    fn $field_name()
-                        -> impl $crate::parser::Parser
+                    fn $field_name<I: $crate::abstract_tree::__Interner>()
+                        -> impl $crate::parser::Parser<I>
                         $(+ for<'x> $crate::output::Output<
                                 Extract = $crate::abstract_tree::__extract!(
                                     $($field_attr)?
@@ -364,8 +368,8 @@ macro_rules! abstract_tree {
             );
 
             #[doc(hidden)]
-            fn __parser(
-                state: &mut $crate::state::State
+            fn __parser<I: $crate::abstract_tree::__Interner>(
+                state: &mut $crate::state::State<I>
             ) ->  $crate::abstract_tree::__std::result::Result<
                 (),
                 $crate::parser::Unexpected,
@@ -460,7 +464,7 @@ macro_rules! abstract_tree {
                 $($generic_param),*
             >)?
             {
-                fn parser() -> impl $crate::parser::Parser {
+                fn parser<I: $crate::abstract_tree::__Interner>() -> impl $crate::parser::Parser<I> {
                     Self::__parser
                 }
 
@@ -526,7 +530,7 @@ macro_rules! abstract_tree {
     } => {
         $( #[$enum_meta] )*
         #[derive($crate::abstract_tree::__stable_type_id::Identifiable)]
-        #[pernixc_stable_type_id($crate::abstract_tree::__stable_type_id)]
+        #[stable_type_id_crate($crate::abstract_tree::__stable_type_id)]
         $enum_vis
         enum
         $enum_name
@@ -598,7 +602,8 @@ macro_rules! abstract_tree {
                 $($generic_param),*
             >)?
             {
-                fn parser() -> impl $crate::parser::Parser {
+                fn parser<I: $crate::abstract_tree::__Interner>()
+                    -> impl $crate::parser::Parser<I> {
                     $crate::parser::Choice((
                         $first_parser_expr,
                         $($rest_parser_expr),*
@@ -637,7 +642,7 @@ macro_rules! abstract_tree {
 }
 
 pub use abstract_tree;
-use pernixc_stable_type_id::Identifiable;
+use qbice::stable_type_id::Identifiable;
 
 /// A tagging type
 #[derive(
@@ -648,8 +653,8 @@ use pernixc_stable_type_id::Identifiable;
     Eq,
     Hash,
     Default,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     Identifiable,
 )]
 pub struct First;
@@ -663,8 +668,8 @@ pub struct First;
     Eq,
     Hash,
     Default,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     Identifiable,
 )]
 pub struct Second;
@@ -678,8 +683,8 @@ pub struct Second;
     Eq,
     Hash,
     Default,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     Identifiable,
 )]
 pub struct Third;
@@ -703,8 +708,8 @@ pub struct Third;
     Ord,
     Hash,
     Identifiable,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     derive_more::Deref,
     derive_more::DerefMut,
 )]
@@ -716,7 +721,7 @@ pub struct Tag<T, U>(
 );
 
 impl<T: AbstractTree, U: Identifiable + 'static> AbstractTree for Tag<T, U> {
-    fn parser() -> impl Parser { parser::ast::<T>() }
+    fn parser<I: Interner>() -> impl Parser<I> { parser::ast::<T>() }
 
     fn step_into_fragment() -> Option<expect::Fragment> { None }
 }

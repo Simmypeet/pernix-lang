@@ -1673,10 +1673,12 @@ dependencies = [
  "pernixc_handler",
  "pernixc_hash",
  "pernixc_lexical",
+ "pernixc_qbice",
  "pernixc_source_file",
  "pernixc_target",
  "pernixc_test_input",
  "proptest",
+ "qbice",
  "rayon",
 ]
 
