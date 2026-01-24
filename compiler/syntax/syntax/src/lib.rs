@@ -2,7 +2,7 @@
 
 //! Contains all the definitions of the syntax tree
 
-use std::{path::Path, sync::Arc};
+use std::path::Path;
 
 use enum_as_inner::EnumAsInner;
 use expression::Expression;
