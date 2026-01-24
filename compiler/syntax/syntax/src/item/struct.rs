@@ -1,9 +1,8 @@
 use pernixc_parser::{
     abstract_tree, expect,
-    parser::{Parser as _, ast},
+    parser::{ParserExt, ast},
 };
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     AccessModifier, Identifier, Keyword, Punctuation,
@@ -34,8 +33,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
     )]
     pub struct Field {
         pub access_modifier: AccessModifier = ast::<AccessModifier>(),

@@ -19,6 +19,8 @@ pernixc_parser = { path = "../parser" }
 pernixc_test_input = { path = "../../base/test_input", optional = true }
 pernixc_source_file = { path = "../../base/source_file" }
 pernixc_target = { path = "../../base/target" }
+pernixc_qbice.path = "../../base/qbice"
+qbice.workspace = true
 proptest = { workspace = true, optional = true }
 enum-as-inner = { workspace = true }
 derive_more = { workspace = true }

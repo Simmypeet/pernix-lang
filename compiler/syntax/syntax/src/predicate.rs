@@ -3,7 +3,7 @@ use pernixc_lexical::tree::DelimiterKind;
 use pernixc_parser::{
     abstract_tree::{self, First, Second, Tag},
     expect,
-    parser::{Parser as _, ast},
+    parser::{ParserExt, ast},
 };
 
 use crate::{

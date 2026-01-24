@@ -5,10 +5,9 @@ use enum_as_inner::EnumAsInner;
 use pernixc_lexical::tree::DelimiterKind;
 use pernixc_parser::{
     abstract_tree, expect,
-    parser::{Parser, ast},
+    parser::{ParserExt, ast},
 };
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode, StableHash};
 use terminator::Terminator;
 
 #[cfg(any(test, feature = "arbitrary"))]
@@ -40,8 +39,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
         EnumAsInner
     )]
     pub enum Expression {

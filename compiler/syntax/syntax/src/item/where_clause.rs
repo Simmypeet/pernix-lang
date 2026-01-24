@@ -1,9 +1,8 @@
 use pernixc_parser::{
     abstract_tree, expect,
-    parser::{Parser as _, ast},
+    parser::{ParserExt, ast},
 };
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{Keyword, Passable, predicate::Predicate};
 
@@ -20,8 +19,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
     )]
     #{fragment = expect::Fragment::Indentation}
     pub struct Predicates {
@@ -39,8 +38,8 @@ abstract_tree::abstract_tree! {
         PartialOrd,
         Ord,
         Hash,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
     )]
     pub struct WhereClause {
         pub where_keyword: Keyword = expect::Keyword::Where,

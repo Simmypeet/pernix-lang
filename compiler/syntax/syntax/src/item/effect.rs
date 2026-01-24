@@ -1,6 +1,6 @@
 use pernixc_parser::{
     abstract_tree, expect,
-    parser::{Parser, ast},
+    parser::{ParserExt, ast},
 };
 
 use crate::{

@@ -1,10 +1,9 @@
 use pernixc_parser::{
     abstract_tree::{self, AbstractTree},
     expect,
-    parser::{Parser as _, ast},
+    parser::{ParserExt, ast},
 };
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     AccessModifier, Keyword, QualifiedIdentifier,
@@ -97,8 +96,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize
+        Encode,
+        Decode,
     )]
     pub struct Implements {
         pub signature: Signature = ast::<Signature>(),

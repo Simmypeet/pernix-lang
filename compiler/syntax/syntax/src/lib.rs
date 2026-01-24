@@ -14,12 +14,10 @@ use pernixc_lexical::{
 use pernixc_parser::{
     abstract_tree::{self, AbstractTree},
     expect::{self, Ext as _},
-    parser::{Parser as _, ast, ast_always_step_into_fragment},
+    parser::{ParserExt, ast, ast_always_step_into_fragment},
 };
-use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_target::TargetID;
+use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 use r#type::Type;
 
 pub mod expression;
@@ -63,8 +61,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         EnumAsInner,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
         StableHash
     )]
     pub enum AccessModifier {
@@ -92,8 +90,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize
+        Encode,
+        Decode,
     )]
     pub struct Elided {
         pub first_dot = '.',
@@ -120,8 +118,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize
+        Encode,
+        Decode,
     )]
     pub struct Lifetime {
         pub apostrophe: Punctuation = '\'',
@@ -216,8 +214,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize
+        Encode,
+        Decode,
     )]
     pub struct QualifiedIdentifier {
         pub root: QualifiedIdentifierRoot = ast::<QualifiedIdentifierRoot>(),
@@ -289,13 +287,13 @@ abstract_tree::abstract_tree! {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
-    pernixc_query::Key,
+    Encode,
+    Decode,
+    Query,
 )]
 #[value(
     Result<
-        (Option<item::module::Content>, Arc<[pernixc_parser::error::Error]>),
+        (Option<item::module::Content>, Interned<[pernixc_parser::error::Error]>),
         pernixc_source_file::Error
     >
 )]
@@ -306,6 +304,27 @@ pub struct Key {
     /// The target ID that requested the source file parsing.
     pub target_id: TargetID,
 }
+
+/// A key for retrieving the diagnostics that occurred while parsing the token
+/// tree from the source file.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Query,
+)]
+#[value(Result<Arc<[pernixc_parser::error::Error]>, pernixc_source_file::Error>)]
+pub struct DiagnosticKey(pub Key);
+
+/*
+
 
 pernixc_register::register!(Key, Executor, skip_cache);
 
@@ -338,23 +357,6 @@ pub async fn parse_executor(
     Ok(Ok((module, Arc::from(errors.into_boxed_slice()))))
 }
 
-/// A key for retrieving the diagnostics that occurred while parsing the token
-/// tree from the source file.
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    StableHash,
-    Serialize,
-    Deserialize,
-    pernixc_query::Key,
-)]
-#[value(Result<Arc<[pernixc_parser::error::Error]>, pernixc_source_file::Error>)]
-pub struct DiagnosticKey(pub Key);
 
 pernixc_register::register!(DiagnosticKey, DiagnosticExecutor);
 
@@ -374,6 +376,7 @@ pub async fn diagnostic_executor(
 
     Ok(Ok(token_tree.1))
 }
+*/
 
 #[cfg(test)]
 mod test;

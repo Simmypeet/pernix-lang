@@ -3,10 +3,9 @@
 use pernixc_lexical::tree::DelimiterKind;
 use pernixc_parser::{
     abstract_tree, expect,
-    parser::{Parser, ast},
+    parser::{ParserExt, ast},
 };
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Elided, Ellipsis, Identifier, Keyword, Lifetime, Numeric, Punctuation,
@@ -26,8 +25,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize
+        Encode,
+        Decode,
     )]
     pub enum Primitive {
         Bool(Keyword = expect::Keyword::Bool),
@@ -56,8 +55,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize
+        Encode,
+        Decode,
     )]
     pub struct Reference {
         pub ampersand: Punctuation = '&', pub lifetime: Lifetime = ast::<Lifetime>().optional(),
@@ -76,8 +75,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize
+        Encode,
+        Decode,
     )]
     pub struct Unpackable {
         pub ellipsis: Ellipsis = ast::<Ellipsis>().optional(),
@@ -95,8 +94,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize
+        Encode,
+        Decode,
     )]
     #{fragment = expect::Fragment::Delimited(DelimiterKind::Parenthesis)}
     pub struct Tuple {
@@ -115,8 +114,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize
+        Encode,
+        Decode,
     )]
     #{fragment = expect::Fragment::Delimited(DelimiterKind::Bracket)}
     pub struct Array {
@@ -136,8 +135,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize
+        Encode,
+        Decode,
     )]
     pub struct Pointer {
         pub asterisk: Punctuation = '*',
@@ -156,8 +155,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize
+        Encode,
+        Decode,
     )]
     pub struct Phantom {
         pub phantom: Keyword = expect::Keyword::Phantom,
@@ -175,8 +174,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize
+        Encode,
+        Decode,
     )]
     pub enum Type {
         Primitive(Primitive = ast::<Primitive>()),

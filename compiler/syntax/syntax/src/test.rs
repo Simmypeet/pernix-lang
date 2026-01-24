@@ -1,6 +1,7 @@
 use std::fmt::{Debug, Display};
 
 use pernixc_parser::abstract_tree::AbstractTree;
+use pernixc_qbice::DuplicatingInterner;
 use pernixc_source_file::{GlobalSourceID, SourceFile, SourceMap};
 use pernixc_target::TargetID;
 use pernixc_test_input::Input;
@@ -23,11 +24,13 @@ pub fn parse_token_tree(
         TargetID::TEST,
         SourceFile::new(source_code.to_string(), "test".into()),
     );
+    let interned = DuplicatingInterner;
     let source = source_map.get(TargetID::TEST.make_global(source_id)).unwrap();
 
     let tree = pernixc_lexical::tree::Tree::from_source(
         source.content(),
         TargetID::TEST.make_global(source_id),
+        &interned,
         &pernixc_handler::Panic,
     );
 
@@ -47,7 +50,9 @@ where
     println!("===============================================================");
     let (token_tree, _) = parse_token_tree(&mut source_map, &source);
 
-    let (tree, errors) = TAst::parse(&token_tree);
+    let interned = DuplicatingInterner;
+    let (tree, errors) = TAst::parse(&token_tree, &interned);
+
     let tree = tree.ok_or_else(|| {
         TestCaseError::fail(format!("Failed to parse tree: {errors:?}"))
     })?;
@@ -70,7 +75,9 @@ where
     println!("===============================================================");
     let (token_tree, _) = parse_token_tree(&mut source_map, &source);
 
-    let (tree, errors) = TAst::parse(&token_tree);
+    let interned = DuplicatingInterner;
+    let (tree, errors) = TAst::parse(&token_tree, &interned);
+
     let tree = tree.ok_or_else(|| {
         TestCaseError::fail(format!("Failed to parse tree: {errors:?}"))
     })?;

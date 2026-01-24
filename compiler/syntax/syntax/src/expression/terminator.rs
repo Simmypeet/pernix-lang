@@ -1,10 +1,9 @@
 use enum_as_inner::EnumAsInner;
 use pernixc_parser::{
     abstract_tree, expect,
-    parser::{Parser as _, ast},
+    parser::{ParserExt, ast},
 };
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{Keyword, Label, expression::binary::Binary};
 
@@ -21,8 +20,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
         EnumAsInner
     )]
     pub enum Terminator {
@@ -43,8 +42,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
     )]
     pub struct Return {
         pub return_keyword: Keyword = expect::Keyword::Return,
@@ -62,8 +61,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
     )]
     pub struct Continue {
         pub continue_keyword: Keyword = expect::Keyword::Continue,
@@ -81,8 +80,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
     )]
     pub struct Express {
         pub express_keyword: Keyword = expect::Keyword::Express,
@@ -101,8 +100,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
     )]
     pub struct Break {
         pub break_keyword: Keyword = expect::Keyword::Break,
