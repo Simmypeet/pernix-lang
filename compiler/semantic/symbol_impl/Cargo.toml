@@ -19,6 +19,9 @@ pernixc_lexical = { path = "../../syntax/lexical" }
 pernixc_arena = { path = "../../base/arena" }
 pernixc_tokio = { path = "../../base/tokio" }
 pernixc_parser = { path = "../../syntax/parser" }
+pernixc_qbice = { path = "../../base/qbice" }
+qbice = { workspace = true }
+linkme = { workspace = true }
 codespan-reporting = { workspace = true }
 tokio = { workspace = true }
 

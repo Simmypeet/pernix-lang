@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use flexstr::SharedStr;
 use pernixc_source_file::SourceElement;
-use pernixc_symbol::{calculate_implements_id, kind::Kind};
+use pernixc_symbol::{calculate_implements_id, kind::Kind, member::Member};
+use qbice::storage::intern::Interned;
 use tokio::task::JoinHandle;
 
 use crate::table::builder::{Builder, MemberBuilder};
@@ -78,7 +78,10 @@ impl Builder {
 
             None => {
                 self.insert_kind(implements_id, Kind::PositiveImplementation);
-                self.insert_member(implements_id, Arc::default());
+                self.insert_member(
+                    implements_id,
+                    self.engine().intern(Member::default()),
+                );
 
                 None
             }
@@ -112,7 +115,7 @@ impl Builder {
     async fn handle_positive_implementation(
         &self,
         implements_id: pernixc_symbol::ID,
-        implements_qualified_identifier_sequence: Arc<[SharedStr]>,
+        implements_qualified_identifier_sequence: Arc<[Interned<str>]>,
         body: &pernixc_syntax::item::Body<
             pernixc_syntax::item::implements::Member,
         >,

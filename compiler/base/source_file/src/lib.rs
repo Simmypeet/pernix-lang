@@ -23,7 +23,7 @@ use pernixc_target::{
     Global, TargetID, get_invocation_arguments, get_target_seed,
 };
 use qbice::{
-    Decode, Encode, StableHash,
+    Decode, Encode, Identifiable, StableHash,
     stable_hash::{StableHasher, Value},
     storage::intern::Interned,
 };
@@ -443,6 +443,7 @@ pub type ByteIndex = usize;
     Encode,
     Decode,
     StableHash,
+    Identifiable,
 )]
 pub struct Span<L> {
     /// Gets the start byte index of the span.
@@ -851,6 +852,7 @@ impl<'a> codespan_reporting::files::Files<'a> for SourceMap {
     StableHash,
     Encode,
     Decode,
+    Identifiable,
 )]
 pub struct LocalSourceID {
     lo: u64,

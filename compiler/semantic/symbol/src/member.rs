@@ -1,17 +1,27 @@
 //! Contains the definition of [`Member`] type.
 
-use std::sync::Arc;
-
 use pernixc_extend::extend;
 use pernixc_hash::{HashMap, HashSet};
 use pernixc_qbice::TrackedEngine;
 use pernixc_target::Global;
-use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
+use qbice::{
+    Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned,
+};
 
 use crate::{ID, kind::get_kind};
 
 /// Stores the members of a symbol in a form of `::Member`
-#[derive(Debug, Clone, PartialEq, Eq, Default, Encode, Decode, StableHash)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
+    Encode,
+    Decode,
+    StableHash,
+    Identifiable,
+)]
 pub struct Member {
     /// A map from the member name to its ID.
     ///
@@ -40,7 +50,7 @@ pub struct Member {
     StableHash,
     Query,
 )]
-#[value(Arc<Member>)]
+#[value(Interned<Member>)]
 #[extend(name = get_members, by_val)]
 pub struct Key {
     /// The global ID of the symbol to get the members for.
@@ -53,7 +63,7 @@ pub struct Key {
 pub async fn try_get_members(
     self: &TrackedEngine,
     id: Global<ID>,
-) -> Option<Arc<Member>> {
+) -> Option<Interned<Member>> {
     if !self.get_kind(id).await.has_member() {
         return None;
     }

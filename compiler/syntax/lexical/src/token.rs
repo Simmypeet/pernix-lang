@@ -13,7 +13,7 @@ use pernixc_qbice::Interner;
 use pernixc_source_file::{
     AbsoluteSpan, ByteIndex, GlobalSourceID, SourceElement, Span,
 };
-use qbice::{Decode, Encode, StableHash};
+use qbice::{Decode, Encode, Identifiable, StableHash};
 
 use crate::{
     error::{self, InvalidEscapeSequence},
@@ -62,6 +62,7 @@ pub type Kind<L> = Token<kind::Kind, L>;
     Encode,
     Decode,
     StableHash,
+    Identifiable,
 )]
 pub struct Token<T, L> {
     /// Specifies the kind of the token.

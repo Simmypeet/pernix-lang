@@ -1,7 +1,7 @@
 //! Defines the linkage of functions and static variables.
 
 use pernixc_target::Global;
-use qbice::{Decode, Encode, Query, StableHash};
+use qbice::{Decode, Encode, Identifiable, Query, StableHash};
 
 use crate::ID;
 
@@ -18,6 +18,7 @@ use crate::ID;
     StableHash,
     Encode,
     Decode,
+    Identifiable,
 )]
 #[allow(missing_docs)]
 pub enum Linkage {

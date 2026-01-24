@@ -200,6 +200,7 @@ pub enum OffsetMode {
     Encode,
     Decode,
     StableHash,
+    Identifiable,
 )]
 pub struct RelativeLocation {
     /// The byte offset from the branch.

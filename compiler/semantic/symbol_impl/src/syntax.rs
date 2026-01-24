@@ -1,6 +1,5 @@
-use std::sync::Arc;
-
-use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
+use linkme::distributed_slice;
+use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_symbol::{
     name::get_qualified_name,
     syntax::{
@@ -12,331 +11,317 @@ use pernixc_symbol::{
     },
 };
 use pernixc_syntax::QualifiedIdentifier;
+use qbice::{executor, program::Registration, storage::intern::Interned};
 
 use crate::table::get_table_of_symbol;
 
 /// Implementation of the `get_module_imports_syntax` method
-#[pernixc_query::executor(key(ImportKey), name(ImportExecutor))]
-#[allow(clippy::unnecessary_wraps)]
-pub async fn import_syntax_executor(
-    &ImportKey(id): &ImportKey,
+#[executor(config = Config)]
+async fn import_syntax_executor(
+    key: &ImportKey,
     engine: &TrackedEngine,
-) -> Result<Arc<[pernixc_syntax::item::module::Import]>, CyclicError> {
-    let table = engine.get_table_of_symbol(id).await;
-    Ok(table
+) -> Interned<[pernixc_syntax::item::module::Import]> {
+    let table = engine.get_table_of_symbol(key.symbol_id).await;
+    table
         .import_syntaxes
-        .get(&id.id)
+        .get(&key.symbol_id.id)
         .unwrap_or_else(|| {
-            panic!("No import syntax found for symbol ID: {:?}", id.id)
+            panic!(
+                "No import syntax found for symbol ID: {:?}",
+                key.symbol_id.id
+            )
         })
-        .clone())
+        .clone()
 }
 
-pernixc_register::register!(ImportKey, ImportExecutor);
+#[distributed_slice(PERNIX_PROGRAM)]
+static IMPORT_SYNTAX_EXECUTOR: Registration<Config> =
+    Registration::new::<ImportKey, ImportSyntaxExecutor>();
 
-#[pernixc_query::executor(
-    key(ImplementsQualifiedIdentifierKey),
-    name(ImplementsQualifiedIdentifierExecutor)
-)]
-#[allow(clippy::unnecessary_wraps)]
-pub async fn implements_qualified_identifier_executor(
-    &ImplementsQualifiedIdentifierKey(id): &ImplementsQualifiedIdentifierKey,
+#[executor(config = Config)]
+async fn implements_qualified_identifier_executor(
+    key: &ImplementsQualifiedIdentifierKey,
     engine: &TrackedEngine,
-) -> Result<QualifiedIdentifier, CyclicError> {
-    let table = engine.get_table_of_symbol(id).await;
-    Ok(table
+) -> QualifiedIdentifier {
+    let table = engine.get_table_of_symbol(key.symbol_id).await;
+    table
         .implements_qualified_identifier_syntaxes
-        .get(&id.id)
+        .get(&key.symbol_id.id)
         .unwrap_or_else(|| {
             panic!(
                 "No implements qualified identifier syntax found for symbol \
                  ID: {:?}",
-                id.id
+                key.symbol_id.id
             )
         })
-        .clone())
+        .clone()
 }
 
-pernixc_register::register!(
-    ImplementsQualifiedIdentifierKey,
-    ImplementsQualifiedIdentifierExecutor
-);
+#[distributed_slice(PERNIX_PROGRAM)]
+static IMPLEMENTS_QUALIFIED_IDENTIFIER_EXECUTOR: Registration<Config> =
+    Registration::new::<
+        ImplementsQualifiedIdentifierKey,
+        ImplementsQualifiedIdentifierExecutor,
+    >();
 
 /// Implementation of the `get_generic_parameters_syntax` method
-#[pernixc_query::executor(
-    key(GenericParametersKey),
-    name(GenericParametersExecutor)
-)]
-#[allow(clippy::unnecessary_wraps)]
-pub async fn generic_parameters_syntax(
-    &GenericParametersKey(id): &GenericParametersKey,
+#[executor(config = Config)]
+async fn generic_parameters_syntax(
+    key: &GenericParametersKey,
     engine: &TrackedEngine,
-) -> Result<
-    Option<pernixc_syntax::item::generic_parameters::GenericParameters>,
-    CyclicError,
-> {
-    let table = engine.get_table_of_symbol(id).await;
+) -> Option<pernixc_syntax::item::generic_parameters::GenericParameters> {
+    let table = engine.get_table_of_symbol(key.symbol_id).await;
 
-    Ok(if let Some(value) = table.generic_parameter_syntaxes.get(&id.id) {
+    if let Some(value) = table.generic_parameter_syntaxes.get(&key.symbol_id.id)
+    {
         value.clone()
     } else {
-        let qualified_name = engine.get_qualified_name(id).await;
+        let qualified_name = engine.get_qualified_name(key.symbol_id).await;
         panic!(
             "No generic parameters syntax found for symbol ID: {:?} \
              ({qualified_name})",
-            id.id
+            key.symbol_id.id
         )
-    })
+    }
 }
 
-pernixc_register::register!(GenericParametersKey, GenericParametersExecutor);
+#[distributed_slice(PERNIX_PROGRAM)]
+static GENERIC_PARAMETERS_EXECUTOR: Registration<Config> =
+    Registration::new::<GenericParametersKey, GenericParametersSyntax>();
 
 /// Implementation of the `get_where_clause_syntax` method
-#[pernixc_query::executor(key(WhereClauseKey), name(WhereClauseExecutor))]
-#[allow(clippy::unnecessary_wraps)]
-pub async fn where_clause_syntax(
-    &WhereClauseKey(id): &WhereClauseKey,
+#[executor(config = Config)]
+async fn where_clause_syntax(
+    key: &WhereClauseKey,
     engine: &TrackedEngine,
-) -> Result<Option<pernixc_syntax::item::where_clause::Predicates>, CyclicError>
-{
-    let table = engine.get_table_of_symbol(id).await;
+) -> Option<pernixc_syntax::item::where_clause::Predicates> {
+    let table = engine.get_table_of_symbol(key.symbol_id).await;
 
-    if let Some(value) = table.where_clause_syntaxes.get(&id.id) {
-        return Ok(value.clone());
+    if let Some(value) = table.where_clause_syntaxes.get(&key.symbol_id.id) {
+        return value.clone();
     }
 
-    let qualified_name = engine.get_qualified_name(id).await;
+    let qualified_name = engine.get_qualified_name(key.symbol_id).await;
     panic!(
         "No where clause syntax found for symbol ID: {:?} ({qualified_name})",
-        id.id
+        key.symbol_id.id
     );
 }
 
-pernixc_register::register!(WhereClauseKey, WhereClauseExecutor);
+#[distributed_slice(PERNIX_PROGRAM)]
+static WHERE_CLAUSE_EXECUTOR: Registration<Config> =
+    Registration::new::<WhereClauseKey, WhereClauseSyntax>();
 
 /// Implementation of the `get_type_alias_syntax` method
-#[pernixc_query::executor(key(TypeAliasKey), name(TypeAliasExecutor))]
-#[allow(clippy::unnecessary_wraps)]
-pub async fn get_type_alias_syntax(
-    &TypeAliasKey(id): &TypeAliasKey,
+#[executor(config = Config)]
+async fn get_type_alias_syntax(
+    key: &TypeAliasKey,
     engine: &TrackedEngine,
-) -> Result<Option<pernixc_syntax::r#type::Type>, CyclicError> {
-    let table = engine.get_table_of_symbol(id).await;
-    Ok(table
+) -> Option<pernixc_syntax::r#type::Type> {
+    let table = engine.get_table_of_symbol(key.symbol_id).await;
+    table
         .type_alias_syntaxes
-        .get(&id.id)
+        .get(&key.symbol_id.id)
         .unwrap_or_else(|| {
-            panic!("No type alias syntax found for symbol ID: {:?}", id.id)
+            panic!(
+                "No type alias syntax found for symbol ID: {:?}",
+                key.symbol_id.id
+            )
         })
-        .clone())
+        .clone()
 }
 
-pernixc_register::register!(TypeAliasKey, TypeAliasExecutor);
+#[distributed_slice(PERNIX_PROGRAM)]
+static TYPE_ALIAS_EXECUTOR: Registration<Config> =
+    Registration::new::<TypeAliasKey, GetTypeAliasSyntax>();
 
 /// Implementation of the `get_implements_final_keyword` method
-#[pernixc_query::executor(
-    key(ImplementsFinalKeywordKey),
-    name(ImplementsFinalKeywordExecutor)
-)]
-#[allow(clippy::unnecessary_wraps)]
-pub async fn get_implements_final_keyword(
-    &ImplementsFinalKeywordKey(id): &ImplementsFinalKeywordKey,
+#[executor(config = Config)]
+async fn get_implements_final_keyword(
+    key: &ImplementsFinalKeywordKey,
     engine: &TrackedEngine,
-) -> Result<Option<pernixc_syntax::Keyword>, CyclicError> {
-    let table = engine.get_table_of_symbol(id).await;
-    Ok(*table.final_keywords.get(&id.id).unwrap_or_else(|| {
-        panic!("No final keyword found for symbol ID: {:?}", id.id)
-    }))
+) -> Option<pernixc_syntax::Keyword> {
+    let table = engine.get_table_of_symbol(key.symbol_id).await;
+    *table.final_keywords.get(&key.symbol_id.id).unwrap_or_else(|| {
+        panic!("No final keyword found for symbol ID: {:?}", key.symbol_id.id)
+    })
 }
 
-pernixc_register::register!(
-    ImplementsFinalKeywordKey,
-    ImplementsFinalKeywordExecutor
-);
+#[distributed_slice(PERNIX_PROGRAM)]
+static IMPLEMENTS_FINAL_KEYWORD_EXECUTOR: Registration<Config> =
+    Registration::new::<ImplementsFinalKeywordKey, GetImplementsFinalKeyword>();
 
 /// Implementation of the `get_function_unsafe_keyword` method
-#[pernixc_query::executor(
-    key(FunctionUnsafeKeywordKey),
-    name(FunctionUnsafeKeywordExecutor)
-)]
-#[allow(clippy::unnecessary_wraps)]
-pub async fn get_function_unsafe_keyword(
-    &FunctionUnsafeKeywordKey(id): &FunctionUnsafeKeywordKey,
+#[executor(config = Config)]
+async fn get_function_unsafe_keyword(
+    key: &FunctionUnsafeKeywordKey,
     engine: &TrackedEngine,
-) -> Result<Option<pernixc_syntax::Keyword>, CyclicError> {
-    let table = engine.get_table_of_symbol(id).await;
-    Ok(*table.function_unsafe_keywords.get(&id.id).unwrap_or_else(|| {
-        panic!("No function unsafe keyword found for symbol ID: {:?}", id.id)
-    }))
+) -> Option<pernixc_syntax::Keyword> {
+    let table = engine.get_table_of_symbol(key.symbol_id).await;
+    *table.function_unsafe_keywords.get(&key.symbol_id.id).unwrap_or_else(
+        || {
+            panic!(
+                "No function unsafe keyword found for symbol ID: {:?}",
+                key.symbol_id.id
+            )
+        },
+    )
 }
 
-pernixc_register::register!(
-    FunctionUnsafeKeywordKey,
-    FunctionUnsafeKeywordExecutor
-);
+#[distributed_slice(PERNIX_PROGRAM)]
+static FUNCTION_UNSAFE_KEYWORD_EXECUTOR: Registration<Config> =
+    Registration::new::<FunctionUnsafeKeywordKey, GetFunctionUnsafeKeyword>();
 
 /// Implementation of the `get_implements_member_access_modifier` method
-#[pernixc_query::executor(
-    key(ImplementsMemberAccessModifierKey),
-    name(ImplementsMemberAccessModifierExecutor)
-)]
-#[allow(clippy::unnecessary_wraps)]
-pub async fn get_implements_member_access_modifier(
-    &ImplementsMemberAccessModifierKey(id): &ImplementsMemberAccessModifierKey,
+#[executor(config = Config)]
+async fn get_implements_member_access_modifier(
+    key: &ImplementsMemberAccessModifierKey,
     engine: &TrackedEngine,
-) -> Result<Option<pernixc_syntax::AccessModifier>, CyclicError> {
-    let table = engine.get_table_of_symbol(id).await;
-    Ok(table
+) -> Option<pernixc_syntax::AccessModifier> {
+    let table = engine.get_table_of_symbol(key.symbol_id).await;
+    table
         .implements_access_modifier_syntaxes
-        .get(&id.id)
+        .get(&key.symbol_id.id)
         .unwrap_or_else(|| {
             panic!(
                 "No implements member access modifier syntax found for symbol \
                  ID: {:?}",
-                id.id
+                key.symbol_id.id
             )
         })
-        .clone())
+        .clone()
 }
 
-pernixc_register::register!(
-    ImplementsMemberAccessModifierKey,
-    ImplementsMemberAccessModifierExecutor
-);
+#[distributed_slice(PERNIX_PROGRAM)]
+static IMPLEMENTS_MEMBER_ACCESS_MODIFIER_EXECUTOR: Registration<Config> =
+    Registration::new::<
+        ImplementsMemberAccessModifierKey,
+        GetImplementsMemberAccessModifier,
+    >();
 
 /// Implementation of the `get_variant_associated_type_syntax` method
-#[pernixc_query::executor(
-    key(VariantAssociatedTypeKey),
-    name(VariantAssociatedTypeExecutor)
-)]
-#[allow(clippy::unnecessary_wraps)]
-pub async fn get_variant_associated_type_syntax(
-    &VariantAssociatedTypeKey(id): &VariantAssociatedTypeKey,
+#[executor(config = Config)]
+async fn get_variant_associated_type_syntax(
+    key: &VariantAssociatedTypeKey,
     engine: &TrackedEngine,
-) -> Result<Option<pernixc_syntax::r#type::Type>, CyclicError> {
-    let table = engine.get_table_of_symbol(id).await;
-    Ok(table
+) -> Option<pernixc_syntax::r#type::Type> {
+    let table = engine.get_table_of_symbol(key.symbol_id).await;
+    table
         .variant_associated_type_syntaxes
-        .get(&id.id)
+        .get(&key.symbol_id.id)
         .unwrap_or_else(|| {
             panic!(
                 "No variant associated type syntax found for symbol ID: {:?}",
-                id.id
+                key.symbol_id.id
             )
         })
-        .clone())
+        .clone()
 }
 
-pernixc_register::register!(
-    VariantAssociatedTypeKey,
-    VariantAssociatedTypeExecutor
-);
+#[distributed_slice(PERNIX_PROGRAM)]
+static VARIANT_ASSOCIATED_TYPE_EXECUTOR: Registration<Config> =
+    Registration::new::<VariantAssociatedTypeKey, GetVariantAssociatedTypeSyntax>(
+    );
 
 /// Implementation of the `get_fields_syntax` method
-#[pernixc_query::executor(key(FieldsKey), name(FieldsExecutor))]
-#[allow(clippy::unnecessary_wraps)]
-pub async fn get_fields_syntax(
-    &FieldsKey(id): &FieldsKey,
+#[executor(config = Config)]
+async fn get_fields_syntax(
+    key: &FieldsKey,
     engine: &TrackedEngine,
-) -> Result<
-    Option<pernixc_syntax::item::Body<pernixc_syntax::item::r#struct::Field>>,
-    CyclicError,
-> {
-    let table = engine.get_table_of_symbol(id).await;
-    Ok(table
+) -> Option<pernixc_syntax::item::Body<pernixc_syntax::item::r#struct::Field>> {
+    let table = engine.get_table_of_symbol(key.symbol_id).await;
+    table
         .fields_syntaxes
-        .get(&id.id)
+        .get(&key.symbol_id.id)
         .unwrap_or_else(|| {
-            panic!("No fields syntax found for symbol ID: {:?}", id.id)
+            panic!(
+                "No fields syntax found for symbol ID: {:?}",
+                key.symbol_id.id
+            )
         })
-        .clone())
+        .clone()
 }
 
-pernixc_register::register!(FieldsKey, FieldsExecutor);
+#[distributed_slice(PERNIX_PROGRAM)]
+static FIELDS_EXECUTOR: Registration<Config> =
+    Registration::new::<FieldsKey, GetFieldsSyntax>();
 
 /// Implementation of the `get_function_signature` method
-#[pernixc_query::executor(
-    key(FunctionSignatureKey),
-    name(FunctionSignatureExecutor)
-)]
-#[allow(clippy::unnecessary_wraps)]
-pub async fn get_function_signature_syntax(
-    &FunctionSignatureKey(id): &FunctionSignatureKey,
+#[executor(config = Config)]
+async fn get_function_signature_syntax(
+    key: &FunctionSignatureKey,
     engine: &TrackedEngine,
-) -> Result<
-    (
-        Option<pernixc_syntax::item::function::Parameters>,
-        Option<pernixc_syntax::item::function::ReturnType>,
-    ),
-    CyclicError,
-> {
-    let table = engine.get_table_of_symbol(id).await;
-    Ok(table
+) -> (
+    Option<pernixc_syntax::item::function::Parameters>,
+    Option<pernixc_syntax::item::function::ReturnType>,
+) {
+    let table = engine.get_table_of_symbol(key.symbol_id).await;
+    table
         .function_signature_syntaxes
-        .get(&id.id)
+        .get(&key.symbol_id.id)
         .unwrap_or_else(|| {
             panic!(
                 "No function signature syntax found for symbol ID: {:?}",
-                id.id
+                key.symbol_id.id
             )
         })
-        .clone())
+        .clone()
 }
 
-pernixc_register::register!(FunctionSignatureKey, FunctionSignatureExecutor);
+#[distributed_slice(PERNIX_PROGRAM)]
+static FUNCTION_SIGNATURE_EXECUTOR: Registration<Config> =
+    Registration::new::<FunctionSignatureKey, GetFunctionSignatureSyntax>();
 
 /// Implementation of the `get_fields_syntax` method
-#[pernixc_query::executor(key(FunctionBodyKey), name(FunctionBodyExecutor))]
-#[allow(clippy::unnecessary_wraps)]
-pub async fn get_function_body_syntax(
-    &FunctionBodyKey(id): &FunctionBodyKey,
+#[executor(config = Config)]
+async fn get_function_body_syntax(
+    key: &FunctionBodyKey,
     engine: &TrackedEngine,
-) -> Result<
-    Option<pernixc_syntax::item::Members<pernixc_syntax::statement::Statement>>,
-    CyclicError,
-> {
-    let table = engine.get_table_of_symbol(id).await;
-    Ok(table
-        .function_body_syntaxes
-        .get(&id.id)
-        .unwrap_or_else(|| {
-            panic!(
-                "No function signature syntax found for symbol ID: {:?}",
-                id.id
-            )
-        })
-        .clone())
-}
-
-pernixc_register::register!(FunctionBodyKey, FunctionBodyExecutor);
-
-/// Implementation of the `get_fields_syntax` method
-#[pernixc_query::executor(
-    key(FunctionEffectAnnotationKey),
-    name(FunctionDoEffectExecutor)
-)]
-#[allow(clippy::unnecessary_wraps)]
-pub async fn get_function_effect_annotation_syntax(
-    &FunctionEffectAnnotationKey(id): &FunctionEffectAnnotationKey,
-    engine: &TrackedEngine,
-) -> Result<Option<pernixc_syntax::item::function::EffectAnnotation>, CyclicError>
+) -> Option<pernixc_syntax::item::Members<pernixc_syntax::statement::Statement>>
 {
-    let table = engine.get_table_of_symbol(id).await;
+    let table = engine.get_table_of_symbol(key.symbol_id).await;
+    table
+        .function_body_syntaxes
+        .get(&key.symbol_id.id)
+        .unwrap_or_else(|| {
+            panic!(
+                "No function signature syntax found for symbol ID: {:?}",
+                key.symbol_id.id
+            )
+        })
+        .clone()
+}
 
-    if let Some(value) = table.function_effect_annotation_syntaxes.get(&id.id) {
-        return Ok(value.clone());
+#[distributed_slice(PERNIX_PROGRAM)]
+static FUNCTION_BODY_EXECUTOR: Registration<Config> =
+    Registration::new::<FunctionBodyKey, GetFunctionBodySyntax>();
+
+/// Implementation of the `get_fields_syntax` method
+#[executor(config = Config)]
+async fn get_function_effect_annotation_syntax(
+    key: &FunctionEffectAnnotationKey,
+    engine: &TrackedEngine,
+) -> Option<pernixc_syntax::item::function::EffectAnnotation> {
+    let table = engine.get_table_of_symbol(key.symbol_id).await;
+
+    if let Some(value) =
+        table.function_effect_annotation_syntaxes.get(&key.symbol_id.id)
+    {
+        return value.clone();
     }
 
-    let qualified_identifier = engine.get_qualified_name(id).await;
+    let qualified_identifier = engine.get_qualified_name(key.symbol_id).await;
 
     panic!(
         "No function do effect syntax found for symbol ID: {:?}, qualified \
          identifier: {:?}",
-        id.id, qualified_identifier
+        key.symbol_id.id, qualified_identifier
     );
 }
 
-pernixc_register::register!(
-    FunctionEffectAnnotationKey,
-    FunctionDoEffectExecutor
-);
+#[distributed_slice(PERNIX_PROGRAM)]
+static FUNCTION_EFFECT_ANNOTATION_EXECUTOR: Registration<Config> =
+    Registration::new::<
+        FunctionEffectAnnotationKey,
+        GetFunctionEffectAnnotationSyntax,
+    >();

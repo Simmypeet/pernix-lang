@@ -7,7 +7,7 @@ use pernixc_qbice::TrackedEngine;
 // re-export
 pub use pernixc_source_file::ByteIndex;
 use pernixc_source_file::Span;
-use qbice::{Decode, Encode, StableHash};
+use qbice::{Decode, Encode, Identifiable, StableHash};
 
 /// Implement this trait for a type that can report a diagnostic.
 ///
@@ -94,6 +94,7 @@ pub struct Highlight<L> {
     Decode,
     StableHash,
     Builder,
+    Identifiable,
 )]
 pub struct Rendered<L> {
     /// The span location where the diagnostic occurred.

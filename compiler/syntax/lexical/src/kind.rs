@@ -9,7 +9,9 @@ use std::{
 
 use derive_more::{Deref, DerefMut, From};
 use enum_as_inner::EnumAsInner;
-use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
+use qbice::{
+    Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
+};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 use thiserror::Error;
@@ -35,6 +37,7 @@ pub mod arbitrary;
     Encode,
     Decode,
     StableHash,
+    Identifiable,
 )]
 pub enum Keyword {
     /// `match` keyword.

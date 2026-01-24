@@ -3,34 +3,36 @@
 //! `codespan_reporting`.
 use std::{collections::HashMap, fmt::Display, path::Path, sync::Arc};
 
+use linkme::distributed_slice;
 use pernixc_extend::extend;
-use pernixc_query::TrackedEngine;
-use pernixc_source_file::{FilePathKey, SourceFile};
+use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
+use pernixc_source_file::{FilePathKey, GlobalSourceID, SourceFile};
 use pernixc_target::{Global, TargetID};
+use qbice::{executor, program::Registration, storage::intern::Interned};
 
 use crate::table::MapKey;
 
-pernixc_register::register!(FilePathKey, FilePathExecutor);
-
-#[pernixc_query::executor(key(FilePathKey), name(FilePathExecutor))]
-pub async fn file_path_executor(
-    FilePathKey(source_file_id): &FilePathKey,
+#[executor(config = Config)]
+async fn file_path_executor(
+    key: &FilePathKey,
     engine: &TrackedEngine,
-) -> Result<Arc<Path>, pernixc_query::runtime::executor::CyclicError> {
-    let table = engine.query(&MapKey(source_file_id.target_id)).await?;
+) -> Interned<Path> {
+    let table = engine.query(&MapKey(key.id.target_id)).await;
 
-    Ok(table.paths_by_source_id.get(&source_file_id.id).map_or_else(
-        || panic!("Source file path not found for ID: {:?}", source_file_id.id),
+    table.paths_by_source_id.get(&key.id.id).map_or_else(
+        || panic!("Source file path not found for ID: {:?}", key.id),
         |x| x.0.clone(),
-    ))
+    )
 }
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static FILE_PATH_EXECUTOR: Registration<Config> =
+    Registration::new::<FilePathKey, FilePathExecutor>();
 
 /// A wrapper around [`TrackedEngine`] to implement
 /// `codespan_reporting::files::Files` for use with `codespan_reporting`.
 #[derive(Debug, Clone)]
-pub struct SourceMap(
-    pub HashMap<Global<pernixc_arena::ID<SourceFile>>, Arc<SourceFile>>,
-);
+pub struct SourceMap(pub HashMap<GlobalSourceID, Arc<SourceFile>>);
 
 /// Creates a new [`SourceMap`] that will allow a code span reporting to
 /// retrieve source files by their IDs.
@@ -39,7 +41,7 @@ pub async fn create_source_map(
     self: &TrackedEngine,
     target_id: TargetID,
 ) -> SourceMap {
-    let map = self.query(&MapKey(target_id)).await.unwrap();
+    let map = self.query(&MapKey(target_id)).await;
     let mut source_files = HashMap::default();
 
     for (id, source_file) in map.paths_by_source_id.iter() {
@@ -49,7 +51,6 @@ pub async fn create_source_map(
                 target_id,
             })
             .await
-            .unwrap()
         else {
             continue;
         };
@@ -90,7 +91,7 @@ impl AsRef<str> for SourceFileStr {
  */
 
 impl<'x> codespan_reporting::files::Files<'x> for SourceMap {
-    type FileId = Global<pernixc_arena::ID<SourceFile>>;
+    type FileId = GlobalSourceID;
 
     type Name = PathDisplay<'x>;
 

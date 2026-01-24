@@ -22,7 +22,7 @@ impl Builder {
             return;
         };
 
-        let linkage = match convention.kind.as_str() {
+        let linkage = match convention.kind.as_ref() {
             "C" | "c" => linkage::Linkage::C(C { variadic: false }),
             _ => linkage::Linkage::Unknown,
         };

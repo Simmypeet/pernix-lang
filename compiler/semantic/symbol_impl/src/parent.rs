@@ -1,50 +1,62 @@
 use std::sync::Arc;
 
+use linkme::distributed_slice;
 use pernixc_hash::HashMap;
-use pernixc_query::TrackedEngine;
+use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_symbol::{ID, get_target_root_module_id, parent::Key};
 use pernixc_target::TargetID;
+use qbice::{
+    Decode, Encode, Query, StableHash, executor, program::Registration,
+};
 
-use crate::table::{MapKey, Table, get_table_of_symbol};
+use crate::table::{MapKey, get_table_of_symbol};
 
 /// The executor for the [`Parent`] component.
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct Executor;
-
-impl pernixc_query::runtime::executor::Executor<Key> for Executor {
-    async fn execute(
-        &self,
-        engine: &TrackedEngine,
-        key: &Key,
-    ) -> Result<Option<ID>, pernixc_query::runtime::executor::CyclicError> {
-        if key.0.id == engine.get_target_root_module_id(key.0.target_id).await {
-            return Ok(None);
-        }
-
-        let intermediate = engine
-            .query(&IntermediateKey(key.0.target_id))
-            .await
-            .expect("should have no cyclic dependencies");
-
-        let parent_id = intermediate.get(&key.0.id).copied().unwrap();
-
-        Ok(Some(parent_id))
+#[executor(config = Config)]
+async fn parent_executor(key: &Key, engine: &TrackedEngine) -> Option<ID> {
+    let symbol_id = key.symbol_id;
+    if symbol_id.id
+        == engine.get_target_root_module_id(symbol_id.target_id).await
+    {
+        return None;
     }
+
+    let intermediate =
+        engine.query(&IntermediateKey(symbol_id.target_id)).await;
+
+    let parent_id = intermediate.get(&symbol_id.id).copied().unwrap();
+
+    Some(parent_id)
 }
 
-#[pernixc_query::query(
-    key(IntermediateKey),
-    id(TargetID),
-    value(Arc<HashMap<ID, ID>>),
-    executor(IntermediateExecutor),
+#[distributed_slice(PERNIX_PROGRAM)]
+static PARENT_EXECUTOR: Registration<Config> =
+    Registration::new::<Key, ParentExecutor>();
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    Query,
 )]
-pub async fn intermediate_executor(
-    target_id: TargetID,
+#[value(Arc<HashMap<ID, ID>>)]
+pub struct IntermediateKey(pub TargetID);
+
+#[executor(config = Config)]
+async fn intermediate_executor(
+    key: &IntermediateKey,
     engine: &TrackedEngine,
-) -> Result<Arc<HashMap<ID, ID>>, pernixc_query::runtime::executor::CyclicError>
-{
-    let map = engine.query(&MapKey(target_id)).await?;
+) -> Arc<HashMap<ID, ID>> {
+    let target_id = key.0;
+    let map = engine.query(&MapKey(target_id)).await;
 
     let mut key_and_member_tasks = Vec::new();
 
@@ -53,7 +65,7 @@ pub async fn intermediate_executor(
         let symbol = *symbol;
 
         key_and_member_tasks.push(tokio::spawn(async move {
-            let table: Arc<Table> =
+            let table =
                 engine.get_table_of_symbol(target_id.make_global(symbol)).await;
 
             table.members.get(&symbol).map(|members| {
@@ -87,9 +99,9 @@ pub async fn intermediate_executor(
         }
     }
 
-    Ok(Arc::new(parent_map))
+    Arc::new(parent_map)
 }
 
-pernixc_register::register!(IntermediateKey, IntermediateExecutor);
-
-pernixc_register::register!(Key, Executor);
+#[distributed_slice(PERNIX_PROGRAM)]
+static INTERMEDIATE_EXECUTOR: Registration<Config> =
+    Registration::new::<IntermediateKey, IntermediateExecutor>();

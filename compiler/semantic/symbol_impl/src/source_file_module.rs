@@ -1,14 +1,16 @@
-use pernixc_query::TrackedEngine;
+use linkme::distributed_slice;
+use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_symbol::source_file_module::Key;
+use qbice::{executor, program::Registration};
 
 use crate::table::{self, MapKey, TableKey};
 
-#[pernixc_query::executor(key(Key), name(Executor))]
-pub async fn source_file_module_executor(
-    Key(source_file_id): &Key,
+#[executor(config = Config)]
+async fn source_file_module_executor(
+    &Key { source_file_id }: &Key,
     engine: &TrackedEngine,
-) -> Result<pernixc_symbol::ID, pernixc_query::runtime::executor::CyclicError> {
-    let table = engine.query(&MapKey(source_file_id.target_id)).await?;
+) -> pernixc_symbol::ID {
+    let table = engine.query(&MapKey(source_file_id.target_id)).await;
     let (_, external_submodule) =
         table.paths_by_source_id.get(&source_file_id.id).unwrap();
 
@@ -20,9 +22,11 @@ pub async fn source_file_module_executor(
         },
     );
 
-    let table = engine.query(&TableKey(table_key)).await?;
+    let table = engine.query(&TableKey(table_key)).await;
 
-    Ok(table.module_id)
+    table.module_id
 }
 
-pernixc_register::register!(Key, Executor);
+#[distributed_slice(PERNIX_PROGRAM)]
+static SOURCE_FILE_MODULE_EXECUTOR: Registration<Config> =
+    Registration::new::<Key, SourceFileModuleExecutor>();

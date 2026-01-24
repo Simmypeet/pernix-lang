@@ -9,6 +9,7 @@ rust-version.workspace = true
 [dependencies]
 fxhash = { workspace = true }
 dashmap = { workspace = true }
+qbice.workspace = true
 
 [lints]
 workspace = true

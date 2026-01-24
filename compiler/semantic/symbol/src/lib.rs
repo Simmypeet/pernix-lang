@@ -8,7 +8,7 @@ use pernixc_qbice::TrackedEngine;
 use pernixc_target::{
     Global, TargetID, get_invocation_arguments, get_target_seed,
 };
-use qbice::{Decode, Encode, Query, StableHash};
+use qbice::{Decode, Encode, Identifiable, Query, StableHash};
 use siphasher::sip128::Hasher128;
 
 pub mod accessibility;
@@ -47,6 +47,7 @@ pub mod arbitrary;
     Encode,
     Decode,
     StableHash,
+    Identifiable,
 )]
 pub struct ID {
     lo: u64,

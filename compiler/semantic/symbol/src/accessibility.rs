@@ -4,7 +4,7 @@ use enum_as_inner::EnumAsInner;
 use pernixc_extend::extend;
 use pernixc_qbice::TrackedEngine;
 use pernixc_target::{Global, TargetID};
-use qbice::{Decode, Encode, Query, StableHash};
+use qbice::{Decode, Encode, Identifiable, Query, StableHash};
 
 use crate::{
     ID,
@@ -53,6 +53,7 @@ pub struct Key {
     Decode,
     EnumAsInner,
     StableHash,
+    Identifiable,
 )]
 pub enum Accessibility<ID> {
     /// The symbol is accessible from anywhere.

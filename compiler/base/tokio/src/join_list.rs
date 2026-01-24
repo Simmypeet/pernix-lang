@@ -13,6 +13,14 @@ pub struct JoinList<T> {
     tasks: VecDeque<JoinHandle<T>>,
 }
 
+impl<T> Drop for JoinList<T> {
+    fn drop(&mut self) {
+        for task in self.tasks.drain(..) {
+            task.abort();
+        }
+    }
+}
+
 impl<T> Default for JoinList<T> {
     fn default() -> Self { Self { tasks: VecDeque::new() } }
 }

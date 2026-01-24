@@ -1,11 +1,9 @@
 //! Contains the queries for retrieving syntax items defined to a particular
 //! symbol.
 
-use std::sync::Arc;
-
 use pernixc_syntax::QualifiedIdentifier;
 use pernixc_target::Global;
-use qbice::{Decode, Encode, Query, StableHash};
+use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 
 use crate::ID;
 
@@ -24,7 +22,7 @@ use crate::ID;
     StableHash,
     Query,
 )]
-#[value(Arc<[pernixc_syntax::item::module::Import]>)]
+#[value(Interned<[pernixc_syntax::item::module::Import]>)]
 #[extend(name = get_module_imports_syntax, by_val)]
 pub struct ImportKey {
     /// The global identifier of the module symbol.

@@ -1,28 +1,32 @@
+use linkme::distributed_slice;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
+use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_symbol::span::Key;
 use pernixc_target::TargetID;
+use qbice::{executor, program::Registration};
 
 use crate::table::get_table_of_symbol;
 
-#[pernixc_query::executor(key(Key), name(Executor))]
-#[allow(clippy::unnecessary_wraps)]
-pub async fn executor(
+#[executor(config = Config)]
+async fn span_executor(
     key: &Key,
     engine: &TrackedEngine,
-) -> Result<Option<RelativeSpan>, CyclicError> {
+) -> Option<RelativeSpan> {
+    let symbol_id = key.symbol_id;
     // the core symbols don't have spans
-    if key.0.target_id == TargetID::CORE {
-        return Ok(None);
+    if symbol_id.target_id == TargetID::CORE {
+        return None;
     }
 
-    let table = engine.get_table_of_symbol(key.0).await;
+    let table = engine.get_table_of_symbol(symbol_id).await;
 
-    Ok(table
+    table
         .spans
-        .get(&key.0.id)
+        .get(&symbol_id.id)
         .copied()
-        .unwrap_or_else(|| panic!("invalid symbol ID: {:?}", key.0.id)))
+        .unwrap_or_else(|| panic!("invalid symbol ID: {:?}", symbol_id.id))
 }
 
-pernixc_register::register!(Key, Executor);
+#[distributed_slice(PERNIX_PROGRAM)]
+static SPAN_EXECUTOR: Registration<Config> =
+    Registration::new::<Key, SpanExecutor>();

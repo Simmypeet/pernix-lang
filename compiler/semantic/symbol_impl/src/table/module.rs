@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use flexstr::FlexStr;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
@@ -85,10 +84,7 @@ impl Builder {
                 .unwrap_or_default();
 
             load_path.extend(
-                next_submodule_qualified_name
-                    .iter()
-                    .skip(1)
-                    .map(FlexStr::as_str),
+                next_submodule_qualified_name.iter().skip(1).map(AsRef::as_ref),
             );
 
             load_path.set_extension("pnx");
@@ -102,7 +98,7 @@ impl Builder {
                     .unwrap_or_default()
                     .to_string_lossy()
                     .as_ref()
-                    == identifier.kind.0.as_str()
+                    == identifier.kind.0.as_ref()
             {
                 // this is the recursive file loading, so we skip it
                 self.add_diagnostic(Diagnostic::RecursiveFileRequest(
@@ -120,8 +116,8 @@ impl Builder {
             {
                 self.insert_external_submodule(
                     id,
-                    Arc::new(ExternalSubmodule {
-                        path: Arc::from(load_path),
+                    self.engine().intern(ExternalSubmodule {
+                        path: self.engine().intern_unsized(load_path),
                         submodule_id: id,
                         submodule_qualified_name: next_submodule_qualified_name,
                         accessibility,
@@ -436,7 +432,8 @@ impl Builder {
                         .get_target_root_module_id(self.target_id())
                         .await;
 
-                    let module_qualified_name = Arc::from([target_name]);
+                    let module_qualified_name =
+                        Arc::from([self.engine().intern_unsized(target_name)]);
 
                     (
                         Accessibility::Public,
@@ -479,7 +476,10 @@ impl Builder {
                         .await;
                 }
 
-                builder.insert_imports(current_module_id, imports.into());
+                builder.insert_imports(
+                    current_module_id,
+                    builder.engine().intern_unsized(imports),
+                );
                 builder.insert_span(current_module_id, span);
                 builder.insert_maybe_scope_span(current_module_id, scope_span);
                 builder.insert_accessibility(current_module_id, accessibility);

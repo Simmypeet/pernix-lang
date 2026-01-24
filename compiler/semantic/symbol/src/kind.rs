@@ -3,7 +3,7 @@
 use std::{fmt::Debug, hash::Hash};
 
 use pernixc_target::Global;
-use qbice::{Decode, Encode, Query, StableHash};
+use qbice::{Decode, Encode, Identifiable, Query, StableHash};
 
 use crate::ID;
 
@@ -23,6 +23,7 @@ use crate::ID;
     Decode,
     Default,
     StableHash,
+    Identifiable,
 )]
 #[allow(missing_docs)]
 pub enum Kind {
