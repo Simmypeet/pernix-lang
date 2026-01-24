@@ -3,7 +3,7 @@
 use pernixc_diagnostic::ByteIndex;
 use pernixc_extend::extend;
 use pernixc_lexical::tree::RelativeLocation;
-use pernixc_query::TrackedEngine;
+use pernixc_qbice::TrackedEngine;
 use pernixc_source_file::{Span, get_source_file_path};
 
 /// Converts the given relative span to an absolute span.
@@ -21,7 +21,6 @@ pub async fn to_absolute_span(
             target_id: relative_span.source_id.target_id,
         })
         .await
-        .unwrap()
         .unwrap();
 
     let token_tree = self
@@ -30,7 +29,6 @@ pub async fn to_absolute_span(
             target_id: relative_span.source_id.target_id,
         })
         .await
-        .unwrap()
         .unwrap()
         .0;
 

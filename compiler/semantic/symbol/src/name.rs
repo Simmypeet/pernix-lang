@@ -1,12 +1,10 @@
 //! Contains the definition of query related to naming symbols and provides
 //! basic naming resolution functionality.
 
-use flexstr::SharedStr;
 use pernixc_extend::extend;
-use pernixc_query::TrackedEngine;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use pernixc_qbice::TrackedEngine;
 use pernixc_target::{Global, get_target_map};
+use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 
 use crate::{
     ID, get_target_root_module_id, kind::get_kind, member::get_members,
@@ -23,14 +21,17 @@ use crate::{
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
-    pernixc_query::Key,
+    Query,
 )]
-#[value(SharedStr)]
-#[extend(method(get_name), no_cyclic)]
-pub struct Key(pub Global<ID>);
+#[value(Interned<str>)]
+#[extend(name = get_name, by_val)]
+pub struct Key {
+    /// The global ID of the symbol to get the name for.
+    pub symbol_id: Global<ID>,
+}
 
 /// Gets the qualified name of the symbol such as `module::function`.
 #[extend]

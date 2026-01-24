@@ -3,10 +3,9 @@
 
 use std::sync::Arc;
 
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_syntax::QualifiedIdentifier;
 use pernixc_target::Global;
+use qbice::{Decode, Encode, Query, StableHash};
 
 use crate::ID;
 
@@ -20,14 +19,17 @@ use crate::ID;
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
-    pernixc_query::Key,
+    Query,
 )]
 #[value(Arc<[pernixc_syntax::item::module::Import]>)]
-#[extend(method(get_module_imports_syntax), no_cyclic)]
-pub struct ImportKey(pub Global<ID>);
+#[extend(name = get_module_imports_syntax, by_val)]
+pub struct ImportKey {
+    /// The global identifier of the module symbol.
+    pub symbol_id: Global<ID>,
+}
 
 /// Retrieves the qualified identifier of a trait/adt/marker that is being
 /// implemented.
@@ -40,14 +42,17 @@ pub struct ImportKey(pub Global<ID>);
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
-    pernixc_query::Key,
+    Query,
 )]
 #[value(QualifiedIdentifier)]
-#[extend(method(get_implements_qualified_identifier), no_cyclic)]
-pub struct ImplementsQualifiedIdentifierKey(pub Global<ID>);
+#[extend(name = get_implements_qualified_identifier, by_val)]
+pub struct ImplementsQualifiedIdentifierKey {
+    /// The global identifier of the implements symbol.
+    pub symbol_id: Global<ID>,
+}
 
 /// Retrieves the generic parameters syntax defined to a symbol.
 #[derive(
@@ -59,14 +64,17 @@ pub struct ImplementsQualifiedIdentifierKey(pub Global<ID>);
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
-    pernixc_query::Key,
+    Query,
 )]
 #[value(Option<pernixc_syntax::item::generic_parameters::GenericParameters>)]
-#[extend(method(get_generic_parameters_syntax), no_cyclic)]
-pub struct GenericParametersKey(pub Global<ID>);
+#[extend(name = get_generic_parameters_syntax, by_val)]
+pub struct GenericParametersKey {
+    /// The global identifier of the symbol.
+    pub symbol_id: Global<ID>,
+}
 
 /// Retrieves the where clause syntax defined to a symbol.
 #[derive(
@@ -78,14 +86,17 @@ pub struct GenericParametersKey(pub Global<ID>);
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
-    pernixc_query::Key,
+    Query,
 )]
 #[value(Option<pernixc_syntax::item::where_clause::Predicates>)]
-#[extend(method(get_where_clause_syntax), no_cyclic)]
-pub struct WhereClauseKey(pub Global<ID>);
+#[extend(name = get_where_clause_syntax, by_val)]
+pub struct WhereClauseKey {
+    /// The global identifier of the symbol.
+    pub symbol_id: Global<ID>,
+}
 
 /// Retrieves the type alias syntax defined to a symbol.
 #[derive(
@@ -97,14 +108,17 @@ pub struct WhereClauseKey(pub Global<ID>);
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
-    pernixc_query::Key,
+    Query,
 )]
 #[value(Option<pernixc_syntax::r#type::Type>)]
-#[extend(method(get_type_alias_syntax), no_cyclic)]
-pub struct TypeAliasKey(pub Global<ID>);
+#[extend(name = get_type_alias_syntax, by_val)]
+pub struct TypeAliasKey {
+    /// The global identifier of the type alias symbol.
+    pub symbol_id: Global<ID>,
+}
 
 /// Retrieves the final keyword defined to a symbol.
 #[derive(
@@ -116,14 +130,17 @@ pub struct TypeAliasKey(pub Global<ID>);
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
-    pernixc_query::Key,
+    Query,
 )]
 #[value(Option<pernixc_syntax::Keyword>)]
-#[extend(method(get_implements_final_keyword), no_cyclic)]
-pub struct ImplementsFinalKeywordKey(pub Global<ID>);
+#[extend(name = get_implements_final_keyword, by_val)]
+pub struct ImplementsFinalKeywordKey {
+    /// The global identifier of the implements symbol.
+    pub symbol_id: Global<ID>,
+}
 
 /// Retrieves the access modifier defined to an implements member.
 #[derive(
@@ -135,14 +152,17 @@ pub struct ImplementsFinalKeywordKey(pub Global<ID>);
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
-    pernixc_query::Key,
+    Query,
 )]
 #[value(Option<pernixc_syntax::AccessModifier>)]
-#[extend(method(get_implements_member_access_modifier), no_cyclic)]
-pub struct ImplementsMemberAccessModifierKey(pub Global<ID>);
+#[extend(name = get_implements_member_access_modifier, by_val)]
+pub struct ImplementsMemberAccessModifierKey {
+    /// The global identifier of the implements member symbol.
+    pub symbol_id: Global<ID>,
+}
 
 /// Retrieves the access modifier defined to an implements member.
 #[derive(
@@ -154,14 +174,17 @@ pub struct ImplementsMemberAccessModifierKey(pub Global<ID>);
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
-    pernixc_query::Key,
+    Query,
 )]
 #[value(Option<pernixc_syntax::r#type::Type>)]
-#[extend(method(get_variant_associated_type_syntax), no_cyclic)]
-pub struct VariantAssociatedTypeKey(pub Global<ID>);
+#[extend(name = get_variant_associated_type_syntax, by_val)]
+pub struct VariantAssociatedTypeKey {
+    /// The global identifier of the variant symbol.
+    pub symbol_id: Global<ID>,
+}
 
 /// Retrieves the fields syntax defined to a struct.
 #[derive(
@@ -173,14 +196,17 @@ pub struct VariantAssociatedTypeKey(pub Global<ID>);
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
-    pernixc_query::Key,
+    Query,
 )]
 #[value(Option<pernixc_syntax::item::Body<pernixc_syntax::item::r#struct::Field>>)]
-#[extend(method(get_fields_syntax), no_cyclic)]
-pub struct FieldsKey(pub Global<ID>);
+#[extend(name = get_fields_syntax, by_val)]
+pub struct FieldsKey {
+    /// The global identifier of the struct symbol.
+    pub symbol_id: Global<ID>,
+}
 
 /// Retrieves the function signature syntax defined to a function.
 #[derive(
@@ -192,17 +218,20 @@ pub struct FieldsKey(pub Global<ID>);
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
-    pernixc_query::Key,
+    Query,
 )]
 #[value((
     Option<pernixc_syntax::item::function::Parameters>,
     Option<pernixc_syntax::item::function::ReturnType>,
 ))]
-#[extend(method(get_function_signature_syntax), no_cyclic)]
-pub struct FunctionSignatureKey(pub Global<ID>);
+#[extend(name = get_function_signature_syntax, by_val)]
+pub struct FunctionSignatureKey {
+    /// The global identifier of the function symbol.
+    pub symbol_id: Global<ID>,
+}
 
 /// Retrieves the function body syntax defined to a function.
 #[derive(
@@ -214,16 +243,19 @@ pub struct FunctionSignatureKey(pub Global<ID>);
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
-    pernixc_query::Key,
+    Query,
 )]
 #[value(Option<
      pernixc_syntax::item::Members<pernixc_syntax::statement::Statement>,
 >)]
-#[extend(method(get_function_body_syntax), no_cyclic)]
-pub struct FunctionBodyKey(pub Global<ID>);
+#[extend(name = get_function_body_syntax, by_val)]
+pub struct FunctionBodyKey {
+    /// The global identifier of the function symbol.
+    pub symbol_id: Global<ID>,
+}
 
 /// Retrieves the function body syntax defined to a function.
 #[derive(
@@ -235,14 +267,17 @@ pub struct FunctionBodyKey(pub Global<ID>);
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
-    pernixc_query::Key,
+    Query,
 )]
 #[value(Option<pernixc_syntax::item::function::EffectAnnotation>)]
-#[extend(method(get_function_effect_annotation_syntax), no_cyclic)]
-pub struct FunctionEffectAnnotationKey(pub Global<ID>);
+#[extend(name = get_function_effect_annotation_syntax, by_val)]
+pub struct FunctionEffectAnnotationKey {
+    /// The global identifier of the function symbol.
+    pub symbol_id: Global<ID>,
+}
 
 /// Retrieves the unsafe keyword defined to a function.
 #[derive(
@@ -254,11 +289,14 @@ pub struct FunctionEffectAnnotationKey(pub Global<ID>);
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
-    pernixc_query::Key,
+    Query,
 )]
 #[value(Option<pernixc_syntax::Keyword>)]
-#[extend(method(get_function_unsafe_keyword), no_cyclic)]
-pub struct FunctionUnsafeKeywordKey(pub Global<ID>);
+#[extend(name = get_function_unsafe_keyword, by_val)]
+pub struct FunctionUnsafeKeywordKey {
+    /// The global identifier of the function symbol.
+    pub symbol_id: Global<ID>,
+}

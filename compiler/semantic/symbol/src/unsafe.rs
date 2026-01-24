@@ -1,24 +1,43 @@
 //! Contains the query definition for retrieving whether the function
 //! is marked as unsafe or not
 
-use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
+use linkme::distributed_slice;
+use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_target::Global;
+use qbice::{
+    Decode, Encode, Query, StableHash, executor, program::Registration,
+};
 
 use crate::syntax::get_function_unsafe_keyword;
 
-#[pernixc_query::query(
-    key(Key),
-    value(bool),
-    id(Global<crate::ID>),
-    executor(Executor),
-    extend(method(is_function_unsafe), no_cyclic)
+/// The key type used to query whether a function is unsafe.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    Query,
 )]
-pub async fn is_function_unsafe(
-    id: Global<crate::ID>,
-    engine: &TrackedEngine,
-) -> Result<bool, CyclicError> {
-    let kw = engine.get_function_unsafe_keyword(id).await;
-    Ok(kw.is_some())
+#[value(bool)]
+#[extend(name = is_function_unsafe, by_val)]
+pub struct Key {
+    /// The global ID of the function symbol.
+    pub symbol_id: Global<crate::ID>,
 }
 
-pernixc_register::register!(Key, Executor);
+#[executor(config = Config)]
+async fn is_function_unsafe_executor(id: &Key, engine: &TrackedEngine) -> bool {
+    let kw = engine.get_function_unsafe_keyword(id.symbol_id).await;
+    kw.is_some()
+}
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static IS_FUNCTION_UNSAFE_EXECUTOR: Registration<Config> =
+    Registration::new::<Key, IsFunctionUnsafeExecutor>();

@@ -1,8 +1,7 @@
 //! A query for retrieving the declaration order of a variant in the enum.
 
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
+use qbice::{Decode, Encode, Query, StableHash};
 
 use crate::ID;
 
@@ -16,11 +15,14 @@ use crate::ID;
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
-    pernixc_query::Key,
+    Query,
 )]
 #[value(usize)]
-#[extend(method(get_variant_declaration_order), no_cyclic)]
-pub struct Key(pub Global<ID>);
+#[extend(name = get_variant_declaration_order, by_val)]
+pub struct Key {
+    /// The global ID of the variant to get the declaration order for.
+    pub variant_id: Global<ID>,
+}

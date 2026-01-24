@@ -2,9 +2,8 @@
 
 use derive_more::{Deref, DerefMut};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
+use qbice::{Decode, Encode, Query, StableHash};
 
 use crate::ID;
 
@@ -23,11 +22,14 @@ use crate::ID;
     Hash,
     Deref,
     DerefMut,
-    Serialize,
-    Deserialize,
-    pernixc_query::Key,
+    Encode,
+    Decode,
+    Query,
     StableHash,
 )]
-#[extend(method(get_span), no_cyclic)]
+#[extend(name = get_span, by_val)]
 #[value(Option<RelativeSpan>)]
-pub struct Key(pub Global<ID>);
+pub struct Key {
+    /// The global ID of the symbol to get the span for.
+    pub symbol_id: Global<ID>,
+}

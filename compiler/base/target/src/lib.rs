@@ -479,7 +479,7 @@ const fn get_styles() -> clap::builder::Styles {
     qbice::Query,
 )]
 #[value(Arc<HashMap<Interned<str>, TargetID>>)]
-#[extend(name = get_target_map)]
+#[extend(name = get_target_map, by_val)]
 pub struct MapKey;
 
 /// A query for retrieving the linked targets of a given target ID.

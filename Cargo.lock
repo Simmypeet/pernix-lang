@@ -1774,6 +1774,7 @@ dependencies = [
  "derive-new",
  "derive_more",
  "enum-as-inner",
+ "linkme",
  "pernixc_arena",
  "pernixc_diagnostic",
  "pernixc_extend",

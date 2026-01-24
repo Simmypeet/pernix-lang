@@ -1,10 +1,10 @@
 //! Defines the [`ModuleKind`] query.
 
-use pernixc_arena::ID;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_source_file::SourceFile;
-use pernixc_stable_hash::StableHash;
+use pernixc_source_file::LocalSourceID;
 use pernixc_target::Global;
+use qbice::{Decode, Encode, Query, StableHash};
+
+use crate::ID;
 
 /// Determines the kinds of module symbol.
 #[derive(
@@ -16,13 +16,10 @@ use pernixc_target::Global;
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
-    pernixc_query::Value,
 )]
-#[id(Global<crate::ID>)]
-#[extend(method(get_module_kind), no_cyclic)]
 pub enum ModuleKind {
     /// The module is defined inlined in the same place it was declared.
     ///
@@ -39,5 +36,28 @@ pub enum ModuleKind {
     /// given external source file.
     ///
     /// `None` in case of the external file is failed to load.
-    ExteranlFile(Option<ID<SourceFile>>),
+    ExteranlFile(Option<LocalSourceID>),
+}
+
+/// The key type used with [`TrackedEngine`] to access the kind of a module
+/// symbol.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    Query,
+    StableHash,
+)]
+#[value(ModuleKind)]
+#[extend(name = get_module_kind, by_val)]
+pub struct Key {
+    /// The global ID of the module symbol to get the kind for.
+    pub module_id: Global<ID>,
 }
