@@ -1,15 +1,15 @@
 //! Contains the implementation of the lexical analysis executor.
 
+use linkme::distributed_slice;
 use pernixc_handler::Storage;
 use pernixc_lexical::{DiagnosticKey, Key, error, tree::Tree};
-use pernixc_qbice::{Config, TrackedEngine};
+use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_source_file::calculate_path_id;
-use qbice::{executor, storage::intern::Interned};
+use qbice::{executor, program::Registration, storage::intern::Interned};
 
-/// An executor that parses a token tree from the given source file path.
 #[executor(config = Config)]
 #[allow(clippy::type_complexity)]
-pub async fn parse_executor(
+async fn parse_executor(
     key: &Key,
     engine: &TrackedEngine,
 ) -> Result<
@@ -40,10 +40,12 @@ pub async fn parse_executor(
     Ok((engine.intern(tree), engine.intern_unsized(storage.into_vec())))
 }
 
-/// An executor that retrieves the diagnostics that occurred while parsing the
-/// token tree from the source file.
+#[distributed_slice(PERNIX_PROGRAM)]
+static PARSE_EXECUTOR: Registration<Config> =
+    Registration::new::<Key, ParseExecutor>();
+
 #[executor(config = Config)]
-pub async fn diagnostic_executor(
+async fn diagnostic_executor(
     DiagnosticKey(key): &DiagnosticKey,
     engine: &TrackedEngine,
 ) -> Result<Interned<[error::Error]>, pernixc_source_file::Error> {
@@ -51,3 +53,7 @@ pub async fn diagnostic_executor(
 
     Ok(token_tree.1)
 }
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static DIAGNOSTIC_EXECUTOR: Registration<Config> =
+    Registration::new::<DiagnosticKey, DiagnosticExecutor>();

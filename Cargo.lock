@@ -1609,6 +1609,7 @@ dependencies = [
 name = "pernixc_lexical_impl"
 version = "0.1.0-beta.2"
 dependencies = [
+ "linkme",
  "pernixc_handler",
  "pernixc_lexical",
  "pernixc_qbice",

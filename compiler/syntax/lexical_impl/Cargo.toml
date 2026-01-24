@@ -7,11 +7,12 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-qbice.workspace = true
 pernixc_lexical.path = "../../syntax/lexical"
 pernixc_source_file.path = "../../base/source_file"
 pernixc_qbice.path = "../../base/qbice"
 pernixc_handler.path = "../../base/handler"
+linkme.workspace = true
+qbice.workspace = true
 
 [lints]
 workspace = true
