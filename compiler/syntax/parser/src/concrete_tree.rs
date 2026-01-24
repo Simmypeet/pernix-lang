@@ -229,6 +229,12 @@ pub struct AstInfo {
         Option<(ID<pernixc_lexical::tree::Branch>, GlobalSourceID)>,
 }
 
+impl AstInfo {
+    /// Retrieves the AST type ID that created this tree node.
+    #[must_use]
+    pub const fn ast_type_id(&self) -> StableTypeID { self.ast_type_id }
+}
+
 /// A typeless concrete syntax tree built by the parser.
 #[derive(
     Debug,
@@ -267,6 +273,10 @@ impl Tree {
     /// Retrieves the AST info of this tree, if any.
     #[must_use]
     pub const fn ast_info(&self) -> Option<&AstInfo> { self.ast_info.as_ref() }
+
+    /// Retrieves the nodes contained in this tree.
+    #[must_use]
+    pub fn nodes(&self) -> &[Node] { &self.nodes }
 
     pub(crate) fn new(ast_info: Option<AstInfo>, nodes: Vec<Node>) -> Self {
         let mut siphasher = Sip128Hasher::new();

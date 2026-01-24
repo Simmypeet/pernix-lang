@@ -155,7 +155,7 @@ macro_rules! field_extract {
                 ~$($field_attr)?
                 ->
                 $parser_expr,
-                &self.0.nodes
+                self.0.nodes()
             )
         }
     };
@@ -403,7 +403,7 @@ macro_rules! abstract_tree {
             ) -> Option<Self> {
                 tree.ast_info().cloned().is_some_and(|x|
                     <Self as $crate::abstract_tree::__stable_type_id::Identifiable>::STABLE_TYPE_ID
-                        == x.ast_type_id
+                        == x.ast_type_id()
                 )
                 .then_some(Self(
                     tree.clone(),
@@ -435,9 +435,9 @@ macro_rules! abstract_tree {
                     node: &$crate::concrete_tree::Node,
                 ) -> Option<Self> {
                     node.as_branch().and_then(|branch| {
-                        branch.ast_info.clone().is_some_and(|x|
+                        branch.ast_info().cloned().is_some_and(|x|
                             <Self as $crate::abstract_tree::__stable_type_id::Identifiable>::STABLE_TYPE_ID
-                                == x.ast_type_id
+                                == x.ast_type_id()
                         )
                         .then(|| Self(
                             branch.clone(),
@@ -563,16 +563,16 @@ macro_rules! abstract_tree {
                     node: &$crate::concrete_tree::Node,
                 ) -> Option<Self> {
                     let branch = node.as_branch().and_then(|branch| {
-                        branch.ast_info.clone().is_some_and(|x|
+                        branch.ast_info().cloned().is_some_and(|x|
                             <Self as $crate::abstract_tree::__stable_type_id::Identifiable>::STABLE_TYPE_ID
-                                == x.ast_type_id
+                                == x.ast_type_id()
                         )
                         .then(|| branch.clone())
                     })?;
 
                     if let Some(result) = $crate::output::extract_one(
                         $first_parser_expr,
-                        &branch.nodes
+                        branch.nodes()
                     ) {
                         return Some(Self::$first_variant_name(result));
                     }
@@ -581,7 +581,7 @@ macro_rules! abstract_tree {
 
                     if let Some(result) = $crate::output::extract_one(
                         $rest_parser_expr,
-                        &branch.nodes
+                        branch.nodes()
                     ) {
                         return Some(Self::$rest_variant_name(result));
                     }
