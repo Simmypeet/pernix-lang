@@ -12,16 +12,15 @@ use std::{
 
 use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
+use linkme::distributed_slice;
 use parking_lot::RwLock;
 use pernixc_extend::extend;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor};
+use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_semantic_element::{
     implied_predicate::{ImpliedPredicate, get_implied_predicates},
     where_clause::get_where_clause,
 };
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{kind::get_kind, parent::scope_walker};
 use pernixc_target::Global;
 use pernixc_term::{
@@ -29,12 +28,24 @@ use pernixc_term::{
     predicate::{Compatible, Predicate},
     r#type::Type,
 };
+use qbice::{
+    Decode, Encode, Identifiable, StableHash, executor, program::Registration,
+    storage::intern::Interned,
+};
 
 use crate::{OverflowError, normalizer::Normalizer};
 
 /// Contains the premise of the semantic logic.
 #[derive(
-    Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, StableHash,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
+    Encode,
+    Decode,
+    StableHash,
+    Identifiable,
 )]
 pub struct Premise {
     /// List of predicates that will be considered as facts.
@@ -52,27 +63,41 @@ pub struct Premise {
 ///
 /// This works by iterating down the symbol hierarchy and collecting all the
 /// predicates that are defined in the current site and its children.
-#[pernixc_query::query(
-    key(ActivePremiseKey),
-    value(Arc<Premise>),
-    id(Global<pernixc_symbol::ID>),
-    executor(ActivePremiseExecutor),
-    extend(method(get_active_premise))
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    qbice::Query,
 )]
-pub async fn get_active_premise(
-    current_site: Global<pernixc_symbol::ID>,
-    engine: &TrackedEngine,
-) -> Result<Arc<Premise>, executor::CyclicError> {
-    let mut premise =
-        Premise { predicates: BTreeSet::new(), query_site: Some(current_site) };
+#[value(Interned<Premise>)]
+#[extend(name = get_active_premise, by_val)]
+pub struct ActivePremiseKey {
+    /// The global ID of the current symbol site.
+    pub symbol_id: Global<pernixc_symbol::ID>,
+}
 
-    let mut scope_walker = engine.scope_walker(current_site);
+#[executor(config = Config)]
+async fn active_premise_executor(
+    &ActivePremiseKey { symbol_id }: &ActivePremiseKey,
+    engine: &TrackedEngine,
+) -> Interned<Premise> {
+    let mut premise =
+        Premise { predicates: BTreeSet::new(), query_site: Some(symbol_id) };
+    let mut scope_walker = engine.scope_walker(symbol_id);
     while let Some(id) = scope_walker.next().await {
-        let current_id = current_site.target_id.make_global(id);
+        let current_id = symbol_id.target_id.make_global(id);
         let kind = engine.get_kind(current_id).await;
 
         if kind.has_where_clause() {
-            let where_clause = engine.get_where_clause(current_id).await?;
+            let where_clause = engine.get_where_clause(current_id).await;
 
             premise
                 .predicates
@@ -80,7 +105,7 @@ pub async fn get_active_premise(
         }
 
         if kind.has_implied_predicates() {
-            let predicates = engine.get_implied_predicates(current_id).await?;
+            let predicates = engine.get_implied_predicates(current_id).await;
 
             premise.predicates.extend(predicates.iter().map(|x| match x {
                 ImpliedPredicate::LifetimeOutlives(outlives) => {
@@ -93,10 +118,12 @@ pub async fn get_active_premise(
         }
     }
 
-    Ok(Arc::new(premise))
+    engine.intern(premise)
 }
 
-pernixc_register::register!(ActivePremiseKey, ActivePremiseExecutor);
+#[distributed_slice(PERNIX_PROGRAM)]
+static ACTIVE_PREMISE_EXECUTOR: Registration<Config> =
+    Registration::new::<ActivePremiseKey, ActivePremiseExecutor>();
 
 /// Retrieves the active premise of the current site with the span of the
 /// predicates.
@@ -113,9 +140,9 @@ pub async fn get_active_premise_predicates_with_span(
         let global_id = current_site.target_id.make_global(id);
         let symbol_kind = self.get_kind(global_id).await;
 
-        if symbol_kind.has_where_clause()
-            && let Ok(where_clause) = self.get_where_clause(global_id).await
-        {
+        if symbol_kind.has_where_clause() {
+            let where_clause = self.get_where_clause(global_id).await;
+
             for predicate in where_clause.iter() {
                 let Some(span) = predicate.span else {
                     continue;
@@ -135,7 +162,7 @@ pub async fn get_active_premise_predicates_with_span(
 /// A structure that contains the environment of the semantic logic.
 ///
 /// This is the query system for the type system. Unlike
-/// [`pernixc_query::Engine`], this query system tracked the call stack count
+/// [`qbice::Engine`], this query system tracked the call stack count
 /// and terminate upon certain query count limit due to the partially-decidable
 /// properties of the type system.
 #[derive(Getters, CopyGetters)]

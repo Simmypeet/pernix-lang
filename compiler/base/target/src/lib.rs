@@ -56,6 +56,18 @@ impl TargetID {
         Self { lo: id as u64, hi: (id >> 64) as u64 }
     }
 
+    /// Creates a new [`TargetID`] from the given low and high u64 values.
+    #[must_use]
+    pub fn from_lo_hi(lo: u64, hi: u64) -> Self {
+        assert!(
+            lo != 0 || hi != 0,
+            "TargetID(0) is reserved for `core` module, use `TargetID::CORE` \
+             to obtain the core target"
+        );
+
+        Self { lo, hi }
+    }
+
     /// Creates a new [`TargetID`] from the given name.
     #[must_use]
     pub fn from_target_name(name: &str) -> Self {

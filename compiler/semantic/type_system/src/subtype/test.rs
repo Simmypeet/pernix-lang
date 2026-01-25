@@ -1,6 +1,5 @@
-use std::{borrow::Cow, sync::Arc};
+use std::borrow::Cow;
 
-use pernixc_query::Engine;
 use pernixc_semantic_element::variance::{Variance, Variances};
 use pernixc_symbol::kind::Kind;
 use pernixc_target::{Global, TargetID};
@@ -20,6 +19,7 @@ use crate::{
     lifetime_constraint::LifetimeConstraint,
     normalizer,
     subtype::Subtype,
+    test::create_test_engine,
 };
 
 #[rstest::rstest]
@@ -32,7 +32,10 @@ fn basic_subtyping(#[case] variance: Variance) {
         // Variance::Covariant: &'a bool :> &'static bool then 'a: 'static
 
         let a_lt = Lifetime::Parameter(LifetimeParameterID {
-            parent_id: Global::new(TargetID::TEST, pernixc_symbol::ID(1)),
+            parent_id: Global::new(
+                TargetID::TEST,
+                pernixc_symbol::ID::from_u128(1),
+            ),
             id: pernixc_arena::ID::new(0),
         });
         let static_lt = Lifetime::Static;
@@ -49,7 +52,7 @@ fn basic_subtyping(#[case] variance: Variance) {
             pointee: Box::new(Type::Primitive(Primitive::Bool)),
         });
 
-        let engine = Arc::new(Engine::default());
+        let (engine, _dir) = create_test_engine();
         let premise = Premise::default();
 
         let environment = Environment::new(
@@ -118,8 +121,10 @@ fn basic_subtyping(#[case] variance: Variance) {
 #[case(Variance::Invariant)]
 fn subtyping_with_adt(#[case] variance: Variance) {
     let test = async move {
-        let global_id = Global::new(TargetID::TEST, pernixc_symbol::ID(1));
-        let adt_id = Global::new(TargetID::TEST, pernixc_symbol::ID(2));
+        let global_id =
+            Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(1));
+        let adt_id =
+            Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(2));
 
         let a_lt = Lifetime::Parameter(LifetimeParameterID {
             parent_id: global_id,
@@ -131,12 +136,12 @@ fn subtyping_with_adt(#[case] variance: Variance) {
             id: pernixc_arena::ID::new(1),
         });
 
-        let mut engine = Arc::new(Engine::default());
+        let (engine, _dir) = create_test_engine();
 
         let mut generic_parameter = GenericParameters::default();
         let lifetime_id = generic_parameter
             .add_lifetime_parameter(LifetimeParameter {
-                name: "a".into(),
+                name: engine.intern_unsized("a".to_owned()),
                 span: None,
             })
             .unwrap();
@@ -144,25 +149,23 @@ fn subtyping_with_adt(#[case] variance: Variance) {
         let mut variance_map = Variances::default();
         variance_map.variances_by_lifetime_ids.insert(lifetime_id, variance);
 
-        Arc::get_mut(&mut engine)
-            .unwrap()
-            .input_session(async |x| {
-                x.set_input(
-                    pernixc_term::generic_parameters::Key(adt_id),
-                    Arc::new(generic_parameter),
-                )
-                .await;
+        {
+            let mut input_session = engine.input_session();
+            input_session.set_input(
+                pernixc_term::generic_parameters::Key { symbol_id: adt_id },
+                engine.intern_unsized(generic_parameter),
+            );
 
-                x.set_input(
-                    pernixc_semantic_element::variance::Key(adt_id),
-                    Arc::new(variance_map),
-                )
-                .await;
+            input_session.set_input(
+                pernixc_semantic_element::variance::Key { symbol_id: adt_id },
+                engine.intern_unsized(variance_map),
+            );
 
-                x.set_input(pernixc_symbol::kind::Key(adt_id), Kind::Enum)
-                    .await;
-            })
-            .await;
+            input_session.set_input(
+                pernixc_symbol::kind::Key { symbol_id: adt_id },
+                Kind::Enum,
+            );
+        }
 
         // Adt['a]
         let a_t = Type::Symbol(Symbol {
@@ -242,7 +245,8 @@ fn subtyping_with_adt(#[case] variance: Variance) {
 async fn subtyping_with_inner_tuple() {
     // &'a mutable &'b bool == &'c mutable &'d bool
 
-    let global_id = Global::new(TargetID::TEST, pernixc_symbol::ID(1));
+    let global_id =
+        Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(1));
     let a_lt = Lifetime::Parameter(LifetimeParameterID {
         parent_id: global_id,
         id: pernixc_arena::ID::new(0),
@@ -263,7 +267,7 @@ async fn subtyping_with_inner_tuple() {
         )],
     });
 
-    let engine = Arc::new(Engine::default());
+    let (engine, _dir) = create_test_engine();
     let premise = Premise::default();
 
     let environment = Environment::new(
@@ -292,7 +296,8 @@ async fn subtyping_with_inner_tuple() {
 async fn subtyping_with_mutable_reference() {
     // &'a mutable &'b bool == &'c mutable &'d bool
 
-    let global_id = Global::new(TargetID::TEST, pernixc_symbol::ID(1));
+    let global_id =
+        Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(1));
     let a_lt = Lifetime::Parameter(LifetimeParameterID {
         parent_id: global_id,
         id: pernixc_arena::ID::new(0),
@@ -329,7 +334,7 @@ async fn subtyping_with_mutable_reference() {
         })),
     });
 
-    let engine = Arc::new(Engine::default());
+    let (engine, _dir) = create_test_engine();
     let premise = Premise::default();
 
     let environment = Environment::new(

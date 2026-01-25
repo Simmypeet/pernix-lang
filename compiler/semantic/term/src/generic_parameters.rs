@@ -1,5 +1,5 @@
 //! Contains the definition of [`GenericParameters`] component.
-use std::{collections::hash_map::Entry, sync::Arc};
+use std::collections::hash_map::Entry;
 
 use getset::Getters;
 use paste::paste;
@@ -8,7 +8,9 @@ use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_symbol::MemberID;
 use pernixc_target::Global;
-use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
+use qbice::{
+    Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned,
+};
 
 use crate::{
     constant::Constant, generic_arguments::GenericArguments,
@@ -30,7 +32,7 @@ use crate::{
     Decode,
     Query,
 )]
-#[value(Arc<GenericParameters>)]
+#[value(Interned<GenericParameters>)]
 #[extend(name = get_generic_parameters, by_val)]
 pub struct Key {
     /// The global symbol ID to get the generic parameters for.
@@ -42,7 +44,16 @@ pub struct Key {
 /// parameters, as well as the order of their declaration and the maps that
 /// maps the name of the generic parameters to their IDs.
 #[derive(
-    Debug, Clone, PartialEq, Eq, Default, Getters, StableHash, Encode, Decode,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
+    Getters,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
 )]
 pub struct GenericParameters {
     /// List of defined lifetime parameters.

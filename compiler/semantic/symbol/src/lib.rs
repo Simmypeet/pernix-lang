@@ -61,6 +61,10 @@ impl ID {
     pub const fn from_u128(value: u128) -> Self {
         Self { lo: value as u64, hi: (value >> 64) as u64 }
     }
+
+    /// Creates a new ID from the given low and high u64 values.
+    #[must_use]
+    pub const fn from_lo_hi(lo: u64, hi: u64) -> Self { Self { lo, hi } }
 }
 
 /// A kind of ID used to unique identify a symbol inside a particular global

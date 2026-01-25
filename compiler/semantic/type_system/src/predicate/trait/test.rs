@@ -1,6 +1,5 @@
-use std::{borrow::Cow, collections::BTreeMap, sync::Arc};
+use std::{borrow::Cow, collections::BTreeMap};
 
-use pernixc_query::Engine;
 use pernixc_semantic_element::where_clause::Predicate;
 use pernixc_symbol::kind::Kind;
 use pernixc_target::{Global, TargetID};
@@ -18,7 +17,8 @@ use pernixc_term::{
 
 use crate::{
     environment::{Environment, Premise},
-    normalizer, order,
+    normalizer,
+    test::create_test_engine,
 };
 
 #[tokio::test]
@@ -40,121 +40,115 @@ async fn single_implementation() {
         pointee: Box::new(tuple_with_i32.clone()),
     });
 
-    let implements_id = Global::new(TargetID::TEST, pernixc_symbol::ID(0));
-    let trait_id = Global::new(TargetID::TEST, pernixc_symbol::ID(1));
+    let implements_id =
+        Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(0));
+    let trait_id =
+        Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(1));
 
-    let mut engine = Arc::new(Engine::default());
+    let (engine, _dir) = create_test_engine();
 
-    Arc::get_mut(&mut engine)
-        .unwrap()
-        .runtime
-        .executor
-        .register(Arc::new(order::ImplementsOrderExecutor));
+    let expected_instantiation = {
+        let mut input_session = engine.input_session();
+        input_session.set_input(
+            pernixc_symbol::kind::Key { symbol_id: implements_id },
+            Kind::PositiveImplementation,
+        );
+        input_session.set_input(
+            pernixc_symbol::kind::Key { symbol_id: trait_id },
+            Kind::Trait,
+        );
+        input_session.set_input(
+            pernixc_semantic_element::implements::Key {
+                symbol_id: implements_id,
+            },
+            Some(trait_id),
+        );
+        input_session.set_input(
+            pernixc_symbol::final_implements::Key { symbol_id: implements_id },
+            false,
+        );
+        input_session.set_input(
+            pernixc_semantic_element::where_clause::Key {
+                symbol_id: implements_id,
+            },
+            engine.intern_unsized(&[] as &[Predicate]),
+        );
+        input_session.set_input(
+            pernixc_semantic_element::implemented::Key { symbol_id: trait_id },
+            engine.intern(std::iter::once(implements_id).collect()),
+        );
 
-    let expected_instantiation = Arc::get_mut(&mut engine)
-        .unwrap()
-        .input_session(async |x| {
-            x.set_input(
-                pernixc_symbol::kind::Key(implements_id),
-                Kind::PositiveImplementation,
-            )
-            .await;
-            x.set_input(pernixc_symbol::kind::Key(trait_id), Kind::Trait).await;
-            x.set_input(
-                pernixc_semantic_element::implements::Key(implements_id),
-                Some(trait_id),
-            )
-            .await;
-            x.set_input(
-                pernixc_symbol::final_implements::Key(implements_id),
-                false,
-            )
-            .await;
-            x.set_input(
-                pernixc_semantic_element::where_clause::Key(implements_id),
-                Arc::default(),
-            )
-            .await;
-            x.set_input(
-                pernixc_semantic_element::implemented::Key(trait_id),
-                Arc::new(std::iter::once(implements_id).collect()),
-            )
-            .await;
+        let mut trait_generic_param = GenericParameters::default();
+        trait_generic_param
+            .add_type_parameter(TypeParameter {
+                name: engine.intern_unsized("T".to_owned()),
+                span: None,
+            })
+            .unwrap();
 
-            let mut trait_generic_param = GenericParameters::default();
-            trait_generic_param
-                .add_type_parameter(TypeParameter {
-                    name: "T".into(),
+        input_session.set_input(
+            pernixc_term::generic_parameters::Key { symbol_id: trait_id },
+            engine.intern(trait_generic_param),
+        );
+
+        let mut impl_generic_param = GenericParameters::default();
+        let impl_a = impl_generic_param
+            .add_lifetime_parameter(
+                pernixc_term::generic_parameters::LifetimeParameter {
+                    name: engine.intern_unsized("a".to_owned()),
                     span: None,
-                })
-                .unwrap();
-
-            x.set_input(
-                pernixc_term::generic_parameters::Key(trait_id),
-                Arc::new(trait_generic_param),
+                },
             )
-            .await;
+            .unwrap();
+        let impl_t = impl_generic_param
+            .add_type_parameter(TypeParameter {
+                name: engine.intern_unsized("T".to_owned()),
+                span: None,
+            })
+            .unwrap();
 
-            let mut impl_generic_param = GenericParameters::default();
-            let impl_a = impl_generic_param
-                .add_lifetime_parameter(
-                    pernixc_term::generic_parameters::LifetimeParameter {
-                        name: "a".into(),
-                        span: None,
-                    },
-                )
-                .unwrap();
-            let impl_t = impl_generic_param
-                .add_type_parameter(TypeParameter {
-                    name: "T".into(),
-                    span: None,
-                })
-                .unwrap();
+        input_session.set_input(
+            pernixc_term::generic_parameters::Key { symbol_id: implements_id },
+            engine.intern(impl_generic_param),
+        );
 
-            x.set_input(
-                pernixc_term::generic_parameters::Key(implements_id),
-                Arc::new(impl_generic_param),
-            )
-            .await;
-
-            x.set_input(
-                pernixc_semantic_element::implements_arguments::Key(
-                    implements_id,
-                ),
-                Some(Arc::new(GenericArguments {
-                    lifetimes: vec![],
-                    types: vec![Type::Reference(Reference {
-                        qualifier: Qualifier::Immutable,
-                        lifetime: Lifetime::Parameter(
-                            LifetimeParameterID::new(implements_id, impl_a),
-                        ),
-                        pointee: Box::new(Type::Parameter(
-                            TypeParameterID::new(trait_id, impl_t),
-                        )),
-                    })],
-                    constants: vec![],
-                })),
-            )
-            .await;
-
-            Instantiation {
-                lifetimes: std::iter::once((
-                    Lifetime::Parameter(LifetimeParameterID::new(
+        input_session.set_input(
+            pernixc_semantic_element::implements_arguments::Key {
+                symbol_id: implements_id,
+            },
+            Some(engine.intern(GenericArguments {
+                lifetimes: vec![],
+                types: vec![Type::Reference(Reference {
+                    qualifier: Qualifier::Immutable,
+                    lifetime: Lifetime::Parameter(LifetimeParameterID::new(
                         implements_id,
                         impl_a,
                     )),
-                    Lifetime::Static,
-                ))
-                .collect(),
-                types: std::iter::once((
-                    Type::Parameter(TypeParameterID::new(trait_id, impl_t)),
-                    tuple_with_i32.clone(),
-                ))
-                .collect(),
-                constants: BTreeMap::default(),
-            }
-        })
-        .await;
+                    pointee: Box::new(Type::Parameter(TypeParameterID::new(
+                        trait_id, impl_t,
+                    ))),
+                })],
+                constants: vec![],
+            })),
+        );
+
+        Instantiation {
+            lifetimes: std::iter::once((
+                Lifetime::Parameter(LifetimeParameterID::new(
+                    implements_id,
+                    impl_a,
+                )),
+                Lifetime::Static,
+            ))
+            .collect(),
+            types: std::iter::once((
+                Type::Parameter(TypeParameterID::new(trait_id, impl_t)),
+                tuple_with_i32.clone(),
+            ))
+            .collect(),
+            constants: BTreeMap::default(),
+        }
+    };
 
     let predicate = PositiveTrait::new(trait_id, false, GenericArguments {
         lifetimes: vec![],
@@ -195,261 +189,238 @@ async fn single_implementation() {
 #[allow(clippy::too_many_lines)]
 async fn specialization_test_internal(case: SpecializationCase) {
     let specialized_impl_id =
-        Global::new(TargetID::TEST, pernixc_symbol::ID(0));
-    let general_impl_id = Global::new(TargetID::TEST, pernixc_symbol::ID(1));
-    let trait_id = Global::new(TargetID::TEST, pernixc_symbol::ID(2));
+        Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(0));
+    let general_impl_id =
+        Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(1));
+    let trait_id =
+        Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(2));
 
-    let mut engine = Arc::new(Engine::default());
+    let (engine, _dir) = create_test_engine();
 
-    Arc::get_mut(&mut engine)
-        .unwrap()
-        .runtime
-        .executor
-        .register(Arc::new(order::ImplementsOrderExecutor));
+    let expected = {
+        let mut input_session = engine.input_session();
+        input_session.set_input(
+            pernixc_symbol::kind::Key { symbol_id: specialized_impl_id },
+            Kind::PositiveImplementation,
+        );
+        input_session.set_input(
+            pernixc_semantic_element::implements::Key {
+                symbol_id: specialized_impl_id,
+            },
+            Some(trait_id),
+        );
+        input_session.set_input(
+            pernixc_symbol::final_implements::Key {
+                symbol_id: specialized_impl_id,
+            },
+            false,
+        );
 
-    let expected = Arc::get_mut(&mut engine)
-        .unwrap()
-        .input_session(async |x| {
-            x.set_input(
-                pernixc_symbol::kind::Key(specialized_impl_id),
-                Kind::PositiveImplementation,
-            )
-            .await;
-            x.set_input(
-                pernixc_semantic_element::implements::Key(specialized_impl_id),
-                Some(trait_id),
-            )
-            .await;
-            x.set_input(
-                pernixc_symbol::final_implements::Key(specialized_impl_id),
-                false,
-            )
-            .await;
-            x.set_input(
-                pernixc_semantic_element::where_clause::Key(
-                    specialized_impl_id,
-                ),
-                if let SpecializationCase::SpecializedButFallback(ty) = &case {
-                    Arc::from([{
-                        let impossible_trait_id =
-                            Global::new(TargetID::TEST, pernixc_symbol::ID(10));
+        let where_clause_value =
+            if let SpecializationCase::SpecializedButFallback(ty) = &case {
+                let impossible_trait_id = Global::new(
+                    TargetID::TEST,
+                    pernixc_symbol::ID::from_u128(10),
+                );
 
-                        x.set_input(
-                            pernixc_symbol::kind::Key(impossible_trait_id),
-                            Kind::Trait,
-                        )
-                        .await;
-                        x.set_input(
-                            pernixc_semantic_element::implemented::Key(
-                                impossible_trait_id,
-                            ),
-                            Arc::default(),
-                        )
-                        .await;
+                input_session.set_input(
+                    pernixc_symbol::kind::Key {
+                        symbol_id: impossible_trait_id,
+                    },
+                    Kind::Trait,
+                );
+                input_session.set_input(
+                    pernixc_semantic_element::implemented::Key {
+                        symbol_id: impossible_trait_id,
+                    },
+                    engine.intern(pernixc_hash::HashSet::default()),
+                );
 
-                        let mut trait_generic_param =
-                            GenericParameters::default();
-                        trait_generic_param
-                            .add_type_parameter(TypeParameter {
-                                name: "T".into(),
-                                span: None,
-                            })
-                            .unwrap();
+                let mut trait_generic_param = GenericParameters::default();
+                trait_generic_param
+                    .add_type_parameter(TypeParameter {
+                        name: engine.intern_unsized("T".to_owned()),
+                        span: None,
+                    })
+                    .unwrap();
 
-                        x.set_input(
-                            pernixc_term::generic_parameters::Key(
-                                impossible_trait_id,
-                            ),
-                            Arc::new(trait_generic_param),
-                        )
-                        .await;
+                input_session.set_input(
+                    pernixc_term::generic_parameters::Key {
+                        symbol_id: impossible_trait_id,
+                    },
+                    engine.intern(trait_generic_param),
+                );
 
-                        // This predicate requirement will never be satisfiable
-                        Predicate {
-                            predicate: predicate::Predicate::PositiveTrait(
-                                PositiveTrait {
-                                    trait_id: impossible_trait_id,
-                                    is_const: false,
-                                    generic_arguments: GenericArguments {
-                                        types: vec![ty.clone()],
-                                        ..Default::default()
-                                    },
-                                },
-                            ),
-                            span: None,
-                        }
-                    }])
-                } else {
-                    Arc::default()
-                },
-            )
-            .await;
-
-            let mut impl_generic_param = GenericParameters::default();
-            let impl_specialized_t = impl_generic_param
-                .add_type_parameter(TypeParameter {
-                    name: "T".into(),
+                engine.intern_unsized(vec![Predicate {
+                    predicate: predicate::Predicate::PositiveTrait(
+                        PositiveTrait {
+                            trait_id: impossible_trait_id,
+                            is_const: false,
+                            generic_arguments: GenericArguments {
+                                types: vec![ty.clone()],
+                                ..Default::default()
+                            },
+                        },
+                    ),
                     span: None,
-                })
-                .unwrap();
+                }])
+            } else {
+                engine.intern_unsized(&[] as &[Predicate])
+            };
 
-            x.set_input(
-                pernixc_term::generic_parameters::Key(specialized_impl_id),
-                Arc::new(impl_generic_param),
-            )
-            .await;
+        input_session.set_input(
+            pernixc_semantic_element::where_clause::Key {
+                symbol_id: specialized_impl_id,
+            },
+            where_clause_value,
+        );
 
-            x.set_input(
-                pernixc_semantic_element::implements_arguments::Key(
-                    specialized_impl_id,
-                ),
-                Some(Arc::new(GenericArguments {
-                    lifetimes: vec![],
-                    types: vec![
-                        Type::Parameter(TypeParameterID::new(
-                            specialized_impl_id,
-                            impl_specialized_t,
-                        )),
-                        Type::Parameter(TypeParameterID::new(
-                            specialized_impl_id,
-                            impl_specialized_t,
-                        )),
-                    ],
-                    constants: vec![],
-                })),
-            )
-            .await;
+        let mut impl_generic_param = GenericParameters::default();
+        let impl_specialized_t = impl_generic_param
+            .add_type_parameter(TypeParameter {
+                name: engine.intern_unsized("T".to_owned()),
+                span: None,
+            })
+            .unwrap();
 
-            x.set_input(
-                pernixc_symbol::kind::Key(general_impl_id),
-                Kind::PositiveImplementation,
-            )
-            .await;
-            x.set_input(
-                pernixc_semantic_element::implements::Key(general_impl_id),
-                Some(trait_id),
-            )
-            .await;
-            x.set_input(
-                pernixc_symbol::final_implements::Key(general_impl_id),
-                false,
-            )
-            .await;
-            x.set_input(
-                pernixc_semantic_element::where_clause::Key(general_impl_id),
-                Arc::default(),
-            )
-            .await;
+        input_session.set_input(
+            pernixc_term::generic_parameters::Key {
+                symbol_id: specialized_impl_id,
+            },
+            engine.intern(impl_generic_param),
+        );
 
-            let mut impl_generic_param = GenericParameters::default();
-            let impl_general_t = impl_generic_param
-                .add_type_parameter(TypeParameter {
-                    name: "T".into(),
-                    span: None,
-                })
-                .unwrap();
-            let impl_general_u = impl_generic_param
-                .add_type_parameter(TypeParameter {
-                    name: "U".into(),
-                    span: None,
-                })
-                .unwrap();
+        input_session.set_input(
+            pernixc_semantic_element::implements_arguments::Key {
+                symbol_id: specialized_impl_id,
+            },
+            Some(engine.intern(GenericArguments {
+                lifetimes: vec![],
+                types: vec![
+                    Type::Parameter(TypeParameterID::new(
+                        specialized_impl_id,
+                        impl_specialized_t,
+                    )),
+                    Type::Parameter(TypeParameterID::new(
+                        specialized_impl_id,
+                        impl_specialized_t,
+                    )),
+                ],
+                constants: vec![],
+            })),
+        );
 
-            x.set_input(
-                pernixc_term::generic_parameters::Key(general_impl_id),
-                Arc::new(impl_generic_param),
-            )
-            .await;
+        input_session.set_input(
+            pernixc_symbol::kind::Key { symbol_id: general_impl_id },
+            Kind::PositiveImplementation,
+        );
+        input_session.set_input(
+            pernixc_semantic_element::implements::Key {
+                symbol_id: general_impl_id,
+            },
+            Some(trait_id),
+        );
+        input_session.set_input(
+            pernixc_symbol::final_implements::Key {
+                symbol_id: general_impl_id,
+            },
+            false,
+        );
+        input_session.set_input(
+            pernixc_semantic_element::where_clause::Key {
+                symbol_id: general_impl_id,
+            },
+            engine.intern_unsized(&[] as &[Predicate]),
+        );
 
-            x.set_input(
-                pernixc_semantic_element::implements_arguments::Key(
-                    general_impl_id,
-                ),
-                Some(Arc::new(GenericArguments {
-                    lifetimes: vec![],
-                    types: vec![
-                        Type::Parameter(TypeParameterID::new(
-                            general_impl_id,
-                            impl_general_t,
-                        )),
-                        Type::Parameter(TypeParameterID::new(
-                            general_impl_id,
-                            impl_general_u,
-                        )),
-                    ],
-                    constants: vec![],
-                })),
-            )
-            .await;
+        let mut impl_generic_param = GenericParameters::default();
+        let impl_general_t = impl_generic_param
+            .add_type_parameter(TypeParameter {
+                name: engine.intern_unsized("T".to_owned()),
+                span: None,
+            })
+            .unwrap();
+        let impl_general_u = impl_generic_param
+            .add_type_parameter(TypeParameter {
+                name: engine.intern_unsized("U".to_owned()),
+                span: None,
+            })
+            .unwrap();
 
-            x.set_input(pernixc_symbol::kind::Key(trait_id), Kind::Trait).await;
-            x.set_input(
-                pernixc_semantic_element::implemented::Key(trait_id),
-                Arc::new(
-                    [specialized_impl_id, general_impl_id]
-                        .into_iter()
-                        .collect(),
-                ),
-            )
-            .await;
+        input_session.set_input(
+            pernixc_term::generic_parameters::Key {
+                symbol_id: general_impl_id,
+            },
+            engine.intern(impl_generic_param),
+        );
 
-            let mut trait_generic_param = GenericParameters::default();
-            trait_generic_param
-                .add_type_parameter(TypeParameter {
-                    name: "T".into(),
-                    span: None,
-                })
-                .unwrap();
+        input_session.set_input(
+            pernixc_semantic_element::implements_arguments::Key {
+                symbol_id: general_impl_id,
+            },
+            Some(engine.intern(GenericArguments {
+                lifetimes: vec![],
+                types: vec![
+                    Type::Parameter(TypeParameterID::new(
+                        general_impl_id,
+                        impl_general_t,
+                    )),
+                    Type::Parameter(TypeParameterID::new(
+                        general_impl_id,
+                        impl_general_u,
+                    )),
+                ],
+                constants: vec![],
+            })),
+        );
 
-            trait_generic_param
-                .add_type_parameter(TypeParameter {
-                    name: "U".into(),
-                    span: None,
-                })
-                .unwrap();
+        input_session.set_input(
+            pernixc_symbol::kind::Key { symbol_id: trait_id },
+            Kind::Trait,
+        );
+        input_session.set_input(
+            pernixc_semantic_element::implemented::Key { symbol_id: trait_id },
+            engine.intern(
+                [specialized_impl_id, general_impl_id].into_iter().collect(),
+            ),
+        );
 
-            x.set_input(
-                pernixc_term::generic_parameters::Key(trait_id),
-                Arc::new(trait_generic_param),
-            )
-            .await;
+        let mut trait_generic_param = GenericParameters::default();
+        trait_generic_param
+            .add_type_parameter(TypeParameter {
+                name: engine.intern_unsized("T".to_owned()),
+                span: None,
+            })
+            .unwrap();
 
-            match &case {
-                SpecializationCase::SpecializedRewrittenable(ty, _)
-                | SpecializationCase::Specialized(ty) => Instantiation {
-                    types: std::iter::once((
-                        Type::Parameter(TypeParameterID::new(
-                            specialized_impl_id,
-                            impl_specialized_t,
-                        )),
-                        ty.clone(),
-                    ))
-                    .collect(),
-                    ..Default::default()
-                },
+        trait_generic_param
+            .add_type_parameter(TypeParameter {
+                name: engine.intern_unsized("U".to_owned()),
+                span: None,
+            })
+            .unwrap();
 
-                SpecializationCase::SpecializedButFallback(first) => {
-                    Instantiation {
-                        types: std::iter::once((
-                            Type::Parameter(TypeParameterID::new(
-                                general_impl_id,
-                                impl_general_t,
-                            )),
-                            first.clone(),
-                        ))
-                        .chain(std::iter::once((
-                            Type::Parameter(TypeParameterID::new(
-                                general_impl_id,
-                                impl_general_u,
-                            )),
-                            first.clone(),
-                        )))
-                        .collect(),
-                        ..Default::default()
-                    }
-                }
+        input_session.set_input(
+            pernixc_term::generic_parameters::Key { symbol_id: trait_id },
+            engine.intern(trait_generic_param),
+        );
 
-                SpecializationCase::General(first, second) => Instantiation {
+        match &case {
+            SpecializationCase::SpecializedRewrittenable(ty, _)
+            | SpecializationCase::Specialized(ty) => Instantiation {
+                types: std::iter::once((
+                    Type::Parameter(TypeParameterID::new(
+                        specialized_impl_id,
+                        impl_specialized_t,
+                    )),
+                    ty.clone(),
+                ))
+                .collect(),
+                ..Default::default()
+            },
+
+            SpecializationCase::SpecializedButFallback(first) => {
+                Instantiation {
                     types: std::iter::once((
                         Type::Parameter(TypeParameterID::new(
                             general_impl_id,
@@ -462,14 +433,33 @@ async fn specialization_test_internal(case: SpecializationCase) {
                             general_impl_id,
                             impl_general_u,
                         )),
-                        second.clone(),
+                        first.clone(),
                     )))
                     .collect(),
                     ..Default::default()
-                },
+                }
             }
-        })
-        .await;
+
+            SpecializationCase::General(first, second) => Instantiation {
+                types: std::iter::once((
+                    Type::Parameter(TypeParameterID::new(
+                        general_impl_id,
+                        impl_general_t,
+                    )),
+                    first.clone(),
+                ))
+                .chain(std::iter::once((
+                    Type::Parameter(TypeParameterID::new(
+                        general_impl_id,
+                        impl_general_u,
+                    )),
+                    second.clone(),
+                )))
+                .collect(),
+                ..Default::default()
+            },
+        }
+    };
 
     let expected_id = match &case {
         SpecializationCase::SpecializedRewrittenable(_, _)

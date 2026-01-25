@@ -1,6 +1,5 @@
-use std::{borrow::Cow, sync::Arc};
+use std::borrow::Cow;
 
-use pernixc_query::Engine;
 use pernixc_target::{Global, TargetID};
 use pernixc_term::{
     generic_arguments::GenericArguments,
@@ -12,16 +11,23 @@ use crate::{
     environment::{Environment, Premise},
     normalizer,
     order::Order,
+    test::create_test_engine,
 };
 
 #[tokio::test]
 async fn ambiguous() {
     let t_parameter = Type::Parameter(TypeParameterID {
-        parent_id: Global::new(TargetID::TEST, pernixc_symbol::ID(1)),
+        parent_id: Global::new(
+            TargetID::TEST,
+            pernixc_symbol::ID::from_u128(1),
+        ),
         id: pernixc_arena::ID::new(0),
     });
     let u_parameter = Type::Parameter(TypeParameterID {
-        parent_id: Global::new(TargetID::TEST, pernixc_symbol::ID(2)),
+        parent_id: Global::new(
+            TargetID::TEST,
+            pernixc_symbol::ID::from_u128(2),
+        ),
         id: pernixc_arena::ID::new(0),
     });
 
@@ -37,7 +43,7 @@ async fn ambiguous() {
         constants: Vec::new(),
     };
 
-    let engine = Arc::new(Engine::default());
+    let (engine, _dir) = create_test_engine();
     let premise = Premise::default();
 
     let environment = Environment::new(
@@ -52,7 +58,10 @@ async fn ambiguous() {
 #[tokio::test]
 async fn more_general() {
     let t_parameter = Type::Parameter(TypeParameterID {
-        parent_id: Global::new(TargetID::TEST, pernixc_symbol::ID(1)),
+        parent_id: Global::new(
+            TargetID::TEST,
+            pernixc_symbol::ID::from_u128(1),
+        ),
         id: pernixc_arena::ID::new(0),
     });
 
@@ -71,7 +80,7 @@ async fn more_general() {
         constants: Vec::new(),
     };
 
-    let engine = Arc::new(Engine::default());
+    let (engine, _dir) = create_test_engine();
     let premise = Premise::default();
 
     let environment = Environment::new(
@@ -89,7 +98,10 @@ async fn more_general() {
 #[tokio::test]
 async fn incompatible() {
     let t_parameter = Type::Parameter(TypeParameterID {
-        parent_id: Global::new(TargetID::TEST, pernixc_symbol::ID(1)),
+        parent_id: Global::new(
+            TargetID::TEST,
+            pernixc_symbol::ID::from_u128(1),
+        ),
         id: pernixc_arena::ID::new(0),
     });
 
@@ -108,7 +120,7 @@ async fn incompatible() {
         constants: Vec::new(),
     };
 
-    let engine = Arc::new(Engine::default());
+    let (engine, _dir) = create_test_engine();
     let premise = Premise::default();
 
     let environment = Environment::new(

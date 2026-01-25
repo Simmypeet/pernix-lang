@@ -7,7 +7,7 @@ use pernixc_symbol::{
     parent::get_parent,
 };
 use pernixc_target::Global;
-use qbice::{Decode, Encode, StableHash};
+use qbice::{Decode, Encode, Identifiable, StableHash};
 
 use crate::{
     constant::Constant,
@@ -34,6 +34,7 @@ pub mod arbitrary;
     Encode,
     Decode,
     StableHash,
+    Identifiable,
 )]
 pub struct GenericArguments {
     /// The lifetimes supplied to the term.

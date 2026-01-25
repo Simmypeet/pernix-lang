@@ -5,9 +5,7 @@ use std::{collections::BTreeSet, sync::Arc};
 use enum_as_inner::EnumAsInner;
 use pernixc_handler::Handler;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::runtime::executor::CyclicError;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{diagnostic::Diagnostic, lifetime_constraint::LifetimeConstraint};
 
@@ -42,8 +40,8 @@ pub mod wf_check;
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     thiserror::Error,
 )]
 #[error(
@@ -69,9 +67,6 @@ pub struct OverflowError;
 pub enum Error {
     #[error(transparent)]
     Overflow(#[from] OverflowError),
-
-    #[error(transparent)]
-    CyclicDependency(#[from] CyclicError),
 }
 
 /// A tag type signaling that the predicate/query is satisfied.
@@ -179,9 +174,6 @@ pub enum Satisfiability {
 )]
 #[allow(missing_docs)]
 pub enum UnrecoverableError {
-    #[error(transparent)]
-    CyclicDependency(#[from] CyclicError),
-
     #[error(
         "encountered an unrecoverable error that possible left the binder \
          state corrupted, the diagnostic has been reported"
@@ -206,9 +198,6 @@ impl Error {
 
                 UnrecoverableError::Reported
             }
-            Self::CyclicDependency(cyclic) => {
-                UnrecoverableError::CyclicDependency(cyclic)
-            }
         }
     }
 
@@ -224,10 +213,6 @@ impl Error {
                 overflow.report_as_type_check_overflow(overflow_span, handler);
 
                 UnrecoverableError::Reported
-            }
-
-            Self::CyclicDependency(cyclic) => {
-                UnrecoverableError::CyclicDependency(cyclic)
             }
         }
     }
@@ -251,10 +236,6 @@ impl Error {
                 );
 
                 UnrecoverableError::Reported
-            }
-
-            Self::CyclicDependency(cyclic) => {
-                UnrecoverableError::CyclicDependency(cyclic)
             }
         }
     }

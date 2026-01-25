@@ -3,7 +3,6 @@
 use enum_as_inner::EnumAsInner;
 use pernixc_handler::Handler;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::runtime::executor;
 use pernixc_term::{lifetime::Lifetime, predicate::Outlives};
 
 use crate::{
@@ -27,7 +26,7 @@ impl<N: Normalizer> Environment<'_, N> {
         lifetime_constraints: impl IntoIterator<Item = &'a LifetimeConstraint>,
         span: &RelativeSpan,
         handler: &dyn Handler<Diagnostic>,
-    ) -> Result<(), executor::CyclicError> {
+    ) {
         for constraint in lifetime_constraints {
             match constraint {
                 LifetimeConstraint::LifetimeOutlives(outlives) => {
@@ -43,9 +42,6 @@ impl<N: Normalizer> Environment<'_, N> {
                             ));
                         }
 
-                        Err(Error::CyclicDependency(e)) => {
-                            return Err(e);
-                        }
                         Err(Error::Overflow(e)) => {
                             e.report_as_undecidable_predicate(
                                 outlives.clone().into(),
@@ -58,7 +54,5 @@ impl<N: Normalizer> Environment<'_, N> {
                 }
             }
         }
-
-        Ok(())
     }
 }

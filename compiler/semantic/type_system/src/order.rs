@@ -8,14 +8,16 @@ use std::{
     collections::{BTreeMap, BTreeSet},
 };
 
-use pernixc_query::{TrackedEngine, runtime::executor};
+use linkme::distributed_slice;
+use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_semantic_element::implements_arguments::get_implements_argument;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant, generic_arguments::GenericArguments,
     lifetime::Lifetime, r#type::Type,
+};
+use qbice::{
+    Decode, Encode, Query, StableHash, executor, program::Registration,
 };
 
 use crate::{
@@ -38,8 +40,8 @@ use crate::{
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 #[allow(missing_docs)]
 pub enum Order {
@@ -235,9 +237,9 @@ impl<N: Normalizer> Environment<'_, N> {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
-    pernixc_query::Key,
+    Encode,
+    Decode,
+    Query,
     derive_new::new,
 )]
 #[value(Result<Option<Order>, OverflowError>)]
@@ -248,18 +250,17 @@ pub struct Key {
     pub other: Global<pernixc_symbol::ID>,
 }
 
-pernixc_register::register!(Key, ImplementsOrderExecutor);
-
-#[pernixc_query::executor(key(Key), name(ImplementsOrderExecutor))]
-pub async fn implements_order(
+/// The executor for the [`ImplementsOrderExecutor`] query.
+#[executor(config = Config)]
+pub async fn implements_order_executor(
     Key { this, other }: &Key,
     tracked_engine: &TrackedEngine,
-) -> Result<Result<Option<Order>, OverflowError>, executor::CyclicError> {
+) -> Result<Option<Order>, OverflowError> {
     let (Some(lhs_generic_arguments), Some(rhs_generic_arguments)) = (
-        tracked_engine.get_implements_argument(*this).await?,
-        tracked_engine.get_implements_argument(*other).await?,
+        tracked_engine.get_implements_argument(*this).await,
+        tracked_engine.get_implements_argument(*other).await,
     ) else {
-        return Ok(Ok(None));
+        return Ok(None);
     };
 
     let default_environment = Environment::new(
@@ -272,11 +273,14 @@ pub async fn implements_order(
         .order(&lhs_generic_arguments, &rhs_generic_arguments)
         .await
     {
-        Ok(order) => Ok(Ok(Some(order))),
-        Err(Error::Overflow(overflow)) => Ok(Err(overflow)),
-        Err(Error::CyclicDependency(cyclic)) => Err(cyclic),
+        Ok(order) => Ok(Some(order)),
+        Err(Error::Overflow(overflow)) => Err(overflow),
     }
 }
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static IMPLEMENTS_ORDER_EXECUTOR: Registration<Config> =
+    Registration::new::<Key, ImplementsOrderExecutor>();
 
 #[cfg(test)]
 mod test;

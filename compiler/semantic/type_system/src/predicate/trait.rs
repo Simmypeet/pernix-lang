@@ -275,7 +275,7 @@ async fn is_in_trait(
         let trait_generic_arguments = environment
             .tracked_engine()
             .get_generic_parameters(current_id)
-            .await?
+            .await
             .create_identity_generic_arguments(current_id);
 
         let Some(compatibility) = environment

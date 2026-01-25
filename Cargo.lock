@@ -1701,17 +1701,20 @@ dependencies = [
  "bon",
  "derive_more",
  "enum-as-inner",
+ "linkme",
  "pernixc_diagnostic",
  "pernixc_extend",
  "pernixc_handler",
  "pernixc_hash",
  "pernixc_lexical",
+ "pernixc_qbice",
  "pernixc_semantic_element",
  "pernixc_source_file",
  "pernixc_symbol",
  "pernixc_syntax",
  "pernixc_target",
  "pernixc_term",
+ "qbice",
  "strsim",
 ]
 
@@ -1905,19 +1908,24 @@ dependencies = [
  "derive_more",
  "enum-as-inner",
  "getset",
+ "linkme",
  "parking_lot",
  "pernixc_arena",
  "pernixc_diagnostic",
  "pernixc_extend",
  "pernixc_handler",
+ "pernixc_hash",
  "pernixc_lexical",
+ "pernixc_qbice",
  "pernixc_semantic_element",
  "pernixc_source_file",
  "pernixc_symbol",
  "pernixc_target",
  "pernixc_term",
  "proptest",
+ "qbice",
  "rstest",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
 ]
@@ -2091,14 +2099,13 @@ dependencies = [
 
 [[package]]
 name = "proptest"
-version = "1.7.0"
+version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6fcdab19deb5195a31cf7726a210015ff1496ba1464fd42cb4f537b8b01b471f"
+checksum = "bee689443a2bd0a16ab0348b52ee43e3b2d1b1f931c8aa5c9f8de4c86fbe8c40"
 dependencies = [
  "bit-set",
  "bit-vec",
  "bitflags 2.9.2",
- "lazy_static",
  "num-traits",
  "rand",
  "rand_chacha",
@@ -2120,9 +2127,9 @@ dependencies = [
 
 [[package]]
 name = "qbice"
-version = "0.3.10"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bd088dc66645e25bb468b16a211d28af78c713375a44624341731373ea880059"
+checksum = "c23a944cb9eb8d600368649137e0fef2b5f0ec0b234bb6a7339fdeaa67b52300"
 dependencies = [
  "crossbeam",
  "dashmap 6.1.0",
@@ -2232,9 +2239,9 @@ dependencies = [
 
 [[package]]
 name = "qbice_storage"
-version = "0.4.7"
+version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41ae044e0f38d7149eab4f495d6ca015216ff92416833d3c1a6f0613a77113f2"
+checksum = "d172f1f173a438e7490013c509478f81fbe3b677bcbf12bd6ed1b6781cff9aa8"
 dependencies = [
  "crossbeam-channel",
  "crossbeam-deque",

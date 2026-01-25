@@ -6,7 +6,7 @@ use std::{
 };
 
 use enum_as_inner::EnumAsInner;
-use pernixc_query::{TrackedEngine, runtime::executor};
+use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::{
     kind::{Kind, get_kind},
     parent::scope_walker,
@@ -142,20 +142,20 @@ impl<N: Normalizer> visitor::AsyncVisitor<Constant> for Visitor<'_, '_, N> {
 async fn try_get_adt_fields(
     ty: &Type,
     engine: &TrackedEngine,
-) -> Result<Option<Vec<Type>>, executor::CyclicError> {
+) -> Option<Vec<Type>> {
     let Type::Symbol(symbol) = ty else {
-        return Ok(None);
+        return None;
     };
 
     if !matches!(engine.get_kind(symbol.id).await, Kind::Enum | Kind::Struct) {
-        return Ok(None);
+        return None;
     }
 
-    Ok(Some(
+    Some(
         engine
             .get_instantiated_adt_fields(symbol.id, &symbol.generic_arguments)
-            .await?,
-    ))
+            .await,
+    )
 }
 
 impl Query for PositiveMarker {
@@ -272,7 +272,7 @@ impl Query for PositiveMarker {
                         // including fields as well
                         for field_ty in
                             try_get_adt_fields(ty, environment.tracked_engine())
-                                .await?
+                                .await
                                 .into_iter()
                                 .flatten()
                         {
@@ -467,7 +467,7 @@ async fn is_in_marker(
         let marker_generic_arguments = environment
             .tracked_engine()
             .get_generic_parameters(current_id)
-            .await?
+            .await
             .create_identity_generic_arguments(current_id);
 
         let Some(compatibility) = environment
