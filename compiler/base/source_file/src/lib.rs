@@ -28,10 +28,7 @@ use qbice::{
     storage::intern::Interned,
 };
 use rayon::{iter::ParallelIterator, slice::ParallelSlice};
-use siphasher::{
-    sip::SipHasher24,
-    sip128::{self, Hasher128},
-};
+use siphasher::sip128::{self, Hasher128};
 
 /// Represents an source file input for the compiler.
 #[derive(Clone, PartialEq, Eq, Hash, Getters, Encode, Decode)]
@@ -934,8 +931,6 @@ pub async fn calculate_path_id(
     path: &Path,
     target_id: TargetID,
 ) -> Result<LocalSourceID, std::io::Error> {
-    let hasher = SipHasher24::default();
-
     let target_args = self.get_invocation_arguments(target_id).await;
 
     if path.is_absolute().not() {
