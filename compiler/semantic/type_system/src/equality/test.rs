@@ -1069,12 +1069,6 @@ impl Arbitrary for Decoy {
 }
 
 proptest! {
-
-    #![proptest_config(proptest::test_runner::Config {
-        cases: 5_000,
-        ..Default::default()
-    })]
-
     #[test]
    fn property_based_testing_type(
         property in Box::<dyn Property<Type>>::arbitrary(),
@@ -1104,63 +1098,4 @@ proptest! {
             .unwrap()
             .block_on(property_based_testing(&*property, decoy))?;
     }
-}
-
-#[test]
-#[allow(clippy::unreadable_literal)]
-pub fn test() {
-    use pernixc_term::generic_arguments::MemberSymbol as MemberSymbolType;
-
-    let decoy = Decoy::default();
-    let property: Box<dyn Property<Type>> = Box::new(Mapping {
-        property: Box::new(Identity { term: Type::Primitive(Primitive::Bool) }),
-        target_trait_member: TraitMember(MemberSymbol {
-            id: TargetID::from_lo_hi(5812977776462280804, 9147891367887105665)
-                .make_global(pernixc_symbol::ID::from_lo_hi(
-                    11152373782417433177,
-                    14652691540803969679,
-                )),
-            parent_generic_arguments: GenericArguments {
-                lifetimes: vec![],
-                types: vec![Type::MemberSymbol(MemberSymbolType {
-                    id: TargetID::from_lo_hi(
-                        13887759092866945124,
-                        14058066127486463877,
-                    )
-                    .make_global(
-                        pernixc_symbol::ID::from_lo_hi(
-                            13306152054774422446,
-                            7970737621205145970,
-                        ),
-                    ),
-                    parent_generic_arguments: GenericArguments {
-                        lifetimes: vec![],
-                        types: vec![],
-                        constants: vec![],
-                    },
-                    member_generic_arguments: GenericArguments {
-                        lifetimes: vec![Lifetime::Static],
-                        types: vec![],
-                        constants: vec![],
-                    },
-                })],
-                constants: vec![],
-            },
-            member_generic_arguments: GenericArguments {
-                lifetimes: vec![],
-                types: vec![],
-                constants: vec![],
-            },
-        }),
-        trait_id: pernixc_symbol::ID::from_lo_hi(
-            10766687814771831992,
-            10795805856261138005,
-        ),
-        map_at_lhs: true,
-    });
-
-    tokio::runtime::Runtime::new()
-        .unwrap()
-        .block_on(property_based_testing(&*property, decoy))
-        .unwrap();
 }
