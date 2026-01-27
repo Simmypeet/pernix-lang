@@ -1448,11 +1448,15 @@ dependencies = [
 name = "pernixc_check"
 version = "0.1.0-beta.2"
 dependencies = [
+ "linkme",
  "pernixc_diagnostic",
  "pernixc_ir_impl",
+ "pernixc_qbice",
  "pernixc_semantic_element_impl",
  "pernixc_symbol_impl",
  "pernixc_target",
+ "pernixc_tokio",
+ "qbice",
  "tokio",
 ]
 
@@ -1910,6 +1914,7 @@ name = "pernixc_tokio"
 version = "0.1.0-beta.2"
 dependencies = [
  "pernixc_extend",
+ "thiserror 2.0.18",
  "tokio",
 ]
 

@@ -1,11 +1,13 @@
 //! Crate for collecting all semantic analysis checks.
 
-use std::sync::Arc;
-
+use linkme::distributed_slice;
 use pernixc_diagnostic::Rendered;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
-use pernixc_target::TargetID;
+use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
+use pernixc_tokio::panic_propagate::PanicPropagate;
+use qbice::{
+    Decode, Encode, Query, StableHash, executor, program::Registration,
+    storage::intern::Interned,
+};
 
 /// The main data structure collecting all diagnostics for semantic analysis
 #[derive(
@@ -17,17 +19,13 @@ use pernixc_target::TargetID;
     Ord,
     Hash,
     StableHash,
-    Default,
-    Serialize,
-    Deserialize,
-    pernixc_query::Value,
+    Encode,
+    Decode,
 )]
-#[id(TargetID)]
-#[value(Arc<Check>)]
 pub struct Check {
-    symbol_immpl: Arc<[Rendered<usize>]>,
-    semantic_impl: Arc<[Arc<[Rendered<usize>]>]>,
-    ir_impl: Arc<[Arc<[Rendered<usize>]>]>,
+    symbol_immpl: Interned<[Rendered<usize>]>,
+    semantic_impl: Interned<[Interned<[Rendered<usize>]>]>,
+    ir_impl: Interned<[Interned<[Rendered<usize>]>]>,
 }
 
 impl Check {
@@ -40,22 +38,41 @@ impl Check {
     }
 }
 
-#[pernixc_query::executor(key(Key), name(Executor))]
-pub async fn check_executor(
-    &key: &Key,
-    engine: &pernixc_query::TrackedEngine,
-) -> Result<Arc<Check>, pernixc_query::runtime::executor::CyclicError> {
-    // Collect all diagnostics for the various phases.
-    unsafe {
-        engine.start_parallel();
-    }
+/// The main query for checking all semantic errors.
+///
+/// This represents the `pernixc check` command.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Query,
+)]
+#[value(Check)]
+pub struct Key {
+    /// The target ID for which to check semantic errors.
+    pub target_id: pernixc_target::TargetID,
+}
+
+#[executor(config = Config)]
+async fn check_executor(&key: &Key, engine: &TrackedEngine) -> Check {
+    // PARALLEL: Collect all diagnostics for the various phases.
 
     let symbol_diags = {
         let engine = engine.clone();
 
         tokio::spawn(async move {
             engine
-                .query(&pernixc_symbol_impl::diagnostic::RenderedKey(key.0))
+                .query(&pernixc_symbol_impl::diagnostic::RenderedKey(
+                    key.target_id,
+                ))
                 .await
         })
     };
@@ -66,9 +83,9 @@ pub async fn check_executor(
         tokio::spawn(async move {
             engine
                 .query(
-                    &pernixc_semantic_element_impl::diagnostic::AllRenderedKey(
-                        key.0,
-                    ),
+                    &pernixc_semantic_element_impl::diagnostic::AllRenderedKey {
+                        target_id: key.target_id,
+                    },
                 )
                 .await
         })
@@ -78,21 +95,17 @@ pub async fn check_executor(
         let engine = engine.clone();
 
         tokio::spawn(async move {
-            engine.query(&pernixc_ir_impl::AllRenderedKey(key.0)).await
+            engine.query(&pernixc_ir_impl::AllRenderedKey(key.target_id)).await
         })
     };
 
-    let check = Check {
-        symbol_immpl: symbol_diags.await.unwrap()?,
-        semantic_impl: semantic_diags.await.unwrap()?,
-        ir_impl: ir_diags.await.unwrap()?,
-    };
-
-    unsafe {
-        engine.end_parallel();
+    Check {
+        symbol_immpl: symbol_diags.await.panic_propagate().unwrap(),
+        semantic_impl: semantic_diags.await.panic_propagate().unwrap(),
+        ir_impl: ir_diags.await.panic_propagate().unwrap(),
     }
-
-    Ok(Arc::new(check))
 }
 
-pernixc_register::register!(Key, Executor);
+#[distributed_slice(PERNIX_PROGRAM)]
+static CHECK_EXECUTOR: Registration<Config> =
+    Registration::new::<Key, CheckExecutor>();

@@ -8,6 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 tokio = { workspace = true, features = ["full"] }
+thiserror.workspace = true
 pernixc_extend = { path = "../extend" }
 
 [lints]

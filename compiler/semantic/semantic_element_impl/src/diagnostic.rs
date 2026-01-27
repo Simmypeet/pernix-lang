@@ -152,11 +152,13 @@ async fn single_rendered_executor(
 static SINGLE_RENDERED_EXECUTOR: Registration<Config> =
     Registration::<Config>::new::<SingleRenderedKey, SingleRenderedExecutor>();
 
+/// A query for retrieving all rendered diagnostics for a specific target.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, StableHash, Encode, Decode, Query,
 )]
 #[value(Interned<[Interned<[pernixc_diagnostic::Rendered<ByteIndex>]>]>)]
-struct AllRenderedKey {
+pub struct AllRenderedKey {
+    /// The target ID to get all diagnostics for.
     pub target_id: TargetID,
 }
 
