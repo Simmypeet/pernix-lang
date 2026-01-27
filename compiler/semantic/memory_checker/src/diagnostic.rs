@@ -3,10 +3,9 @@
 use pernixc_diagnostic::{ByteIndex, Highlight, Report, Severity};
 use pernixc_ir::value::register::load;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::source_map::to_absolute_span;
+use qbice::{Decode, Encode, StableHash};
 
 /// Enumeration of all diagnostics that can be produced by the memory checker.
 #[derive(
@@ -18,8 +17,8 @@ use pernixc_symbol::source_map::to_absolute_span;
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     derive_more::From,
 )]
 #[allow(clippy::large_enum_variant, missing_docs)]
@@ -35,7 +34,7 @@ impl Report for Diagnostic {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, CyclicError> {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         match self {
             Self::TypeSystem(d) => d.report(engine).await,
             Self::MovedOutValueFromMutableReference(d) => {
@@ -60,8 +59,8 @@ impl Report for Diagnostic {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct MovedOutValueFromMutableReference {
     /// The span of the moved out value.
@@ -75,7 +74,7 @@ impl Report for MovedOutValueFromMutableReference {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, CyclicError> {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let mut related = Vec::new();
 
         if let Some(reassignment_span) = &self.reassignment_span {
@@ -90,7 +89,7 @@ impl Report for MovedOutValueFromMutableReference {
             );
         }
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message(
                 "the value behind the mutable reference has been moved out \
                  and needs to be restored",
@@ -106,7 +105,7 @@ impl Report for MovedOutValueFromMutableReference {
                     .build(),
             )
             .related(related)
-            .build())
+            .build()
     }
 }
 
@@ -121,8 +120,8 @@ impl Report for MovedOutValueFromMutableReference {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct UseBeforeInitialization {
     /// The span where the value is used.
@@ -133,8 +132,8 @@ impl Report for UseBeforeInitialization {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, CyclicError> {
-        Ok(pernixc_diagnostic::Rendered::builder()
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        pernixc_diagnostic::Rendered::builder()
             .message("the value is used before it has been initialized")
             .severity(Severity::Error)
             .primary_highlight(
@@ -142,7 +141,7 @@ impl Report for UseBeforeInitialization {
                     .span(engine.to_absolute_span(&self.use_span).await)
                     .build(),
             )
-            .build())
+            .build()
     }
 }
 
@@ -157,8 +156,8 @@ impl Report for UseBeforeInitialization {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct UseAfterMove {
     /// The span where the value is used.
@@ -175,11 +174,11 @@ impl Report for UseAfterMove {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, CyclicError> {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let use_span = engine.to_absolute_span(&self.use_span).await;
         let move_span = engine.to_absolute_span(&self.move_span).await;
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message("the value is used after it has been moved")
             .severity(Severity::Error)
             .primary_highlight(Highlight::builder().span(use_span).build())
@@ -196,7 +195,7 @@ impl Report for UseAfterMove {
                     })
                     .build(),
             ])
-            .build())
+            .build()
     }
 }
 
@@ -212,8 +211,8 @@ impl Report for UseAfterMove {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct MoveInLoop {
     /// The span of the moved value.
@@ -227,11 +226,11 @@ impl Report for MoveInLoop {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, CyclicError> {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let moved_value_span =
             engine.to_absolute_span(&self.moved_value_span).await;
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message(match self.load_purpose {
                 load::Purpose::General => "the value has been moved inside \
                                            the loop, which could be used in \
@@ -247,6 +246,6 @@ impl Report for MoveInLoop {
             .primary_highlight(
                 Highlight::builder().span(moved_value_span).build(),
             )
-            .build())
+            .build()
     }
 }

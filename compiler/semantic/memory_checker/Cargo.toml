@@ -19,6 +19,9 @@ pernixc_ir = { path = "../ir" }
 pernixc_term = { path = "../term" }
 pernixc_symbol = { path = "../symbol" }
 pernixc_type_system = { path = "../type_system" }
+pernixc_qbice = { path = "../../base/qbice" }
+qbice = { workspace = true }
+linkme = { workspace = true }
 enum-as-inner = { workspace = true }
 take_mut = { workspace = true }
 getset = { workspace = true }

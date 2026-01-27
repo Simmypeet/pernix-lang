@@ -12,7 +12,7 @@ use pernixc_ir::{
     value::register::load,
 };
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
+use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::{
     fields::{self, get_fields},
     variant::get_variant_associated_type,
@@ -462,14 +462,14 @@ impl State {
         alternate: &Self,
         address: &Address,
         engine: &TrackedEngine,
-    ) -> Result<Vec<Instruction>, CyclicError> {
+    ) -> Vec<Instruction> {
         match (self, alternate) {
             (Self::Total(Initialized::False(_)), other) => {
                 other.get_drop_instructions(address, engine).await
             }
 
             (Self::Projection(_), Self::Total(Initialized::False(_)))
-            | (Self::Total(Initialized::True), _) => Ok(Vec::new()),
+            | (Self::Total(Initialized::True), _) => Vec::new(),
 
             (this, Self::Total(Initialized::True)) => {
                 this.get_drop_instructions_internal(address, engine, true, true)
@@ -488,7 +488,7 @@ impl State {
                     other.states_by_field_id.len()
                 );
 
-                let fields = engine.get_fields(this.struct_id).await?;
+                let fields = engine.get_fields(this.struct_id).await;
 
                 assert_eq!(this.states_by_field_id.len(), fields.fields.len());
 
@@ -508,11 +508,11 @@ impl State {
                                 engine,
                             ),
                         )
-                        .await?,
+                        .await,
                     );
                 }
 
-                Ok(instructions)
+                instructions
             }
 
             (
@@ -542,11 +542,11 @@ impl State {
                                 engine,
                             ),
                         )
-                        .await?,
+                        .await,
                     );
                 }
 
-                Ok(instructions)
+                instructions
             }
 
             (
@@ -594,23 +594,27 @@ impl State {
         engine: &TrackedEngine,
         negative: bool,
         should_drop_mutable_reference: bool,
-    ) -> Result<Vec<Instruction>, CyclicError> {
+    ) -> Vec<Instruction> {
         match self {
-            Self::Total(Initialized::True) => Ok(if negative {
-                Vec::new()
-            } else {
-                vec![Instruction::Drop(Drop { address: address.clone() })]
-            }),
+            Self::Total(Initialized::True) => {
+                if negative {
+                    Vec::new()
+                } else {
+                    vec![Instruction::Drop(Drop { address: address.clone() })]
+                }
+            }
 
-            Self::Total(Initialized::False(_)) => Ok(if negative {
-                vec![Instruction::Drop(Drop { address: address.clone() })]
-            } else {
-                Vec::new()
-            }),
+            Self::Total(Initialized::False(_)) => {
+                if negative {
+                    vec![Instruction::Drop(Drop { address: address.clone() })]
+                } else {
+                    Vec::new()
+                }
+            }
 
             Self::Projection(Projection::Struct(st)) => {
                 let mut instructions = Vec::new();
-                let fields = engine.get_fields(st.struct_id).await?;
+                let fields = engine.get_fields(st.struct_id).await;
 
                 for field_id in fields.field_declaration_order.iter().copied() {
                     let field_state = &st.states_by_field_id[&field_id];
@@ -625,11 +629,11 @@ impl State {
                             negative,
                             should_drop_mutable_reference,
                         ))
-                        .await?,
+                        .await,
                     );
                 }
 
-                Ok(instructions)
+                instructions
             }
 
             Self::Projection(Projection::Tuple(tuple)) => {
@@ -695,12 +699,12 @@ impl State {
                                     should_drop_mutable_reference,
                                 ),
                             )
-                            .await?,
+                            .await,
                         );
                     }
                 }
 
-                Ok(instructions)
+                instructions
             }
 
             Self::Projection(Projection::Enum(en)) => {
@@ -729,7 +733,7 @@ impl State {
                     ))
                     .await
                 } else {
-                    Ok(Vec::new())
+                    Vec::new()
                 }
             }
         }
@@ -741,7 +745,7 @@ impl State {
         &self,
         address: &Address,
         table: &TrackedEngine,
-    ) -> Result<Vec<Instruction>, CyclicError> {
+    ) -> Vec<Instruction> {
         self.get_drop_instructions_internal(address, table, false, false).await
     }
 
@@ -1288,13 +1292,13 @@ impl Scope {
                 );
 
                 let fields =
-                    environment.tracked_engine().get_fields(struct_id).await?;
+                    environment.tracked_engine().get_fields(struct_id).await;
 
                 let instantiation = environment
                     .tracked_engine()
                     .get_instantiation(struct_id, generic_arguments)
-                    .await?
-                    .unwrap();
+                    .await
+                    .map_err(|_| UnrecoverableError::Reported)?;
 
                 if let State::Total(current) = state {
                     // already satisfied
@@ -1469,19 +1473,21 @@ impl Scope {
                     Kind::Variant
                 );
 
-                let assocated_type = environment
+                let Some(assocated_type_interned) = environment
                     .tracked_engine()
                     .get_variant_associated_type(variant.id)
-                    .await?
-                    .unwrap()
-                    .deref()
-                    .clone();
+                    .await
+                else {
+                    return Err(UnrecoverableError::Reported);
+                };
+
+                let assocated_type = assocated_type_interned.deref().clone();
 
                 let instantiation = environment
                     .tracked_engine()
                     .get_instantiation(enum_id, generic_arguments)
-                    .await?
-                    .unwrap();
+                    .await
+                    .map_err(|_| UnrecoverableError::Reported)?;
 
                 if let State::Total(current) = state {
                     // already satisfied

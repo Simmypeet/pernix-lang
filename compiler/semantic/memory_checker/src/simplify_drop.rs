@@ -80,7 +80,7 @@ pub(super) async fn simplify_drop<N: Normalizer>(
 ) -> Result<Vec<Instruction>, UnrecoverableError> {
     let span_of = values
         .span_of_memory(drop.address.get_root_memory(), environment)
-        .await?;
+        .await;
 
     let ty = values
         .type_of(&drop.address, environment)
@@ -149,7 +149,7 @@ pub(super) async fn simplify_drop<N: Normalizer>(
                     let fields = environment
                         .tracked_engine()
                         .get_fields(symbol.id)
-                        .await?;
+                        .await;
 
                     let mut instructions = Vec::new();
 
@@ -226,14 +226,13 @@ pub(super) async fn simplify_drop<N: Normalizer>(
                         .map(|x| Global::new(symbol.id.target_id, x))
                     {
                         // recursively simplify the drop instructions
-                        let variant_sym = environment
+                        let Some(_variant_sym) = environment
                             .tracked_engine()
                             .get_variant_associated_type(variant_id)
-                            .await?;
-
-                        if variant_sym.is_none() {
+                            .await
+                        else {
                             continue;
-                        }
+                        };
 
                         if !Box::pin(simplify_drop(
                             &Drop {
