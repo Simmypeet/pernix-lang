@@ -4,14 +4,12 @@ use std::ops::Deref;
 
 use enum_as_inner::EnumAsInner;
 use pernixc_extend::extend;
-use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
+use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::{
     implemented::get_implemented, implements::get_implements,
     implements_arguments::get_implements_argument, import::get_import_map,
 };
-use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::SourceElement;
-use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{
     accessibility::symbol_accessible,
     get_target_root_module_id,
@@ -28,6 +26,7 @@ use pernixc_term::{
     generic_arguments::GenericArguments,
     generic_parameters::get_generic_parameters, r#type::Type,
 };
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Config, Diagnostic, Error, Handler,
@@ -49,8 +48,8 @@ use crate::{
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct Generic {
     /// The resolved symbbol.
@@ -79,8 +78,8 @@ pub struct Generic {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct Variant {
     /// The resolved variant symbol.
@@ -101,8 +100,8 @@ pub struct Variant {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct MemberGeneric {
     /// The resolved member symbol.
@@ -130,8 +129,8 @@ pub struct MemberGeneric {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     EnumAsInner,
 )]
 pub enum Resolution {
@@ -326,21 +325,21 @@ async fn resolve_root(
                         id: this_symbol,
                         generic_arguments: tracked_engine
                             .get_generic_parameters(this_symbol)
-                            .await?
+                            .await
                             .create_identity_generic_arguments(this_symbol),
                     })
                 }
 
                 Kind::PositiveImplementation => {
                     let Some(implemented_id) =
-                        tracked_engine.get_implements(this_symbol).await?
+                        tracked_engine.get_implements(this_symbol).await
                     else {
                         return Err(Error::Abort);
                     };
 
                     let Some(implemented_generic_arguments) = tracked_engine
                         .get_implements_argument(this_symbol)
-                        .await?
+                        .await
                     else {
                         return Err(Error::Abort);
                     };
@@ -409,7 +408,7 @@ async fn resolve_root(
                             config.reborrow(),
                             handler,
                         )
-                        .await?,
+                        .await,
                 )
             } else {
                 if let Some(gen_args) =
@@ -483,9 +482,9 @@ pub async fn resolve_in(
     symbol_id: Global<pernixc_symbol::ID>,
     identifier: &str,
     consider_adt_implements: bool,
-) -> Result<Option<Global<pernixc_symbol::ID>>, CyclicError> {
+) -> Option<Global<pernixc_symbol::ID>> {
     if let Some(resolved_id) = self.get_member_of(symbol_id, identifier).await {
-        return Ok(Some(resolved_id));
+        return Some(resolved_id);
     }
 
     // try to search in the implements if the latest resolution is an
@@ -494,10 +493,10 @@ pub async fn resolve_in(
     let kind = self.get_kind(symbol_id).await;
 
     if !(kind.is_adt() && consider_adt_implements) {
-        return Ok(None);
+        return None;
     }
 
-    let implemented = self.get_implemented(symbol_id).await?;
+    let implemented = self.get_implemented(symbol_id).await;
 
     for impl_id in implemented.iter().copied() {
         let impl_members = self.get_members(impl_id).await;
@@ -505,11 +504,11 @@ pub async fn resolve_in(
         if let Some(resolved_id) =
             impl_members.member_ids_by_name.get(identifier)
         {
-            return Ok(Some(Global::new(impl_id.target_id, *resolved_id)));
+            return Some(Global::new(impl_id.target_id, *resolved_id));
         }
     }
 
-    Ok(None)
+    None
 }
 
 #[extend]
@@ -526,7 +525,7 @@ async fn resolve_step(
             &identifier.kind.0,
             config.consider_adt_implements,
         )
-        .await?;
+        .await;
 
     let Some(resolved_id) = resolved_id else {
         handler.receive(Diagnostic::SymbolNotFound(SymbolNotFound {
@@ -600,7 +599,7 @@ async fn resolve_qualified_identifier_internal(
                     config.reborrow(),
                     handler,
                 )
-                .await?,
+                .await,
             )
         } else {
             if let Some(gen_args) =
@@ -680,10 +679,8 @@ pub async fn resolve_simple_path(
                 let target =
                     self.get_linked_targets(referring_site.target_id).await;
 
-                let Some(target_id) = target_map
-                    .get(ident.kind.0.as_str())
-                    .copied()
-                    .filter(|x| {
+                let Some(target_id) =
+                    target_map.get(&*ident.kind.0).copied().filter(|x| {
                         x == &referring_site.target_id || { target.contains(x) }
                     })
                 else {
@@ -713,14 +710,14 @@ pub async fn resolve_simple_path(
                     .get_members(global_closest_module_id)
                     .await
                     .member_ids_by_name
-                    .get(ident.kind.0.as_str())
+                    .get(&*ident.kind.0)
                     .map(|x| Global::new(referring_site.target_id, *x))
                 {
                     Some(id) => Some(id),
                     None => self
                         .get_import_map(global_closest_module_id)
                         .await
-                        .get(ident.kind.0.as_str())
+                        .get(&*ident.kind.0)
                         .map(|x| x.id),
                 };
 
@@ -762,9 +759,8 @@ pub async fn resolve_sequence<'a>(
     let mut lastest_resolution = root;
 
     for identifier in simple_path {
-        let Some(new_id) = self
-            .get_member_of(lastest_resolution, identifier.kind.0.as_str())
-            .await
+        let Some(new_id) =
+            self.get_member_of(lastest_resolution, &identifier.kind.0).await
         else {
             handler.receive(Diagnostic::SymbolNotFound(SymbolNotFound {
                 searched_item_id: Some(lastest_resolution),

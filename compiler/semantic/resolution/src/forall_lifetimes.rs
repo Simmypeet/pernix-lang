@@ -2,10 +2,10 @@
 
 use std::{collections::hash_map::Entry, hash::BuildHasher};
 
-use flexstr::SharedStr;
 use pernixc_handler::Handler;
 use pernixc_source_file::SourceElement;
 use pernixc_term::lifetime::{self, Forall, Lifetime};
+use qbice::storage::intern::Interned;
 
 use crate::diagnostic::ForallLifetimeRedefinition;
 
@@ -13,7 +13,7 @@ use crate::diagnostic::ForallLifetimeRedefinition;
 /// into the given namespace.
 pub fn create_forall_lifetimes(
     namespace: &mut std::collections::HashMap<
-        SharedStr,
+        Interned<str>,
         Lifetime,
         impl BuildHasher,
     >,
@@ -34,7 +34,7 @@ pub fn create_forall_lifetimes(
                 entry.insert(Lifetime::Forall(Forall::Named(
                     lifetime::NamedForall::new(
                         identifier.span,
-                        identifier.kind.0,
+                        identifier.kind.0.clone(),
                     ),
                 )));
             }

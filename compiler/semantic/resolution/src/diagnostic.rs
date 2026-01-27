@@ -1,13 +1,10 @@
 //! Defines all kinds of diagnostics occurred during resolution.
 
-use flexstr::SharedStr;
 use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor};
+use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::import::get_import_map;
-use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
-use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{
     kind::{Kind, get_kind},
     member::try_get_members,
@@ -16,6 +13,7 @@ use pernixc_symbol::{
 };
 use pernixc_target::{Global, get_target_map};
 use pernixc_term::generic_parameters::GenericKind;
+use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
 /// Enumeration of all kinds of diagnostic generated during resolution.
 #[derive(
@@ -27,8 +25,8 @@ use pernixc_term::generic_parameters::GenericKind;
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     derive_more::From,
 )]
 #[allow(missing_docs)]
@@ -50,8 +48,7 @@ impl Report for Diagnostic {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         match self {
             Self::MoreThanOneUnpackedInTupleType(diagnostic) => {
                 diagnostic.report(engine).await
@@ -93,8 +90,8 @@ impl Report for Diagnostic {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct ThisNotFound {
     /// The span where the `this` keyword was used.
@@ -105,9 +102,8 @@ impl Report for ThisNotFound {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
-        Ok(pernixc_diagnostic::Rendered {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.this_span).await,
                 Some(
@@ -120,7 +116,7 @@ impl Report for ThisNotFound {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -134,15 +130,15 @@ impl Report for ThisNotFound {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct LifetimeParameterNotFound {
     /// The span where the lifetime parameter was referred from.
     pub referred_span: RelativeSpan,
 
     /// The name of the lifetime that was searched.
-    pub name: SharedStr,
+    pub name: Interned<str>,
 
     /// The site where the search occurred.
     pub referring_site: Global<pernixc_symbol::ID>,
@@ -152,25 +148,24 @@ impl Report for LifetimeParameterNotFound {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let referring_site_qualified_name =
             engine.get_qualified_name(self.referring_site).await;
 
-        Ok(pernixc_diagnostic::Rendered {
+        pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.referred_span).await,
                 Some(format!(
                     "the lifetime parameter `{}` was not found in \
                      `{referring_site_qualified_name}`",
-                    self.name.as_str()
+                    &*self.name
                 )),
             )),
             message: "cannot find the lifetime parameter".to_string(),
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -185,8 +180,8 @@ impl Report for LifetimeParameterNotFound {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct UnexpectedInference {
     /// Span where the inference term was found.
@@ -200,9 +195,8 @@ impl Report for UnexpectedInference {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
-        Ok(pernixc_diagnostic::Rendered {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.unexpected_span).await,
                 Some(format!(
@@ -224,7 +218,7 @@ impl Report for UnexpectedInference {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -239,8 +233,8 @@ impl Report for UnexpectedInference {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct ExpectType {
     /// The span where the non-type symbol was found.
@@ -254,13 +248,12 @@ impl Report for ExpectType {
     async fn report(
         &self,
         table: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let qualified_name =
             table.get_qualified_name(self.resolved_global_id).await;
         let kind = table.get_kind(self.resolved_global_id).await;
 
-        Ok(pernixc_diagnostic::Rendered {
+        pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 table.to_absolute_span(&self.non_type_symbol_span).await,
                 Some(format!(
@@ -272,7 +265,7 @@ impl Report for ExpectType {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -287,8 +280,8 @@ impl Report for ExpectType {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct MoreThanOneUnpackedInTupleType {
     /// The span where the illegal tuple type was found.
@@ -299,9 +292,8 @@ impl Report for MoreThanOneUnpackedInTupleType {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
-        Ok(pernixc_diagnostic::Rendered {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.illegal_tuple_type_span).await,
                 None,
@@ -312,7 +304,7 @@ impl Report for MoreThanOneUnpackedInTupleType {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -327,8 +319,8 @@ impl Report for MoreThanOneUnpackedInTupleType {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct MisorderedGenericArgument {
     /// The kind of the mis-ordered generic argument.
@@ -342,9 +334,8 @@ impl Report for MisorderedGenericArgument {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
-        Ok(pernixc_diagnostic::Rendered {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.generic_argument).await,
                 match self.generic_kind {
@@ -364,7 +355,7 @@ impl Report for MisorderedGenericArgument {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -379,8 +370,8 @@ impl Report for MisorderedGenericArgument {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct MismatchedGenericArgumentCount {
     /// The kind of the generic parameter.
@@ -400,9 +391,8 @@ impl Report for MismatchedGenericArgumentCount {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
-        Ok(pernixc_diagnostic::Rendered {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.generic_identifier_span).await,
                 Some(format!(
@@ -420,7 +410,7 @@ impl Report for MismatchedGenericArgumentCount {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -435,8 +425,8 @@ impl Report for MismatchedGenericArgumentCount {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct NoGenericArgumentsRequired {
     /// The symbol that  was supplied with generic arguments.
@@ -450,11 +440,10 @@ impl Report for NoGenericArgumentsRequired {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let qualified_name = engine.get_qualified_name(self.global_id).await;
 
-        Ok(pernixc_diagnostic::Rendered {
+        pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.generic_argument_span).await,
                 Some(format!(
@@ -468,7 +457,7 @@ impl Report for NoGenericArgumentsRequired {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -481,8 +470,8 @@ impl Report for NoGenericArgumentsRequired {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct SymbolNotFound {
@@ -494,7 +483,7 @@ pub struct SymbolNotFound {
     pub resolution_span: RelativeSpan,
 
     /// The name that failed to resolved.
-    pub name: SharedStr,
+    pub name: Interned<str>,
 }
 
 #[allow(clippy::cast_precision_loss)]
@@ -547,8 +536,7 @@ impl Report for SymbolNotFound {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let searched_item_id_qualified_name = match self.searched_item_id {
             Some(id) => Some(engine.get_qualified_name(id).await),
             None => None,
@@ -571,51 +559,36 @@ impl Report for SymbolNotFound {
                             members
                                 .member_ids_by_name
                                 .keys()
-                                .map(flexstr::FlexStr::as_str)
-                                .chain(
-                                    imports
-                                        .keys()
-                                        .map(flexstr::FlexStr::as_str),
-                                ),
+                                .map(|s| &**s)
+                                .chain(imports.keys().map(|s| &**s)),
                         )
                         .map(ToString::to_string)
                     }
 
                     _ => suggest(
                         &self.name,
-                        members
-                            .member_ids_by_name
-                            .keys()
-                            .map(flexstr::FlexStr::as_str),
+                        members.member_ids_by_name.keys().map(|s| &**s),
                     )
                     .map(ToString::to_string),
                 }
             } else {
                 let target_map = engine.get_target_map().await;
-                suggest(
-                    &self.name,
-                    target_map.keys().map(flexstr::FlexStr::as_str),
-                )
-                .map(ToString::to_string)
+                suggest(&self.name, target_map.keys().map(|s| &**s))
+                    .map(ToString::to_string)
             }
         };
 
         let span_message = searched_item_id_qualified_name.map_or_else(
-            || {
-                format!(
-                    "the target named `{}` is not found",
-                    self.name.as_str()
-                )
-            },
+            || format!("the target named `{}` is not found", &*self.name),
             |x| {
                 format!(
                     "the symbol named `{}` does not exist in `{x}`",
-                    self.name.as_str(),
+                    &*self.name,
                 )
             },
         );
 
-        Ok(pernixc_diagnostic::Rendered {
+        pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.resolution_span).await,
                 Some(span_message),
@@ -626,7 +599,7 @@ impl Report for SymbolNotFound {
                 .as_ref()
                 .map(|suggestion| format!("did you mean `{suggestion}`?")),
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -640,8 +613,8 @@ impl Report for SymbolNotFound {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct SymbolIsNotAccessible {
@@ -659,14 +632,13 @@ impl Report for SymbolIsNotAccessible {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let referring_site_qualified_name =
             engine.get_qualified_name(self.referring_site).await;
         let referred_qualified_name =
             engine.get_qualified_name(self.referred).await;
 
-        Ok(pernixc_diagnostic::Rendered {
+        pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.referred_span).await,
                 Some(format!(
@@ -678,7 +650,7 @@ impl Report for SymbolIsNotAccessible {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -692,8 +664,8 @@ impl Report for SymbolIsNotAccessible {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct ExpectModule {
@@ -708,14 +680,13 @@ impl Report for ExpectModule {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let found_symbol_qualified_name =
             engine.get_qualified_name(self.found_id).await;
 
         let kind = engine.get_kind(self.found_id).await;
 
-        Ok(pernixc_diagnostic::Rendered {
+        pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.module_path).await,
                 None,
@@ -728,7 +699,7 @@ impl Report for ExpectModule {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -744,8 +715,8 @@ impl Report for ExpectModule {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct ForallLifetimeRedefinition {
     /// The span of the redefinition.
@@ -756,9 +727,8 @@ impl Report for ForallLifetimeRedefinition {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
-        Ok(pernixc_diagnostic::Rendered {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.redefinition_span).await,
                 Some(
@@ -771,6 +741,6 @@ impl Report for ForallLifetimeRedefinition {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }

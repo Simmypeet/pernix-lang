@@ -18,6 +18,9 @@ pernixc_syntax = { path = "../../syntax/syntax" }
 pernixc_symbol = { path = "../symbol" }
 pernixc_term = { path = "../term" }
 pernixc_semantic_element = { path = "../semantic_element" }
+pernixc_qbice = { path = "../../base/qbice" }
+qbice = { workspace = true }
+linkme = { workspace = true }
 bon = { workspace = true }
 enum-as-inner = { workspace = true }
 derive_more = { workspace = true }
