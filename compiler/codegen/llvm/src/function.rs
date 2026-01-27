@@ -7,7 +7,6 @@ use std::{
     convert::Into,
     fmt::Write,
     rc::Rc,
-    sync::Arc,
 };
 
 use derive_new::new;
@@ -25,12 +24,12 @@ use pernixc_ir::{
     IR,
     address::{Address, Memory},
     control_flow_graph::Block,
-    get_ir,
+    function_ir::get_function_ir,
     value::{
         Environment as ValueEnvironment, TypeOf, Value, register::Register,
     },
 };
-use pernixc_query::TrackedEngine;
+use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::{
     implements::get_implements,
     implements_arguments::get_implements_argument,
@@ -53,6 +52,7 @@ use pernixc_type_system::{
     environment::{Environment, Premise},
     normalizer,
 };
+use qbice::storage::intern::Interned;
 
 use crate::{context::Context, r#type::IsAggregateTypeExt, zst::Zst};
 
@@ -65,8 +65,8 @@ mod literal;
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(missing_docs)]
 pub struct FunctionSignature {
-    pub parameters: Arc<Parameters>,
-    pub return_type: Arc<Type>,
+    pub parameters: Interned<Parameters>,
+    pub return_type: Interned<Type>,
 }
 
 /// Obtains the function signature of the given function ID.
@@ -76,8 +76,8 @@ pub async fn get_function_signature(
     id: Global<pernixc_symbol::ID>,
 ) -> FunctionSignature {
     FunctionSignature {
-        parameters: self.get_parameters(id).await.unwrap(),
-        return_type: self.get_return_type(id).await.unwrap(),
+        parameters: self.get_parameters(id).await,
+        return_type: self.get_return_type(id).await,
     }
 }
 
@@ -190,11 +190,8 @@ impl<'ctx> Context<'_, 'ctx> {
                 let mut qualified_name =
                     self.engine().get_qualified_name(callable_id).await;
 
-                let generic_params = self
-                    .engine()
-                    .get_generic_parameters(callable_id)
-                    .await
-                    .unwrap();
+                let generic_params =
+                    self.engine().get_generic_parameters(callable_id).await;
 
                 let mut generic_arguments = instantiation
                     .create_generic_arguments(callable_id, &generic_params);
@@ -218,25 +215,21 @@ impl<'ctx> Context<'_, 'ctx> {
                     .engine()
                     .get_implements(parent_implementation_id)
                     .await
-                    .unwrap()
                     .unwrap();
 
-                let mut implemented_generic_args = (*self
+                let mut implemented_generic_args = self
                     .engine()
                     .get_implements_argument(parent_implementation_id)
                     .await
                     .unwrap()
-                    .unwrap())
-                .clone();
+                    .clone_inner();
+
                 implemented_generic_args.instantiate(instantiation);
                 self.normalize_generic_arguments(&mut implemented_generic_args)
                     .await;
 
-                let function_generic_params = self
-                    .engine()
-                    .get_generic_parameters(callable_id)
-                    .await
-                    .unwrap();
+                let function_generic_params =
+                    self.engine().get_generic_parameters(callable_id).await;
 
                 let mut function_generic_args = instantiation
                     .create_generic_arguments(
@@ -257,7 +250,7 @@ impl<'ctx> Context<'_, 'ctx> {
                 write!(
                     qualified_name,
                     "::{}",
-                    self.engine().get_name(callable_id).await
+                    self.engine().get_name(callable_id).await.as_ref()
                 )
                 .unwrap();
 
@@ -285,7 +278,7 @@ impl<'ctx> Context<'_, 'ctx> {
         let builder = self.context().create_builder();
         builder.position_at_end(entry_block);
 
-        match self.engine().get_name(key.callable_id).await.as_str() {
+        match self.engine().get_name(key.callable_id).await.as_ref() {
             "sizeof" => {
                 let ty = key.instantiation.types.values().next().unwrap();
                 let llvm_ty = self.get_type(ty.clone()).await;
@@ -624,7 +617,7 @@ impl<'ctx> Context<'_, 'ctx> {
             self.create_intrinsic_function(&llvm_function_signatue, key).await;
         } else {
             let pernix_ir =
-                self.engine().get_ir(key.callable_id).await.unwrap();
+                self.engine().get_function_ir(key.callable_id).await;
 
             let environment = Environment::new(
                 Cow::Owned(Premise {

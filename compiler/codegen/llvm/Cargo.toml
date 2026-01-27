@@ -17,6 +17,9 @@ pernixc_symbol = { path = "../../semantic/symbol" }
 pernixc_ir = { path = "../../semantic/ir" }
 pernixc_arena = { path = "../../base/arena" }
 pernixc_diagnostic = { path = "../../base/diagnostic" }
+pernixc_qbice.path = "../../base/qbice"
+qbice.workspace = true
+linkme.workspace = true
 inkwell = { workspace = true }
 derive-new = { workspace = true }
 getset = { workspace = true }

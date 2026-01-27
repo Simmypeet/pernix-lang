@@ -13,6 +13,7 @@ arbitrary = ["dep:proptest"]
 pernixc_hash = { path = "../hash" }
 pernixc_extend = { path = "../extend" }
 pernixc_qbice.path = "../qbice"
+linkme.workspace = true
 derive-new = { workspace = true }
 clap = { workspace = true }
 enum-as-inner = { workspace = true }

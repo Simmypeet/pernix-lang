@@ -25,7 +25,7 @@ error: struct has uninitialized fields
    ╭─ compiler/e2e/test/snapshot/ir/expression/struct/initialization/main.pnx:17:5
    │
 17 │     Test {}
-   │     ^^^^^^^ fields 'second', 'first' and 'third' of struct 'main::Test' are not initialized
+   │     ^^^^^^^ fields 'first', 'second' and 'third' of struct 'main::Test' are not initialized
 
 error: field is initialized multiple times
    ╭─ compiler/e2e/test/snapshot/ir/expression/struct/initialization/main.pnx:20:53

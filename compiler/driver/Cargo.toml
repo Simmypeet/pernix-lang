@@ -18,6 +18,12 @@ pernixc_symbol = { path = "../semantic/symbol" }
 pernixc_symbol_impl = { path = "../semantic/symbol_impl" }
 pernixc_check = { path = "../semantic/check" }
 pernixc_llvm = { path = "../codegen/llvm" }
+pernixc_qbice.path = "../base/qbice"
+pernixc_source_file_impl.path = "../base/source_file_impl"
+pernixc_lexical_impl.path = "../syntax/lexical_impl"
+pernixc_syntax_impl.path = "../syntax/syntax_impl"
+qbice.workspace = true
+linkme.workspace = true
 codespan-reporting = { workspace = true }
 inkwell = { workspace = true }
 tracing = { workspace = true }

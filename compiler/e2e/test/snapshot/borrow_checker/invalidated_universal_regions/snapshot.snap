@@ -11,7 +11,7 @@ error: access is done while it is mutably borrowed
 31 │     let b = *number
    │             ^^^^^^^ access occurs here while it is mutably borrowed
    │
-   = lifetime(s) 'b, 'a can access the borrow later
+   = lifetime(s) 'a, 'b can access the borrow later
 
 error: Compilation aborted due to 1 error(s)
 

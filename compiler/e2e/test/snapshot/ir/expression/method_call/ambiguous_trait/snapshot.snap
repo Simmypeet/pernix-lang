@@ -10,8 +10,8 @@ error: ambiguous method call `coolMethod` for type `T`
    │     ----- ^^^^^^^^^^
    │     │     │
    │     │     ambiguous method call `coolMethod`
-   │     │     candidate: `main::First::coolMethod`
    │     │     candidate: `main::Second::coolMethod`
+   │     │     candidate: `main::First::coolMethod`
    │     this expression has type `T`
 
 error: Compilation aborted due to 1 error(s)

@@ -6,10 +6,14 @@ use codespan_reporting::{
     diagnostic::{Diagnostic, Label, LabelStyle},
     term::{StylesWriter, termcolor::WriteColor},
 };
-use pernixc_query::{Engine, TrackedEngine, runtime::persistence::Persistence};
+use pernixc_qbice::{Engine, TrackedEngine};
 use pernixc_source_file::GlobalSourceID;
 use pernixc_symbol_impl::source_map::{SourceMap, create_source_map};
 use pernixc_target::{Arguments, Build, Command, Run, TargetID, TargetKind};
+use qbice::{
+    serialize::Plugin, stable_hash::SeededStableHasherBuilder,
+    storage::kv_database::rocksdb::RocksDB,
+};
 use tracing::instrument;
 
 use crate::{
@@ -135,153 +139,159 @@ fn get_output_path(
     }
 }
 
+fn normalize_input_argument(
+    argument: &mut Arguments,
+    writer: &mut dyn WriteColor,
+    config: &codespan_reporting::term::Config,
+) -> bool {
+    // if no incremental path is set, use a default one `.build/<target_name>`
+    // relative to the input file
+
+    if argument.command.input().incremental_path.is_none() {
+        let mut incremental_path =
+            if let Some(parent) = argument.command.input().file.parent() {
+                parent.to_path_buf()
+            } else {
+                codespan_reporting::term::emit_to_write_style(
+                    writer,
+                    config,
+                    &codespan_reporting::files::SimpleFile::new("", ""),
+                    &Diagnostic::error().with_message(
+                        "failed to determine parent directory of input file",
+                    ),
+                )
+                .unwrap();
+
+                return false;
+            };
+
+        incremental_path.push(".build");
+        incremental_path.push(argument.command.input().target_name());
+
+        argument.command.input_mut().incremental_path = Some(incremental_path);
+    }
+
+    true
+}
+
+fn create_engine(
+    argument: &Arguments,
+    writer: &mut dyn WriteColor,
+    config: &codespan_reporting::term::Config,
+) -> Option<Engine> {
+    let engine = Engine::new_with(
+        Plugin::new(),
+        RocksDB::factory(
+            argument.command.input().incremental_path.as_ref().unwrap(),
+        ),
+        SeededStableHasherBuilder::new(123_456_789),
+    );
+
+    match engine {
+        Ok(engine) => Some(engine),
+        Err(err) => {
+            let diag = Diagnostic::error().with_message(format!(
+                "failed to open incremental database: {err}"
+            ));
+
+            codespan_reporting::term::emit_to_write_style(
+                writer,
+                config,
+                &codespan_reporting::files::SimpleFile::new("", ""),
+                &diag,
+            )
+            .unwrap();
+
+            None
+        }
+    }
+}
+
 /// Runs the program with the given arguments.
 #[must_use]
 #[allow(clippy::too_many_lines, clippy::needless_pass_by_value)]
 #[instrument(skip(err_writer, _out_writer))]
 pub async fn run(
-    argument: Arguments,
+    mut argument: Arguments,
     err_writer: &mut dyn WriteColor,
     _out_writer: &mut dyn WriteColor,
 ) -> ExitCode {
-    let mut serde_registry = pernixc_register::SerdeRegistry::default();
-
-    let report_styles = term::get_styles();
     let report_config = term::get_coonfig();
-    let simple_file = codespan_reporting::files::SimpleFile::new("", "");
 
-    // all the serialization/deserialization runtime information must be
-    // registered before creating a persistence layer
-    pernixc_register::Registration::register_serde_registry(
-        &mut serde_registry,
-    );
-
-    let mut engine = Engine::default();
-
-    // setup the persistence layer if the incremental setting is set
-    if let Some(incremental_path) = &argument.command.input().incremental_path {
-        let persistence = match Persistence::new(
-            incremental_path.clone(),
-            Arc::new(serde_registry),
-        ) {
-            Ok(persistence) => persistence,
-            Err(error) => {
-                let diag = Diagnostic::error().with_message(format!(
-                    "Failed to setup persistence: {error}"
-                ));
-
-                codespan_reporting::term::emit_to_write_style(
-                    &mut StylesWriter::new(err_writer, &report_styles),
-                    &report_config,
-                    &simple_file,
-                    &diag,
-                )
-                .unwrap();
-
-                return ExitCode::FAILURE;
-            }
-        };
-
-        // load the database from the persistence layer
-        engine.database = match persistence.load_database() {
-            Ok(database) => database,
-            Err(error) => {
-                let diag = Diagnostic::error().with_message(format!(
-                    "Failed to load incremental database: {error}"
-                ));
-
-                codespan_reporting::term::emit_to_write_style(
-                    &mut StylesWriter::new(err_writer, &report_styles),
-                    &report_config,
-                    &simple_file,
-                    &diag,
-                )
-                .unwrap();
-
-                return ExitCode::FAILURE;
-            }
-        };
-
-        engine.runtime.persistence = Some(persistence);
+    if !normalize_input_argument(&mut argument, err_writer, &report_config) {
+        return ExitCode::FAILURE;
     }
 
-    // if persistence is set, setup the value that will be skipped from saving
-    // into the persistence layer.
-    if let Some(persistence) = engine.runtime.persistence.as_mut() {
-        pernixc_register::Registration::register_skip_persistence(persistence);
-    }
+    let Some(mut engine) = create_engine(&argument, err_writer, &report_config)
+    else {
+        return ExitCode::FAILURE;
+    };
 
-    // final step, setup the query executors for the engine
-    pernixc_register::Registration::register_executor(
-        &mut engine.runtime.executor,
-    );
-    pernixc_register::Registration::register_always_recompute(
-        &mut engine.runtime.executor,
-    );
+    pernixc_source_file_impl::black_box();
+    pernixc_lexical_impl::black_box();
+    pernixc_syntax_impl::black_box();
+
+    engine.register_program(pernixc_qbice::PERNIX_PROGRAM);
 
     // set the initial input, the invocation arguments
     let local_target_id =
         TargetID::from_target_name(&argument.command.input().target_name());
     let target_name = argument.command.input().target_name();
 
-    let mut engine = Arc::new(engine);
-    pernixc_corelib::initialize_corelib(&mut engine).await;
+    let engine = Arc::new(engine);
 
-    Arc::get_mut(&mut engine)
-        .unwrap()
-        .input_session(async |x| {
-            x.always_reverify();
+    {
+        let mut input_session = engine.input_session();
 
-            x.set_input(
-                pernixc_target::LinkKey(local_target_id),
-                Arc::new(std::iter::once(TargetID::CORE).collect()),
-            )
-            .await;
+        pernixc_corelib::initialize_corelib(&mut input_session);
 
-            x.set_input(
-                pernixc_target::AllTargetIDsKey,
-                Arc::new(
-                    [local_target_id, TargetID::CORE].into_iter().collect(),
-                ),
-            )
-            .await;
+        input_session.set_input(
+            pernixc_target::LinkKey { target_id: local_target_id },
+            input_session.intern(std::iter::once(TargetID::CORE).collect()),
+        );
 
-            x.set_input(
-                pernixc_target::MapKey,
-                Arc::new(
-                    [
-                        (
+        input_session.set_input(
+            pernixc_target::AllTargetIDsKey,
+            input_session.intern(
+                [local_target_id, TargetID::CORE].into_iter().collect(),
+            ),
+        );
+
+        input_session.set_input(
+            pernixc_target::MapKey,
+            input_session.intern(
+                [
+                    (
+                        input_session.intern_unsized(
                             argument.command.input().target_name(),
-                            local_target_id,
                         ),
-                        ("core".into(), TargetID::CORE),
-                    ]
-                    .into_iter()
-                    .collect(),
-                ),
-            )
-            .await;
+                        local_target_id,
+                    ),
+                    (
+                        input_session.intern_unsized("core".to_owned()),
+                        TargetID::CORE,
+                    ),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+        );
 
-            if let Some(explicit_seed) = argument.command.input().target_seed {
-                x.set_input(
-                    pernixc_target::SeedKey(local_target_id),
-                    explicit_seed,
-                )
-                .await;
-            }
+        if let Some(explicit_seed) = argument.command.input().target_seed {
+            input_session.set_input(
+                pernixc_target::SeedKey { target_id: local_target_id },
+                explicit_seed,
+            );
+        }
 
-            x.set_input(
-                pernixc_target::Key(local_target_id),
-                Arc::new(argument.clone()),
-            )
-            .await;
-        })
-        .await;
+        input_session.set_input(
+            pernixc_target::Key { target_id: local_target_id },
+            input_session.intern(argument.clone()),
+        );
 
-    tracing::info!(
-        "Starting compilation with database version: {}",
-        engine.version()
-    );
+        // refresh all the input files
+        input_session.refresh::<pernixc_source_file::Key>().await;
+    }
 
     // now the query can start ...
 
@@ -301,9 +311,8 @@ pub async fn run(
         let mut diagnostics = Vec::new();
 
         let check = tracked_engine
-            .query(&pernixc_check::Key(local_target_id))
-            .await
-            .unwrap();
+            .query(&pernixc_check::Key { target_id: local_target_id })
+            .await;
 
         for diag in check.all_diagnostics() {
             diagnostics.push(SortableDiagnostic(
@@ -320,7 +329,7 @@ pub async fn run(
         diagnostics.len()
     };
 
-    let result = if diagnostic_count != 0 {
+    if diagnostic_count != 0 {
         let diag = codespan_reporting::diagnostic::Diagnostic::error()
             .with_message(format!(
                 "Compilation aborted due to {diagnostic_count} error(s)"
@@ -338,27 +347,7 @@ pub async fn run(
             &mut report_term,
         )
         .await
-    };
-
-    drop(tracked_engine);
-    let mut engine =
-        Arc::try_unwrap(engine).expect("Engine should be unique at this point");
-
-    if let Err(error) = engine.save_database() {
-        let diag = codespan_reporting::diagnostic::Diagnostic::error()
-            .with_message(format!("Failed to save database: {error}"));
-
-        codespan_reporting::term::emit_to_write_style(
-            &mut report_term.writer,
-            &report_config,
-            &simple_file,
-            &diag,
-        )
-        .unwrap();
-        return ExitCode::FAILURE;
     }
-
-    result
 }
 
 #[allow(clippy::too_many_lines)]

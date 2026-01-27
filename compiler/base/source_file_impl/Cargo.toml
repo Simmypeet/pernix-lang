@@ -1,5 +1,5 @@
 [package]
-name = "pernix_source_file_impl"
+name = "pernixc_source_file_impl"
 version.workspace = true
 authors.workspace = true
 description.workspace = true
@@ -11,6 +11,7 @@ pernixc_source_file.path = "../source_file"
 pernixc_qbice.path = "../qbice"
 qbice.workspace = true
 linkme.workspace = true
+siphasher.workspace = true
 
 [lints]
 workspace = true

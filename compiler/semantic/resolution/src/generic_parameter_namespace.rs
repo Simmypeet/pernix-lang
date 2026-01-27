@@ -4,7 +4,6 @@
 use std::collections::hash_map::Entry;
 
 use linkme::distributed_slice;
-use pernixc_extend::extend;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_symbol::{kind::get_kind, parent::scope_walker};
 use pernixc_target::Global;

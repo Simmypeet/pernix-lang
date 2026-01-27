@@ -6,7 +6,7 @@ use pernixc_handler::{Handler, Storage};
 use pernixc_hash::{DashMap, HashMap, HashSet};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
-use pernixc_source_file::{LocalSourceID, calculate_path_id};
+use pernixc_source_file::{LocalSourceID, get_stable_path_id};
 use pernixc_symbol::{
     AllSymbolIDKey, ID, accessibility::Accessibility, kind::Kind, linkage,
     member::Member,
@@ -609,7 +609,7 @@ async fn map_executor(key: &MapKey, engine: &TrackedEngine) -> Map {
 
             // Calculate the source file ID for this path
             if let Ok(source_file_id) =
-                engine.calculate_path_id(&path, current_target_id).await
+                engine.get_stable_path_id(path.clone()).await
             {
                 // Add the path to source file mapping
                 paths_by_source_id.insert(

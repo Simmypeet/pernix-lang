@@ -1,14 +1,16 @@
 //! This crate contains the information about the target of the compilation.
 
-use std::{collections::HashMap, hash::Hasher, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, hash::Hasher, path::PathBuf};
 
 use clap::{Args, Subcommand, builder::styling};
 use derive_new::new;
 use enum_as_inner::EnumAsInner;
+use linkme::distributed_slice;
 use pernixc_hash::HashSet;
-use pernixc_qbice::TrackedEngine;
+use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use qbice::{
-    Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
+    Decode, Encode, Identifiable, StableHash, program::Registration,
+    storage::intern::Interned,
 };
 use rand::Rng;
 use siphasher::sip128::Hasher128;
@@ -30,6 +32,7 @@ pub mod arbitrary;
     Encode,
     Decode,
     StableHash,
+    Identifiable,
 )]
 pub struct TargetID {
     lo: u64,
@@ -169,6 +172,12 @@ pub struct Input {
 }
 
 impl Input {
+    /// Canonicalizes the file path of the input file.
+    pub fn canonicalize_file_path(&mut self) -> std::io::Result<()> {
+        self.file = std::fs::canonicalize(&self.file)?;
+        Ok(())
+    }
+
     /// Returns the target name of the input file.
     #[must_use]
     pub fn target_name(&self) -> String {
@@ -323,6 +332,16 @@ impl Command {
             Self::Build(build) => &build.input,
         }
     }
+
+    /// Returns the mutable input file of the command.
+    #[must_use]
+    pub const fn input_mut(&mut self) -> &mut Input {
+        match self {
+            Self::Run(run) => &mut run.input,
+            Self::Check(check) => &mut check.input,
+            Self::Build(build) => &mut build.input,
+        }
+    }
 }
 
 /// Optimizations level for the compiler.
@@ -406,6 +425,7 @@ pub enum TargetKind {
     Encode,
     Decode,
     StableHash,
+    Identifiable,
     clap::Parser,
 )]
 #[command(styles = get_styles())]
@@ -430,7 +450,7 @@ pub struct Arguments {
     StableHash,
     qbice::Query,
 )]
-#[value(Arc<Arguments>)]
+#[value(Interned<Arguments>)]
 #[extend(name = get_invocation_arguments, by_val)]
 pub struct Key {
     /// The target ID of the compilation session.
@@ -493,7 +513,7 @@ const fn get_styles() -> clap::builder::Styles {
     StableHash,
     qbice::Query,
 )]
-#[value(Arc<HashMap<Interned<str>, TargetID>>)]
+#[value(Interned<HashMap<Interned<str>, TargetID>>)]
 #[extend(name = get_target_map, by_val)]
 pub struct MapKey;
 
@@ -512,7 +532,7 @@ pub struct MapKey;
     StableHash,
     qbice::Query,
 )]
-#[value(Arc<HashSet<TargetID>>)]
+#[value(Interned<HashSet<TargetID>>)]
 #[extend(name = get_linked_targets, by_val)]
 pub struct LinkKey {
     /// The target ID to retrieve the linked targets for.
@@ -541,12 +561,23 @@ pub struct SeedKey {
     pub target_id: TargetID,
 }
 
+/// The seed value for the `core` target.
+pub const CORE_TARGET_SEED: u64 = 0x1234_5678_9abc_def0;
+
 /// The executor that uses rabndom number generator to produce a target seed.
 #[qbice::executor(config = pernixc_qbice::Config)]
 #[allow(clippy::unused_async)]
-pub async fn target_seed_executor(_: &SeedKey, _: &TrackedEngine) -> u64 {
+pub async fn target_seed_executor(key: &SeedKey, _: &TrackedEngine) -> u64 {
+    if key.target_id == TargetID::CORE {
+        return CORE_TARGET_SEED;
+    }
+
     rand::rng().random()
 }
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static TARGET_SEED_EXECUTOR: Registration<Config> =
+    Registration::new::<SeedKey, TargetSeedExecutor>();
 
 /// A query for retrieving the `TargetID` that's currently being compiled in
 /// the current session.
@@ -584,6 +615,6 @@ pub struct LocalTargetIDKey;
     Decode,
     qbice::Query,
 )]
-#[value(Arc<HashSet<TargetID>>)]
+#[value(Interned<HashSet<TargetID>>)]
 #[extend(name = get_all_target_ids, by_val)]
 pub struct AllTargetIDsKey;

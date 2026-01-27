@@ -109,8 +109,7 @@ impl<'ctx> Context<'_, 'ctx> {
 
         match symbol_kind {
             Kind::Struct => {
-                let fields =
-                    self.engine().get_fields(symbol_ty.id).await.unwrap();
+                let fields = self.engine().get_fields(symbol_ty.id).await;
                 let llvm_struct_signature =
                     self.get_struct_type(symbol_ty).await;
 
@@ -199,8 +198,7 @@ impl<'ctx> Context<'_, 'ctx> {
                     let variant = self
                         .engine()
                         .get_variant_associated_type(variant_id)
-                        .await
-                        .unwrap();
+                        .await;
 
                     let Some(ty) = variant else {
                         continue;
@@ -431,7 +429,6 @@ impl<'ctx> Context<'_, 'ctx> {
                     .get_implements_argument(impl_id)
                     .await
                     .unwrap()
-                    .unwrap()
                     .types[0]
                     .as_symbol()
                     .unwrap()
@@ -448,16 +445,10 @@ impl<'ctx> Context<'_, 'ctx> {
                         .copied()
                         .unwrap(),
                 );
-                let impl_func_generic_params = self
-                    .engine()
-                    .get_generic_parameters(impl_func_id)
-                    .await
-                    .unwrap();
-                let impl_funcs_elided_params = self
-                    .engine()
-                    .get_elided_lifetimes(impl_func_id)
-                    .await
-                    .unwrap();
+                let impl_func_generic_params =
+                    self.engine().get_generic_parameters(impl_func_id).await;
+                let impl_funcs_elided_params =
+                    self.engine().get_elided_lifetimes(impl_func_id).await;
 
                 let env = Environment::new(
                     std::borrow::Cow::Owned(Premise {
@@ -526,11 +517,10 @@ impl<'ctx> Context<'_, 'ctx> {
                         &Instantiation::from_generic_arguments(
                             symbol_ty.generic_arguments.clone(),
                             symbol_ty.id,
-                            &self
+                            &*self
                                 .engine()
                                 .get_generic_parameters(symbol_ty.id)
-                                .await
-                                .unwrap(),
+                                .await,
                         )
                         .unwrap(),
                         symbol_ty,
@@ -865,16 +855,12 @@ impl<'ctx> Context<'_, 'ctx> {
             .await
             .unwrap();
 
-        let implemented =
-            self.engine().get_implemented(drop_trait_id).await.unwrap();
+        let implemented = self.engine().get_implemented(drop_trait_id).await;
 
         let implementation_id = 'result: {
             for impl_id in implemented.iter().copied() {
-                let Some(implementation) = self
-                    .engine()
-                    .get_implements_argument(impl_id)
-                    .await
-                    .unwrap()
+                let Some(implementation) =
+                    self.engine().get_implements_argument(impl_id).await
                 else {
                     continue;
                 };
@@ -897,11 +883,7 @@ impl<'ctx> Context<'_, 'ctx> {
         let inst = Instantiation::from_generic_arguments(
             symbol.generic_arguments.clone(),
             current_symbol_id,
-            &self
-                .engine()
-                .get_generic_parameters(current_symbol_id)
-                .await
-                .unwrap(),
+            &*self.engine().get_generic_parameters(current_symbol_id).await,
         )
         .unwrap();
 
@@ -913,7 +895,6 @@ impl<'ctx> Context<'_, 'ctx> {
                     .engine()
                     .get_fields(current_symbol_id)
                     .await
-                    .unwrap()
                     .fields
                     .items()
                 {
@@ -942,8 +923,7 @@ impl<'ctx> Context<'_, 'ctx> {
                     let variant = self
                         .engine()
                         .get_variant_associated_type(variant)
-                        .await
-                        .unwrap();
+                        .await;
 
                     let Some(ty) = variant else {
                         continue;

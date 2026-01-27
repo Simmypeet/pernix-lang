@@ -46,7 +46,7 @@ impl CoreLibInitializer<'_, '_> {
     ///         T: 'a    
     /// ```
     #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
-    pub async fn initialize_copy_marker(&mut self) -> pernixc_symbol::ID {
+    pub fn initialize_copy_marker(&mut self) -> pernixc_symbol::ID {
         let copy_marker_id = TargetID::CORE.make_global(
             calculate_qualified_name_id_with_given_seed(
                 MARKER_SEQUENCE.iter().copied(),
@@ -222,7 +222,7 @@ impl CoreLibInitializer<'_, '_> {
         }
 
         // mutable/immutable pointer of any type can be copied
-        let mut impl_pointer = async |mutable| {
+        let mut impl_pointer = |mutable| {
             let impl_id =
                 self.get_impl_id(if mutable { "*mut T" } else { "*const T" });
 
@@ -252,8 +252,8 @@ impl CoreLibInitializer<'_, '_> {
             implemented.insert(impl_id);
         };
 
-        impl_pointer(false).await;
-        impl_pointer(true).await;
+        impl_pointer(false);
+        impl_pointer(true);
 
         self.input_session.set_input(
             implemented::InTargetKey {

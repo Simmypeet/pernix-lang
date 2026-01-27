@@ -326,7 +326,7 @@ impl<'ctx> Context<'_, 'ctx> {
         symbol: Symbol,
     ) -> Result<Rc<LlvmStructSignature<'ctx>>, Zst> {
         let generic_params =
-            self.engine().get_generic_parameters(symbol.id).await.unwrap();
+            self.engine().get_generic_parameters(symbol.id).await;
 
         let instantiation = Instantiation::from_generic_arguments(
             symbol.generic_arguments.clone(),
@@ -342,7 +342,7 @@ impl<'ctx> Context<'_, 'ctx> {
             return value.ok_or(Zst);
         }
 
-        let fields = self.engine().get_fields(symbol.id).await.unwrap();
+        let fields = self.engine().get_fields(symbol.id).await;
 
         let mut llvm_field_types = Vec::new();
         let mut llvm_field_indices_by_field_id = HashMap::new();
@@ -487,7 +487,7 @@ impl<'ctx> Context<'_, 'ctx> {
         }
 
         let generic_params =
-            self.engine().get_generic_parameters(symbol.id).await.unwrap();
+            self.engine().get_generic_parameters(symbol.id).await;
 
         let instantiation = Instantiation::from_generic_arguments(
             symbol.generic_arguments.clone(),
@@ -519,11 +519,8 @@ impl<'ctx> Context<'_, 'ctx> {
 
         // gets the of each enum variants
         for (variant_id, _) in variants.iter().copied() {
-            let variant = self
-                .engine()
-                .get_variant_associated_type(variant_id)
-                .await
-                .unwrap();
+            let variant =
+                self.engine().get_variant_associated_type(variant_id).await;
 
             if let Some(associated_ty) = &variant {
                 let mut ty = (**associated_ty).clone();
@@ -615,7 +612,7 @@ impl<'ctx> Context<'_, 'ctx> {
                 let variant_qualified_name = format!(
                     "{}::{}",
                     enum_qualified_name,
-                    self.engine().get_name(variant_id).await
+                    self.engine().get_name(variant_id).await.as_ref()
                 );
 
                 let ty =

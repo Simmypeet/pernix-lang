@@ -3,15 +3,6 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: symbol `duplicateInner` is already defined in the scope `main::inner`
-  ╭─ compiler/e2e/test/snapshot/symbol/redefinition/inner.pnx:4:15
-  │
-1 │ public module duplicateInner:
-  │               -------------- symbol `duplicateInner` is already defined here
-  ·
-4 │ public module duplicateInner:
-  │               ^^^^^^^^^^^^^^ redefinition here
-
 error: symbol `first` is already defined in the scope `main`
   ╭─ compiler/e2e/test/snapshot/symbol/redefinition/main.pnx:6:15
   │
@@ -108,6 +99,15 @@ error: symbol `test` is already defined in the scope `main::[implements Test[int
    ·
 59 │     function test():
    │              ^^^^ redefinition here
+
+error: symbol `duplicateInner` is already defined in the scope `main::inner`
+  ╭─ compiler/e2e/test/snapshot/symbol/redefinition/inner.pnx:4:15
+  │
+1 │ public module duplicateInner:
+  │               -------------- symbol `duplicateInner` is already defined here
+  ·
+4 │ public module duplicateInner:
+  │               ^^^^^^^^^^^^^^ redefinition here
 
 error: Compilation aborted due to 12 error(s)
 

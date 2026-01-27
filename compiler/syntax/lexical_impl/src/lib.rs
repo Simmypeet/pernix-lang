@@ -4,7 +4,7 @@ use linkme::distributed_slice;
 use pernixc_handler::Storage;
 use pernixc_lexical::{DiagnosticKey, Key, error, tree::Tree};
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
-use pernixc_source_file::calculate_path_id;
+use pernixc_source_file::get_stable_path_id;
 use qbice::{executor, program::Registration, storage::intern::Interned};
 
 #[executor(config = Config)]
@@ -28,7 +28,7 @@ async fn parse_executor(
     let tree = Tree::from_source(
         source_file.content(),
         key.target_id.make_global(
-            engine.calculate_path_id(&key.path, key.target_id).await.expect(
+            engine.get_stable_path_id(key.path.clone()).await.expect(
                 "should be sucessful since the source file is loaded \
                  successfully",
             ),
@@ -57,3 +57,6 @@ async fn diagnostic_executor(
 #[distributed_slice(PERNIX_PROGRAM)]
 static DIAGNOSTIC_EXECUTOR: Registration<Config> =
     Registration::new::<DiagnosticKey, DiagnosticExecutor>();
+
+/// A dummy function to make sure this crate is linked by the compiler.
+pub const fn black_box() {}

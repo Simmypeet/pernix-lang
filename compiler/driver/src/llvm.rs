@@ -9,7 +9,7 @@ use inkwell::{
     },
 };
 use pernixc_diagnostic::Report;
-use pernixc_query::TrackedEngine;
+use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::{get_target_root_module_id, member::get_members};
 use pernixc_target::{Global, OptimizationLevel, TargetID};
 
@@ -172,7 +172,7 @@ pub(super) async fn emit_as_machine_code(
         true
     } else {
         for error in storage.into_vec() {
-            let diag = error.report(engine).await.unwrap();
+            let diag = error.report(engine).await;
             let diag = pernix_diagnostic_to_codespan_diagnostic(&diag);
 
             report_term.report(&diag);

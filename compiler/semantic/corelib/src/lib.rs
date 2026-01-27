@@ -4,7 +4,7 @@ use pernixc_hash::{HashMap, HashSet};
 use pernixc_qbice::InputSession;
 use pernixc_semantic_element::import;
 use pernixc_symbol::{
-    ID, accessibility, kind,
+    ID, accessibility, calculate_core_root_target_module_id, kind,
     member::{self, Member},
     name, parent,
 };
@@ -21,18 +21,17 @@ struct CoreLibInitializer<'i, 'e> {
 }
 
 /// Initializes all the core library intrinsics.
-pub async fn initialize_corelib(
-    input_session: &mut InputSession<'_>,
-    root_target_module_id: Global<ID>,
-    target_seed: u64,
-) {
+pub fn initialize_corelib(input_session: &mut InputSession<'_>) {
     let mut initializer = CoreLibInitializer {
         input_session,
-        root_target_module_id,
-        target_seed,
+        root_target_module_id: Global::new(
+            pernixc_target::TargetID::CORE,
+            calculate_core_root_target_module_id(),
+        ),
+        target_seed: pernixc_target::CORE_TARGET_SEED,
     };
 
-    let copy_marker_id = initializer.initialize_copy_marker().await;
+    let copy_marker_id = initializer.initialize_copy_marker();
     let drop_trait_id = initializer.initialize_drop_trait(copy_marker_id);
     let intrinsic_ids = initializer.initialize_intrinsics();
 

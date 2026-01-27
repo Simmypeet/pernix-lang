@@ -6,7 +6,7 @@ use inkwell::{
     intrinsics::Intrinsic, targets::TargetData, values::FunctionValue,
 };
 use pernixc_handler::Handler;
-use pernixc_query::TrackedEngine;
+use pernixc_qbice::TrackedEngine;
 use pernixc_target::Global;
 
 use crate::{constant, diagnostic::Diagnostic, function, r#type};

@@ -47,3 +47,6 @@ async fn diagnostic_executor(
 #[distributed_slice(PERNIX_PROGRAM)]
 static DIAGNOSTIC_EXECUTOR: Registration<Config> =
     Registration::new::<DiagnosticKey, DiagnosticExecutor>();
+
+/// A dummy function to make sure this crate is linked by the compiler.
+pub const fn black_box() {}

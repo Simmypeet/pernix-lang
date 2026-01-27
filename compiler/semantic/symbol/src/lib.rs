@@ -6,7 +6,8 @@ use pernixc_extend::extend;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_target::{
-    Global, TargetID, get_invocation_arguments, get_target_seed,
+    CORE_TARGET_SEED, Global, TargetID, get_invocation_arguments,
+    get_target_seed,
 };
 use qbice::{Decode, Encode, Identifiable, Query, StableHash};
 use siphasher::sip128::Hasher128;
@@ -122,6 +123,17 @@ pub async fn calculate_qualified_name_id<'a>(
         parent_id,
         declaration_order,
         target_seed,
+    )
+}
+
+/// Calculates the ID of the core root module symbol.
+#[must_use]
+pub fn calculate_core_root_target_module_id() -> ID {
+    calculate_qualified_name_id_with_given_seed(
+        std::iter::once("core"),
+        None,
+        0,
+        CORE_TARGET_SEED,
     )
 }
 

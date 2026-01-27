@@ -3,7 +3,7 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: the following effect operations are not handled: `unhandledOne`, `unhandledTwo`
+error: the following effect operations are not handled: `unhandledTwo`, `unhandledOne`
    ╭─ compiler/e2e/test/snapshot/ir/expression/do/unhandled_effect_oepration/main.pnx:10:13
    │  
 10 │           pass

@@ -234,10 +234,6 @@ impl Query for Resolve {
                 }
             }
 
-            println!(
-                "Done resolving implementation for {:?}",
-                self.implemented_id
-            );
             match candidate {
                 Some((
                     implementation_id,

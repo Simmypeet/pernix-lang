@@ -43,11 +43,11 @@ error: the name `second` has already been bound in the scope
    │                   │           
    │                   the name is already bound here
 
-error: not all fields are bound in the pattern: b, a, c
+error: not all fields are bound in the pattern: a, b, c
    ╭─ compiler/e2e/test/snapshot/ir/pattern/struct/main.pnx:39:1
    │
 39 │     {unknown}: Test, # unknown field 
-   │ ^^^^^^^^^^^^^ these fields are not bound in the pattern: b, a, c
+   │ ^^^^^^^^^^^^^ these fields are not bound in the pattern: a, b, c
    │
    = try to handle all fields in the pattern or use the `..` syntax after the fields to ignore the rest
 

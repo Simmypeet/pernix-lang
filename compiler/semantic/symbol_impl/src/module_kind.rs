@@ -1,6 +1,6 @@
 use linkme::distributed_slice;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
-use pernixc_source_file::calculate_path_id;
+use pernixc_source_file::get_stable_path_id;
 use pernixc_symbol::{
     module_kind::{Key, ModuleKind},
     parent::get_parent_global,
@@ -20,10 +20,10 @@ async fn module_kind_executor(
     else {
         let target_args =
             engine.get_invocation_arguments(module_id.target_id).await;
+
         let root_src_id = engine
-            .calculate_path_id(
-                &target_args.command.input().file,
-                module_id.target_id,
+            .get_stable_path_id(
+                engine.intern_unsized(target_args.command.input().file.clone()),
             )
             .await
             .ok();
@@ -41,9 +41,7 @@ async fn module_kind_executor(
     {
         let path = exteranl_submodule.path.clone();
 
-        ModuleKind::ExteranlFile(
-            engine.calculate_path_id(&path, module_id.target_id).await.ok(),
-        )
+        ModuleKind::ExteranlFile(engine.get_stable_path_id(path).await.ok())
     } else {
         ModuleKind::Inline
     }

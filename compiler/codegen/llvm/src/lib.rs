@@ -7,7 +7,7 @@ use diagnostic::{
 use function::Call;
 use inkwell::targets::TargetData;
 use pernixc_handler::Handler;
-use pernixc_query::TrackedEngine;
+use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::{
     parameter::get_parameters, return_type::get_return_type,
     where_clause::get_where_clause,
@@ -77,11 +77,8 @@ async fn check_function_main(input: &Input<'_, '_>) -> bool {
         true
     };
 
-    let func_parameters =
-        input.engine.get_parameters(main_function_id).await.unwrap();
-
-    let return_type =
-        input.engine.get_return_type(main_function_id).await.unwrap();
+    let func_parameters = input.engine.get_parameters(main_function_id).await;
+    let return_type = input.engine.get_return_type(main_function_id).await;
 
     if !func_parameters.parameters.is_empty()
         || *return_type != Type::Tuple(Tuple { elements: Vec::new() })
@@ -93,7 +90,7 @@ async fn check_function_main(input: &Input<'_, '_>) -> bool {
     }
 
     let generic_params =
-        input.engine.get_generic_parameters(main_function_id).await.unwrap();
+        input.engine.get_generic_parameters(main_function_id).await;
 
     // must not have any generic parameters
     if !generic_params.lifetimes().is_empty()
@@ -110,8 +107,7 @@ async fn check_function_main(input: &Input<'_, '_>) -> bool {
         has_error = true;
     }
 
-    let where_clause =
-        input.engine.get_where_clause(main_function_id).await.unwrap();
+    let where_clause = input.engine.get_where_clause(main_function_id).await;
 
     // must not have any where clause predicates
     if !where_clause.is_empty() {
@@ -150,7 +146,7 @@ pub async fn codegen<'ctx>(
                     .await,
             ))
             .await
-            .as_str(),
+            .as_ref(),
     );
 
     let mut context = context::Context::new(

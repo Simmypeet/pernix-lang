@@ -8,7 +8,7 @@ use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::MemberID;
 use pernixc_target::Global;
 use qbice::{
-    Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
+    self, Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
 };
 
 use crate::{

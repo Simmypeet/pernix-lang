@@ -4,18 +4,18 @@ expression: clean_run
 ---
 stderr:
 error: the token is in an invalid indentation level
-  ╭─ compiler/e2e/test/snapshot/symbol/file_branching/sub1/inner.pnx:4:9
+  ╭─ compiler/e2e/test/snapshot/symbol/file_branching/sub2.pnx:6:9
   │
-2 │ public function weirdIndentationSub1Inner():
-  │                                            - previous indentation level is 4 space(s)
-3 │     pass
-4 │         pass
+4 │ public function weirdIndentationSub2():
+  │                                       - previous indentation level is 4 space(s)
+5 │     pass
+6 │         pass
   │         ^^^^ found 8 space(s)
 
 error: the token is in an invalid indentation level
-  ╭─ compiler/e2e/test/snapshot/symbol/file_branching/sub2/inner.pnx:4:9
+  ╭─ compiler/e2e/test/snapshot/symbol/file_branching/sub1/inner.pnx:4:9
   │
-2 │ public function weirdIndentationSub2Inner():
+2 │ public function weirdIndentationSub1Inner():
   │                                            - previous indentation level is 4 space(s)
 3 │     pass
 4 │         pass
@@ -31,12 +31,12 @@ error: the token is in an invalid indentation level
   │         ^^^^ found 8 space(s)
 
 error: the token is in an invalid indentation level
-  ╭─ compiler/e2e/test/snapshot/symbol/file_branching/sub2.pnx:6:9
+  ╭─ compiler/e2e/test/snapshot/symbol/file_branching/sub2/inner.pnx:4:9
   │
-4 │ public function weirdIndentationSub2():
-  │                                       - previous indentation level is 4 space(s)
-5 │     pass
-6 │         pass
+2 │ public function weirdIndentationSub2Inner():
+  │                                            - previous indentation level is 4 space(s)
+3 │     pass
+4 │         pass
   │         ^^^^ found 8 space(s)
 
 error: Compilation aborted due to 4 error(s)

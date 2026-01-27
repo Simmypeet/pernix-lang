@@ -7,7 +7,7 @@ use std::{
     fs::File,
     hash::Hash,
     io::Read,
-    ops::{Not, Range},
+    ops::Range,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -19,16 +19,14 @@ use dashmap::{
 use getset::{CopyGetters, Getters};
 use pernixc_extend::extend;
 use pernixc_qbice::TrackedEngine;
-use pernixc_target::{
-    Global, TargetID, get_invocation_arguments, get_target_seed,
-};
+use pernixc_target::{Global, TargetID};
 use qbice::{
-    Decode, Encode, Identifiable, StableHash,
+    Decode, Encode, Identifiable, Query, StableHash,
     stable_hash::{StableHasher, Value},
     storage::intern::Interned,
 };
 use rayon::{iter::ParallelIterator, slice::ParallelSlice};
-use siphasher::sip128::{self, Hasher128};
+use siphasher::sip128::Hasher128;
 
 /// Represents an source file input for the compiler.
 #[derive(Clone, PartialEq, Eq, Hash, Getters, Encode, Decode)]
@@ -857,6 +855,20 @@ pub struct LocalSourceID {
     hi: u64,
 }
 
+impl LocalSourceID {
+    /// Creates a new [`LocalSourceID`] from the given low and high parts.
+    #[must_use]
+    pub const fn new(lo: u64, hi: u64) -> Self { Self { lo, hi } }
+
+    /// Returns the low 64 bits of the ID.
+    #[must_use]
+    pub const fn lo(&self) -> u64 { self.lo }
+
+    /// Returns the high 64 bits of the ID.
+    #[must_use]
+    pub const fn hi(&self) -> u64 { self.hi }
+}
+
 /// A type alias for the [`Global`] type with a [`LocalSourceID`] as the inner
 /// type, used for identifying source files across different targets.
 pub type GlobalSourceID = Global<LocalSourceID>;
@@ -918,75 +930,42 @@ pub enum CalculatePathError {
     NotInTargetDirectory,
 }
 
-/// Calculates the ID of the source file based on their path.
+/// A query for calculating the stable source file ID from the given path.
 ///
-/// The path will be canonicalized before calculating the ID. Therefore,
-/// two different path strings that point to the same file will ultimately
-/// yield the same source file ID.
+/// This query takes a path (which can be relative or absolute) and produces a
+/// stable 128-bit ID that uniquely identifies the file. The ID is computed by:
 ///
-/// Internally this uses a hash function to derive a stable ID for the source
-/// file.
-#[extend]
-pub async fn calculate_path_id(
-    self: &TrackedEngine,
-    path: &Path,
-    target_id: TargetID,
-) -> Result<LocalSourceID, std::io::Error> {
-    let target_args = self.get_invocation_arguments(target_id).await;
-
-    if path.is_absolute().not() {
-        return Err(std::io::Error::other("the given path is not absolute"));
-    }
-
-    if target_args.command.input().file.is_absolute().not() {
-        return Err(std::io::Error::other(
-            "the target root file path is not absolute",
-        ));
-    }
-
-    let target_directory = target_args
-        .command
-        .input()
-        .file
-        .parent()
-        .unwrap_or_else(|| std::path::Path::new(""));
-
-    // skip the prefix components to avoid absolute path issues (e.g. \\?\ on
-    // Windows)
-    let this_components = path.components().skip(1).collect::<Vec<_>>();
-    let target_components =
-        target_directory.components().skip(1).collect::<Vec<_>>();
-
-    if target_components.len() > this_components.len() {
-        return Err(std::io::Error::other(
-            "the given path is not in the target directory",
-        ));
-    }
-
-    for (a, b) in target_components.iter().zip(this_components.iter()) {
-        if a != b {
-            return Err(std::io::Error::other(
-                "the given path is not in the target directory",
-            ));
-        }
-    }
-
-    let mut hasher = sip128::SipHasher24::default();
-
-    // hash only the relative path from the target directory
-    for component in this_components.iter().skip(target_components.len()) {
-        component.as_os_str().hash(&mut hasher);
-    }
-
-    let target_seed = self.get_target_seed(target_id).await;
-    target_seed.hash(&mut hasher);
-
-    let hash128 = hasher.finish128();
-
-    let lo = hash128.h1;
-    let hi = hash128.h2;
-
-    Ok(LocalSourceID { lo, hi })
+/// 1. Canonicalizing the path to resolve:
+///    - Relative path components (`.` and `..`)
+///    - Symbolic links
+///    - Converting to absolute path
+/// 2. Hashing the canonicalized path using `SipHash-2-4` with a fixed seed to
+///    produce a 128-bit hash
+///
+/// This ensures that the same file, whether accessed via relative or absolute
+/// path, will always produce the same stable ID. The file content does NOT
+/// contribute to the ID—only the path.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    Query,
+)]
+#[value(Result<LocalSourceID, Interned<str>>)]
+#[extend(name = get_stable_path_id, by_val)]
+pub struct StablePathIDKey {
+    /// The path to calculate the stable ID for.
+    ///
+    /// This can be either a relative or absolute path. The path will be
+    /// canonicalized before computing the stable ID.
+    pub path: Interned<Path>,
 }
 
 /// A query for retrieving the a path of the given sourcce file ID.

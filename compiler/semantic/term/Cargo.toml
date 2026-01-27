@@ -34,6 +34,7 @@ proptest = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
+tempfile = { workspace = true }
 pernixc_symbol = { path = "../symbol", features = ["arbitrary"] }
 pernixc_arena = { path = "../../base/arena", features = ["arbitrary"] }
 
