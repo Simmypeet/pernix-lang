@@ -1,11 +1,10 @@
-use flexstr::SharedStr;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor};
-use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_qbice::TrackedEngine;
 use pernixc_source_file::ByteIndex;
-use pernixc_stable_hash::StableHash;
-use pernixc_stable_type_id::Identifiable;
 use pernixc_symbol::accessibility::Accessibility;
+use qbice::{
+    Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
+};
 
 #[derive(
     Debug,
@@ -15,10 +14,10 @@ use pernixc_symbol::accessibility::Accessibility;
     PartialOrd,
     Ord,
     Hash,
-    Identifiable,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
+    Identifiable,
     derive_more::From,
 )]
 #[allow(clippy::large_enum_variant)]
@@ -33,8 +32,7 @@ impl pernixc_diagnostic::Report for Diagnostic {
     async fn report(
         &self,
         parameter: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         match self {
             Self::Resolution(diagnostic) => diagnostic.report(parameter).await,
             Self::TypeSystem(diagnostic) => diagnostic.report(parameter).await,
@@ -58,12 +56,12 @@ impl pernixc_diagnostic::Report for Diagnostic {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct FieldRedefinition {
     /// The name of the field that is being redefined.
-    pub field_name: SharedStr,
+    pub field_name: Interned<str>,
 
     /// The span of the redefinition.
     pub redefinition_span: RelativeSpan,
@@ -79,8 +77,7 @@ impl pernixc_diagnostic::Report for FieldRedefinition {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         use pernixc_diagnostic::{Highlight, Severity};
         use pernixc_symbol::{
             name::get_qualified_name, source_map::to_absolute_span,
@@ -90,7 +87,10 @@ impl pernixc_diagnostic::Report for FieldRedefinition {
 
         let primary_highlight = Some(Highlight::new(
             engine.to_absolute_span(&self.redefinition_span).await,
-            Some(format!("field `{}` redefined here", self.field_name)),
+            Some(format!(
+                "field `{}` redefined here",
+                self.field_name.as_ref()
+            )),
         ));
 
         let related = if let Some(original_span) = &self.original_span {
@@ -102,18 +102,19 @@ impl pernixc_diagnostic::Report for FieldRedefinition {
             Vec::new()
         };
 
-        Ok(pernixc_diagnostic::Rendered {
+        pernixc_diagnostic::Rendered {
             primary_highlight,
             message: format!(
                 "field `{}` is already defined in struct `{}`",
-                self.field_name, struct_name
+                self.field_name.as_ref(),
+                struct_name
             ),
             severity: Severity::Error,
             help_message: Some(
                 "consider using a different field name".to_string(),
             ),
             related,
-        })
+        }
     }
 }
 
@@ -127,8 +128,8 @@ impl pernixc_diagnostic::Report for FieldRedefinition {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct FieldMoreAccessibleThanStruct {
     /// The span to the field that is more accessible.
@@ -138,7 +139,7 @@ pub struct FieldMoreAccessibleThanStruct {
     pub field_accessibility: Accessibility<pernixc_symbol::ID>,
 
     /// The name of the field.
-    pub field_name: SharedStr,
+    pub field_name: Interned<str>,
 
     /// The accessibility of the struct.
     pub struct_accessibility: Accessibility<pernixc_symbol::ID>,
@@ -151,8 +152,7 @@ impl pernixc_diagnostic::Report for FieldMoreAccessibleThanStruct {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         use pernixc_diagnostic::{Highlight, Severity};
         use pernixc_symbol::{
             accessibility::accessibility_description, name::get_qualified_name,
@@ -178,18 +178,19 @@ impl pernixc_diagnostic::Report for FieldMoreAccessibleThanStruct {
                 engine.to_absolute_span(&self.field_span).await,
                 Some(format!(
                     "field `{}` is {} but struct is {}",
-                    self.field_name,
+                    self.field_name.as_ref(),
                     field_accessibility_description,
                     struct_accessibility_description
                 )),
             ))
         };
 
-        Ok(pernixc_diagnostic::Rendered {
+        pernixc_diagnostic::Rendered {
             primary_highlight,
             message: format!(
                 "field `{}` is more accessible than struct `{}`",
-                self.field_name, struct_name
+                self.field_name.as_ref(),
+                struct_name
             ),
             severity: Severity::Error,
             help_message: Some(format!(
@@ -197,6 +198,6 @@ impl pernixc_diagnostic::Report for FieldMoreAccessibleThanStruct {
                  or making the struct {field_accessibility_description}"
             )),
             related: Vec::new(),
-        })
+        }
     }
 }

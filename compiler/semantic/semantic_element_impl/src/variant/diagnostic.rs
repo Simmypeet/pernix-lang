@@ -1,8 +1,6 @@
-use pernixc_query::{TrackedEngine, runtime::executor};
-use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_qbice::TrackedEngine;
 use pernixc_source_file::ByteIndex;
-use pernixc_stable_hash::StableHash;
-use pernixc_stable_type_id::Identifiable;
+use qbice::{Decode, Encode, Identifiable, StableHash};
 
 #[derive(
     Debug,
@@ -14,8 +12,8 @@ use pernixc_stable_type_id::Identifiable;
     Hash,
     Identifiable,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     derive_more::From,
 )]
 #[allow(clippy::large_enum_variant)]
@@ -28,8 +26,7 @@ impl pernixc_diagnostic::Report for Diagnostic {
     async fn report(
         &self,
         parameter: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         match self {
             Self::Resolution(diagnostic) => diagnostic.report(parameter).await,
             Self::TypeSystem(diagnostic) => diagnostic.report(parameter).await,

@@ -1,12 +1,13 @@
-use std::{borrow::Cow, ops::Deref, sync::Arc};
+use std::{borrow::Cow, ops::Deref};
 
+use linkme::distributed_slice;
 use pernixc_arena::{Arena, ID};
 use pernixc_handler::Storage;
 use pernixc_hash::HashSet;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor};
+use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_resolution::{
-    Config, ElidedTermProvider, ExtraNamespace,
+    Config as ResolutionConfig, ElidedTermProvider, ExtraNamespace,
     generic_parameter_namespace::get_generic_parameter_namespace,
     term::resolve_type,
 };
@@ -18,9 +19,7 @@ use pernixc_semantic_element::{
     return_type,
     where_clause::get_where_clause,
 };
-use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::SourceElement;
-use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{
     parent::get_parent, syntax::get_function_signature_syntax,
 };
@@ -38,6 +37,10 @@ use pernixc_type_system::{
     environment::{Environment, get_active_premise},
     normalizer,
 };
+use qbice::{
+    Decode, Encode, Query, StableHash, executor, program::Registration,
+    storage::intern::Interned,
+};
 
 use crate::{
     Build,
@@ -48,23 +51,22 @@ use crate::{
 
 pub mod diagnostic;
 
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    StableHash,
-    Serialize,
-    Deserialize,
-    pernixc_query::Value,
-)]
-#[id(Global<pernixc_symbol::ID>)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct FunctionSignature {
-    pub parameters: Arc<Parameters>,
-    pub return_type: Arc<Type>,
-    pub implied_predicates: Arc<HashSet<ImpliedPredicate>>,
-    pub elided_lifetimes: Arc<Arena<ElidedLifetime>>,
-    pub late_bound_lifetime_parameters: Arc<HashSet<ID<LifetimeParameter>>>,
+    pub parameters: Interned<Parameters>,
+    pub return_type: Interned<Type>,
+    pub implied_predicates: Interned<HashSet<ImpliedPredicate>>,
+    pub elided_lifetimes: Interned<Arena<ElidedLifetime>>,
+    pub late_bound_lifetime_parameters:
+        Interned<HashSet<ID<LifetimeParameter>>>,
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, StableHash, Encode, Decode, Query,
+)]
+#[value(FunctionSignature)]
+pub struct Key {
+    pub symbol_id: Global<pernixc_symbol::ID>,
 }
 
 async fn create_parameters<
@@ -77,7 +79,7 @@ async fn create_parameters<
     occurrences: &mut Occurrences,
     storage: &Storage<Diagnostic>,
     parameters: T,
-) -> Result<Vec<(Type, RelativeSpan)>, executor::CyclicError> {
+) -> Vec<(Type, RelativeSpan)> {
     let mut result = Vec::new();
     for parameter in parameters {
         let ty = match parameter.r#type() {
@@ -85,7 +87,7 @@ async fn create_parameters<
                 engine
                     .resolve_type(
                         &ty,
-                        Config::builder()
+                        ResolutionConfig::builder()
                             .referring_site(id)
                             .extra_namespace(extra_namespace)
                             .elided_lifetime_provider(elided_lifetimes_provider)
@@ -93,7 +95,7 @@ async fn create_parameters<
                             .build(),
                         storage,
                     )
-                    .await?
+                    .await
             }
             None => Type::Error(pernixc_term::error::Error),
         };
@@ -101,42 +103,39 @@ async fn create_parameters<
         result.push((ty, parameter.span()));
     }
 
-    Ok(result)
+    result
 }
 
 impl Build for Key {
     type Diagnostic = Diagnostic;
 
     #[allow(clippy::cognitive_complexity, clippy::too_many_lines)]
-    async fn execute(
-        engine: &TrackedEngine,
-        key: &Self,
-    ) -> Result<Output<Self>, executor::CyclicError> {
+    async fn execute(engine: &TrackedEngine, key: &Self) -> Output<Self> {
         let extra_namespace =
-            engine.get_generic_parameter_namespace(key.0).await?;
+            engine.get_generic_parameter_namespace(key.symbol_id).await;
         let mut elided_lifetimes = Arena::default();
         let mut occurrences = Occurrences::default();
         let mut elided_lifetimes_provider = ParametersElidedLifetimeProvider {
-            global_id: key.0,
+            global_id: key.symbol_id,
             elided_lifetimes: &mut elided_lifetimes,
             counter: 0,
         };
         let storage = Storage::<Diagnostic>::default();
 
         let (parameters_syn, return_type_syn) =
-            engine.get_function_signature_syntax(key.0).await;
+            engine.get_function_signature_syntax(key.symbol_id).await;
 
         let parameters = if let Some(parameters) = parameters_syn {
             create_parameters(
                 engine,
-                key.0,
+                key.symbol_id,
                 &extra_namespace,
                 &mut elided_lifetimes_provider,
                 &mut occurrences,
                 &storage,
                 parameters.parameters().filter_map(|x| x.into_regular().ok()),
             )
-            .await?
+            .await
         } else {
             Vec::new()
         };
@@ -144,7 +143,7 @@ impl Build for Key {
         let mut return_elided_lifetime_provider = (elided_lifetimes.len() == 1)
             .then(|| ReturnElidedLifetimeProvider {
                 lifetime: Lifetime::Elided(ElidedLifetimeID {
-                    parent_id: key.0,
+                    parent_id: key.symbol_id,
                     id: elided_lifetimes.ids().next().unwrap(),
                 }),
             });
@@ -154,8 +153,8 @@ impl Build for Key {
                 let ty = engine
                     .resolve_type(
                         &ty_syn,
-                        Config::builder()
-                            .referring_site(key.0)
+                        ResolutionConfig::builder()
+                            .referring_site(key.symbol_id)
                             .maybe_elided_lifetime_provider(
                                 return_elided_lifetime_provider
                                     .as_mut()
@@ -166,24 +165,23 @@ impl Build for Key {
                             .build(),
                         &storage,
                     )
-                    .await?;
+                    .await;
 
                 Some((ty, ty_syn.span()))
             } else {
                 None
             };
 
-        let mut active_premise = engine
-            .get_active_premise(
-                key.0
-                    .target_id
-                    .make_global(engine.get_parent(key.0).await.unwrap()),
-            )
-            .await?
-            .deref()
-            .clone();
+        let mut active_premise =
+            engine
+                .get_active_premise(key.symbol_id.target_id.make_global(
+                    engine.get_parent(key.symbol_id).await.unwrap(),
+                ))
+                .await
+                .deref()
+                .clone();
 
-        let where_clause = engine.get_where_clause(key.0).await?;
+        let where_clause = engine.get_where_clause(key.symbol_id).await;
 
         for predicate in where_clause.as_ref() {
             active_premise.predicates.insert(predicate.predicate.clone());
@@ -204,7 +202,7 @@ impl Build for Key {
                 match ty {
                     Type::Symbol(symbol) => {
                         let where_clause =
-                            engine.get_where_clause(symbol.id).await?;
+                            engine.get_where_clause(symbol.id).await;
 
                         implied_predicate_candidates.extend(
                             where_clause.as_ref().iter().filter_map(
@@ -278,9 +276,6 @@ impl Build for Key {
                         &storage,
                     );
                 }
-                Err(pernixc_type_system::Error::CyclicDependency(err)) => {
-                    return Err(err);
-                }
 
                 Ok(Some(_)) => { /* already satisfied */ }
             }
@@ -308,7 +303,7 @@ impl Build for Key {
                             .simplify_and_check_lifetime_constraints(
                                 &r#type, &span, &storage,
                             )
-                            .await?,
+                            .await,
                         span: Some(span),
                     }),
                 );
@@ -324,7 +319,7 @@ impl Build for Key {
                         .simplify_and_check_lifetime_constraints(
                             &return_ty, &span, &storage,
                         )
-                        .await?
+                        .await
                 } else {
                     Type::Tuple(tuple::Tuple::default())
                 },
@@ -332,12 +327,13 @@ impl Build for Key {
         };
 
         let late_bound = {
-            let generic_params = engine.get_generic_parameters(key.0).await?;
-            let where_clause = engine.get_where_clause(key.0).await?;
+            let generic_params =
+                engine.get_generic_parameters(key.symbol_id).await;
+            let where_clause = engine.get_where_clause(key.symbol_id).await;
 
             let mut all_lifetime_parameters = AllLifetimeParameters {
                 lifetimes: generic_params.lifetimes().ids().collect(),
-                current_function_id: key.0,
+                current_function_id: key.symbol_id,
             };
 
             for predicate in where_clause.as_ref() {
@@ -348,17 +344,17 @@ impl Build for Key {
             all_lifetime_parameters.lifetimes
         };
 
-        Ok(Output {
+        Output {
             item: FunctionSignature {
-                parameters: Arc::new(parameters),
-                return_type: Arc::new(return_type),
-                implied_predicates: Arc::new(implied_predicates),
-                elided_lifetimes: Arc::new(elided_lifetimes),
-                late_bound_lifetime_parameters: Arc::new(late_bound),
+                parameters: engine.intern(parameters),
+                return_type: engine.intern(return_type),
+                implied_predicates: engine.intern(implied_predicates),
+                elided_lifetimes: engine.intern(elided_lifetimes),
+                late_bound_lifetime_parameters: engine.intern(late_bound),
             },
-            diagnostics: storage.into_vec().into(),
-            occurrences: Arc::new(occurrences),
-        })
+            diagnostics: engine.intern_unsized(storage.into_vec()),
+            occurrences: engine.intern(occurrences),
+        }
     }
 }
 
@@ -500,69 +496,74 @@ impl AllLifetimeParameters {
     }
 }
 
-#[pernixc_query::executor(key(parameter::Key), name(ParametersExecutor))]
+#[executor(config = Config)]
 pub async fn parameters_executor(
-    parameter::Key(id): &parameter::Key,
+    &parameter::Key { symbol_id }: &parameter::Key,
     engine: &TrackedEngine,
-) -> Result<Arc<Parameters>, executor::CyclicError> {
-    let signature = engine.query(&Key(*id)).await?;
-    Ok(signature.parameters)
+) -> Interned<Parameters> {
+    let signature = engine.query(&Key { symbol_id }).await;
+    signature.parameters
 }
 
-pernixc_register::register!(parameter::Key, ParametersExecutor);
+#[distributed_slice(PERNIX_PROGRAM)]
+static PARAMETERS_EXECUTOR: Registration<Config> =
+    Registration::<Config>::new::<parameter::Key, ParametersExecutor>();
 
-#[pernixc_query::executor(key(return_type::Key), name(ReturnTypeExecutor))]
+#[executor(config = Config)]
 pub async fn return_type_executor(
-    return_type::Key(id): &return_type::Key,
+    &return_type::Key { symbol_id }: &return_type::Key,
     engine: &TrackedEngine,
-) -> Result<Arc<Type>, executor::CyclicError> {
-    let signature = engine.query(&Key(*id)).await?;
-    Ok(signature.return_type)
+) -> Interned<Type> {
+    let signature = engine.query(&Key { symbol_id }).await;
+    signature.return_type
 }
 
-pernixc_register::register!(return_type::Key, ReturnTypeExecutor);
+#[distributed_slice(PERNIX_PROGRAM)]
+static RETURN_TYPE_EXECUTOR: Registration<Config> =
+    Registration::<Config>::new::<return_type::Key, ReturnTypeExecutor>();
 
-#[pernixc_query::executor(
-    key(implied_predicate::Key),
-    name(ImpliedPredicatesExecutor)
-)]
+#[executor(config = Config)]
 pub async fn implied_predicates_executor(
-    implied_predicate::Key(id): &implied_predicate::Key,
+    &implied_predicate::Key { symbol_id }: &implied_predicate::Key,
     engine: &TrackedEngine,
-) -> Result<Arc<HashSet<ImpliedPredicate>>, executor::CyclicError> {
-    let signature = engine.query(&Key(*id)).await?;
-    Ok(signature.implied_predicates)
+) -> Interned<HashSet<ImpliedPredicate>> {
+    let signature = engine.query(&Key { symbol_id }).await;
+    signature.implied_predicates
 }
 
-pernixc_register::register!(implied_predicate::Key, ImpliedPredicatesExecutor);
+#[distributed_slice(PERNIX_PROGRAM)]
+static IMPLIED_PREDICATES_EXECUTOR: Registration<Config> =
+    Registration::<Config>::new::<
+        implied_predicate::Key,
+        ImpliedPredicatesExecutor,
+    >();
 
-#[pernixc_query::executor(
-    key(elided_lifetime::Key),
-    name(ElidedLifetimesExecutor)
-)]
+#[executor(config = Config)]
 pub async fn elided_lifetimes_executor(
-    elided_lifetime::Key(id): &elided_lifetime::Key,
+    &elided_lifetime::Key { symbol_id }: &elided_lifetime::Key,
     engine: &TrackedEngine,
-) -> Result<Arc<Arena<ElidedLifetime>>, executor::CyclicError> {
-    let signature = engine.query(&Key(*id)).await?;
-    Ok(signature.elided_lifetimes)
+) -> Interned<Arena<ElidedLifetime>> {
+    let signature = engine.query(&Key { symbol_id }).await;
+    signature.elided_lifetimes
 }
 
-pernixc_register::register!(elided_lifetime::Key, ElidedLifetimesExecutor);
+#[distributed_slice(PERNIX_PROGRAM)]
+static ELIDED_LIFETIMES_EXECUTOR: Registration<Config> =
+    Registration::<Config>::new::<elided_lifetime::Key, ElidedLifetimesExecutor>(
+    );
 
-#[pernixc_query::executor(
-    key(late_bound_lifetime::Key),
-    name(LateBooundLifetimesExecutor)
-)]
+#[executor(config = Config)]
 pub async fn late_bound_lifetimes_executor(
-    late_bound_lifetime::Key(id): &late_bound_lifetime::Key,
+    &late_bound_lifetime::Key { symbol_id }: &late_bound_lifetime::Key,
     engine: &TrackedEngine,
-) -> Result<Arc<HashSet<ID<LifetimeParameter>>>, executor::CyclicError> {
-    let signature = engine.query(&Key(*id)).await?;
-    Ok(signature.late_bound_lifetime_parameters)
+) -> Interned<HashSet<ID<LifetimeParameter>>> {
+    let signature = engine.query(&Key { symbol_id }).await;
+    signature.late_bound_lifetime_parameters
 }
 
-pernixc_register::register!(
-    late_bound_lifetime::Key,
-    LateBooundLifetimesExecutor
-);
+#[distributed_slice(PERNIX_PROGRAM)]
+static LATE_BOUND_LIFETIMES_EXECUTOR: Registration<Config> =
+    Registration::<Config>::new::<
+        late_bound_lifetime::Key,
+        LateBoundLifetimesExecutor,
+    >();

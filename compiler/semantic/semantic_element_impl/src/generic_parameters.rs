@@ -1,7 +1,7 @@
-use std::{ops::Deref, sync::Arc};
+use std::ops::Deref;
 
 use pernixc_handler::{Handler, Storage};
-use pernixc_query::runtime::executor;
+use pernixc_qbice::TrackedEngine;
 use pernixc_resolution::{
     Config, generic_parameter_namespace::get_generic_parameter_namespace,
     term::resolve_type,
@@ -42,10 +42,11 @@ impl build::Build for pernixc_term::generic_parameters::Key {
 
     #[allow(clippy::too_many_lines)]
     async fn execute(
-        engine: &pernixc_query::TrackedEngine,
+        engine: &TrackedEngine,
         key: &Self,
-    ) -> Result<build::Output<Self>, executor::CyclicError> {
-        let syntax_tree = engine.get_generic_parameters_syntax(key.0).await;
+    ) -> build::Output<Self> {
+        let syntax_tree =
+            engine.get_generic_parameters_syntax(key.symbol_id).await;
 
         let mut lifetime_parameter_syns = Vec::new();
         let mut type_parameter_syns = Vec::new();
@@ -150,10 +151,10 @@ impl build::Build for pernixc_term::generic_parameters::Key {
         let mut generic_parameters = GenericParameters::default();
         let mut extra_name_space = engine
             .get_generic_parameter_namespace(Global::new(
-                key.0.target_id,
-                engine.get_parent(key.0).await.unwrap(),
+                key.symbol_id.target_id,
+                engine.get_parent(key.symbol_id).await.unwrap(),
             ))
-            .await?
+            .await
             .deref()
             .clone();
 
@@ -165,14 +166,17 @@ impl build::Build for pernixc_term::generic_parameters::Key {
                 Ok(id) => {
                     extra_name_space.lifetimes.insert(
                         lifetime_parameter_syn.kind.0,
-                        Lifetime::Parameter(MemberID { parent_id: key.0, id }),
+                        Lifetime::Parameter(MemberID {
+                            parent_id: key.symbol_id,
+                            id,
+                        }),
                     );
                 }
                 Err(id) => {
                     storage.receive(Diagnostic::LifetimeParameterRedefinition(
                         GenericParameterRedefinition {
                             existing_generic_parameter_id: MemberID {
-                                parent_id: key.0,
+                                parent_id: key.symbol_id,
                                 id,
                             },
                             duplicating_generic_parameter_span:
@@ -183,7 +187,7 @@ impl build::Build for pernixc_term::generic_parameters::Key {
             }
         }
 
-        let kind = engine.get_kind(key.0).await;
+        let kind = engine.get_kind(key.symbol_id).await;
 
         // check if the generic parameters are for an effect operation
         if kind == Kind::EffectOperation
@@ -202,7 +206,7 @@ impl build::Build for pernixc_term::generic_parameters::Key {
                                     .map(|x| x.0.span),
                             )
                             .collect(),
-                        effect_operation_id: key.0,
+                        effect_operation_id: key.symbol_id,
                     },
                 ),
             );
@@ -219,14 +223,17 @@ impl build::Build for pernixc_term::generic_parameters::Key {
                 Ok(id) => {
                     extra_name_space.types.insert(
                         type_parameter_syn.kind.0,
-                        Type::Parameter(MemberID { parent_id: key.0, id }),
+                        Type::Parameter(MemberID {
+                            parent_id: key.symbol_id,
+                            id,
+                        }),
                     );
                 }
                 Err(id) => {
                     storage.receive(Diagnostic::TypeParameterRedefinition(
                         GenericParameterRedefinition {
                             existing_generic_parameter_id: MemberID {
-                                parent_id: key.0,
+                                parent_id: key.symbol_id,
                                 id,
                             },
                             duplicating_generic_parameter_span:
@@ -252,13 +259,13 @@ impl build::Build for pernixc_term::generic_parameters::Key {
                             extra_namespace: Some(&extra_name_space),
                             consider_adt_implements: true,
                             referring_site: Global::new(
-                                key.0.target_id,
-                                engine.get_parent(key.0).await.unwrap(),
+                                key.symbol_id.target_id,
+                                engine.get_parent(key.symbol_id).await.unwrap(),
                             ),
                         },
                         &storage,
                     )
-                    .await?;
+                    .await;
 
                 // add the constant type to the occurrences
                 occurrences.constant_types.push((
@@ -278,14 +285,17 @@ impl build::Build for pernixc_term::generic_parameters::Key {
                 Ok(id) => {
                     extra_name_space.constants.insert(
                         constant_parameter_syn.0.kind.0.clone(),
-                        Constant::Parameter(MemberID { parent_id: key.0, id }),
+                        Constant::Parameter(MemberID {
+                            parent_id: key.symbol_id,
+                            id,
+                        }),
                     );
                 }
                 Err(id) => {
                     storage.receive(Diagnostic::ConstantParameterRedefinition(
                         GenericParameterRedefinition {
                             existing_generic_parameter_id: MemberID {
-                                parent_id: key.0,
+                                parent_id: key.symbol_id,
                                 id,
                             },
                             duplicating_generic_parameter_span:
@@ -296,11 +306,11 @@ impl build::Build for pernixc_term::generic_parameters::Key {
             }
         }
 
-        Ok(Output {
-            item: Arc::new(generic_parameters),
-            diagnostics: storage.into_vec().into(),
-            occurrences: Arc::new(occurrences),
-        })
+        Output {
+            item: engine.intern(generic_parameters),
+            diagnostics: engine.intern_unsized(storage.into_vec()),
+            occurrences: engine.intern(occurrences),
+        }
     }
 }
 

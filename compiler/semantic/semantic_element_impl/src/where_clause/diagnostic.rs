@@ -2,19 +2,17 @@
 
 use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor};
+use pernixc_qbice::TrackedEngine;
 use pernixc_resolution::diagnostic::{
     self as resolution_diagnostic, ForallLifetimeRedefinition,
 };
-use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::{ByteIndex, get_source_file_path};
-use pernixc_stable_hash::StableHash;
-use pernixc_stable_type_id::Identifiable;
 use pernixc_symbol::{
     kind::get_kind, name::get_qualified_name, source_map::to_absolute_span,
 };
 use pernixc_target::Global;
 use pernixc_term::{lifetime, r#type::Type};
+use qbice::{Decode, Encode, Identifiable, StableHash};
 
 /// Enumeration of all diagnostics that can be reported during the building of
 /// where clause
@@ -27,8 +25,8 @@ use pernixc_term::{lifetime, r#type::Type};
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     Identifiable,
     derive_more::From,
 )]
@@ -46,8 +44,7 @@ impl Report for Diagnostic {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         match self {
             Self::Resolution(d) => d.report(engine).await,
             Self::ForallLifetimeRedefinition(d) => d.report(engine).await,
@@ -71,8 +68,8 @@ impl Report for Diagnostic {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 #[allow(missing_docs)]
 pub enum PredicateKind {
@@ -91,8 +88,8 @@ pub enum PredicateKind {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct UnexpectedSymbolInPredicate {
     /// The kind of the predicate that found the unexpected symbol.
@@ -109,8 +106,7 @@ impl Report for UnexpectedSymbolInPredicate {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let found_symbol_qualified_name =
             engine.get_qualified_name(self.found_id).await;
         let symbol_kind = engine.get_kind(self.found_id).await;
@@ -121,7 +117,7 @@ impl Report for UnexpectedSymbolInPredicate {
             PredicateKind::TypeBound => "either a trait or marker",
         };
 
-        Ok(pernixc_diagnostic::Rendered {
+        pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.qualified_identifier_span).await,
                 Some(format!(
@@ -141,7 +137,7 @@ impl Report for UnexpectedSymbolInPredicate {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -155,8 +151,8 @@ impl Report for UnexpectedSymbolInPredicate {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct UnexpectedTypeEqualityPredicate {
     /// The span of the invalid left-hand side type.
@@ -170,9 +166,8 @@ impl Report for UnexpectedTypeEqualityPredicate {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
-        Ok(pernixc_diagnostic::Rendered {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.invalid_lhs_type_span).await,
                 None,
@@ -183,7 +178,7 @@ impl Report for UnexpectedTypeEqualityPredicate {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -197,8 +192,8 @@ impl Report for UnexpectedTypeEqualityPredicate {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct ForallLifetimeIsNotAllowedInOutlivesPredicate {
     /// The span of the term that contains the forall lifetime.
@@ -212,8 +207,7 @@ impl Report for ForallLifetimeIsNotAllowedInOutlivesPredicate {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let mut forall_lifetimes = Vec::new();
         for forall in &self.forall_lifetimes {
             match forall {
@@ -227,8 +221,8 @@ impl Report for ForallLifetimeIsNotAllowedInOutlivesPredicate {
                             target_id: named_forall.span.source_id.target_id,
                         })
                         .await
-                        .unwrap()
                         .unwrap();
+
                     let abs_span =
                         engine.to_absolute_span(&named_forall.span).await;
 
@@ -244,7 +238,7 @@ impl Report for ForallLifetimeIsNotAllowedInOutlivesPredicate {
         }
         let forall_lifetimes = forall_lifetimes.join(", ");
 
-        Ok(pernixc_diagnostic::Rendered {
+        pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.forall_lifetime_span).await,
                 Some(format!(
@@ -258,7 +252,7 @@ impl Report for ForallLifetimeIsNotAllowedInOutlivesPredicate {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 

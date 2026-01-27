@@ -1,9 +1,9 @@
-use std::{borrow::Cow, sync::Arc};
+use std::borrow::Cow;
 
 use pernixc_arena::Arena;
 use pernixc_handler::{Handler, Storage};
 use pernixc_hash::HashMap;
-use pernixc_query::{TrackedEngine, runtime::executor};
+use pernixc_qbice::TrackedEngine;
 use pernixc_resolution::{
     Config, ExtraNamespace,
     generic_parameter_namespace::get_generic_parameter_namespace,
@@ -39,36 +39,37 @@ impl build::Build for pernixc_semantic_element::fields::Key {
 
     #[allow(clippy::too_many_lines)]
     async fn execute(
-        engine: &pernixc_query::TrackedEngine,
+        engine: &TrackedEngine,
         key: &Self,
-    ) -> Result<build::Output<Self>, executor::CyclicError> {
-        let syntax = engine.get_fields_syntax(key.0).await;
+    ) -> build::Output<Self> {
+        let syntax = engine.get_fields_syntax(key.symbol_id).await;
 
         let Some(syntax_tree) = syntax.and_then(|x| x.members()) else {
-            return Ok(Output {
-                item: Arc::new(Fields {
+            return Output {
+                item: engine.intern(Fields {
                     fields: Arena::default(),
                     field_ids_by_name: HashMap::default(),
                     field_declaration_order: Vec::default(),
                 }),
-                diagnostics: Arc::default(),
-                occurrences: Arc::default(),
-            });
+                diagnostics: engine.intern_unsized([]),
+                occurrences: engine.intern(Occurrences::default()),
+            };
         };
 
         let storage = Storage::<Diagnostic>::default();
         let mut occurrences = Occurrences::default();
         let extra_namespace =
-            engine.get_generic_parameter_namespace(key.0).await?;
+            engine.get_generic_parameter_namespace(key.symbol_id).await;
 
-        let struct_accessibility = engine.get_accessibility(key.0).await;
+        let struct_accessibility =
+            engine.get_accessibility(key.symbol_id).await;
 
         let mut fields = Fields::default();
 
         for field in syntax_tree.members().filter_map(|x| x.into_line().ok()) {
             process_field(
                 engine,
-                key.0,
+                key.symbol_id,
                 struct_accessibility,
                 &extra_namespace,
                 field,
@@ -76,14 +77,14 @@ impl build::Build for pernixc_semantic_element::fields::Key {
                 &storage,
                 &mut occurrences,
             )
-            .await?;
+            .await;
         }
 
-        Ok(Output {
-            item: Arc::new(fields),
-            diagnostics: storage.into_vec().into(),
-            occurrences: Arc::new(occurrences),
-        })
+        Output {
+            item: engine.intern(fields),
+            diagnostics: engine.intern_unsized(storage.into_vec()),
+            occurrences: engine.intern(occurrences),
+        }
     }
 }
 
@@ -99,10 +100,10 @@ async fn process_field(
     fields: &mut Fields,
     storage: &Storage<Diagnostic>,
     occurrences: &mut Occurrences,
-) -> Result<(), executor::CyclicError> {
+) {
     // Get field identifier, skip if missing
     let Some(field_identifier) = field_syntax.identifier() else {
-        return Ok(());
+        return;
     };
 
     let field_name = field_identifier.kind.0.clone();
@@ -152,9 +153,9 @@ async fn process_field(
                     .build(),
                 storage,
             )
-            .await?;
+            .await;
 
-        let premise = engine.get_active_premise(struct_id).await?;
+        let premise = engine.get_active_premise(struct_id).await;
         let env = Environment::new(
             Cow::Borrowed(&premise),
             Cow::Borrowed(engine),
@@ -166,7 +167,7 @@ async fn process_field(
             &field_type_syntax.span(),
             storage,
         )
-        .await?
+        .await
     } else {
         Type::Error(pernixc_term::error::Error)
     };
@@ -178,7 +179,7 @@ async fn process_field(
         struct_id.target_id,
         engine,
     )
-    .await?
+    .await
     {
         storage.receive(Diagnostic::FieldMoreAccessibleThanStruct(
             FieldMoreAccessibleThanStruct {
@@ -205,8 +206,6 @@ async fn process_field(
     }
 
     fields.field_declaration_order.push(field_id);
-
-    Ok(())
 }
 
 /// Creates accessibility from an access modifier syntax.
@@ -214,7 +213,7 @@ async fn create_accessibility_from_modifier(
     access_modifier: &pernixc_syntax::AccessModifier,
     struct_id: pernixc_symbol::ID,
     target_id: pernixc_target::TargetID,
-    engine: &pernixc_query::TrackedEngine,
+    engine: &TrackedEngine,
 ) -> Accessibility<pernixc_symbol::ID> {
     match access_modifier {
         pernixc_syntax::AccessModifier::Private(_) => {
@@ -239,20 +238,20 @@ async fn is_more_accessible(
     first: pernixc_symbol::accessibility::Accessibility<pernixc_symbol::ID>,
     second: pernixc_symbol::accessibility::Accessibility<pernixc_symbol::ID>,
     target_id: pernixc_target::TargetID,
-    engine: &pernixc_query::TrackedEngine,
-) -> Result<bool, executor::CyclicError> {
+    engine: &TrackedEngine,
+) -> bool {
     use pernixc_symbol::{
         accessibility::Accessibility,
         parent::{HierarchyRelationship, symbol_hierarchy_relationship},
     };
 
     match (first, second) {
-        (Accessibility::Public, Accessibility::Scoped(_)) => Ok(true),
+        (Accessibility::Public, Accessibility::Scoped(_)) => true,
 
         (
             Accessibility::Scoped(_) | Accessibility::Public,
             Accessibility::Public,
-        ) => Ok(false),
+        ) => false,
 
         (
             Accessibility::Scoped(first_module),
@@ -267,7 +266,7 @@ async fn is_more_accessible(
                 )
                 .await;
 
-            Ok(matches!(relationship, HierarchyRelationship::Parent))
+            matches!(relationship, HierarchyRelationship::Parent)
         }
     }
 }

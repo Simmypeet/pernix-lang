@@ -1,14 +1,14 @@
 //! Contains the diagnostics related to import statements.
 
-use flexstr::SharedStr;
 use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor};
-use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_qbice::TrackedEngine;
 use pernixc_source_file::ByteIndex;
-use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{name::get_qualified_name, source_map::to_absolute_span};
 use pernixc_target::Global;
+use qbice::{
+    Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
+};
 
 /// Enumeration of all diagnostics related to import statements.
 #[derive(
@@ -19,9 +19,10 @@ use pernixc_target::Global;
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
+    Identifiable,
     derive_more::From,
 )]
 #[allow(missing_docs)]
@@ -37,8 +38,7 @@ impl Report for Diagnostic {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         match self {
             Self::Resolution(err) => err.report(engine).await,
             Self::TargetRootInImportIsNotAllowedwithFrom(err) => {
@@ -60,8 +60,8 @@ impl Report for Diagnostic {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct TargetRootInImportIsNotAllowedwithFrom {
@@ -73,9 +73,8 @@ impl Report for TargetRootInImportIsNotAllowedwithFrom {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
-        Ok(pernixc_diagnostic::Rendered {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.target_root_span).await,
                 Some(
@@ -89,7 +88,7 @@ impl Report for TargetRootInImportIsNotAllowedwithFrom {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -102,8 +101,8 @@ impl Report for TargetRootInImportIsNotAllowedwithFrom {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct ConflictingUsing {
@@ -111,7 +110,7 @@ pub struct ConflictingUsing {
     pub using_span: RelativeSpan,
 
     /// The name that conflicts with the existing name in the module.
-    pub name: SharedStr,
+    pub name: Interned<str>,
 
     /// The module where the name is already defined.
     pub module_id: Global<pernixc_symbol::ID>,
@@ -127,18 +126,17 @@ impl Report for ConflictingUsing {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let module_qualified_name =
             engine.get_qualified_name(self.module_id).await;
 
-        Ok(pernixc_diagnostic::Rendered {
+        pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.using_span).await,
                 Some(format!(
                     "the using `{name}` conflicts with the existing name in \
                      the module `{module_qualified_name}`",
-                    name = self.name
+                    name = self.name.as_ref()
                 )),
             )),
             message: "the using statement conflicts with an existing name in \
@@ -152,12 +150,12 @@ impl Report for ConflictingUsing {
                         engine.to_absolute_span(span).await,
                         Some(format!(
                             "this symbol already defined the name `{}`",
-                            self.name
+                            self.name.as_ref()
                         )),
                     )]
                 }
                 None => vec![],
             },
-        })
+        }
     }
 }

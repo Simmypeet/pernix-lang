@@ -585,5 +585,5 @@ pub struct LocalTargetIDKey;
     qbice::Query,
 )]
 #[value(Arc<HashSet<TargetID>>)]
-#[extend(name = get_all_target_ids)]
+#[extend(name = get_all_target_ids, by_val)]
 pub struct AllTargetIDsKey;

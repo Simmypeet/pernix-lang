@@ -1,10 +1,7 @@
 use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor};
-use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_qbice::TrackedEngine;
 use pernixc_source_file::ByteIndex;
-use pernixc_stable_hash::StableHash;
-use pernixc_stable_type_id::Identifiable;
 use pernixc_symbol::{
     MemberID, name::get_qualified_name, parent::get_parent_global,
     source_map::to_absolute_span, span::get_span,
@@ -14,6 +11,7 @@ use pernixc_term::generic_parameters::{
     ConstantParameter, GenericKind, GenericParameter, LifetimeParameter,
     TypeParameter, get_generic_parameters,
 };
+use qbice::{Decode, Encode, Identifiable, StableHash};
 
 #[derive(
     Debug,
@@ -25,8 +23,8 @@ use pernixc_term::generic_parameters::{
     Hash,
     Identifiable,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     derive_more::From,
 )]
 pub enum Diagnostic {
@@ -51,8 +49,7 @@ impl Report for Diagnostic {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         match self {
             Self::Resolution(diagnostic) => diagnostic.report(engine).await,
             Self::MisorderedGenericParameter(diagnostic) => {
@@ -87,8 +84,8 @@ impl Report for Diagnostic {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct MisorderedGenericParameter {
     /// The kind of the mis-ordered generic parameter.
@@ -102,9 +99,8 @@ impl Report for MisorderedGenericParameter {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
-        Ok(pernixc_diagnostic::Rendered {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.generic_parameter_span).await,
                 match self.generic_kind {
@@ -124,7 +120,7 @@ impl Report for MisorderedGenericParameter {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -138,8 +134,8 @@ impl Report for MisorderedGenericParameter {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct DefaultGenericParameterMustBeTrailing {
     /// The span of the generic parameter.
@@ -150,9 +146,8 @@ impl Report for DefaultGenericParameterMustBeTrailing {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
-        Ok(pernixc_diagnostic::Rendered {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine
                     .to_absolute_span(
@@ -166,7 +161,7 @@ impl Report for DefaultGenericParameterMustBeTrailing {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -180,8 +175,8 @@ impl Report for DefaultGenericParameterMustBeTrailing {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct GenericParameterRedefinition<T> {
     /// The ID of the existing generic parameter.
@@ -195,8 +190,7 @@ impl<T: GenericParameter> Report for GenericParameterRedefinition<T> {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let qualified_name = engine
             .get_qualified_name(self.existing_generic_parameter_id.parent_id)
             .await;
@@ -204,15 +198,14 @@ impl<T: GenericParameter> Report for GenericParameterRedefinition<T> {
             .get_generic_parameters(
                 self.existing_generic_parameter_id.parent_id,
             )
-            .await
-            .unwrap();
+            .await;
 
         let generic_parameter =
             T::get_generic_parameters_arena(&generic_parameters)
                 .get(self.existing_generic_parameter_id.id)
                 .unwrap();
 
-        Ok(pernixc_diagnostic::Rendered {
+        pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine
                     .to_absolute_span(&self.duplicating_generic_parameter_span)
@@ -221,7 +214,7 @@ impl<T: GenericParameter> Report for GenericParameterRedefinition<T> {
             )),
             message: format!(
                 "generic parameter `{}` is already defined in the `{}`",
-                generic_parameter.name(),
+                generic_parameter.name().as_ref(),
                 qualified_name
             ),
             severity: Severity::Error,
@@ -234,7 +227,7 @@ impl<T: GenericParameter> Report for GenericParameterRedefinition<T> {
             } else {
                 Vec::new()
             },
-        })
+        }
     }
 }
 
@@ -248,8 +241,8 @@ impl<T: GenericParameter> Report for GenericParameterRedefinition<T> {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct EffectOperationCanNotHaveTypeOrConstantParameters {
     /// The spans of the type or constant parameters.
@@ -263,8 +256,7 @@ impl Report for EffectOperationCanNotHaveTypeOrConstantParameters {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let span = engine
             .to_absolute_span(
                 &engine.get_span(self.effect_operation_id).await.unwrap(),
@@ -311,7 +303,7 @@ impl Report for EffectOperationCanNotHaveTypeOrConstantParameters {
                 .build(),
         );
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message(
                 "effect operation symbol cannot have type or constant \
                  parameters",
@@ -332,6 +324,6 @@ impl Report for EffectOperationCanNotHaveTypeOrConstantParameters {
                  consider moving type or constant parameters to the parent \
                  effect symbol instead",
             )
-            .build())
+            .build()
     }
 }

@@ -1,14 +1,13 @@
 use pernixc_diagnostic::{Highlight, Report};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor};
+use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::implements_arguments::get_implements_argument;
-use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
-use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{source_map::to_absolute_span, span::get_span};
 use pernixc_target::Global;
 use pernixc_term::{display::Display, generic_arguments::GenericArguments};
 use pernixc_type_system::diagnostic::UnsatisfiedPredicate;
+use qbice::{Decode, Encode, Identifiable, StableHash};
 
 /// Enumeration of all diagnostics during the well-formedness checking.
 #[derive(
@@ -19,9 +18,10 @@ use pernixc_type_system::diagnostic::UnsatisfiedPredicate;
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
+    Identifiable,
     derive_more::From,
 )]
 #[allow(clippy::large_enum_variant)]
@@ -35,8 +35,7 @@ impl Report for Diagnostic {
     async fn report(
         &self,
         parameter: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         match self {
             Self::TypeSystem(diag) => diag.report(parameter).await,
             Self::MismatchedImplementationArguments(diag) => {
@@ -60,8 +59,8 @@ impl Report for Diagnostic {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct MismatchedImplementationArguments {
     /// The ID of the ADT implementation where the generic arguments are
@@ -79,8 +78,7 @@ impl Report for MismatchedImplementationArguments {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let impl_span = if let Some(span) =
             engine.get_span(self.adt_implementation_id).await
         {
@@ -92,10 +90,9 @@ impl Report for MismatchedImplementationArguments {
         let impl_arguments = engine
             .get_implements_argument(self.adt_implementation_id)
             .await
-            .unwrap()
             .unwrap();
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message(
                 "the generic arguments are not compatible with the generic \
                  arguments defined in the implementation",
@@ -139,7 +136,7 @@ impl Report for MismatchedImplementationArguments {
                     .into_iter()
                     .collect(),
             )
-            .build())
+            .build()
     }
 }
 
@@ -154,8 +151,8 @@ impl Report for MismatchedImplementationArguments {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct AdtImplementationIsNotGeneralEnough {
     /// The ADT implementation ID where the generic arguments are not general
@@ -173,8 +170,7 @@ impl Report for AdtImplementationIsNotGeneralEnough {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let span = engine.to_absolute_span(&self.instantiation_span).await;
         let impl_span = if let Some(span) =
             engine.get_span(self.adt_implementation_id).await
@@ -184,7 +180,7 @@ impl Report for AdtImplementationIsNotGeneralEnough {
             None
         };
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message(
                 "the struct/enum implementation is not general enough to \
                  satisfy the required forall lifetimes in the generic \
@@ -219,7 +215,7 @@ impl Report for AdtImplementationIsNotGeneralEnough {
                     .into_iter()
                     .collect(),
             )
-            .build())
+            .build()
     }
 }
 

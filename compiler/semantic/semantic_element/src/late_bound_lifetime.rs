@@ -1,13 +1,11 @@
 //! Contains the query definition for the list of lifetime parameters that
 //! are considered late bound.
 
-use std::sync::Arc;
-
 use pernixc_arena::ID;
 use pernixc_hash::HashSet;
 use pernixc_target::Global;
 use pernixc_term::generic_parameters::LifetimeParameter;
-use qbice::{Decode, Encode, Query, StableHash};
+use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 
 /// A query for retrieving the list of lifetime parameters that are considered
 /// late bound.
@@ -25,7 +23,7 @@ use qbice::{Decode, Encode, Query, StableHash};
     Decode,
     Query,
 )]
-#[value(Arc<HashSet<ID<LifetimeParameter>>>)]
+#[value(Interned<HashSet<ID<LifetimeParameter>>>)]
 #[extend(name = get_late_bound_lifetimes, by_val)]
 pub struct Key {
     /// The global ID of the function symbol.

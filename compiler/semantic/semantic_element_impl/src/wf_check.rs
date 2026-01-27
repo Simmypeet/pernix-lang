@@ -1,13 +1,14 @@
 //! Performs the well-formedness checking for every symbol
 //! resolutions/occurrences in a symbol.
 
-use std::{borrow::Cow, collections::BTreeSet, sync::Arc};
+use std::{borrow::Cow, collections::BTreeSet};
 
 use diagnostic::Diagnostic;
 use enum_as_inner::EnumAsInner;
+use linkme::distributed_slice;
 use pernixc_handler::{Handler, Storage};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor};
+use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_resolution::qualified_identifier::Resolution;
 use pernixc_semantic_element::{
     implements_arguments::get_implements_argument, variance::Variance,
@@ -39,6 +40,10 @@ use pernixc_type_system::{
     normalizer,
     predicate::{marker, r#trait},
     resolution,
+};
+use qbice::{
+    Decode, Encode, Query, StableHash, executor, program::Registration,
+    storage::intern::Interned,
 };
 
 use crate::{
@@ -154,16 +159,13 @@ impl Checker<'_> {
         adt_implementation_id: Global<pernixc_symbol::ID>,
         parent_generic_arguments: &GenericArguments,
         resolution_span: &RelativeSpan,
-    ) -> Result<Option<Instantiation>, executor::CyclicError> {
+    ) -> Option<Instantiation> {
         // deduce the generic arguments
-        let Some(arguments) = self
+        let arguments = self
             .environment
             .tracked_engine()
             .get_implements_argument(adt_implementation_id)
-            .await?
-        else {
-            return Ok(None);
-        };
+            .await?;
 
         let result = match self
             .environment
@@ -183,11 +185,7 @@ impl Checker<'_> {
                     instantiation_span: *resolution_span,
                 });
 
-                return Ok(None); // can't continue
-            }
-
-            Err(deduction::Error::CyclicDependency(error)) => {
-                return Err(error);
+                return None; // can't continue
             }
 
             Err(deduction::Error::Overflow(error)) => {
@@ -196,7 +194,7 @@ impl Checker<'_> {
                     self.handler,
                 );
 
-                return Ok(None);
+                return None;
             }
         };
 
@@ -206,7 +204,7 @@ impl Checker<'_> {
                 resolution_span,
                 self.handler,
             )
-            .await?;
+            .await;
 
         // check if the deduced generic arguments are correct
         self.check_instantiation_predicates(
@@ -214,7 +212,7 @@ impl Checker<'_> {
             &result.result.instantiation,
             resolution_span,
         )
-        .await?;
+        .await;
 
         // the implementation is not general enough
         if result.result.is_not_general_enough {
@@ -225,7 +223,7 @@ impl Checker<'_> {
             });
         }
 
-        Ok(Some(result.result.instantiation))
+        Some(result.result.instantiation)
     }
 
     async fn check_trait_instantiation(
@@ -233,7 +231,7 @@ impl Checker<'_> {
         trait_id: Global<pernixc_symbol::ID>,
         generic_arguments: GenericArguments,
         instantiation_span: &RelativeSpan,
-    ) -> Result<(), executor::CyclicError> {
+    ) {
         for error in self
             .predicate_satisfied(
                 Predicate::PositiveTrait(PositiveTrait {
@@ -243,12 +241,10 @@ impl Checker<'_> {
                 }),
                 None,
             )
-            .await?
+            .await
         {
             error.report(*instantiation_span, self.handler);
         }
-
-        Ok(())
     }
 
     /// Checks if the given `resolution` is well-formed. The errors are reported
@@ -258,9 +254,9 @@ impl Checker<'_> {
         &self,
         resolution: &Resolution,
         resolution_span: &RelativeSpan,
-    ) -> Result<(), executor::CyclicError> {
+    ) {
         match resolution {
-            Resolution::Module(_) | Resolution::Variant(_) => Ok(()),
+            Resolution::Module(_) | Resolution::Variant(_) => {}
 
             Resolution::Generic(generic) => {
                 self.check_instantiation_predicates_by_generic_arguments(
@@ -268,7 +264,7 @@ impl Checker<'_> {
                     generic.generic_arguments.clone(),
                     resolution_span,
                 )
-                .await
+                .await;
             }
 
             Resolution::MemberGeneric(member_generic) => {
@@ -339,9 +335,9 @@ impl Checker<'_> {
                                 &member_generic.parent_generic_arguments,
                                 resolution_span,
                             )
-                            .await?
+                            .await
                         else {
-                            return Ok(());
+                            return;
                         };
 
                         instantiation
@@ -359,7 +355,7 @@ impl Checker<'_> {
                             .environment
                             .tracked_engine()
                             .get_generic_parameters(parent_id)
-                            .await?;
+                            .await;
 
                         Instantiation::from_generic_arguments(
                             member_generic.parent_generic_arguments.clone(),
@@ -373,7 +369,7 @@ impl Checker<'_> {
                     .environment
                     .tracked_engine()
                     .get_generic_parameters(member_generic.id)
-                    .await?;
+                    .await;
 
                 parent_instantiation
                     .append_from_generic_arguments(
@@ -388,7 +384,7 @@ impl Checker<'_> {
                     &parent_instantiation,
                     resolution_span,
                 )
-                .await
+                .await;
             }
         }
     }
@@ -400,14 +396,14 @@ impl Checker<'_> {
         instantiated: Global<pernixc_symbol::ID>,
         generic_arguments: GenericArguments,
         instantiation_span: &RelativeSpan,
-    ) -> Result<(), executor::CyclicError> {
+    ) {
         // convert the generic arguments to an instantiation and delegate the
         // check to the `check_instantiation_predicates` method
         let generic_parameters = self
             .environment
             .tracked_engine()
             .get_generic_parameters(instantiated)
-            .await?;
+            .await;
 
         let instantiation = Instantiation::from_generic_arguments(
             generic_arguments,
@@ -421,7 +417,7 @@ impl Checker<'_> {
             &instantiation,
             instantiation_span,
         )
-        .await
+        .await;
     }
 
     /// Do where clause predicates check for the given instantiation. The errors
@@ -431,12 +427,12 @@ impl Checker<'_> {
         instantiated: Global<pernixc_symbol::ID>,
         instantiation: &Instantiation,
         instantiation_span: &RelativeSpan,
-    ) -> Result<(), executor::CyclicError> {
+    ) {
         let where_clause = self
             .environment
             .tracked_engine()
             .get_where_clause(instantiated)
-            .await?;
+            .await;
 
         #[allow(clippy::significant_drop_in_scrutinee)]
         for predicate_info in where_clause.iter() {
@@ -444,16 +440,13 @@ impl Checker<'_> {
 
             predicate.instantiate(instantiation);
 
-            let errors = self
-                .predicate_satisfied(predicate, predicate_info.span)
-                .await?;
+            let errors =
+                self.predicate_satisfied(predicate, predicate_info.span).await;
 
             for error in errors {
                 error.report(*instantiation_span, self.handler);
             }
         }
-
-        Ok(())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -464,13 +457,13 @@ impl Checker<'_> {
         generic_arguments: &GenericArguments,
         predicate_declaration_span: Option<RelativeSpan>,
         mut is_not_general_enough: bool,
-    ) -> Result<Vec<PredicateError>, executor::CyclicError> {
+    ) -> Vec<PredicateError> {
         let mut errors = Vec::new();
         let where_clause = self
             .environment
             .tracked_engine()
             .get_where_clause(implementation_id)
-            .await?;
+            .await;
 
         // check for each predicate in the implementation
         for predicate in where_clause.iter() {
@@ -526,7 +519,7 @@ impl Checker<'_> {
                     predicate_instantiated,
                     predicate.span,
                 )
-                .await?,
+                .await,
             );
         }
 
@@ -544,7 +537,7 @@ impl Checker<'_> {
             ));
         }
 
-        Ok(errors)
+        errors
     }
 
     async fn handle_positive_marker_satisfied(
@@ -552,18 +545,15 @@ impl Checker<'_> {
         result: marker::PositiveSatisfied,
         pred_generic_arguments: &GenericArguments,
         predicate_declaration_span: Option<RelativeSpan>,
-    ) -> Result<
-        (BTreeSet<LifetimeConstraint>, Vec<PredicateError>),
-        executor::CyclicError,
-    > {
+    ) -> (BTreeSet<LifetimeConstraint>, Vec<PredicateError>) {
         match result {
             marker::PositiveSatisfied::Premise
             | marker::PositiveSatisfied::Environment
             | marker::PositiveSatisfied::Cyclic => {
-                Ok((BTreeSet::new(), Vec::new()))
+                (BTreeSet::new(), Vec::new())
             }
 
-            marker::PositiveSatisfied::Implementation(implementation) => Ok((
+            marker::PositiveSatisfied::Implementation(implementation) => (
                 BTreeSet::new(),
                 self.check_implementation_satisfied(
                     implementation.id,
@@ -572,8 +562,8 @@ impl Checker<'_> {
                     predicate_declaration_span,
                     implementation.is_not_general_enough,
                 )
-                .await?,
-            )),
+                .await,
+            ),
 
             marker::PositiveSatisfied::Congruence(btree_map) => {
                 let mut constraints = BTreeSet::new();
@@ -588,13 +578,13 @@ impl Checker<'_> {
                             pred_generic_arguments,
                             predicate_declaration_span,
                         ))
-                        .await?;
+                        .await;
 
                     constraints.extend(new_constraints);
                     pred_errors.extend(new_pred_errors);
                 }
 
-                Ok((constraints, pred_errors))
+                (constraints, pred_errors)
             }
         }
     }
@@ -604,7 +594,7 @@ impl Checker<'_> {
         &self,
         predicate: Predicate,
         predicate_declaration_span: Option<RelativeSpan>,
-    ) -> Result<Vec<PredicateError>, executor::CyclicError> {
+    ) -> Vec<PredicateError> {
         let (result, mut extra_predicate_error) = match &predicate {
             Predicate::TraitTypeCompatible(eq) => {
                 let result = self
@@ -646,55 +636,43 @@ impl Checker<'_> {
 
             Predicate::LifetimeOutlives(pred) => {
                 return match self.environment.query(pred).await {
-                    Ok(Some(_)) => Ok(vec![]),
+                    Ok(Some(_)) => vec![],
 
-                    Ok(None) => Ok(vec![PredicateError::Unsatisfied(
-                        UnsatisfiedError {
+                    Ok(None) => {
+                        vec![PredicateError::Unsatisfied(UnsatisfiedError {
                             predicate,
                             predicate_declaration_span,
-                        },
-                    )]),
-
-                    Err(pernixc_type_system::Error::CyclicDependency(err)) => {
-                        Err(err)
+                        })]
                     }
 
                     Err(pernixc_type_system::Error::Overflow(
                         overflow_error,
-                    )) => Ok(vec![PredicateError::Undecidable(
-                        UndecidableError {
-                            predicate,
-                            predicate_declaration_span,
-                            overflow_error,
-                        },
-                    )]),
+                    )) => vec![PredicateError::Undecidable(UndecidableError {
+                        predicate,
+                        predicate_declaration_span,
+                        overflow_error,
+                    })],
                 };
             }
 
             Predicate::TypeOutlives(pred) => {
                 return match self.environment.query(pred).await {
-                    Ok(Some(_)) => Ok(vec![]),
+                    Ok(Some(_)) => vec![],
 
-                    Ok(None) => Ok(vec![PredicateError::Unsatisfied(
-                        UnsatisfiedError {
+                    Ok(None) => {
+                        vec![PredicateError::Unsatisfied(UnsatisfiedError {
                             predicate,
                             predicate_declaration_span,
-                        },
-                    )]),
-
-                    Err(pernixc_type_system::Error::CyclicDependency(err)) => {
-                        Err(err)
+                        })]
                     }
 
                     Err(pernixc_type_system::Error::Overflow(
                         overflow_error,
-                    )) => Ok(vec![PredicateError::Undecidable(
-                        UndecidableError {
-                            predicate,
-                            predicate_declaration_span,
-                            overflow_error,
-                        },
-                    )]),
+                    )) => vec![PredicateError::Undecidable(UndecidableError {
+                        predicate,
+                        predicate_declaration_span,
+                        overflow_error,
+                    })],
                 };
             }
 
@@ -717,7 +695,7 @@ impl Checker<'_> {
                                 &pred.generic_arguments,
                                 predicate_declaration_span,
                             ))
-                            .await?;
+                            .await;
 
                         let mut constraints = result.constraints.clone();
                         constraints.extend(new_constraints);
@@ -758,7 +736,7 @@ impl Checker<'_> {
                                 predicate_declaration_span,
                                 implementation.is_not_general_enough,
                             ))
-                            .await?,
+                            .await,
                         ),
                     },
                     Err(error) => (Err(error), Vec::new()),
@@ -791,7 +769,7 @@ impl Checker<'_> {
                                 predicate_declaration_span,
                                 implementation.is_not_general_enough,
                             ))
-                            .await?,
+                            .await,
                         ),
                     },
 
@@ -822,7 +800,7 @@ impl Checker<'_> {
                                 predicate_declaration_span,
                                 implementation.is_not_general_enough,
                             ))
-                            .await?,
+                            .await,
                         ),
                     },
                     Ok(None) => (Ok(None), Vec::new()),
@@ -838,57 +816,49 @@ impl Checker<'_> {
 
                 for constraint in constraints {
                     match constraint {
-                        LifetimeConstraint::LifetimeOutlives(pred) => match self
-                            .environment
-                            .query(&pred)
-                            .await
-                        {
-                            Ok(None) => {
-                                extra_predicate_error.push(
-                                    PredicateError::Unsatisfied(
-                                        UnsatisfiedError {
-                                            predicate:
-                                                Predicate::LifetimeOutlives(
-                                                    pred,
-                                                ),
+                        LifetimeConstraint::LifetimeOutlives(pred) => {
+                            match self.environment.query(&pred).await {
+                                Ok(None) => {
+                                    extra_predicate_error.push(
+                                        PredicateError::Unsatisfied(
+                                            UnsatisfiedError {
+                                                predicate:
+                                                    Predicate::LifetimeOutlives(
+                                                        pred,
+                                                    ),
 
-                                            predicate_declaration_span: None,
-                                        },
-                                    ),
-                                );
+                                                predicate_declaration_span:
+                                                    None,
+                                            },
+                                        ),
+                                    );
+                                }
+                                Err(pernixc_type_system::Error::Overflow(
+                                    overflow_error,
+                                )) => {
+                                    extra_predicate_error.push(
+                                        PredicateError::Undecidable(
+                                            UndecidableError {
+                                                predicate:
+                                                    Predicate::LifetimeOutlives(
+                                                        pred,
+                                                    ),
+
+                                                predicate_declaration_span:
+                                                    None,
+                                                overflow_error,
+                                            },
+                                        ),
+                                    );
+                                }
+
+                                Ok(Some(_)) => {}
                             }
-                            Err(pernixc_type_system::Error::Overflow(
-                                overflow_error,
-                            )) => {
-                                extra_predicate_error.push(
-                                    PredicateError::Undecidable(
-                                        UndecidableError {
-                                            predicate:
-                                                Predicate::LifetimeOutlives(
-                                                    pred,
-                                                ),
-
-                                            predicate_declaration_span: None,
-                                            overflow_error,
-                                        },
-                                    ),
-                                );
-                            }
-
-                            Err(
-                                pernixc_type_system::Error::CyclicDependency(
-                                    err,
-                                ),
-                            ) => {
-                                return Err(err);
-                            }
-
-                            Ok(Some(_)) => {}
-                        },
+                        }
                     }
                 }
 
-                Ok(extra_predicate_error)
+                extra_predicate_error
             }
 
             Ok(None) => {
@@ -896,10 +866,8 @@ impl Checker<'_> {
                     UnsatisfiedError { predicate, predicate_declaration_span },
                 ));
 
-                Ok(extra_predicate_error)
+                extra_predicate_error
             }
-
-            Err(pernixc_type_system::Error::CyclicDependency(err)) => Err(err),
 
             Err(pernixc_type_system::Error::Overflow(overflow_error)) => {
                 extra_predicate_error.push(PredicateError::Undecidable(
@@ -910,7 +878,7 @@ impl Checker<'_> {
                     },
                 ));
 
-                Ok(extra_predicate_error)
+                extra_predicate_error
             }
         }
     }
@@ -921,7 +889,7 @@ impl Checker<'_> {
         &self,
         ty: &Type,
         instantiation_span: &RelativeSpan,
-    ) -> Result<(), executor::CyclicError> {
+    ) {
         match ty {
             Type::Error(_)
             | Type::Tuple(_)
@@ -935,7 +903,6 @@ impl Checker<'_> {
             | Type::FunctionSignature(_)
             | Type::Inference(_) => {
                 // no additional check
-                Ok(())
             }
 
             Type::Reference(reference) => {
@@ -945,11 +912,7 @@ impl Checker<'_> {
                 );
 
                 match self.environment.query(&outlives).await {
-                    Err(pernixc_type_system::Error::CyclicDependency(err)) => {
-                        Err(err)
-                    }
-
-                    Ok(Some(_)) => Ok(()),
+                    Ok(Some(_)) => {}
 
                     Ok(None) => {
                         self.handler.receive(UnsatisfiedPredicate {
@@ -957,8 +920,6 @@ impl Checker<'_> {
                             instantiation_span: *instantiation_span,
                             predicate_declaration_span: None,
                         });
-
-                        Ok(())
                     }
 
                     Err(pernixc_type_system::Error::Overflow(
@@ -970,8 +931,6 @@ impl Checker<'_> {
                             *instantiation_span,
                             self.handler,
                         );
-
-                        Ok(())
                     }
                 }
             }
@@ -1049,17 +1008,15 @@ impl Checker<'_> {
         &self,
         unpacked_term: Type,
         instantiation_span: &RelativeSpan,
-    ) -> Result<(), executor::CyclicError> {
+    ) {
         let tuple_predicate = predicate::Tuple(unpacked_term);
 
         let errors =
-            self.predicate_satisfied(tuple_predicate.into(), None).await?;
+            self.predicate_satisfied(tuple_predicate.into(), None).await;
 
         for error in errors {
             error.report(*instantiation_span, self.handler);
         }
-
-        Ok(())
     }
 }
 
@@ -1067,56 +1024,68 @@ pub(super) async fn check_occurrences(
     occurrences: &Occurrences,
     environment: &Environment<'_, normalizer::NoOp>,
     storage: &Storage<Diagnostic>,
-) -> Result<(), executor::CyclicError> {
+) {
     let checker = Checker { environment, handler: storage };
 
     // check resolution occurrences
     for (resolution, span) in &occurrences.resolutions {
-        checker.check_resolution_occurrence(resolution, span).await?;
+        checker.check_resolution_occurrence(resolution, span).await;
     }
 
     // check type occurrences
     for (ty, syn) in &occurrences.types {
-        checker.check_type_ocurrence(ty, &syn.span()).await?;
+        checker.check_type_ocurrence(ty, &syn.span()).await;
     }
 
     // check unpacked type occurrences
     for (unpacked, syn) in &occurrences.unpacked_types {
-        checker
-            .check_unpacked_ocurrences(unpacked.clone(), &syn.span())
-            .await?;
+        checker.check_unpacked_ocurrences(unpacked.clone(), &syn.span()).await;
     }
 
     // check unpacked constant occurrences
     for _ in &occurrences.unpacked_constants {
         // TODO: check that the type of constant must be a tuple
     }
-
-    Ok(())
 }
 
-pernixc_register::register!(Key, Executor);
+#[distributed_slice(PERNIX_PROGRAM)]
+static WF_CHECK_EXECUTOR: Registration<Config> =
+    Registration::new::<Key, WfCheckExecutor>();
 
-#[pernixc_query::query(
-    key(Key),
-    value(Arc<[Diagnostic]>),
-    id(Global<pernixc_symbol::ID>),
-    executor(Executor)
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Query,
 )]
-pub async fn wf_check_executors(
-    global_id: Global<pernixc_symbol::ID>,
+#[value(Interned<[Diagnostic]>)]
+pub struct Key {
+    pub symbol_id: Global<pernixc_symbol::ID>,
+}
+
+#[executor(config = Config)]
+pub async fn wf_check_executor(
+    &Key { symbol_id }: &Key,
     tracked_engine: &TrackedEngine,
-) -> Result<Arc<[Diagnostic]>, executor::CyclicError> {
+) -> Interned<[Diagnostic]> {
     let mut occurrences = Vec::new();
-    let kind = tracked_engine.get_kind(global_id).await;
+    let kind = tracked_engine.get_kind(symbol_id).await;
 
     if kind.has_generic_parameters() {
         occurrences.push(
             tracked_engine
                 .query(&build::OccurrencesKey::new(
-                    pernixc_term::generic_parameters::Key(global_id),
+                    pernixc_term::generic_parameters::Key { symbol_id },
                 ))
-                .await?,
+                .await,
         );
     }
 
@@ -1124,9 +1093,9 @@ pub async fn wf_check_executors(
         occurrences.push(
             tracked_engine
                 .query(&build::OccurrencesKey::new(
-                    pernixc_semantic_element::where_clause::Key(global_id),
+                    pernixc_semantic_element::where_clause::Key { symbol_id },
                 ))
-                .await?,
+                .await,
         );
     }
 
@@ -1134,9 +1103,9 @@ pub async fn wf_check_executors(
         occurrences.push(
             tracked_engine
                 .query(&build::OccurrencesKey::new(
-                    pernixc_semantic_element::type_alias::Key(global_id),
+                    pernixc_semantic_element::type_alias::Key { symbol_id },
                 ))
-                .await?,
+                .await,
         );
     }
 
@@ -1144,9 +1113,9 @@ pub async fn wf_check_executors(
         occurrences.push(
             tracked_engine
                 .query(&build::OccurrencesKey::new(
-                    pernixc_semantic_element::variant::Key(global_id),
+                    pernixc_semantic_element::variant::Key { symbol_id },
                 ))
-                .await?,
+                .await,
         );
     }
 
@@ -1154,9 +1123,9 @@ pub async fn wf_check_executors(
         occurrences.push(
             tracked_engine
                 .query(&build::OccurrencesKey::new(
-                    pernixc_semantic_element::fields::Key(global_id),
+                    pernixc_semantic_element::fields::Key { symbol_id },
                 ))
-                .await?,
+                .await,
         );
     }
 
@@ -1164,23 +1133,23 @@ pub async fn wf_check_executors(
         occurrences.push(
             tracked_engine
                 .query(&build::OccurrencesKey::new(
-                    implements_qualified_identifier::Key(global_id),
+                    implements_qualified_identifier::Key { symbol_id },
                 ))
-                .await?,
+                .await,
         );
     }
 
     if kind.has_function_signature() {
         occurrences.push(
             tracked_engine
-                .query(&build::OccurrencesKey::new(function_signature::Key(
-                    global_id,
-                )))
-                .await?,
+                .query(&build::OccurrencesKey::new(function_signature::Key {
+                    symbol_id,
+                }))
+                .await,
         );
     }
 
-    let active_premise = tracked_engine.get_active_premise(global_id).await?;
+    let active_premise = tracked_engine.get_active_premise(symbol_id).await;
     let environment = Environment::new(
         Cow::Borrowed(&active_premise),
         Cow::Borrowed(tracked_engine),
@@ -1189,8 +1158,8 @@ pub async fn wf_check_executors(
 
     let storage = Storage::<Diagnostic>::default();
     for occurrence in occurrences {
-        check_occurrences(&occurrence, &environment, &storage).await?;
+        check_occurrences(&occurrence, &environment, &storage).await;
     }
 
-    Ok(storage.into_vec().into())
+    tracked_engine.intern_unsized(storage.into_vec())
 }

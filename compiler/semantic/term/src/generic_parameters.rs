@@ -162,6 +162,7 @@ pub trait GenericParameter: Sized + Send + Sync + 'static {
     StableHash,
     Encode,
     Decode,
+    Identifiable,
 )]
 pub struct LifetimeParameter {
     /// The name of the lifetime parameter (if none, then it is anonymous

@@ -26,7 +26,7 @@ use pernixc_term::{
     generic_arguments::GenericArguments,
     generic_parameters::get_generic_parameters, r#type::Type,
 };
-use qbice::{Decode, Encode, StableHash};
+use qbice::{Decode, Encode, Identifiable, StableHash};
 
 use crate::{
     Config, Diagnostic, Error, Handler,
@@ -131,6 +131,7 @@ pub struct MemberGeneric {
     StableHash,
     Encode,
     Decode,
+    Identifiable,
     EnumAsInner,
 )]
 pub enum Resolution {
