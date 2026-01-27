@@ -3,7 +3,7 @@
 
 use std::collections::BTreeSet;
 
-use qbice::{Decode, Encode, StableHash};
+use qbice::{Decode, Encode, Identifiable, StableHash};
 
 use crate::generic_arguments::Symbol;
 
@@ -22,6 +22,7 @@ use crate::generic_arguments::Symbol;
     derive_more::From,
     derive_more::Deref,
     derive_more::DerefMut,
+    Identifiable,
 )]
 pub struct Unit(pub Symbol);
 

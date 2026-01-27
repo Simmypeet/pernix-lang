@@ -12,6 +12,8 @@ pernixc_hash = { path = "../../base/hash" }
 pernixc_arena = { path = "../../base/arena" }
 pernixc_symbol = { path = "../symbol" }
 pernixc_term = { path = "../term" }
+pernixc_qbice.path = "../../base/qbice"
+qbice.workspace = true
 pernixc_semantic_element = { path = "../semantic_element" }
 
 [lints]

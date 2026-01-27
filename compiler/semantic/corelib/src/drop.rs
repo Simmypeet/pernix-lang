@@ -1,10 +1,7 @@
 //! Contains the definition for the `Drop` trait in the core library.
 
-use std::sync::Arc;
-
 use pernixc_arena::{Arena, OrderedArena};
 use pernixc_hash::HashSet;
-use pernixc_query::Engine;
 use pernixc_semantic_element::{
     effect_annotation, elided_lifetime, implemented, implied_predicate,
     parameter::{self, Parameter, Parameters},
@@ -12,7 +9,7 @@ use pernixc_semantic_element::{
 };
 use pernixc_symbol::{
     accessibility::{self, Accessibility},
-    calculate_qualified_name_id, get_target_root_module_id, kind,
+    calculate_qualified_name_id_with_given_seed, kind,
     member::{self, Member},
     name, parent,
 };
@@ -28,6 +25,8 @@ use pernixc_term::{
     r#type::{Qualifier, Reference, Type},
 };
 
+use crate::CoreLibInitializer;
+
 #[allow(missing_docs)]
 pub const TRAIT_NAME: &str = "Drop";
 #[allow(missing_docs)]
@@ -37,76 +36,74 @@ pub const DROP_TRAIT_SEQUENCE: [&str; 2] = ["core", "Drop"];
 #[allow(missing_docs)]
 pub const DROP_FUNCTION_SEQUENCE: [&str; 3] = ["core", "Drop", "drop"];
 
-/// Creates a `Drop` trait in the core library.
-///
-/// ```txt
-/// public trait Drop[T]:
-///     public function drop['a](self: &'a mut T):
-///         where:
-///             marker not Copy[T]
-///             T: 'a
-/// ```
-#[allow(clippy::too_many_lines)]
-pub async fn initialize_drop_trait(
-    engine: &mut Arc<Engine>,
-    copy_marker_id: pernixc_symbol::ID,
-) -> pernixc_symbol::ID {
-    let (root_target_module_id, drop_trait_id, drop_function_id) = {
-        let tracked_engine = engine.tracked();
-
-        let root_target_module_id =
-            tracked_engine.get_target_root_module_id(TargetID::CORE).await;
-
-        let drop_trait_id = TargetID::CORE.make_global(
-            tracked_engine
-                .calculate_qualified_name_id(
+impl CoreLibInitializer<'_, '_> {
+    /// Creates a `Drop` trait in the core library.
+    ///
+    /// ```txt
+    /// public trait Drop[T]:
+    ///     public function drop['a](self: &'a mut T):
+    ///         where:
+    ///             marker not Copy[T]
+    ///             T: 'a
+    /// ```
+    #[allow(clippy::too_many_lines)]
+    pub fn initialize_drop_trait(
+        &mut self,
+        copy_marker_id: pernixc_symbol::ID,
+    ) -> pernixc_symbol::ID {
+        let (drop_trait_id, drop_function_id) = {
+            let drop_trait_id = TargetID::CORE.make_global(
+                calculate_qualified_name_id_with_given_seed(
                     DROP_TRAIT_SEQUENCE,
-                    TargetID::CORE,
-                    Some(root_target_module_id),
+                    Some(self.root_target_module_id.id),
                     0,
-                )
-                .await,
-        );
+                    self.target_seed,
+                ),
+            );
 
-        let drop_function_id = TargetID::CORE.make_global(
-            tracked_engine
-                .calculate_qualified_name_id(
+            let drop_function_id = TargetID::CORE.make_global(
+                calculate_qualified_name_id_with_given_seed(
                     DROP_FUNCTION_SEQUENCE,
-                    TargetID::CORE,
-                    Some(root_target_module_id),
+                    Some(self.root_target_module_id.id),
                     0,
-                )
-                .await,
+                    self.target_seed,
+                ),
+            );
+
+            (drop_trait_id, drop_function_id)
+        };
+
+        let mut trait_generic_params = GenericParameters::default();
+        let t_ty = Type::Parameter(TypeParameterID::new(
+            drop_trait_id,
+            trait_generic_params
+                .add_type_parameter(TypeParameter {
+                    name: self.input_session.intern_unsized("T".to_owned()),
+                    span: None,
+                })
+                .unwrap(),
+        ));
+
+        self.input_session.set_input(
+            kind::Key { symbol_id: drop_trait_id },
+            kind::Kind::Trait,
+        );
+        self.input_session.set_input(
+            name::Key { symbol_id: drop_trait_id },
+            self.input_session.intern_unsized("Drop"),
+        );
+        self.input_session.set_input(
+            parent::Key { symbol_id: drop_trait_id },
+            Some(self.root_target_module_id.id),
+        );
+        self.input_session.set_input(
+            generic_parameters::Key { symbol_id: drop_trait_id },
+            self.input_session.intern(trait_generic_params),
         );
 
-        (root_target_module_id, drop_trait_id, drop_function_id)
-    };
-
-    let mut trait_generic_params = GenericParameters::default();
-    let t_ty = Type::Parameter(TypeParameterID::new(
-        drop_trait_id,
-        trait_generic_params
-            .add_type_parameter(TypeParameter { name: "T".into(), span: None })
-            .unwrap(),
-    ));
-
-    let input_lock = Arc::get_mut(engine).unwrap().input_lock();
-
-    input_lock.set_input(kind::Key(drop_trait_id), kind::Kind::Trait).await;
-    input_lock.set_input(name::Key(drop_trait_id), "Drop".into()).await;
-    input_lock
-        .set_input(parent::Key(drop_trait_id), Some(root_target_module_id))
-        .await;
-    input_lock
-        .set_input(
-            generic_parameters::Key(drop_trait_id),
-            Arc::new(trait_generic_params),
-        )
-        .await;
-    input_lock
-        .set_input(
-            where_clause::Key(drop_trait_id),
-            Arc::from([where_clause::Predicate {
+        self.input_session.set_input(
+            where_clause::Key { symbol_id: drop_trait_id },
+            self.input_session.intern_unsized([where_clause::Predicate {
                 predicate: predicate::Predicate::NegativeMarker(
                     NegativeMarker {
                         marker_id: TargetID::CORE.make_global(copy_marker_id),
@@ -119,130 +116,125 @@ pub async fn initialize_drop_trait(
                 ),
                 span: None,
             }]),
-        )
-        .await;
-    input_lock
-        .set_input(
-            member::Key(drop_trait_id),
-            Arc::new(Member {
+        );
+        self.input_session.set_input(
+            member::Key { symbol_id: drop_trait_id },
+            self.input_session.intern(Member {
                 member_ids_by_name: std::iter::once((
-                    "drop".into(),
+                    self.input_session.intern_unsized("drop"),
                     drop_function_id.id,
                 ))
                 .collect(),
                 unnameds: HashSet::default(),
             }),
-        )
-        .await;
-    input_lock
-        .set_input(accessibility::Key(drop_trait_id), Accessibility::Public)
-        .await;
-    input_lock
-        .set_input(implemented::Key(drop_function_id), Arc::default())
-        .await;
+        );
+        self.input_session.set_input(
+            accessibility::Key { symbol_id: drop_trait_id },
+            Accessibility::Public,
+        );
+        self.input_session.set_input(
+            implemented::Key { symbol_id: drop_function_id },
+            self.input_session.intern(HashSet::default()),
+        );
 
-    // add drop method
-    {
-        input_lock
-            .set_input(kind::Key(drop_function_id), kind::Kind::TraitFunction)
-            .await;
-        input_lock.set_input(name::Key(drop_function_id), "drop".into()).await;
-        input_lock
-            .set_input(parent::Key(drop_function_id), Some(drop_trait_id.id))
-            .await;
-        input_lock
-            .set_input(elided_lifetime::Key(drop_function_id), Arc::default())
-            .await;
-        input_lock
-            .set_input(implied_predicate::Key(drop_function_id), Arc::default())
-            .await;
-        input_lock
-            .set_input(pernixc_symbol::r#unsafe::Key(drop_function_id), false)
-            .await;
+        // add drop method
+        {
+            self.input_session.set_input(
+                kind::Key { symbol_id: drop_function_id },
+                kind::Kind::TraitFunction,
+            );
+            self.input_session.set_input(
+                name::Key { symbol_id: drop_function_id },
+                self.input_session.intern_unsized("drop".to_owned()),
+            );
+            self.input_session.set_input(
+                parent::Key { symbol_id: drop_function_id },
+                Some(drop_trait_id.id),
+            );
+            self.input_session.set_input(
+                elided_lifetime::Key { symbol_id: drop_function_id },
+                self.input_session.intern(Arena::default()),
+            );
+            self.input_session.set_input(
+                implied_predicate::Key { symbol_id: drop_function_id },
+                self.input_session.intern(HashSet::default()),
+            );
+            self.input_session.set_input(
+                pernixc_symbol::r#unsafe::Key { symbol_id: drop_function_id },
+                false,
+            );
 
-        let mut inner_generic_params = GenericParameters::default();
-        let a_lt = inner_generic_params
-            .add_lifetime_parameter(LifetimeParameter {
-                name: "a".into(),
-                span: None,
-            })
-            .unwrap();
-        let a_lt = Lifetime::Parameter(LifetimeParameterID::new(
-            drop_function_id,
-            a_lt,
-        ));
+            let mut inner_generic_params = GenericParameters::default();
 
-        input_lock
-            .set_input(
-                generic_parameters::Key(drop_function_id),
-                Arc::new(inner_generic_params),
-            )
-            .await;
+            let a_lt = inner_generic_params
+                .add_lifetime_parameter(LifetimeParameter {
+                    name: self.input_session.intern_unsized("a".to_owned()),
+                    span: None,
+                })
+                .unwrap();
+            let a_lt = Lifetime::Parameter(LifetimeParameterID::new(
+                drop_function_id,
+                a_lt,
+            ));
 
-        input_lock
-            .set_input(
-                where_clause::Key(drop_function_id),
-                Arc::from([where_clause::Predicate {
+            self.input_session.set_input(
+                generic_parameters::Key { symbol_id: drop_function_id },
+                self.input_session.intern(inner_generic_params),
+            );
+
+            self.input_session.set_input(
+                where_clause::Key { symbol_id: drop_function_id },
+                self.input_session.intern_unsized([where_clause::Predicate {
                     predicate: predicate::Predicate::type_outlives(
                         t_ty.clone(),
                         a_lt.clone(),
                     ),
                     span: None,
                 }]),
-            )
-            .await;
+            );
 
-        input_lock
-            .set_input(
-                accessibility::Key(drop_function_id),
+            self.input_session.set_input(
+                accessibility::Key { symbol_id: drop_function_id },
                 Accessibility::Public,
-            )
-            .await;
+            );
 
-        let mut parameters = Arena::default();
-        let param_id = parameters.insert(Parameter {
-            r#type: Type::Reference(Reference {
-                qualifier: Qualifier::Mutable,
-                lifetime: a_lt,
-                pointee: Box::new(t_ty),
-            }),
-            span: None,
-        });
+            let mut parameters = Arena::default();
+            let param_id = parameters.insert(Parameter {
+                r#type: Type::Reference(Reference {
+                    qualifier: Qualifier::Mutable,
+                    lifetime: a_lt,
+                    pointee: Box::new(t_ty),
+                }),
+                span: None,
+            });
 
-        input_lock
-            .set_input(
-                parameter::Key(drop_function_id),
-                Arc::new(Parameters {
+            self.input_session.set_input(
+                parameter::Key { symbol_id: drop_function_id },
+                self.input_session.intern(Parameters {
                     parameters,
                     parameter_order: vec![param_id],
                 }),
-            )
-            .await;
+            );
 
-        input_lock
-            .set_input(
-                return_type::Key(drop_function_id),
-                Arc::new(Type::unit()),
-            )
-            .await;
+            self.input_session.set_input(
+                return_type::Key { symbol_id: drop_function_id },
+                self.input_session.intern(Type::unit()),
+            );
 
-        input_lock
-            .set_input(
-                effect_annotation::Key(drop_function_id),
-                Arc::new(OrderedArena::default()),
-            )
-            .await;
-    }
+            self.input_session.set_input(
+                effect_annotation::Key { symbol_id: drop_function_id },
+                self.input_session.intern(OrderedArena::default()),
+            );
+        }
 
-    input_lock
-        .set_input(
+        self.input_session.set_input(
             implemented::InTargetKey {
                 implementable_id: drop_trait_id,
                 target_id: TargetID::CORE,
             },
-            Arc::new(HashSet::default()),
-        )
-        .await;
+            self.input_session.intern(HashSet::default()),
+        );
 
-    drop_trait_id.id
+        drop_trait_id.id
+    }
 }

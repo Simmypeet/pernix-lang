@@ -1,8 +1,6 @@
 //! Defines a query for retrieving all the `implements` IDs that are associated
 //! with a given symbol.
 
-use std::sync::Arc;
-
 use pernixc_hash::HashSet;
 use pernixc_target::Global;
 use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
@@ -45,7 +43,7 @@ pub struct Key {
     StableHash,
     Query,
 )]
-#[value(Arc<HashSet<Global<pernixc_symbol::ID>>>)]
+#[value(Interned<HashSet<Global<pernixc_symbol::ID>>>)]
 pub struct InTargetKey {
     /// The ID of the implementable (trait or marker).
     pub implementable_id: Global<pernixc_symbol::ID>,

@@ -140,7 +140,7 @@ sled = { version = "0.34.7" }
 stacker = "0.1.21"
 serde_json = { version = "1.0.96" }
 fuzzy-matcher = { version = "0.3.7" }
-qbice = { version = "0.4.2" }
+qbice = { version = "0.4.3" }
 linkme = { version = "0.3.35" }
 
 [patch.crates-io]

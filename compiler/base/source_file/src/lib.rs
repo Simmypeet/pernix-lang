@@ -588,6 +588,7 @@ impl<L> Span<L> {
     }
 
     /// Gets the byte range of the span, with an option to make the end
+    #[allow(clippy::range_plus_one)]
     pub fn range_maybe_inclusive(&self, inclusive: bool) -> Range<L>
     where
         L: Clone + std::ops::Add<usize, Output = L>,

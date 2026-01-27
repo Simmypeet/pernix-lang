@@ -7,7 +7,9 @@ use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::MemberID;
 use pernixc_target::Global;
-use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
+use qbice::{
+    Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
+};
 
 use crate::{
     Never,
@@ -130,6 +132,7 @@ pub enum Forall {
     StableHash,
     Encode,
     Decode,
+    Identifiable,
 )]
 pub struct ElidedLifetime {
     /// The order in which the elided lifetime was encountered in the function

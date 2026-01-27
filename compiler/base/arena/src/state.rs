@@ -3,7 +3,7 @@
 use std::marker::PhantomData;
 
 use pernixc_hash::HashMap;
-use qbice::{Decode, Encode, StableHash};
+use qbice::{Decode, Encode, Identifiable, StableHash};
 
 use crate::ID;
 
@@ -97,6 +97,7 @@ impl<T> State<T> for Default {
     Encode,
     Decode,
     StableHash,
+    Identifiable,
 )]
 pub struct Serial(u64);
 
@@ -160,6 +161,7 @@ impl<T, U> Rebind<T, U> for Serial {
     Default,
     Encode,
     Decode,
+    Identifiable,
 )]
 pub struct Hash<V>(PhantomData<V>);
 
@@ -215,6 +217,7 @@ impl<T, U, V> Rebind<T, U> for Hash<V> {
     Default,
     Encode,
     Decode,
+    Identifiable,
 )]
 pub struct PartialHash<F, V>(PhantomData<(F, V)>);
 

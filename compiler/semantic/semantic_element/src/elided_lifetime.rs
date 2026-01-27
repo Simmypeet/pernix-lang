@@ -1,12 +1,10 @@
 //! Contains the query definition for the list of elided lifetimes used in the
 //! function signature.
 
-use std::sync::Arc;
-
 use pernixc_arena::Arena;
 use pernixc_target::Global;
 use pernixc_term::lifetime::ElidedLifetime;
-use qbice::{Decode, Encode, Query, StableHash};
+use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 
 /// A query for retrieving the list of elided lifetimes used in the function
 /// signature.
@@ -24,7 +22,7 @@ use qbice::{Decode, Encode, Query, StableHash};
     Decode,
     Query,
 )]
-#[value(Arc<Arena<ElidedLifetime>>)]
+#[value(Interned<Arena<ElidedLifetime>>)]
 #[extend(name = get_elided_lifetimes, by_val)]
 pub struct Key {
     /// The global ID of the function symbol.

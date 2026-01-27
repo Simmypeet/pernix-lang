@@ -11,7 +11,9 @@ use std::{
 };
 
 use pernixc_hash::HashMap;
-use qbice::{Decode, Encode, StableHash, stable_hash::StableHasher};
+use qbice::{
+    Decode, Encode, Identifiable, StableHash, stable_hash::StableHasher,
+};
 use state::{Generator, Rebind, State};
 
 use crate::state::FreeGenerator;
@@ -117,7 +119,7 @@ impl<T> Decode for ID<T> {
 
 /// Represents a collection of items of type `T` that can be referenced by an
 /// [`ID`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Identifiable)]
 pub struct Arena<T, G: State<T> = state::Serial> {
     generator: G,
     items: HashMap<G::ID, T>,
@@ -359,7 +361,7 @@ impl<'a, T, G: State<T>> IntoIterator for &'a mut Arena<T, G> {
 
 /// A wrapper around an [`Arena`] that also keeps track of the order in which
 /// items were inserted.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Identifiable)]
 pub struct OrderedArena<T, G: State<T> = state::Serial> {
     arena: Arena<T, G>,
     order: Vec<G::ID>,

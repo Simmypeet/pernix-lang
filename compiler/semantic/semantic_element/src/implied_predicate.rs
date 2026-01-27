@@ -1,8 +1,6 @@
 //! Contains the query definition for retrieving all the "implied predicate"s
 //! that appear on the function signature.
 
-use std::sync::Arc;
-
 use pernixc_hash::HashSet;
 use pernixc_target::Global;
 use pernixc_term::{
@@ -10,7 +8,9 @@ use pernixc_term::{
     predicate::{Outlives, Predicate},
     r#type::Type,
 };
-use qbice::{Decode, Encode, Identifiable, Query, StableHash};
+use qbice::{
+    Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned,
+};
 
 /// The enumeration of all predicates that can be implied by the compiler.
 #[derive(
@@ -61,7 +61,7 @@ impl From<ImpliedPredicate> for Predicate {
     Decode,
     Query,
 )]
-#[value(Arc<HashSet<ImpliedPredicate>>)]
+#[value(Interned<HashSet<ImpliedPredicate>>)]
 #[extend(name = get_implied_predicates, by_val)]
 pub struct Key {
     /// The global ID of the function symbol.

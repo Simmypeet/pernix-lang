@@ -115,9 +115,25 @@ pub async fn calculate_qualified_name_id<'a>(
     parent_id: Option<ID>,
     declaration_order: usize,
 ) -> ID {
-    let mut hasher = siphasher::sip128::SipHasher24::default();
     let target_seed = self.get_target_seed(target_id).await;
 
+    calculate_qualified_name_id_with_given_seed(
+        qualified_name_sequence,
+        parent_id,
+        declaration_order,
+        target_seed,
+    )
+}
+
+/// Calculates the ID of the symbol with the given sequence of qualified names
+/// and the target ID, using the given target seed.
+pub fn calculate_qualified_name_id_with_given_seed<'a>(
+    qualified_name_sequence: impl IntoIterator<Item = &'a str>,
+    parent_id: Option<ID>,
+    declaration_order: usize,
+    target_seed: u64,
+) -> ID {
+    let mut hasher = siphasher::sip128::SipHasher24::default();
     target_seed.hash(&mut hasher);
 
     // signify that we're generating ID for the qualified name
@@ -164,8 +180,22 @@ pub async fn calculate_implements_id_by_unique_name(
     unique_name: &str,
     target_id: TargetID,
 ) -> ID {
-    let mut hasher = siphasher::sip128::SipHasher24::default();
     let target_seed = self.get_target_seed(target_id).await;
+
+    calculate_implements_id_by_unique_name_with_given_seed(
+        unique_name,
+        target_seed,
+    )
+}
+
+/// Calculates a symbol [`ID`] for the implements with the given unique name,
+/// using the given target seed.
+#[must_use]
+pub fn calculate_implements_id_by_unique_name_with_given_seed(
+    unique_name: &str,
+    target_seed: u64,
+) -> ID {
+    let mut hasher = siphasher::sip128::SipHasher24::default();
 
     target_seed.hash(&mut hasher);
 

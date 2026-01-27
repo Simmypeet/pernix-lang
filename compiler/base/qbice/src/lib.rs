@@ -39,6 +39,10 @@ pub type Engine = qbice::Engine<Config>;
 /// [`Config`].
 pub type TrackedEngine = qbice::TrackedEngine<Config>;
 
+/// Type alias for the [`qbice::InputSession`] with configuration set to
+/// [`Config`].
+pub type InputSession<'x> = qbice::InputSession<'x, Config>;
+
 /// Distributed slice for registering all the executors required for Pernix
 /// compiler.
 ///
