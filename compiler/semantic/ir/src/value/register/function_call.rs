@@ -4,10 +4,9 @@ use std::ops::Deref;
 
 use pernixc_arena::ID;
 use pernixc_hash::HashMap;
-use pernixc_query::runtime::executor::CyclicError;
 use pernixc_semantic_element::return_type::get_return_type;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode};
+use qbice::StableHash;
 use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant, effect, instantiation::Instantiation,
@@ -34,8 +33,8 @@ use crate::{
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub enum EffectHandlerArgument {
@@ -50,7 +49,7 @@ pub enum EffectHandlerArgument {
 }
 
 /// Represents a function call.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, StableHash)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, StableHash)]
 pub struct FunctionCall {
     /// The ID of the function that is called.
     pub callable_id: Global<pernixc_symbol::ID>,
@@ -88,10 +87,10 @@ pub(super) async fn transform_function_call<
     function_call: &mut FunctionCall,
     transformer: &mut T,
     span: pernixc_lexical::tree::RelativeSpan,
-) -> Result<(), CyclicError> {
+) {
     for argument in &mut function_call.arguments {
         if let Some(literal) = argument.as_literal_mut() {
-            literal.transform(transformer).await?;
+            literal.transform(transformer).await;
         }
     }
 
@@ -106,7 +105,7 @@ pub(super) async fn transform_function_call<
             _ => unreachable!("should've either be parameter or elided"),
         };
 
-        transformer.transform(lt, source, span).await?;
+        transformer.transform(lt, source, span).await;
     }
 
     for (ty_id, ty) in &mut function_call.instantiation.types {
@@ -121,7 +120,7 @@ pub(super) async fn transform_function_call<
                 ),
                 span,
             )
-            .await?;
+            .await;
     }
 
     for (ct_id, ct) in &mut function_call.instantiation.constants {
@@ -136,10 +135,8 @@ pub(super) async fn transform_function_call<
                 ),
                 span,
             )
-            .await?;
+            .await;
     }
-
-    Ok(())
 }
 
 impl TypeOf<&FunctionCall> for Values {
@@ -151,7 +148,7 @@ impl TypeOf<&FunctionCall> for Values {
         let mut return_type = environment
             .tracked_engine()
             .get_return_type(value.callable_id)
-            .await?
+            .await
             .deref()
             .clone();
 

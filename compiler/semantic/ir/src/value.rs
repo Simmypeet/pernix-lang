@@ -4,9 +4,8 @@ use bon::Builder;
 use literal::Literal;
 use pernixc_arena::ID;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::TrackedEngine;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use pernixc_qbice::TrackedEngine;
+use qbice::{Decode, Encode, StableHash};
 use pernixc_target::Global;
 use pernixc_term::r#type::Type;
 use pernixc_type_system::{
@@ -32,8 +31,8 @@ pub mod register;
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
     enum_as_inner::EnumAsInner,
     derive_more::From,

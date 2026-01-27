@@ -6,10 +6,8 @@ use enum_as_inner::EnumAsInner;
 use pernixc_arena::ID;
 use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::runtime::executor::CyclicError;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_term::r#type::{Qualifier, Type};
+use qbice::{Decode, Encode, StableHash};
 
 use super::{
     Values,
@@ -33,8 +31,8 @@ use crate::transform::{self, Transformer};
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct UnconditionalJump {
@@ -51,8 +49,8 @@ pub struct UnconditionalJump {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct ConditionalJump {
@@ -67,15 +65,10 @@ pub struct ConditionalJump {
 }
 
 impl ConditionalJump {
-    async fn transform<T: Transformer<Type>>(
-        &mut self,
-        transformer: &mut T,
-    ) -> Result<(), CyclicError> {
+    async fn transform<T: Transformer<Type>>(&mut self, transformer: &mut T) {
         if let Value::Literal(literal) = &mut self.condition {
-            literal.transform(transformer).await?;
+            literal.transform(transformer).await;
         }
-
-        Ok(())
     }
 }
 
@@ -89,8 +82,8 @@ impl ConditionalJump {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     EnumAsInner,
     StableHash,
     derive_more::Display,
@@ -103,7 +96,7 @@ pub enum SwitchValue {
 
 /// Represents a jump to another block based on a the matching of an integer
 /// value.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, StableHash)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, StableHash)]
 pub struct SwitchJump {
     /// The integer value to match.
     pub integer: Value,
@@ -116,20 +109,15 @@ pub struct SwitchJump {
 }
 
 impl SwitchJump {
-    async fn transform<T: Transformer<Type>>(
-        &mut self,
-        transformer: &mut T,
-    ) -> Result<(), CyclicError> {
+    async fn transform<T: Transformer<Type>>(&mut self, transformer: &mut T) {
         if let Value::Literal(literal) = &mut self.integer {
-            literal.transform(transformer).await?;
+            literal.transform(transformer).await;
         }
-
-        Ok(())
     }
 }
 
 /// An enumeration containing all kinds of jump instructions.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, StableHash)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, StableHash)]
 #[allow(missing_docs)]
 pub enum Jump {
     Unconditional(UnconditionalJump),
@@ -138,14 +126,11 @@ pub enum Jump {
 }
 
 impl Jump {
-    async fn transform<T: Transformer<Type>>(
-        &mut self,
-        transformer: &mut T,
-    ) -> Result<(), CyclicError> {
+    async fn transform<T: Transformer<Type>>(&mut self, transformer: &mut T) {
         match self {
-            Self::Unconditional(_) => Ok(()),
+            Self::Unconditional(_) => {}
             Self::Conditional(conditional) => {
-                conditional.transform(transformer).await
+                conditional.transform(transformer).await;
             }
             Self::Switch(switch) => switch.transform(transformer).await,
         }
@@ -180,8 +165,8 @@ impl Jump {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Return {
@@ -194,15 +179,10 @@ pub struct Return {
 
 impl Return {
     /// Transforms the return value using the given transformer.
-    async fn transform<T: Transformer<Type>>(
-        &mut self,
-        transformer: &mut T,
-    ) -> Result<(), CyclicError> {
+    async fn transform<T: Transformer<Type>>(&mut self, transformer: &mut T) {
         if let Value::Literal(literal) = &mut self.value {
-            literal.transform(transformer).await?;
+            literal.transform(transformer).await;
         }
-
-        Ok(())
     }
 }
 
@@ -216,8 +196,8 @@ impl Return {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct RegisterAssignment {
@@ -237,8 +217,8 @@ pub struct RegisterAssignment {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Store {
@@ -253,17 +233,12 @@ pub struct Store {
 }
 
 impl Store {
-    async fn transform<T: Transformer<Type>>(
-        &mut self,
-        transformer: &mut T,
-    ) -> Result<(), CyclicError> {
+    async fn transform<T: Transformer<Type>>(&mut self, transformer: &mut T) {
         if let Value::Literal(literal) = &mut self.value {
-            literal.transform(transformer).await?;
+            literal.transform(transformer).await;
         }
 
-        self.address.transform(transformer).await?;
-
-        Ok(())
+        self.address.transform(transformer).await;
     }
 }
 
@@ -310,8 +285,8 @@ impl Store {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct TuplePack {
@@ -343,14 +318,9 @@ pub struct TuplePack {
 }
 
 impl TuplePack {
-    async fn transform<T: Transformer<Type>>(
-        &mut self,
-        transformer: &mut T,
-    ) -> Result<(), CyclicError> {
-        self.store_address.transform(transformer).await?;
-        self.tuple_address.transform(transformer).await?;
-
-        Ok(())
+    async fn transform<T: Transformer<Type>>(&mut self, transformer: &mut T) {
+        self.store_address.transform(transformer).await;
+        self.tuple_address.transform(transformer).await;
     }
 }
 
@@ -364,8 +334,8 @@ impl TuplePack {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct ScopePush(pub ID<Scope>);
@@ -380,8 +350,8 @@ pub struct ScopePush(pub ID<Scope>);
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct ScopePop(pub ID<Scope>);
@@ -395,8 +365,8 @@ pub struct ScopePop(pub ID<Scope>);
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Drop {
@@ -405,13 +375,8 @@ pub struct Drop {
 }
 
 impl Drop {
-    async fn transform<T: Transformer<Type>>(
-        &mut self,
-        transformer: &mut T,
-    ) -> Result<(), CyclicError> {
-        self.address.transform(transformer).await?;
-
-        Ok(())
+    async fn transform<T: Transformer<Type>>(&mut self, transformer: &mut T) {
+        self.address.transform(transformer).await;
     }
 }
 
@@ -424,8 +389,8 @@ impl Drop {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct DropUnpackTuple {
@@ -440,13 +405,8 @@ pub struct DropUnpackTuple {
 }
 
 impl DropUnpackTuple {
-    async fn transform<T: Transformer<Type>>(
-        &mut self,
-        transformer: &mut T,
-    ) -> Result<(), CyclicError> {
-        self.tuple_address.transform(transformer).await?;
-
-        Ok(())
+    async fn transform<T: Transformer<Type>>(&mut self, transformer: &mut T) {
+        self.tuple_address.transform(transformer).await;
     }
 }
 
@@ -463,8 +423,8 @@ impl DropUnpackTuple {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct RegisterDiscard {
     /// The register that is being dropped.
@@ -484,8 +444,8 @@ pub struct RegisterDiscard {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
     EnumAsInner,
 )]
@@ -509,12 +469,12 @@ impl transform::Element for Instruction {
     >(
         &mut self,
         transformer: &mut T,
-        _: &pernixc_query::TrackedEngine,
-    ) -> Result<(), CyclicError> {
+        _: &pernixc_qbice::TrackedEngine,
+    ) {
         match self {
             Self::Store(store) => store.transform(transformer).await,
             Self::TuplePack(tuple_pack) => {
-                tuple_pack.transform(transformer).await
+                tuple_pack.transform(transformer).await;
             }
             Self::DropUnpackTuple(drop) => drop.transform(transformer).await,
             Self::Drop(drop) => drop.transform(transformer).await,
@@ -522,7 +482,7 @@ impl transform::Element for Instruction {
             Self::RegisterAssignment(_)
             | Self::RegisterDiscard(_)
             | Self::ScopePush(_)
-            | Self::ScopePop(_) => Ok(()),
+            | Self::ScopePop(_) => {}
         }
     }
 }
@@ -532,7 +492,7 @@ impl transform::Element for Instruction {
 /// Terminators are instructions that change the control flow of the program.
 /// Either they move to another block or they return from the function.
 #[derive(
-    Debug, Clone, PartialEq, Eq, Serialize, Deserialize, EnumAsInner, StableHash,
+    Debug, Clone, PartialEq, Eq, Encode, Decode, EnumAsInner, StableHash,
 )]
 #[allow(missing_docs)]
 pub enum Terminator {
@@ -551,12 +511,12 @@ impl transform::Element for Terminator {
     >(
         &mut self,
         transformer: &mut T,
-        _: &pernixc_query::TrackedEngine,
-    ) -> Result<(), CyclicError> {
+        _: &pernixc_qbice::TrackedEngine,
+    ) {
         match self {
             Self::Jump(jump) => jump.transform(transformer).await,
             Self::Return(ret) => ret.transform(transformer).await,
-            Self::Panic => Ok(()),
+            Self::Panic => {}
         }
     }
 }

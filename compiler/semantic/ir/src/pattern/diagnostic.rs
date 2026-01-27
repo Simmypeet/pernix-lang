@@ -1,12 +1,10 @@
 //! Contains the diagnostic related to the pattern binding.
 
-use flexstr::SharedStr;
-use pernixc_diagnostic::{Highlight, Report};
+use qbice::storage::intern::Interned;
+use pernixc_diagnostic::{ByteIndex, Highlight, Report};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor};
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_source_file::ByteIndex;
-use pernixc_stable_hash::StableHash;
+use pernixc_qbice::TrackedEngine;
+use qbice::{Decode, Encode, StableHash};
 use pernixc_symbol::source_map::to_absolute_span;
 
 /// A particular name has already been bound in the given scope.
@@ -19,8 +17,8 @@ use pernixc_symbol::source_map::to_absolute_span;
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct AlreadyBoundName {
     /// The span of the already bound identifier.
@@ -30,19 +28,18 @@ pub struct AlreadyBoundName {
     pub new_binding_span: RelativeSpan,
 
     /// The name of the identifier.
-    pub name: SharedStr,
+    pub name: Interned<str>,
 }
 
 impl Report for AlreadyBoundName {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
-        Ok(pernixc_diagnostic::Rendered::builder()
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        pernixc_diagnostic::Rendered::builder()
             .message(format!(
                 "the name `{}` has already been bound in the scope",
-                self.name
+                self.name.as_ref()
             ))
             .primary_highlight(
                 Highlight::builder()
@@ -61,6 +58,6 @@ impl Report for AlreadyBoundName {
                     .message("the name is already bound here")
                     .build(),
             ])
-            .build())
+            .build()
     }
 }

@@ -3,9 +3,8 @@
 use std::ops::Deref;
 
 use getset::{CopyGetters, Getters};
-use pernixc_query::runtime::executor::CyclicError;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode};
+use qbice::StableHash;
 use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
 use pernixc_type_system::Error;
 
@@ -28,8 +27,8 @@ use crate::{
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     Getters,
     CopyGetters,
 )]
@@ -72,12 +71,10 @@ pub(super) async fn transform_resume_call<
 >(
     resume_call: &mut ResumeCall,
     transformer: &mut T,
-) -> Result<(), CyclicError> {
+) {
     if let Value::Literal(literal) = &mut resume_call.value {
-        literal.transform(transformer).await?;
+        literal.transform(transformer).await;
     }
-
-    Ok(())
 }
 
 impl visitor::Element for ResumeCall {

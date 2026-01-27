@@ -4,7 +4,7 @@
 
 use pernixc_arena::ID;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
+use pernixc_qbice::TrackedEngine;
 use pernixc_term::{
     constant::Constant,
     generic_parameters::{
@@ -115,7 +115,7 @@ pub trait Transformer<T: Transformable> {
         term: &mut T,
         source: T::Source,
         span: RelativeSpan,
-    ) -> Result<(), CyclicError>;
+    );
 }
 
 /// A trait for an object that can have [`Transformable`] elements transformed
@@ -130,5 +130,5 @@ pub trait Element {
         &mut self,
         transformer: &mut T,
         engine: &TrackedEngine,
-    ) -> Result<(), CyclicError>;
+    );
 }

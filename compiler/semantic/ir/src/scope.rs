@@ -4,8 +4,7 @@ use std::{collections::HashSet, num::NonZeroUsize};
 
 use getset::{CopyGetters, Getters};
 use pernixc_arena::{Arena, ID};
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode, StableHash};
 
 /// Represents a branch of scopes that stems out from a single scope.
 ///
@@ -20,14 +19,14 @@ use pernixc_stable_hash::StableHash;
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Branch(pub Vec<ID<Scope>>);
 
 /// Represents a scope introduced by `{ ... }` expressions.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, StableHash)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, StableHash)]
 pub struct Scope {
     /// The parent scope of the current scope.
     ///
@@ -57,8 +56,8 @@ pub struct Scope {
     Eq,
     Getters,
     CopyGetters,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Tree {

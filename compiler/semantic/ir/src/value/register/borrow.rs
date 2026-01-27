@@ -1,14 +1,12 @@
 //! Contains the definition of the [`Borrow`] register.
 
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::runtime::executor::CyclicError;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_term::{
     lifetime::Lifetime,
     r#type::{Qualifier, Type},
 };
 use pernixc_type_system::{Error, Succeeded, normalizer::Normalizer};
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Values,
@@ -26,8 +24,8 @@ use crate::{
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Borrow {
@@ -53,12 +51,12 @@ pub(super) async fn transform_borrow<
     borrow: &mut Borrow,
     transformer: &mut T,
     span: RelativeSpan,
-) -> Result<(), CyclicError> {
-    borrow.address.transform(transformer).await?;
+) {
+    borrow.address.transform(transformer).await;
 
     transformer
         .transform(&mut borrow.lifetime, LifetimeTermSource::Borrow, span)
-        .await
+        .await;
 }
 
 impl TypeOf<&Borrow> for Values {

@@ -4,11 +4,9 @@ use std::ops::Deref;
 
 use pernixc_arena::ID;
 use pernixc_hash::HashMap;
-use pernixc_query::runtime::executor::CyclicError;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_term::r#type::Type;
 use pernixc_type_system::{Error, Succeeded, normalizer::Normalizer};
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Values,
@@ -22,7 +20,7 @@ use crate::{
 /// A phi node is used to determine the value based on the flow of the
 /// execution. This is typcially used in the control flow related expressions
 /// such as `if` and `match`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, StableHash)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, StableHash)]
 pub struct Phi {
     /// Maps the incoming block to the value.
     pub incoming_values: HashMap<ID<Block>, Value>,
@@ -58,14 +56,14 @@ pub(super) async fn transform_phi<T: Transformer<Type>>(
     phi: &mut Phi,
     transformer: &mut T,
     span: pernixc_lexical::tree::RelativeSpan,
-) -> Result<(), CyclicError> {
+) {
     for value in phi.incoming_values.values_mut() {
         if let Some(literal) = value.as_literal_mut() {
-            literal.transform(transformer).await?;
+            literal.transform(transformer).await;
         }
     }
 
-    transformer.transform(&mut phi.r#type, TypeTermSource::Phi, span).await
+    transformer.transform(&mut phi.r#type, TypeTermSource::Phi, span).await;
 }
 
 impl TypeOf<&Phi> for Values {

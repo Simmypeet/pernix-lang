@@ -3,9 +3,8 @@
 use getset::{CopyGetters, Getters, MutGetters};
 use pernixc_arena::{Arena, ID};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use pernixc_qbice::TrackedEngine;
+use qbice::{Decode, Encode, StableHash};
 use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
 
 use crate::{
@@ -24,8 +23,8 @@ use crate::{
     PartialEq,
     Eq,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     Getters,
     MutGetters,
     CopyGetters,
@@ -69,8 +68,8 @@ impl IRWithContext {
     PartialEq,
     Eq,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     derive_more::Index,
     derive_more::IndexMut,
 )]
@@ -87,12 +86,10 @@ impl transform::Element for IRMap {
         &mut self,
         transformer: &mut T,
         engine: &TrackedEngine,
-    ) -> Result<(), CyclicError> {
+    ) {
         for (_, ir_with_context) in &mut self.irs {
-            ir_with_context.ir.transform(transformer, engine).await?;
+            ir_with_context.ir.transform(transformer, engine).await;
         }
-
-        Ok(())
     }
 }
 
@@ -132,7 +129,7 @@ impl IRMap {
 
 /// Contains all the registers and allocas used in the program.
 #[derive(
-    Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, StableHash,
+    Debug, Clone, PartialEq, Eq, Default, Encode, Decode, StableHash,
 )]
 pub struct Values {
     /// Contains all the registers used in the program.
@@ -158,7 +155,7 @@ impl Values {
 /// It can be used as a body of a function, closure, effect handler,
 /// compile-time constant, etc.
 #[derive(
-    Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, StableHash,
+    Debug, Clone, PartialEq, Eq, Default, Encode, Decode, StableHash,
 )]
 pub struct IR {
     /// Contains the registers and allocas used in the program.
@@ -178,11 +175,11 @@ impl transform::Element for IR {
         &mut self,
         transformer: &mut T,
         engine: &TrackedEngine,
-    ) -> Result<(), CyclicError> {
-        self.control_flow_graph.transform(transformer, engine).await?;
+    ) {
+        self.control_flow_graph.transform(transformer, engine).await;
 
         for (_, register) in &mut self.values.registers {
-            register.transform(transformer, engine).await?;
+            register.transform(transformer, engine).await;
         }
 
         for (&alloca_id, alloca) in &mut self.values.allocas {
@@ -192,9 +189,7 @@ impl transform::Element for IR {
                     TypeTermSource::Alloca(alloca_id),
                     alloca.span,
                 )
-                .await?;
+                .await;
         }
-
-        Ok(())
     }
 }

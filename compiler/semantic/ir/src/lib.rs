@@ -18,5 +18,5 @@ pub mod value;
 pub mod visitor;
 
 // re-exports
-pub use function_ir::{FunctionIR, Key, get_ir};
+pub use function_ir::{FunctionIR, Key};
 pub use ir::{IR, IRWithContext, Values};

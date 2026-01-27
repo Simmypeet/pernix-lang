@@ -2,7 +2,7 @@
 
 use std::ops::Deref;
 
-use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
+use pernixc_qbice::TrackedEngine;
 use pernixc_target::Global;
 
 use crate::{
@@ -49,8 +49,8 @@ pub trait Typer<V> {
     ///
     /// This error type is used to handle unexpected errors that may occur
     /// during calculation of the type of a value. Most likely some form of
-    /// overflow calculation or cyclic query detection.
-    type Error: From<CyclicError>;
+    /// overflow calculation.
+    type Error;
 
     /// Retrieve the type of a value.
     fn type_of<'s, 'v, 'e, E: Environment>(

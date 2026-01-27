@@ -4,10 +4,9 @@ use std::sync::Arc;
 
 use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 use pernixc_type_system::normalizer::Normalizer;
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     IRWithContext,
@@ -20,20 +19,8 @@ use crate::{
 
 /// An intermediate representation of a function.
 #[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    Default,
-    Serialize,
-    Deserialize,
-    StableHash,
-    Getters,
-    pernixc_query::Value,
+    Debug, Clone, PartialEq, Eq, Default, Encode, Decode, StableHash, Getters,
 )]
-#[id(Global<pernixc_symbol::ID>)]
-#[value(Arc<FunctionIR>)]
-#[extend(method(get_ir))]
 pub struct FunctionIR {
     /// The collection of all handler groups defined in the function body.
     #[get = "pub"]
@@ -91,8 +78,8 @@ impl FunctionIR {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     CopyGetters,
 )]
 pub struct OperationHandlerContext {
@@ -127,8 +114,8 @@ impl OperationHandlerContext {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     CopyGetters,
 )]
 pub struct DoContext {
@@ -154,8 +141,8 @@ impl DoContext {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 #[allow(missing_docs)]
 pub enum IRContext {
@@ -333,3 +320,21 @@ impl FunctionIR {
         )
     }
 }
+
+/// Query key for retrieving [`FunctionIR`].
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    qbice::Query,
+)]
+#[value(Arc<FunctionIR>)]
+pub struct Key(pub Global<pernixc_symbol::ID>);

@@ -1552,11 +1552,13 @@ dependencies = [
  "derive_more",
  "enum-as-inner",
  "getset",
+ "linkme",
  "pernixc_arena",
  "pernixc_diagnostic",
  "pernixc_handler",
  "pernixc_hash",
  "pernixc_lexical",
+ "pernixc_qbice",
  "pernixc_semantic_element",
  "pernixc_source_file",
  "pernixc_symbol",
@@ -1564,6 +1566,7 @@ dependencies = [
  "pernixc_term",
  "pernixc_transitive_closure",
  "pernixc_type_system",
+ "qbice",
 ]
 
 [[package]]
@@ -1571,17 +1574,20 @@ name = "pernixc_ir_impl"
 version = "0.1.0-beta.2"
 dependencies = [
  "derive_more",
+ "linkme",
  "pernixc_bind",
  "pernixc_borrow_checker",
  "pernixc_diagnostic",
  "pernixc_handler",
  "pernixc_ir",
  "pernixc_memory_checker",
+ "pernixc_qbice",
  "pernixc_source_file",
  "pernixc_symbol",
  "pernixc_target",
  "pernixc_tokio",
  "pernixc_type_system",
+ "qbice",
 ]
 
 [[package]]
@@ -1743,11 +1749,13 @@ version = "0.1.0-beta.2"
 dependencies = [
  "derive_more",
  "enum-as-inner",
+ "linkme",
  "pernixc_arena",
  "pernixc_diagnostic",
  "pernixc_handler",
  "pernixc_hash",
  "pernixc_lexical",
+ "pernixc_qbice",
  "pernixc_resolution",
  "pernixc_semantic_element",
  "pernixc_source_file",
@@ -1757,6 +1765,7 @@ dependencies = [
  "pernixc_term",
  "pernixc_tokio",
  "pernixc_type_system",
+ "qbice",
 ]
 
 [[package]]

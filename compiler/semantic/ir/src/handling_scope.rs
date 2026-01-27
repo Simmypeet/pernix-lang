@@ -4,17 +4,14 @@ use derive_more::Index;
 use getset::{CopyGetters, Getters};
 use pernixc_arena::{Arena, ID};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 use pernixc_term::{generic_arguments::GenericArguments, r#type::Type};
+use qbice::{Decode, Encode, StableHash};
 
 use crate::transform::{self, TypeTermSource};
 
 /// A collection of all the effect handler groups in a function body.
-#[derive(
-    Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize, Default,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Default)]
 pub struct HandlingScopes(Arena<HandlingScope>);
 
 impl std::ops::Index<HandlerClauseID> for HandlingScopes {
@@ -46,13 +43,11 @@ impl transform::Element for HandlingScopes {
     >(
         &mut self,
         transformer: &mut T,
-        engine: &pernixc_query::TrackedEngine,
-    ) -> Result<(), pernixc_query::runtime::executor::CyclicError> {
+        engine: &pernixc_qbice::TrackedEngine,
+    ) {
         for handling_scope in self.0.items_mut() {
-            handling_scope.transform(transformer, engine).await?;
+            handling_scope.transform(transformer, engine).await;
         }
-
-        Ok(())
     }
 }
 
@@ -105,8 +100,8 @@ impl HandlingScopes {
     PartialEq,
     Eq,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     Index,
     Getters,
     CopyGetters,
@@ -133,15 +128,15 @@ impl transform::Element for HandlingScope {
     >(
         &mut self,
         transformer: &mut T,
-        _engine: &pernixc_query::TrackedEngine,
-    ) -> Result<(), pernixc_query::runtime::executor::CyclicError> {
+        _engine: &pernixc_qbice::TrackedEngine,
+    ) {
         transformer
             .transform(
                 &mut self.return_type,
                 TypeTermSource::DoReturnType,
                 self.do_with_span,
             )
-            .await
+            .await;
     }
 }
 
@@ -216,8 +211,8 @@ impl HandlingScope {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     derive_new::new,
     CopyGetters,
     Getters,
@@ -243,8 +238,8 @@ pub struct HandlerClause {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     derive_new::new,
 )]
 pub struct HandlerClauseID {
@@ -264,8 +259,8 @@ pub struct HandlerClauseID {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     CopyGetters,
 )]
 pub struct OperationHandlerID {

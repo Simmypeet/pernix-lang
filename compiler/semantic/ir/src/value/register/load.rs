@@ -1,11 +1,9 @@
 //! Contains the definition of the [`Load`] register.
 
 use getset::{CopyGetters, Getters, MutGetters};
-use pernixc_query::runtime::executor::CyclicError;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_term::r#type::Type;
 use pernixc_type_system::{Error, Succeeded, normalizer::Normalizer};
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Values,
@@ -26,8 +24,8 @@ use crate::{
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub enum Purpose {
     /// A general purpose load.
@@ -46,8 +44,8 @@ pub enum Purpose {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
     Getters,
     CopyGetters,
@@ -90,8 +88,8 @@ pub(super) async fn transform_load<
     load: &mut Load,
     transformer: &mut T,
     _span: pernixc_lexical::tree::RelativeSpan,
-) -> Result<(), CyclicError> {
-    load.address.transform(transformer).await
+) {
+    load.address.transform(transformer).await;
 }
 
 impl TypeOf<&Load> for Values {

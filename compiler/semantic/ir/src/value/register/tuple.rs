@@ -3,9 +3,8 @@
 use std::{collections::BTreeSet, ops::Deref};
 
 use pernixc_arena::ID;
-use pernixc_query::runtime::executor::CyclicError;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode};
+use qbice::StableHash;
 use pernixc_term::r#type::Type;
 use pernixc_type_system::Succeeded;
 
@@ -24,8 +23,8 @@ use crate::{
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct TupleElement {
@@ -45,8 +44,8 @@ pub struct TupleElement {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Tuple {
@@ -81,15 +80,13 @@ pub(super) async fn transform_tuple<
     tuple: &mut Tuple,
     transformer: &mut T,
     _span: pernixc_lexical::tree::RelativeSpan,
-    _engine: &pernixc_query::TrackedEngine,
-) -> Result<(), CyclicError> {
+    _engine: &pernixc_qbice::TrackedEngine,
+) {
     for element in
         tuple.elements.iter_mut().filter_map(|x| x.value.as_literal_mut())
     {
-        element.transform(transformer).await?;
+        element.transform(transformer).await;
     }
-
-    Ok(())
 }
 
 impl TypeOf<&Tuple> for Values {

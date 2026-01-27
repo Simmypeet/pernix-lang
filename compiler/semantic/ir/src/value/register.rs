@@ -8,9 +8,7 @@ use std::borrow::Cow;
 use enum_as_inner::EnumAsInner;
 use pernixc_arena::ID;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::MemberID;
 use pernixc_target::Global;
 use pernixc_term::{
@@ -19,6 +17,7 @@ use pernixc_term::{
     r#type::Type,
 };
 use pernixc_type_system::{Error, Succeeded, normalizer::Normalizer};
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Values,
@@ -67,7 +66,7 @@ pub use variant_number::VariantNumber;
 /// An enumeration of the different kinds of values that can be assigned in the
 /// register.
 #[derive(
-    Debug, Clone, PartialEq, Eq, Serialize, Deserialize, EnumAsInner, StableHash,
+    Debug, Clone, PartialEq, Eq, Encode, Decode, EnumAsInner, StableHash,
 )]
 #[allow(missing_docs)]
 pub enum Assignment {
@@ -122,7 +121,7 @@ impl Assignment {
 }
 
 /// Represents a register in the SSA from.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, StableHash)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, StableHash)]
 pub struct Register {
     /// The value stored in the register.
     pub assignment: Assignment,
@@ -191,24 +190,24 @@ impl transform::Element for Register {
         &mut self,
         transformer: &mut T,
         engine: &TrackedEngine,
-    ) -> Result<(), CyclicError> {
+    ) {
         match &mut self.assignment {
             Assignment::Tuple(tuple) => {
                 tuple::transform_tuple(tuple, transformer, self.span, engine)
-                    .await
+                    .await;
             }
             Assignment::Load(load) => {
-                load::transform_load(load, transformer, self.span).await
+                load::transform_load(load, transformer, self.span).await;
             }
             Assignment::Borrow(borrow) => {
-                borrow::transform_borrow(borrow, transformer, self.span).await
+                borrow::transform_borrow(borrow, transformer, self.span).await;
             }
             Assignment::Prefix(prefix) => {
-                prefix::transform_prefix(prefix, transformer, self.span).await
+                prefix::transform_prefix(prefix, transformer, self.span).await;
             }
             Assignment::Struct(st) => {
                 r#struct::transform_struct(st, transformer, self.span, engine)
-                    .await
+                    .await;
             }
             Assignment::Variant(variant) => {
                 variant::transform_variant(
@@ -217,7 +216,7 @@ impl transform::Element for Register {
                     self.span,
                     engine,
                 )
-                .await
+                .await;
             }
             Assignment::FunctionCall(function_call) => {
                 function_call::transform_function_call(
@@ -225,19 +224,19 @@ impl transform::Element for Register {
                     transformer,
                     self.span,
                 )
-                .await
+                .await;
             }
             Assignment::Binary(binary) => {
-                binary::transform_binary(binary, transformer, self.span).await
+                binary::transform_binary(binary, transformer, self.span).await;
             }
             Assignment::Array(array) => {
-                array::transform_array(array, transformer, self.span).await
+                array::transform_array(array, transformer, self.span).await;
             }
             Assignment::Phi(phi) => {
-                phi::transform_phi(phi, transformer, self.span).await
+                phi::transform_phi(phi, transformer, self.span).await;
             }
             Assignment::Cast(cast) => {
-                cast::transform_cast(cast, transformer, self.span).await
+                cast::transform_cast(cast, transformer, self.span).await;
             }
             Assignment::VariantNumber(variant_number) => {
                 variant_number::transform_variant_number(
@@ -245,13 +244,13 @@ impl transform::Element for Register {
                     transformer,
                     self.span,
                 )
-                .await
+                .await;
             }
             Assignment::Do(d) => {
-                do_with::transform_do_with(d, transformer, engine).await
+                do_with::transform_do_with(d, transformer, engine).await;
             }
             Assignment::ResumeCall(r) => {
-                resume_call::transform_resume_call(r, transformer).await
+                resume_call::transform_resume_call(r, transformer).await;
             }
         }
     }
@@ -265,8 +264,8 @@ pub(super) async fn transform_generic_arguments<
     span: RelativeSpan,
     engine: &TrackedEngine,
     generic_arg: &mut GenericArguments,
-) -> Result<(), CyclicError> {
-    let generic_params = engine.get_generic_parameters(symbol_id).await?;
+) {
+    let generic_params = engine.get_generic_parameters(symbol_id).await;
 
     for (lt_id, lt) in generic_params
         .lifetime_order()
@@ -282,7 +281,7 @@ pub(super) async fn transform_generic_arguments<
                 )),
                 span,
             )
-            .await?;
+            .await;
     }
 
     for (ty_id, ty) in generic_params
@@ -299,7 +298,7 @@ pub(super) async fn transform_generic_arguments<
                 )),
                 span,
             )
-            .await?;
+            .await;
     }
 
     for (ct_id, ct) in generic_params
@@ -316,10 +315,8 @@ pub(super) async fn transform_generic_arguments<
                 )),
                 span,
             )
-            .await?;
+            .await;
     }
-
-    Ok(())
 }
 
 /// A visitor that collects all register IDs from values.

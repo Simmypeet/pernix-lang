@@ -1,12 +1,10 @@
 //! Contains the definition of the [`VariantNumber`] register.
 
-use pernixc_query::runtime::executor::CyclicError;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_symbol::member::get_members;
 use pernixc_target::Global;
 use pernixc_term::r#type::{Primitive, Type};
 use pernixc_type_system::{Succeeded, normalizer::Normalizer};
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Values,
@@ -30,8 +28,8 @@ use crate::{
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct VariantNumber {
@@ -52,8 +50,8 @@ pub(super) async fn transform_variant_number<T: Transformer<Type>>(
     variant_number: &mut VariantNumber,
     transformer: &mut T,
     _span: pernixc_lexical::tree::RelativeSpan,
-) -> Result<(), CyclicError> {
-    variant_number.address.transform(transformer).await
+) {
+    variant_number.address.transform(transformer).await;
 }
 
 impl TypeOf<&VariantNumber> for Values {
