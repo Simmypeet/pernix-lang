@@ -1,18 +1,16 @@
 use pernixc_diagnostic::{Highlight, Report};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::source_map::to_absolute_span;
 use pernixc_term::{
     constant::Constant,
     display::{Display, InferenceRenderingMap},
     r#type::Type,
 };
+use qbice::{Decode, Encode, StableHash};
 
 /// The kind of pointer involved in a pointer type casting operation.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, StableHash, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, StableHash, Encode, Decode)]
 pub enum PointerKind {
     /// A raw pointer (`*T` or `*mut T`).
     RawPointer,
@@ -22,7 +20,7 @@ pub enum PointerKind {
 }
 
 /// The operand type of pointer type casting is invalid.
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct InvalidPointerTypeCasting {
     /// The span of the operand.
     pub span: RelativeSpan,
@@ -43,11 +41,8 @@ pub struct InvalidPointerTypeCasting {
 impl Report for InvalidPointerTypeCasting {
     async fn report(
         &self,
-        parameter: &pernixc_query::TrackedEngine,
-    ) -> Result<
-        pernixc_diagnostic::Rendered<pernixc_diagnostic::ByteIndex>,
-        pernixc_query::runtime::executor::CyclicError,
-    > {
+        parameter: &TrackedEngine,
+    ) -> pernixc_diagnostic::Rendered<pernixc_diagnostic::ByteIndex> {
         let mut message = format!(
             "cannot cast to a `{}` type from an expression of type `",
             match self.casted_pointer_kind {
@@ -69,7 +64,7 @@ impl Report for InvalidPointerTypeCasting {
 
         message.push('`');
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message(message)
             .primary_highlight(
                 Highlight::builder()
@@ -81,12 +76,12 @@ impl Report for InvalidPointerTypeCasting {
                 "only a `pointer`, `reference`, or `usize` type can be cast \
                  to a pointer type",
             )
-            .build())
+            .build()
     }
 }
 
 /// The given type cannot be used in cast expression.
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct InvalidCastType {
     /// The span of the type reference.
     pub span: RelativeSpan,
@@ -104,11 +99,8 @@ pub struct InvalidCastType {
 impl Report for InvalidCastType {
     async fn report(
         &self,
-        parameter: &pernixc_query::TrackedEngine,
-    ) -> Result<
-        pernixc_diagnostic::Rendered<pernixc_diagnostic::ByteIndex>,
-        pernixc_query::runtime::executor::CyclicError,
-    > {
+        parameter: &TrackedEngine,
+    ) -> pernixc_diagnostic::Rendered<pernixc_diagnostic::ByteIndex> {
         let mut message = "the type `".to_string();
 
         self.r#type
@@ -124,7 +116,7 @@ impl Report for InvalidCastType {
 
         message.push_str("` cannot be used in cast expression");
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message(message)
             .primary_highlight(
                 Highlight::builder()
@@ -137,6 +129,6 @@ impl Report for InvalidCastType {
                  pointer-sized integer types, and casting to pointer or \
                  reference types are allowed",
             )
-            .build())
+            .build()
     }
 }

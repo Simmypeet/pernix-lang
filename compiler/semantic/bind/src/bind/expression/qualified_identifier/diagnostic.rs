@@ -1,13 +1,12 @@
 use pernixc_diagnostic::{Highlight, Report};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor};
-use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_qbice::TrackedEngine;
 use pernixc_source_file::ByteIndex;
-use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{
     kind::get_kind, name::get_qualified_name, source_map::to_absolute_span,
 };
 use pernixc_target::Global;
+use qbice::{Decode, Encode, StableHash};
 
 use crate::diagnostic_enum;
 
@@ -22,8 +21,8 @@ diagnostic_enum! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
     )]
     pub enum Diagnostic {
         ExpectedAssociatedValue(ExpectedAssociatedValue),
@@ -42,8 +41,8 @@ diagnostic_enum! {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct ExpectedAssociatedValue {
     /// The ID of the variant where the associated value is expected.
@@ -57,13 +56,12 @@ impl Report for ExpectedAssociatedValue {
     async fn report(
         &self,
         parameter: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let qualified_identifier =
             parameter.get_qualified_name(self.variant_id).await;
         let abs_span = parameter.to_absolute_span(&self.span).await;
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message(format!(
                 "expected associated value for variant \
                  `{qualified_identifier}`"
@@ -80,7 +78,7 @@ impl Report for ExpectedAssociatedValue {
                  after the variant name"
                     .to_string(),
             )
-            .build())
+            .build()
     }
 }
 
@@ -95,8 +93,8 @@ impl Report for ExpectedAssociatedValue {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct SymbolCannotBeUsedAsAnExpression {
     /// The span of the symbol reference.
@@ -110,13 +108,12 @@ impl Report for SymbolCannotBeUsedAsAnExpression {
     async fn report(
         &self,
         parameter: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let qualified_name = parameter.get_qualified_name(self.symbol).await;
         let abs_span = parameter.to_absolute_span(&self.span).await;
         let kind = parameter.get_kind(self.symbol).await;
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message(format!(
                 "the symbol `{} {qualified_name}` cannot be used as an \
                  expression",
@@ -134,6 +131,6 @@ impl Report for SymbolCannotBeUsedAsAnExpression {
                  variables can be used as expressions"
                     .to_string(),
             )
-            .build())
+            .build()
     }
 }

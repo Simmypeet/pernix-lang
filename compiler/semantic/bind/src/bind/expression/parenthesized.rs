@@ -29,7 +29,7 @@ impl Bind<&pernixc_syntax::expression::unit::Parenthesized>
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
     ) -> Result<crate::bind::Expression, Error> {
         let element = syntax_tree.unpackables().collect::<Vec<_>>();
-        let has_comma = syntax_tree.inner_tree().nodes.iter().any(|x| {
+        let has_comma = syntax_tree.inner_tree().nodes().iter().any(|x| {
             x.as_leaf()
                 .and_then(|x| x.kind.as_punctuation())
                 .is_some_and(|x| x.0 == ',')

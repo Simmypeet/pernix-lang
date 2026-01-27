@@ -171,7 +171,7 @@ async fn build_with_blocks(
                 with_block.effect_id,
                 with_block.generic_arguments,
             )
-            .await?
+            .await
             .expect("instantiation must be available");
 
         for (effect_operation_id, handler_block) in with_block.handlers {
@@ -182,7 +182,7 @@ async fn build_with_blocks(
                     with_block.effect_id.target_id,
                     effect_operation_id,
                 ))
-                .await?;
+                .await;
 
             let closure_parameters =
                 ClosureParameters::from_original_parameters_and_instantiation(
@@ -363,7 +363,7 @@ async fn extract_effect_operations<
         // obtains the effect operation id
         let Some(effect_operation_id) = effect_operations
             .member_ids_by_name
-            .get(identifier.kind.0.as_str())
+            .get(identifier.kind.0.as_ref())
         else {
             handler.receive(Diagnostic::UnknownEffectOperation(
                 UnknownEffectOperation {
@@ -398,7 +398,7 @@ async fn extract_effect_operations<
 
         // checks the number of parameters
         let operation_parameters =
-            binder.engine().get_parameters(global_effect_operation_id).await?;
+            binder.engine().get_parameters(global_effect_operation_id).await;
 
         if operation_parameters.parameters.len() != parameters.len() {
             handler.receive(
@@ -478,9 +478,6 @@ async fn extract_handler_chain(
             Err(pernixc_resolution::Error::Abort) => {
                 // failed to resolve
                 continue;
-            }
-            Err(pernixc_resolution::Error::Cyclic(cyclic)) => {
-                return Err(cyclic.into());
             }
         };
 

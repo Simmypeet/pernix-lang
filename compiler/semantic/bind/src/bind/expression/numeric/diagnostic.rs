@@ -1,10 +1,9 @@
 use pernixc_diagnostic::{Highlight, Report};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor};
-use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_qbice::TrackedEngine;
 use pernixc_source_file::ByteIndex;
-use pernixc_stable_hash::StableHash;
 use pernixc_symbol::source_map::to_absolute_span;
+use qbice::{Decode, Encode, StableHash};
 
 use crate::diagnostic_enum;
 
@@ -19,8 +18,8 @@ diagnostic_enum! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
     )]
     pub enum Diagnostic {
         InvalidNumericSuffix(InvalidNumericSuffix),
@@ -41,8 +40,8 @@ diagnostic_enum! {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct InvalidNumericSuffix {
     /// The span of the numeric suffix.
@@ -53,11 +52,10 @@ impl Report for InvalidNumericSuffix {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let span = engine.to_absolute_span(&self.suffix_span).await;
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message("invalid numeric suffix")
             .primary_highlight(
                 Highlight::builder()
@@ -70,7 +68,7 @@ impl Report for InvalidNumericSuffix {
                 "valid suffixes are: i8, i16, i32, i64, u8, u16, u32, u64, \
                  f32, f64, us, is",
             )
-            .build())
+            .build()
     }
 }
 
@@ -86,8 +84,8 @@ impl Report for InvalidNumericSuffix {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct FloatingPointLiteralHasIntegralSuffix {
     /// The span of the numeric literal.
@@ -98,11 +96,10 @@ impl Report for FloatingPointLiteralHasIntegralSuffix {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let span = engine.to_absolute_span(&self.numeric_literal_span).await;
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message("floating point literal has integral suffix")
             .primary_highlight(
                 Highlight::builder()
@@ -118,6 +115,6 @@ impl Report for FloatingPointLiteralHasIntegralSuffix {
                 "remove the decimal point or change the suffix to a floating \
                  point type (such as f32 or f64)",
             )
-            .build())
+            .build()
     }
 }

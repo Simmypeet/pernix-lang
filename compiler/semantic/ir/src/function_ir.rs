@@ -1,12 +1,12 @@
 //! Defines the intermediate representation of a function.
 
-use std::sync::Arc;
-
 use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
 use pernixc_target::Global;
 use pernixc_type_system::normalizer::Normalizer;
-use qbice::{Decode, Encode, StableHash};
+use qbice::{
+    Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
+};
 
 use crate::{
     IRWithContext,
@@ -19,7 +19,16 @@ use crate::{
 
 /// An intermediate representation of a function.
 #[derive(
-    Debug, Clone, PartialEq, Eq, Default, Encode, Decode, StableHash, Getters,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
+    Encode,
+    Decode,
+    StableHash,
+    Getters,
+    Identifiable,
 )]
 pub struct FunctionIR {
     /// The collection of all handler groups defined in the function body.
@@ -336,5 +345,9 @@ impl FunctionIR {
     Decode,
     qbice::Query,
 )]
-#[value(Arc<FunctionIR>)]
-pub struct Key(pub Global<pernixc_symbol::ID>);
+#[value(Interned<FunctionIR>)]
+#[extend(name = get_function_ir, by_val)]
+pub struct Key {
+    /// The global ID of the function symbol.
+    pub function_id: Global<pernixc_symbol::ID>,
+}

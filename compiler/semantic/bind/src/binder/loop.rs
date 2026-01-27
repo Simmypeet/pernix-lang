@@ -3,7 +3,6 @@
 use std::collections::hash_map::Entry;
 
 use enum_as_inner::EnumAsInner;
-use flexstr::SharedStr;
 use getset::CopyGetters;
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
@@ -19,6 +18,7 @@ use pernixc_ir::{
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_term::r#type::Type;
+use qbice::storage::intern::Interned;
 
 use super::Error;
 use crate::{
@@ -49,7 +49,7 @@ enum LoopKindState {
 /// value of the loop expression.
 #[derive(Debug, Clone, PartialEq, Eq, CopyGetters)]
 pub struct LoopState {
-    label: Option<SharedStr>,
+    label: Option<Interned<str>>,
     /// The block ID of the loop header. This is where `continue` statements
     /// will jump to.
     #[get_copy = "pub"]
@@ -105,7 +105,7 @@ impl Binder<'_> {
     pub fn push_loop_state(
         &mut self,
         scope_id: ID<Scope>,
-        label: Option<SharedStr>,
+        label: Option<Interned<str>>,
         loop_block_id: ID<Block>,
         exit_block_id: ID<Block>,
         kind: LoopKind,

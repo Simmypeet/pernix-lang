@@ -23,18 +23,13 @@ use pernixc_ir::{
     },
 };
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{
-    TrackedEngine,
-    runtime::executor::{self, CyclicError},
-};
+use pernixc_qbice::TrackedEngine;
 use pernixc_resolution::{
     self, ExtraNamespace,
     generic_parameter_namespace::get_generic_parameter_namespace,
 };
 use pernixc_semantic_element::parameter::get_parameters;
-use pernixc_serialize::Serialize;
 use pernixc_source_file::SourceElement;
-use pernixc_stable_hash::StableHash;
 use pernixc_symbol::syntax::get_function_signature_syntax;
 use pernixc_target::Global;
 use pernixc_term::{
@@ -48,6 +43,7 @@ use pernixc_type_system::{
     Succeeded,
     environment::{Environment as TyEnvironment, Premise, get_active_premise},
 };
+use qbice::{StableHash, storage::intern::Interned};
 
 use crate::{
     bind::LValue,
@@ -69,15 +65,15 @@ pub mod type_check;
 pub mod typer;
 
 /// The environment where the binder is operating on.
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash)]
 pub struct Environment {
     /// The current site where the binder is operating on.
     current_site: Global<pernixc_symbol::ID>,
 
     /// Gets the active premise at the `current_site`.
-    premise: Arc<Premise>,
+    premise: Interned<Premise>,
 
-    extra_namespace: Arc<ExtraNamespace>,
+    extra_namespace: Interned<ExtraNamespace>,
 }
 
 impl Environment {
@@ -85,16 +81,16 @@ impl Environment {
     pub async fn new(
         engine: &TrackedEngine,
         current_site: Global<pernixc_symbol::ID>,
-    ) -> Result<Self, CyclicError> {
-        let premise = engine.get_active_premise(current_site).await?;
+    ) -> Self {
+        let premise = engine.get_active_premise(current_site).await;
         let generic_parameter_namespace =
-            engine.get_generic_parameter_namespace(current_site).await?;
+            engine.get_generic_parameter_namespace(current_site).await;
 
-        Ok(Self {
+        Self {
             current_site,
             premise,
             extra_namespace: generic_parameter_namespace,
-        })
+        }
     }
 }
 
@@ -229,7 +225,7 @@ impl<'t> Binder<'t> {
             .await;
 
         let parameters =
-            binder.engine.get_parameters(environment.current_site).await?;
+            binder.engine.get_parameters(environment.current_site).await;
 
         let mut name_binding_point = NameBindingPoint::default();
 
@@ -292,12 +288,6 @@ impl<'t> Binder<'t> {
 #[allow(missing_docs)]
 pub struct BindingError(pub RelativeSpan);
 
-impl From<executor::CyclicError> for Error {
-    fn from(value: executor::CyclicError) -> Self {
-        Self::Unrecoverable(UnrecoverableError::CyclicDependency(value))
-    }
-}
-
 /// Is an error occurred while binding the syntax tree
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
@@ -329,9 +319,6 @@ pub fn report_as_type_calculating_overflow(
 
             UnrecoverableError::Reported
         }
-        pernixc_type_system::Error::CyclicDependency(cyclic) => {
-            UnrecoverableError::CyclicDependency(cyclic)
-        }
     }
 }
 
@@ -348,9 +335,6 @@ pub fn report_as_type_check_overflow(
             overflow.report_as_type_check_overflow(overflow_span, &handler);
 
             UnrecoverableError::Reported
-        }
-        pernixc_type_system::Error::CyclicDependency(cyclic) => {
-            UnrecoverableError::CyclicDependency(cyclic)
         }
     }
 }
@@ -828,7 +812,7 @@ impl Binder<'_> {
             Err(err) => Err(err.report_as_type_calculating_overflow(
                 self.values()
                     .span_of_memory(address.get_root_memory(), &environment)
-                    .await?,
+                    .await,
                 &handler,
             )),
         }

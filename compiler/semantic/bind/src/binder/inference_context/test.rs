@@ -1,12 +1,17 @@
 use std::sync::{Arc, atomic::AtomicU64};
 
-use pernixc_query::Engine;
+use pernixc_qbice::Engine;
 use pernixc_term::{
     inference,
     tuple::{Element, Tuple},
     r#type::{Primitive, Type},
 };
 use pernixc_type_system::environment::Premise;
+use qbice::{
+    serialize::Plugin, stable_hash::SeededStableHasherBuilder,
+    storage::kv_database::rocksdb::RocksDB,
+};
+use tempfile::tempdir;
 
 use super::{InferenceContext, UnifyError};
 use crate::infer::{constraint, table::Inference};
@@ -58,10 +63,22 @@ fn get_known_type(
     }
 }
 
+pub fn create_test_engine() -> (Arc<Engine>, tempfile::TempDir) {
+    let tempdir = tempdir().unwrap();
+    let engine = Engine::new_with(
+        Plugin::default(),
+        RocksDB::factory(tempdir.path()),
+        SeededStableHasherBuilder::new(0),
+    )
+    .unwrap();
+
+    (Arc::new(engine), tempdir)
+}
+
 #[tokio::test]
 async fn inference_variable_unification_with_known_type() {
     let mut context = InferenceContext::default();
-    let engine = Arc::new(Engine::default());
+    let (engine, _dir) = create_test_engine();
     let premise = Premise::default();
 
     // Create an inference variable
@@ -90,7 +107,7 @@ async fn inference_variable_unification_with_known_type() {
 #[tokio::test]
 async fn two_inference_variables_unification() {
     let mut context = InferenceContext::default();
-    let engine = Arc::new(Engine::default());
+    let (engine, _dir) = create_test_engine();
     let premise = Premise::default();
 
     // Create two inference variables
@@ -129,7 +146,7 @@ async fn two_inference_variables_unification() {
 #[tokio::test]
 async fn tuple_unification() {
     let mut context = InferenceContext::default();
-    let engine = Arc::new(Engine::default());
+    let (engine, _dir) = create_test_engine();
     let premise = Premise::default();
 
     // Create an inference variable
@@ -164,7 +181,7 @@ async fn tuple_unification() {
 #[tokio::test]
 async fn nested_tuple_unification() {
     let mut context = InferenceContext::default();
-    let engine = Arc::new(Engine::default());
+    let (engine, _dir) = create_test_engine();
     let premise = Premise::default();
 
     // Create inference variables
@@ -213,7 +230,7 @@ async fn nested_tuple_unification() {
 #[tokio::test]
 async fn cyclic_inference_detection() {
     let mut context = InferenceContext::default();
-    let engine = Arc::new(Engine::default());
+    let (engine, _dir) = create_test_engine();
     let premise = Premise::default();
 
     // Create an inference variable
@@ -240,7 +257,7 @@ async fn cyclic_inference_detection() {
 #[tokio::test]
 async fn cyclic_inference_with_tuple_elements() {
     let mut context = InferenceContext::default();
-    let engine = Arc::new(Engine::default());
+    let (engine, _dir) = create_test_engine();
     let premise = Premise::default();
 
     // Create two inference variables
@@ -271,7 +288,7 @@ async fn cyclic_inference_with_tuple_elements() {
             &Type::Inference(inference_var1),
             &tuple_with_type2,
             &premise,
-            &engine.tracked(),
+            &engine.clone().tracked(),
         )
         .await;
     assert!(result1.is_ok());
@@ -291,7 +308,7 @@ async fn cyclic_inference_with_tuple_elements() {
 #[tokio::test]
 async fn multiple_inference_variables_in_tuple() {
     let mut context = InferenceContext::default();
-    let engine = Arc::new(Engine::default());
+    let (engine, _dir) = create_test_engine();
     let premise = Premise::default();
 
     // Create multiple inference variables
@@ -344,7 +361,7 @@ async fn multiple_inference_variables_in_tuple() {
 fn partial_tuple_unification() {
     let test = async {
         let mut context = InferenceContext::default();
-        let engine = Arc::new(Engine::default());
+        let (engine, _dir) = create_test_engine();
         let premise = Premise::default();
 
         // Create an inference variable
@@ -378,7 +395,7 @@ fn partial_tuple_unification() {
 #[tokio::test]
 async fn inference_variable_with_constraint_mismatch() {
     let mut context = InferenceContext::default();
-    let engine = Arc::new(Engine::default());
+    let (engine, _dir) = create_test_engine();
     let premise = Premise::default();
 
     // Create an inference variable with integer constraint

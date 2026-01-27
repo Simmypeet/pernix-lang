@@ -6,7 +6,7 @@ use pernixc_ir::{
     transform::{Element, Transformable, Transformer},
 };
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
+use pernixc_qbice::TrackedEngine;
 use pernixc_term::{
     constant::Constant,
     lifetime::Lifetime,
@@ -77,10 +77,8 @@ impl Transformer<Lifetime> for ToBorrowTransformer {
         term: &mut Lifetime,
         _: <Lifetime as Transformable>::Source,
         _: RelativeSpan,
-    ) -> Result<(), CyclicError> {
+    ) {
         transform_lifetime(term, &mut self.generator);
-
-        Ok(())
     }
 }
 
@@ -90,10 +88,8 @@ impl Transformer<Type> for ToBorrowTransformer {
         term: &mut Type,
         _: <Type as Transformable>::Source,
         _: RelativeSpan,
-    ) -> Result<(), CyclicError> {
+    ) {
         visitor::accept_recursive_mut(term, self);
-
-        Ok(())
     }
 }
 
@@ -103,21 +99,19 @@ impl Transformer<Constant> for ToBorrowTransformer {
         term: &mut Constant,
         _: <Constant as Transformable>::Source,
         _: RelativeSpan,
-    ) -> Result<(), CyclicError> {
+    ) {
         visitor::accept_recursive_mut(term, self);
-
-        Ok(())
     }
 }
 
 pub(super) async fn transform_to_inference(
     ir: &mut IR,
     engine: &TrackedEngine,
-) -> Result<LocalRegionGenerator, CyclicError> {
+) -> LocalRegionGenerator {
     let mut transformer =
         ToBorrowTransformer { generator: LocalRegionGenerator::new() };
 
-    ir.transform(&mut transformer, engine).await?;
+    ir.transform(&mut transformer, engine).await;
 
-    Ok(transformer.generator)
+    transformer.generator
 }

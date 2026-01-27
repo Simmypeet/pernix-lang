@@ -5,8 +5,8 @@ use std::{
     hash::Hash,
 };
 
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use qbice::{Encode, Decode};
+use qbice::StableHash;
 
 /// Implements by a constraint type. Representing a restrict domain of what
 /// terms can be inferred.
@@ -34,8 +34,8 @@ pub trait Constraint: Debug + Clone + Eq + Display {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     derive_more::Display,
 )]
 pub enum Type {
@@ -238,8 +238,8 @@ impl Constraint for Type {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     derive_more::Display,
 )]
 #[display("_")]

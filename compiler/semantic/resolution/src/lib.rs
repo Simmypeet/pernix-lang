@@ -8,7 +8,9 @@ use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_target::Global;
 use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
-use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
+use qbice::{
+    Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
+};
 
 use crate::{diagnostic::Diagnostic, qualified_identifier::Resolution};
 
@@ -26,7 +28,17 @@ pub trait ElidedTermProvider<T>: Send {
 
 /// The extra namespace that is used to resolve the symbols prior to the
 /// resolution process.
-#[derive(Debug, Clone, PartialEq, Eq, Default, StableHash, Encode, Decode)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
 #[allow(missing_docs)]
 pub struct ExtraNamespace {
     pub lifetimes: HashMap<Interned<str>, Lifetime>,

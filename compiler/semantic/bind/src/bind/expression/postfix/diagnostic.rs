@@ -1,5 +1,5 @@
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use qbice::{Encode, Decode};
+use qbice::StableHash;
 
 use crate::{
     bind::expression::postfix::{
@@ -21,8 +21,8 @@ diagnostic_enum! {
         PartialEq,
         Eq,
         StableHash,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
     )]
     pub enum Diagnostic {
         FieldNotFound(FieldNotFound),

@@ -9,7 +9,7 @@ use pernixc_ir::{
     value::{Environment, register::Register},
 };
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::TrackedEngine;
+use pernixc_qbice::TrackedEngine;
 use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
@@ -150,7 +150,7 @@ impl<'a, N: Normalizer> Checker<'a, N> {
                 borrow_assignment.address.get_root_memory(),
                 self.environment(),
             )
-            .await?;
+            .await;
 
         if !self
             .context
@@ -332,7 +332,7 @@ impl<'a, N: Normalizer> Checker<'a, N> {
             }
 
             let span =
-                self.values().span_of_memory(&drop, self.environment()).await?;
+                self.values().span_of_memory(&drop, self.environment()).await;
 
             self.invalidate_borrow(
                 *borrow_register_id,

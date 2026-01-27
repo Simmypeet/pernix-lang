@@ -81,7 +81,7 @@ impl Bind<&pernixc_syntax::expression::unit::Struct>
         }
 
         let struct_generic_parameters =
-            self.engine().get_generic_parameters(struct_id).await?;
+            self.engine().get_generic_parameters(struct_id).await;
 
         let instantiation = Instantiation::from_generic_arguments(
             generic_arguments.clone(),
@@ -90,7 +90,7 @@ impl Bind<&pernixc_syntax::expression::unit::Struct>
         )
         .unwrap();
 
-        let fields = self.engine().get_fields(struct_id).await?;
+        let fields = self.engine().get_fields(struct_id).await;
 
         let fields_initializers = (collect_fields(
             self,
@@ -164,7 +164,7 @@ async fn collect_fields(
         let (field_id, field_ty, field_accessibility) = {
             let Some(field_id) = fields
                 .field_ids_by_name
-                .get(field_ident.kind.0.as_str())
+                .get(field_ident.kind.0.as_ref())
                 .copied()
             else {
                 handler.receive(

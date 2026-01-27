@@ -40,10 +40,8 @@ impl Bind<&pernixc_syntax::expression::terminator::Return> for Binder<'_> {
 
         let return_type = match self.expected_closure_return_type() {
             Some(ty) => ty.clone(),
-            None => {
-                (*self.engine().get_return_type(self.current_site()).await?)
-                    .clone()
-            }
+            None => (*self.engine().get_return_type(self.current_site()).await)
+                .clone(),
         };
 
         let value = match syntax_tree.binary() {

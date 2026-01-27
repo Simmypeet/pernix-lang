@@ -20,6 +20,9 @@ pernixc_term = { path = "../term" }
 pernixc_symbol = { path = "../symbol" }
 pernixc_type_system = { path = "../type_system" }
 pernixc_transitive_closure = { path = "../../base/transitive_closure" }
+pernixc_qbice = { path = "../../base/qbice" }
+qbice = { workspace = true }
+linkme = { workspace = true }
 derive_more = { workspace = true }
 enum-as-inner = { workspace = true }
 getset = { workspace = true }

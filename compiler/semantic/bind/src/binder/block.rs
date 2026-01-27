@@ -3,7 +3,6 @@
 use std::collections::hash_map::Entry;
 
 use bon::bon;
-use flexstr::SharedStr;
 use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
@@ -23,6 +22,7 @@ use pernixc_ir::{
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_syntax::Label;
 use pernixc_term::r#type::Type;
+use qbice::storage::intern::Interned;
 
 use crate::{
     bind::{Bind, Expression},
@@ -46,7 +46,7 @@ impl Context {
 /// of the `express` expression if it exists.
 #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
 pub struct BlockState {
-    label: Option<SharedStr>,
+    label: Option<Interned<str>>,
     incoming_values: HashMap<ID<Block>, Value>,
 
     /// The block ID to jump to after the block is finished executing.

@@ -26,7 +26,7 @@ use pernixc_ir::{
     },
 };
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::TrackedEngine;
+use pernixc_qbice::TrackedEngine;
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
     kind::{Kind, get_kind},
@@ -278,7 +278,9 @@ impl Binder<'_> {
                     Assignment::Binary(Binary {
                         lhs: Value::Register(numeric_value),
                         rhs: Value::Literal(Literal::Numeric(Numeric {
-                            integer_string: first_value.to_string().into(),
+                            integer_string: self
+                                .engine()
+                                .intern_unsized(first_value.to_string()),
                             decimal_string: None,
                             r#type: self
                                 .type_of_register(numeric_value, handler)

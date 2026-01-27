@@ -1,6 +1,5 @@
 //! Contains the logic for collecting name bindings from patterns
 
-use flexstr::SharedStr;
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
 use pernixc_ir::{
@@ -29,6 +28,7 @@ use pernixc_term::{
     tuple,
     r#type::{Qualifier, Reference, Type},
 };
+use qbice::storage::intern::Interned;
 
 use crate::{
     binder::{Binder, UnrecoverableError},
@@ -299,7 +299,7 @@ impl Binder<'_> {
         };
 
         let struct_generic_parameters =
-            self.engine().get_generic_parameters(*struct_id).await?;
+            self.engine().get_generic_parameters(*struct_id).await;
 
         let instantiation = Instantiation::from_generic_arguments(
             generic_arguments.clone(),
@@ -308,7 +308,7 @@ impl Binder<'_> {
         )
         .unwrap();
 
-        let fields = self.engine().get_fields(*struct_id).await?;
+        let fields = self.engine().get_fields(*struct_id).await;
 
         assert_eq!(
             fields.field_declaration_order.len(),
@@ -365,7 +365,7 @@ impl Binder<'_> {
         address: Address,
         address_span: Option<RelativeSpan>,
         pattern_span: RelativeSpan,
-        name: SharedStr,
+        name: Interned<str>,
         mutable: bool,
         scope_id: ID<Scope>,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
@@ -426,7 +426,7 @@ impl Binder<'_> {
         };
 
         let enum_generic_parameters =
-            self.engine().get_generic_parameters(*enum_id).await?;
+            self.engine().get_generic_parameters(*enum_id).await;
 
         let instantiation = Instantiation::from_generic_arguments(
             generic_arguments.clone(),
@@ -438,7 +438,7 @@ impl Binder<'_> {
         let mut variant_ty = self
             .engine()
             .get_variant_associated_type(enum_pat.variant_id)
-            .await?
+            .await
             .as_deref()
             .cloned()
             .unwrap();

@@ -18,6 +18,9 @@ pernixc_bind = { path = "../bind" }
 pernixc_memory_checker = { path = "../memory_checker" }
 pernixc_borrow_checker = { path = "../borrow_checker" }
 pernixc_type_system = { path = "../type_system" }
+pernixc_qbice = { path = "../../base/qbice" }
+qbice = { workspace = true }
+linkme = { workspace = true }
 derive_more = { workspace = true }
 
 

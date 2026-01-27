@@ -1,7 +1,7 @@
 //! Contains the helper query for creating an extra namespace that includes all
 //! the generic parameters scope.
 
-use std::{collections::hash_map::Entry, sync::Arc};
+use std::collections::hash_map::Entry;
 
 use linkme::distributed_slice;
 use pernixc_extend::extend;
@@ -19,6 +19,7 @@ use pernixc_term::{
 };
 use qbice::{
     Decode, Encode, Query, StableHash, executor, program::Registration,
+    storage::intern::Interned,
 };
 
 use crate::ExtraNamespace;
@@ -38,7 +39,7 @@ use crate::ExtraNamespace;
     StableHash,
     Query,
 )]
-#[value(Arc<ExtraNamespace>)]
+#[value(Interned<ExtraNamespace>)]
 #[extend(name = get_generic_parameter_namespace, by_val)]
 pub struct Key {
     /// The global ID of the symbol.
@@ -51,7 +52,7 @@ pub struct Key {
 async fn get_generic_parameter_namespace_executor(
     key: &Key,
     engine: &TrackedEngine,
-) -> Arc<ExtraNamespace> {
+) -> Interned<ExtraNamespace> {
     let mut extra_namespace = ExtraNamespace::default();
 
     let mut scope_walker = engine.scope_walker(key.symbol_id);
@@ -101,7 +102,7 @@ async fn get_generic_parameter_namespace_executor(
         }
     }
 
-    Arc::new(extra_namespace)
+    engine.intern(extra_namespace)
 }
 
 #[distributed_slice(PERNIX_PROGRAM)]

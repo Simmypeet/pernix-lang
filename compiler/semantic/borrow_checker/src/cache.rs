@@ -8,7 +8,7 @@ use pernixc_ir::{
     control_flow_graph::Point,
     value::{Environment, TypeOf, register::Register},
 };
-use pernixc_query::TrackedEngine;
+use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::{parameter::get_parameters, variance::Variance};
 use pernixc_symbol::kind::get_kind;
 use pernixc_target::Global;
@@ -115,7 +115,7 @@ impl RegionVariances {
                         Variance::Covariant,
                         term_locations.into_iter(),
                     )
-                    .await?;
+                    .await;
 
                 // insert the variance into the cache or combine it with the
                 // existing variance
@@ -139,7 +139,7 @@ impl RegionVariances {
         }
 
         let function_signature =
-            tracked_engine.get_parameters(current_site).await?;
+            tracked_engine.get_parameters(current_site).await;
 
         for parameter in function_signature.parameters.items() {
             for (region, term_locations) in
@@ -161,7 +161,7 @@ impl RegionVariances {
                         Variance::Covariant,
                         term_locations.into_iter(),
                     )
-                    .await?;
+                    .await;
 
                 // insert the variance into the cache or combine it with the
                 // existing variance

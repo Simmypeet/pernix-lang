@@ -4,9 +4,7 @@ use enum_as_inner::EnumAsInner;
 use pernixc_diagnostic::{ByteIndex, Highlight, Rendered, Report, Severity};
 use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::source_map::to_absolute_span;
 use pernixc_term::{
     display::{Configuration, Display},
@@ -15,6 +13,7 @@ use pernixc_term::{
 use pernixc_type_system::diagnostic::{
     PredicateSatisfiabilityOverflow, UnsatisfiedPredicate,
 };
+use qbice::{Decode, Encode, StableHash};
 
 use crate::UniversalRegion;
 
@@ -29,8 +28,8 @@ use crate::UniversalRegion;
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     derive_more::From,
 )]
 #[allow(missing_docs, clippy::large_enum_variant)]
@@ -43,10 +42,7 @@ pub enum Diagnostic {
 }
 
 impl Report for Diagnostic {
-    async fn report(
-        &self,
-        engine: &TrackedEngine,
-    ) -> Result<Rendered<ByteIndex>, CyclicError> {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         match self {
             Self::TypeSystem(x) => x.report(engine).await,
             Self::MovedOutWhileBorrowed(x) => x.report(engine).await,
@@ -71,8 +67,8 @@ impl Report for Diagnostic {
     Hash,
     EnumAsInner,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub enum Usage {
     /// The invalidated borrows are later used within the body of local
@@ -97,8 +93,8 @@ pub enum Usage {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct MovedOutWhileBorrowed {
     /// The span of the borrow.
@@ -119,7 +115,7 @@ async fn format_universal_regions(
         .iter()
         .filter_map(|x| x.as_non_static().and_then(|x| x.as_elided()))
         .copied()
-        .zip((0..).map(|x| format!("'{x}").into()))
+        .zip((0..).map(|x| engine.intern_unsized(format!("'{x}"))))
         .collect::<HashMap<_, _>>();
 
     let fmt_config =
@@ -143,10 +139,7 @@ async fn format_universal_regions(
 }
 
 impl Report for MovedOutWhileBorrowed {
-    async fn report(
-        &self,
-        engine: &TrackedEngine,
-    ) -> Result<Rendered<ByteIndex>, CyclicError> {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         let mut related = Vec::new();
 
         if let Usage::Local(span) = &self.usage {
@@ -158,7 +151,7 @@ impl Report for MovedOutWhileBorrowed {
             );
         }
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message(
                 "the value is moved out from the variable while it is borrowed",
             )
@@ -181,7 +174,7 @@ impl Report for MovedOutWhileBorrowed {
                 ),
             })
             .related(related)
-            .build())
+            .build()
     }
 }
 
@@ -195,8 +188,8 @@ impl Report for MovedOutWhileBorrowed {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct VariableDoesNotLiveLongEnough {
     /// The span where the borrows occurred
@@ -210,10 +203,7 @@ pub struct VariableDoesNotLiveLongEnough {
 }
 
 impl Report for VariableDoesNotLiveLongEnough {
-    async fn report(
-        &self,
-        engine: &TrackedEngine,
-    ) -> Result<Rendered<ByteIndex>, CyclicError> {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         let mut related = vec![
             Highlight::builder()
                 .span(engine.to_absolute_span(&self.borrow_span).await)
@@ -230,7 +220,7 @@ impl Report for VariableDoesNotLiveLongEnough {
             );
         }
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message("the variable doesn't live long enough")
             .severity(Severity::Error)
             .primary_highlight(
@@ -253,7 +243,7 @@ impl Report for VariableDoesNotLiveLongEnough {
                 ),
             })
             .related(related)
-            .build())
+            .build()
     }
 }
 
@@ -267,8 +257,8 @@ impl Report for VariableDoesNotLiveLongEnough {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct MutablyAccessWhileImmutablyBorrowed {
     /// The span of the mutable access.
@@ -282,10 +272,7 @@ pub struct MutablyAccessWhileImmutablyBorrowed {
 }
 
 impl Report for MutablyAccessWhileImmutablyBorrowed {
-    async fn report(
-        &self,
-        engine: &TrackedEngine,
-    ) -> Result<Rendered<ByteIndex>, CyclicError> {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         let mut related = Vec::new();
 
         let in_loop = self
@@ -313,7 +300,7 @@ impl Report for MutablyAccessWhileImmutablyBorrowed {
             );
         }
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message("mutable access is done while it is borrowed")
             .severity(Severity::Error)
             .primary_highlight(
@@ -343,7 +330,7 @@ impl Report for MutablyAccessWhileImmutablyBorrowed {
                 ),
             })
             .related(related)
-            .build())
+            .build()
     }
 }
 
@@ -357,8 +344,8 @@ impl Report for MutablyAccessWhileImmutablyBorrowed {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct AccessWhileMutablyBorrowed {
     /// The span of the access.
@@ -372,10 +359,7 @@ pub struct AccessWhileMutablyBorrowed {
 }
 
 impl Report for AccessWhileMutablyBorrowed {
-    async fn report(
-        &self,
-        engine: &TrackedEngine,
-    ) -> Result<Rendered<ByteIndex>, CyclicError> {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         let mut related = Vec::new();
 
         let in_loop = self
@@ -403,7 +387,7 @@ impl Report for AccessWhileMutablyBorrowed {
             );
         }
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message("access is done while it is mutably borrowed")
             .severity(Severity::Error)
             .primary_highlight(
@@ -429,7 +413,7 @@ impl Report for AccessWhileMutablyBorrowed {
                     "the borrow is used in the drop implementation".to_string(),
                 ),
             })
-            .build())
+            .build()
     }
 }
 

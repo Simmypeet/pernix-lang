@@ -164,9 +164,6 @@ impl<N: Normalizer> Checker<'_, N> {
 
                         return Err(UnrecoverableError::Reported);
                     }
-                    Err(pernixc_type_system::Error::CyclicDependency(
-                        error,
-                    )) => return Err(error.into()),
                 }
             }
         }
@@ -250,7 +247,7 @@ impl<N: Normalizer> Checker<'_, N> {
                 .await
             }
             Instruction::ScopePop(scope_pop) => {
-                let mut dropped_memories = self
+                let dropped_memories = self
                     .values()
                     .allocas
                     .iter()
@@ -268,14 +265,10 @@ impl<N: Normalizer> Checker<'_, N> {
                     && scope_pop.0
                         == self.context().ir().scope_tree.root_scope_id()
                 {
-                    let callable = self
+                    let _callable = self
                         .tracked_engine()
                         .get_parameters(self.current_site())
-                        .await?;
-
-                    dropped_memories.extend(
-                        callable.parameters.ids().map(Memory::Parameter),
-                    );
+                        .await;
                 }
 
                 for memory in dropped_memories {

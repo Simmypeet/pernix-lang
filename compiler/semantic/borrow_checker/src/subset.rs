@@ -13,7 +13,7 @@ use pernixc_ir::{
     },
 };
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::TrackedEngine;
+use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::{
     elided_lifetime::get_elided_lifetimes, return_type::get_return_type,
     variance::Variance,
@@ -292,7 +292,7 @@ impl<N: Normalizer> Builder<'_, N> {
                     self.context
                         .tracked_engine()
                         .get_generic_parameters(global_id)
-                        .await?
+                        .await
                         .lifetime_order()
                         .iter()
                         .copied()
@@ -314,7 +314,7 @@ impl<N: Normalizer> Builder<'_, N> {
                     self.context
                         .tracked_engine()
                         .get_elided_lifetimes(global_id)
-                        .await?
+                        .await
                         .ids()
                         .map(|x| {
                             Region::Universal(UniversalRegion::NonStatic(
@@ -449,7 +449,7 @@ impl<N: Normalizer> Builder<'_, N> {
                 .context
                 .tracked_engine()
                 .get_return_type(self.context.current_site())
-                .await?;
+                .await;
 
             let mut constraints = BTreeSet::new();
             self.context
@@ -875,7 +875,7 @@ impl<'a, N: Normalizer> Walker<'a, N> {
             let predicates = self
                 .tracked_engine()
                 .get_active_premise(self.current_site())
-                .await?;
+                .await;
 
             let mut adding_edges = HashSet::default();
 

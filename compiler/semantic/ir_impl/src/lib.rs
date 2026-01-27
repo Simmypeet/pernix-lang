@@ -1,20 +1,23 @@
 //! Crate for implementing the IR queries.
 
-use std::{borrow::Cow, sync::Arc};
+use std::borrow::Cow;
 
+use linkme::distributed_slice;
 use pernixc_bind::binder::{self, Binder, UnrecoverableError};
 use pernixc_diagnostic::{ByteIndex, Rendered, Report};
 use pernixc_handler::Storage;
 use pernixc_ir::{FunctionIR, value};
-use pernixc_query::TrackedEngine;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_symbol::{
     get_all_function_with_body_ids, syntax::get_function_body_syntax,
 };
 use pernixc_target::{Global, TargetID};
 use pernixc_tokio::{chunk::chunk_for_tasks, scoped};
 use pernixc_type_system::environment::{Environment, get_active_premise};
+use qbice::{
+    Decode, Encode, Identifiable, StableHash, executor, program::Registration,
+    storage::intern::Interned,
+};
 
 /// A collection of all diagnostics related to IRs.
 #[derive(
@@ -23,8 +26,9 @@ use pernixc_type_system::environment::{Environment, get_active_premise};
     PartialEq,
     Eq,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
+    Identifiable,
     derive_more::From,
 )]
 #[allow(missing_docs)]
@@ -37,11 +41,8 @@ pub enum Diagnostic {
 impl Report for Diagnostic {
     async fn report(
         &self,
-        engine: &pernixc_query::TrackedEngine,
-    ) -> Result<
-        pernixc_diagnostic::Rendered<pernixc_source_file::ByteIndex>,
-        pernixc_query::runtime::executor::CyclicError,
-    > {
+        engine: &pernixc_qbice::TrackedEngine,
+    ) -> pernixc_diagnostic::Rendered<pernixc_source_file::ByteIndex> {
         match self {
             Self::Bind(d) => d.report(engine).await,
             Self::MemoryChecker(d) => d.report(engine).await,
@@ -50,43 +51,50 @@ impl Report for Diagnostic {
     }
 }
 
-#[pernixc_query::query(
-    key(BuildFunctionIRKey),
-    executor(BuildIRExecutor),
-    value((Arc<FunctionIR>, Arc<[Diagnostic]>)),
-    id(Global<pernixc_symbol::ID>)
+/// Query key for building function IR with diagnostics.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    qbice::Query,
 )]
+#[value((Interned<FunctionIR>, Interned<[Diagnostic]>))]
+pub struct BuildFunctionIRKey(pub Global<pernixc_symbol::ID>);
+
+#[executor(config = Config)]
 #[allow(clippy::too_many_lines)]
-pub async fn ir_with_diagnostic_executor(
-    id: Global<pernixc_symbol::ID>,
+async fn ir_with_diagnostic_executor(
+    &BuildFunctionIRKey(id): &BuildFunctionIRKey,
     engine: &TrackedEngine,
-) -> Result<
-    (Arc<FunctionIR>, Arc<[Diagnostic]>),
-    pernixc_query::runtime::executor::CyclicError,
-> {
+) -> (Interned<FunctionIR>, Interned<[Diagnostic]>) {
     let function_body_syntax = engine.get_function_body_syntax(id).await;
 
     let Some(function_body_syntax) = function_body_syntax else {
-        return Ok((
-            Arc::new(pernixc_ir::FunctionIR::default()),
-            Arc::default(),
-        ));
+        return (
+            engine.intern(pernixc_ir::FunctionIR::default()),
+            engine.intern_unsized([]),
+        );
     };
 
     let storage = Storage::<Diagnostic>::default();
-    let environment = binder::Environment::new(engine, id).await?;
+    let environment = binder::Environment::new(engine, id).await;
 
     let mut binder =
         match Binder::new_function(engine, &environment, &storage).await {
             Ok(binder) => binder,
             Err(UnrecoverableError::Reported) => {
-                return Ok((
-                    Arc::new(pernixc_ir::FunctionIR::default()),
-                    storage.into_vec().into(),
-                ));
-            }
-            Err(UnrecoverableError::CyclicDependency(error)) => {
-                return Err(error);
+                return (
+                    engine.intern(pernixc_ir::FunctionIR::default()),
+                    engine.intern_unsized(storage.into_vec()),
+                );
             }
         };
 
@@ -95,14 +103,11 @@ pub async fn ir_with_diagnostic_executor(
     {
         match binder.bind_statement(&statement, &storage).await {
             Ok(()) => {}
-            Err(UnrecoverableError::CyclicDependency(error)) => {
-                return Err(error);
-            }
             Err(UnrecoverableError::Reported) => {
-                return Ok((
-                    Arc::new(pernixc_ir::FunctionIR::default()),
-                    storage.into_vec().into(),
-                ));
+                return (
+                    engine.intern(pernixc_ir::FunctionIR::default()),
+                    engine.intern_unsized(storage.into_vec()),
+                );
             }
         }
     }
@@ -110,23 +115,20 @@ pub async fn ir_with_diagnostic_executor(
     // finalize the binder to an ir
     let mut ir = match binder.finalize_function_ir(&storage).await {
         Ok(ir) => ir,
-        Err(UnrecoverableError::CyclicDependency(error)) => {
-            return Err(error);
-        }
         Err(UnrecoverableError::Reported) => {
-            return Ok((
-                Arc::new(pernixc_ir::FunctionIR::default()),
-                storage.into_vec().into(),
-            ));
+            return (
+                engine.intern(pernixc_ir::FunctionIR::default()),
+                engine.intern_unsized(storage.into_vec()),
+            );
         }
     };
 
     // if there's an error from binding, do not proceed to analyses
     if !storage.as_vec().is_empty() {
-        return Ok((Arc::new(ir), storage.into_vec().into()));
+        return (engine.intern(ir), engine.intern_unsized(storage.into_vec()));
     }
 
-    let premise = engine.get_active_premise(id).await?;
+    let premise = engine.get_active_premise(id).await;
     let ty_env = Environment::new(
         Cow::Borrowed(&premise),
         Cow::Borrowed(engine),
@@ -138,20 +140,17 @@ pub async fn ir_with_diagnostic_executor(
         .await
     {
         Ok(()) => {}
-        Err(UnrecoverableError::CyclicDependency(error)) => {
-            return Err(error);
-        }
         Err(UnrecoverableError::Reported) => {
-            return Ok((
-                Arc::new(pernixc_ir::FunctionIR::default()),
-                storage.into_vec().into(),
-            ));
+            return (
+                engine.intern(pernixc_ir::FunctionIR::default()),
+                engine.intern_unsized(storage.into_vec()),
+            );
         }
     }
 
     // if there's an error, should not proceed to borrow checking
     if !storage.as_vec().is_empty() {
-        return Ok((Arc::new(ir), storage.into_vec().into()));
+        return (engine.intern(ir), engine.intern_unsized(storage.into_vec()));
     }
 
     // do borrow checking analysis
@@ -167,89 +166,101 @@ pub async fn ir_with_diagnostic_executor(
     .await
     {
         Ok(()) => {}
-
-        Err(UnrecoverableError::CyclicDependency(error)) => {
-            return Err(error);
-        }
-
         Err(UnrecoverableError::Reported) => {
-            return Ok((
-                Arc::new(pernixc_ir::FunctionIR::default()),
-                storage.into_vec().into(),
-            ));
+            return (
+                engine.intern(pernixc_ir::FunctionIR::default()),
+                engine.intern_unsized(storage.into_vec()),
+            );
         }
     }
 
-    Ok((Arc::new(ir), storage.into_vec().into()))
+    (engine.intern(ir), engine.intern_unsized(storage.into_vec()))
 }
 
-pernixc_register::register!(BuildFunctionIRKey, BuildIRExecutor);
+#[distributed_slice(PERNIX_PROGRAM)]
+static BUILD_FUNCTION_IR_EXECUTOR: Registration<Config> =
+    Registration::new::<BuildFunctionIRKey, IrWithDiagnosticExecutor>();
 
-#[pernixc_query::query(
-    key(SingleRenderedKey),
-    executor(SingleRenderedExecutor),
-    value(Arc<[Rendered<ByteIndex>]>),
-    id(Global<pernixc_symbol::ID>)
+/// Query key for rendering diagnostics of a single function IR.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    qbice::Query,
 )]
-pub async fn ir_diagnostic_executor(
-    id: Global<pernixc_symbol::ID>,
+#[value(Interned<[Rendered<ByteIndex>]>)]
+struct SingleRenderedKey(pub Global<pernixc_symbol::ID>);
+
+#[executor(config = Config)]
+async fn ir_diagnostic_executor(
+    &SingleRenderedKey(id): &SingleRenderedKey,
     engine: &TrackedEngine,
-) -> Result<
-    Arc<[Rendered<ByteIndex>]>,
-    pernixc_query::runtime::executor::CyclicError,
-> {
-    let (_ir, diagnostics) = engine.query(&BuildFunctionIRKey(id)).await?;
+) -> Interned<[Rendered<ByteIndex>]> {
+    let (_ir, diagnostics) = engine.query(&BuildFunctionIRKey(id)).await;
 
     let mut rendered_diagnostics = Vec::new();
 
     for diag in diagnostics.iter() {
-        rendered_diagnostics.push(diag.report(engine).await?);
+        rendered_diagnostics.push(diag.report(engine).await);
     }
 
-    Ok(Arc::from(rendered_diagnostics))
+    engine.intern_unsized(rendered_diagnostics)
 }
 
-pernixc_register::register!(SingleRenderedKey, SingleRenderedExecutor);
+#[distributed_slice(PERNIX_PROGRAM)]
+static SINGLE_RENDERED_EXECUTOR: Registration<Config> =
+    Registration::new::<SingleRenderedKey, IrDiagnosticExecutor>();
 
-#[pernixc_query::executor(key(pernixc_ir::Key), name(ExtractIRExecutor))]
-pub async fn extract_ir_executor(
-    key: &pernixc_ir::Key,
+#[executor(config = Config)]
+async fn extract_ir_executor(
+    &pernixc_ir::Key { function_id }: &pernixc_ir::Key,
     engine: &TrackedEngine,
-) -> Result<
-    Arc<pernixc_ir::FunctionIR>,
-    pernixc_query::runtime::executor::CyclicError,
-> {
-    let (ir, _diagnostics) = engine.query(&BuildFunctionIRKey(key.0)).await?;
+) -> Interned<pernixc_ir::FunctionIR> {
+    let (ir, _diagnostics) =
+        engine.query(&BuildFunctionIRKey(function_id)).await;
 
-    Ok(ir)
+    ir
 }
 
 // Register the IR building query.
-pernixc_register::register!(pernixc_ir::Key, ExtractIRExecutor);
+#[distributed_slice(PERNIX_PROGRAM)]
+static EXTRACT_IR_EXECUTOR: Registration<Config> =
+    Registration::new::<pernixc_ir::Key, ExtractIrExecutor>();
 
 /// The main query for extracting all diagnostics related to IRs in a target
-#[pernixc_query::query(
-    key(AllRenderedKey),
-    executor(AllRenderedExecutor),
-    value(Arc<[Arc<[pernixc_diagnostic::Rendered<ByteIndex>]>]>),
-    id(TargetID)
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    qbice::Query,
 )]
-pub async fn all_ir_rendered_diagnostics_executor(
-    id: TargetID,
+#[value(Interned<[Interned<[pernixc_diagnostic::Rendered<ByteIndex>]>]>)]
+pub struct AllRenderedKey(pub TargetID);
+
+#[executor(config = Config)]
+async fn all_ir_rendered_diagnostics_executor(
+    &AllRenderedKey(id): &AllRenderedKey,
     engine: &TrackedEngine,
-) -> Result<
-    Arc<[Arc<[pernixc_diagnostic::Rendered<ByteIndex>]>]>,
-    pernixc_query::runtime::executor::CyclicError,
-> {
+) -> Interned<[Interned<[pernixc_diagnostic::Rendered<ByteIndex>]>]> {
     scoped!(|handles| async move {
         let mut diagnostics = Vec::new();
         let all_function_ids = engine.get_all_function_with_body_ids(id).await;
-
-        // SAFETY: each diagnostic for each IR is independent, so it's safe to
-        // parallelize
-        unsafe {
-            engine.start_parallel();
-        }
 
         for ids in all_function_ids
             .chunk_for_tasks()
@@ -260,25 +271,23 @@ pub async fn all_ir_rendered_diagnostics_executor(
                 let mut chunk_diagnostics = Vec::new();
                 for id in ids {
                     chunk_diagnostics
-                        .push(engine.query(&SingleRenderedKey(id)).await?);
+                        .push(engine.query(&SingleRenderedKey(id)).await);
                 }
 
-                Ok(chunk_diagnostics)
+                chunk_diagnostics
             });
         }
 
-        unsafe {
-            engine.end_parallel();
-        }
-
         while let Some(handle) = handles.next().await {
-            for diag in handle? {
+            for diag in handle {
                 diagnostics.push(diag);
             }
         }
 
-        Ok(diagnostics.into())
+        engine.intern_unsized(diagnostics)
     })
 }
 
-pernixc_register::register!(AllRenderedKey, AllRenderedExecutor);
+#[distributed_slice(PERNIX_PROGRAM)]
+static ALL_RENDERED_EXECUTOR: Registration<Config> =
+    Registration::new::<AllRenderedKey, AllIrRenderedDiagnosticsExecutor>();

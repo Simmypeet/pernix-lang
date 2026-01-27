@@ -1,18 +1,16 @@
-use flexstr::SharedStr;
 use pernixc_arena::ID;
 use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_hash::HashSet;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor};
+use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::fields::{Field, get_fields};
-use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
-use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{
     accessibility::accessibility_description, kind::get_kind,
     name::get_qualified_name, source_map::to_absolute_span,
 };
 use pernixc_target::Global;
+use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
 use crate::diagnostic_enum;
 
@@ -23,8 +21,8 @@ diagnostic_enum! {
         PartialEq,
         Eq,
         StableHash,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
     )]
     pub enum Diagnostic {
         ExpectedStructSymbol(ExpectedStructSymbol),
@@ -45,8 +43,8 @@ diagnostic_enum! {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct ExpectedStructSymbol {
@@ -61,13 +59,12 @@ impl Report for ExpectedStructSymbol {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let span = engine.to_absolute_span(&self.span).await;
         let qualified_name = engine.get_qualified_name(self.id).await;
         let kind = engine.get_kind(self.id).await;
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .severity(Severity::Error)
             .message("expected struct symbol for struct expression")
             .primary_highlight(
@@ -79,7 +76,7 @@ impl Report for ExpectedStructSymbol {
                     .span(span)
                     .build(),
             )
-            .build())
+            .build()
     }
 }
 
@@ -93,8 +90,8 @@ impl Report for ExpectedStructSymbol {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct FieldNotFound {
     /// The span to the identifier that refers to non-existent field.
@@ -104,20 +101,19 @@ pub struct FieldNotFound {
     pub struct_id: Global<pernixc_symbol::ID>,
 
     /// The name of the field that was not found.
-    pub field_name: SharedStr,
+    pub field_name: Interned<str>,
 }
 
 impl Report for FieldNotFound {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let identifier_span =
             engine.to_absolute_span(&self.identifier_span).await;
         let struct_name = engine.get_qualified_name(self.struct_id).await;
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .severity(Severity::Error)
             .message("field not found in struct")
             .primary_highlight(
@@ -125,12 +121,12 @@ impl Report for FieldNotFound {
                     .message(format!(
                         "field '{field_name}' not found in struct \
                          '{struct_name}'",
-                        field_name = self.field_name
+                        field_name = self.field_name.as_ref()
                     ))
                     .span(identifier_span)
                     .build(),
             )
-            .build())
+            .build()
     }
 }
 
@@ -145,8 +141,8 @@ impl Report for FieldNotFound {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct FieldIsNotAccessible {
     /// The ID of the field that is not accessible.
@@ -166,8 +162,7 @@ impl Report for FieldIsNotAccessible {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let identifier_span =
             engine.to_absolute_span(&self.referring_identifier_span).await;
         let struct_name = engine.get_qualified_name(self.struct_id).await;
@@ -175,7 +170,7 @@ impl Report for FieldIsNotAccessible {
             engine.get_qualified_name(self.referring_site).await;
 
         // Get the fields to access the field name
-        let fields = engine.get_fields(self.struct_id).await.unwrap();
+        let fields = engine.get_fields(self.struct_id).await;
         let field = &fields.fields[self.field_id];
 
         // Get the field's accessibility description for the help message
@@ -185,23 +180,26 @@ impl Report for FieldIsNotAccessible {
             )
             .await;
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .severity(Severity::Error)
             .message("field is not accessible")
             .primary_highlight(
                 Highlight::builder()
                     .message(format!(
                         "field '{}' of struct '{}' is not accessible from '{}'",
-                        field.name, struct_name, referring_site_name
+                        field.name.as_ref(),
+                        struct_name,
+                        referring_site_name
                     ))
                     .span(identifier_span)
                     .build(),
             )
             .help_message(format!(
                 "field '{}' is {}",
-                field.name, field_accessibility_description
+                field.name.as_ref(),
+                field_accessibility_description
             ))
-            .build())
+            .build()
     }
 }
 
@@ -216,8 +214,8 @@ impl Report for FieldIsNotAccessible {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct DuplicatedFieldInitialization {
     /// The ID of the field that is initialized more than once.
@@ -237,8 +235,7 @@ impl Report for DuplicatedFieldInitialization {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let duplicate_span =
             engine.to_absolute_span(&self.duplicate_initialization_span).await;
         let prior_span =
@@ -246,17 +243,18 @@ impl Report for DuplicatedFieldInitialization {
         let struct_name = engine.get_qualified_name(self.struct_id).await;
 
         // Get the field name
-        let fields = engine.get_fields(self.struct_id).await.unwrap();
+        let fields = engine.get_fields(self.struct_id).await;
         let field = &fields.fields[self.field_id];
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .severity(Severity::Error)
             .message("field is initialized multiple times")
             .primary_highlight(
                 Highlight::builder()
                     .message(format!(
                         "field '{}' of struct '{}' is initialized here again",
-                        field.name, struct_name
+                        field.name.as_ref(),
+                        struct_name
                     ))
                     .span(duplicate_span)
                     .build(),
@@ -267,12 +265,12 @@ impl Report for DuplicatedFieldInitialization {
                     .span(prior_span)
                     .build(),
             ])
-            .build())
+            .build()
     }
 }
 
 /// The struct expression contains uninitialized fields.
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct UninitializedFields {
     /// The ID of the struct where the fields are uninitialized.
     pub struct_id: Global<pernixc_symbol::ID>,
@@ -288,14 +286,13 @@ impl Report for UninitializedFields {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let struct_span =
             engine.to_absolute_span(&self.struct_expression_span).await;
         let struct_name = engine.get_qualified_name(self.struct_id).await;
 
         // Get the field names
-        let fields = engine.get_fields(self.struct_id).await.unwrap();
+        let fields = engine.get_fields(self.struct_id).await;
         let uninitialized_field_names: Vec<String> = self
             .uninitialized_fields
             .iter()
@@ -324,7 +321,7 @@ impl Report for UninitializedFields {
         let verb =
             if uninitialized_field_names.len() == 1 { "is" } else { "are" };
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .severity(Severity::Error)
             .message("struct has uninitialized fields")
             .primary_highlight(
@@ -336,6 +333,6 @@ impl Report for UninitializedFields {
                     .span(struct_span)
                     .build(),
             )
-            .build())
+            .build()
     }
 }

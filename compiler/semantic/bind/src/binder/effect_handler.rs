@@ -15,7 +15,7 @@ use pernixc_ir::{
     value::register::do_with::{Do, OperationHandler},
 };
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::TrackedEngine;
+use pernixc_qbice::TrackedEngine;
 use pernixc_target::Global;
 use pernixc_term::{generic_arguments::GenericArguments, r#type::Type};
 use pernixc_type_system::environment::Premise;
@@ -44,9 +44,9 @@ impl transform::Element for Context {
     >(
         &mut self,
         transformer: &mut T,
-        engine: &pernixc_query::TrackedEngine,
-    ) -> Result<(), pernixc_query::runtime::executor::CyclicError> {
-        self.handling_scopes.transform(transformer, engine).await
+        engine: &TrackedEngine,
+    ) {
+        self.handling_scopes.transform(transformer, engine).await;
     }
 }
 

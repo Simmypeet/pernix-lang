@@ -261,7 +261,7 @@ async fn visible_traits(
             }
 
             let Some(implemented) =
-                binder.engine().get_implements(current_id).await?
+                binder.engine().get_implements(current_id).await
             else {
                 continue;
             };
@@ -296,7 +296,7 @@ async fn trait_method_candidates(
     for trait_id in visibile_traits.iter().copied() {
         // check if the trait has atleast one type generic parameter
         let generic_parameters =
-            binder.engine().get_generic_parameters(trait_id).await?;
+            binder.engine().get_generic_parameters(trait_id).await;
 
         // skip traits without type parameters
         let Some(first_type_parameter) =
@@ -321,7 +321,7 @@ async fn trait_method_candidates(
             continue;
         }
 
-        let parameters = binder.engine().get_parameters(method_id).await?;
+        let parameters = binder.engine().get_parameters(method_id).await;
 
         // the first parameter must be either `T`, `&T` or `&mut T` where `T` is
         // the first type parameter of the trait
@@ -381,7 +381,7 @@ async fn attempt_match_trait_method_candidate(
     );
 
     let trait_generic_parameters =
-        binder.engine().get_generic_parameters(parent_trait_id).await?;
+        binder.engine().get_generic_parameters(parent_trait_id).await;
 
     // assume `T` is the type of `LValue` and `U` is the type in the method
     // receiver.
@@ -477,9 +477,6 @@ async fn attempt_match_trait_method_candidate(
                 );
 
                 Err(UnrecoverableError::Reported)
-            }
-            pernixc_type_system::Error::CyclicDependency(cyclic_error) => {
-                Err(UnrecoverableError::CyclicDependency(cyclic_error))
             }
         },
     }
@@ -618,10 +615,7 @@ async fn attempt_trait_method_call(
         Instantiation::from_generic_arguments(
             generic_arguments,
             candidate.method_id,
-            &*binder
-                .engine()
-                .get_generic_parameters(candidate.method_id)
-                .await?,
+            &*binder.engine().get_generic_parameters(candidate.method_id).await,
         )
         .expect("generic arguments have been verified")
     } else {
@@ -629,10 +623,7 @@ async fn attempt_trait_method_call(
         extend_inference_instantiation(
             binder,
             &mut inst,
-            &*binder
-                .engine()
-                .get_generic_parameters(candidate.method_id)
-                .await?,
+            &*binder.engine().get_generic_parameters(candidate.method_id).await,
             candidate.method_id,
         );
 
@@ -643,7 +634,7 @@ async fn attempt_trait_method_call(
         binder.engine().get_parent(candidate.method_id).await.unwrap(),
     );
     let parent_trait_generic_parameters =
-        binder.engine().get_generic_parameters(parent_trait_id).await?;
+        binder.engine().get_generic_parameters(parent_trait_id).await;
 
     inst.lifetimes.extend(
         parent_trait_generic_parameters.lifetime_parameters_as_order().map(
@@ -756,7 +747,7 @@ async fn attempt_adt_method_call(
         return Ok(Err(lvalue));
     }
 
-    let implemented = binder.engine().get_implemented(*id).await?;
+    let implemented = binder.engine().get_implemented(*id).await;
 
     let Some((method_id, receiver_kind)) = find_method_in_implemented(
         binder,
@@ -790,7 +781,7 @@ async fn attempt_adt_method_call(
         Instantiation::from_generic_arguments(
             generic_arguments,
             method_id,
-            &*binder.engine().get_generic_parameters(method_id).await?,
+            &*binder.engine().get_generic_parameters(method_id).await,
         )
         .expect("generic arguments have been verified")
     } else {
@@ -798,7 +789,7 @@ async fn attempt_adt_method_call(
         extend_inference_instantiation(
             binder,
             &mut inst,
-            &*binder.engine().get_generic_parameters(method_id).await?,
+            &*binder.engine().get_generic_parameters(method_id).await,
             method_id,
         );
 
@@ -809,7 +800,7 @@ async fn attempt_adt_method_call(
         .target_id
         .make_global(binder.engine().get_parent(method_id).await.unwrap());
     let parent_impl_generic_parameters =
-        binder.engine().get_generic_parameters(parent_impl_id).await?;
+        binder.engine().get_generic_parameters(parent_impl_id).await;
 
     extend_inference_instantiation(
         binder,
@@ -819,7 +810,7 @@ async fn attempt_adt_method_call(
     );
 
     let parent_impl_generic_arguments =
-        binder.engine().get_implements_argument(parent_impl_id).await?;
+        binder.engine().get_implements_argument(parent_impl_id).await;
 
     // type check the receiver
     if let Some(parent_impl_generic_arguments) = parent_impl_generic_arguments {
@@ -908,7 +899,7 @@ async fn find_method_in_implemented(
         }
 
         // check if the method has a receiver
-        let parameters = binder.engine().get_parameters(member).await?;
+        let parameters = binder.engine().get_parameters(member).await;
 
         if parameters.parameters.is_empty() {
             return Ok(None);
@@ -921,7 +912,7 @@ async fn find_method_in_implemented(
         .clone();
 
         let Some(generic_arguments) =
-            binder.engine().get_implements_argument(impl_id).await?
+            binder.engine().get_implements_argument(impl_id).await
         else {
             return Ok(None);
         };

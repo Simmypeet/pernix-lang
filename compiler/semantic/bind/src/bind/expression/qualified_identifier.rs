@@ -59,7 +59,7 @@ impl Bind<&pernixc_syntax::QualifiedIdentifier> for Binder<'_> {
                 let variant = self
                     .engine()
                     .get_variant_associated_type(variant_res.variant_id)
-                    .await?;
+                    .await;
 
                 let parent_enum_id = Global::new(
                     variant_res.variant_id.target_id,
@@ -69,10 +69,8 @@ impl Bind<&pernixc_syntax::QualifiedIdentifier> for Binder<'_> {
                         .unwrap(),
                 );
 
-                let enum_generic_parameters = self
-                    .engine()
-                    .get_generic_parameters(parent_enum_id)
-                    .await?;
+                let enum_generic_parameters =
+                    self.engine().get_generic_parameters(parent_enum_id).await;
 
                 // expected a variant type
                 if variant.is_some() {
@@ -185,7 +183,7 @@ async fn bind_simple_identifier(
         return Ok(None);
     }
 
-    let Some(name) = binder.stack().search(identifier.kind.0.as_str()) else {
+    let Some(name) = binder.stack().search(identifier.kind.0.as_ref()) else {
         return Ok(None);
     };
 
