@@ -14,7 +14,7 @@ use pernixc_symbol::{
 use pernixc_syntax::QualifiedIdentifier;
 use pernixc_target::{Global, TargetID, get_invocation_arguments};
 use qbice::{
-    Decode, Encode, Identifiable, Query, StableHash, executor,
+    Decode, Encode, ExecutionStyle, Identifiable, Query, StableHash, executor,
     program::Registration, storage::intern::Interned,
 };
 
@@ -348,7 +348,7 @@ enum ModuleKind {
     },
 }
 
-#[executor(config = Config)]
+#[executor(config = Config, style = ExecutionStyle::Firewall)]
 #[allow(clippy::too_many_lines)]
 async fn table_executor(
     key: &TableKey,
@@ -558,7 +558,7 @@ pub struct Map {
 #[value(Map)]
 pub struct MapKey(pub TargetID);
 
-#[executor(config = Config)]
+#[executor(config = Config, style = ExecutionStyle::Firewall)]
 #[allow(clippy::too_many_lines)]
 async fn map_executor(key: &MapKey, engine: &TrackedEngine) -> Map {
     #[allow(
@@ -722,26 +722,56 @@ async fn all_symbol_ids_executor(
 static ALL_SYMBOL_ID_EXECUTOR: Registration<Config> =
     Registration::new::<AllSymbolIDKey, AllSymbolIdsExecutor>();
 
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    Query,
+)]
+#[value(Option<Key>)]
+pub struct GetTableKeyFromSymbolID {
+    pub symbol_id: Global<ID>,
+}
+
+#[executor(config = Config, style = ExecutionStyle::Projection)]
+pub async fn get_table_key_from_symbol_id_executor(
+    key: &GetTableKeyFromSymbolID,
+    engine: &TrackedEngine,
+) -> Option<Key> {
+    let map = engine.query(&MapKey(key.symbol_id.target_id)).await;
+
+    map.keys_by_symbol_id.get(&key.symbol_id.id).map(|entry| {
+        entry.as_ref().map_or_else(
+            || Key::Root(key.symbol_id.target_id),
+            |x| Key::Submodule {
+                external_submodule: x.clone(),
+                target_id: key.symbol_id.target_id,
+            },
+        )
+    })
+}
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static GET_TABLE_KEY_FROM_SYMBOL_ID_EXECUTOR: Registration<Config> =
+    Registration::new::<GetTableKeyFromSymbolID, GetTableKeyFromSymbolIdExecutor>(
+    );
+
 /// Gets the table node where the information of the given symbol ID is stored.
 #[extend]
 pub async fn get_table_of_symbol(
     self: &TrackedEngine,
     id: Global<ID>,
-) -> Interned<Table> {
-    let map = self.query(&MapKey(id.target_id)).await;
+) -> Option<Interned<Table>> {
+    let node_key =
+        self.query(&GetTableKeyFromSymbolID { symbol_id: id }).await?;
 
-    let node_key = map
-        .keys_by_symbol_id
-        .get(&id.id)
-        .unwrap_or_else(|| panic!("invalid symbol ID: {:?}", id.id))
-        .as_ref()
-        .map_or_else(
-            || Key::Root(id.target_id),
-            |x| Key::Submodule {
-                external_submodule: x.clone(),
-                target_id: id.target_id,
-            },
-        );
-
-    self.query(&TableKey(node_key)).await
+    Some(self.query(&TableKey(node_key)).await)
 }

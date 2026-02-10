@@ -262,7 +262,7 @@ struct FileError {
     symbols: Interned<[Diagnostic]>,
 }
 
-fn populate_file_errors(
+async fn populate_file_errors(
     engine: &TrackedEngine,
     target_id: TargetID,
     file_errors_list: &mut JoinList<FileError>,
@@ -345,7 +345,7 @@ async fn rendered_executor(
         // Get the map for this target to discover all table keys
         let map = engine.query(&MapKey(*target_id)).await;
 
-        populate_file_errors(engine, *target_id, file_diagnostics, &map);
+        populate_file_errors(engine, *target_id, file_diagnostics, &map).await;
 
         populate_member_is_more_accessible_diagnostics(
             engine,

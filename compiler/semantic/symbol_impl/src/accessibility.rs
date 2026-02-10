@@ -41,7 +41,7 @@ async fn accessibility_executor(
         | Kind::ExternFunction
         | Kind::Effect
         | Kind::Function => {
-            let table = engine.get_table_of_symbol(id).await;
+            let table = engine.get_table_of_symbol(id).await.unwrap();
             table.accessibilities.get(&id.id).copied().unwrap()
         }
 

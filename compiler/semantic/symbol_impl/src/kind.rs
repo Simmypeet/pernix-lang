@@ -7,7 +7,7 @@ use pernixc_symbol::{
     AllAdtIDKey, AllFunctionWithBodyIDKey, AllImplementsIDKey, ID,
     kind::{Key, Kind},
 };
-use pernixc_target::TargetID;
+use pernixc_target::{Global, TargetID};
 use pernixc_tokio::{chunk::chunk_for_tasks, scoped};
 use qbice::{
     Decode, Encode, Executor, Identifiable, Query, StableHash, executor,
@@ -16,16 +16,43 @@ use qbice::{
 
 use crate::table::{self, MapKey, get_table_of_symbol};
 
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    Query,
+)]
+#[value(Option<Kind>)]
+pub struct ProjectionKey {
+    pub symbol_id: Global<pernixc_symbol::ID>,
+}
+
+#[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
+async fn projection_executor(
+    key: &ProjectionKey,
+    engine: &TrackedEngine,
+) -> Option<Kind> {
+    let id = key.symbol_id;
+    let table = engine.get_table_of_symbol(id).await?;
+
+    table.kinds.get(&id.id).cloned()
+}
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static PROJECTION_EXECUTOR: Registration<Config> =
+    Registration::new::<ProjectionKey, ProjectionExecutor>();
+
 #[executor(config = Config)]
 async fn kind_executor(key: &Key, engine: &TrackedEngine) -> Kind {
-    let symbol_id = key.symbol_id;
-    let table = engine.get_table_of_symbol(symbol_id).await;
-
-    table
-        .kinds
-        .get(&symbol_id.id)
-        .copied()
-        .unwrap_or_else(|| panic!("invalid symbol ID: {:?}", symbol_id.id))
+    engine.query(&ProjectionKey { symbol_id: key.symbol_id }).await.unwrap()
 }
 
 #[distributed_slice(PERNIX_PROGRAM)]
