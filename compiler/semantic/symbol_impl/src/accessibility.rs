@@ -13,7 +13,10 @@ use pernixc_symbol::{
     syntax::get_implements_member_access_modifier,
 };
 use pernixc_target::Global;
-use qbice::{executor, program::Registration, storage::intern::Interned};
+use qbice::{
+    Decode, Encode, Query, StableHash, executor, program::Registration,
+    storage::intern::Interned,
+};
 
 use crate::{
     accessibility::diagnostic::SymbolIsMoreAccessibleThanParent,
@@ -21,6 +24,38 @@ use crate::{
 };
 
 pub mod diagnostic;
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    Query,
+)]
+#[value(Option<Accessibility<ID>>)]
+pub struct ProjectionKey {
+    pub symbol_id: Global<pernixc_symbol::ID>,
+}
+
+#[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
+async fn projection_executor(
+    key: &ProjectionKey,
+    engine: &TrackedEngine,
+) -> Option<Accessibility<ID>> {
+    let table = engine.get_table_of_symbol(key.symbol_id).await?;
+    table.accessibilities.get(&key.symbol_id.id).copied()
+}
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static PROJECTION_EXECUTOR: Registration<Config> =
+    Registration::new::<ProjectionKey, ProjectionExecutor>();
 
 #[executor(config = Config)]
 async fn accessibility_executor(
@@ -41,8 +76,7 @@ async fn accessibility_executor(
         | Kind::ExternFunction
         | Kind::Effect
         | Kind::Function => {
-            let table = engine.get_table_of_symbol(id).await.unwrap();
-            table.accessibilities.get(&id.id).copied().unwrap()
+            engine.query(&ProjectionKey { symbol_id: id }).await.unwrap()
         }
 
         Kind::EffectOperation | Kind::Variant => {

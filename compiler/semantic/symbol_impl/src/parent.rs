@@ -35,17 +35,10 @@ async fn projection_executor(
     key: &ProjectionKey,
     engine: &TrackedEngine,
 ) -> Option<Option<pernixc_symbol::ID>> {
-    let symbol_id = key.symbol_id;
-    if symbol_id.id
-        == engine.get_target_root_module_id(symbol_id.target_id).await
-    {
-        return Some(None);
-    }
-
     let intermediate =
-        engine.query(&IntermediateKey(symbol_id.target_id)).await;
+        engine.query(&IntermediateKey(key.symbol_id.target_id)).await;
 
-    intermediate.get(&symbol_id.id).copied().map(|x| Some(x))
+    intermediate.get(&key.symbol_id.id).copied().map(Some)
 }
 
 #[distributed_slice(PERNIX_PROGRAM)]
@@ -55,6 +48,13 @@ static PROJECTION_EXECUTOR: Registration<Config> =
 /// The executor for the [`Parent`] component.
 #[executor(config = Config)]
 async fn parent_executor(key: &Key, engine: &TrackedEngine) -> Option<ID> {
+    let symbol_id = key.symbol_id;
+    if symbol_id.id
+        == engine.get_target_root_module_id(symbol_id.target_id).await
+    {
+        return None;
+    }
+
     engine.query(&ProjectionKey { symbol_id: key.symbol_id }).await.unwrap()
 }
 

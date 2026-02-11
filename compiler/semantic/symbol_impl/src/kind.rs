@@ -43,7 +43,7 @@ async fn projection_executor(
     let id = key.symbol_id;
     let table = engine.get_table_of_symbol(id).await?;
 
-    table.kinds.get(&id.id).cloned()
+    table.kinds.get(&id.id).copied()
 }
 
 #[distributed_slice(PERNIX_PROGRAM)]
