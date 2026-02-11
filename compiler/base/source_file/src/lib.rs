@@ -17,7 +17,6 @@ use dashmap::{
     mapref::one::{MappedRef, Ref, RefMut},
 };
 use getset::{CopyGetters, Getters};
-use pernixc_extend::extend;
 use pernixc_qbice::TrackedEngine;
 use pernixc_target::{Global, TargetID};
 use qbice::{
