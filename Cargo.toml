@@ -144,9 +144,7 @@ sled = { version = "0.34.7" }
 stacker = "0.1.21"
 serde_json = { version = "1.0.96" }
 fuzzy-matcher = { version = "0.3.7" }
-qbice = { path = "/Users/simmypeet/Documents/qbice/crates/qbice", features = [
-    "rocksdb",
-] }
+qbice = { version = "0.5.0", features = ["rocksdb"] }
 linkme = { version = "0.3.35" }
 console-subscriber = "0.5.0"
 
@@ -193,7 +191,3 @@ iter_on_single_items = "deny"
 
 [workspace.metadata.cargo-machete]
 ignored = ["strum"]
-
-
-[profile.release]
-debug = true
