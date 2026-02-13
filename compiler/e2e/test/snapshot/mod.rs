@@ -85,7 +85,7 @@ async fn test(file_path: &Path) {
                     file: file_path.to_path_buf(),
                     target_name: None,
                     library_paths: Vec::new(),
-                    incremental_path: Some(temp_dir.path().to_path_buf()),
+                    incremental_path: None,
                     chrome_tracing: false,
                     target_seed: Some(0),
                 },

@@ -76,12 +76,7 @@ fn parse_test_spec(file_path: &Path) -> Vec<Case> {
     let mut test_cases = Vec::new();
     let mut lines = buf_reader.lines().peekable();
 
-    loop {
-        // expect "## Case: "
-        let Some(Ok(case_prefix_line)) = lines.next() else {
-            break;
-        };
-
+    while let Some(Ok(case_prefix_line)) = lines.next() {
         if !case_prefix_line.trim().starts_with(CASE_PREFIX) {
             break;
         }

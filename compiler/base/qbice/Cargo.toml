@@ -10,6 +10,7 @@ rust-version.workspace = true
 qbice.workspace = true
 fxhash.workspace = true
 linkme.workspace = true
+enum-as-inner.workspace = true
 
 [lints]
 workspace = true

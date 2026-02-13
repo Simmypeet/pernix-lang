@@ -6,14 +6,13 @@ use codespan_reporting::{
     diagnostic::{Diagnostic, Label, LabelStyle},
     term::{StylesWriter, termcolor::WriteColor},
 };
-use pernixc_qbice::{Engine, TrackedEngine};
+use pernixc_qbice::{
+    Engine, InMemoryFactory, IncrementalStorageEngine, TrackedEngine,
+};
 use pernixc_source_file::GlobalSourceID;
 use pernixc_symbol_impl::source_map::{SourceMap, create_source_map};
 use pernixc_target::{Arguments, Build, Command, Run, TargetID, TargetKind};
-use qbice::{
-    serialize::Plugin, stable_hash::SeededStableHasherBuilder,
-    storage::kv_database::rocksdb::RocksDB,
-};
+use qbice::{serialize::Plugin, stable_hash::SeededStableHasherBuilder};
 use tracing::instrument;
 
 use crate::{
@@ -139,71 +138,45 @@ fn get_output_path(
     }
 }
 
-fn normalize_input_argument(
-    argument: &mut Arguments,
-    writer: &mut dyn WriteColor,
-    config: &codespan_reporting::term::Config,
-) -> bool {
-    // if no incremental path is set, use a default one `.build/<target_name>`
-    // relative to the input file
-
-    if argument.command.input().incremental_path.is_none() {
-        let mut incremental_path =
-            if let Some(parent) = argument.command.input().file.parent() {
-                parent.to_path_buf()
-            } else {
-                codespan_reporting::term::emit_to_write_style(
-                    writer,
-                    config,
-                    &codespan_reporting::files::SimpleFile::new("", ""),
-                    &Diagnostic::error().with_message(
-                        "failed to determine parent directory of input file",
-                    ),
-                )
-                .unwrap();
-
-                return false;
-            };
-
-        incremental_path.push(".build");
-        incremental_path.push(argument.command.input().target_name());
-
-        argument.command.input_mut().incremental_path = Some(incremental_path);
-    }
-
-    true
-}
-
-fn create_engine(
+async fn create_engine(
     argument: &Arguments,
     writer: &mut dyn WriteColor,
     config: &codespan_reporting::term::Config,
 ) -> Option<Engine> {
-    let engine = Engine::new_with(
-        Plugin::new(),
-        RocksDB::factory(
-            argument.command.input().incremental_path.as_ref().unwrap(),
-        ),
-        SeededStableHasherBuilder::new(123_456_789),
-    );
+    if let Some(inc_path) = &argument.command.input().incremental_path {
+        match Engine::new_with(
+            Plugin::new(),
+            IncrementalStorageEngine(inc_path),
+            SeededStableHasherBuilder::new(0),
+        )
+        .await
+        {
+            Ok(engine) => Some(engine),
+            Err(err) => {
+                codespan_reporting::term::emit_to_write_style(
+                    &mut StylesWriter::new(writer, &term::get_styles()),
+                    config,
+                    &pernixc_source_file::SourceMap::default(),
+                    &Diagnostic::error().with_message(format!(
+                        "failed to create incremental engine at '{}': {err}",
+                        inc_path.display()
+                    )),
+                )
+                .unwrap();
 
-    match engine {
-        Ok(engine) => Some(engine),
-        Err(err) => {
-            let diag = Diagnostic::error().with_message(format!(
-                "failed to open incremental database: {err}"
-            ));
-
-            codespan_reporting::term::emit_to_write_style(
-                writer,
-                config,
-                &codespan_reporting::files::SimpleFile::new("", ""),
-                &diag,
-            )
-            .unwrap();
-
-            None
+                None
+            }
         }
+    } else {
+        Some(
+            Engine::new_with(
+                Plugin::new(),
+                InMemoryFactory,
+                SeededStableHasherBuilder::new(0),
+            )
+            .await
+            .expect("in-memory is infailable"),
+        )
     }
 }
 
@@ -212,17 +185,14 @@ fn create_engine(
 #[allow(clippy::too_many_lines, clippy::needless_pass_by_value)]
 #[instrument(skip(err_writer, _out_writer))]
 pub async fn run(
-    mut argument: Arguments,
+    argument: Arguments,
     err_writer: &mut dyn WriteColor,
     _out_writer: &mut dyn WriteColor,
 ) -> ExitCode {
     let report_config = term::get_coonfig();
 
-    if !normalize_input_argument(&mut argument, err_writer, &report_config) {
-        return ExitCode::FAILURE;
-    }
-
-    let Some(mut engine) = create_engine(&argument, err_writer, &report_config)
+    let Some(mut engine) =
+        create_engine(&argument, err_writer, &report_config).await
     else {
         return ExitCode::FAILURE;
     };
@@ -241,61 +211,73 @@ pub async fn run(
     let engine = Arc::new(engine);
 
     {
-        let mut input_session = engine.input_session();
+        let mut input_session = engine.input_session().await;
 
-        pernixc_corelib::initialize_corelib(&mut input_session);
+        pernixc_corelib::initialize_corelib(&mut input_session).await;
 
-        input_session.set_input(
-            pernixc_target::LinkKey { target_id: local_target_id },
-            input_session.intern(std::iter::once(TargetID::CORE).collect()),
-        );
+        input_session
+            .set_input(
+                pernixc_target::LinkKey { target_id: local_target_id },
+                input_session.intern(std::iter::once(TargetID::CORE).collect()),
+            )
+            .await;
 
-        input_session.set_input(
-            pernixc_target::AllTargetIDsKey,
-            input_session.intern(
-                [local_target_id, TargetID::CORE].into_iter().collect(),
-            ),
-        );
+        input_session
+            .set_input(
+                pernixc_target::AllTargetIDsKey,
+                input_session.intern(
+                    [local_target_id, TargetID::CORE].into_iter().collect(),
+                ),
+            )
+            .await;
 
-        input_session.set_input(
-            pernixc_target::MapKey,
-            input_session.intern(
-                [
-                    (
-                        input_session.intern_unsized(
-                            argument.command.input().target_name(),
+        input_session
+            .set_input(
+                pernixc_target::MapKey,
+                input_session.intern(
+                    [
+                        (
+                            input_session.intern_unsized(
+                                argument.command.input().target_name(),
+                            ),
+                            local_target_id,
                         ),
-                        local_target_id,
-                    ),
-                    (
-                        input_session.intern_unsized("core".to_owned()),
-                        TargetID::CORE,
-                    ),
-                ]
-                .into_iter()
-                .collect(),
-            ),
-        );
+                        (
+                            input_session.intern_unsized("core".to_owned()),
+                            TargetID::CORE,
+                        ),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ),
+            )
+            .await;
 
         if let Some(explicit_seed) = argument.command.input().target_seed {
-            input_session.set_input(
-                pernixc_target::SeedKey { target_id: local_target_id },
-                explicit_seed,
-            );
+            input_session
+                .set_input(
+                    pernixc_target::SeedKey { target_id: local_target_id },
+                    explicit_seed,
+                )
+                .await;
         }
 
-        input_session.set_input(
-            pernixc_target::Key { target_id: local_target_id },
-            input_session.intern(argument.clone()),
-        );
+        input_session
+            .set_input(
+                pernixc_target::Key { target_id: local_target_id },
+                input_session.intern(argument.clone()),
+            )
+            .await;
 
         // refresh all the input files
         input_session.refresh::<pernixc_source_file::Key>().await;
+
+        input_session.commit().await;
     }
 
     // now the query can start ...
 
-    let tracked_engine = engine.tracked();
+    let tracked_engine = engine.clone().tracked().await;
 
     let source_map = tracked_engine.create_source_map(local_target_id).await;
 
@@ -328,6 +310,13 @@ pub async fn run(
 
         diagnostics.len()
     };
+
+    // let _ = engine
+    //     .visualize_html(
+    //         &pernixc_check::Key { target_id: local_target_id },
+    //         "after.html",
+    //     )
+    //     .await;
 
     if diagnostic_count != 0 {
         let diag = codespan_reporting::diagnostic::Diagnostic::error()

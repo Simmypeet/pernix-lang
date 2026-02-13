@@ -10,8 +10,7 @@ pub fn chunk_for_tasks<'a, T: 'a>(self: &'a [T]) -> Chunks<'a, T> {
     // chunk the items to avoid spawning too many tasks
     // at once, targeting 4x the number of available
     let num_threads = std::thread::available_parallelism()
-        .map(std::num::NonZero::get)
-        .unwrap_or(1)
+        .map_or(1, std::num::NonZero::get)
         * 4;
 
     let mut chunk_size = self.len().div_ceil(num_threads);
