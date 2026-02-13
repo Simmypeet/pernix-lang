@@ -37,13 +37,13 @@ use crate::{
 
 #[tokio::test]
 async fn reflexive() {
-    let (engine, _dir) = create_test_engine();
+    let (engine, _dir) = create_test_engine().await;
     let term = Type::Primitive(Primitive::Bool);
     let premise = Premise::default();
 
     let environment = Environment::new(
         Cow::Borrowed(&premise),
-        Cow::Owned(engine.tracked()),
+        Cow::Owned(engine.tracked().await),
         normalizer::NO_OP,
     );
 
@@ -60,7 +60,7 @@ async fn reflexive() {
 
 #[tokio::test]
 async fn symmetric() {
-    let (engine, _dir) = create_test_engine();
+    let (engine, _dir) = create_test_engine().await;
 
     let trait_member = TraitMember(MemberSymbol {
         id: TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(1)),
@@ -69,30 +69,36 @@ async fn symmetric() {
     });
 
     {
-        let mut input_session = engine.input_session();
-        input_session.set_input(
-            pernixc_symbol::parent::Key {
-                symbol_id: TargetID::TEST
-                    .make_global(pernixc_symbol::ID::from_u128(1)),
-            },
-            Some(pernixc_symbol::ID::from_u128(2)),
-        );
+        let mut input_session = engine.input_session().await;
+        input_session
+            .set_input(
+                pernixc_symbol::parent::Key {
+                    symbol_id: TargetID::TEST
+                        .make_global(pernixc_symbol::ID::from_u128(1)),
+                },
+                Some(pernixc_symbol::ID::from_u128(2)),
+            )
+            .await;
 
-        input_session.set_input(
-            pernixc_symbol::kind::Key {
-                symbol_id: TargetID::TEST
-                    .make_global(pernixc_symbol::ID::from_u128(2)),
-            },
-            Kind::Trait,
-        );
+        input_session
+            .set_input(
+                pernixc_symbol::kind::Key {
+                    symbol_id: TargetID::TEST
+                        .make_global(pernixc_symbol::ID::from_u128(2)),
+                },
+                Kind::Trait,
+            )
+            .await;
 
-        input_session.set_input(
-            pernixc_semantic_element::implemented::Key {
-                symbol_id: TargetID::TEST
-                    .make_global(pernixc_symbol::ID::from_u128(2)),
-            },
-            engine.intern(HashSet::default()),
-        );
+        input_session
+            .set_input(
+                pernixc_semantic_element::implemented::Key {
+                    symbol_id: TargetID::TEST
+                        .make_global(pernixc_symbol::ID::from_u128(2)),
+                },
+                engine.intern(HashSet::default()),
+            )
+            .await;
     }
 
     let equivalence = Type::Primitive(Primitive::Bool);
@@ -105,7 +111,7 @@ async fn symmetric() {
 
     let environment = Environment::new(
         Cow::Borrowed(&premise),
-        Cow::Owned(engine.tracked()),
+        Cow::Owned(engine.tracked().await),
         normalizer::NO_OP,
     );
 
@@ -144,33 +150,39 @@ async fn not_equal() {
     });
     let equivalence = Type::Primitive(Primitive::Bool);
 
-    let (engine, _dir) = create_test_engine();
+    let (engine, _dir) = create_test_engine().await;
 
     {
-        let mut input_session = engine.input_session();
-        input_session.set_input(
-            pernixc_symbol::parent::Key {
-                symbol_id: TargetID::TEST
-                    .make_global(pernixc_symbol::ID::from_u128(1)),
-            },
-            Some(pernixc_symbol::ID::from_u128(2)),
-        );
+        let mut input_session = engine.input_session().await;
+        input_session
+            .set_input(
+                pernixc_symbol::parent::Key {
+                    symbol_id: TargetID::TEST
+                        .make_global(pernixc_symbol::ID::from_u128(1)),
+                },
+                Some(pernixc_symbol::ID::from_u128(2)),
+            )
+            .await;
 
-        input_session.set_input(
-            pernixc_symbol::kind::Key {
-                symbol_id: TargetID::TEST
-                    .make_global(pernixc_symbol::ID::from_u128(2)),
-            },
-            Kind::Trait,
-        );
+        input_session
+            .set_input(
+                pernixc_symbol::kind::Key {
+                    symbol_id: TargetID::TEST
+                        .make_global(pernixc_symbol::ID::from_u128(2)),
+                },
+                Kind::Trait,
+            )
+            .await;
 
-        input_session.set_input(
-            pernixc_semantic_element::implemented::Key {
-                symbol_id: TargetID::TEST
-                    .make_global(pernixc_symbol::ID::from_u128(2)),
-            },
-            engine.intern(HashSet::default()),
-        );
+        input_session
+            .set_input(
+                pernixc_semantic_element::implemented::Key {
+                    symbol_id: TargetID::TEST
+                        .make_global(pernixc_symbol::ID::from_u128(2)),
+                },
+                engine.intern(HashSet::default()),
+            )
+            .await;
     }
 
     let mut premise = Premise::default();
@@ -181,7 +193,7 @@ async fn not_equal() {
 
     let environment = Environment::new(
         Cow::Borrowed(&premise),
-        Cow::Owned(engine.tracked()),
+        Cow::Owned(engine.tracked().await),
         normalizer::NO_OP,
     );
 
@@ -224,38 +236,46 @@ async fn transitivity() {
     });
     let equivalence = Type::Primitive(Primitive::Bool);
 
-    let (engine, _dir) = create_test_engine();
+    let (engine, _dir) = create_test_engine().await;
 
     {
-        let mut input_session = engine.input_session();
-        input_session.set_input(
-            pernixc_symbol::parent::Key {
-                symbol_id: TargetID::TEST
-                    .make_global(pernixc_symbol::ID::from_u128(1)),
-            },
-            Some(pernixc_symbol::ID::from_u128(3)),
-        );
-        input_session.set_input(
-            pernixc_symbol::parent::Key {
-                symbol_id: TargetID::TEST
-                    .make_global(pernixc_symbol::ID::from_u128(2)),
-            },
-            Some(pernixc_symbol::ID::from_u128(3)),
-        );
-        input_session.set_input(
-            pernixc_symbol::kind::Key {
-                symbol_id: TargetID::TEST
-                    .make_global(pernixc_symbol::ID::from_u128(3)),
-            },
-            Kind::Trait,
-        );
-        input_session.set_input(
-            pernixc_semantic_element::implemented::Key {
-                symbol_id: TargetID::TEST
-                    .make_global(pernixc_symbol::ID::from_u128(3)),
-            },
-            engine.intern(HashSet::default()),
-        );
+        let mut input_session = engine.input_session().await;
+        input_session
+            .set_input(
+                pernixc_symbol::parent::Key {
+                    symbol_id: TargetID::TEST
+                        .make_global(pernixc_symbol::ID::from_u128(1)),
+                },
+                Some(pernixc_symbol::ID::from_u128(3)),
+            )
+            .await;
+        input_session
+            .set_input(
+                pernixc_symbol::parent::Key {
+                    symbol_id: TargetID::TEST
+                        .make_global(pernixc_symbol::ID::from_u128(2)),
+                },
+                Some(pernixc_symbol::ID::from_u128(3)),
+            )
+            .await;
+        input_session
+            .set_input(
+                pernixc_symbol::kind::Key {
+                    symbol_id: TargetID::TEST
+                        .make_global(pernixc_symbol::ID::from_u128(3)),
+                },
+                Kind::Trait,
+            )
+            .await;
+        input_session
+            .set_input(
+                pernixc_semantic_element::implemented::Key {
+                    symbol_id: TargetID::TEST
+                        .make_global(pernixc_symbol::ID::from_u128(3)),
+                },
+                engine.intern(HashSet::default()),
+            )
+            .await;
     }
 
     let mut premise = Premise::default();
@@ -272,7 +292,7 @@ async fn transitivity() {
 
     let environment = Environment::new(
         Cow::Borrowed(&premise),
-        Cow::Owned(engine.tracked()),
+        Cow::Owned(engine.tracked().await),
         normalizer::NO_OP,
     );
 
@@ -306,6 +326,7 @@ async fn transitivity() {
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn congruence() {
     let first_trait_member = TraitMember(MemberSymbol {
         id: TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(1)),
@@ -320,38 +341,46 @@ async fn congruence() {
     let first_equivalence = Type::Primitive(Primitive::Bool);
     let second_equivalence = Type::Primitive(Primitive::Int32);
 
-    let (engine, _dir) = create_test_engine();
+    let (engine, _dir) = create_test_engine().await;
 
     {
-        let mut input_session = engine.input_session();
-        input_session.set_input(
-            pernixc_symbol::parent::Key {
-                symbol_id: TargetID::TEST
-                    .make_global(pernixc_symbol::ID::from_u128(1)),
-            },
-            Some(pernixc_symbol::ID::from_u128(3)),
-        );
-        input_session.set_input(
-            pernixc_symbol::parent::Key {
-                symbol_id: TargetID::TEST
-                    .make_global(pernixc_symbol::ID::from_u128(2)),
-            },
-            Some(pernixc_symbol::ID::from_u128(3)),
-        );
-        input_session.set_input(
-            pernixc_symbol::kind::Key {
-                symbol_id: TargetID::TEST
-                    .make_global(pernixc_symbol::ID::from_u128(3)),
-            },
-            Kind::Trait,
-        );
-        input_session.set_input(
-            pernixc_semantic_element::implemented::Key {
-                symbol_id: TargetID::TEST
-                    .make_global(pernixc_symbol::ID::from_u128(3)),
-            },
-            engine.intern(HashSet::default()),
-        );
+        let mut input_session = engine.input_session().await;
+        input_session
+            .set_input(
+                pernixc_symbol::parent::Key {
+                    symbol_id: TargetID::TEST
+                        .make_global(pernixc_symbol::ID::from_u128(1)),
+                },
+                Some(pernixc_symbol::ID::from_u128(3)),
+            )
+            .await;
+        input_session
+            .set_input(
+                pernixc_symbol::parent::Key {
+                    symbol_id: TargetID::TEST
+                        .make_global(pernixc_symbol::ID::from_u128(2)),
+                },
+                Some(pernixc_symbol::ID::from_u128(3)),
+            )
+            .await;
+        input_session
+            .set_input(
+                pernixc_symbol::kind::Key {
+                    symbol_id: TargetID::TEST
+                        .make_global(pernixc_symbol::ID::from_u128(3)),
+                },
+                Kind::Trait,
+            )
+            .await;
+        input_session
+            .set_input(
+                pernixc_semantic_element::implemented::Key {
+                    symbol_id: TargetID::TEST
+                        .make_global(pernixc_symbol::ID::from_u128(3)),
+                },
+                engine.intern(HashSet::default()),
+            )
+            .await;
     }
 
     let mut premise = Premise::default();
@@ -368,7 +397,7 @@ async fn congruence() {
 
     let environment = Environment::new(
         Cow::Borrowed(&premise),
-        Cow::Owned(engine.tracked()),
+        Cow::Owned(engine.tracked().await),
         normalizer::NO_OP,
     );
 
@@ -427,10 +456,10 @@ async fn symbol() {
     });
 
     let premise = Premise::default();
-    let (engine, _dir) = create_test_engine();
+    let (engine, _dir) = create_test_engine().await;
     let environment = Environment::new(
         Cow::Borrowed(&premise),
-        Cow::Owned(engine.tracked()),
+        Cow::Owned(engine.tracked().await),
         normalizer::NO_OP,
     );
 
@@ -559,35 +588,44 @@ impl Property<Type> for Mapping {
     ) -> BoxedFuture<'s, Type> {
         Box::pin(async move {
             let added = {
-                let mut input_session = engine.input_session();
-                let add_parent = input_session.set_input(
-                    pernixc_symbol::parent::Key {
-                        symbol_id: self.target_trait_member.id,
-                    },
-                    Some(self.trait_id),
-                ) == SetInputResult::Fresh;
+                let mut input_session = engine.input_session().await;
+                let add_parent = input_session
+                    .set_input(
+                        pernixc_symbol::parent::Key {
+                            symbol_id: self.target_trait_member.id,
+                        },
+                        Some(self.trait_id),
+                    )
+                    .await
+                    == SetInputResult::Fresh;
 
-                let add_kind = input_session.set_input(
-                    pernixc_symbol::kind::Key {
-                        symbol_id: self
-                            .target_trait_member
-                            .id
-                            .target_id
-                            .make_global(self.trait_id),
-                    },
-                    pernixc_symbol::kind::Kind::Trait,
-                ) == SetInputResult::Fresh;
+                let add_kind = input_session
+                    .set_input(
+                        pernixc_symbol::kind::Key {
+                            symbol_id: self
+                                .target_trait_member
+                                .id
+                                .target_id
+                                .make_global(self.trait_id),
+                        },
+                        pernixc_symbol::kind::Kind::Trait,
+                    )
+                    .await
+                    == SetInputResult::Fresh;
 
-                let add_implemented = input_session.set_input(
-                    pernixc_semantic_element::implemented::Key {
-                        symbol_id: self
-                            .target_trait_member
-                            .id
-                            .target_id
-                            .make_global(self.trait_id),
-                    },
-                    engine.intern(HashSet::default()),
-                ) == SetInputResult::Fresh;
+                let add_implemented = input_session
+                    .set_input(
+                        pernixc_semantic_element::implemented::Key {
+                            symbol_id: self
+                                .target_trait_member
+                                .id
+                                .target_id
+                                .make_global(self.trait_id),
+                        },
+                        engine.intern(HashSet::default()),
+                    )
+                    .await
+                    == SetInputResult::Fresh;
 
                 add_parent && add_kind && add_implemented
             };
@@ -602,7 +640,7 @@ impl Property<Type> for Mapping {
             let should_map = if self.map_at_lhs {
                 Environment::new(
                     Cow::Borrowed(premise),
-                    Cow::Owned(engine.clone().tracked()),
+                    Cow::Owned(engine.clone().tracked().await),
                     normalizer::NO_OP,
                 )
                 .query(&Equality::new(
@@ -614,7 +652,7 @@ impl Property<Type> for Mapping {
             } else {
                 Environment::new(
                     Cow::Borrowed(premise),
-                    Cow::Owned(engine.clone().tracked()),
+                    Cow::Owned(engine.clone().tracked().await),
                     normalizer::NO_OP,
                 )
                 .query(&Equality::new(
@@ -839,7 +877,7 @@ async fn property_based_testing<T: Term + 'static>(
     decoy: Decoy,
 ) -> TestCaseResult {
     let mut premise = Premise::default();
-    let (engine, _dir) = create_test_engine();
+    let (engine, _dir) = create_test_engine().await;
 
     let (term1, term2) =
         property.generate(&engine, &mut premise).await.map_err(|error| {
@@ -850,7 +888,7 @@ async fn property_based_testing<T: Term + 'static>(
 
     let environment = Environment::new(
         Cow::Borrowed(&premise),
-        Cow::Owned(engine.clone().tracked()),
+        Cow::Owned(engine.clone().tracked().await),
         normalizer::NO_OP,
     );
 
@@ -893,7 +931,7 @@ async fn property_based_testing<T: Term + 'static>(
 
         let modified_environment = Environment::new(
             Cow::Borrowed(&modified_premise),
-            Cow::Owned(engine.clone().tracked()),
+            Cow::Owned(engine.clone().tracked().await),
             normalizer::NO_OP,
         );
 
@@ -957,33 +995,44 @@ async fn property_based_testing<T: Term + 'static>(
 
     for (trait_member, trait_id) in &decoy.types {
         let added = {
-            let mut input_session = engine.input_session();
-            let add_parent = input_session.set_input(
-                pernixc_symbol::parent::Key { symbol_id: trait_member.lhs.id },
-                Some(*trait_id),
-            ) == SetInputResult::Fresh;
+            let mut input_session = engine.input_session().await;
+            let add_parent = input_session
+                .set_input(
+                    pernixc_symbol::parent::Key {
+                        symbol_id: trait_member.lhs.id,
+                    },
+                    Some(*trait_id),
+                )
+                .await
+                == SetInputResult::Fresh;
 
-            let add_kind = input_session.set_input(
-                pernixc_symbol::kind::Key {
-                    symbol_id: trait_member
-                        .lhs
-                        .id
-                        .target_id
-                        .make_global(*trait_id),
-                },
-                pernixc_symbol::kind::Kind::Trait,
-            ) == SetInputResult::Fresh;
+            let add_kind = input_session
+                .set_input(
+                    pernixc_symbol::kind::Key {
+                        symbol_id: trait_member
+                            .lhs
+                            .id
+                            .target_id
+                            .make_global(*trait_id),
+                    },
+                    pernixc_symbol::kind::Kind::Trait,
+                )
+                .await
+                == SetInputResult::Fresh;
 
-            let add_implemented = input_session.set_input(
-                pernixc_semantic_element::implemented::Key {
-                    symbol_id: trait_member
-                        .lhs
-                        .id
-                        .target_id
-                        .make_global(*trait_id),
-                },
-                engine.intern(HashSet::default()),
-            ) == SetInputResult::Fresh;
+            let add_implemented = input_session
+                .set_input(
+                    pernixc_semantic_element::implemented::Key {
+                        symbol_id: trait_member
+                            .lhs
+                            .id
+                            .target_id
+                            .make_global(*trait_id),
+                    },
+                    engine.intern(HashSet::default()),
+                )
+                .await
+                == SetInputResult::Fresh;
 
             add_parent && add_kind && add_implemented
         };
@@ -1003,7 +1052,7 @@ async fn property_based_testing<T: Term + 'static>(
 
     let environment = Environment::new(
         Cow::Borrowed(&premise),
-        Cow::Owned(engine.tracked()),
+        Cow::Owned(engine.tracked().await),
         normalizer::NO_OP,
     );
 

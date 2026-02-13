@@ -191,13 +191,13 @@ async fn property_based_testing<T: Term + 'static>(
     property: &dyn Property<T>,
 ) -> TestCaseResult {
     let mut premise = Premise::default();
-    let (engine, _dir) = create_test_engine();
+    let (engine, _dir) = create_test_engine().await;
 
     let term = property.generate(&engine, &mut premise).await?;
 
     let environment = Environment::new(
         Cow::Borrowed(&premise),
-        Cow::Owned(engine.tracked()),
+        Cow::Owned(engine.tracked().await),
         normalizer::NO_OP,
     );
 

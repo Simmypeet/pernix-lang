@@ -52,12 +52,12 @@ fn basic_subtyping(#[case] variance: Variance) {
             pointee: Box::new(Type::Primitive(Primitive::Bool)),
         });
 
-        let (engine, _dir) = create_test_engine();
+        let (engine, _dir) = create_test_engine().await;
         let premise = Premise::default();
 
         let environment = Environment::new(
             Cow::Borrowed(&premise),
-            Cow::Owned(engine.tracked()),
+            Cow::Owned(engine.tracked().await),
             normalizer::NO_OP,
         );
 
@@ -136,7 +136,7 @@ fn subtyping_with_adt(#[case] variance: Variance) {
             id: pernixc_arena::ID::new(1),
         });
 
-        let (engine, _dir) = create_test_engine();
+        let (engine, _dir) = create_test_engine().await;
 
         let mut generic_parameter = GenericParameters::default();
         let lifetime_id = generic_parameter
@@ -150,21 +150,29 @@ fn subtyping_with_adt(#[case] variance: Variance) {
         variance_map.variances_by_lifetime_ids.insert(lifetime_id, variance);
 
         {
-            let mut input_session = engine.input_session();
-            input_session.set_input(
-                pernixc_term::generic_parameters::Key { symbol_id: adt_id },
-                engine.intern_unsized(generic_parameter),
-            );
+            let mut input_session = engine.input_session().await;
+            input_session
+                .set_input(
+                    pernixc_term::generic_parameters::Key { symbol_id: adt_id },
+                    engine.intern_unsized(generic_parameter),
+                )
+                .await;
 
-            input_session.set_input(
-                pernixc_semantic_element::variance::Key { symbol_id: adt_id },
-                engine.intern_unsized(variance_map),
-            );
+            input_session
+                .set_input(
+                    pernixc_semantic_element::variance::Key {
+                        symbol_id: adt_id,
+                    },
+                    engine.intern_unsized(variance_map),
+                )
+                .await;
 
-            input_session.set_input(
-                pernixc_symbol::kind::Key { symbol_id: adt_id },
-                Kind::Enum,
-            );
+            input_session
+                .set_input(
+                    pernixc_symbol::kind::Key { symbol_id: adt_id },
+                    Kind::Enum,
+                )
+                .await;
         }
 
         // Adt['a]
@@ -190,7 +198,7 @@ fn subtyping_with_adt(#[case] variance: Variance) {
         let premise = Premise::default();
         let environment = Environment::new(
             Cow::Borrowed(&premise),
-            Cow::Owned(engine.tracked()),
+            Cow::Owned(engine.tracked().await),
             normalizer::NO_OP,
         );
 
@@ -267,12 +275,12 @@ async fn subtyping_with_inner_tuple() {
         )],
     });
 
-    let (engine, _dir) = create_test_engine();
+    let (engine, _dir) = create_test_engine().await;
     let premise = Premise::default();
 
     let environment = Environment::new(
         Cow::Borrowed(&premise),
-        Cow::Owned(engine.tracked()),
+        Cow::Owned(engine.tracked().await),
         normalizer::NO_OP,
     );
 
@@ -334,12 +342,12 @@ async fn subtyping_with_mutable_reference() {
         })),
     });
 
-    let (engine, _dir) = create_test_engine();
+    let (engine, _dir) = create_test_engine().await;
     let premise = Premise::default();
 
     let environment = Environment::new(
         Cow::Borrowed(&premise),
-        Cow::Owned(engine.tracked()),
+        Cow::Owned(engine.tracked().await),
         normalizer::NO_OP,
     );
 

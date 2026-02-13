@@ -69,33 +69,41 @@ impl Property<Type> for ByEquality {
     ) -> BoxedFuture<'x, Type> {
         Box::pin(async move {
             {
-                let mut input_session = engine.input_session();
-                input_session.set_input(
-                    pernixc_symbol::parent::Key { symbol_id: self.equality.id },
-                    Some(self.trait_id),
-                );
+                let mut input_session = engine.input_session().await;
+                input_session
+                    .set_input(
+                        pernixc_symbol::parent::Key {
+                            symbol_id: self.equality.id,
+                        },
+                        Some(self.trait_id),
+                    )
+                    .await;
 
-                input_session.set_input(
-                    pernixc_symbol::kind::Key {
-                        symbol_id: self
-                            .equality
-                            .id
-                            .target_id
-                            .make_global(self.trait_id),
-                    },
-                    Kind::Trait,
-                );
+                input_session
+                    .set_input(
+                        pernixc_symbol::kind::Key {
+                            symbol_id: self
+                                .equality
+                                .id
+                                .target_id
+                                .make_global(self.trait_id),
+                        },
+                        Kind::Trait,
+                    )
+                    .await;
 
-                input_session.set_input(
-                    pernixc_semantic_element::implemented::Key {
-                        symbol_id: self
-                            .equality
-                            .id
-                            .target_id
-                            .make_global(self.trait_id),
-                    },
-                    engine.intern(HashSet::default()),
-                );
+                input_session
+                    .set_input(
+                        pernixc_semantic_element::implemented::Key {
+                            symbol_id: self
+                                .equality
+                                .id
+                                .target_id
+                                .make_global(self.trait_id),
+                        },
+                        engine.intern(HashSet::default()),
+                    )
+                    .await;
             }
 
             let (inner_operand, inner_bound) =
@@ -108,7 +116,7 @@ impl Property<Type> for ByEquality {
 
             let environment = Environment::new(
                 Cow::Borrowed(premise),
-                Cow::Owned(engine.clone().tracked()),
+                Cow::Owned(engine.clone().tracked().await),
                 normalizer::NO_OP,
             );
 
@@ -238,25 +246,31 @@ impl Property<Type> for LifetimeMatching {
             }
 
             {
-                let mut input_session = engine.input_session();
-                input_session.set_input(
-                    pernixc_symbol::kind::Key { symbol_id: self.struct_id },
-                    Kind::Struct,
-                );
+                let mut input_session = engine.input_session().await;
+                input_session
+                    .set_input(
+                        pernixc_symbol::kind::Key { symbol_id: self.struct_id },
+                        Kind::Struct,
+                    )
+                    .await;
 
-                input_session.set_input(
-                    pernixc_semantic_element::variance::Key {
-                        symbol_id: self.struct_id,
-                    },
-                    engine.intern(variance_map),
-                );
+                input_session
+                    .set_input(
+                        pernixc_semantic_element::variance::Key {
+                            symbol_id: self.struct_id,
+                        },
+                        engine.intern(variance_map),
+                    )
+                    .await;
 
-                input_session.set_input(
-                    pernixc_term::generic_parameters::Key {
-                        symbol_id: self.struct_id,
-                    },
-                    engine.intern(generic_parameter),
-                );
+                input_session
+                    .set_input(
+                        pernixc_term::generic_parameters::Key {
+                            symbol_id: self.struct_id,
+                        },
+                        engine.intern(generic_parameter),
+                    )
+                    .await;
             }
 
             let ty_operand = Type::Symbol(Symbol {
@@ -270,7 +284,7 @@ impl Property<Type> for LifetimeMatching {
 
             let environment = Environment::new(
                 Cow::Borrowed(premise),
-                Cow::Owned(engine.clone().tracked()),
+                Cow::Owned(engine.clone().tracked().await),
                 normalizer::NO_OP,
             );
 
@@ -403,7 +417,7 @@ where
         Box::pin(async move {
             let environment = Environment::new(
                 Cow::Borrowed(premise),
-                Cow::Owned(engine.clone().tracked()),
+                Cow::Owned(engine.clone().tracked().await),
                 normalizer::NO_OP,
             );
 
@@ -446,7 +460,7 @@ impl<T: Term> Property<T> for Transitive<T> {
 
             let environment = Environment::new(
                 Cow::Borrowed(premise),
-                Cow::Owned(engine.clone().tracked()),
+                Cow::Owned(engine.clone().tracked().await),
                 normalizer::NO_OP,
             );
 
@@ -536,7 +550,7 @@ async fn property_based_testing<T: Term + 'static>(
     property: &dyn Property<T>,
 ) -> TestCaseResult {
     let mut premise = Premise::default();
-    let (engine, _dir) = create_test_engine();
+    let (engine, _dir) = create_test_engine().await;
 
     println!("node count: {}", property.node_count());
 
@@ -550,7 +564,7 @@ async fn property_based_testing<T: Term + 'static>(
 
     let environment = Environment::new(
         Cow::Borrowed(&premise),
-        Cow::Owned(engine.tracked()),
+        Cow::Owned(engine.tracked().await),
         normalizer::NO_OP,
     );
     let result = environment
@@ -602,12 +616,12 @@ proptest! {
         lifetime in Lifetime::arbitrary()
     ) {
         let test = async move {
-            let (engine, _dir) = create_test_engine();
+            let (engine, _dir) = create_test_engine().await;
             let premise = Premise::default();
 
             let environment = Environment::new(
                 Cow::Borrowed(&premise),
-                Cow::Owned(engine.tracked()),
+                Cow::Owned(engine.tracked().await),
                 normalizer::NO_OP
             );
 

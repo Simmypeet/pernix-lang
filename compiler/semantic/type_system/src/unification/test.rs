@@ -403,35 +403,41 @@ impl Property<Type> for Mapping {
     ) -> BoxedFuture<'x> {
         Box::pin(async move {
             {
-                let mut input_session = engine.input_session();
-                input_session.set_input(
-                    pernixc_symbol::parent::Key {
-                        symbol_id: self.trait_member.id,
-                    },
-                    Some(self.trait_id),
-                );
+                let mut input_session = engine.input_session().await;
+                input_session
+                    .set_input(
+                        pernixc_symbol::parent::Key {
+                            symbol_id: self.trait_member.id,
+                        },
+                        Some(self.trait_id),
+                    )
+                    .await;
 
-                input_session.set_input(
-                    pernixc_symbol::kind::Key {
-                        symbol_id: self
-                            .trait_member
-                            .id
-                            .target_id
-                            .make_global(self.trait_id),
-                    },
-                    Kind::Trait,
-                );
+                input_session
+                    .set_input(
+                        pernixc_symbol::kind::Key {
+                            symbol_id: self
+                                .trait_member
+                                .id
+                                .target_id
+                                .make_global(self.trait_id),
+                        },
+                        Kind::Trait,
+                    )
+                    .await;
 
-                input_session.set_input(
-                    pernixc_semantic_element::implemented::Key {
-                        symbol_id: self
-                            .trait_member
-                            .id
-                            .target_id
-                            .make_global(self.trait_id),
-                    },
-                    engine.intern(HashSet::default()),
-                );
+                input_session
+                    .set_input(
+                        pernixc_semantic_element::implemented::Key {
+                            symbol_id: self
+                                .trait_member
+                                .id
+                                .target_id
+                                .make_global(self.trait_id),
+                        },
+                        engine.intern(HashSet::default()),
+                    )
+                    .await;
             }
 
             let (from, to) = self.generate();
@@ -549,7 +555,7 @@ fn rewrite_term<T: Term + 'static>(
 async fn property_based_testing<T: Term + 'static>(
     property: &dyn Property<T>,
 ) -> TestCaseResult {
-    let (engine, _dir) = create_test_engine();
+    let (engine, _dir) = create_test_engine().await;
     let mut premise = Premise::default();
     let config = GenericParameterUnifyConfig;
 
@@ -559,7 +565,7 @@ async fn property_based_testing<T: Term + 'static>(
 
     let environment = Environment::new(
         Cow::Borrowed(&premise),
-        Cow::Owned(engine.tracked()),
+        Cow::Owned(engine.tracked().await),
         normalizer::NO_OP,
     );
 

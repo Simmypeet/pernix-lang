@@ -43,12 +43,12 @@ async fn ambiguous() {
         constants: Vec::new(),
     };
 
-    let (engine, _dir) = create_test_engine();
+    let (engine, _dir) = create_test_engine().await;
     let premise = Premise::default();
 
     let environment = Environment::new(
         Cow::Borrowed(&premise),
-        Cow::Owned(engine.tracked()),
+        Cow::Owned(engine.tracked().await),
         normalizer::NO_OP,
     );
 
@@ -80,12 +80,12 @@ async fn more_general() {
         constants: Vec::new(),
     };
 
-    let (engine, _dir) = create_test_engine();
+    let (engine, _dir) = create_test_engine().await;
     let premise = Premise::default();
 
     let environment = Environment::new(
         Cow::Borrowed(&premise),
-        Cow::Owned(engine.tracked()),
+        Cow::Owned(engine.tracked().await),
         normalizer::NO_OP,
     );
 
@@ -120,12 +120,12 @@ async fn incompatible() {
         constants: Vec::new(),
     };
 
-    let (engine, _dir) = create_test_engine();
+    let (engine, _dir) = create_test_engine().await;
     let premise = Premise::default();
 
     let environment = Environment::new(
         Cow::Borrowed(&premise),
-        Cow::Owned(engine.tracked()),
+        Cow::Owned(engine.tracked().await),
         normalizer::NO_OP,
     );
 
