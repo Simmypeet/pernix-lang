@@ -269,8 +269,10 @@ pub async fn run(
             )
             .await;
 
-        // refresh all the input files
-        input_session.refresh::<pernixc_source_file::Key>().await;
+        pernixc_source_file_impl::refresh_source_file_executors(
+            &mut input_session,
+        )
+        .await;
 
         input_session.commit().await;
     }
