@@ -291,13 +291,15 @@ pub struct Table {
 #[value(ReadOnlyMap<Kind>)]
 pub struct KindMapKey(pub Key);
 
-#[executor(config = Config)]
+#[executor(config = Config, style = ExecutionStyle::Projection)]
 async fn kind_map_executor(
     key: &KindMapKey,
     engine: &TrackedEngine,
 ) -> ReadOnlyMap<Kind> {
     let KindMapKey(inner_key) = key;
+
     let table = engine.query(&TableKey(inner_key.clone())).await;
+
     table.kinds.clone()
 }
 
@@ -322,13 +324,14 @@ static KIND_MAP_EXECUTOR: Registration<Config> =
 #[value(ReadOnlyMap<Interned<ExternalSubmodule>>)]
 pub struct ExternalSubmoduleMapKey(pub Key);
 
-#[executor(config = Config)]
+#[executor(config = Config, style = ExecutionStyle::Projection)]
 async fn external_submodule_map_executor(
     key: &ExternalSubmoduleMapKey,
     engine: &TrackedEngine,
 ) -> ReadOnlyMap<Interned<ExternalSubmodule>> {
     let ExternalSubmoduleMapKey(inner_key) = key;
     let table = engine.query(&TableKey(inner_key.clone())).await;
+
     table.external_submodules.clone()
 }
 

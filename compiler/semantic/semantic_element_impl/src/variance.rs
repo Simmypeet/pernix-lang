@@ -537,7 +537,7 @@ pub struct MapKey {
     pub target_id: TargetID,
 }
 
-#[executor(config = Config)]
+#[executor(config = Config, style = qbice::ExecutionStyle::Firewall)]
 pub async fn map_executor(
     &MapKey { target_id }: &MapKey,
     engine: &TrackedEngine,
@@ -647,15 +647,45 @@ pub async fn map_executor(
 static MAP_EXECUTOR: Registration<Config> =
     Registration::new::<MapKey, MapExecutor>();
 
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    Query,
+)]
+#[value(Option<Interned<Variances>>)]
+pub struct ProjectionKey {
+    pub symbol_id: Global<pernixc_symbol::ID>,
+}
+
+#[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
+async fn projection_executor(
+    key: &ProjectionKey,
+    engine: &TrackedEngine,
+) -> Option<Interned<Variances>> {
+    let id = key.symbol_id;
+    let map = engine.query(&MapKey { target_id: id.target_id }).await;
+    map.get(&id.id).cloned()
+}
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static PROJECTION_EXECUTOR: Registration<Config> =
+    Registration::new::<ProjectionKey, ProjectionExecutor>();
+
 #[executor(config = Config)]
 async fn executor(
     key: &pernixc_semantic_element::variance::Key,
     engine: &TrackedEngine,
 ) -> Interned<Variances> {
-    let variance_maps =
-        engine.query(&MapKey { target_id: key.symbol_id.target_id }).await;
-
-    variance_maps.get(&key.symbol_id.id).cloned().unwrap()
+    engine.query(&ProjectionKey { symbol_id: key.symbol_id }).await.unwrap()
 }
 
 #[distributed_slice(PERNIX_PROGRAM)]

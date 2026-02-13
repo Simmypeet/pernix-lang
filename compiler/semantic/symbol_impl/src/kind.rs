@@ -166,9 +166,17 @@ impl<
                             );
 
                         let node =
-                            engine.query(&table::TableKey(node_key)).await;
+                            engine.query(&table::KindMapKey(node_key)).await;
 
-                        if filter.filter(*node.kinds.get(&id).unwrap()).await {
+                        if filter
+                            .filter(*node.get(&id).unwrap_or_else(|| {
+                                panic!(
+                                    "invalid symbol ID: {id:?}\n node: \
+                                     {node:#?}\n table: {map:#?}\n"
+                                )
+                            }))
+                            .await
+                        {
                             results.push(id);
                         }
                     }
@@ -184,6 +192,10 @@ impl<
 
             Arc::from(results)
         })
+    }
+
+    fn execution_style() -> qbice::ExecutionStyle {
+        qbice::ExecutionStyle::Projection
     }
 }
 
