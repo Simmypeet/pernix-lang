@@ -262,6 +262,12 @@ async fn all_ir_rendered_diagnostics_executor(
         let mut diagnostics = Vec::new();
         let all_function_ids = engine.get_all_function_with_body_ids(id).await;
 
+        // PARALLEL: retrieves rendered diagnostics for each function in
+        // parallel
+        unsafe {
+            engine.start_unordered_callee_group();
+        }
+
         for ids in all_function_ids
             .chunk_for_tasks()
             .map(|x| x.iter().map(|x| Global::new(id, *x)).collect::<Vec<_>>())
@@ -282,6 +288,10 @@ async fn all_ir_rendered_diagnostics_executor(
             for diag in handle {
                 diagnostics.push(diag);
             }
+        }
+
+        unsafe {
+            engine.end_unordered_callee_group();
         }
 
         engine.intern_unsized(diagnostics)

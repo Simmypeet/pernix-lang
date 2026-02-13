@@ -173,6 +173,9 @@ async fn all_rendered_executor(
 
         // PARALLEL: the spawned tasks are independent and do not access shared
         // state therefore they can be safely parallelly re-verified.
+        unsafe {
+            engine.start_unordered_callee_group();
+        }
 
         for chunk in all_ids.chunk_for_tasks().map(|x| {
             x.iter().map(|x| Global::new(target_id, *x)).collect::<Vec<_>>()
@@ -194,6 +197,10 @@ async fn all_rendered_executor(
             for diag in handle {
                 diagnostics.push(diag);
             }
+        }
+
+        unsafe {
+            engine.end_unordered_callee_group();
         }
 
         engine.intern_unsized(diagnostics)

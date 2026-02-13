@@ -64,6 +64,9 @@ pub struct Key {
 #[executor(config = Config)]
 async fn check_executor(&key: &Key, engine: &TrackedEngine) -> Check {
     // PARALLEL: Collect all diagnostics for the various phases.
+    unsafe {
+        engine.start_unordered_callee_group();
+    }
 
     let symbol_diags = {
         let engine = engine.clone();
@@ -98,6 +101,10 @@ async fn check_executor(&key: &Key, engine: &TrackedEngine) -> Check {
             engine.query(&pernixc_ir_impl::AllRenderedKey(key.target_id)).await
         })
     };
+
+    unsafe {
+        engine.end_unordered_callee_group();
+    }
 
     Check {
         symbol_immpl: symbol_diags.await.panic_propagate().unwrap(),

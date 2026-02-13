@@ -489,10 +489,13 @@ async fn collect_constraints(
     // any of the constraint queries are being invoked.
     let adt_ids = engine.get_all_adt_ids(target_id).await;
 
-    // PARALLEL: Gets a list of constraints for each ADT id
-
     let constraints_list = scoped!(|scoped| async move {
         let mut constraints_list = Vec::new();
+
+        // PARALLEL: Gets a list of constraints for each ADT id
+        unsafe {
+            engine.start_unordered_callee_group();
+        }
 
         for constraint_id in adt_ids.iter().map(|x| target_id.make_global(*x)) {
             let engine = engine.clone();
@@ -503,6 +506,10 @@ async fn collect_constraints(
 
         while let Some(res) = scoped.next().await {
             constraints_list.push(res);
+        }
+
+        unsafe {
+            engine.end_unordered_callee_group();
         }
 
         constraints_list

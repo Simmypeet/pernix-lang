@@ -29,10 +29,13 @@ pub async fn in_target_executor(
 
     let implementations = engine.get_all_implements_ids(key.target_id).await;
 
-    // PARALLEL: invokes implements calculation in parallel
-
     let result = scoped!(|scoped| async move {
         let mut results = HashSet::default();
+
+        // PARALLEL: invokes implements calculation in parallel
+        unsafe {
+            engine.start_unordered_callee_group();
+        }
 
         for implementation in implementations.chunk_for_tasks().map(|x| {
             x.iter().map(|x| key.target_id.make_global(*x)).collect::<Vec<_>>()
@@ -66,6 +69,11 @@ pub async fn in_target_executor(
             }
         }
 
+        // End of parallel section
+        unsafe {
+            engine.end_unordered_callee_group();
+        }
+
         engine.intern_unsized(results)
     });
 
@@ -91,10 +99,13 @@ pub async fn implemented_executor(
 ) -> Interned<HashSet<Global<pernixc_symbol::ID>>> {
     let target_ids = engine.get_all_target_ids().await;
 
-    // PARALLEL: invokes implements calculation in parallel
-
     let result = scoped!(|scoped| async move {
         let mut results = HashSet::default();
+
+        // PARALLEL: invokes implements calculation in parallel
+        unsafe {
+            engine.start_unordered_callee_group();
+        }
 
         for target_id in target_ids.iter() {
             let engine = engine.clone();
@@ -108,6 +119,10 @@ pub async fn implemented_executor(
 
         while let Some(result) = scoped.next().await {
             results.extend(result.iter().copied());
+        }
+
+        unsafe {
+            engine.end_unordered_callee_group();
         }
 
         engine.intern(results)
