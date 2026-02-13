@@ -14,14 +14,14 @@ pub mod copy;
 pub mod drop;
 pub mod intrinsics;
 
-struct CoreLibInitializer<'i, 'e> {
-    input_session: &'i mut InputSession<'e>,
+struct CoreLibInitializer<'i> {
+    input_session: &'i mut InputSession,
     root_target_module_id: Global<ID>,
     target_seed: u64,
 }
 
 /// Initializes all the core library intrinsics.
-pub fn initialize_corelib(input_session: &mut InputSession<'_>) {
+pub async fn initialize_corelib(input_session: &mut InputSession) {
     let mut initializer = CoreLibInitializer {
         input_session,
         root_target_module_id: Global::new(
@@ -31,30 +31,45 @@ pub fn initialize_corelib(input_session: &mut InputSession<'_>) {
         target_seed: pernixc_target::CORE_TARGET_SEED,
     };
 
-    let copy_marker_id = initializer.initialize_copy_marker();
-    let drop_trait_id = initializer.initialize_drop_trait(copy_marker_id);
-    let intrinsic_ids = initializer.initialize_intrinsics();
+    let copy_marker_id = initializer.initialize_copy_marker().await;
+    let drop_trait_id = initializer.initialize_drop_trait(copy_marker_id).await;
+    let intrinsic_ids = initializer.initialize_intrinsics().await;
 
-    initializer.input_session.set_input(
-        kind::Key { symbol_id: initializer.root_target_module_id },
-        kind::Kind::Module,
-    );
-    initializer.input_session.set_input(
-        accessibility::Key { symbol_id: initializer.root_target_module_id },
-        accessibility::Accessibility::Public,
-    );
-    initializer.input_session.set_input(
-        parent::Key { symbol_id: initializer.root_target_module_id },
-        None,
-    );
-    initializer.input_session.set_input(
-        name::Key { symbol_id: initializer.root_target_module_id },
-        initializer.input_session.intern_unsized("core".to_owned()),
-    );
-    initializer.input_session.set_input(
-        import::Key { symbol_id: initializer.root_target_module_id },
-        initializer.input_session.intern(HashMap::default()),
-    );
+    initializer
+        .input_session
+        .set_input(
+            kind::Key { symbol_id: initializer.root_target_module_id },
+            kind::Kind::Module,
+        )
+        .await;
+    initializer
+        .input_session
+        .set_input(
+            accessibility::Key { symbol_id: initializer.root_target_module_id },
+            accessibility::Accessibility::Public,
+        )
+        .await;
+    initializer
+        .input_session
+        .set_input(
+            parent::Key { symbol_id: initializer.root_target_module_id },
+            None,
+        )
+        .await;
+    initializer
+        .input_session
+        .set_input(
+            name::Key { symbol_id: initializer.root_target_module_id },
+            initializer.input_session.intern_unsized("core".to_owned()),
+        )
+        .await;
+    initializer
+        .input_session
+        .set_input(
+            import::Key { symbol_id: initializer.root_target_module_id },
+            initializer.input_session.intern(HashMap::default()),
+        )
+        .await;
 
     let member_map = [
         (
@@ -99,11 +114,14 @@ pub fn initialize_corelib(input_session: &mut InputSession<'_>) {
     .into_iter()
     .collect::<pernixc_hash::HashMap<_, _>>();
 
-    initializer.input_session.set_input(
-        member::Key { symbol_id: initializer.root_target_module_id },
-        initializer.input_session.intern(Member {
-            member_ids_by_name: member_map,
-            unnameds: HashSet::default(),
-        }),
-    );
+    initializer
+        .input_session
+        .set_input(
+            member::Key { symbol_id: initializer.root_target_module_id },
+            initializer.input_session.intern(Member {
+                member_ids_by_name: member_map,
+                unnameds: HashSet::default(),
+            }),
+        )
+        .await;
 }

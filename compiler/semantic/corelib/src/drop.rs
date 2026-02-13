@@ -36,7 +36,7 @@ pub const DROP_TRAIT_SEQUENCE: [&str; 2] = ["core", "Drop"];
 #[allow(missing_docs)]
 pub const DROP_FUNCTION_SEQUENCE: [&str; 3] = ["core", "Drop", "drop"];
 
-impl CoreLibInitializer<'_, '_> {
+impl CoreLibInitializer<'_> {
     /// Creates a `Drop` trait in the core library.
     ///
     /// ```txt
@@ -47,7 +47,7 @@ impl CoreLibInitializer<'_, '_> {
     ///             T: 'a
     /// ```
     #[allow(clippy::too_many_lines)]
-    pub fn initialize_drop_trait(
+    pub async fn initialize_drop_trait(
         &mut self,
         copy_marker_id: pernixc_symbol::ID,
     ) -> pernixc_symbol::ID {
@@ -84,85 +84,116 @@ impl CoreLibInitializer<'_, '_> {
                 .unwrap(),
         ));
 
-        self.input_session.set_input(
-            kind::Key { symbol_id: drop_trait_id },
-            kind::Kind::Trait,
-        );
-        self.input_session.set_input(
-            name::Key { symbol_id: drop_trait_id },
-            self.input_session.intern_unsized("Drop"),
-        );
-        self.input_session.set_input(
-            parent::Key { symbol_id: drop_trait_id },
-            Some(self.root_target_module_id.id),
-        );
-        self.input_session.set_input(
-            generic_parameters::Key { symbol_id: drop_trait_id },
-            self.input_session.intern(trait_generic_params),
-        );
+        self.input_session
+            .set_input(
+                kind::Key { symbol_id: drop_trait_id },
+                kind::Kind::Trait,
+            )
+            .await;
+        self.input_session
+            .set_input(
+                name::Key { symbol_id: drop_trait_id },
+                self.input_session.intern_unsized("Drop"),
+            )
+            .await;
+        self.input_session
+            .set_input(
+                parent::Key { symbol_id: drop_trait_id },
+                Some(self.root_target_module_id.id),
+            )
+            .await;
+        self.input_session
+            .set_input(
+                generic_parameters::Key { symbol_id: drop_trait_id },
+                self.input_session.intern(trait_generic_params),
+            )
+            .await;
 
-        self.input_session.set_input(
-            where_clause::Key { symbol_id: drop_trait_id },
-            self.input_session.intern_unsized([where_clause::Predicate {
-                predicate: predicate::Predicate::NegativeMarker(
-                    NegativeMarker {
-                        marker_id: TargetID::CORE.make_global(copy_marker_id),
-                        generic_arguments: GenericArguments {
-                            lifetimes: Vec::new(),
-                            types: vec![t_ty.clone()],
-                            constants: Vec::new(),
+        self.input_session
+            .set_input(
+                where_clause::Key { symbol_id: drop_trait_id },
+                self.input_session.intern_unsized([where_clause::Predicate {
+                    predicate: predicate::Predicate::NegativeMarker(
+                        NegativeMarker {
+                            marker_id: TargetID::CORE
+                                .make_global(copy_marker_id),
+                            generic_arguments: GenericArguments {
+                                lifetimes: Vec::new(),
+                                types: vec![t_ty.clone()],
+                                constants: Vec::new(),
+                            },
                         },
-                    },
-                ),
-                span: None,
-            }]),
-        );
-        self.input_session.set_input(
-            member::Key { symbol_id: drop_trait_id },
-            self.input_session.intern(Member {
-                member_ids_by_name: std::iter::once((
-                    self.input_session.intern_unsized("drop"),
-                    drop_function_id.id,
-                ))
-                .collect(),
-                unnameds: HashSet::default(),
-            }),
-        );
-        self.input_session.set_input(
-            accessibility::Key { symbol_id: drop_trait_id },
-            Accessibility::Public,
-        );
-        self.input_session.set_input(
-            implemented::Key { symbol_id: drop_function_id },
-            self.input_session.intern(HashSet::default()),
-        );
+                    ),
+                    span: None,
+                }]),
+            )
+            .await;
+        self.input_session
+            .set_input(
+                member::Key { symbol_id: drop_trait_id },
+                self.input_session.intern(Member {
+                    member_ids_by_name: std::iter::once((
+                        self.input_session.intern_unsized("drop"),
+                        drop_function_id.id,
+                    ))
+                    .collect(),
+                    unnameds: HashSet::default(),
+                }),
+            )
+            .await;
+        self.input_session
+            .set_input(
+                accessibility::Key { symbol_id: drop_trait_id },
+                Accessibility::Public,
+            )
+            .await;
+        self.input_session
+            .set_input(
+                implemented::Key { symbol_id: drop_function_id },
+                self.input_session.intern(HashSet::default()),
+            )
+            .await;
 
         // add drop method
         {
-            self.input_session.set_input(
-                kind::Key { symbol_id: drop_function_id },
-                kind::Kind::TraitFunction,
-            );
-            self.input_session.set_input(
-                name::Key { symbol_id: drop_function_id },
-                self.input_session.intern_unsized("drop".to_owned()),
-            );
-            self.input_session.set_input(
-                parent::Key { symbol_id: drop_function_id },
-                Some(drop_trait_id.id),
-            );
-            self.input_session.set_input(
-                elided_lifetime::Key { symbol_id: drop_function_id },
-                self.input_session.intern(Arena::default()),
-            );
-            self.input_session.set_input(
-                implied_predicate::Key { symbol_id: drop_function_id },
-                self.input_session.intern(HashSet::default()),
-            );
-            self.input_session.set_input(
-                pernixc_symbol::r#unsafe::Key { symbol_id: drop_function_id },
-                false,
-            );
+            self.input_session
+                .set_input(
+                    kind::Key { symbol_id: drop_function_id },
+                    kind::Kind::TraitFunction,
+                )
+                .await;
+            self.input_session
+                .set_input(
+                    name::Key { symbol_id: drop_function_id },
+                    self.input_session.intern_unsized("drop".to_owned()),
+                )
+                .await;
+            self.input_session
+                .set_input(
+                    parent::Key { symbol_id: drop_function_id },
+                    Some(drop_trait_id.id),
+                )
+                .await;
+            self.input_session
+                .set_input(
+                    elided_lifetime::Key { symbol_id: drop_function_id },
+                    self.input_session.intern(Arena::default()),
+                )
+                .await;
+            self.input_session
+                .set_input(
+                    implied_predicate::Key { symbol_id: drop_function_id },
+                    self.input_session.intern(HashSet::default()),
+                )
+                .await;
+            self.input_session
+                .set_input(
+                    pernixc_symbol::r#unsafe::Key {
+                        symbol_id: drop_function_id,
+                    },
+                    false,
+                )
+                .await;
 
             let mut inner_generic_params = GenericParameters::default();
 
@@ -177,26 +208,34 @@ impl CoreLibInitializer<'_, '_> {
                 a_lt,
             ));
 
-            self.input_session.set_input(
-                generic_parameters::Key { symbol_id: drop_function_id },
-                self.input_session.intern(inner_generic_params),
-            );
+            self.input_session
+                .set_input(
+                    generic_parameters::Key { symbol_id: drop_function_id },
+                    self.input_session.intern(inner_generic_params),
+                )
+                .await;
 
-            self.input_session.set_input(
-                where_clause::Key { symbol_id: drop_function_id },
-                self.input_session.intern_unsized([where_clause::Predicate {
-                    predicate: predicate::Predicate::type_outlives(
-                        t_ty.clone(),
-                        a_lt.clone(),
-                    ),
-                    span: None,
-                }]),
-            );
+            self.input_session
+                .set_input(
+                    where_clause::Key { symbol_id: drop_function_id },
+                    self.input_session.intern_unsized([
+                        where_clause::Predicate {
+                            predicate: predicate::Predicate::type_outlives(
+                                t_ty.clone(),
+                                a_lt.clone(),
+                            ),
+                            span: None,
+                        },
+                    ]),
+                )
+                .await;
 
-            self.input_session.set_input(
-                accessibility::Key { symbol_id: drop_function_id },
-                Accessibility::Public,
-            );
+            self.input_session
+                .set_input(
+                    accessibility::Key { symbol_id: drop_function_id },
+                    Accessibility::Public,
+                )
+                .await;
 
             let mut parameters = Arena::default();
             let param_id = parameters.insert(Parameter {
@@ -208,32 +247,40 @@ impl CoreLibInitializer<'_, '_> {
                 span: None,
             });
 
-            self.input_session.set_input(
-                parameter::Key { symbol_id: drop_function_id },
-                self.input_session.intern(Parameters {
-                    parameters,
-                    parameter_order: vec![param_id],
-                }),
-            );
+            self.input_session
+                .set_input(
+                    parameter::Key { symbol_id: drop_function_id },
+                    self.input_session.intern(Parameters {
+                        parameters,
+                        parameter_order: vec![param_id],
+                    }),
+                )
+                .await;
 
-            self.input_session.set_input(
-                return_type::Key { symbol_id: drop_function_id },
-                self.input_session.intern(Type::unit()),
-            );
+            self.input_session
+                .set_input(
+                    return_type::Key { symbol_id: drop_function_id },
+                    self.input_session.intern(Type::unit()),
+                )
+                .await;
 
-            self.input_session.set_input(
-                effect_annotation::Key { symbol_id: drop_function_id },
-                self.input_session.intern(OrderedArena::default()),
-            );
+            self.input_session
+                .set_input(
+                    effect_annotation::Key { symbol_id: drop_function_id },
+                    self.input_session.intern(OrderedArena::default()),
+                )
+                .await;
         }
 
-        self.input_session.set_input(
-            implemented::InTargetKey {
-                implementable_id: drop_trait_id,
-                target_id: TargetID::CORE,
-            },
-            self.input_session.intern(HashSet::default()),
-        );
+        self.input_session
+            .set_input(
+                implemented::InTargetKey {
+                    implementable_id: drop_trait_id,
+                    target_id: TargetID::CORE,
+                },
+                self.input_session.intern(HashSet::default()),
+            )
+            .await;
 
         drop_trait_id.id
     }

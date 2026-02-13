@@ -29,7 +29,7 @@ pub const MARKER_NAME: &str = "Copy";
 #[allow(missing_docs)]
 pub const MARKER_SEQUENCE: [&str; 2] = ["core", "Copy"];
 
-impl CoreLibInitializer<'_, '_> {
+impl CoreLibInitializer<'_> {
     /// Creates a `Copy` marker in the core library and implements it for all
     /// primitive types, raw pointers, and immutable references.
     ///
@@ -46,7 +46,7 @@ impl CoreLibInitializer<'_, '_> {
     ///         T: 'a    
     /// ```
     #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
-    pub fn initialize_copy_marker(&mut self) -> pernixc_symbol::ID {
+    pub async fn initialize_copy_marker(&mut self) -> pernixc_symbol::ID {
         let copy_marker_id = TargetID::CORE.make_global(
             calculate_qualified_name_id_with_given_seed(
                 MARKER_SEQUENCE.iter().copied(),
@@ -56,30 +56,40 @@ impl CoreLibInitializer<'_, '_> {
             ),
         );
 
-        self.input_session.set_input(
-            kind::Key { symbol_id: copy_marker_id },
-            kind::Kind::Marker,
-        );
+        self.input_session
+            .set_input(
+                kind::Key { symbol_id: copy_marker_id },
+                kind::Kind::Marker,
+            )
+            .await;
 
-        self.input_session.set_input(
-            name::Key { symbol_id: copy_marker_id },
-            self.input_session.intern_unsized(MARKER_NAME.to_owned()),
-        );
+        self.input_session
+            .set_input(
+                name::Key { symbol_id: copy_marker_id },
+                self.input_session.intern_unsized(MARKER_NAME.to_owned()),
+            )
+            .await;
 
-        self.input_session.set_input(
-            parent::Key { symbol_id: copy_marker_id },
-            Some(self.root_target_module_id.id),
-        );
+        self.input_session
+            .set_input(
+                parent::Key { symbol_id: copy_marker_id },
+                Some(self.root_target_module_id.id),
+            )
+            .await;
 
-        self.input_session.set_input(
-            accessibility::Key { symbol_id: copy_marker_id },
-            accessibility::Accessibility::Public,
-        );
+        self.input_session
+            .set_input(
+                accessibility::Key { symbol_id: copy_marker_id },
+                accessibility::Accessibility::Public,
+            )
+            .await;
 
-        self.input_session.set_input(
-            where_clause::Key { symbol_id: copy_marker_id },
-            self.input_session.intern_unsized([]),
-        );
+        self.input_session
+            .set_input(
+                where_clause::Key { symbol_id: copy_marker_id },
+                self.input_session.intern_unsized([]),
+            )
+            .await;
 
         let mut generic_params = GenericParameters::default();
 
@@ -92,10 +102,12 @@ impl CoreLibInitializer<'_, '_> {
             )
             .unwrap();
 
-        self.input_session.set_input(
-            generic_parameters::Key { symbol_id: copy_marker_id },
-            self.input_session.intern(generic_params),
-        );
+        self.input_session
+            .set_input(
+                generic_parameters::Key { symbol_id: copy_marker_id },
+                self.input_session.intern(generic_params),
+            )
+            .await;
 
         let mut implemented = HashSet::default();
 
@@ -123,7 +135,8 @@ impl CoreLibInitializer<'_, '_> {
                 copy_marker_id,
                 self.input_session.intern(GenericParameters::default()),
                 self.input_session.intern_unsized([]),
-            );
+            )
+            .await;
 
             implemented.insert(impl_id);
         }
@@ -170,7 +183,8 @@ impl CoreLibInitializer<'_, '_> {
                 copy_marker_id,
                 self.input_session.intern(generic_parameters),
                 where_clause,
-            );
+            )
+            .await;
 
             implemented.insert(impl_id);
         }
@@ -216,13 +230,14 @@ impl CoreLibInitializer<'_, '_> {
                 copy_marker_id,
                 self.input_session.intern(generic_parameters),
                 where_clause,
-            );
+            )
+            .await;
 
             implemented.insert(impl_id);
         }
 
         // mutable/immutable pointer of any type can be copied
-        let mut impl_pointer = |mutable| {
+        for mutable in [false, true] {
             let impl_id =
                 self.get_impl_id(if mutable { "*mut T" } else { "*const T" });
 
@@ -247,21 +262,21 @@ impl CoreLibInitializer<'_, '_> {
                 copy_marker_id,
                 self.input_session.intern(generic_parameters),
                 self.input_session.intern_unsized([]),
-            );
+            )
+            .await;
 
             implemented.insert(impl_id);
-        };
+        }
 
-        impl_pointer(false);
-        impl_pointer(true);
-
-        self.input_session.set_input(
-            implemented::InTargetKey {
-                implementable_id: copy_marker_id,
-                target_id: TargetID::CORE,
-            },
-            self.input_session.intern(implemented),
-        );
+        self.input_session
+            .set_input(
+                implemented::InTargetKey {
+                    implementable_id: copy_marker_id,
+                    target_id: TargetID::CORE,
+                },
+                self.input_session.intern(implemented),
+            )
+            .await;
 
         copy_marker_id.id
     }
@@ -275,7 +290,7 @@ impl CoreLibInitializer<'_, '_> {
         )
     }
 
-    fn implements_copy_marker(
+    async fn implements_copy_marker(
         &mut self,
         kind: kind::Kind,
         rt: Type,
@@ -284,24 +299,30 @@ impl CoreLibInitializer<'_, '_> {
         generic_parameters: Interned<GenericParameters>,
         where_clause: Interned<[Predicate]>,
     ) {
-        self.input_session.set_input(kind::Key { symbol_id: impl_id }, kind);
-        self.input_session.set_input(
-            generic_parameters::Key { symbol_id: impl_id },
-            generic_parameters,
-        );
-        self.input_session.set_input(
-            implements::Key { symbol_id: impl_id },
-            Some(copy_marker_id),
-        );
         self.input_session
-            .set_input(where_clause::Key { symbol_id: impl_id }, where_clause);
-        self.input_session.set_input(
-            implements_arguments::Key { symbol_id: impl_id },
-            {
+            .set_input(kind::Key { symbol_id: impl_id }, kind)
+            .await;
+        self.input_session
+            .set_input(
+                generic_parameters::Key { symbol_id: impl_id },
+                generic_parameters,
+            )
+            .await;
+        self.input_session
+            .set_input(
+                implements::Key { symbol_id: impl_id },
+                Some(copy_marker_id),
+            )
+            .await;
+        self.input_session
+            .set_input(where_clause::Key { symbol_id: impl_id }, where_clause)
+            .await;
+        self.input_session
+            .set_input(implements_arguments::Key { symbol_id: impl_id }, {
                 let mut args = GenericArguments::default();
                 args.types.push(rt);
                 Some(self.input_session.intern(args))
-            },
-        );
+            })
+            .await;
     }
 }

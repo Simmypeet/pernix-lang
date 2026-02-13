@@ -65,7 +65,7 @@ pub struct IntrinsicIds {
     pub read_id: pernixc_symbol::ID,
 }
 
-impl CoreLibInitializer<'_, '_> {
+impl CoreLibInitializer<'_> {
     /// Creates the intrinsic functions in the core library.
     ///
     /// This includes:
@@ -74,13 +74,13 @@ impl CoreLibInitializer<'_, '_> {
     /// - `dropAt[T](pointer: *mut T)`: Drops the value at the given pointer
     /// - `NoDrop[T]`: A struct that holds a value without dropping it
     /// - `read[T](pointer: *T) -> T`: Reads a value from the given pointer
-    pub fn initialize_intrinsics(&mut self) -> IntrinsicIds {
+    pub async fn initialize_intrinsics(&mut self) -> IntrinsicIds {
         IntrinsicIds {
-            sizeof_id: self.initialize_sizeof().id,
-            alignof_id: self.initialize_alignof().id,
-            drop_at_id: self.initialize_drop_at().id,
-            no_drop_id: self.initialize_no_drop().id,
-            read_id: self.initialize_read().id,
+            sizeof_id: self.initialize_sizeof().await.id,
+            alignof_id: self.initialize_alignof().await.id,
+            drop_at_id: self.initialize_drop_at().await.id,
+            no_drop_id: self.initialize_no_drop().await.id,
+            read_id: self.initialize_read().await.id,
         }
     }
 
@@ -90,7 +90,7 @@ impl CoreLibInitializer<'_, '_> {
     /// The `build_params_and_return` callback receives the function ID and the
     /// generic type parameter T, and should return (parameters, `return_type`)
     /// for the function.
-    fn initialize_generic_function<F>(
+    async fn initialize_generic_function<F>(
         &mut self,
         name_sequence: [&str; 2],
         name: &str,
@@ -124,54 +124,78 @@ impl CoreLibInitializer<'_, '_> {
         let (parameters, return_type) =
             build_params_and_return(function_id, t_ty);
 
-        self.input_session.set_input(
-            kind::Key { symbol_id: function_id },
-            kind::Kind::Function,
-        );
-        self.input_session.set_input(
-            name::Key { symbol_id: function_id },
-            self.input_session.intern_unsized(name.to_owned()),
-        );
-        self.input_session.set_input(
-            parent::Key { symbol_id: function_id },
-            Some(self.root_target_module_id.id),
-        );
-        self.input_session.set_input(
-            generic_parameters::Key { symbol_id: function_id },
-            self.input_session.intern(generic_params),
-        );
-        self.input_session.set_input(
-            accessibility::Key { symbol_id: function_id },
-            Accessibility::Public,
-        );
-        self.input_session.set_input(
-            elided_lifetime::Key { symbol_id: function_id },
-            self.input_session.intern(Arena::default()),
-        );
-        self.input_session.set_input(
-            implied_predicate::Key { symbol_id: function_id },
-            self.input_session.intern(HashSet::default()),
-        );
-        self.input_session.set_input(
-            where_clause::Key { symbol_id: function_id },
-            self.input_session.intern_unsized([]),
-        );
-        self.input_session.set_input(
-            parameter::Key { symbol_id: function_id },
-            self.input_session.intern(parameters),
-        );
-        self.input_session.set_input(
-            return_type::Key { symbol_id: function_id },
-            self.input_session.intern(return_type),
-        );
-        self.input_session.set_input(
-            pernixc_symbol::r#unsafe::Key { symbol_id: function_id },
-            is_unsafe,
-        );
-        self.input_session.set_input(
-            effect_annotation::Key { symbol_id: function_id },
-            self.input_session.intern(OrderedArena::default()),
-        );
+        self.input_session
+            .set_input(
+                kind::Key { symbol_id: function_id },
+                kind::Kind::Function,
+            )
+            .await;
+        self.input_session
+            .set_input(
+                name::Key { symbol_id: function_id },
+                self.input_session.intern_unsized(name.to_owned()),
+            )
+            .await;
+        self.input_session
+            .set_input(
+                parent::Key { symbol_id: function_id },
+                Some(self.root_target_module_id.id),
+            )
+            .await;
+        self.input_session
+            .set_input(
+                generic_parameters::Key { symbol_id: function_id },
+                self.input_session.intern(generic_params),
+            )
+            .await;
+        self.input_session
+            .set_input(
+                accessibility::Key { symbol_id: function_id },
+                Accessibility::Public,
+            )
+            .await;
+        self.input_session
+            .set_input(
+                elided_lifetime::Key { symbol_id: function_id },
+                self.input_session.intern(Arena::default()),
+            )
+            .await;
+        self.input_session
+            .set_input(
+                implied_predicate::Key { symbol_id: function_id },
+                self.input_session.intern(HashSet::default()),
+            )
+            .await;
+        self.input_session
+            .set_input(
+                where_clause::Key { symbol_id: function_id },
+                self.input_session.intern_unsized([]),
+            )
+            .await;
+        self.input_session
+            .set_input(
+                parameter::Key { symbol_id: function_id },
+                self.input_session.intern(parameters),
+            )
+            .await;
+        self.input_session
+            .set_input(
+                return_type::Key { symbol_id: function_id },
+                self.input_session.intern(return_type),
+            )
+            .await;
+        self.input_session
+            .set_input(
+                pernixc_symbol::r#unsafe::Key { symbol_id: function_id },
+                is_unsafe,
+            )
+            .await;
+        self.input_session
+            .set_input(
+                effect_annotation::Key { symbol_id: function_id },
+                self.input_session.intern(OrderedArena::default()),
+            )
+            .await;
 
         function_id
     }
@@ -181,7 +205,7 @@ impl CoreLibInitializer<'_, '_> {
     /// ```txt
     /// public function sizeof[T]() -> usize
     /// ```
-    fn initialize_sizeof(&mut self) -> Global<pernixc_symbol::ID> {
+    async fn initialize_sizeof(&mut self) -> Global<pernixc_symbol::ID> {
         self.initialize_generic_function(
             SIZEOF_FUNCTION_SEQUENCE,
             SIZEOF_FUNCTION_NAME,
@@ -196,6 +220,7 @@ impl CoreLibInitializer<'_, '_> {
                 )
             },
         )
+        .await
     }
 
     /// Creates the `alignof` intrinsic function.
@@ -203,7 +228,7 @@ impl CoreLibInitializer<'_, '_> {
     /// ```txt
     /// public function alignof[T]() -> usize
     /// ```
-    fn initialize_alignof(&mut self) -> Global<pernixc_symbol::ID> {
+    async fn initialize_alignof(&mut self) -> Global<pernixc_symbol::ID> {
         self.initialize_generic_function(
             ALIGNOF_FUNCTION_SEQUENCE,
             ALIGNOF_FUNCTION_NAME,
@@ -218,6 +243,7 @@ impl CoreLibInitializer<'_, '_> {
                 )
             },
         )
+        .await
     }
 
     /// Creates the `dropAt` intrinsic function.
@@ -225,7 +251,7 @@ impl CoreLibInitializer<'_, '_> {
     /// ```txt
     /// public unsafe function dropAt[T](pointer: *mut T)
     /// ```
-    fn initialize_drop_at(&mut self) -> Global<pernixc_symbol::ID> {
+    async fn initialize_drop_at(&mut self) -> Global<pernixc_symbol::ID> {
         self.initialize_generic_function(
             DROPAT_FUNCTION_SEQUENCE,
             DROPAT_FUNCTION_NAME,
@@ -246,6 +272,7 @@ impl CoreLibInitializer<'_, '_> {
                 )
             },
         )
+        .await
     }
 
     /// Creates the `NoDrop` struct.
@@ -254,7 +281,7 @@ impl CoreLibInitializer<'_, '_> {
     /// public struct NoDrop[T]:
     ///     public value: T
     /// ```
-    fn initialize_no_drop(&mut self) -> Global<pernixc_symbol::ID> {
+    async fn initialize_no_drop(&mut self) -> Global<pernixc_symbol::ID> {
         let no_drop_id = {
             TargetID::CORE.make_global(
                 calculate_qualified_name_id_with_given_seed(
@@ -279,31 +306,44 @@ impl CoreLibInitializer<'_, '_> {
 
         // Set up the struct
         self.input_session
-            .set_input(kind::Key { symbol_id: no_drop_id }, kind::Kind::Struct);
-        self.input_session.set_input(
-            name::Key { symbol_id: no_drop_id },
-            self.input_session.intern_unsized(NODROP_STRUCT_NAME),
-        );
-        self.input_session.set_input(
-            parent::Key { symbol_id: no_drop_id },
-            Some(self.root_target_module_id.id),
-        );
-        self.input_session.set_input(
-            generic_parameters::Key { symbol_id: no_drop_id },
-            self.input_session.intern(generic_params),
-        );
-        self.input_session.set_input(
-            accessibility::Key { symbol_id: no_drop_id },
-            Accessibility::Public,
-        );
-        self.input_session.set_input(
-            where_clause::Key { symbol_id: no_drop_id },
-            self.input_session.intern_unsized([]),
-        );
-        self.input_session.set_input(
-            member::Key { symbol_id: no_drop_id },
-            self.input_session.intern(Member::default()),
-        );
+            .set_input(kind::Key { symbol_id: no_drop_id }, kind::Kind::Struct)
+            .await;
+        self.input_session
+            .set_input(
+                name::Key { symbol_id: no_drop_id },
+                self.input_session.intern_unsized(NODROP_STRUCT_NAME),
+            )
+            .await;
+        self.input_session
+            .set_input(
+                parent::Key { symbol_id: no_drop_id },
+                Some(self.root_target_module_id.id),
+            )
+            .await;
+        self.input_session
+            .set_input(
+                generic_parameters::Key { symbol_id: no_drop_id },
+                self.input_session.intern(generic_params),
+            )
+            .await;
+        self.input_session
+            .set_input(
+                accessibility::Key { symbol_id: no_drop_id },
+                Accessibility::Public,
+            )
+            .await;
+        self.input_session
+            .set_input(
+                where_clause::Key { symbol_id: no_drop_id },
+                self.input_session.intern_unsized([]),
+            )
+            .await;
+        self.input_session
+            .set_input(
+                member::Key { symbol_id: no_drop_id },
+                self.input_session.intern(Member::default()),
+            )
+            .await;
 
         // Set up the fields
         let mut field_arena = Arena::default();
@@ -316,18 +356,21 @@ impl CoreLibInitializer<'_, '_> {
             span: None,
         });
 
-        self.input_session.set_input(
-            fields::Key { symbol_id: no_drop_id },
-            self.input_session.intern(fields::Fields {
-                fields: field_arena,
-                field_ids_by_name: std::iter::once((
-                    self.input_session.intern_unsized(NODROP_VALUE_FIELD_NAME),
-                    field_id,
-                ))
-                .collect(),
-                field_declaration_order: vec![field_id],
-            }),
-        );
+        self.input_session
+            .set_input(
+                fields::Key { symbol_id: no_drop_id },
+                self.input_session.intern(fields::Fields {
+                    fields: field_arena,
+                    field_ids_by_name: std::iter::once((
+                        self.input_session
+                            .intern_unsized(NODROP_VALUE_FIELD_NAME),
+                        field_id,
+                    ))
+                    .collect(),
+                    field_declaration_order: vec![field_id],
+                }),
+            )
+            .await;
 
         no_drop_id
     }
@@ -337,7 +380,7 @@ impl CoreLibInitializer<'_, '_> {
     /// ```txt
     /// public unsafe function read[T](pointer: *T) -> T
     /// ```
-    fn initialize_read(&mut self) -> Global<pernixc_symbol::ID> {
+    async fn initialize_read(&mut self) -> Global<pernixc_symbol::ID> {
         self.initialize_generic_function(
             READ_FUNCTION_SEQUENCE,
             READ_FUNCTION_NAME,
@@ -358,5 +401,6 @@ impl CoreLibInitializer<'_, '_> {
                 )
             },
         )
+        .await
     }
 }
