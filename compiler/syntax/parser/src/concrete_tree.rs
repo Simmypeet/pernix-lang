@@ -12,7 +12,6 @@ use qbice::{
     Decode, Encode, Identifiable, StableHash, stable_hash::Sip128Hasher,
     stable_type_id::StableTypeID, storage::intern::Interned,
 };
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use siphasher::sip128::Hasher128;
 
 use crate::abstract_tree::AbstractTree;
@@ -299,14 +298,6 @@ impl StableHash for Tree {
         self.digest.stable_hash(state);
     }
 }
-
-impl Drop for Tree {
-    fn drop(&mut self) {
-        std::mem::take(&mut self.nodes).into_par_iter().for_each(drop);
-    }
-}
-
-impl Tree {}
 
 impl SourceElement for Tree {
     type Location = RelativeLocation;
