@@ -559,10 +559,9 @@ impl<'a, 'cache, I: Interner> State<'a, 'cache, I> {
             .drain(before.emitted_error_count..after.emitted_error_count);
 
         if before.event_index.0 == after.event_index.0
-            && before.event_index.1.is_some()
+            && let Some(event_index) = before.event_index.1
         {
-            let middle_count =
-                after.event_index.1.unwrap() - before.event_index.1.unwrap();
+            let middle_count = after.event_index.1.unwrap() - event_index;
 
             match &mut self.events[after.event_index.0 - 1] {
                 Event::Take(count) | Event::Error(count) => {
