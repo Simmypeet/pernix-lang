@@ -151,6 +151,7 @@ tikv-jemallocator = { version = "0.6.1", features = [
     "override_allocator_on_supported_platforms",
 ] }
 tikv-jemalloc-ctl = { version = "0.6.1" }
+ropey = "1.6.1"
 
 [patch.crates-io]
 inkwell = { git = "https://github.com/Simmypeet/inkwell", rev = "4366f7b37b4e732b4c567494077f3d871e2a2a60" }

@@ -19,6 +19,7 @@ fxhash = { workspace = true }
 siphasher = { workspace = true }
 rayon = { workspace = true }
 qbice.workspace = true
+ropey.workspace = true
 
 [lints]
 workspace = true

@@ -1,32 +1,15 @@
+use std::path::PathBuf;
+
+use qbice::storage::intern::Interned;
+
 use super::{EditorLocation, SourceFile};
 
 #[test]
-fn get_line_byte_positions() {
-    let text = "Hello\nworld\r\n!\n\rtes";
-    let byte_positions = super::get_line_byte_positions(text);
-    assert_eq!(byte_positions, vec![0..6, 6..13, 13..15, 15..16, 16..19]);
-}
-
-#[test]
-fn get_line_byte_positions_with_trailing_new_line() {
-    let text = "Hello\nworld\r\n!\n\rtes\n";
-
-    let byte_positions = super::get_line_byte_positions(text);
-
-    assert_eq!(byte_positions, vec![
-        0..6,
-        6..13,
-        13..15,
-        15..16,
-        16..20,
-        20..20
-    ]);
-}
-
-#[test]
 fn replace_range_as_insert() {
-    let mut source_file =
-        SourceFile::new("ABCD\nEFGH\nIJKL".to_string(), "test".into());
+    let mut source_file = SourceFile::from_str(
+        "ABCD\nEFGH\nIJKL",
+        Interned::new_duplicating_unsized(PathBuf::from("test")),
+    );
 
     source_file.replace_range(5..5, "1234");
 
@@ -41,8 +24,10 @@ fn replace_range_as_insert() {
 
 #[test]
 fn replace_range_in_same_line_one_line() {
-    let mut source_file =
-        SourceFile::new("ABCD\nEFGH\nIJKL".to_string(), "test".into());
+    let mut source_file = SourceFile::from_str(
+        "ABCD\nEFGH\nIJKL",
+        Interned::new_duplicating_unsized(PathBuf::from("test")),
+    );
 
     source_file.replace_range(6..8, "1234");
 
@@ -67,8 +52,10 @@ fn replace_range_in_same_line_one_line() {
 
 #[test]
 fn replace_range_multi_line_one_line() {
-    let mut source_file =
-        SourceFile::new("ABCD\nEFGH\nIJKL\nMNOP".to_string(), "test".into());
+    let mut source_file = SourceFile::from_str(
+        "ABCD\nEFGH\nIJKL\nMNOP",
+        Interned::new_duplicating_unsized(PathBuf::from("test")),
+    );
 
     source_file.replace_range(5..11, "1234");
 
@@ -83,13 +70,15 @@ fn replace_range_multi_line_one_line() {
 
 #[test]
 fn replace_range_multi_line() {
-    let mut source_file =
-        SourceFile::new("ABC\nDEF\nGHI\nJ".to_string(), "test".into());
+    let mut source_file = SourceFile::from_str(
+        "ABC\nDEF\nGHI\nJ",
+        Interned::new_duplicating_unsized(PathBuf::from("test")),
+    );
 
     source_file.replace_range(5..6, "12\n3\n4");
 
     assert_eq!(source_file.line_coount(), 6);
-    assert_eq!(source_file.content, "ABC\nD12\n3\n4F\nGHI\nJ");
+    assert_eq!(source_file.content(), "ABC\nD12\n3\n4F\nGHI\nJ");
 
     assert_eq!(source_file.get_line(0).unwrap(), "ABC\n");
     assert_eq!(source_file.get_line(1).unwrap(), "D12\n");
@@ -101,8 +90,10 @@ fn replace_range_multi_line() {
 
 #[test]
 fn replace_trimming() {
-    let mut source_file =
-        SourceFile::new("ABC\nDEF\nGHI\nJ".to_string(), "test".into());
+    let mut source_file = SourceFile::from_str(
+        "ABC\nDEF\nGHI\nJ",
+        Interned::new_duplicating_unsized(PathBuf::from("test")),
+    );
 
     source_file.replace_range(1..10, "1\n2");
 
@@ -117,8 +108,10 @@ fn replace_trimming() {
 
 #[test]
 fn replace_add_line() {
-    let mut source_file =
-        SourceFile::new("ABC\nDEF\nGHI\nJ".to_string(), "test".into());
+    let mut source_file = SourceFile::from_str(
+        "ABC\nDEF\nGHI\nJ",
+        Interned::new_duplicating_unsized(PathBuf::from("test")),
+    );
 
     source_file.replace_range(5..5, "\n");
 
@@ -135,7 +128,10 @@ fn replace_add_line() {
 
 #[test]
 fn replace_range_as_append() {
-    let mut source_file = SourceFile::new("ABC".to_string(), "test".into());
+    let mut source_file = SourceFile::from_str(
+        "ABC",
+        Interned::new_duplicating_unsized(PathBuf::from("test")),
+    );
 
     let position = EditorLocation::new(0, 3);
     let byte_index =
@@ -149,9 +145,11 @@ fn replace_range_as_append() {
 }
 
 #[test]
-fn reaplce_range_delete() {
-    let mut source_file =
-        SourceFile::new("AAA\nBBB\nCCC".to_string(), "test".into());
+fn replace_range_delete() {
+    let mut source_file = SourceFile::from_str(
+        "AAA\nBBB\nCCC",
+        Interned::new_duplicating_unsized(PathBuf::from("test")),
+    );
 
     let start = EditorLocation::new(0, 1);
     let end = EditorLocation::new(2, 2);
