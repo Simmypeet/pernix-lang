@@ -1,9 +1,7 @@
 //! Contains the code related to the source code input.
 
 use core::str;
-use std::{
-    fmt::Debug, hash::Hash, io::Read, ops::Range, path::Path, sync::Arc,
-};
+use std::{fmt::Debug, hash::Hash, io::Read, ops::Range, path::Path};
 
 use getset::{CopyGetters, Getters};
 use pernixc_qbice::TrackedEngine;
@@ -394,7 +392,7 @@ pub type GlobalSourceID = Global<LocalSourceID>;
     StableHash,
     qbice::Query,
 )]
-#[value(Result<Arc<SourceFile>, Error>)]
+#[value(Result<SourceFile, Error>)]
 pub struct Key {
     /// The path to load the source file.
     pub path: Interned<Path>,
@@ -496,12 +494,12 @@ pub struct FilePathKey {
     pub id: GlobalSourceID,
 }
 
-/// Obtains the [`Arc<SourceFile>`] by its associated ID.
+/// Obtains the [`SourceFile`] by its associated ID.
 #[pernixc_extend::extend]
 pub async fn get_source_file_by_id(
     self: &TrackedEngine,
     id: GlobalSourceID,
-) -> Arc<SourceFile> {
+) -> SourceFile {
     let source_path = self.get_source_file_path(id).await;
     let target_id = id.target_id;
 

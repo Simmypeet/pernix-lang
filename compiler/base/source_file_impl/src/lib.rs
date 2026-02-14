@@ -1,6 +1,6 @@
 //! Contains the implementation of the source file loading executor.
 
-use std::{hash::Hash, path::Path, sync::Arc};
+use std::{hash::Hash, path::Path};
 
 use linkme::distributed_slice;
 use pernixc_qbice::{Config, InputSession, PERNIX_PROGRAM, TrackedEngine};
@@ -19,12 +19,17 @@ use siphasher::sip128::Hasher128;
 pub async fn load_source_file_executor(
     key: &pernixc_source_file::Key,
     engine: &TrackedEngine,
-) -> Result<Arc<SourceFile>, Error> {
-    std::fs::File::open(key.path.as_ref())
-        .and_then(|file| {
-            Ok(Arc::new(SourceFile::load(file, key.path.to_path_buf())?))
-        })
-        .map_err(|x| Error(engine.intern_unsized(x.to_string())))
+) -> Result<SourceFile, Error> {
+    let file = std::fs::File::open(key.path.as_ref())
+        .map_err(|x| Error(engine.intern_unsized(x.to_string())))?;
+
+    let source_file = SourceFile::from_reader(
+        std::io::BufReader::new(file),
+        engine.intern_unsized(key.path.to_path_buf()),
+    )
+    .map_err(|x| Error(engine.intern_unsized(x.to_string())))?;
+
+    Ok(source_file)
 }
 
 #[distributed_slice(PERNIX_PROGRAM)]
