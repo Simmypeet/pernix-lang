@@ -1,6 +1,7 @@
 use std::{
     collections::HashSet,
     fmt::{Debug, Display},
+    path::PathBuf,
 };
 
 use enum_as_inner::EnumAsInner;
@@ -9,7 +10,9 @@ use pernixc_lexical::{
     tree::{DelimiterKind, RelativeLocation},
 };
 use pernixc_qbice::DuplicatingInterner;
-use pernixc_source_file::{GlobalSourceID, SourceFile, SourceMap};
+use pernixc_source_file::{
+    GlobalSourceID, SourceFile, simple_source_map::SimpleSourceMap,
+};
 use pernixc_target::TargetID;
 use pernixc_test_input::Input;
 use proptest::{
@@ -18,6 +21,7 @@ use proptest::{
     strategy::Strategy,
     test_runner::TestCaseResult,
 };
+use qbice::storage::intern::Interned;
 
 use crate::{
     abstract_tree::{AbstractTree, First, Second, Tag, abstract_tree},
@@ -42,19 +46,22 @@ abstract_tree! {
 }
 
 fn parse_token_tree(
-    source_map: &mut SourceMap,
+    source_map: &mut SimpleSourceMap,
     source_code: &str,
 ) -> (pernixc_lexical::tree::Tree, GlobalSourceID) {
     let source_id = source_map.register(
         TargetID::TEST,
-        SourceFile::new(source_code.to_string(), "test".into()),
+        SourceFile::from_str(
+            source_code,
+            Interned::new_duplicating_unsized(PathBuf::from("test")),
+        ),
     );
 
     let source = source_map.get(TargetID::TEST.make_global(source_id)).unwrap();
     let interner = DuplicatingInterner;
 
     let tree = pernixc_lexical::tree::Tree::from_source(
-        source.content(),
+        &source,
         TargetID::TEST.make_global(source_id),
         &interner,
         &pernixc_handler::Panic,
@@ -84,7 +91,7 @@ fn check_basic_sequence(basic_sequence: &BasicSequence, expected_name: &str) {
 
 #[test]
 fn basic_sequence() {
-    let mut source_map = SourceMap::new();
+    let mut source_map = SimpleSourceMap::new();
     let (tree, _) = parse_token_tree(&mut source_map, "public struct Foo;");
 
     let interner = DuplicatingInterner;
@@ -99,7 +106,7 @@ fn basic_sequence() {
 
 #[test]
 fn basic_sequence_missing_semicolon() {
-    let mut source_map = SourceMap::new();
+    let mut source_map = SimpleSourceMap::new();
     let (tree, _) = parse_token_tree(&mut source_map, "public struct Foo");
 
     let interner = DuplicatingInterner;
@@ -136,7 +143,7 @@ abstract_tree! {
 
 #[test]
 fn two_basic_sequences() {
-    let mut source_map = SourceMap::new();
+    let mut source_map = SimpleSourceMap::new();
     let (tree, _) = parse_token_tree(
         &mut source_map,
         "public struct Foo; public struct Bar;",
@@ -186,7 +193,7 @@ public struct Foo:
 
 #[test]
 fn sequence_with_fragment() {
-    let mut source_map = SourceMap::new();
+    let mut source_map = SimpleSourceMap::new();
     let (tree, _) = parse_token_tree(&mut source_map, SEQUENCE_WITH_FRAGMENT);
 
     let interner = DuplicatingInterner;
@@ -246,7 +253,7 @@ abstract_tree! {
 
 #[test]
 fn mutable_int32_reference() {
-    let mut source_map = SourceMap::new();
+    let mut source_map = SimpleSourceMap::new();
     let (tree, _) = parse_token_tree(&mut source_map, "&mut int32");
 
     let interner = DuplicatingInterner;
@@ -265,7 +272,7 @@ fn mutable_int32_reference() {
 
 #[test]
 fn int32_reference() {
-    let mut source_map = SourceMap::new();
+    let mut source_map = SimpleSourceMap::new();
     let (tree, _) = parse_token_tree(&mut source_map, "&int32");
 
     let interner = DuplicatingInterner;
@@ -284,7 +291,7 @@ fn int32_reference() {
 
 #[test]
 fn int32_reference_error() {
-    let mut source_map = SourceMap::new();
+    let mut source_map = SimpleSourceMap::new();
     let (token_tree, _) = parse_token_tree(&mut source_map, "&bool");
 
     let interner = DuplicatingInterner;
@@ -322,7 +329,7 @@ fn int32_reference_error() {
 
 #[test]
 fn int32_reference_missing_int32() {
-    let mut source_map = SourceMap::new();
+    let mut source_map = SimpleSourceMap::new();
 
     let (token_tree, _) = parse_token_tree(&mut source_map, "&mut");
 
@@ -648,7 +655,7 @@ fn verify_type_ref<TR: Display, TAst: AbstractTree + Debug>(
 where
     for<'x, 'y> &'x TR: Input<&'y TAst, ()>,
 {
-    let mut source_map = SourceMap::new();
+    let mut source_map = SimpleSourceMap::new();
 
     let source = ast_ref.to_string();
     let (token_tree, _) = parse_token_tree(&mut source_map, &source);
@@ -683,7 +690,7 @@ abstract_tree! {
 
 #[test]
 fn trailing_optional() {
-    let mut source_map = SourceMap::new();
+    let mut source_map = SimpleSourceMap::new();
     let (token_tree, _) = parse_token_tree(&mut source_map, "&");
 
     let interner = DuplicatingInterner;
@@ -789,7 +796,7 @@ abstract_tree! {
 
 #[test]
 fn error_choice_choose_most_progress() {
-    let mut source_map = SourceMap::new();
+    let mut source_map = SimpleSourceMap::new();
     let (token_tree, _) = parse_token_tree(&mut source_map, "+ - * / ?");
 
     let interner = DuplicatingInterner;
@@ -832,7 +839,7 @@ abstract_tree! {
 
 #[test]
 fn repeat_all_error_recovery() {
-    let mut source_map = SourceMap::new();
+    let mut source_map = SimpleSourceMap::new();
     let (token_tree, _) =
         parse_token_tree(&mut source_map, "[int32 &x float32]");
 
@@ -864,7 +871,7 @@ fn repeat_all_error_recovery() {
 
 #[test]
 fn reference_missing_type() {
-    let mut source_map = SourceMap::new();
+    let mut source_map = SimpleSourceMap::new();
     let (token_tree, _) = parse_token_tree(&mut source_map, "&x");
 
     let interner = DuplicatingInterner;
