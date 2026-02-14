@@ -3,15 +3,16 @@
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use pernixc_diagnostic::ByteIndex;
-use pernixc_query::{
-    Engine, TrackedEngine,
-    runtime::executor::{self, Executor},
-};
+use pernixc_qbice::{Engine, IncrementalStorageEngine, TrackedEngine};
 use pernixc_source_file::{
     EditorLocation, GlobalSourceID, SourceFile, get_source_file_by_id,
 };
 use pernixc_target::{Arguments, Check, Input, TargetID};
-use tokio::sync::{RwLock, RwLockReadGuard};
+use qbice::{
+    executor, serialize::Plugin, stable_hash::SeededStableHasherBuilder,
+    storage::storage_engine::StorageEngineFactory,
+};
+use tokio::sync::RwLock;
 use tower_lsp::lsp_types::{DidChangeTextDocumentParams, Url};
 
 use crate::{
@@ -22,7 +23,7 @@ use crate::{
 /// The struct that handles analysis of the workspace (e.g., checking errors).
 #[derive(Debug)]
 pub struct Analyzer {
-    engine: RwLock<Arc<Engine>>,
+    engine: Arc<Engine>,
     workspace: Workspace,
     current_target_id: TargetID,
     published_diagnostics: RwLock<Vec<Url>>,
@@ -31,33 +32,28 @@ pub struct Analyzer {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 struct LoadSourceFileExecutor;
 
-impl executor::Executor<pernixc_source_file::Key> for LoadSourceFileExecutor {
-    /// The original executor always recomputes the value, which is not what we
-    /// want here in the lsp server. We'll depend on the LSP server to tell us
-    /// when to recompute.
-    const ALWAYS_RECOMPUTE: bool = false;
-
+impl executor::Executor<pernixc_source_file::Key, pernixc_qbice::Config>
+    for LoadSourceFileExecutor
+{
     async fn execute(
         &self,
-        _: &pernixc_query::TrackedEngine,
         key: &pernixc_source_file::Key,
-    ) -> Result<
-        Result<Arc<SourceFile>, pernixc_source_file::Error>,
-        executor::CyclicError,
-    > {
-        Ok(std::fs::File::open(key.path.as_ref())
+        engine: &pernixc_qbice::TrackedEngine,
+    ) -> Result<Arc<SourceFile>, pernixc_source_file::Error> {
+        std::fs::File::open(key.path.as_ref())
             .and_then(|file| {
                 Ok(Arc::new(SourceFile::load(file, key.path.to_path_buf())?))
             })
-            .map_err(|x| pernixc_source_file::Error(x.to_string().into())))
+            .map_err(|x| {
+                pernixc_source_file::Error(engine.intern_unsized(x.to_string()))
+            })
     }
 }
 
 impl Analyzer {
     /// Returns a read guard to the engine.
-    pub async fn engine(&self) -> RwLockReadGuard<'_, Arc<Engine>> {
-        self.engine.read().await
-    }
+    #[must_use]
+    pub const fn engine(&self) -> &Arc<Engine> { &self.engine }
 
     /// Returns the current target ID.
     #[must_use]
@@ -74,13 +70,17 @@ impl Analyzer {
     /// - `source_file_loader_overide`: An executor to override the default
     ///   source file loader.
     /// - `target_seed`: An optional seed for the target.
-    pub async fn create_engine<E: Executor<pernixc_source_file::Key>>(
+    pub async fn create_engine<
+        E: executor::Executor<pernixc_source_file::Key, pernixc_qbice::Config>,
+        S: StorageEngineFactory<StorageEngine = pernixc_qbice::StorageEngine>,
+    >(
         target_name: String,
         root_source_file: PathBuf,
-        source_file_loader_overide: Arc<E>,
+        source_file_loader_override: Arc<E>,
         is_testing_lsp: bool,
         target_seed: Option<u64>,
-    ) -> Arc<Engine> {
+        storage_engine_factory: S,
+    ) -> Result<Arc<Engine>, S::Error> {
         let local_target_id = TargetID::from_target_name(&target_name);
 
         let command = pernixc_target::Command::Check(Check {
@@ -95,30 +95,44 @@ impl Analyzer {
         });
 
         // initialize the engine with corelib
-        let mut engine = Engine::default();
-        pernixc_register::Registration::register_executor(
-            &mut engine.runtime.executor,
-        );
+        let mut engine = Engine::new_with(
+            Plugin::default(),
+            storage_engine_factory,
+            SeededStableHasherBuilder::new(0),
+        )
+        .await?;
 
-        assert!(
-            engine
-                .runtime
-                .executor
-                .register(source_file_loader_overide)
-                .is_some()
-        );
+        // Due to how rust compiler work, if a crate is linked without having
+        // any symbols in it used, the crate will be completely ignored
+        // and the static distributed registration will be optimized
+        // out, causing the engine to not have the executors
+        pernixc_source_file_impl::black_box();
+        pernixc_lexical_impl::black_box();
+        pernixc_syntax_impl::black_box();
 
-        engine
-            .input_session(async |x| {
-                x.set_input(
-                    pernixc_target::LinkKey(local_target_id),
-                    Arc::new(std::iter::once(TargetID::CORE).collect()),
+        engine.register_program(pernixc_qbice::PERNIX_PROGRAM);
+
+        engine.register_executor(source_file_loader_override);
+
+        let engine = Arc::new(engine);
+
+        {
+            let mut input_session = engine.input_session().await;
+
+            pernixc_corelib::initialize_corelib(&mut input_session).await;
+
+            input_session
+                .set_input(
+                    pernixc_target::LinkKey { target_id: local_target_id },
+                    input_session
+                        .intern(std::iter::once(TargetID::CORE).collect()),
                 )
                 .await;
 
-                x.set_input(
+            input_session
+                .set_input(
                     pernixc_target::AllTargetIDsKey,
-                    Arc::new(
+                    input_session.intern(
                         vec![local_target_id, TargetID::CORE]
                             .into_iter()
                             .collect(),
@@ -126,14 +140,23 @@ impl Analyzer {
                 )
                 .await;
 
-                x.set_input(TestConfig, is_testing_lsp).await;
+            input_session.set_input(TestConfig, is_testing_lsp).await;
 
-                x.set_input(
+            input_session
+                .set_input(
                     pernixc_target::MapKey,
-                    Arc::new(
+                    input_session.intern(
                         [
-                            (command.input().target_name(), local_target_id),
-                            ("core".into(), TargetID::CORE),
+                            (
+                                input_session.intern_unsized(
+                                    command.input().target_name(),
+                                ),
+                                local_target_id,
+                            ),
+                            (
+                                input_session.intern_unsized("core"),
+                                TargetID::CORE,
+                            ),
                         ]
                         .into_iter()
                         .collect(),
@@ -141,45 +164,49 @@ impl Analyzer {
                 )
                 .await;
 
-                x.set_input(
-                    pernixc_target::Key(local_target_id),
-                    Arc::new(Arguments { command }),
+            input_session
+                .set_input(
+                    pernixc_target::Key { target_id: local_target_id },
+                    input_session.intern(Arguments { command }),
                 )
                 .await;
 
-                if let Some(target_seed) = target_seed {
-                    x.set_input(
-                        pernixc_target::SeedKey(local_target_id),
+            if let Some(target_seed) = target_seed {
+                input_session
+                    .set_input(
+                        pernixc_target::SeedKey { target_id: local_target_id },
                         target_seed,
                     )
                     .await;
-                }
-            })
-            .await;
+            }
 
-        let mut engine = Arc::new(engine);
-        pernixc_corelib::initialize_corelib(&mut engine).await;
+            input_session.commit().await;
+        }
 
-        engine
+        Ok(engine)
     }
 
     /// Creates a new analyzer for the given workspace URL.
     pub async fn new(workspace_url: Url) -> Result<Self, NewWorkspaceError> {
         let workspace = workspace::Workspace::new(&workspace_url)?;
+        let incremental_dir = workspace.root_path().join(".pernix");
 
         let target_name = workspace.target_name().to_string();
         let local_target_id = TargetID::from_target_name(&target_name);
+
         let engine = Self::create_engine(
             target_name,
             workspace.root_source_file().to_path_buf(),
             Arc::new(LoadSourceFileExecutor),
             false,
             None,
+            IncrementalStorageEngine(incremental_dir),
         )
-        .await;
+        .await
+        .map_err(NewWorkspaceError::IncrementalDbFailure)?;
 
         Ok(Self {
-            engine: RwLock::new(engine),
+            engine,
             workspace,
             current_target_id: local_target_id,
             published_diagnostics: RwLock::new(Vec::new()),
@@ -188,52 +215,54 @@ impl Analyzer {
 
     /// Applies the given change to the source file in the engine.
     /// This does not perform a check, that must be done separately.
-    pub async fn apply_change(&self, mut params: DidChangeTextDocumentParams) {
-        let mut engine_lock = self.engine.write().await;
+    pub async fn apply_change(&self, mut _params: DidChangeTextDocumentParams) {
+        todo!()
+        // let mut engine_lock = self.engine.write().await;
 
-        let input_lock = Arc::get_mut(&mut *engine_lock).unwrap().input_lock();
-        let key = pernixc_source_file::Key {
-            path: params.text_document.uri.to_file_path().unwrap().into(),
-            target_id: self.current_target_id,
-        };
+        // let input_lock = Arc::get_mut(&mut
+        // *engine_lock).unwrap().input_lock();
+        // let key = pernixc_source_file::Key {
+        //     path: params.text_document.uri.to_file_path().unwrap().into(),
+        //     target_id: self.current_target_id,
+        // };
 
-        let changes = match params
-            .content_changes
-            .iter()
-            .rposition(|x| x.range.is_none())
-        {
-            Some(index) => {
-                let change = &mut params.content_changes[index];
+        // let changes = match params
+        //     .content_changes
+        //     .iter()
+        //     .rposition(|x| x.range.is_none())
+        // {
+        //     Some(index) => {
+        //         let change = &mut params.content_changes[index];
 
-                let file_path =
-                    params.text_document.uri.to_file_path().unwrap();
+        //         let file_path =
+        //             params.text_document.uri.to_file_path().unwrap();
 
-                input_lock
-                    .set_input(
-                        key.clone(),
-                        Ok(Arc::new(SourceFile::new(
-                            std::mem::take(&mut change.text),
-                            file_path,
-                        ))),
-                    )
-                    .await;
+        //         input_lock
+        //             .set_input(
+        //                 key.clone(),
+        //                 Ok(Arc::new(SourceFile::new(
+        //                     std::mem::take(&mut change.text),
+        //                     file_path,
+        //                 ))),
+        //             )
+        //             .await;
 
-                &params.content_changes[index + 1..]
-            }
-            None => &params.content_changes,
-        };
+        //         &params.content_changes[index + 1..]
+        //     }
+        //     None => &params.content_changes,
+        // };
 
-        input_lock.inplace_mutate(&key, |source_file| {
-            let source_file = source_file.as_mut().unwrap();
+        // input_lock.inplace_mutate(&key, |source_file| {
+        //     let source_file = source_file.as_mut().unwrap();
 
-            for change in changes {
-                Self::update_source_file(
-                    Arc::get_mut(source_file).expect("should be unique"),
-                    &change.text,
-                    change.range.unwrap(),
-                );
-            }
-        });
+        //     for change in changes {
+        //         Self::update_source_file(
+        //             Arc::get_mut(source_file).expect("should be unique"),
+        //             &change.text,
+        //             change.range.unwrap(),
+        //         );
+        //     }
+        // });
     }
 
     fn update_source_file(
@@ -278,17 +307,14 @@ impl Analyzer {
         version: Option<i32>,
     ) {
         // the engine lock is intentionally held here
-        let engine_lock = self.engine.read().await;
         let mut published_diagnostics =
             self.published_diagnostics.write().await;
 
-        let engine = engine_lock.tracked();
+        let engine = self.engine.clone().tracked().await;
 
-        let Ok(check) =
-            engine.query(&pernixc_check::Key(self.current_target_id)).await
-        else {
-            return;
-        };
+        let check = engine
+            .query(&pernixc_check::Key { target_id: self.current_target_id })
+            .await;
 
         // collect diagnostics and group them by source file URL
         let mut diagnostics = HashMap::new();

@@ -1,17 +1,17 @@
 //! Handles the implementation of resolving the symbol being pointed at in the
 //! LSP server.
 
-use std::{path::Path, sync::Arc};
+use std::path::Path;
 
 use pernixc_extend::extend;
 use pernixc_parser::concrete_tree;
-use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
+use pernixc_qbice::TrackedEngine;
 use pernixc_resolution::qualified_identifier::{
     resolve_in, resolve_simple_qualified_identifier_root,
 };
 use pernixc_source_file::{
-    ByteIndex, GlobalSourceID, SourceElement, Span, calculate_path_id,
-    get_source_file_by_id,
+    ByteIndex, GlobalSourceID, SourceElement, Span, get_source_file_by_id,
+    get_stable_path_id,
 };
 use pernixc_symbol::{
     member::try_get_members, scope_span::get_scope_span,
@@ -19,6 +19,7 @@ use pernixc_symbol::{
 };
 use pernixc_syntax::QualifiedIdentifier;
 use pernixc_target::{Global, TargetID};
+use qbice::storage::intern::Interned;
 use tower_lsp::lsp_types;
 
 use crate::conversion::to_pernix_editor_location;
@@ -29,10 +30,10 @@ use crate::conversion::to_pernix_editor_location;
 pub async fn get_pointing_qualified_identifier(
     self: &TrackedEngine,
     target_id: TargetID,
-    source_file_path: Arc<Path>,
+    source_file_path: Interned<Path>,
     byte_index: ByteIndex,
 ) -> Option<(QualifiedIdentifier, Span<ByteIndex>)> {
-    let Ok(Ok((Some(syntax), _))) = self
+    let Ok((Some(syntax), _)) = self
         .query(&pernixc_syntax::Key {
             path: source_file_path.clone(),
             target_id,
@@ -42,7 +43,7 @@ pub async fn get_pointing_qualified_identifier(
         return None;
     };
 
-    let Ok(Ok((token_tree, _))) = self
+    let Ok((token_tree, _)) = self
         .query(&pernixc_lexical::Key {
             path: source_file_path.clone(),
             target_id,
@@ -133,10 +134,8 @@ pub async fn resolve_qualified_identifier_path(
     current_site: Global<pernixc_symbol::ID>,
     qualified_identifier: &QualifiedIdentifier,
     pointing_span: Option<Span<ByteIndex>>,
-) -> Result<Option<Resolution>, CyclicError> {
-    let Some(root_syn) = qualified_identifier.root() else {
-        return Ok(None);
-    };
+) -> Option<Resolution> {
+    let root_syn = qualified_identifier.root()?;
 
     let Some(root) = self
         .resolve_simple_qualified_identifier_root(current_site, &root_syn)
@@ -144,10 +143,10 @@ pub async fn resolve_qualified_identifier_path(
     else {
         let root_span = self.to_absolute_span(&root_syn.span()).await;
 
-        return Ok(Some(Resolution::Failed(Failed {
+        return Some(Resolution::Failed(Failed {
             prior_scope: None,
             fail_at_cursor: Some(root_span) == pointing_span,
-        })));
+        }));
     };
 
     let root_match = match root_syn {
@@ -169,20 +168,17 @@ pub async fn resolve_qualified_identifier_path(
 
     // shows as pointing to the root
     if root_match {
-        return Ok(Some(Resolution::Success(SuccessResolution {
+        return Some(Resolution::Success(SuccessResolution {
             pointing_symbol: root,
             parent_scope: None,
-        })));
+        }));
     }
 
     let mut current_symbol_id = root;
 
     for subsequence in qualified_identifier.subsequences() {
-        let Some(identifier) =
-            subsequence.generic_identifier().and_then(|x| x.identifier())
-        else {
-            return Ok(None);
-        };
+        let identifier =
+            subsequence.generic_identifier().and_then(|x| x.identifier())?;
 
         let identifier_span = self.to_absolute_span(&identifier.span).await;
 
@@ -192,28 +188,28 @@ pub async fn resolve_qualified_identifier_path(
                 &identifier.kind.0,
                 /* consider_adt_implements */ true,
             )
-            .await?
+            .await
         else {
             // resolution failed at this segment
-            return Ok(Some(Resolution::Failed(Failed {
+            return Some(Resolution::Failed(Failed {
                 prior_scope: Some(current_symbol_id),
                 fail_at_cursor: Some(identifier_span) == pointing_span,
-            })));
+            }));
         };
 
         // shows as pointing to this subsequence
         if Some(identifier_span) == pointing_span {
-            return Ok(Some(Resolution::Success(SuccessResolution {
+            return Some(Resolution::Success(SuccessResolution {
                 pointing_symbol: resolved_id,
                 parent_scope: Some(current_symbol_id),
-            })));
+            }));
         }
 
         current_symbol_id = resolved_id;
     }
 
     // no match at the cursor position
-    Ok(Some(Resolution::NoMatchFound(current_symbol_id)))
+    Some(Resolution::NoMatchFound(current_symbol_id))
 }
 
 /// Resolves the symbol at the given LSP position in the specified URI.
@@ -223,12 +219,13 @@ pub async fn symbol_at(
     position: &lsp_types::Position,
     uri: &lsp_types::Url,
     target_id: pernixc_target::TargetID,
-) -> Result<Option<Global<pernixc_symbol::ID>>, CyclicError> {
+) -> Option<Global<pernixc_symbol::ID>> {
     let source_file_path = uri.to_file_path().unwrap();
-    let source_file_path: Arc<Path> = Arc::from(source_file_path);
+    let source_file_path: Interned<Path> =
+        self.intern_unsized(source_file_path);
 
     let source_id = target_id.make_global(
-        self.calculate_path_id(&source_file_path, target_id)
+        self.get_stable_path_id(source_file_path.clone(), target_id)
             .await
             .expect("lsp URL should've been valid"),
     );
@@ -249,32 +246,26 @@ pub async fn symbol_at(
         .await;
 
     // get the qualified name of the symbol scope
-    let Some((qualified_identifier, pointing_span)) = self
+    let (qualified_identifier, pointing_span) = self
         .get_pointing_qualified_identifier(
             target_id,
             source_file_path.clone(),
             byte_index,
         )
-        .await
-    else {
-        return Ok(None);
-    };
+        .await?;
 
-    let Some(resolved_symbol_id) = self
+    let resolved_symbol_id = self
         .resolve_qualified_identifier_path(
             symbol_scope_id,
             &qualified_identifier,
             Some(pointing_span),
         )
-        .await?
-    else {
-        return Ok(None);
-    };
+        .await?;
 
     match resolved_symbol_id {
-        Resolution::Success(success) => Ok(Some(success.pointing_symbol)),
+        Resolution::Success(success) => Some(success.pointing_symbol),
 
-        Resolution::Failed(_) | Resolution::NoMatchFound(_) => Ok(None),
+        Resolution::Failed(_) | Resolution::NoMatchFound(_) => None,
     }
 }
 

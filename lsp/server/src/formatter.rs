@@ -4,8 +4,7 @@
 use std::ops::{Deref, DerefMut};
 
 use bon::Builder;
-use pernixc_extend::extend;
-use pernixc_query::runtime::executor::CyclicError;
+use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::{
     implements::get_implements, implements_arguments::get_implements_argument,
 };
@@ -31,34 +30,10 @@ mod where_clause;
 
 pub use irrefutable_pattern::format_pattern;
 
-/// Represents errors that can occur during formatting.
-#[derive(Debug, Clone, Copy, thiserror::Error)]
-#[allow(missing_docs)]
-pub enum Error {
-    #[error(transparent)]
-    Fmt(#[from] std::fmt::Error),
-
-    #[error(transparent)]
-    Cyclic(#[from] CyclicError),
-}
-
-/// Converts a Result that may contain a formatting error into one that
-/// panics on formatting errors, propagating only cyclic errors.
-#[extend]
-pub fn assert_no_fmt_error<T>(
-    self: Result<T, Error>,
-) -> Result<T, CyclicError> {
-    match self {
-        Ok(value) => Ok(value),
-        Err(Error::Cyclic(e)) => Err(e),
-        Err(Error::Fmt(e)) => panic!("Unexpected formatting error: {e}"),
-    }
-}
-
 /// Stores the internal buffer for formatting with indentation support.
 pub struct Formatter<'x, 'y> {
     buffer: &'x mut (dyn std::fmt::Write + Send),
-    engine: &'y pernixc_query::TrackedEngine,
+    engine: &'y TrackedEngine,
     current_identiation_level: usize,
     first_line: bool,
 }
@@ -67,7 +42,7 @@ impl<'x, 'y> Formatter<'x, 'y> {
     /// Creates a new [`Formatter`] with the given buffer and engine.
     pub fn new(
         buffer: &'x mut (dyn std::fmt::Write + Send),
-        engine: &'y pernixc_query::TrackedEngine,
+        engine: &'y TrackedEngine,
     ) -> Self {
         Self { buffer, engine, current_identiation_level: 0, first_line: true }
     }
@@ -120,10 +95,7 @@ impl Formatter<'_, '_> {
 
     /// Starts a new line with the current indentation level, applies the given
     /// format function, and then adds a newline.
-    pub async fn new_line(
-        &mut self,
-        format: impl AsyncFnOnce(LinedFormatter) -> Result<(), Error>,
-    ) -> Result<(), Error> {
+    pub async fn new_line(&mut self, format: impl AsyncFnOnce(LinedFormatter)) {
         if !self.first_line {
             writeln!(self.buffer).unwrap();
         }
@@ -134,20 +106,16 @@ impl Formatter<'_, '_> {
             write!(self.buffer, "{}", Self::TAB).unwrap();
         }
 
-        format(LinedFormatter { formatter: self }).await?;
-
-        Ok(())
+        format(LinedFormatter { formatter: self }).await;
     }
 
     /// Immediately starts a new line without any indentation.
-    pub fn immediate_line(&mut self) -> Result<(), Error> {
+    pub fn immediate_line(&mut self) {
         if !self.first_line {
             writeln!(self.buffer).unwrap();
         }
 
         self.first_line = false;
-
-        Ok(())
     }
 }
 
@@ -175,7 +143,7 @@ impl LinedFormatter<'_, '_, '_> {
         &mut self,
         symbol: Global<pernixc_symbol::ID>,
         options: &WriteSignatureOptions<'_>,
-    ) -> Result<(), Error> {
+    ) {
         if options.format_accessibility == FormatAccessiblity::Yes {
             let accessibility_str =
                 self.engine.get_accessiblity_str(symbol).await;
@@ -186,7 +154,7 @@ impl LinedFormatter<'_, '_, '_> {
         write!(self.buffer, "{}", options.signature_string).unwrap();
         let name = self.engine.get_name(symbol).await;
 
-        write!(self.buffer, " {name}").unwrap();
+        write!(self.buffer, " {}", name.as_ref()).unwrap();
 
         let kind = self.engine.get_kind(symbol).await;
 
@@ -194,14 +162,12 @@ impl LinedFormatter<'_, '_, '_> {
             && options.format_generic_parameters == FormatGenericParameters::Yes
         {
             let generic_parameters =
-                self.engine.get_generic_parameters(symbol).await?;
+                self.engine.get_generic_parameters(symbol).await;
 
             self.engine
                 .format_generic_parameters(self.buffer, &generic_parameters)
                 .await;
         }
-
-        Ok(())
     }
 
     /// Formats the accessibility to the buffer.
@@ -209,7 +175,7 @@ impl LinedFormatter<'_, '_, '_> {
         &mut self,
         accessibility: Accessibility<pernixc_symbol::ID>,
         current_site: Global<pernixc_symbol::ID>,
-    ) -> Result<(), Error> {
+    ) {
         let root_module_id =
             self.engine.get_target_root_module_id(current_site.target_id).await;
         let nearest_moodule_id =
@@ -229,26 +195,24 @@ impl LinedFormatter<'_, '_, '_> {
             }
         };
 
-        write!(self.buffer, "{accessibility_str}")?;
-
-        Ok(())
+        write!(self.buffer, "{accessibility_str}").unwrap();
     }
 
     /// Writes the implements signature for the given implementation ID.
     pub async fn write_implements_signature(
         &mut self,
         implementation_id: Global<pernixc_symbol::ID>,
-    ) -> Result<bool, Error> {
+    ) -> bool {
         let (Some(implements_id), Some(implements_arguments)) = (
-            self.engine.get_implements(implementation_id).await?,
-            self.engine.get_implements_argument(implementation_id).await?,
+            self.engine.get_implements(implementation_id).await,
+            self.engine.get_implements_argument(implementation_id).await,
         ) else {
-            return Ok(false);
+            return false;
         };
 
         let implements_name = self.engine.get_name(implements_id).await;
 
-        write!(self.buffer, "implements {implements_name}").unwrap();
+        write!(self.buffer, "implements {}", implements_name.as_ref()).unwrap();
 
         if !implements_arguments.is_empty() {
             let configuration = pernixc_term::display::Configuration::builder()
@@ -261,34 +225,27 @@ impl LinedFormatter<'_, '_, '_> {
                     self.buffer,
                     &configuration,
                 )
-                .await?;
+                .await
+                .unwrap();
         }
 
-        Ok(true)
+        true
     }
 
     /// Indents the formatter for the duration of the given async function.
     /// After the function completes, the indentation level is restored.
-    pub async fn indent(
-        &mut self,
-        f: impl AsyncFnOnce(&mut Formatter) -> Result<(), Error>,
-    ) -> Result<(), Error> {
+    pub async fn indent(&mut self, f: impl AsyncFnOnce(&mut Formatter)) {
         write!(self.buffer, ":").unwrap();
 
         self.current_identiation_level += 1;
-        f(self.formatter).await?;
+        f(self.formatter).await;
         self.current_identiation_level -= 1;
-
-        Ok(())
     }
 
     /// Writes the given type using the formatter's engine and the standard
     /// configuration.
-    pub async fn write_type(
-        &mut self,
-        ty: &pernixc_term::r#type::Type,
-    ) -> Result<(), std::fmt::Error> {
-        self.write_term(ty).await
+    pub async fn write_type(&mut self, ty: &pernixc_term::r#type::Type) {
+        self.write_term(ty).await;
     }
 
     /// Writes the given lifetime using the formatter's engine and the standard
@@ -296,8 +253,8 @@ impl LinedFormatter<'_, '_, '_> {
     pub async fn write_lifetime(
         &mut self,
         lifetime: &pernixc_term::lifetime::Lifetime,
-    ) -> Result<(), std::fmt::Error> {
-        self.write_term(lifetime).await
+    ) {
+        self.write_term(lifetime).await;
     }
 
     /// Writes the given term using the formatter's engine and the standard
@@ -305,7 +262,7 @@ impl LinedFormatter<'_, '_, '_> {
     pub async fn write_term<T: pernixc_term::display::Display>(
         &mut self,
         term: &T,
-    ) -> Result<(), std::fmt::Error> {
+    ) {
         let configuration = pernixc_term::display::Configuration::builder()
             .short_qualified_identifiers(true)
             .build();
@@ -316,6 +273,7 @@ impl LinedFormatter<'_, '_, '_> {
             &configuration,
         )
         .await
+        .unwrap();
     }
 }
 

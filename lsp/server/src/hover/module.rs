@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
 use pernixc_extend::extend;
-use pernixc_query::TrackedEngine;
+use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::name::get_qualified_name;
 use pernixc_target::Global;
 

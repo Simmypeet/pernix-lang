@@ -10,6 +10,7 @@ use pernix_server::{
     completion::handle_completion, goto_definition::handle_goto_definition,
     hover::handle_hover,
 };
+use pernixc_qbice::InMemoryFactory;
 use pernixc_query::TrackedEngine;
 use pernixc_target::TargetID;
 use tower_lsp::lsp_types::{
@@ -227,6 +228,7 @@ pub async fn create_engine_test_for_fixture_with_cursor(
         fixture.clone(),
         true,
         Some(0), // fixed target seed for deterministic results
+        InMemoryFactory,
     )
     .await;
 

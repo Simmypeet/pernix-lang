@@ -16,6 +16,7 @@ path = "snapshot/mod.rs"
 pernix_server = { path = "../server" }
 pernixc_source_file = { path = "../../compiler/base/source_file" }
 pernixc_target = { path = "../../compiler/base/target" }
+pernixc_qbice.path = "../../compiler/base/qbice"
 tower-lsp = { workspace = true }
 walkdir = { workspace = true }
 serde_json = { workspace = true }

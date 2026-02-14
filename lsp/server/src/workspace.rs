@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use getset::Getters;
+use qbice::storage::kv_database::rocksdb::RocksDBError;
 use serde::Deserialize;
 use tower_lsp::lsp_types::Url;
 
@@ -26,6 +27,10 @@ impl Workspace {
     /// Returns the name of the target specified in the `pernix.json` file.
     #[must_use]
     pub fn target_name(&self) -> &str { &self.configuration.target_name }
+
+    /// Returns the root path of the workspace.
+    #[must_use]
+    pub fn root_path(&self) -> &Path { &self.root_path }
 }
 
 /// Represents the parsed configuration of the `pernix.json` file.
@@ -80,6 +85,9 @@ pub enum NewWorkspaceError {
 
     #[error("failed to canonicalize the root path {0}: {1}")]
     RootPathCanonicalizationFailed(PathBuf, std::io::Error),
+
+    #[error("failed to open the incremental database: {0}")]
+    IncrementalDbFailure(#[from] RocksDBError),
 
     #[error("error(s) while parsing the `pernix.json` file: {1:?}")]
     JsonParsing(PathBuf, serde_json::Error),

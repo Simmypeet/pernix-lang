@@ -1,12 +1,12 @@
 use std::ops::Not;
 
 use pernixc_extend::extend;
-use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
+use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::where_clause::get_where_clause;
 use pernixc_target::Global;
 
 use crate::{
-    formatter::{Formatter, WriteSignatureOptions, assert_no_fmt_error},
+    formatter::{Formatter, WriteSignatureOptions},
     hover::markdown::PERNIX_FENCE,
 };
 
@@ -15,7 +15,7 @@ pub async fn format_simple_signature_with_where_clause(
     self: &TrackedEngine,
     symbol: Global<pernixc_symbol::ID>,
     signature_string: &str,
-) -> Result<String, CyclicError> {
+) -> String {
     let mut string = format!("```{PERNIX_FENCE}\n");
     let mut formatter = Formatter::new(&mut string, self);
 
@@ -27,25 +27,20 @@ pub async fn format_simple_signature_with_where_clause(
                     .signature_string(signature_string)
                     .build(),
             )
-            .await?;
+            .await;
 
-            let where_clause = self.get_where_clause(symbol).await?;
+            let where_clause = self.get_where_clause(symbol).await;
 
             if where_clause.is_empty().not() {
                 x.indent(async |x| {
-                    x.format_where_clause(&where_clause).await?;
-
-                    Ok(())
+                    x.format_where_clause(&where_clause).await;
                 })
-                .await?;
+                .await;
             }
-
-            Ok(())
         })
-        .await
-        .assert_no_fmt_error()?;
+        .await;
 
     string.push_str("\n```");
 
-    Ok(string)
+    string
 }

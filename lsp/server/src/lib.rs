@@ -247,14 +247,11 @@ impl LanguageServer for Server {
             return Ok(None);
         };
 
-        let engine = analyzer.engine().await;
-        let engine = engine.tracked();
+        let engine = analyzer.engine();
+        let engine = engine.clone().tracked().await;
 
-        let Ok(hover_contents) =
-            engine.handle_hover(analyzer.current_target_id(), params).await
-        else {
-            return Ok(None);
-        };
+        let hover_contents =
+            engine.handle_hover(analyzer.current_target_id(), params).await;
 
         Ok(hover_contents.map(|hover_contents| Hover {
             contents: HoverContents::Markup(MarkupContent {
@@ -274,13 +271,12 @@ impl LanguageServer for Server {
             return Ok(None);
         };
 
-        let engine = analyzer.engine().await;
-        let engine = engine.tracked();
+        let engine = analyzer.engine();
+        let engine = engine.clone().tracked().await;
 
         Ok(engine
             .handle_goto_definition(analyzer.current_target_id(), params)
-            .await
-            .unwrap_or_default())
+            .await)
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
@@ -315,13 +311,10 @@ impl LanguageServer for Server {
             return Ok(None);
         };
 
-        let engine = analyzer.engine().await;
-        let engine = engine.tracked();
+        let engine = analyzer.engine();
+        let engine = engine.clone().tracked().await;
 
-        Ok(engine
-            .handle_completion(analyzer.current_target_id(), params)
-            .await
-            .unwrap_or_default())
+        Ok(engine.handle_completion(analyzer.current_target_id(), params).await)
     }
 
     async fn completion_resolve(

@@ -1,10 +1,11 @@
 //! Handles completion requests.
 
-use std::{path::Path, sync::Arc};
+use std::path::Path;
 
 use pernixc_extend::extend;
-use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
-use pernixc_source_file::{calculate_path_id, get_source_file_by_id};
+use pernixc_qbice::TrackedEngine;
+use pernixc_source_file::{get_source_file_by_id, get_stable_path_id};
+use qbice::storage::intern::Interned;
 use tower_lsp::lsp_types::{CompletionParams, CompletionResponse};
 
 use crate::{
@@ -21,12 +22,12 @@ pub async fn handle_completion(
     self: &TrackedEngine,
     target_id: pernixc_target::TargetID,
     params: CompletionParams,
-) -> Result<Option<CompletionResponse>, CyclicError> {
-    let source_file_path: Arc<Path> = Arc::from(
+) -> Option<CompletionResponse> {
+    let source_file_path: Interned<Path> = self.intern_unsized(
         params.text_document_position.text_document.uri.to_file_path().unwrap(),
     );
     let source_id = target_id.make_global(
-        self.calculate_path_id(&source_file_path, target_id)
+        self.get_stable_path_id(source_file_path.clone(), target_id)
             .await
             .expect("lsp URL should've been valid"),
     );
@@ -36,18 +37,18 @@ pub async fn handle_completion(
             path: source_file_path.clone(),
             target_id,
         })
-        .await?;
+        .await;
 
     let token_tree = self
         .query(&pernixc_lexical::Key { path: source_file_path, target_id })
-        .await?;
+        .await;
 
     let Ok((token_tree, _error)) = token_tree else {
-        return Ok(None);
+        return None;
     };
 
     let Ok((Some(content), error)) = syntax_tree else {
-        return Ok(None);
+        return None;
     };
 
     let pernix_editor_location =
@@ -72,7 +73,7 @@ pub async fn handle_completion(
             &token_tree,
             target_id,
         )
-        .await?;
+        .await;
 
     // in testing mode, sort completions to make snapshots stable
     if self.is_testing_lsp().await {
@@ -82,8 +83,8 @@ pub async fn handle_completion(
     completions.reserve(qualified_identifier_completions.len());
 
     for completion in qualified_identifier_completions {
-        completions.push(completion.to_lsp_completion(self).await?);
+        completions.push(completion.to_lsp_completion(self).await);
     }
 
-    Ok(Some(CompletionResponse::Array(completions)))
+    Some(CompletionResponse::Array(completions))
 }

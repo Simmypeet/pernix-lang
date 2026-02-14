@@ -37,8 +37,8 @@ members = [
 
     "compiler/codegen/llvm",
 
-    # "lsp/integration_test",
-    # "lsp/server",
+    "lsp/integration_test",
+    "lsp/server",
 
     "compiler/driver",
     "compiler/main",

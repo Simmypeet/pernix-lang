@@ -197,6 +197,10 @@ pub async fn run(
         return ExitCode::FAILURE;
     };
 
+    // Due to how rust compiler work, if a crate is linked without having any
+    // symbols in it used, the crate will be completely ignored and the
+    // static distributed registration will be optimized out, causing the engine
+    // to not have the executors
     pernixc_source_file_impl::black_box();
     pernixc_lexical_impl::black_box();
     pernixc_syntax_impl::black_box();

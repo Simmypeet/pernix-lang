@@ -4,19 +4,21 @@ use pernixc_syntax::pattern;
 pub fn format_pattern(
     buffer: &mut dyn std::fmt::Write,
     irrefutable_pattern: Option<&pattern::Irrefutable>,
-) -> Result<(), std::fmt::Error> {
+) {
     let Some(irrefutable) = irrefutable_pattern else {
-        return write!(buffer, "..");
+        write!(buffer, "..").unwrap();
+
+        return;
     };
 
     match irrefutable {
         pattern::Irrefutable::Struct(st) => {
             let mut is_first = true;
-            write!(buffer, "{{")?;
+            write!(buffer, "{{").unwrap();
 
             for field in st.fields() {
                 if !is_first {
-                    write!(buffer, ", ")?;
+                    write!(buffer, ", ").unwrap();
                 }
                 is_first = false;
 
@@ -25,70 +27,70 @@ pub fn format_pattern(
                         let name = field_association.identifier();
 
                         if let Some(name) = name {
-                            write!(buffer, "{}: ", name.kind)?;
+                            write!(buffer, "{}: ", name.kind).unwrap();
                             format_pattern(
                                 buffer,
                                 field_association.pattern().as_ref(),
-                            )?;
+                            );
                         } else {
-                            write!(buffer, "..")?;
+                            write!(buffer, "..").unwrap();
                         }
                     }
 
                     pattern::Field::Wildcard(_) => {
-                        write!(buffer, "..")?;
+                        write!(buffer, "..").unwrap();
                     }
 
                     pattern::Field::Named(named) => {
                         if let Some(identifier) = named.identifier() {
                             if named.mutable_keyword().is_some() {
-                                write!(buffer, "mut ")?;
+                                write!(buffer, "mut ").unwrap();
                             }
 
-                            write!(buffer, "{}", identifier.kind)?;
+                            write!(buffer, "{}", identifier.kind).unwrap();
                         } else {
-                            write!(buffer, "..")?;
+                            write!(buffer, "..").unwrap();
                         }
                     }
                 }
             }
 
-            write!(buffer, "}}")
+            write!(buffer, "}}").unwrap();
         }
 
         pattern::Irrefutable::Named(named) => {
             if let Some(identifier) = named.identifier() {
                 if named.mutable_keyword().is_some() {
-                    write!(buffer, "mut ")?;
+                    write!(buffer, "mut ").unwrap();
                 }
 
-                write!(buffer, "{}", identifier.kind)
+                write!(buffer, "{}", identifier.kind).unwrap();
             } else {
-                write!(buffer, "..")
+                write!(buffer, "..").unwrap();
             }
         }
 
         pattern::Irrefutable::Tuple(tuple) => {
             let mut is_first = true;
 
-            write!(buffer, "(")?;
+            write!(buffer, "(").unwrap();
             for element in tuple.types() {
                 if !is_first {
-                    write!(buffer, ", ")?;
+                    write!(buffer, ", ").unwrap();
                 }
                 is_first = false;
 
                 if element.ellipsis().is_some() {
-                    write!(buffer, "...")?;
+                    write!(buffer, "...").unwrap();
                 }
 
-                format_pattern(buffer, element.pattern().as_ref())?;
+                format_pattern(buffer, element.pattern().as_ref());
             }
-            write!(buffer, ")")
+            write!(buffer, ")").unwrap();
         }
 
         pattern::Irrefutable::Wildcard(_) => {
-            write!(buffer, "..")
+            write!(buffer, "..").unwrap();
         }
     }
 }

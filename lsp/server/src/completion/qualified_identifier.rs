@@ -2,13 +2,13 @@
 
 use std::sync::Arc;
 
-use flexstr::SharedStr;
 use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
+use linkme::distributed_slice;
 use log::info;
 use pernixc_diagnostic::ByteIndex;
 use pernixc_extend::extend;
 use pernixc_hash::HashSet;
-use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
+use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_semantic_element::import::get_import_map;
 use pernixc_source_file::{
     GlobalSourceID, SourceElement, Span, get_source_file_by_id,
@@ -27,6 +27,10 @@ use pernixc_symbol::{
 use pernixc_syntax::QualifiedIdentifier;
 use pernixc_target::{Global, TargetID};
 use pernixc_tokio::{chunk::chunk_for_tasks, scoped};
+use qbice::{
+    Decode, Encode, Query, StableHash, executor, program::Registration,
+    storage::intern::Interned,
+};
 use tokio::sync::RwLock;
 use tower_lsp::lsp_types::{
     CompletionItem, CompletionItemKind, CompletionItemLabelDetails,
@@ -154,13 +158,13 @@ pub struct QualifiedIdentifierMatching {
 #[extend]
 #[allow(clippy::too_many_lines)]
 pub async fn qualified_identifier_completion(
-    self: &pernixc_query::TrackedEngine,
+    self: &TrackedEngine,
     byte_index: ByteIndex,
     source_id: GlobalSourceID,
     syntax_tree: pernixc_syntax::item::module::Content,
     token_tree: &pernixc_lexical::tree::Tree,
     target_id: TargetID,
-) -> Result<Vec<Completion>, pernixc_query::runtime::executor::CyclicError> {
+) -> Vec<Completion> {
     let module =
         target_id.make_global(self.get_source_file_module(source_id).await);
 
@@ -168,10 +172,6 @@ pub async fn qualified_identifier_completion(
     let current_site = self
         .get_symbol_scope_at_byte_index(module, source_id, byte_index)
         .await;
-
-    let node = pernixc_parser::concrete_tree::Node::Branch(
-        syntax_tree.inner_tree().clone(),
-    );
 
     let Some(QualifiedIdentifierMatching {
         qualified_identifier,
@@ -185,7 +185,7 @@ pub async fn qualified_identifier_completion(
         .await
     else {
         info!(" No qualified identifier found at byte index {byte_index} ");
-        return Ok(Vec::new());
+        return Vec::new();
     };
 
     let Some(resolved_path) = self
@@ -194,13 +194,13 @@ pub async fn qualified_identifier_completion(
             &qualified_identifier,
             token_abs_span,
         )
-        .await?
+        .await
     else {
         info!(
             " Qualified identifier at byte index {byte_index} could not be \
              resolved "
         );
-        return Ok(Vec::new());
+        return Vec::new();
     };
 
     info!(
@@ -223,7 +223,7 @@ pub async fn qualified_identifier_completion(
                 fail_at_cursor.prior_scope
             } else {
                 // no suggestions
-                return Ok(Vec::new());
+                return Vec::new();
             }
         }
 
@@ -237,17 +237,19 @@ pub async fn qualified_identifier_completion(
                 Some(no_match_found)
             } else {
                 // cursor is not at the end, no suggestions
-                return Ok(Vec::new());
+                return Vec::new();
             }
         }
     };
 
-    let pointing_string: Option<SharedStr> =
+    let pointing_string: Option<Interned<str>> =
         if let Some(token_span) = token_abs_span {
             let source_file =
                 self.get_source_file_by_id(token_span.source_id).await;
 
-            Some(source_file.content()[token_span.range()].into())
+            Some(self.intern_unsized(
+                source_file.content()[token_span.range()].to_owned(),
+            ))
         } else {
             None
         };
@@ -281,7 +283,7 @@ pub struct ModuleCompletion {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ImportCompletion {
     /// The completion string to be shown.
-    pub completion_string: SharedStr,
+    pub completion_string: Interned<str>,
 
     /// The symbol ID of the import.
     pub symbol: Global<ID>,
@@ -312,7 +314,7 @@ impl Completion {
     pub async fn to_lsp_completion(
         self,
         engine: &TrackedEngine,
-    ) -> Result<CompletionItem, CyclicError> {
+    ) -> CompletionItem {
         match self {
             Self::Member(member_completion) => {
                 let name = engine.get_name(member_completion.completion).await;
@@ -322,13 +324,13 @@ impl Completion {
                     .await
                     .kind_to_completion_item_kind();
 
-                Ok(CompletionItem {
+                CompletionItem {
                     label: name.to_string(),
                     kind: Some(kind),
                     sort_text: Some("100".to_string()),
 
                     ..Default::default()
-                })
+                }
             }
 
             Self::Module(module_completion) => {
@@ -339,13 +341,13 @@ impl Completion {
                     .await
                     .kind_to_completion_item_kind();
 
-                Ok(CompletionItem {
+                CompletionItem {
                     label: name.to_string(),
                     kind: Some(kind),
                     sort_text: Some("100".to_string()),
 
                     ..Default::default()
-                })
+                }
             }
 
             Self::Import(import_completion) => {
@@ -354,12 +356,12 @@ impl Completion {
                     .await
                     .kind_to_completion_item_kind();
 
-                Ok(CompletionItem {
+                CompletionItem {
                     label: import_completion.completion_string.to_string(),
                     kind: Some(kind),
                     sort_text: Some("100".to_string()),
                     ..Default::default()
-                })
+                }
             }
 
             Self::Global(global_completion) => {
@@ -381,7 +383,7 @@ impl Completion {
                     None
                 };
 
-                Ok(CompletionItem {
+                CompletionItem {
                     label: name.to_string(),
                     kind: Some(kind),
                     sort_text: Some("200".to_string()),
@@ -396,22 +398,22 @@ impl Completion {
                     }),
 
                     ..Default::default()
-                })
+                }
             }
 
-            Self::ThisKeyword => Ok(CompletionItem {
+            Self::ThisKeyword => CompletionItem {
                 label: "this".to_string(),
                 kind: Some(CompletionItemKind::KEYWORD),
                 sort_text: Some("300".to_string()),
                 ..Default::default()
-            }),
+            },
 
-            Self::TargetKeyword => Ok(CompletionItem {
+            Self::TargetKeyword => CompletionItem {
                 label: "target".to_string(),
                 kind: Some(CompletionItemKind::KEYWORD),
                 sort_text: Some("300".to_string()),
                 ..Default::default()
-            }),
+            },
         }
     }
 }
@@ -495,8 +497,8 @@ async fn create_completions(
     engine: &TrackedEngine,
     nearest_module_id: Global<ID>,
     prior_scope: Option<Global<ID>>,
-    str: Option<&SharedStr>,
-) -> Result<Vec<Completion>, CyclicError> {
+    str: Option<&Interned<str>>,
+) -> Vec<Completion> {
     let mut completions = Vec::new();
     let target_id = nearest_module_id.target_id;
     let fuzzy_matcher = SkimMatcherV2::default();
@@ -504,7 +506,7 @@ async fn create_completions(
     if let Some(symbol) = prior_scope {
         // suggest members of the resolved symbol
         let Some(members) = engine.try_get_members(symbol).await else {
-            return Ok(Vec::default());
+            return Vec::default();
         };
 
         for id in members.member_ids_by_name.values().copied() {
@@ -622,21 +624,21 @@ async fn create_completions(
                 nearest_module_id,
                 completions,
             )
-            .await?;
+            .await;
         }
     }
 
-    Ok(completions)
+    completions
 }
 
 async fn create_global_import_candidate(
     engine: &TrackedEngine,
     target_id: TargetID,
     inserted: HashSet<Global<ID>>,
-    str: &SharedStr,
+    str: &Interned<str>,
     current_module_id: Global<pernixc_symbol::ID>,
     completion: Vec<Completion>,
-) -> Result<Vec<Completion>, CyclicError> {
+) -> Vec<Completion> {
     let candidates = Arc::new(RwLock::new(completion));
     let inserted = Arc::new(inserted);
 
@@ -687,65 +689,91 @@ async fn create_global_import_candidate(
         }
     });
 
-    Ok(Arc::into_inner(candidates).unwrap().into_inner())
+    Arc::into_inner(candidates).unwrap().into_inner()
 }
 
-#[pernixc_query::query(
-    key(GlobalImportSuggestionKey),
-    value(Arc<[pernixc_symbol::ID]>),
-    id(TargetID),
-    executor(GlobalImportSuggestionExecutor),
-    extend(method(get_global_import_suggestion_ids), no_cyclic)
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Query,
 )]
-pub async fn get_global_import_suggestions(
+#[value(Interned<[pernixc_symbol::ID]>)]
+#[extend(name = get_global_import_suggestion_ids, by_val)]
+struct GlobalImportSuggestionKey {
     target_id: TargetID,
+}
+
+#[executor(config = Config)]
+async fn global_import_suggestion_executor(
+    &GlobalImportSuggestionKey { target_id }: &GlobalImportSuggestionKey,
     engine: &TrackedEngine,
-) -> Result<
-    Arc<[pernixc_symbol::ID]>,
-    pernixc_query::runtime::executor::CyclicError,
-> {
+) -> Interned<[pernixc_symbol::ID]> {
     let root_module_id = engine.get_target_root_module_id(target_id).await;
 
     engine
-        .query(&ModuleImportSuggestionKey(
-            target_id.make_global(root_module_id),
-        ))
+        .query(&ModuleImportSuggestionKey {
+            module_id: target_id.make_global(root_module_id),
+        })
         .await
 }
 
-pernixc_register::register!(
-    GlobalImportSuggestionKey,
-    GlobalImportSuggestionExecutor
-);
+#[distributed_slice(PERNIX_PROGRAM)]
+static GLOBAL_IMPORT_SUGGESTION_EXECUTOR: Registration<Config> =
+    Registration::new::<
+        GlobalImportSuggestionKey,
+        GlobalImportSuggestionExecutor,
+    >();
 
-#[pernixc_query::query(
-    key(ModuleImportSuggestionKey),
-    value(Arc<[pernixc_symbol::ID]>),
-    id(Global<ID>),
-    executor(ModuleImportSuggestionExecutor),
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Query,
 )]
-async fn collect_module_id(
-    current_module_id: Global<pernixc_symbol::ID>,
+#[value(Interned<[pernixc_symbol::ID]>)]
+struct ModuleImportSuggestionKey {
+    module_id: Global<ID>,
+}
+
+#[executor(config = Config)]
+async fn module_import_suggestion_executor(
+    &ModuleImportSuggestionKey { module_id }: &ModuleImportSuggestionKey,
     engine: &TrackedEngine,
-) -> Result<Arc<[pernixc_symbol::ID]>, CyclicError> {
-    let members = engine.get_members(current_module_id).await;
-    let mut results = vec![current_module_id.id];
+) -> Interned<[pernixc_symbol::ID]> {
+    let members = engine.get_members(module_id).await;
+    let mut results = vec![module_id.id];
 
     scoped!(|handles| async {
         for id in members.member_ids_by_name.values().copied() {
             // recursively collect from child modules
-            let kind = engine
-                .get_kind(current_module_id.target_id.make_global(id))
-                .await;
+            let kind =
+                engine.get_kind(module_id.target_id.make_global(id)).await;
 
             if kind == pernixc_symbol::kind::Kind::Module {
                 let engine = engine.clone();
 
                 handles.spawn(async move {
                     engine
-                        .query(&ModuleImportSuggestionKey(
-                            current_module_id.target_id.make_global(id),
-                        ))
+                        .query(&ModuleImportSuggestionKey {
+                            module_id: module_id.target_id.make_global(id),
+                        })
                         .await
                 });
             } else {
@@ -753,18 +781,17 @@ async fn collect_module_id(
             }
         }
 
-        while let Some(result) = handles.next().await {
-            let child_ids = result?;
+        while let Some(child_ids) = handles.next().await {
             results.extend(child_ids.iter().copied());
         }
+    });
 
-        Ok(())
-    })?;
-
-    Ok(results.into())
+    engine.intern_unsized(results)
 }
 
-pernixc_register::register!(
-    ModuleImportSuggestionKey,
-    ModuleImportSuggestionExecutor
-);
+#[distributed_slice(PERNIX_PROGRAM)]
+static MODULE_IMPORT_SUGGESTION_EXECUTOR: Registration<Config> =
+    Registration::new::<
+        ModuleImportSuggestionKey,
+        ModuleImportSuggestionExecutor,
+    >();

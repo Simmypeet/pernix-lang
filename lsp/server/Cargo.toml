@@ -33,6 +33,12 @@ pernixc_resolution = { path = "../../compiler/semantic/resolution" }
 pernixc_semantic_element = { path = "../../compiler/semantic/semantic_element" }
 pernixc_term = { path = "../../compiler/semantic/term" }
 pernixc_tokio = { path = "../../compiler/base/tokio" }
+pernixc_qbice.path = "../../compiler/base/qbice"
+pernixc_source_file_impl.path = "../../compiler/base/source_file_impl"
+pernixc_lexical_impl.path = "../../compiler/syntax/lexical_impl"
+pernixc_syntax_impl.path = "../../compiler/syntax/syntax_impl"
+qbice.workspace = true
+linkme.workspace = true
 
 
 [lints]
