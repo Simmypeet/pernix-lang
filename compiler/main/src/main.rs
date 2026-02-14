@@ -14,13 +14,35 @@ use codespan_reporting::{
     },
 };
 use pernixc_target::Arguments;
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
 use tracing_chrome::{ChromeLayerBuilder, FlushGuard};
 use tracing_subscriber::{
     EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt,
 };
 
+#[cfg(not(target_env = "msvc"))]
 #[global_allocator]
-static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+static GLOBAL: Jemalloc = Jemalloc;
+
+#[cfg(not(target_env = "msvc"))]
+fn configure_jemalloc() {
+    // this configuration is equivalent to
+    // "background_thread:true,dirty_decay_ms:1000,muzzy_decay_ms:1000"
+
+    unsafe {
+        let _ =
+            tikv_jemalloc_ctl::raw::write::<bool>(b"background_thread\0", true);
+        let _ = tikv_jemalloc_ctl::raw::write::<isize>(
+            b"arenas.dirty_decay_ms\0",
+            1000,
+        );
+        let _ = tikv_jemalloc_ctl::raw::write::<isize>(
+            b"arenas.muzzy_decay_ms\0",
+            1000,
+        );
+    }
+}
 
 async fn main_async() -> ExitCode {
     // if the program is compiled in release mode, set the panic hook to
@@ -44,6 +66,9 @@ async fn main_async() -> ExitCode {
 }
 
 fn main() -> ExitCode {
+    #[cfg(not(target_env = "msvc"))]
+    configure_jemalloc();
+
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_stack_size(

@@ -28,10 +28,13 @@ async fn parse_executor(
     let tree = Tree::from_source(
         source_file.content(),
         key.target_id.make_global(
-            engine.get_stable_path_id(key.path.clone()).await.expect(
-                "should be sucessful since the source file is loaded \
-                 successfully",
-            ),
+            engine
+                .get_stable_path_id(key.path.clone(), key.target_id)
+                .await
+                .expect(
+                    "should be sucessful since the source file is loaded \
+                     successfully",
+                ),
         ),
         engine,
         &storage,

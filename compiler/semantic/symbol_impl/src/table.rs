@@ -612,7 +612,7 @@ async fn map_executor(key: &MapKey, engine: &TrackedEngine) -> Map {
 
             // Calculate the source file ID for this path
             if let Ok(source_file_id) =
-                engine.get_stable_path_id(path.clone()).await
+                engine.get_stable_path_id(path.clone(), current_target_id).await
             {
                 // Add the path to source file mapping
                 paths_by_source_id.insert(

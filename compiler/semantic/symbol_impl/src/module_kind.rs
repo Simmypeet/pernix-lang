@@ -45,6 +45,7 @@ async fn projection_executor(
         let root_src_id = engine
             .get_stable_path_id(
                 engine.intern_unsized(target_args.command.input().file.clone()),
+                module_id.target_id,
             )
             .await
             .ok();
@@ -63,7 +64,7 @@ async fn projection_executor(
         let path = exteranl_submodule.path.clone();
 
         Some(ModuleKind::ExteranlFile(
-            engine.get_stable_path_id(path).await.ok(),
+            engine.get_stable_path_id(path, module_id.target_id).await.ok(),
         ))
     } else {
         Some(ModuleKind::Inline)

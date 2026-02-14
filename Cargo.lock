@@ -961,16 +961,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "libmimalloc-sys"
-version = "0.1.44"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "667f4fec20f29dfc6bc7357c582d91796c169ad7e2fce709468aefeb2c099870"
-dependencies = [
- "cc",
- "libc",
-]
-
-[[package]]
 name = "libz-sys"
 version = "1.1.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1060,15 +1050,6 @@ name = "memchr"
 version = "2.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
-
-[[package]]
-name = "mimalloc"
-version = "0.1.48"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1ee66a4b64c74f4ef288bcbb9192ad9c3feaad75193129ac8509af543894fd8"
-dependencies = [
- "libmimalloc-sys",
-]
 
 [[package]]
 name = "minimal-lexical"
@@ -1231,11 +1212,12 @@ dependencies = [
  "backtrace",
  "clap",
  "codespan-reporting",
- "mimalloc",
  "pernixc_driver",
  "pernixc_source_file",
  "pernixc_target",
  "serde",
+ "tikv-jemalloc-ctl",
+ "tikv-jemallocator",
  "tokio",
  "toml",
  "tracing-chrome",
@@ -1686,6 +1668,7 @@ dependencies = [
  "linkme",
  "pernixc_qbice",
  "pernixc_source_file",
+ "pernixc_target",
  "qbice",
  "siphasher",
 ]
@@ -2034,9 +2017,9 @@ dependencies = [
 
 [[package]]
 name = "qbice"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "370665969fefa0c8cf0aab067be80845b17e89d169f3c4d4ea2c3b920658ca58"
+checksum = "f3449f03806df5352d022b66b3d8c91dda7480e7f0c17d9a9f21e92a59ea849c"
 dependencies = [
  "crossbeam",
  "dashmap",
@@ -2051,6 +2034,7 @@ dependencies = [
  "qbice_stable_type_id",
  "qbice_storage",
  "rayon",
+ "scc",
  "thiserror 2.0.18",
  "thread_local",
  "tokio",
@@ -2149,9 +2133,9 @@ dependencies = [
 
 [[package]]
 name = "qbice_storage"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb46b14429558a3b29f834f6d7e76840324aade6f44b0ea4ae99cb6f82971ab9"
+checksum = "24ccbc8dc91e4a06fd282f2c09052a8ad6662ba6aeaeb6932a4eff540cb12b5b"
 dependencies = [
  "bon",
  "crossbeam",
@@ -2166,6 +2150,7 @@ dependencies = [
  "qbice_stable_hash",
  "qbice_stable_type_id",
  "rust-rocksdb",
+ "scc",
  "thread_local",
  "tokio",
 ]
@@ -2431,10 +2416,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "saa"
+version = "5.4.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "da0ba8adb63e0deebd0744d8fc5bea394c08029159deaf680513fec1a3949144"
+
+[[package]]
+name = "scc"
+version = "3.5.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e4bd9d1727de391b6982925d830baad51692fa2aa6e337733c03d95121ca2793"
+dependencies = [
+ "saa",
+ "sdd",
+]
+
+[[package]]
 name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "sdd"
+version = "4.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c25da4ae64b24edfcb0b0d30b96b2b0dbc64ec63aefeb6ec35bfc5ef167e5c9e"
 
 [[package]]
 name = "semver"
@@ -2717,6 +2724,37 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f60246a4944f24f6e018aa17cdeffb7818b76356965d03b07d6a9886e8962185"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "tikv-jemalloc-ctl"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "661f1f6a57b3a36dc9174a2c10f19513b4866816e13425d3e418b11cc37bc24c"
+dependencies = [
+ "libc",
+ "paste",
+ "tikv-jemalloc-sys",
+]
+
+[[package]]
+name = "tikv-jemalloc-sys"
+version = "0.6.1+5.3.0-1-ge13ca993e8ccb9ba9847cc330696e02839f328f7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cd8aa5b2ab86a2cefa406d889139c162cbb230092f7d1d7cbc1716405d852a3b"
+dependencies = [
+ "cc",
+ "libc",
+]
+
+[[package]]
+name = "tikv-jemallocator"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0359b4327f954e0567e69fb191cf1436617748813819c94b8cd4a431422d053a"
+dependencies = [
+ "libc",
+ "tikv-jemalloc-sys",
 ]
 
 [[package]]

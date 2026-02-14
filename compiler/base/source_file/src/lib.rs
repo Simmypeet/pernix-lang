@@ -965,6 +965,9 @@ pub struct StablePathIDKey {
     /// This can be either a relative or absolute path. The path will be
     /// canonicalized before computing the stable ID.
     pub path: Interned<Path>,
+
+    /// The target id that is requesting the stable path ID calculation.
+    pub target_id: TargetID,
 }
 
 /// A query for retrieving the a path of the given sourcce file ID.

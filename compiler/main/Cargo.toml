@@ -15,12 +15,15 @@ pernixc_target = { path = "../base/target" }
 clap = { workspace = true }
 backtrace = { workspace = true }
 codespan-reporting = { workspace = true }
-mimalloc = { workspace = true }
 tracing-subscriber = { workspace = true }
 tracing-chrome = { workspace = true }
 serde = { workspace = true }
 toml = { workspace = true }
 tokio = { workspace = true }
+
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = { workspace = true }
+tikv-jemalloc-ctl = { workspace = true }
 
 [lints]
 workspace = true
