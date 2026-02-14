@@ -1,118 +1,58 @@
 //! Contains the main `run()` function for the compiler.
 
-use std::{path::PathBuf, process::ExitCode, sync::Arc};
+use std::{io::Write, path::PathBuf, process::ExitCode, sync::Arc};
 
-use codespan_reporting::{
-    diagnostic::{Diagnostic, Label, LabelStyle},
-    term::{StylesWriter, termcolor::WriteColor},
-};
+use miette::{GraphicalReportHandler, GraphicalTheme};
 use pernixc_qbice::{
     Engine, InMemoryFactory, IncrementalStorageEngine, TrackedEngine,
 };
-use pernixc_source_file::GlobalSourceID;
 use pernixc_symbol_impl::source_map::{SourceMap, create_source_map};
 use pernixc_target::{Arguments, Build, Command, Run, TargetID, TargetKind};
 use qbice::{serialize::Plugin, stable_hash::SeededStableHasherBuilder};
 use tracing::instrument;
 
 use crate::{
-    diagnostic::pernix_diagnostic_to_codespan_diagnostic, llvm::MachineCodeKind,
+    diagnostic::{
+        PernixDiagnostic, pernix_diagnostic_to_miette_diagnostic, simple_error,
+    },
+    llvm::MachineCodeKind,
 };
 
 pub mod term;
 
-mod diagnostic;
+pub mod diagnostic;
 mod llvm;
 
-struct ReportTerm<'a, 's> {
-    config: codespan_reporting::term::Config,
-    writer: StylesWriter<'a, &'s mut dyn WriteColor>,
-    source_map: &'s SourceMap,
+/// A struct that handles emitting diagnostics to the terminal.
+pub struct ReportTerm<'a> {
+    handler: GraphicalReportHandler,
+    /// The writer to emit diagnostics to.
+    pub writer: &'a mut dyn Write,
+    /// The source map containing source files for diagnostics.
+    pub source_map: &'a SourceMap,
 }
 
-impl ReportTerm<'_, '_> {
-    #[allow(clippy::trivially_copy_pass_by_ref)]
-    fn report(&mut self, diagnostic: &Diagnostic<GlobalSourceID>) {
-        let _ = codespan_reporting::term::emit_to_write_style(
-            &mut self.writer,
-            &self.config,
-            self.source_map,
-            diagnostic,
-        );
+impl std::fmt::Debug for ReportTerm<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ReportTerm")
+            .field("handler", &self.handler)
+            .field("source_map", &self.source_map)
+            .finish_non_exhaustive()
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct SortableDiagnostic(Diagnostic<GlobalSourceID>);
-
-#[allow(clippy::trivially_copy_pass_by_ref)]
-const fn cmp_label_style(a: &LabelStyle, b: &LabelStyle) -> std::cmp::Ordering {
-    match (a, b) {
-        (LabelStyle::Primary, LabelStyle::Primary) => std::cmp::Ordering::Equal,
-        (LabelStyle::Primary, LabelStyle::Secondary) => {
-            std::cmp::Ordering::Less
-        }
-        (LabelStyle::Secondary, LabelStyle::Primary) => {
-            std::cmp::Ordering::Greater
-        }
-        (LabelStyle::Secondary, LabelStyle::Secondary) => {
-            std::cmp::Ordering::Equal
-        }
-    }
-}
-
-fn cmp_label(
-    a: &Label<GlobalSourceID>,
-    b: &Label<GlobalSourceID>,
-) -> std::cmp::Ordering {
-    cmp_label_style(&a.style, &b.style)
-        .then_with(|| a.file_id.cmp(&b.file_id))
-        .then_with(|| a.range.start.cmp(&b.range.start))
-        .then_with(|| a.range.end.cmp(&b.range.end))
-        .then_with(|| a.message.cmp(&b.message))
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ComparableLabel<'a>(pub &'a Label<GlobalSourceID>);
-
-impl PartialOrd for ComparableLabel<'_> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for ComparableLabel<'_> {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        cmp_label(self.0, other.0)
-    }
-}
-
-impl PartialOrd for SortableDiagnostic {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for SortableDiagnostic {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0
-            .severity
-            .cmp(&other.0.severity)
-            .then_with(|| {
-                self.0
-                    .labels
-                    .iter()
-                    .map(ComparableLabel)
-                    .cmp(other.0.labels.iter().map(ComparableLabel))
-            })
-            .then_with(|| self.0.message.cmp(&other.0.message))
+impl ReportTerm<'_> {
+    fn report(&mut self, diagnostic: &PernixDiagnostic) {
+        let mut output = String::new();
+        let _ = self.handler.render_report(&mut output, diagnostic);
+        let _ = writeln!(self.writer, "{output}");
     }
 }
 
 fn get_output_path(
     argument_output: Option<PathBuf>,
     target_kind: TargetKind,
-    report_term: &mut ReportTerm<'_, '_>,
+    report_term: &mut ReportTerm<'_>,
     target_name: &str,
 ) -> Option<PathBuf> {
     if let Some(output) = argument_output {
@@ -121,7 +61,7 @@ fn get_output_path(
         let mut output = match std::env::current_dir() {
             Ok(dir) => dir,
             Err(error) => {
-                report_term.report(&Diagnostic::error().with_message(format!(
+                report_term.report(&simple_error(format!(
                     "failed to get current directory: {error}"
                 )));
                 return None;
@@ -140,8 +80,7 @@ fn get_output_path(
 
 async fn create_engine(
     argument: &Arguments,
-    writer: &mut dyn WriteColor,
-    config: &codespan_reporting::term::Config,
+    writer: &mut dyn Write,
 ) -> Option<Engine> {
     if let Some(inc_path) = &argument.command.input().incremental_path {
         match Engine::new_with(
@@ -153,16 +92,16 @@ async fn create_engine(
         {
             Ok(engine) => Some(engine),
             Err(err) => {
-                codespan_reporting::term::emit_to_write_style(
-                    &mut StylesWriter::new(writer, &term::get_styles()),
-                    config,
-                    &pernixc_source_file::SourceMap::default(),
-                    &Diagnostic::error().with_message(format!(
-                        "failed to create incremental engine at '{}': {err}",
-                        inc_path.display()
-                    )),
-                )
-                .unwrap();
+                let handler = GraphicalReportHandler::new_themed(
+                    GraphicalTheme::unicode(),
+                );
+                let diagnostic = simple_error(format!(
+                    "failed to create incremental engine at '{}': {err}",
+                    inc_path.display()
+                ));
+                let mut output = String::new();
+                let _ = handler.render_report(&mut output, &diagnostic);
+                let _ = writeln!(writer, "{output}");
 
                 None
             }
@@ -186,14 +125,10 @@ async fn create_engine(
 #[instrument(skip(err_writer, _out_writer))]
 pub async fn run(
     argument: Arguments,
-    err_writer: &mut dyn WriteColor,
-    _out_writer: &mut dyn WriteColor,
+    err_writer: &mut dyn Write,
+    _out_writer: &mut dyn Write,
 ) -> ExitCode {
-    let report_config = term::get_coonfig();
-
-    let Some(mut engine) =
-        create_engine(&argument, err_writer, &report_config).await
-    else {
+    let Some(mut engine) = create_engine(&argument, err_writer).await else {
         return ExitCode::FAILURE;
     };
 
@@ -287,31 +222,24 @@ pub async fn run(
 
     let source_map = tracked_engine.create_source_map(local_target_id).await;
 
-    let styles = term::get_styles();
+    let handler = GraphicalReportHandler::new_themed(GraphicalTheme::unicode());
 
-    let mut report_term = ReportTerm {
-        config: report_config.clone(),
-        source_map: &source_map,
-        writer: StylesWriter::new(err_writer, &styles),
-    };
+    let mut report_term =
+        ReportTerm { handler, source_map: &source_map, writer: err_writer };
 
     let diagnostic_count = {
-        let mut diagnostics = Vec::new();
-
         let check = tracked_engine
             .query(&pernixc_check::Key { target_id: local_target_id })
             .await;
 
-        for diag in check.all_diagnostics() {
-            diagnostics.push(SortableDiagnostic(
-                pernix_diagnostic_to_codespan_diagnostic(diag),
-            ));
-        }
+        let mut diagnostics: Vec<_> = check.all_diagnostics().collect();
+        // Sort by severity and then by span location for consistent output
+        diagnostics.sort_by(|a, b| a.severity.cmp(&b.severity));
 
-        diagnostics.sort();
-
-        for diagnostic in &diagnostics {
-            report_term.report(&diagnostic.0);
+        for diag in &diagnostics {
+            let miette_diag =
+                pernix_diagnostic_to_miette_diagnostic(diag, &source_map);
+            report_term.report(&miette_diag);
         }
 
         diagnostics.len()
@@ -325,10 +253,9 @@ pub async fn run(
     //     .await;
 
     if diagnostic_count != 0 {
-        let diag = codespan_reporting::diagnostic::Diagnostic::error()
-            .with_message(format!(
-                "Compilation aborted due to {diagnostic_count} error(s)"
-            ));
+        let diag = simple_error(format!(
+            "Compilation aborted due to {diagnostic_count} error(s)"
+        ));
 
         report_term.report(&diag);
 
@@ -351,7 +278,7 @@ async fn build(
     target_name: &str,
     current_target_id: TargetID,
     tracked_engine: &TrackedEngine,
-    report_term: &mut ReportTerm<'_, '_>,
+    report_term: &mut ReportTerm<'_>,
 ) -> ExitCode {
     // retrieve the output path
     let output_path = match &argument.command {
@@ -429,9 +356,9 @@ async fn build(
             let mut child = match command.spawn() {
                 Ok(child) => child,
                 Err(error) => {
-                    report_term.report(&Diagnostic::error().with_message(
-                        format!("failed to spawn executable: {error}"),
-                    ));
+                    report_term.report(&simple_error(format!(
+                        "failed to spawn executable: {error}"
+                    )));
 
                     return ExitCode::FAILURE;
                 }
@@ -440,9 +367,9 @@ async fn build(
             let status = match child.wait() {
                 Ok(status) => status,
                 Err(error) => {
-                    report_term.report(&Diagnostic::error().with_message(
-                        format!("failed to wait for executable: {error}"),
-                    ));
+                    report_term.report(&simple_error(format!(
+                        "failed to wait for executable: {error}"
+                    )));
 
                     return ExitCode::FAILURE;
                 }
@@ -450,14 +377,14 @@ async fn build(
 
             if let Some(code) = status.code() {
                 if code != 0 {
-                    report_term.report(&Diagnostic::error().with_message(
-                        format!("executable terminated with exit code {code}"),
-                    ));
+                    report_term.report(&simple_error(format!(
+                        "executable terminated with exit code {code}"
+                    )));
 
                     return ExitCode::FAILURE;
                 }
             } else {
-                report_term.report(&Diagnostic::error().with_message(
+                report_term.report(&simple_error(
                     "executable terminated by signal".to_string(),
                 ));
 

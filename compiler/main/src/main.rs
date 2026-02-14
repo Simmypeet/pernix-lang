@@ -6,13 +6,6 @@ use std::{
 
 use backtrace::Backtrace;
 use clap::Parser;
-use codespan_reporting::{
-    diagnostic::Diagnostic,
-    term::{
-        self, StylesWriter,
-        termcolor::{self, StandardStream},
-    },
-};
 use pernixc_target::Arguments;
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
@@ -53,14 +46,8 @@ async fn main_async() -> ExitCode {
 
     let _guard = init_tracing(argument.command.input().chrome_tracing);
 
-    let mut stderr =
-        codespan_reporting::term::termcolor::StandardStream::stderr(
-            termcolor::ColorChoice::Always,
-        );
-    let mut stdout =
-        codespan_reporting::term::termcolor::StandardStream::stdout(
-            termcolor::ColorChoice::Always,
-        );
+    let mut stderr = std::io::stderr();
+    let mut stdout = std::io::stdout();
 
     pernixc_driver::run(argument, &mut stderr, &mut stdout).await
 }
@@ -200,35 +187,32 @@ impl IceReport {
 #[allow(dead_code, clippy::too_many_lines)]
 fn setup_panic() {
     std::panic::set_hook(Box::new(|info| {
-        let global_source_map = pernixc_source_file::SourceMap::new();
-        let styles = pernixc_driver::term::get_styles();
-        let config = pernixc_driver::term::get_coonfig();
-        let mut style_writer = StylesWriter::new(
-            StandardStream::stderr(termcolor::ColorChoice::Always),
-            &styles,
-        );
+        use std::io::Write;
 
-        term::emit_to_write_style(
-            &mut style_writer,
-            &config,
-            &global_source_map,
-            &Diagnostic::error().with_message(
-                "internal compiler error (ICE) occurred; the error is caused \
-                 by a bug in the compiler not the error in your code",
-            ),
-        )
-        .unwrap();
+        use miette::{GraphicalReportHandler, GraphicalTheme};
+        use pernixc_driver::diagnostic::{simple_error, simple_note};
 
-        term::emit_to_write_style(
-            &mut style_writer,
-            &config,
-            &global_source_map,
-            &Diagnostic::note().with_message(
-                "we're sorry for the inconvenience, please report this issue \
-                 to the developers",
-            ),
-        )
-        .unwrap();
+        let handler =
+            GraphicalReportHandler::new_themed(GraphicalTheme::unicode());
+        let stderr = std::io::stderr();
+        let mut stderr = stderr.lock();
+
+        let mut print_diagnostic =
+            |diag: &pernixc_driver::diagnostic::PernixDiagnostic| {
+                let mut output = String::new();
+                let _ = handler.render_report(&mut output, diag);
+                let _ = writeln!(stderr, "{output}");
+            };
+
+        print_diagnostic(&simple_error(
+            "internal compiler error (ICE) occurred; the error is caused by a \
+             bug in the compiler not the error in your code",
+        ));
+
+        print_diagnostic(&simple_note(
+            "we're sorry for the inconvenience, please report this issue to \
+             the developers",
+        ));
 
         let payload_string = info
             .payload()
@@ -269,26 +253,14 @@ fn setup_panic() {
         let file = ice_report.write_to_temp();
 
         if let Ok((_, path)) = file {
-            term::emit_to_write_style(
-                &mut style_writer,
-                &config,
-                &global_source_map,
-                &Diagnostic::note().with_message(format!(
-                    "the ICE report has been written to: {}",
-                    path.display()
-                )),
-            )
-            .unwrap();
+            print_diagnostic(&simple_note(format!(
+                "the ICE report has been written to: {}",
+                path.display()
+            )));
         } else {
-            term::emit_to_write_style(
-                &mut style_writer,
-                &config,
-                &global_source_map,
-                &Diagnostic::note().with_message(
-                    "dumping the ICE report to stderr:".to_string(),
-                ),
-            )
-            .unwrap();
+            print_diagnostic(&simple_note(
+                "dumping the ICE report to stderr:".to_string(),
+            ));
 
             eprintln!(
                 "```\n{}```",
@@ -296,38 +268,20 @@ fn setup_panic() {
             );
         }
 
-        term::emit_to_write_style(
-            &mut style_writer,
-            &config,
-            &global_source_map,
-            &Diagnostic::note().with_message(
-                "please report the issue to the developers with the written \
-                 ICE report",
-            ),
-        )
-        .unwrap();
+        print_diagnostic(&simple_note(
+            "please report the issue to the developers with the written ICE \
+             report",
+        ));
 
-        term::emit_to_write_style(
-            &mut style_writer,
-            &config,
-            &global_source_map,
-            &Diagnostic::note().with_message(
-                "the report was not automatically sent to the developers \
-                 because of privacy concerns",
-            ),
-        )
-        .unwrap();
+        print_diagnostic(&simple_note(
+            "the report was not automatically sent to the developers because \
+             of privacy concerns",
+        ));
 
-        term::emit_to_write_style(
-            &mut style_writer,
-            &config,
-            &global_source_map,
-            &Diagnostic::note().with_message(
-                "we appreciate your effort to report the issue and help us \
-                 improve the compiler <3",
-            ),
-        )
-        .unwrap();
+        print_diagnostic(&simple_note(
+            "we appreciate your effort to report the issue and help us \
+             improve the compiler <3",
+        ));
 
         std::process::exit(1);
     }));

@@ -142,18 +142,16 @@ async fn test(file_path: &Path) {
 
     // Compile the program
     {
-        let mut err_writer =
-            codespan_reporting::term::termcolor::NoColor::new(Vec::new());
-        let mut out_writer =
-            codespan_reporting::term::termcolor::NoColor::new(Vec::new());
+        let mut err_writer = Vec::new();
+        let mut out_writer = Vec::new();
 
         let exit_code =
             pernixc_driver::run(arguments, &mut err_writer, &mut out_writer)
                 .await;
 
         if exit_code != std::process::ExitCode::SUCCESS {
-            let stderr = String::from_utf8(err_writer.into_inner()).unwrap();
-            let stdout = String::from_utf8(out_writer.into_inner()).unwrap();
+            let stderr = String::from_utf8(err_writer).unwrap();
+            let stdout = String::from_utf8(out_writer).unwrap();
 
             panic!("Failed to compile\nstderr:\n{stderr}\nstdout:\n{stdout}",);
         }

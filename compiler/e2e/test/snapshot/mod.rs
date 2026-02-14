@@ -57,16 +57,14 @@ fn main(resource: &str) {
 }
 
 async fn run(arguments: Arguments) -> String {
-    let mut err_writer =
-        codespan_reporting::term::termcolor::NoColor::new(Vec::new());
-    let mut out_writer =
-        codespan_reporting::term::termcolor::NoColor::new(Vec::new());
+    let mut err_writer = Vec::new();
+    let mut out_writer = Vec::new();
 
     let _ =
         pernixc_driver::run(arguments, &mut err_writer, &mut out_writer).await;
 
-    let stderr_string = String::from_utf8(err_writer.into_inner()).unwrap();
-    let stout_string = String::from_utf8(out_writer.into_inner()).unwrap();
+    let stderr_string = String::from_utf8(err_writer).unwrap();
+    let stout_string = String::from_utf8(out_writer).unwrap();
 
     format!("stderr:\n{stderr_string}\n\nstdout:\n{stout_string}")
 }

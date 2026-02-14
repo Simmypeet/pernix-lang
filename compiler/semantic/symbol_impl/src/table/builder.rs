@@ -84,7 +84,7 @@ pub struct Builder {
     scope_spans: DashMap<ID, Option<RelativeSpan>>,
 
     token_tree: Option<Interned<pernixc_lexical::tree::Tree>>,
-    source_file: Option<Arc<SourceFile>>,
+    source_file: Option<SourceFile>,
 
     is_root: bool,
 }
@@ -94,7 +94,7 @@ impl Builder {
     pub fn new(
         engine: TrackedEngine,
         storage: Storage<Diagnostic>,
-        source_file: Option<Arc<SourceFile>>,
+        source_file: Option<SourceFile>,
         token_tree: Option<Interned<pernixc_lexical::tree::Tree>>,
         target_id: TargetID,
         is_root: bool,

@@ -24,9 +24,9 @@ pernixc_lexical_impl.path = "../syntax/lexical_impl"
 pernixc_syntax_impl.path = "../syntax/syntax_impl"
 qbice.workspace = true
 linkme.workspace = true
-codespan-reporting = { workspace = true }
 inkwell = { workspace = true }
 tracing = { workspace = true }
+miette.workspace = true
 
 [lints]
 workspace = true
