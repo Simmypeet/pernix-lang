@@ -30,6 +30,8 @@ derive_more = { workspace = true }
 bimap = { workspace = true }
 proptest = { workspace = true, optional = true }
 fxhash = { workspace = true }
+dashmap.workspace = true
+siphasher.workspace = true
 
 [dev-dependencies]
 proptest = { workspace = true }

@@ -1,7 +1,14 @@
 //! Contains the code related to the source code input.
 
 use core::str;
-use std::{fmt::Debug, hash::Hash, io::Read, ops::Range, path::Path};
+use std::{
+    fmt::Debug,
+    hash::Hash,
+    io::Read,
+    ops::{Range, RangeBounds},
+    path::Path,
+    str::CharIndices,
+};
 
 use getset::{CopyGetters, Getters};
 use pernixc_qbice::TrackedEngine;
@@ -12,6 +19,9 @@ use qbice::{
     storage::intern::Interned,
 };
 use rayon::iter::{ParallelBridge, ParallelIterator};
+use ropey::{Rope, RopeSlice, iter::Chunks};
+
+pub mod simple_source_map;
 
 /// Represents an source file input for the compiler.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
@@ -119,6 +129,39 @@ impl SourceFile {
         self.rope.get_line(line_index).map(|x| x.to_string())
     }
 
+    /// Gets the slice of the source file content in the given byte range.
+    pub fn slice(&self, range: impl RangeBounds<ByteIndex>) -> String {
+        self.rope.byte_slice(range).to_string()
+    }
+
+    /// Returns an iterator over the characters of the source file that yields
+    /// the global byte index of each character in the source file.
+    #[must_use]
+    pub fn char_indices(&self) -> SourceFileCharIndices<'_> {
+        SourceFileCharIndices::new(&self.rope)
+    }
+
+    /// Gets the length of the source file in bytes.
+    #[must_use]
+    pub fn len_bytes(&self) -> usize { self.rope.len_bytes() }
+
+    /// Gets the characters of the source file in the given byte range.
+    pub fn chars_range(
+        &self,
+        range: impl RangeBounds<ByteIndex>,
+    ) -> CharsRange<'_> {
+        CharsRange { chars: self.rope.byte_slice(range).chars() }
+    }
+
+    /// Gets a hashable view of the source file content in the given byte range.
+    #[must_use]
+    pub fn hashable_view(
+        &self,
+        range: impl RangeBounds<ByteIndex>,
+    ) -> HashableView<'_> {
+        HashableView { slice: self.rope.byte_slice(range) }
+    }
+
     /// Converts the given editor location (line and column) to a byte index in
     /// the source file, if the location is valid.
     ///
@@ -138,6 +181,98 @@ impl SourceFile {
         line.try_char_to_byte(location.column)
             .ok()
             .map(|byte_offset| line_start + byte_offset)
+    }
+}
+
+/// An iterator over the characters of a source file at a particular byte range.
+#[derive(Debug, Clone)]
+pub struct CharsRange<'a> {
+    chars: ropey::iter::Chars<'a>,
+}
+
+impl Iterator for CharsRange<'_> {
+    type Item = char;
+
+    fn next(&mut self) -> Option<Self::Item> { self.chars.next() }
+}
+
+/// An iterator over the characters of a source file that yields the global byte
+/// index of each character in the source file.
+#[derive(Debug, Clone)]
+pub struct SourceFileCharIndices<'a> {
+    // The iterator over the rope's chunks
+    chunk_iter: Chunks<'a>,
+    // The standard iterator for the specific chunk we are currently processing
+    cur_chunk_indices: CharIndices<'a>,
+    // The global byte offset where the current chunk started
+    chunk_start_byte: usize,
+    // The length of the current chunk (needed to update the offset when
+    // switching chunks)
+    cur_chunk_len: usize,
+}
+
+impl<'a> SourceFileCharIndices<'a> {
+    fn new(rope: &'a Rope) -> Self {
+        let mut chunk_iter = rope.chunks();
+
+        // Initialize with the first chunk.
+        // If the rope is empty, we use an empty string to ensure safety.
+        let first_chunk = chunk_iter.next().unwrap_or("");
+
+        Self {
+            chunk_iter,
+            cur_chunk_indices: first_chunk.char_indices(),
+            chunk_start_byte: 0,
+            cur_chunk_len: first_chunk.len(),
+        }
+    }
+}
+
+impl Iterator for SourceFileCharIndices<'_> {
+    type Item = (usize, char);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            // 1. Try to get the next character from the current chunk
+            if let Some((local_byte_idx, ch)) = self.cur_chunk_indices.next() {
+                // Return global offset + local offset
+                return Some((self.chunk_start_byte + local_byte_idx, ch));
+            }
+
+            // 2. If the current chunk is exhausted, move to the next chunk
+
+            // Update the global offset by adding the length of the chunk we
+            // just finished
+            self.chunk_start_byte += self.cur_chunk_len;
+
+            // Pull the next chunk from the rope
+            match self.chunk_iter.next() {
+                Some(next_chunk) => {
+                    // Set up state for the new chunk and loop back to step 1
+                    self.cur_chunk_len = next_chunk.len();
+                    self.cur_chunk_indices = next_chunk.char_indices();
+                }
+                None => {
+                    // No more chunks left, we are done
+                    return None;
+                }
+            }
+        }
+    }
+}
+
+/// A wrapper around a rope slice that implements `Hash` by hashing the content
+/// of the slice.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HashableView<'a> {
+    slice: RopeSlice<'a>,
+}
+
+impl std::hash::Hash for HashableView<'_> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        for chunk in self.slice.chunks() {
+            state.write(chunk.as_bytes());
+        }
     }
 }
 

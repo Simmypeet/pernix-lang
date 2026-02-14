@@ -1,10 +1,13 @@
+use std::path::PathBuf;
+
 use pernixc_arena::ID;
 use pernixc_handler::Storage;
 use pernixc_qbice::DuplicatingInterner;
-use pernixc_source_file::{SourceFile, SourceMap};
+use pernixc_source_file::{SourceFile, simple_source_map::SimpleSourceMap};
 use pernixc_target::TargetID;
 use pernixc_test_input::Input;
 use proptest::{prop_assert, proptest, test_runner::TestCaseResult};
+use qbice::storage::intern::Interned;
 
 use super::{ROOT_BRANCH_ID, Tree, arbitrary};
 use crate::{
@@ -15,10 +18,13 @@ use crate::{
 #[test]
 fn basic_delimiter() {
     let source = "+ { - } *";
-    let source_map = SourceMap::default();
+    let source_map = SimpleSourceMap::default();
     let source_id = TargetID::TEST.make_global(source_map.register(
         TargetID::TEST,
-        SourceFile::new(source.to_string(), "test".into()),
+        SourceFile::from_str(
+            source,
+            Interned::new_duplicating_unsized(PathBuf::from("test")),
+        ),
     ));
 
     let source_content = source_map.get(source_id).unwrap();
@@ -26,12 +32,8 @@ fn basic_delimiter() {
     let handler = pernixc_handler::Panic;
     let interner = DuplicatingInterner;
 
-    let tree = Tree::from_source(
-        source_content.content(),
-        source_id,
-        &interner,
-        &handler,
-    );
+    let tree =
+        Tree::from_source(&source_content, source_id, &interner, &handler);
 
     let root_branch = &tree[ROOT_BRANCH_ID];
 
@@ -82,10 +84,13 @@ fn basic_delimiter() {
 fn basic_indentation() {
     let source: &str = "+:\n\t-\n*";
 
-    let source_map = SourceMap::default();
+    let source_map = SimpleSourceMap::default();
     let source_id = TargetID::TEST.make_global(source_map.register(
         TargetID::TEST,
-        SourceFile::new(source.to_string(), "test".into()),
+        SourceFile::from_str(
+            source,
+            Interned::new_duplicating_unsized(PathBuf::from("test")),
+        ),
     ));
 
     let source_content = source_map.get(source_id).unwrap();
@@ -93,12 +98,8 @@ fn basic_indentation() {
     let handler = pernixc_handler::Panic;
     let interner = DuplicatingInterner;
 
-    let tree = Tree::from_source(
-        source_content.content(),
-        source_id,
-        &interner,
-        &handler,
-    );
+    let tree =
+        Tree::from_source(&source_content, source_id, &interner, &handler);
 
     let root_branch = &tree[ROOT_BRANCH_ID];
 
@@ -153,12 +154,12 @@ const NESTED_SINGLE_POP_INDENTATION: &str = "+:
 
 #[test]
 fn nested_single_pop_indentation() {
-    let source_map = SourceMap::default();
+    let source_map = SimpleSourceMap::default();
     let source_id = TargetID::TEST.make_global(source_map.register(
         TargetID::TEST,
-        SourceFile::new(
-            NESTED_SINGLE_POP_INDENTATION.to_string(),
-            "test".into(),
+        SourceFile::from_str(
+            NESTED_SINGLE_POP_INDENTATION,
+            Interned::new_duplicating_unsized(PathBuf::from("test")),
         ),
     ));
 
@@ -167,12 +168,8 @@ fn nested_single_pop_indentation() {
     let handler = pernixc_handler::Panic;
     let interner = DuplicatingInterner;
 
-    let tree = Tree::from_source(
-        source_content.content(),
-        source_id,
-        &interner,
-        &handler,
-    );
+    let tree =
+        Tree::from_source(&source_content, source_id, &interner, &handler);
 
     let root_branch = &tree[ROOT_BRANCH_ID];
 
@@ -257,12 +254,12 @@ const NESTED_MULTI_POP_INDENTATION: &str = "+:
 
 #[test]
 fn nested_multi_pop_indentation() {
-    let source_map = SourceMap::default();
+    let source_map = SimpleSourceMap::default();
     let source_id = TargetID::TEST.make_global(source_map.register(
         TargetID::TEST,
-        SourceFile::new(
-            NESTED_MULTI_POP_INDENTATION.to_string(),
-            "test".into(),
+        SourceFile::from_str(
+            NESTED_MULTI_POP_INDENTATION,
+            Interned::new_duplicating_unsized(PathBuf::from("test")),
         ),
     ));
 
@@ -271,12 +268,8 @@ fn nested_multi_pop_indentation() {
     let handler = pernixc_handler::Panic;
     let interner = DuplicatingInterner;
 
-    let tree = Tree::from_source(
-        source_content.content(),
-        source_id,
-        &interner,
-        &handler,
-    );
+    let tree =
+        Tree::from_source(&source_content, source_id, &interner, &handler);
 
     let root_branch = &tree[ROOT_BRANCH_ID];
 
@@ -372,12 +365,12 @@ const INDENTATION_POP_IN_DELIMITER: &str = ":
 
 #[test]
 fn indentation_pop_in_delimiter() {
-    let source_map = SourceMap::default();
+    let source_map = SimpleSourceMap::default();
     let source_id = TargetID::TEST.make_global(source_map.register(
         TargetID::TEST,
-        SourceFile::new(
-            INDENTATION_POP_IN_DELIMITER.to_string(),
-            "test".into(),
+        SourceFile::from_str(
+            INDENTATION_POP_IN_DELIMITER,
+            Interned::new_duplicating_unsized(PathBuf::from("test")),
         ),
     ));
 
@@ -386,12 +379,8 @@ fn indentation_pop_in_delimiter() {
     let handler = pernixc_handler::Panic;
     let interner = DuplicatingInterner;
 
-    let tree = Tree::from_source(
-        source_content.content(),
-        source_id,
-        &interner,
-        &handler,
-    );
+    let tree =
+        Tree::from_source(&source_content, source_id, &interner, &handler);
 
     let root_branch = &tree[ROOT_BRANCH_ID];
 
@@ -466,10 +455,13 @@ const INDENTATION_POP_ALL_AT_END: &str = ":
 
 #[test]
 fn indentation_pop_all_at_end() {
-    let source_map = SourceMap::default();
+    let source_map = SimpleSourceMap::default();
     let source_id = TargetID::TEST.make_global(source_map.register(
         TargetID::TEST,
-        SourceFile::new(INDENTATION_POP_ALL_AT_END.to_string(), "test".into()),
+        SourceFile::from_str(
+            INDENTATION_POP_ALL_AT_END,
+            Interned::new_duplicating_unsized(PathBuf::from("test")),
+        ),
     ));
 
     let source_content = source_map.get(source_id).unwrap();
@@ -477,12 +469,8 @@ fn indentation_pop_all_at_end() {
     let handler = pernixc_handler::Panic;
     let interner = DuplicatingInterner;
 
-    let tree = Tree::from_source(
-        source_content.content(),
-        source_id,
-        &interner,
-        &handler,
-    );
+    let tree =
+        Tree::from_source(&source_content, source_id, &interner, &handler);
 
     let root_branch = &tree[ROOT_BRANCH_ID];
 
@@ -538,10 +526,13 @@ const UNCLOSED_DELIMITER: &str = "-([{}";
 
 #[test]
 fn unclosed_delimiter() {
-    let source_map = SourceMap::default();
+    let source_map = SimpleSourceMap::default();
     let source_id = TargetID::TEST.make_global(source_map.register(
         TargetID::TEST,
-        SourceFile::new(UNCLOSED_DELIMITER.to_string(), "test".into()),
+        SourceFile::from_str(
+            UNCLOSED_DELIMITER,
+            Interned::new_duplicating_unsized(PathBuf::from("test")),
+        ),
     ));
 
     let source_content = source_map.get(source_id).unwrap();
@@ -549,12 +540,8 @@ fn unclosed_delimiter() {
     let storage = Storage::<Error>::new();
     let interner = DuplicatingInterner;
 
-    let tree = Tree::from_source(
-        source_content.content(),
-        source_id,
-        &interner,
-        &storage,
-    );
+    let tree =
+        Tree::from_source(&source_content, source_id, &interner, &storage);
 
     let root_branch = &tree[ROOT_BRANCH_ID];
 
@@ -627,10 +614,13 @@ fn stable_hash_id() {
     const THIRD_STABLE_HASH_ID: &str = "{ a b { e {} f } c d }";
 
     fn get_hash(str: &str) -> ID<Branch> {
-        let source_map = SourceMap::default();
+        let source_map = SimpleSourceMap::default();
         let source_id = TargetID::TEST.make_global(source_map.register(
             TargetID::TEST,
-            SourceFile::new(str.to_string(), "test".into()),
+            SourceFile::from_str(
+                str,
+                Interned::new_duplicating_unsized(PathBuf::from("test")),
+            ),
         ));
 
         let source_content = source_map.get(source_id).unwrap();
@@ -638,12 +628,8 @@ fn stable_hash_id() {
         let storage = Storage::<Error>::new();
         let interner = DuplicatingInterner;
 
-        let tree = Tree::from_source(
-            source_content.content(),
-            source_id,
-            &interner,
-            &storage,
-        );
+        let tree =
+            Tree::from_source(&source_content, source_id, &interner, &storage);
 
         let root_branch = &tree[ROOT_BRANCH_ID];
 
@@ -662,10 +648,13 @@ fn stable_hash_id() {
 }
 
 fn verify_tree(input: &arbitrary::Nodes) -> TestCaseResult {
-    let source_map = SourceMap::new();
+    let source_map = SimpleSourceMap::new();
     let source = input.to_string();
 
-    let source_file = SourceFile::new(source, "test".into());
+    let source_file = SourceFile::from_str(
+        &source,
+        Interned::new_duplicating_unsized(PathBuf::from("test")),
+    );
 
     let id = source_map.register(TargetID::TEST, source_file);
     let id = TargetID::TEST.make_global(id);
@@ -673,12 +662,10 @@ fn verify_tree(input: &arbitrary::Nodes) -> TestCaseResult {
     let storage = Storage::<Error>::new();
     let interner = DuplicatingInterner;
 
-    let tree = super::Tree::from_source(
-        source_map.get(id).unwrap().content(),
-        id,
-        &interner,
-        &storage,
-    );
+    let source_content = source_map.get(id).unwrap();
+
+    let tree =
+        super::Tree::from_source(&source_content, id, &interner, &storage);
 
     let storage = storage.as_vec();
     prop_assert!(storage.is_empty(), "{storage:?}");
@@ -697,10 +684,13 @@ empty:
 
 #[test]
 fn empty_indentation() {
-    let source_map = SourceMap::default();
+    let source_map = SimpleSourceMap::default();
     let source_id = TargetID::TEST.make_global(source_map.register(
         TargetID::TEST,
-        SourceFile::new(EMPTY_INDENTATION.to_string(), "test".into()),
+        SourceFile::from_str(
+            EMPTY_INDENTATION,
+            Interned::new_duplicating_unsized(PathBuf::from("test")),
+        ),
     ));
 
     let source_content = source_map.get(source_id).unwrap();
@@ -708,12 +698,7 @@ fn empty_indentation() {
     let storage = Storage::<Error>::new();
     let interner = DuplicatingInterner;
 
-    let _ = Tree::from_source(
-        source_content.content(),
-        source_id,
-        &interner,
-        &storage,
-    );
+    let _ = Tree::from_source(&source_content, source_id, &interner, &storage);
 
     let mut errs = storage.into_vec();
 
@@ -735,10 +720,13 @@ a:
 
 #[test]
 fn invalid_inner_indentation() {
-    let source_map = SourceMap::default();
+    let source_map = SimpleSourceMap::default();
     let source_id = TargetID::TEST.make_global(source_map.register(
         TargetID::TEST,
-        SourceFile::new(INVALID_INNER_INDENTATION.to_string(), "test".into()),
+        SourceFile::from_str(
+            INVALID_INNER_INDENTATION,
+            Interned::new_duplicating_unsized(PathBuf::from("test")),
+        ),
     ));
 
     let source_content = source_map.get(source_id).unwrap();
@@ -746,12 +734,7 @@ fn invalid_inner_indentation() {
     let storage = Storage::<Error>::new();
     let interner = DuplicatingInterner;
 
-    let _ = Tree::from_source(
-        source_content.content(),
-        source_id,
-        &interner,
-        &storage,
-    );
+    let _ = Tree::from_source(&source_content, source_id, &interner, &storage);
 
     let mut errs = storage.into_vec();
     assert_eq!(errs.len(), 1);

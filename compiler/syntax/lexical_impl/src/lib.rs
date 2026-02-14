@@ -26,7 +26,7 @@ async fn parse_executor(
 
     let storage = Storage::<error::Error>::default();
     let tree = Tree::from_source(
-        source_file.content(),
+        &source_file,
         key.target_id.make_global(
             engine
                 .get_stable_path_id(key.path.clone(), key.target_id)

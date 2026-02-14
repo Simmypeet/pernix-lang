@@ -360,15 +360,13 @@ impl Tree {
     ///
     /// The `source_id` will be assigned to all the spans in the tree.
     pub fn from_source<I: Interner>(
-        source: &str,
+        source: &SourceFile,
         source_id: GlobalSourceID,
         interner: &I,
         handler: &dyn Handler<error::Error>,
     ) -> Self {
         let mut converter = Converter {
             tokenizer: Tokenizer::new(source, source_id, interner, handler),
-            source,
-            handler,
             delimiter_stack: Vec::new(),
             indentation_stack: Vec::new(),
             current_nodes: Vec::new(),
@@ -407,6 +405,7 @@ impl Tree {
                 0
             };
 
+        let source_len = converter.tokenizer.source_file().len_bytes();
         converter
             .tree
             .arena
@@ -414,7 +413,7 @@ impl Tree {
                 kind: BranchKind::Root,
                 nodes: converter.current_nodes,
                 absolute_start_byte_index: 0,
-                absolute_end_byte_index: root_end_position.max(source.len()),
+                absolute_end_byte_index: root_end_position.max(source_len),
             })
             .unwrap();
 
@@ -524,8 +523,6 @@ struct IndentationMarker {
 
 struct Converter<'a, I> {
     tokenizer: Tokenizer<'a, I>,
-    source: &'a str,
-    handler: &'a dyn Handler<error::Error>,
 
     delimiter_stack: Vec<DelimiterMarker>,
     indentation_stack: Vec<IndentationMarker>,
@@ -538,7 +535,6 @@ impl<I> std::fmt::Debug for Converter<'_, I> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Converter")
             .field("tokenizer", &self.tokenizer)
-            .field("source", &self.source)
             .field("delimiter_stack", &self.delimiter_stack)
             .field("indentation_stack", &self.indentation_stack)
             .field("current_nodes", &self.current_nodes)
@@ -563,7 +559,7 @@ enum GeneralBranchKind {
 fn calculate_branch_hash<'a>(
     tokens: impl Iterator<Item = &'a Kind<RelativeLocation>>,
     node_kind: GeneralBranchKind,
-    source: &str,
+    source: &SourceFile,
     arena: &Arena<Branch, state::Default>,
 ) -> ID<Branch> {
     let mut hasher = FxHasher::default();
@@ -577,9 +573,8 @@ fn calculate_branch_hash<'a>(
             .map_or_else(|| token.span.start.offset, |x| x.start.offset);
 
         let end_byte = token.span.end.offset;
-        let str = &source[start_byte..end_byte];
 
-        str.hash(&mut hasher);
+        source.hashable_view(start_byte..end_byte).hash(&mut hasher);
     }
 
     let mut attempt = 0;
@@ -600,7 +595,7 @@ fn calculate_branch_hash<'a>(
     }
 }
 
-impl<I: Interner> Converter<'_, I> {
+impl<'a, I: Interner> Converter<'a, I> {
     const TAB_INDENT_SIZE: usize = 4;
 
     #[allow(clippy::too_many_lines)]
@@ -749,6 +744,14 @@ impl<I: Interner> Converter<'_, I> {
         }
     }
 
+    const fn source_file(&self) -> &'a SourceFile {
+        self.tokenizer.source_file()
+    }
+
+    fn handler(&self) -> &'a dyn Handler<error::Error> {
+        self.tokenizer.handler()
+    }
+
     #[allow(clippy::too_many_lines)]
     fn handle_indentation(
         &mut self,
@@ -758,8 +761,8 @@ impl<I: Interner> Converter<'_, I> {
     ) {
         // calculate the indentation size
         let indentation_size = prior_insignificant.map_or(0usize, |x| {
-            self.source[x.start..x.end]
-                .chars()
+            self.source_file()
+                .chars_range(x.start..x.end)
                 .map(|x| if x == '\t' { Self::TAB_INDENT_SIZE } else { 1 })
                 .sum()
         });
@@ -774,7 +777,7 @@ impl<I: Interner> Converter<'_, I> {
 
             // must be deeper indentation
             if indentation_size == 0 {
-                self.handler.receive(error::Error::ExpectIndentation(
+                self.handler().receive(error::Error::ExpectIndentation(
                     ExpectIndentation {
                         span: token_span,
                         indentation_start: self
@@ -791,7 +794,7 @@ impl<I: Interner> Converter<'_, I> {
                 if indentation_size
                     <= prior_indentation.indentation_size.unwrap()
                 {
-                    self.handler.receive(
+                    self.handler().receive(
                         error::Error::InvalidNewIndentationLevel(
                             InvalidNewIndentationLevel {
                                 span: token_span,
@@ -863,7 +866,7 @@ impl<I: Interner> Converter<'_, I> {
                 });
 
                 if error {
-                    self.handler.receive(error::Error::InvalidIndentation(
+                    self.handler().receive(error::Error::InvalidIndentation(
                         InvalidIndentation {
                             span: token_span,
                             found_indentation: indentation_size,
@@ -908,14 +911,16 @@ impl<I: Interner> Converter<'_, I> {
         if let Some(last) = self.delimiter_stack.pop() {
             // mismatched closing delimiter
             if last.delimiter != expected_delimiter {
-                self.handler.receive(error::Error::MismatchedClosingDelimiter(
-                    MismatchedClosingDelimiter {
-                        span: token_span,
-                        opening_span: last.location,
-                        closing_delimiter: expected_delimiter,
-                        opening_delimiter: last.delimiter,
-                    },
-                ));
+                self.handler().receive(
+                    error::Error::MismatchedClosingDelimiter(
+                        MismatchedClosingDelimiter {
+                            span: token_span,
+                            opening_span: last.location,
+                            closing_delimiter: expected_delimiter,
+                            opening_delimiter: last.delimiter,
+                        },
+                    ),
+                );
             }
 
             // force pop all indentations
@@ -956,7 +961,7 @@ impl<I: Interner> Converter<'_, I> {
             let branch_id = calculate_branch_hash(
                 nodes.iter().filter_map(Node::as_leaf),
                 GeneralBranchKind::Delimited(expected_delimiter),
-                self.source,
+                self.source_file(),
                 &self.tree,
             );
 
@@ -1002,7 +1007,7 @@ impl<I: Interner> Converter<'_, I> {
                 .insert(last.open_puncutation_index, Node::Branch(branch_id));
         } else {
             // unexpected closing delimiter
-            self.handler.receive(error::Error::UnexpectedClosingDelimiter(
+            self.handler().receive(error::Error::UnexpectedClosingDelimiter(
                 UnexpectedClosingDelimiter {
                     span: token_span,
                     closing_delimiter: expected_delimiter,
@@ -1037,15 +1042,15 @@ impl<I: Interner> Converter<'_, I> {
             .unwrap()
             + 1;
 
-        let end_byte_index =
-            self.current_nodes.get(end_index).map_or(self.source.len(), |x| {
-                match x {
-                    Node::Leaf(token) => token.start_location().offset,
-                    Node::Branch(id) => {
-                        self.tree.arena[*id].absolute_start_byte_index
-                    }
+        let end_byte_index = self.current_nodes.get(end_index).map_or(
+            self.source_file().len_bytes(),
+            |x| match x {
+                Node::Leaf(token) => token.start_location().offset,
+                Node::Branch(id) => {
+                    self.tree.arena[*id].absolute_start_byte_index
                 }
-            });
+            },
+        );
 
         for _ in 0..pop_count {
             let marker = self.indentation_stack.pop().unwrap();
@@ -1075,7 +1080,7 @@ impl<I: Interner> Converter<'_, I> {
             let branch_hash = calculate_branch_hash(
                 nodes.iter().filter_map(Node::as_leaf),
                 GeneralBranchKind::Indented,
-                self.source,
+                self.source_file(),
                 &self.tree,
             );
 
@@ -1185,7 +1190,7 @@ impl<I: Interner> Converter<'_, I> {
         let branch_id = calculate_branch_hash(
             std::iter::empty(),
             GeneralBranchKind::Indented,
-            self.source,
+            self.source_file(),
             &self.tree,
         );
 

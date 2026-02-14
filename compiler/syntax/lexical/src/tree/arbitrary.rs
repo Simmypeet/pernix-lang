@@ -5,7 +5,7 @@ use std::fmt::{Display, Formatter};
 use derive_more::{Deref, DerefMut};
 use enum_as_inner::EnumAsInner;
 use pernixc_arena::ID;
-use pernixc_source_file::SourceMap;
+use pernixc_source_file::simple_source_map::SimpleSourceMap;
 use pernixc_test_input::Input;
 use proptest::{
     prelude::{Arbitrary, BoxedStrategy, Just, Strategy, TestCaseError},
@@ -25,11 +25,13 @@ pub struct Indentation {
     pub colon_insignificant: Option<PriorInsignificant>,
 }
 
-impl Input<ID<super::Branch>, (usize, &SourceMap, &Tree)> for &Indentation {
+impl Input<ID<super::Branch>, (usize, &SimpleSourceMap, &Tree)>
+    for &Indentation
+{
     fn assert(
         self,
         branch_id: ID<super::Branch>,
-        (prev_size, source_map, tree): (usize, &SourceMap, &Tree),
+        (prev_size, source_map, tree): (usize, &SimpleSourceMap, &Tree),
     ) -> proptest::test_runner::TestCaseResult {
         let branch = &tree[branch_id];
         prop_assert!(
@@ -326,11 +328,11 @@ pub enum Node {
     Fragment(Fragment),
 }
 
-impl Input<&super::Node, (&SourceMap, &Tree)> for &Node {
+impl Input<&super::Node, (&SimpleSourceMap, &Tree)> for &Node {
     fn assert(
         self,
         output: &super::Node,
-        (source_map, tree): (&SourceMap, &Tree),
+        (source_map, tree): (&SimpleSourceMap, &Tree),
     ) -> proptest::test_runner::TestCaseResult {
         match (self, output) {
             (Node::Leaf(a), super::Node::Leaf(b)) => {
@@ -363,11 +365,11 @@ pub enum Fragment {
     Indentation(Indentation),
 }
 
-impl Input<ID<super::Branch>, (&SourceMap, &Tree)> for &Fragment {
+impl Input<ID<super::Branch>, (&SimpleSourceMap, &Tree)> for &Fragment {
     fn assert(
         self,
         output: ID<super::Branch>,
-        (source_map, tree): (&SourceMap, &Tree),
+        (source_map, tree): (&SimpleSourceMap, &Tree),
     ) -> proptest::test_runner::TestCaseResult {
         match self {
             Fragment::Delimited(a) => a.assert(output, (source_map, tree)),
@@ -398,11 +400,11 @@ pub struct Delimited {
     pub nodes: Nodes,
 }
 
-impl Input<ID<super::Branch>, (&SourceMap, &Tree)> for &Delimited {
+impl Input<ID<super::Branch>, (&SimpleSourceMap, &Tree)> for &Delimited {
     fn assert(
         self,
         output: ID<super::Branch>,
-        (source_map, tree): (&SourceMap, &Tree),
+        (source_map, tree): (&SimpleSourceMap, &Tree),
     ) -> proptest::test_runner::TestCaseResult {
         let branch = &tree[output];
         let delimiter = branch
