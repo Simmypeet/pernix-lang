@@ -3,60 +3,82 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: general IO error (os error 2)
-  ╭─ compiler/e2e/test/snapshot/regression/main.pnx:3:15
-  │
-3 │ public module third
-  │               ^^^^^ submodule declaration here
-  │
-  = check if the file exists and is accessible
+  [error]: symbol `add10000` is already defined in the scope `main::fifth`
+       ╭─[compiler/e2e/test/snapshot/regression/fifth.pnx:19999:18]
+ 19998 │     return a9999 + b9999
+ 19999 │ private function add10000(a10000: int32, b10000: int32) -> int32:
+       ·                  ────┬───
+       ·                      ╰── symbol `add10000` is already defined here
+ 20000 │     return a10000 + b10000
+ 20001 │ private function add10000(a10000: int32, b10000: int32) -> int32:
+       ·                  ────┬───
+       ·                      ╰── redefinition here
+ 20002 │     return a10000 + b10000
+       ╰────
 
-error: symbol `add10000` is already defined in the scope `main`
-      ╭─ compiler/e2e/test/snapshot/regression/main.pnx:20007:18
-      │
-20005 │ private function add10000(a10000: int32, b10000: int32) -> int32:
-      │                  -------- symbol `add10000` is already defined here
-20006 │     return a10000 + b10000
-20007 │ private function add10000(a10000: int32, b10000: int32) -> int32:
-      │                  ^^^^^^^^ redefinition here
+  [error]: symbol `add10000` is already defined in the scope `main::second`
+       ╭─[compiler/e2e/test/snapshot/regression/second.pnx:19997:18]
+ 19996 │     return a9999 + b9999
+ 19997 │ private function add10000(a10000: int32, b10000: int32) -> int32:
+       ·                  ────┬───
+       ·                      ╰── symbol `add10000` is already defined here
+ 19998 │     return a10000 + b10000
+ 19999 │ private function add10000(a10000: int32, b10000: int32) -> int32:
+       ·                  ────┬───
+       ·                      ╰── redefinition here
+ 20000 │     return a10000 + b10000
+       ╰────
 
-error: symbol `add10000` is already defined in the scope `main::fourth`
-      ╭─ compiler/e2e/test/snapshot/regression/fourth.pnx:20001:18
-      │
-19999 │ private function add10000(a10000: int32, b10000: int32) -> int32:
-      │                  -------- symbol `add10000` is already defined here
-20000 │     return a10000 + b10000
-20001 │ private function add10000(a10000: int32, b10000: int32) -> int32:
-      │                  ^^^^^^^^ redefinition here
+  [error]: symbol `add10000` is already defined in the scope `main::first`
+       ╭─[compiler/e2e/test/snapshot/regression/first.pnx:19999:18]
+ 19998 │     return a9999 + b9999
+ 19999 │ private function add10000(a10000: int32, b10000: int32) -> int32:
+       ·                  ────┬───
+       ·                      ╰── symbol `add10000` is already defined here
+ 20000 │     return a10000 + b10000
+ 20001 │ private function add10000(a10000: int32, b10000: int32) -> int32:
+       ·                  ────┬───
+       ·                      ╰── redefinition here
+ 20002 │     return a10000 + b10000
+       ╰────
 
-error: symbol `add10000` is already defined in the scope `main::first`
-      ╭─ compiler/e2e/test/snapshot/regression/first.pnx:20001:18
-      │
-19999 │ private function add10000(a10000: int32, b10000: int32) -> int32:
-      │                  -------- symbol `add10000` is already defined here
-20000 │     return a10000 + b10000
-20001 │ private function add10000(a10000: int32, b10000: int32) -> int32:
-      │                  ^^^^^^^^ redefinition here
+  [error]: symbol `add10000` is already defined in the scope `main::fourth`
+       ╭─[compiler/e2e/test/snapshot/regression/fourth.pnx:19999:18]
+ 19998 │     return a9999 + b9999
+ 19999 │ private function add10000(a10000: int32, b10000: int32) -> int32:
+       ·                  ────┬───
+       ·                      ╰── symbol `add10000` is already defined here
+ 20000 │     return a10000 + b10000
+ 20001 │ private function add10000(a10000: int32, b10000: int32) -> int32:
+       ·                  ────┬───
+       ·                      ╰── redefinition here
+ 20002 │     return a10000 + b10000
+       ╰────
 
-error: symbol `add10000` is already defined in the scope `main::second`
-      ╭─ compiler/e2e/test/snapshot/regression/second.pnx:19999:18
-      │
-19997 │ private function add10000(a10000: int32, b10000: int32) -> int32:
-      │                  -------- symbol `add10000` is already defined here
-19998 │     return a10000 + b10000
-19999 │ private function add10000(a10000: int32, b10000: int32) -> int32:
-      │                  ^^^^^^^^ redefinition here
+  [error]: symbol `add10000` is already defined in the scope `main`
+       ╭─[compiler/e2e/test/snapshot/regression/main.pnx:20005:18]
+ 20004 │     return a9999 + b9999
+ 20005 │ private function add10000(a10000: int32, b10000: int32) -> int32:
+       ·                  ────┬───
+       ·                      ╰── symbol `add10000` is already defined here
+ 20006 │     return a10000 + b10000
+ 20007 │ private function add10000(a10000: int32, b10000: int32) -> int32:
+       ·                  ────┬───
+       ·                      ╰── redefinition here
+ 20008 │     return a10000 + b10000
+       ╰────
 
-error: symbol `add10000` is already defined in the scope `main::fifth`
-      ╭─ compiler/e2e/test/snapshot/regression/fifth.pnx:20001:18
-      │
-19999 │ private function add10000(a10000: int32, b10000: int32) -> int32:
-      │                  -------- symbol `add10000` is already defined here
-20000 │     return a10000 + b10000
-20001 │ private function add10000(a10000: int32, b10000: int32) -> int32:
-      │                  ^^^^^^^^ redefinition here
+  [error]: general IO error (os error 2)
+   ╭─[compiler/e2e/test/snapshot/regression/main.pnx:3:15]
+ 2 │ public module second
+ 3 │ public module third
+   ·               ──┬──
+   ·                 ╰── submodule declaration here
+ 4 │ public module fourth
+   ╰────
+  help: check if the file exists and is accessible
 
-error: Compilation aborted due to 6 error(s)
+  [error]: Compilation aborted due to 6 error(s)
 
 
 
