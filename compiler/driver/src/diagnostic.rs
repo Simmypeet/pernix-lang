@@ -155,6 +155,8 @@ pub struct PernixDiagnostic {
     pub labels: Vec<LabeledSpan>,
     /// The help message.
     pub help: Option<String>,
+    /// Related diagnostics (e.g., for cross-file highlights).
+    pub related_diagnostics: Vec<PernixDiagnostic>,
 }
 
 impl fmt::Display for PernixDiagnostic {
@@ -185,6 +187,18 @@ impl Diagnostic for PernixDiagnostic {
             Some(Box::new(self.labels.clone().into_iter()))
         }
     }
+
+    fn related<'a>(
+        &'a self,
+    ) -> Option<Box<dyn Iterator<Item = &'a dyn Diagnostic> + 'a>> {
+        if self.related_diagnostics.is_empty() {
+            None
+        } else {
+            Some(Box::new(
+                self.related_diagnostics.iter().map(|d| d as &dyn Diagnostic),
+            ))
+        }
+    }
 }
 
 /// Converts a pernix diagnostic to a miette diagnostic.
@@ -200,14 +214,17 @@ pub fn pernix_diagnostic_to_miette_diagnostic(
     };
 
     // Get source code if there's a primary highlight
-    let (source_code, labels) = if let Some(Highlight { span, message }) =
+    let (source_code, labels, related_diagnostics) = if let Some(Highlight {
+        span,
+        message,
+    }) =
         &diagnostic.primary_highlight
     {
         // Get the source file
         let source_file = source_map.0.get(&span.source_id);
 
         source_file.map_or_else(
-            || (None, vec![]),
+            || (None, vec![], vec![]),
             |source_file| {
                 // Create RopeSourceCode which materializes the content once
                 let source_code = RopeSourceCode::new(source_file);
@@ -218,21 +235,50 @@ pub fn pernix_diagnostic_to_miette_diagnostic(
                     message.clone().unwrap_or_default(),
                 )];
 
-                // Add related highlights - but only from the same source file
+                // Collect related highlights from the same file as labels,
+                // and create nested diagnostics for highlights in different
+                // files
+                let mut related_diagnostics = Vec::new();
+
                 for related in &diagnostic.related {
                     if related.span.source_id == span.source_id {
+                        // Same file - add as a label
                         labels.push(LabeledSpan::at(
                             related.span.start..related.span.end,
                             related.message.clone().unwrap_or_default(),
                         ));
+                    } else {
+                        // Different file - create a nested diagnostic
+                        if let Some(related_source_file) =
+                            source_map.0.get(&related.span.source_id)
+                        {
+                            let related_source_code =
+                                RopeSourceCode::new(related_source_file);
+                            let related_label = LabeledSpan::at(
+                                related.span.start..related.span.end,
+                                related.message.clone().unwrap_or_default(),
+                            );
+
+                            related_diagnostics.push(PernixDiagnostic {
+                                severity: Severity::Advice,
+                                message: related
+                                    .message
+                                    .clone()
+                                    .unwrap_or_else(|| "related".to_string()),
+                                source_code: Some(related_source_code),
+                                labels: vec![related_label],
+                                help: None,
+                                related_diagnostics: vec![],
+                            });
+                        }
                     }
                 }
 
-                (Some(source_code), labels)
+                (Some(source_code), labels, related_diagnostics)
             },
         )
     } else {
-        (None, vec![])
+        (None, vec![], vec![])
     };
 
     PernixDiagnostic {
@@ -241,6 +287,7 @@ pub fn pernix_diagnostic_to_miette_diagnostic(
         source_code,
         labels,
         help: diagnostic.help_message.clone(),
+        related_diagnostics,
     }
 }
 
@@ -253,6 +300,7 @@ pub fn simple_error(message: impl Into<String>) -> PernixDiagnostic {
         source_code: None,
         labels: vec![],
         help: None,
+        related_diagnostics: vec![],
     }
 }
 
@@ -265,6 +313,7 @@ pub fn simple_warning(message: impl Into<String>) -> PernixDiagnostic {
         source_code: None,
         labels: vec![],
         help: None,
+        related_diagnostics: vec![],
     }
 }
 
@@ -277,6 +326,7 @@ pub fn simple_note(message: impl Into<String>) -> PernixDiagnostic {
         source_code: None,
         labels: vec![],
         help: None,
+        related_diagnostics: vec![],
     }
 }
 
@@ -292,5 +342,6 @@ pub fn simple_error_with_help(
         source_code: None,
         labels: vec![],
         help: Some(help.into()),
+        related_diagnostics: vec![],
     }
 }
