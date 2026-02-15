@@ -3,10 +3,9 @@
 use std::{collections::BTreeSet, ops::Deref};
 
 use pernixc_arena::ID;
-use qbice::{Decode, Encode};
-use qbice::StableHash;
 use pernixc_term::r#type::Type;
 use pernixc_type_system::Succeeded;
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Values,

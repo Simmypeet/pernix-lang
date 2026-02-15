@@ -1,11 +1,10 @@
 //! Contains the diagnostic related to the pattern binding.
 
-use qbice::storage::intern::Interned;
 use pernixc_diagnostic::{ByteIndex, Highlight, Report};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
-use qbice::{Decode, Encode, StableHash};
 use pernixc_symbol::source_map::to_absolute_span;
+use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
 /// A particular name has already been bound in the given scope.
 #[derive(

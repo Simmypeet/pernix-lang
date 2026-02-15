@@ -5,13 +5,13 @@ use literal::Literal;
 use pernixc_arena::ID;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
-use qbice::{Decode, Encode, StableHash};
 use pernixc_target::Global;
 use pernixc_term::r#type::Type;
 use pernixc_type_system::{
     Error, Succeeded, environment::Environment as TyEnvironment,
     normalizer::Normalizer,
 };
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Values, capture::Captures, closure_parameters::ClosureParameters,

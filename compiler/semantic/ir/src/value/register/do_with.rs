@@ -6,10 +6,9 @@ use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
 use pernixc_hash::HashMap;
 use pernixc_qbice::TrackedEngine;
-use qbice::{Decode, Encode};
-use qbice::StableHash;
 use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
 use pernixc_type_system::{Error, Succeeded, normalizer::Normalizer};
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     IRWithContext, Values,
@@ -22,15 +21,7 @@ use crate::{
 /// Representing the capture initialization. This contains all the values
 /// used to initialize the captures.
 #[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    Default,
-    StableHash,
-    Encode,
-    Decode,
-    Getters,
+    Debug, Clone, PartialEq, Eq, Default, StableHash, Encode, Decode, Getters,
 )]
 pub struct CaptureArguments {
     arguments: HashMap<pernixc_arena::ID<Capture>, Value>,
@@ -157,9 +148,7 @@ impl HandlerClause {
 
 /// The closure for handling a specific effect operation within an
 /// [`HandlerClause`].
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, StableHash, Encode, Decode,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct OperationHandler {
     /// The IR containing the code body of the effect operation handler.
     ir_id: ID<IRWithContext>,
@@ -217,9 +206,7 @@ impl transform::Element for HandlerChain {
 }
 
 /// Represents a `do-with` expression in the IR.
-#[derive(
-    Debug, Clone, PartialEq, Eq, StableHash, Getters, Encode, Decode,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Getters, Encode, Decode)]
 pub struct DoWith {
     /// The unique ID of this `do-with` expression within the function-level
     /// IR.

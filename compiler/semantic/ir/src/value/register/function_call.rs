@@ -5,14 +5,13 @@ use std::ops::Deref;
 use pernixc_arena::ID;
 use pernixc_hash::HashMap;
 use pernixc_semantic_element::return_type::get_return_type;
-use qbice::{Decode, Encode};
-use qbice::StableHash;
 use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant, effect, instantiation::Instantiation,
     lifetime::Lifetime, r#type::Type,
 };
 use pernixc_type_system::Error;
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Values,

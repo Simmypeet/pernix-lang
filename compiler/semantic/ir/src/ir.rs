@@ -4,8 +4,8 @@ use getset::{CopyGetters, Getters, MutGetters};
 use pernixc_arena::{Arena, ID};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
-use qbice::{Decode, Encode, StableHash};
 use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     alloca::Alloca,
@@ -128,9 +128,7 @@ impl IRMap {
 }
 
 /// Contains all the registers and allocas used in the program.
-#[derive(
-    Debug, Clone, PartialEq, Eq, Default, Encode, Decode, StableHash,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Encode, Decode, StableHash)]
 pub struct Values {
     /// Contains all the registers used in the program.
     pub registers: Arena<Register>,
@@ -154,9 +152,7 @@ impl Values {
 ///
 /// It can be used as a body of a function, closure, effect handler,
 /// compile-time constant, etc.
-#[derive(
-    Debug, Clone, PartialEq, Eq, Default, Encode, Decode, StableHash,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Encode, Decode, StableHash)]
 pub struct IR {
     /// Contains the registers and allocas used in the program.
     pub values: Values,

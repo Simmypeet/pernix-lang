@@ -1,10 +1,9 @@
 //! Contains the definition of the [`Binary`] register.
 
 use pernixc_arena::ID;
-use qbice::{Decode, Encode};
-use qbice::StableHash;
 use pernixc_term::r#type::Type;
 use pernixc_type_system::{Error, Succeeded, normalizer::Normalizer};
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Values,

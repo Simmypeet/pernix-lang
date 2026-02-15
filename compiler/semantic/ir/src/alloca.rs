@@ -2,9 +2,8 @@
 
 use pernixc_arena::ID;
 use pernixc_lexical::tree::RelativeSpan;
-use qbice::{Decode, Encode};
-use qbice::StableHash;
 use pernixc_term::r#type::Type;
+use qbice::{Decode, Encode, StableHash};
 
 use crate::scope;
 

@@ -1,5 +1,4 @@
-use qbice::{Encode, Decode};
-use qbice::StableHash;
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     bind::expression::postfix::{

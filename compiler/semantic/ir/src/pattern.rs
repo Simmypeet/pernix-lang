@@ -2,7 +2,6 @@
 
 use diagnostic::AlreadyBoundName;
 use enum_as_inner::EnumAsInner;
-use qbice::storage::intern::Interned;
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
 use pernixc_hash::HashMap;
@@ -11,6 +10,7 @@ use pernixc_semantic_element::fields::Field;
 use pernixc_source_file::SourceElement;
 use pernixc_target::Global;
 use pernixc_term::r#type::Qualifier;
+use qbice::storage::intern::Interned;
 
 use crate::{address::Address, instruction::SwitchValue};
 

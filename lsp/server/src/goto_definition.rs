@@ -57,8 +57,12 @@ pub async fn handle_goto_definition(
 
     let source_file = self.get_source_file_by_id(absolute_span.source_id).await;
 
-    let start = source_file.get_editor_location_from_byte_index(absolute_span.start).unwrap();
-    let end = source_file.get_editor_location_from_byte_index(absolute_span.end).unwrap();
+    let start = source_file
+        .get_editor_location_from_byte_index(absolute_span.start)
+        .unwrap();
+    let end = source_file
+        .get_editor_location_from_byte_index(absolute_span.end)
+        .unwrap();
 
     Some(GotoDefinitionResponse::Scalar(Location {
         uri: Url::from_file_path(

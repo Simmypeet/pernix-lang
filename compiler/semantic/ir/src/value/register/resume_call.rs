@@ -3,10 +3,9 @@
 use std::ops::Deref;
 
 use getset::{CopyGetters, Getters};
-use qbice::{Decode, Encode};
-use qbice::StableHash;
 use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
 use pernixc_type_system::Error;
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Values,

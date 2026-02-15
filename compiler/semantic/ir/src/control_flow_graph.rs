@@ -5,10 +5,9 @@ use std::ops::{Not, RangeBounds};
 use getset::{CopyGetters, Getters};
 use pernixc_arena::{Arena, ID};
 use pernixc_hash::{HashMap, HashSet};
-use qbice::{Decode, Encode};
-use qbice::StableHash;
 use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
 use pernixc_transitive_closure::TransitiveClosure;
+use qbice::{Decode, Encode, StableHash};
 
 use super::instruction::{Instruction, Jump, Terminator};
 use crate::transform::{self, Transformer};

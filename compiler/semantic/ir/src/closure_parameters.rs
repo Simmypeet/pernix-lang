@@ -4,8 +4,8 @@ use derive_more::Index;
 use pernixc_arena::{Arena, ID, OrderedArena};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_semantic_element::parameter::Parameters;
-use qbice::{Decode, Encode, StableHash};
 use pernixc_term::{instantiation::Instantiation, r#type::Type};
+use qbice::{Decode, Encode, StableHash};
 
 use crate::transform;
 
@@ -32,15 +32,7 @@ pub struct ClosureParameter {
 
 /// Represents a collection of parameters taken by a closure.
 #[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    Default,
-    StableHash,
-    Encode,
-    Decode,
-    Index,
+    Debug, Clone, PartialEq, Eq, Default, StableHash, Encode, Decode, Index,
 )]
 pub struct ClosureParameters(OrderedArena<ClosureParameter>);
 

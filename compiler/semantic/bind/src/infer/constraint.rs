@@ -5,8 +5,7 @@ use std::{
     hash::Hash,
 };
 
-use qbice::{Encode, Decode};
-use qbice::StableHash;
+use qbice::{Decode, Encode, StableHash};
 
 /// Implements by a constraint type. Representing a restrict domain of what
 /// terms can be inferred.

@@ -1,11 +1,11 @@
 //! Contains the logic for building the cpatures.
 
-use qbice::storage::intern::Interned;
 use getset::Getters;
 use pernixc_arena::Arena;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_semantic_element::{fields::get_fields, parameter::get_parameters};
 use pernixc_term::r#type::Type;
+use qbice::storage::intern::Interned;
 
 use crate::{
     address::{self, Address, Memory},
