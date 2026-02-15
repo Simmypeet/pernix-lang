@@ -6,6 +6,7 @@ use std::{
 
 use backtrace::Backtrace;
 use clap::Parser;
+use pernixc_driver::term::ReportTerm;
 use pernixc_target::Arguments;
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
@@ -187,32 +188,20 @@ impl IceReport {
 #[allow(dead_code, clippy::too_many_lines)]
 fn setup_panic() {
     std::panic::set_hook(Box::new(|info| {
-        use std::io::Write;
-
-        use miette::{GraphicalReportHandler, GraphicalTheme};
-        use pernixc_driver::diagnostic::{simple_error, simple_note};
-
-        let handler =
-            GraphicalReportHandler::new_themed(GraphicalTheme::unicode());
         let stderr = std::io::stderr();
         let mut stderr = stderr.lock();
 
-        let mut print_diagnostic =
-            |diag: &pernixc_driver::diagnostic::PernixDiagnostic| {
-                let mut output = String::new();
-                let _ = handler.render_report(&mut output, diag);
-                let _ = writeln!(stderr, "{output}");
-            };
+        let mut report_term = ReportTerm::new(&mut stderr, true);
 
-        print_diagnostic(&simple_error(
+        report_term.report_simple_error(
             "internal compiler error (ICE) occurred; the error is caused by a \
              bug in the compiler not the error in your code",
-        ));
+        );
 
-        print_diagnostic(&simple_note(
+        report_term.report_simple_note(
             "we're sorry for the inconvenience, please report this issue to \
              the developers",
-        ));
+        );
 
         let payload_string = info
             .payload()
@@ -253,14 +242,15 @@ fn setup_panic() {
         let file = ice_report.write_to_temp();
 
         if let Ok((_, path)) = file {
-            print_diagnostic(&simple_note(format!(
+            report_term.report_simple_note(format!(
                 "the ICE report has been written to: {}",
                 path.display()
-            )));
-        } else {
-            print_diagnostic(&simple_note(
-                "dumping the ICE report to stderr:".to_string(),
             ));
+        } else {
+            report_term.report_simple_note(
+                "failed to write the ICE report to a temporary file"
+                    .to_string(),
+            );
 
             eprintln!(
                 "```\n{}```",
@@ -268,20 +258,20 @@ fn setup_panic() {
             );
         }
 
-        print_diagnostic(&simple_note(
+        report_term.report_simple_note(
             "please report the issue to the developers with the written ICE \
              report",
-        ));
+        );
 
-        print_diagnostic(&simple_note(
+        report_term.report_simple_note(
             "the report was not automatically sent to the developers because \
              of privacy concerns",
-        ));
+        );
 
-        print_diagnostic(&simple_note(
+        report_term.report_simple_note(
             "we appreciate your effort to report the issue and help us \
              improve the compiler <3",
-        ));
+        );
 
         std::process::exit(1);
     }));

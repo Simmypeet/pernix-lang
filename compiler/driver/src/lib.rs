@@ -2,80 +2,19 @@
 
 use std::{io::Write, path::PathBuf, process::ExitCode, sync::Arc};
 
-use miette::{GraphicalReportHandler, GraphicalTheme};
 use pernixc_qbice::{
     Engine, InMemoryFactory, IncrementalStorageEngine, TrackedEngine,
 };
-use pernixc_symbol_impl::source_map::{SourceMap, create_source_map};
+use pernixc_symbol_impl::source_map::create_source_map;
 use pernixc_target::{Arguments, Build, Command, Run, TargetID, TargetKind};
 use qbice::{serialize::Plugin, stable_hash::SeededStableHasherBuilder};
 use tracing::instrument;
 
-use crate::{
-    diagnostic::{
-        PernixDiagnostic, pernix_diagnostic_to_miette_diagnostic, simple_error,
-    },
-    llvm::MachineCodeKind,
-};
+use crate::{llvm::MachineCodeKind, term::ReportTerm};
 
 pub mod term;
 
-pub mod diagnostic;
 mod llvm;
-
-/// A struct that handles emitting diagnostics to the terminal.
-pub struct ReportTerm<'a> {
-    handler: GraphicalReportHandler,
-    /// The writer to emit diagnostics to.
-    writer: &'a mut dyn Write,
-    /// The source map containing source files for diagnostics.
-    source_map: &'a SourceMap,
-}
-
-impl<'a> ReportTerm<'a> {
-    /// Creates a new [`ReportTerm`] with the given writer and source map,
-    /// using a unicode character set and no colors.
-    #[must_use]
-    pub fn new(writer: &'a mut dyn Write, source_map: &'a SourceMap) -> Self {
-        let mut graphical_theme = GraphicalTheme::unicode();
-
-        graphical_theme.characters.error = "[error]:".to_string();
-        graphical_theme.characters.warning = "[warning]:".to_string();
-        graphical_theme.characters.advice = "[hint]:".to_string();
-
-        graphical_theme.styles.error =
-            graphical_theme.styles.error.bold().bright_red();
-        graphical_theme.styles.warning =
-            graphical_theme.styles.warning.bold().bright_yellow();
-        graphical_theme.styles.advice =
-            graphical_theme.styles.advice.bold().bright_green();
-
-        graphical_theme.styles.link =
-            graphical_theme.styles.link.remove_all_effects().bright_cyan();
-
-        let handler = GraphicalReportHandler::new_themed(graphical_theme)
-            .with_show_related_as_nested(true);
-
-        Self { handler, writer, source_map }
-    }
-}
-
-impl std::fmt::Debug for ReportTerm<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ReportTerm")
-            .field("handler", &self.handler)
-            .field("source_map", &self.source_map)
-            .finish_non_exhaustive()
-    }
-}
-
-impl ReportTerm<'_> {
-    fn report(&mut self, diagnostic: &PernixDiagnostic) {
-        let mut output = String::new();
-        let _ = self.handler.render_report(&mut output, diagnostic);
-        let _ = writeln!(self.writer, "{output}");
-    }
-}
 
 fn get_output_path(
     argument_output: Option<PathBuf>,
@@ -89,9 +28,9 @@ fn get_output_path(
         let mut output = match std::env::current_dir() {
             Ok(dir) => dir,
             Err(error) => {
-                report_term.report(&simple_error(format!(
+                report_term.report_simple_error(format!(
                     "failed to get current directory: {error}"
-                )));
+                ));
                 return None;
             }
         };
@@ -108,7 +47,7 @@ fn get_output_path(
 
 async fn create_engine(
     argument: &Arguments,
-    writer: &mut dyn Write,
+    report_term: &mut ReportTerm<'_>,
 ) -> Option<Engine> {
     if let Some(inc_path) = &argument.command.input().incremental_path {
         match Engine::new_with(
@@ -120,16 +59,10 @@ async fn create_engine(
         {
             Ok(engine) => Some(engine),
             Err(err) => {
-                let handler = GraphicalReportHandler::new_themed(
-                    GraphicalTheme::unicode(),
-                );
-                let diagnostic = simple_error(format!(
+                report_term.report_simple_error(format!(
                     "failed to create incremental engine at '{}': {err}",
                     inc_path.display()
                 ));
-                let mut output = String::new();
-                let _ = handler.render_report(&mut output, &diagnostic);
-                let _ = writeln!(writer, "{output}");
 
                 None
             }
@@ -156,7 +89,11 @@ pub async fn run(
     err_writer: &mut dyn Write,
     _out_writer: &mut dyn Write,
 ) -> ExitCode {
-    let Some(mut engine) = create_engine(&argument, err_writer).await else {
+    let mut report_term =
+        ReportTerm::new(err_writer, argument.command.input().fancy);
+
+    let Some(mut engine) = create_engine(&argument, &mut report_term).await
+    else {
         return ExitCode::FAILURE;
     };
 
@@ -250,7 +187,7 @@ pub async fn run(
 
     let source_map = tracked_engine.create_source_map(local_target_id).await;
 
-    let mut report_term = ReportTerm::new(err_writer, &source_map);
+    report_term.set_source_map(&source_map);
 
     let diagnostic_count = {
         let check = tracked_engine
@@ -262,20 +199,16 @@ pub async fn run(
         diagnostics.sort_by(|a, b| a.severity.cmp(&b.severity));
 
         for diag in &diagnostics {
-            let miette_diag =
-                pernix_diagnostic_to_miette_diagnostic(diag, &source_map);
-            report_term.report(&miette_diag);
+            report_term.report_rendered(diag);
         }
 
         diagnostics.len()
     };
 
     if diagnostic_count != 0 {
-        let diag = simple_error(format!(
+        report_term.report_simple_error(format!(
             "Compilation aborted due to {diagnostic_count} error(s)"
         ));
-
-        report_term.report(&diag);
 
         ExitCode::FAILURE
     } else {
@@ -374,9 +307,9 @@ async fn build(
             let mut child = match command.spawn() {
                 Ok(child) => child,
                 Err(error) => {
-                    report_term.report(&simple_error(format!(
+                    report_term.report_simple_error(format!(
                         "failed to spawn executable: {error}"
-                    )));
+                    ));
 
                     return ExitCode::FAILURE;
                 }
@@ -385,9 +318,9 @@ async fn build(
             let status = match child.wait() {
                 Ok(status) => status,
                 Err(error) => {
-                    report_term.report(&simple_error(format!(
+                    report_term.report_simple_error(format!(
                         "failed to wait for executable: {error}"
-                    )));
+                    ));
 
                     return ExitCode::FAILURE;
                 }
@@ -395,16 +328,16 @@ async fn build(
 
             if let Some(code) = status.code() {
                 if code != 0 {
-                    report_term.report(&simple_error(format!(
+                    report_term.report_simple_error(format!(
                         "executable terminated with exit code {code}"
-                    )));
+                    ));
 
                     return ExitCode::FAILURE;
                 }
             } else {
-                report_term.report(&simple_error(
+                report_term.report_simple_error(
                     "executable terminated by signal".to_string(),
-                ));
+                );
 
                 return ExitCode::FAILURE;
             }

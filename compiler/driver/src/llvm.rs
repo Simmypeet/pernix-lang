@@ -12,13 +12,7 @@ use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::{get_target_root_module_id, member::get_members};
 use pernixc_target::{Global, OptimizationLevel, TargetID};
 
-use crate::{
-    ReportTerm,
-    diagnostic::{
-        pernix_diagnostic_to_miette_diagnostic, simple_error,
-        simple_error_with_help, simple_note, simple_warning,
-    },
-};
+use crate::ReportTerm;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum MachineCodeKind {
@@ -78,7 +72,7 @@ pub(super) async fn emit_as_machine_code(
         .await
     } else {
         report_term
-            .report(&simple_error("no `main` function found in the target"));
+            .report_simple_error("no `main` function found in the target");
         return false;
     };
 
@@ -137,9 +131,9 @@ pub(super) async fn emit_as_machine_code(
         };
 
         if let Err(error) = result {
-            report_term.report(&simple_error(format!(
+            report_term.report_simple_error(format!(
                 "failed to write object file: {error}"
-            )));
+            ));
 
             return false;
         }
@@ -150,11 +144,11 @@ pub(super) async fn emit_as_machine_code(
                 output_path,
                 report_term,
             ) {
-                report_term.report(&simple_note(format!(
+                report_term.report_simple_note(format!(
                     "you can continue to link the object file manually using \
                      the appropriate linker command at `{}`",
                     temp_obj_path.as_ref().unwrap().display()
-                )));
+                ));
                 return false;
             }
 
@@ -162,9 +156,9 @@ pub(super) async fn emit_as_machine_code(
             if let Err(error) =
                 std::fs::remove_file(temp_obj_path.as_ref().unwrap())
             {
-                report_term.report(&simple_warning(format!(
+                report_term.report_simple_warning(format!(
                     "failed to delete temporary object file: {error}"
-                )));
+                ));
 
                 return false;
             }
@@ -174,12 +168,8 @@ pub(super) async fn emit_as_machine_code(
     } else {
         for error in storage.into_vec() {
             let diag = error.report(engine).await;
-            let miette_diag = pernix_diagnostic_to_miette_diagnostic(
-                &diag,
-                report_term.source_map,
-            );
 
-            report_term.report(&miette_diag);
+            report_term.report_rendered(&diag);
         }
 
         false
@@ -241,17 +231,16 @@ fn invoke_linker(
                 None
             };
 
-            let diag = message.map_or_else(
-                || simple_error(format!("failed to spawn linker: {err}")),
-                |help_message| {
-                    simple_error_with_help(
-                        format!("failed to spawn linker: {err}"),
-                        help_message,
-                    )
-                },
-            );
-
-            report_term.report(&diag);
+            if let Some(help) = message {
+                report_term.report_simple_error_with_help(
+                    format!("failed to spawn linker: {err}"),
+                    help.to_string(),
+                );
+            } else {
+                report_term.report_simple_error(format!(
+                    "failed to spawn linker: {err}"
+                ));
+            }
 
             return false;
         }
@@ -260,19 +249,19 @@ fn invoke_linker(
     let status = match child.wait() {
         Ok(status) => status,
         Err(err) => {
-            report_term.report(&simple_error(format!(
+            report_term.report_simple_error(format!(
                 "failed to wait for linker process: {err}"
-            )));
+            ));
 
             return false;
         }
     };
 
     if !status.success() {
-        report_term.report(&simple_error(format!(
+        report_term.report_simple_error(format!(
             "linker process exited with status code: {}",
             status.code().map_or("unknown".to_string(), |c| c.to_string())
-        )));
+        ));
 
         return false;
     }

@@ -169,6 +169,11 @@ pub struct Input {
     /// purposes.
     #[clap(long = "target-seed")]
     pub target_seed: Option<u64>,
+
+    /// Displays the diagnostics in a fancy format with unicode characters and
+    /// colors.
+    #[clap(long = "no-fancy", default_value = "true", action = clap::ArgAction::SetFalse)]
+    pub fancy: bool,
 }
 
 impl Input {
