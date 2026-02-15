@@ -1500,6 +1500,7 @@ dependencies = [
  "pernixc_qbice",
  "pernixc_source_file",
  "pernixc_target",
+ "qbice",
  "serde_json",
  "stacker",
  "test-generator",
@@ -1513,6 +1514,7 @@ dependencies = [
 name = "pernix_server"
 version = "0.1.0-beta.2"
 dependencies = [
+ "backtrace",
  "bon",
  "env_logger",
  "fuzzy-matcher",
@@ -2396,9 +2398,9 @@ dependencies = [
 
 [[package]]
 name = "qbice"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3449f03806df5352d022b66b3d8c91dda7480e7f0c17d9a9f21e92a59ea849c"
+checksum = "2fca70b8444dddd2f14847cb1cd9a8428c23e6728ee8eb0486406a1f8f6344c2"
 dependencies = [
  "crossbeam",
  "dashmap 6.1.0",

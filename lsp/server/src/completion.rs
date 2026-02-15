@@ -54,7 +54,8 @@ pub async fn handle_completion(
     let pernix_editor_location =
         params.text_document_position.position.to_pernix_editor_location();
     let byte_index = source_file
-        .get_byte_index_from_editor_location(&pernix_editor_location);
+        .get_byte_index_from_editor_location(&pernix_editor_location)
+        .unwrap();
 
     let mut completions = Vec::new();
 

@@ -9,17 +9,17 @@ expression: string
     "sortText": "100"
   },
   {
-    "label": "XomeStructOne",
+    "label": "XomeStructTwo",
     "labelDetails": {
-      "detail": "(from lspTest::innerFirst)"
+      "detail": "(from lspTest::innerSecond)"
     },
     "kind": 22,
     "sortText": "200"
   },
   {
-    "label": "XomeStructTwo",
+    "label": "XomeStructOne",
     "labelDetails": {
-      "detail": "(from lspTest::innerSecond)"
+      "detail": "(from lspTest::innerFirst)"
     },
     "kind": 22,
     "sortText": "200"

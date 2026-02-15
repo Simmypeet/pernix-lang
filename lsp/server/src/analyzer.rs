@@ -1,6 +1,10 @@
 //! Contains the analyzer implementation.
 
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use pernixc_diagnostic::ByteIndex;
 use pernixc_qbice::{Engine, IncrementalStorageEngine, TrackedEngine};
@@ -9,8 +13,10 @@ use pernixc_source_file::{
 };
 use pernixc_target::{Arguments, Check, Input, TargetID};
 use qbice::{
-    executor, serialize::Plugin, stable_hash::SeededStableHasherBuilder,
-    storage::storage_engine::StorageEngineFactory,
+    executor,
+    serialize::Plugin,
+    stable_hash::SeededStableHasherBuilder,
+    storage::{intern::Interned, storage_engine::StorageEngineFactory},
 };
 use tokio::sync::RwLock;
 use tower_lsp::lsp_types::{DidChangeTextDocumentParams, Url};
@@ -39,14 +45,20 @@ impl executor::Executor<pernixc_source_file::Key, pernixc_qbice::Config>
         &self,
         key: &pernixc_source_file::Key,
         engine: &pernixc_qbice::TrackedEngine,
-    ) -> Result<Arc<SourceFile>, pernixc_source_file::Error> {
-        std::fs::File::open(key.path.as_ref())
-            .and_then(|file| {
-                Ok(Arc::new(SourceFile::load(file, key.path.to_path_buf())?))
-            })
-            .map_err(|x| {
-                pernixc_source_file::Error(engine.intern_unsized(x.to_string()))
-            })
+    ) -> Result<SourceFile, pernixc_source_file::Error> {
+        let file = std::fs::File::open(key.path.as_ref()).map_err(|x| {
+            pernixc_source_file::Error(engine.intern_unsized(x.to_string()))
+        })?;
+
+        let source_file = SourceFile::from_reader(
+            std::io::BufReader::new(file),
+            engine.intern_unsized(key.path.to_path_buf()),
+        )
+        .map_err(|x| {
+            pernixc_source_file::Error(engine.intern_unsized(x.to_string()))
+        })?;
+
+        Ok(source_file)
     }
 }
 
@@ -91,6 +103,7 @@ impl Analyzer {
                 incremental_path: None,
                 chrome_tracing: false,
                 target_seed,
+                fancy: false,
             },
         });
 
@@ -215,54 +228,56 @@ impl Analyzer {
 
     /// Applies the given change to the source file in the engine.
     /// This does not perform a check, that must be done separately.
-    pub async fn apply_change(&self, mut _params: DidChangeTextDocumentParams) {
-        todo!()
-        // let mut engine_lock = self.engine.write().await;
+    pub async fn apply_change(&self, mut params: DidChangeTextDocumentParams) {
+        let path: Interned<Path> = self
+            .engine
+            .intern_unsized(params.text_document.uri.to_file_path().unwrap());
 
-        // let input_lock = Arc::get_mut(&mut
-        // *engine_lock).unwrap().input_lock();
-        // let key = pernixc_source_file::Key {
-        //     path: params.text_document.uri.to_file_path().unwrap().into(),
-        //     target_id: self.current_target_id,
-        // };
+        let mut input_lock = self.engine.input_session().await;
 
-        // let changes = match params
-        //     .content_changes
-        //     .iter()
-        //     .rposition(|x| x.range.is_none())
-        // {
-        //     Some(index) => {
-        //         let change = &mut params.content_changes[index];
+        let key = pernixc_source_file::Key {
+            path: path.clone(),
+            target_id: self.current_target_id,
+        };
 
-        //         let file_path =
-        //             params.text_document.uri.to_file_path().unwrap();
+        let changes = match params
+            .content_changes
+            .iter()
+            .rposition(|x| x.range.is_none())
+        {
+            Some(index) => {
+                let change = &mut params.content_changes[index];
 
-        //         input_lock
-        //             .set_input(
-        //                 key.clone(),
-        //                 Ok(Arc::new(SourceFile::new(
-        //                     std::mem::take(&mut change.text),
-        //                     file_path,
-        //                 ))),
-        //             )
-        //             .await;
+                input_lock
+                    .set_input(
+                        key.clone(),
+                        Ok(SourceFile::from_str(&change.text, path)),
+                    )
+                    .await;
 
-        //         &params.content_changes[index + 1..]
-        //     }
-        //     None => &params.content_changes,
-        // };
+                &params.content_changes[index + 1..]
+            }
+            None => &params.content_changes,
+        };
 
-        // input_lock.inplace_mutate(&key, |source_file| {
-        //     let source_file = source_file.as_mut().unwrap();
+        input_lock
+            .update(key, |source_file| {
+                let mut source_file = source_file.unwrap();
+                let source_file_ref = source_file.as_mut().unwrap();
 
-        //     for change in changes {
-        //         Self::update_source_file(
-        //             Arc::get_mut(source_file).expect("should be unique"),
-        //             &change.text,
-        //             change.range.unwrap(),
-        //         );
-        //     }
-        // });
+                for change in changes {
+                    Self::update_source_file(
+                        source_file_ref,
+                        &change.text,
+                        change.range.unwrap(),
+                    );
+                }
+
+                source_file
+            })
+            .await;
+
+        input_lock.commit().await;
     }
 
     fn update_source_file(
@@ -280,7 +295,7 @@ impl Analyzer {
         );
 
         let start = source_file
-            .into_byte_index_include_ending(pernix_location_start)
+            .get_byte_index_from_editor_location(&pernix_location_start)
             .unwrap_or_else(|| {
                 panic!(
                     "the given range {pernix_location_start:?} is invalid to \
@@ -289,7 +304,7 @@ impl Analyzer {
             });
 
         let end = source_file
-            .into_byte_index_include_ending(pernix_location_end)
+            .get_byte_index_from_editor_location(&pernix_location_end)
             .unwrap_or_else(|| {
                 panic!(
                     "the given range {pernix_location_end:?} is invalid to \
@@ -358,19 +373,23 @@ async fn to_lsp_range(
     span: &pernixc_source_file::Span<ByteIndex>,
 ) -> tower_lsp::lsp_types::Range {
     let source_file = self.get_source_file_by_id(span.source_id).await;
-    let start = source_file.get_location(span.start).unwrap_or_else(|| {
-        let line = source_file.line_coount() - 1;
-        let column = source_file.get_line(line).unwrap().len();
+    let start = source_file
+        .get_editor_location_from_byte_index(span.start)
+        .unwrap_or_else(|| {
+            let line = source_file.line_coount() - 1;
+            let column = source_file.get_line(line).unwrap().len();
 
-        EditorLocation::new(line, column)
-    });
+            EditorLocation::new(line, column)
+        });
 
-    let end = source_file.get_location(span.end).unwrap_or_else(|| {
-        let line = source_file.line_coount() - 1;
-        let column = source_file.get_line(line).unwrap().len();
+    let end = source_file
+        .get_editor_location_from_byte_index(span.end)
+        .unwrap_or_else(|| {
+            let line = source_file.line_coount() - 1;
+            let column = source_file.get_line(line).unwrap().len();
 
-        EditorLocation::new(line, column)
-    });
+            EditorLocation::new(line, column)
+        });
 
     tower_lsp::lsp_types::Range {
         start: tower_lsp::lsp_types::Position {

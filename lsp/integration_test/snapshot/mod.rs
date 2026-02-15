@@ -10,8 +10,7 @@ use pernix_server::{
     completion::handle_completion, goto_definition::handle_goto_definition,
     hover::handle_hover,
 };
-use pernixc_qbice::InMemoryFactory;
-use pernixc_query::TrackedEngine;
+use pernixc_qbice::{InMemoryFactory, TrackedEngine};
 use pernixc_target::TargetID;
 use tower_lsp::lsp_types::{
     CompletionParams, GotoDefinitionParams, HoverParams, PartialResultParams,
@@ -143,8 +142,7 @@ pub async fn test_hover(main_file: PathBuf) {
                 work_done_token: None,
             },
         })
-        .await
-        .expect("encountered cyclic dependency");
+        .await;
 
     let snapshot_str = response.unwrap_or_else(|| "no hover found".to_string());
 
@@ -192,8 +190,7 @@ pub async fn test_goto_definition(main_file: PathBuf) {
                 partial_result_token: None,
             },
         })
-        .await
-        .expect("encountered cyclic dependency");
+        .await;
 
     let snapshot_str = response.map_or_else(
         || "no definition found".to_string(),
@@ -230,9 +227,10 @@ pub async fn create_engine_test_for_fixture_with_cursor(
         Some(0), // fixed target seed for deterministic results
         InMemoryFactory,
     )
-    .await;
+    .await
+    .unwrap();
 
-    let tracked_engine = engine.tracked();
+    let tracked_engine = engine.tracked().await;
 
     (tracked_engine, fixture, target_id)
 }

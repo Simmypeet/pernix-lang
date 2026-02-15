@@ -183,9 +183,9 @@ impl SourceFile {
     ///
     /// This can be a one-past-end location at the end of the file.
     #[must_use]
-    pub fn into_byte_index_include_ending(
+    pub fn get_byte_index_from_editor_location(
         &self,
-        location: EditorLocation,
+        location: &EditorLocation,
     ) -> Option<ByteIndex> {
         if location.line >= self.line_coount() {
             return None;
@@ -197,6 +197,24 @@ impl SourceFile {
         line.try_char_to_byte(location.column)
             .ok()
             .map(|byte_offset| line_start + byte_offset)
+    }
+
+    /// Converts the given byte index to an editor location (line and column),
+    /// if the index is valid.
+    #[must_use]
+    pub fn get_editor_location_from_byte_index(
+        &self,
+        byte_index: ByteIndex,
+    ) -> Option<EditorLocation> {
+        if byte_index > self.len_bytes() {
+            return None;
+        }
+
+        let line = self.rope.byte_to_line(byte_index);
+        let line_start = self.rope.line_to_byte(line);
+        let column = self.rope.line(line).byte_to_char(byte_index - line_start);
+
+        Some(EditorLocation { line, column })
     }
 }
 

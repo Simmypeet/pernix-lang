@@ -236,9 +236,11 @@ pub async fn symbol_at(
         target_id.make_global(self.get_source_file_module(source_id).await);
 
     // determine the byte position
-    let byte_index = source_file.get_byte_index_from_editor_location(
-        &position.to_pernix_editor_location(),
-    );
+    let byte_index = source_file
+        .get_byte_index_from_editor_location(
+            &position.to_pernix_editor_location(),
+        )
+        .unwrap();
 
     // get the most specific symbol scope at the byte index
     let symbol_scope_id = self

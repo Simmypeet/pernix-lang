@@ -17,6 +17,7 @@ thiserror = { workspace = true }
 serde = { workspace = true }
 bon = { workspace = true }
 fuzzy-matcher = { workspace = true }
+backtrace = { workspace = true }
 
 pernixc_source_file = { path = "../../compiler/base/source_file" }
 pernixc_diagnostic = { path = "../../compiler/base/diagnostic" }

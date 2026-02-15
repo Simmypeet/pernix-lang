@@ -135,7 +135,7 @@ fn replace_range_as_append() {
 
     let position = EditorLocation::new(0, 3);
     let byte_index =
-        source_file.into_byte_index_include_ending(position).unwrap();
+        source_file.get_byte_index_from_editor_location(&position).unwrap();
 
     source_file.replace_range(byte_index..byte_index, "D");
 
@@ -155,9 +155,9 @@ fn replace_range_delete() {
     let end = EditorLocation::new(2, 2);
 
     let start_byte_index =
-        source_file.into_byte_index_include_ending(start).unwrap();
+        source_file.get_byte_index_from_editor_location(&start).unwrap();
     let end_byte_index =
-        source_file.into_byte_index_include_ending(end).unwrap();
+        source_file.get_byte_index_from_editor_location(&end).unwrap();
 
     source_file.replace_range(start_byte_index..end_byte_index, "");
 
