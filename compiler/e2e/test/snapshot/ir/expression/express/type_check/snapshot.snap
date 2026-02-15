@@ -24,21 +24,21 @@ stderr:
   help: earlier `express` expressions in the same scope have a value with a type other than unit (`()`). Consider adding a value to this `express` expression.
 
   [error]: mismatched types: expected `()`, found `bool`
-    ╭─[compiler/e2e/test/snapshot/ir/expression/express/type_check/main.pnx:20:17]
- 19 │         express
- 20 │         express true # error, unit != bool
-    ·                 ──┬─
-    ·                   ╰── expected `()`, found `bool`
-    ╰────
-  help: ensure the expression type matches the expected type
-
-  [error]: mismatched types: expected `()`, found `bool`
     ╭─[compiler/e2e/test/snapshot/ir/expression/express/type_check/main.pnx:14:17]
  13 │         express      # fine, the same as unit
  14 │         express true # errorr, () != bool
     ·                 ──┬─
     ·                   ╰── expected `()`, found `bool`
  15 │ 
+    ╰────
+  help: ensure the expression type matches the expected type
+
+  [error]: mismatched types: expected `()`, found `bool`
+    ╭─[compiler/e2e/test/snapshot/ir/expression/express/type_check/main.pnx:20:17]
+ 19 │         express
+ 20 │         express true # error, unit != bool
+    ·                 ──┬─
+    ·                   ╰── expected `()`, found `bool`
     ╰────
   help: ensure the expression type matches the expected type
 

@@ -4,14 +4,6 @@ expression: clean_run
 ---
 stderr:
   [error]: the generic parameter was declared in the wrong order
-   ╭─[compiler/e2e/test/snapshot/semantic_element/generic_parameters/misordered_generic_parameter/main.pnx:9:36]
- 8 │ 
- 9 │ public type Fourth[const N: usize, T] = bool
-   ·                                    ┬
-   ·                                    ╰── can't be declared after constant parameters
-   ╰────
-
-  [error]: the generic parameter was declared in the wrong order
    ╭─[compiler/e2e/test/snapshot/semantic_element/generic_parameters/misordered_generic_parameter/main.pnx:1:26]
  1 │ public type First['x, T, 'a] = &'x T:
    ·                          ─┬
@@ -35,6 +27,14 @@ stderr:
    ·                                      ─┬
    ·                                       ╰── can't be declared after type or constant parameters
  8 │ 
+   ╰────
+
+  [error]: the generic parameter was declared in the wrong order
+   ╭─[compiler/e2e/test/snapshot/semantic_element/generic_parameters/misordered_generic_parameter/main.pnx:9:36]
+ 8 │ 
+ 9 │ public type Fourth[const N: usize, T] = bool
+   ·                                    ┬
+   ·                                    ╰── can't be declared after constant parameters
    ╰────
 
   [error]: Compilation aborted due to 4 error(s)

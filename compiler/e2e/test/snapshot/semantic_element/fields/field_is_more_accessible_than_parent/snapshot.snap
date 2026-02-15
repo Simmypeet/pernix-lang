@@ -3,6 +3,16 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
+  [error]: field `notFine` is more accessible than struct `main::inner::NotFine`
+   ╭─[compiler/e2e/test/snapshot/semantic_element/fields/field_is_more_accessible_than_parent/main.pnx:3:9]
+ 2 │     private struct NotFine:
+ 3 │         public notFine: int32
+   ·         ──────────┬──────────
+   ·                   ╰── field `notFine` is publicly accessible but struct is accessible in `main::inner`
+ 4 │ 
+   ╰────
+  help: consider making the field accessible in `main::inner` or making the struct publicly accessible
+
   [error]: field `notFine` is more accessible than struct `main::inner::NotFine2`
    ╭─[compiler/e2e/test/snapshot/semantic_element/fields/field_is_more_accessible_than_parent/main.pnx:6:9]
  5 │     private struct NotFine2:
@@ -19,16 +29,6 @@ stderr:
  7 │         public notFineAsWell: int32
    ·         ─────────────┬─────────────
    ·                      ╰── field `notFineAsWell` is publicly accessible but struct is accessible in `main::inner`
-   ╰────
-  help: consider making the field accessible in `main::inner` or making the struct publicly accessible
-
-  [error]: field `notFine` is more accessible than struct `main::inner::NotFine`
-   ╭─[compiler/e2e/test/snapshot/semantic_element/fields/field_is_more_accessible_than_parent/main.pnx:3:9]
- 2 │     private struct NotFine:
- 3 │         public notFine: int32
-   ·         ──────────┬──────────
-   ·                   ╰── field `notFine` is publicly accessible but struct is accessible in `main::inner`
- 4 │ 
    ╰────
   help: consider making the field accessible in `main::inner` or making the struct publicly accessible
 

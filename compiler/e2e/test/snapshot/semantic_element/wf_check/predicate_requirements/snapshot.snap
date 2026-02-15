@@ -4,34 +4,11 @@ expression: clean_run
 ---
 stderr:
   [error]: unsatisfied predicate
-    ╭─[compiler/e2e/test/snapshot/semantic_element/wf_check/predicate_requirements/main.pnx:15:15]
- 14 │     where:
- 15 │         trait Fizz['a, T] + Identity[T]
-    ·               ─────┬─────
-    ·                    ╰── the required predicate was declared here
- 16 │         Identity[T]::Output = T
- 17 │         T: 'a + const + tuple
- 18 │         'a: 'static
- 19 │ 
+    ╭─[compiler/e2e/test/snapshot/semantic_element/wf_check/predicate_requirements/main.pnx:21:35]
  20 │ 
  21 │ public type Instantiate['a, 'b] = Qux['a, &'b float32]
     ·                                   ──────────┬─────────
-    ·                                             ╰── the predicate `trait main::Fizz['a, &'b float32]` is not satisfied
-    ╰────
-
-  [error]: unsatisfied predicate
-    ╭─[compiler/e2e/test/snapshot/semantic_element/wf_check/predicate_requirements/main.pnx:16:9]
- 15 │         trait Fizz['a, T] + Identity[T]
- 16 │         Identity[T]::Output = T
-    ·         ───────────┬───────────
-    ·                    ╰── the required predicate was declared here
- 17 │         T: 'a + const + tuple
- 18 │         'a: 'static
- 19 │ 
- 20 │ 
- 21 │ public type Instantiate['a, 'b] = Qux['a, &'b float32]
-    ·                                   ──────────┬─────────
-    ·                                             ╰── the predicate `main::Identity[&'b float32]::Output = &'b float32` is not satisfied
+    ·                                             ╰── the predicate `&'b float32: 'a` is not satisfied
     ╰────
 
   [error]: unsatisfied predicate
@@ -90,11 +67,34 @@ stderr:
     ╰────
 
   [error]: unsatisfied predicate
-    ╭─[compiler/e2e/test/snapshot/semantic_element/wf_check/predicate_requirements/main.pnx:21:35]
+    ╭─[compiler/e2e/test/snapshot/semantic_element/wf_check/predicate_requirements/main.pnx:16:9]
+ 15 │         trait Fizz['a, T] + Identity[T]
+ 16 │         Identity[T]::Output = T
+    ·         ───────────┬───────────
+    ·                    ╰── the required predicate was declared here
+ 17 │         T: 'a + const + tuple
+ 18 │         'a: 'static
+ 19 │ 
  20 │ 
  21 │ public type Instantiate['a, 'b] = Qux['a, &'b float32]
     ·                                   ──────────┬─────────
-    ·                                             ╰── the predicate `&'b float32: 'a` is not satisfied
+    ·                                             ╰── the predicate `main::Identity[&'b float32]::Output = &'b float32` is not satisfied
+    ╰────
+
+  [error]: unsatisfied predicate
+    ╭─[compiler/e2e/test/snapshot/semantic_element/wf_check/predicate_requirements/main.pnx:15:15]
+ 14 │     where:
+ 15 │         trait Fizz['a, T] + Identity[T]
+    ·               ─────┬─────
+    ·                    ╰── the required predicate was declared here
+ 16 │         Identity[T]::Output = T
+ 17 │         T: 'a + const + tuple
+ 18 │         'a: 'static
+ 19 │ 
+ 20 │ 
+ 21 │ public type Instantiate['a, 'b] = Qux['a, &'b float32]
+    ·                                   ──────────┬─────────
+    ·                                             ╰── the predicate `trait main::Fizz['a, &'b float32]` is not satisfied
     ╰────
 
   [error]: Compilation aborted due to 7 error(s)

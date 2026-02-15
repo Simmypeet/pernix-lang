@@ -4,6 +4,15 @@ expression: clean_run
 ---
 stderr:
   [error]: unsatisfied predicate
+   ╭─[compiler/e2e/test/snapshot/semantic_element/wf_check/trait_occurrences/main.pnx:6:31]
+ 5 │ public struct Bar['a, T]:
+ 6 │     public first: Foo['a, T]::Output
+   ·                               ───┬──
+   ·                                  ╰── the predicate `trait main::Foo['a, T]` is not satisfied
+ 7 │ 
+   ╰────
+
+  [error]: unsatisfied predicate
     ╭─[compiler/e2e/test/snapshot/semantic_element/wf_check/trait_occurrences/main.pnx:13:31]
  12 │ 
  13 │     public first: Foo['b, T]::Output
@@ -20,15 +29,6 @@ stderr:
     ·                                  ╰── the predicate `'b: 'a` is not satisfied
  14 │  
     ╰────
-
-  [error]: unsatisfied predicate
-   ╭─[compiler/e2e/test/snapshot/semantic_element/wf_check/trait_occurrences/main.pnx:6:31]
- 5 │ public struct Bar['a, T]:
- 6 │     public first: Foo['a, T]::Output
-   ·                               ───┬──
-   ·                                  ╰── the predicate `trait main::Foo['a, T]` is not satisfied
- 7 │ 
-   ╰────
 
   [error]: Compilation aborted due to 3 error(s)
 

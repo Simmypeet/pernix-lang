@@ -3,55 +3,6 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-  [error]: cannot index past unpacked tuple element
-    ╭─[compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:26:13]
- 25 │     # accessing past tuple unpacking
- 26 │     myTuple.3
-    ·             ┬
-    ·             ╰── the tuple type is '(int32, bool, ...T, float32, float64)'
- 27 │     myTuple.4
-    ╰────
-  help: if you try to access `float32`, try using `-1` instead
-
-  [error]: cannot index past unpacked tuple element
-    ╭─[compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:27:13]
- 26 │     myTuple.3
- 27 │     myTuple.4
-    ·             ┬
-    ·             ╰── the tuple type is '(int32, bool, ...T, float32, float64)'
- 28 │ 
-    ╰────
-  help: if you try to access `float64`, try using `-0` instead
-
-  [error]: cannot index past unpacked tuple element
-    ╭─[compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:30:13]
- 29 │     # accessing past tuple unpacking, negative index
- 30 │     myTuple.-3
-    ·             ─┬
-    ·              ╰── the tuple type is '(int32, bool, ...T, float32, float64)'
- 31 │     myTuple.-4
-    ╰────
-  help: if you try to access `bool`, try using `1` instead
-
-  [error]: cannot index past unpacked tuple element
-    ╭─[compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:31:13]
- 30 │     myTuple.-3
- 31 │     myTuple.-4
-    ·             ─┬
-    ·              ╰── the tuple type is '(int32, bool, ...T, float32, float64)'
- 32 │ 
-    ╰────
-  help: if you try to access `int32`, try using `0` instead
-
-  [error]: cannot index into unpacked tuple
-    ╭─[compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:34:13]
- 33 │     # accessing the tuple index 
- 34 │     myTuple.2
-    ·             ┬
-    ·             ╰── the tuple type is '(int32, bool, ...T, float32, float64)'
- 35 │ 
-    ╰────
-
   [error]: expected a struct type to access its field members
     ╭─[compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:9:5]
   8 │     # access, non-existing fields
@@ -107,6 +58,55 @@ stderr:
     ·             ─────────────────────────┬────────────────────────
     ·                                      ╰── 
  20 │ 
+    ╰────
+
+  [error]: cannot index past unpacked tuple element
+    ╭─[compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:26:13]
+ 25 │     # accessing past tuple unpacking
+ 26 │     myTuple.3
+    ·             ┬
+    ·             ╰── the tuple type is '(int32, bool, ...T, float32, float64)'
+ 27 │     myTuple.4
+    ╰────
+  help: if you try to access `float32`, try using `-1` instead
+
+  [error]: cannot index past unpacked tuple element
+    ╭─[compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:27:13]
+ 26 │     myTuple.3
+ 27 │     myTuple.4
+    ·             ┬
+    ·             ╰── the tuple type is '(int32, bool, ...T, float32, float64)'
+ 28 │ 
+    ╰────
+  help: if you try to access `float64`, try using `-0` instead
+
+  [error]: cannot index past unpacked tuple element
+    ╭─[compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:30:13]
+ 29 │     # accessing past tuple unpacking, negative index
+ 30 │     myTuple.-3
+    ·             ─┬
+    ·              ╰── the tuple type is '(int32, bool, ...T, float32, float64)'
+ 31 │     myTuple.-4
+    ╰────
+  help: if you try to access `bool`, try using `1` instead
+
+  [error]: cannot index past unpacked tuple element
+    ╭─[compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:31:13]
+ 30 │     myTuple.-3
+ 31 │     myTuple.-4
+    ·             ─┬
+    ·              ╰── the tuple type is '(int32, bool, ...T, float32, float64)'
+ 32 │ 
+    ╰────
+  help: if you try to access `int32`, try using `0` instead
+
+  [error]: cannot index into unpacked tuple
+    ╭─[compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:34:13]
+ 33 │     # accessing the tuple index 
+ 34 │     myTuple.2
+    ·             ┬
+    ·             ╰── the tuple type is '(int32, bool, ...T, float32, float64)'
+ 35 │ 
     ╰────
 
   [error]: Compilation aborted due to 11 error(s)

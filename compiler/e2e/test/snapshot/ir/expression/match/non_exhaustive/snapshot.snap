@@ -4,6 +4,26 @@ expression: clean_run
 ---
 stderr:
   [warning]: non-exhaustive match expression
+   ╭─[compiler/e2e/test/snapshot/ir/expression/match/non_exhaustive/main.pnx:2:14]
+ 1 │ public function first():
+ 2 │     let .. = match true: # missing false arm
+   ·              ─────┬────
+   ·                   ╰── 
+ 3 │         true:  1
+   ╰────
+  help: this match expression does not cover all possible cases; consider adding a wildcard (`_`) arm
+
+  [warning]: non-exhaustive match expression
+   ╭─[compiler/e2e/test/snapshot/ir/expression/match/non_exhaustive/main.pnx:7:14]
+ 6 │ public function second(a: bool, b: bool):
+ 7 │     let .. = match (a, b): # missing (false, false) arm
+   ·              ──────┬─────
+   ·                    ╰── 
+ 8 │         (true, true):   1
+   ╰────
+  help: this match expression does not cover all possible cases; consider adding a wildcard (`_`) arm
+
+  [warning]: non-exhaustive match expression
     ╭─[compiler/e2e/test/snapshot/ir/expression/match/non_exhaustive/main.pnx:14:14]
  13 │ public function third(a: uint8):
  14 │     let .. = match a: # missing arms for 3..255
@@ -24,16 +44,6 @@ stderr:
   help: this match expression does not cover all possible cases; consider adding a wildcard (`_`) arm
 
   [warning]: non-exhaustive match expression
-   ╭─[compiler/e2e/test/snapshot/ir/expression/match/non_exhaustive/main.pnx:7:14]
- 6 │ public function second(a: bool, b: bool):
- 7 │     let .. = match (a, b): # missing (false, false) arm
-   ·              ──────┬─────
-   ·                    ╰── 
- 8 │         (true, true):   1
-   ╰────
-  help: this match expression does not cover all possible cases; consider adding a wildcard (`_`) arm
-
-  [warning]: non-exhaustive match expression
     ╭─[compiler/e2e/test/snapshot/ir/expression/match/non_exhaustive/main.pnx:45:14]
  44 │ public function fifth(a: FakeBool, direction: Direction):
  45 │     let .. = match (a, direction): # missing (False, West) arm
@@ -41,16 +51,6 @@ stderr:
     ·                        ╰── 
  46 │         (case True,  case North): 1
     ╰────
-  help: this match expression does not cover all possible cases; consider adding a wildcard (`_`) arm
-
-  [warning]: non-exhaustive match expression
-   ╭─[compiler/e2e/test/snapshot/ir/expression/match/non_exhaustive/main.pnx:2:14]
- 1 │ public function first():
- 2 │     let .. = match true: # missing false arm
-   ·              ─────┬────
-   ·                   ╰── 
- 3 │         true:  1
-   ╰────
   help: this match expression does not cover all possible cases; consider adding a wildcard (`_`) arm
 
   [error]: Compilation aborted due to 5 error(s)

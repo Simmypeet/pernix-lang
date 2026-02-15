@@ -3,14 +3,6 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-  [error]: the tuple type cannot contain more than one unpacked type
-   ╭─[compiler/e2e/test/snapshot/semantic_element/wf_check/type_occurrences/main.pnx:6:30]
- 5 │     public tupleWithUnpacking: (V, ...W, X)
- 6 │     public multipleUnpacking: (...V, ...W, ...X)
-   ·                              ─────────┬─────────
-   ·                                       ╰── 
-   ╰────
-
   [error]: unsatisfied predicate
    ╭─[compiler/e2e/test/snapshot/semantic_element/wf_check/type_occurrences/main.pnx:2:23]
  1 │ public struct Test['a, T, U, V, W, X]:
@@ -36,6 +28,14 @@ stderr:
    ·                                    ──┬─
    ·                                      ╰── the predicate `W: tuple` is not satisfied
  6 │     public multipleUnpacking: (...V, ...W, ...X)
+   ╰────
+
+  [error]: the tuple type cannot contain more than one unpacked type
+   ╭─[compiler/e2e/test/snapshot/semantic_element/wf_check/type_occurrences/main.pnx:6:30]
+ 5 │     public tupleWithUnpacking: (V, ...W, X)
+ 6 │     public multipleUnpacking: (...V, ...W, ...X)
+   ·                              ─────────┬─────────
+   ·                                       ╰── 
    ╰────
 
   [error]: unsatisfied predicate

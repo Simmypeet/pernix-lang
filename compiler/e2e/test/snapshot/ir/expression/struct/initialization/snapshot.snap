@@ -59,6 +59,14 @@ stderr:
  22 │ 
     ╰────
 
+  [error]: struct has uninitialized fields
+    ╭─[compiler/e2e/test/snapshot/ir/expression/struct/initialization/main.pnx:24:5]
+ 23 │     # missing fields and duplicate fields
+ 24 │     Test { first: 32, second: 0.12f32, first: 54 }
+    ·     ───────────────────────┬──────────────────────
+    ·                            ╰── field 'third' of struct 'main::Test' is not initialized
+    ╰────
+
   [error]: field is initialized multiple times
     ╭─[compiler/e2e/test/snapshot/ir/expression/struct/initialization/main.pnx:24:12]
  23 │     # missing fields and duplicate fields
@@ -66,14 +74,6 @@ stderr:
     ·            ────┬────                   ────┬────
     ·                │                           ╰── field 'first' of struct 'main::Test' is initialized here again
     ·                ╰── field was first initialized here
-    ╰────
-
-  [error]: struct has uninitialized fields
-    ╭─[compiler/e2e/test/snapshot/ir/expression/struct/initialization/main.pnx:24:5]
- 23 │     # missing fields and duplicate fields
- 24 │     Test { first: 32, second: 0.12f32, first: 54 }
-    ·     ───────────────────────┬──────────────────────
-    ·                            ╰── field 'third' of struct 'main::Test' is not initialized
     ╰────
 
   [error]: Compilation aborted due to 8 error(s)

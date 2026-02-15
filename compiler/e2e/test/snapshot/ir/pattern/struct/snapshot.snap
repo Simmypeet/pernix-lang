@@ -3,34 +3,15 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-  [error]: field not found in struct
-    ╭─[compiler/e2e/test/snapshot/ir/pattern/struct/main.pnx:39:6]
- 38 │ public function test6(
- 39 │     {unknown}: Test, # unknown field 
-    ·      ───┬───
-    ·         ╰── field 'unknown' not found in struct 'main::Test'
- 40 │ ):
-    ╰────
-
-  [error]: not all fields are bound in the pattern: a, b, c
-    ╭─[compiler/e2e/test/snapshot/ir/pattern/struct/main.pnx:39:1]
- 38 │ public function test6(
- 39 │     {unknown}: Test, # unknown field 
-    · ──────┬──────
-    ·       ╰── these fields are not bound in the pattern: a, b, c
- 40 │ ):
+  [error]: not all fields are bound in the pattern: b, c
+    ╭─[compiler/e2e/test/snapshot/ir/pattern/struct/main.pnx:15:1]
+ 14 │ public function test2(
+ 15 │     {a, a}: Test,                # duplicate field binding
+    · ─────┬────
+    ·      ╰── these fields are not bound in the pattern: b, c
+ 16 │     {a: first, a: second}: Test, # duplicate field binding
     ╰────
   help: try to handle all fields in the pattern or use the `..` syntax after the fields to ignore the rest
-
-  [error]: the name `second` has already been bound in the scope
-    ╭─[compiler/e2e/test/snapshot/ir/pattern/struct/main.pnx:22:19]
- 21 │ public function test3(
- 22 │     {a: first, b: second, c: second}: Test, # duplicate name binding
-    ·                   ───┬──     ───┬──
-    ·                      │          ╰── 
-    ·                      ╰── the name is already bound here
- 23 │ ):
-    ╰────
 
   [error]: the field `a` is already bound in the pattern
     ╭─[compiler/e2e/test/snapshot/ir/pattern/struct/main.pnx:15:6]
@@ -43,12 +24,12 @@ stderr:
     ╰────
 
   [error]: not all fields are bound in the pattern: b, c
-    ╭─[compiler/e2e/test/snapshot/ir/pattern/struct/main.pnx:15:1]
- 14 │ public function test2(
+    ╭─[compiler/e2e/test/snapshot/ir/pattern/struct/main.pnx:16:1]
  15 │     {a, a}: Test,                # duplicate field binding
-    · ─────┬────
-    ·      ╰── these fields are not bound in the pattern: b, c
  16 │     {a: first, a: second}: Test, # duplicate field binding
+    · ────────────┬────────────
+    ·             ╰── these fields are not bound in the pattern: b, c
+ 17 │ ):
     ╰────
   help: try to handle all fields in the pattern or use the `..` syntax after the fields to ignore the rest
 
@@ -62,23 +43,33 @@ stderr:
  17 │ ):
     ╰────
 
-  [error]: not all fields are bound in the pattern: b, c
-    ╭─[compiler/e2e/test/snapshot/ir/pattern/struct/main.pnx:16:1]
- 15 │     {a, a}: Test,                # duplicate field binding
- 16 │     {a: first, a: second}: Test, # duplicate field binding
-    · ────────────┬────────────
-    ·             ╰── these fields are not bound in the pattern: b, c
- 17 │ ):
+  [error]: the name `second` has already been bound in the scope
+    ╭─[compiler/e2e/test/snapshot/ir/pattern/struct/main.pnx:22:19]
+ 21 │ public function test3(
+ 22 │     {a: first, b: second, c: second}: Test, # duplicate name binding
+    ·                   ───┬──     ───┬──
+    ·                      │          ╰── 
+    ·                      ╰── the name is already bound here
+ 23 │ ):
+    ╰────
+
+  [error]: not all fields are bound in the pattern: a, b, c
+    ╭─[compiler/e2e/test/snapshot/ir/pattern/struct/main.pnx:39:1]
+ 38 │ public function test6(
+ 39 │     {unknown}: Test, # unknown field 
+    · ──────┬──────
+    ·       ╰── these fields are not bound in the pattern: a, b, c
+ 40 │ ):
     ╰────
   help: try to handle all fields in the pattern or use the `..` syntax after the fields to ignore the rest
 
-  [error]: mismatched pattern binding type: expected struct but found `int32`
-    ╭─[compiler/e2e/test/snapshot/ir/pattern/struct/main.pnx:56:1]
- 55 │ public function test8(
- 56 │     {field}: int32, # not a struct
-    · ─────┬─────
-    ·      ╰── this pattern expects struct type but found `int32`
- 57 │ ):
+  [error]: field not found in struct
+    ╭─[compiler/e2e/test/snapshot/ir/pattern/struct/main.pnx:39:6]
+ 38 │ public function test6(
+ 39 │     {unknown}: Test, # unknown field 
+    ·      ───┬───
+    ·         ╰── field 'unknown' not found in struct 'main::Test'
+ 40 │ ):
     ╰────
 
   [error]: field is not accessible
@@ -90,6 +81,15 @@ stderr:
  51 │ ):
     ╰────
   help: field 'hidden' is accessible in `main::inner`
+
+  [error]: mismatched pattern binding type: expected struct but found `int32`
+    ╭─[compiler/e2e/test/snapshot/ir/pattern/struct/main.pnx:56:1]
+ 55 │ public function test8(
+ 56 │     {field}: int32, # not a struct
+    · ─────┬─────
+    ·      ╰── this pattern expects struct type but found `int32`
+ 57 │ ):
+    ╰────
 
   [error]: Compilation aborted due to 9 error(s)
 

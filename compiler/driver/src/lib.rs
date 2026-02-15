@@ -195,8 +195,7 @@ pub async fn run(
             .await;
 
         let mut diagnostics: Vec<_> = check.all_diagnostics().collect();
-        // Sort by severity and then by span location for consistent output
-        diagnostics.sort_by(|a, b| a.severity.cmp(&b.severity));
+        diagnostics.sort();
 
         for diag in &diagnostics {
             report_term.report_rendered(diag);

@@ -4,13 +4,13 @@ expression: clean_run
 ---
 stderr:
   [error]: unused generic parameter in `implements`
-    ╭─[compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/unused_generic_parameters/main.pnx:21:12]
- 20 │ 
- 21 │ implements[T: Iterator] Option[Iterator[T]::Item]:  # should error, T used only in associated type
-    ·            ┬
-    ·            ╰── generic parameter `T` is not used in the generic arguments of the `implements`
- 22 │     pass
-    ╰────
+   ╭─[compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/unused_generic_parameters/main.pnx:5:15]
+ 4 │ 
+ 5 │ implements[T, U] Option[T]:  # U is unused
+   ·               ┬
+   ·               ╰── generic parameter `U` is not used in the generic arguments of the `implements`
+ 6 │     pass
+   ╰────
   help: remove this unused generic parameter or use it in the generic arguments of the `implements`
 
   [error]: unused generic parameter in `implements`
@@ -24,6 +24,16 @@ stderr:
   help: remove this unused generic parameter or use it in the generic arguments of the `implements`
 
   [error]: unused generic parameter in `implements`
+    ╭─[compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/unused_generic_parameters/main.pnx:21:12]
+ 20 │ 
+ 21 │ implements[T: Iterator] Option[Iterator[T]::Item]:  # should error, T used only in associated type
+    ·            ┬
+    ·            ╰── generic parameter `T` is not used in the generic arguments of the `implements`
+ 22 │     pass
+    ╰────
+  help: remove this unused generic parameter or use it in the generic arguments of the `implements`
+
+  [error]: unused generic parameter in `implements`
     ╭─[compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/unused_generic_parameters/main.pnx:36:17]
  35 │ 
  36 │ implements['a, 'b, T: 'a] Option[&'a T]: # 'b is unused
@@ -31,16 +41,6 @@ stderr:
     ·                 ╰── generic parameter `b` is not used in the generic arguments of the `implements`
  37 │     pass
     ╰────
-  help: remove this unused generic parameter or use it in the generic arguments of the `implements`
-
-  [error]: unused generic parameter in `implements`
-   ╭─[compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/unused_generic_parameters/main.pnx:5:15]
- 4 │ 
- 5 │ implements[T, U] Option[T]:  # U is unused
-   ·               ┬
-   ·               ╰── generic parameter `U` is not used in the generic arguments of the `implements`
- 6 │     pass
-   ╰────
   help: remove this unused generic parameter or use it in the generic arguments of the `implements`
 
   [error]: Compilation aborted due to 4 error(s)

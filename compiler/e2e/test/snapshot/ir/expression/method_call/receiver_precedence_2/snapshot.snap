@@ -23,15 +23,6 @@ stderr:
     ╰────
   help: ensure the expression type matches the expected type
 
-  [error]: mismatched types: expected `T`, found `&mut T`
-    ╭─[compiler/e2e/test/snapshot/ir/expression/method_call/receiver_precedence_2/main.pnx:54:15]
- 53 │     
- 54 │     expect[T](value.fakeClone())  # should resolve to FakeClone[&mut T]::Clone
-    ·               ────────┬────────
-    ·                       ╰── expected `T`, found `&mut T`
-    ╰────
-  help: ensure the expression type matches the expected type
-
   [error]: mismatched types: expected `T`, found `&T`
     ╭─[compiler/e2e/test/snapshot/ir/expression/method_call/receiver_precedence_2/main.pnx:47:15]
  46 │     expect[&T](value.fakeClone())  # should resolve to FakeClone[&T]::Clone
@@ -39,6 +30,15 @@ stderr:
     ·               ────────┬────────
     ·                       ╰── expected `T`, found `&T`
  48 │ 
+    ╰────
+  help: ensure the expression type matches the expected type
+
+  [error]: mismatched types: expected `T`, found `&mut T`
+    ╭─[compiler/e2e/test/snapshot/ir/expression/method_call/receiver_precedence_2/main.pnx:54:15]
+ 53 │     
+ 54 │     expect[T](value.fakeClone())  # should resolve to FakeClone[&mut T]::Clone
+    ·               ────────┬────────
+    ·                       ╰── expected `T`, found `&mut T`
     ╰────
   help: ensure the expression type matches the expected type
 

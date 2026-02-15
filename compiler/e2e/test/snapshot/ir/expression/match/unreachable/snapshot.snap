@@ -4,13 +4,13 @@ expression: clean_run
 ---
 stderr:
   [warning]: unreachable match arm
-    ╭─[compiler/e2e/test/snapshot/ir/expression/match/unreachable/main.pnx:26:19]
- 25 │         name:        3 
- 26 │         case Third:  4 # unreachable
-    ·                   ──┬─
-    ·                     ╰── 
- 27 │ 
-    ╰────
+   ╭─[compiler/e2e/test/snapshot/ir/expression/match/unreachable/main.pnx:4:13]
+ 3 │         true:  1
+ 4 │         true:  2  # unreachable
+   ·             ──┬─
+   ·               ╰── 
+ 5 │         false: 3 
+   ╰────
   help: this match arm is unreachable due to prior arms covering all possible cases
 
   [warning]: unreachable match arm
@@ -24,13 +24,13 @@ stderr:
   help: this match arm is unreachable due to prior arms covering all possible cases
 
   [warning]: unreachable match arm
-   ╭─[compiler/e2e/test/snapshot/ir/expression/match/unreachable/main.pnx:4:13]
- 3 │         true:  1
- 4 │         true:  2  # unreachable
-   ·             ──┬─
-   ·               ╰── 
- 5 │         false: 3 
-   ╰────
+    ╭─[compiler/e2e/test/snapshot/ir/expression/match/unreachable/main.pnx:26:19]
+ 25 │         name:        3 
+ 26 │         case Third:  4 # unreachable
+    ·                   ──┬─
+    ·                     ╰── 
+ 27 │ 
+    ╰────
   help: this match arm is unreachable due to prior arms covering all possible cases
 
   [error]: Compilation aborted due to 3 error(s)

@@ -4,16 +4,6 @@ expression: clean_run
 ---
 stderr:
   [error]: the symbol cannot be implemented
-    ╭─[compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/invalid_symbol/main.pnx:20:12]
- 19 │ 
- 20 │ implements math:
-    ·            ──┬─
-    ·              ╰── the symbol `module main::math` cannot be implemented
- 21 │     pass
-    ╰────
-  help: only `trait`, `marker`, `enum`, or `struct` can be implemented
-
-  [error]: the symbol cannot be implemented
     ╭─[compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/invalid_symbol/main.pnx:16:12]
  15 │ 
  16 │ implements Direction::North:
@@ -23,15 +13,15 @@ stderr:
     ╰────
   help: only `trait`, `marker`, `enum`, or `struct` can be implemented
 
-  [error]: the type cannot be implemented
-    ╭─[compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/invalid_symbol/main.pnx:42:19]
- 41 │ 
- 42 │ implements['a, T] MutableReference['a, T]:
-    ·                   ───────────┬───────────
-    ·                              ╰── the type `&'a mut T` cannot be implemented
- 43 │     where:
+  [error]: the symbol cannot be implemented
+    ╭─[compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/invalid_symbol/main.pnx:20:12]
+ 19 │ 
+ 20 │ implements math:
+    ·            ──┬─
+    ·              ╰── the symbol `module main::math` cannot be implemented
+ 21 │     pass
     ╰────
-  help: only `enum`, or `struct` can be implemented
+  help: only `trait`, `marker`, `enum`, or `struct` can be implemented
 
   [error]: the type cannot be implemented
     ╭─[compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/invalid_symbol/main.pnx:35:19]
@@ -40,6 +30,16 @@ stderr:
     ·                   ────────┬───────
     ·                           ╰── the type `&'a T` cannot be implemented
  36 │     where:
+    ╰────
+  help: only `enum`, or `struct` can be implemented
+
+  [error]: the type cannot be implemented
+    ╭─[compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/invalid_symbol/main.pnx:42:19]
+ 41 │ 
+ 42 │ implements['a, T] MutableReference['a, T]:
+    ·                   ───────────┬───────────
+    ·                              ╰── the type `&'a mut T` cannot be implemented
+ 43 │     where:
     ╰────
   help: only `enum`, or `struct` can be implemented
 

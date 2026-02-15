@@ -10,12 +10,11 @@ stderr:
    ·                   ──┬─
    ·                     ╰── the parent symbol is accessible in `main::inner`
  3 │         internal function internalIsMoreAccessible()
+   ·                           ────────────┬───────────
+   ·                                       ╰── the symbol `internalIsMoreAccessible` in `main::inner::Test` is more accessible than the parent symbol
  4 │ 
- 5 │         public function publicIsMoreAccessible()
-   ·                         ───────────┬──────────
-   ·                                    ╰── the symbol `publicIsMoreAccessible` in `main::inner::Test` is more accessible than the parent symbol
    ╰────
-  help: the symbol `publicIsMoreAccessible` is publicly accessible while the parent symbol is accessible in `main::inner`
+  help: the symbol `internalIsMoreAccessible` is accessible in `main` while the parent symbol is accessible in `main::inner`
 
   [error]: the symbol is more accessible than the parent symbol
    ╭─[compiler/e2e/test/snapshot/symbol/symbol_is_more_accessible_than_parent/main.pnx:2:19]
@@ -24,11 +23,12 @@ stderr:
    ·                   ──┬─
    ·                     ╰── the parent symbol is accessible in `main::inner`
  3 │         internal function internalIsMoreAccessible()
-   ·                           ────────────┬───────────
-   ·                                       ╰── the symbol `internalIsMoreAccessible` in `main::inner::Test` is more accessible than the parent symbol
  4 │ 
+ 5 │         public function publicIsMoreAccessible()
+   ·                         ───────────┬──────────
+   ·                                    ╰── the symbol `publicIsMoreAccessible` in `main::inner::Test` is more accessible than the parent symbol
    ╰────
-  help: the symbol `internalIsMoreAccessible` is accessible in `main` while the parent symbol is accessible in `main::inner`
+  help: the symbol `publicIsMoreAccessible` is publicly accessible while the parent symbol is accessible in `main::inner`
 
   [error]: Compilation aborted due to 2 error(s)
 

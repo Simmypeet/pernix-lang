@@ -3,18 +3,15 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-  [error]: symbol `add10000` is already defined in the scope `main::fifth`
-       ╭─[compiler/e2e/test/snapshot/regression/fifth.pnx:19999:18]
- 19998 │     return a9999 + b9999
- 19999 │ private function add10000(a10000: int32, b10000: int32) -> int32:
-       ·                  ────┬───
-       ·                      ╰── symbol `add10000` is already defined here
- 20000 │     return a10000 + b10000
- 20001 │ private function add10000(a10000: int32, b10000: int32) -> int32:
-       ·                  ────┬───
-       ·                      ╰── redefinition here
- 20002 │     return a10000 + b10000
-       ╰────
+  [error]: general IO error (os error 2)
+   ╭─[compiler/e2e/test/snapshot/regression/main.pnx:3:15]
+ 2 │ public module second
+ 3 │ public module third
+   ·               ──┬──
+   ·                 ╰── submodule declaration here
+ 4 │ public module fourth
+   ╰────
+  help: check if the file exists and is accessible
 
   [error]: symbol `add10000` is already defined in the scope `main::second`
        ╭─[compiler/e2e/test/snapshot/regression/second.pnx:19997:18]
@@ -27,6 +24,19 @@ stderr:
        ·                  ────┬───
        ·                      ╰── redefinition here
  20000 │     return a10000 + b10000
+       ╰────
+
+  [error]: symbol `add10000` is already defined in the scope `main::fourth`
+       ╭─[compiler/e2e/test/snapshot/regression/fourth.pnx:19999:18]
+ 19998 │     return a9999 + b9999
+ 19999 │ private function add10000(a10000: int32, b10000: int32) -> int32:
+       ·                  ────┬───
+       ·                      ╰── symbol `add10000` is already defined here
+ 20000 │     return a10000 + b10000
+ 20001 │ private function add10000(a10000: int32, b10000: int32) -> int32:
+       ·                  ────┬───
+       ·                      ╰── redefinition here
+ 20002 │     return a10000 + b10000
        ╰────
 
   [error]: symbol `add10000` is already defined in the scope `main::first`
@@ -42,8 +52,8 @@ stderr:
  20002 │     return a10000 + b10000
        ╰────
 
-  [error]: symbol `add10000` is already defined in the scope `main::fourth`
-       ╭─[compiler/e2e/test/snapshot/regression/fourth.pnx:19999:18]
+  [error]: symbol `add10000` is already defined in the scope `main::fifth`
+       ╭─[compiler/e2e/test/snapshot/regression/fifth.pnx:19999:18]
  19998 │     return a9999 + b9999
  19999 │ private function add10000(a10000: int32, b10000: int32) -> int32:
        ·                  ────┬───
@@ -67,16 +77,6 @@ stderr:
        ·                      ╰── redefinition here
  20008 │     return a10000 + b10000
        ╰────
-
-  [error]: general IO error (os error 2)
-   ╭─[compiler/e2e/test/snapshot/regression/main.pnx:3:15]
- 2 │ public module second
- 3 │ public module third
-   ·               ──┬──
-   ·                 ╰── submodule declaration here
- 4 │ public module fourth
-   ╰────
-  help: check if the file exists and is accessible
 
   [error]: Compilation aborted due to 6 error(s)
 

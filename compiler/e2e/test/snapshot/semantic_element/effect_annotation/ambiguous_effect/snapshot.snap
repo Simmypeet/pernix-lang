@@ -3,14 +3,14 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-  [error]: the effect `main::A[&'a int32]` is defined multiple times with different lifetimes
-    ╭─[compiler/e2e/test/snapshot/semantic_element/effect_annotation/ambiguous_effect/main.pnx:23:7]
- 22 │     B[&'a int32] + B[&'static int32]
- 23 │     + A[&'a int32] + A[&'static int32]
-    ·       ──────┬─────   ────────┬────────
-    ·             │                ╰── 
-    ·             ╰── `main::A[&'a int32]` was first defined here
- 24 │ ):
+  [error]: the effect `main::B[&'a int32]` is defined multiple times with different lifetimes
+    ╭─[compiler/e2e/test/snapshot/semantic_element/effect_annotation/ambiguous_effect/main.pnx:17:41]
+ 16 │ 
+ 17 │ public function error['a]() -> int32 do B[&'a int32] + B[&'static int32]:
+    ·                                         ──────┬─────   ────────┬────────
+    ·                                               │                ╰── 
+    ·                                               ╰── `main::B[&'a int32]` was first defined here
+ 18 │     return 0
     ╰────
 
   [error]: the effect `main::B[&'a int32]` is defined multiple times with different lifetimes
@@ -24,14 +24,14 @@ stderr:
  23 │         + A[&'a int32] + A[&'static int32]
     ╰────
 
-  [error]: the effect `main::B[&'a int32]` is defined multiple times with different lifetimes
-    ╭─[compiler/e2e/test/snapshot/semantic_element/effect_annotation/ambiguous_effect/main.pnx:17:41]
- 16 │ 
- 17 │ public function error['a]() -> int32 do B[&'a int32] + B[&'static int32]:
-    ·                                         ──────┬─────   ────────┬────────
-    ·                                               │                ╰── 
-    ·                                               ╰── `main::B[&'a int32]` was first defined here
- 18 │     return 0
+  [error]: the effect `main::A[&'a int32]` is defined multiple times with different lifetimes
+    ╭─[compiler/e2e/test/snapshot/semantic_element/effect_annotation/ambiguous_effect/main.pnx:23:7]
+ 22 │     B[&'a int32] + B[&'static int32]
+ 23 │     + A[&'a int32] + A[&'static int32]
+    ·       ──────┬─────   ────────┬────────
+    ·             │                ╰── 
+    ·             ╰── `main::A[&'a int32]` was first defined here
+ 24 │ ):
     ╰────
 
   [error]: Compilation aborted due to 3 error(s)
