@@ -199,7 +199,3 @@ iter_on_single_items = "deny"
 
 [workspace.metadata.cargo-machete]
 ignored = ["strum"]
-
-[profile.release]
-debug = true
-debug-info-lines = true
