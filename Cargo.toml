@@ -153,9 +153,11 @@ tikv-jemallocator = { version = "0.6.1", features = [
 tikv-jemalloc-ctl = { version = "0.6.1" }
 ropey = "1.6.1"
 miette = { version = "7.6.0", features = ["fancy"] }
+ansi_term = "0.12.1"
 
 [patch.crates-io]
 inkwell = { git = "https://github.com/Simmypeet/inkwell", rev = "4366f7b37b4e732b4c567494077f3d871e2a2a60" }
+miette = { git = "https://github.com/Simmypeet/miette", rev = "c955d19217b5" }
 
 [workspace.package]
 version = "0.1.0-beta.2"

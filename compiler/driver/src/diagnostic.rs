@@ -2,9 +2,145 @@
 
 use std::fmt;
 
-use miette::{Diagnostic, LabeledSpan, NamedSource, Severity};
+use ansi_term::Style;
+use miette::{
+    Diagnostic, LabeledSpan, Severity, SourceCode, SourceSpan, SpanContents,
+};
 use pernixc_diagnostic::{ByteIndex, Highlight};
+use pernixc_source_file::SourceFile;
 use pernixc_symbol_impl::source_map::SourceMap;
+
+/// An owned implementation of [`SpanContents`] for use with dynamic content.
+///
+/// This struct owns its data, allowing it to be returned from functions that
+/// generate content dynamically (like extracting a portion from a rope).
+#[derive(Debug)]
+pub struct OwnedSpanContents {
+    /// The name of the source (e.g., file path).
+    name: String,
+    /// The owned content data.
+    data: Vec<u8>,
+    /// The span within the data.
+    span: SourceSpan,
+    /// The 0-indexed line number where the span starts.
+    line: usize,
+    /// The 0-indexed column number where the span starts.
+    column: usize,
+    /// The total number of lines in the source.
+    line_count: usize,
+}
+
+impl SpanContents for OwnedSpanContents {
+    fn data(&self) -> &[u8] { &self.data }
+
+    fn span(&self) -> &SourceSpan { &self.span }
+
+    fn line(&self) -> usize { self.line }
+
+    fn column(&self) -> usize { self.column }
+
+    fn line_count(&self) -> usize { self.line_count }
+
+    fn name(&self) -> Option<&str> { Some(&self.name) }
+
+    fn language(&self) -> Option<&str> { None }
+}
+
+/// A wrapper around [`SourceFile`] that implements miette's [`SourceCode`]
+/// trait efficiently by only materializing context lines from the rope.
+///
+/// This avoids materializing the entire file content - only the context
+/// lines around the highlighted span are extracted from the rope.
+#[derive(Debug, Clone)]
+pub struct RopeSourceCode {
+    /// The name of the source file (path).
+    pub name: String,
+    /// The source file containing the rope.
+    pub source_file: SourceFile,
+}
+
+impl RopeSourceCode {
+    /// Creates a new `RopeSourceCode` from a `SourceFile`.
+    #[must_use]
+    pub fn new(source_file: &SourceFile) -> Self {
+        let name = source_file.path().display().to_string();
+        Self { name, source_file: source_file.clone() }
+    }
+}
+
+impl SourceCode for RopeSourceCode {
+    fn read_span<'a>(
+        &'a self,
+        span: &SourceSpan,
+        context_lines_before: usize,
+        context_lines_after: usize,
+    ) -> Result<Box<dyn SpanContents + 'a>, miette::MietteError> {
+        let start = span.offset();
+        let len = span.len();
+        let end = start + len;
+        let file_len = self.source_file.len_bytes();
+
+        if end > file_len {
+            return Err(miette::MietteError::OutOfBounds);
+        }
+
+        let total_lines = self.source_file.line_coount();
+
+        // Find the line containing the start of the span (0-indexed)
+        let start_line = self.source_file.byte_to_line(start);
+        let end_line = if len == 0 {
+            start_line
+        } else {
+            self.source_file.byte_to_line(end.saturating_sub(1))
+        };
+
+        // Calculate context boundaries
+        let context_start_line =
+            start_line.saturating_sub(context_lines_before);
+        let context_end_line =
+            (end_line + context_lines_after + 1).min(total_lines);
+
+        // Get the byte range for the context
+        let context_start = self.source_file.line_to_byte(context_start_line);
+        let context_end = if context_end_line >= total_lines {
+            file_len
+        } else {
+            self.source_file.line_to_byte(context_end_line)
+        };
+
+        // Only materialize the context portion - not the whole file
+        let context_content =
+            self.source_file.slice(context_start..context_end);
+        let context_len = context_end - context_start;
+
+        // Calculate the column (in characters, not bytes) - this is where
+        // the CONTEXT starts, not the span
+        let context_column = if context_lines_before == 0 {
+            // If no context lines before, column is where the span starts
+            self.source_file
+                .slice(self.source_file.line_to_byte(start_line)..start)
+                .chars()
+                .count()
+        } else {
+            // Context starts at the beginning of a line
+            0
+        };
+
+        // The span field should indicate where in the ORIGINAL file the
+        // context data comes from - this allows miette to map the original
+        // label offsets to the correct position in our returned data.
+        Ok(Box::new(OwnedSpanContents {
+            name: self.name.clone(),
+            data: context_content.into_bytes(),
+            // This is the span of the CONTEXT within the original file
+            span: SourceSpan::new(context_start.into(), context_len),
+            // Line where context starts (0-indexed)
+            line: context_start_line,
+            column: context_column,
+            line_count: total_lines,
+        }))
+    }
+}
 
 /// A struct that represents a miette diagnostic with source code attached.
 #[derive(Debug)]
@@ -14,7 +150,7 @@ pub struct PernixDiagnostic {
     /// The main message of the diagnostic.
     pub message: String,
     /// The source code that this diagnostic refers to.
-    pub source_code: Option<NamedSource<String>>,
+    pub source_code: Option<RopeSourceCode>,
     /// The labels to display.
     pub labels: Vec<LabeledSpan>,
     /// The help message.
@@ -23,7 +159,7 @@ pub struct PernixDiagnostic {
 
 impl fmt::Display for PernixDiagnostic {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.message)
+        write!(f, "{}", Style::new().bold().paint(&self.message))
     }
 }
 
@@ -73,9 +209,8 @@ pub fn pernix_diagnostic_to_miette_diagnostic(
         source_file.map_or_else(
             || (None, vec![]),
             |source_file| {
-                let content = source_file.content();
-                let name = source_file.path().display().to_string();
-                let source_code = NamedSource::new(name, content);
+                // Create RopeSourceCode which materializes the content once
+                let source_code = RopeSourceCode::new(source_file);
 
                 // Build all labels - primary label first
                 let mut labels = vec![LabeledSpan::at(

@@ -27,9 +27,37 @@ mod llvm;
 pub struct ReportTerm<'a> {
     handler: GraphicalReportHandler,
     /// The writer to emit diagnostics to.
-    pub writer: &'a mut dyn Write,
+    writer: &'a mut dyn Write,
     /// The source map containing source files for diagnostics.
-    pub source_map: &'a SourceMap,
+    source_map: &'a SourceMap,
+}
+
+impl<'a> ReportTerm<'a> {
+    /// Creates a new [`ReportTerm`] with the given writer and source map,
+    /// using a unicode character set and no colors.
+    #[must_use]
+    pub fn new(writer: &'a mut dyn Write, source_map: &'a SourceMap) -> Self {
+        let mut graphical_theme = GraphicalTheme::unicode();
+
+        graphical_theme.characters.error = "[error]:".to_string();
+        graphical_theme.characters.warning = "[warning]:".to_string();
+        graphical_theme.characters.advice = "[hint]:".to_string();
+
+        graphical_theme.styles.error =
+            graphical_theme.styles.error.bold().bright_red();
+        graphical_theme.styles.warning =
+            graphical_theme.styles.warning.bold().bright_yellow();
+        graphical_theme.styles.advice =
+            graphical_theme.styles.advice.bold().bright_green();
+
+        graphical_theme.styles.link =
+            graphical_theme.styles.link.remove_all_effects().bright_cyan();
+
+        let handler = GraphicalReportHandler::new_themed(graphical_theme)
+            .with_show_related_as_nested(true);
+
+        Self { handler, writer, source_map }
+    }
 }
 
 impl std::fmt::Debug for ReportTerm<'_> {
@@ -222,10 +250,7 @@ pub async fn run(
 
     let source_map = tracked_engine.create_source_map(local_target_id).await;
 
-    let handler = GraphicalReportHandler::new_themed(GraphicalTheme::unicode());
-
-    let mut report_term =
-        ReportTerm { handler, source_map: &source_map, writer: err_writer };
+    let mut report_term = ReportTerm::new(err_writer, &source_map);
 
     let diagnostic_count = {
         let check = tracked_engine
@@ -244,13 +269,6 @@ pub async fn run(
 
         diagnostics.len()
     };
-
-    // let _ = engine
-    //     .visualize_html(
-    //         &pernixc_check::Key { target_id: local_target_id },
-    //         "after.html",
-    //     )
-    //     .await;
 
     if diagnostic_count != 0 {
         let diag = simple_error(format!(

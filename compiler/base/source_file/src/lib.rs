@@ -145,6 +145,22 @@ impl SourceFile {
     #[must_use]
     pub fn len_bytes(&self) -> usize { self.rope.len_bytes() }
 
+    /// Gets the byte offset at the start of the given line (0-indexed).
+    ///
+    /// This is an O(log n) operation using ropey's internal indexing.
+    #[must_use]
+    pub fn line_to_byte(&self, line_index: usize) -> ByteIndex {
+        self.rope.line_to_byte(line_index)
+    }
+
+    /// Gets the line number (0-indexed) containing the given byte offset.
+    ///
+    /// This is an O(log n) operation using ropey's internal indexing.
+    #[must_use]
+    pub fn byte_to_line(&self, byte_index: ByteIndex) -> usize {
+        self.rope.byte_to_line(byte_index)
+    }
+
     /// Gets the characters of the source file in the given byte range.
     pub fn chars_range(
         &self,

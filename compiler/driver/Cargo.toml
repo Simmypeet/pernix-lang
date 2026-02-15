@@ -27,6 +27,7 @@ linkme.workspace = true
 inkwell = { workspace = true }
 tracing = { workspace = true }
 miette.workspace = true
+ansi_term.workspace = true
 
 [lints]
 workspace = true
