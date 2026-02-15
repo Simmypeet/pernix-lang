@@ -3,28 +3,34 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: the symbol is more accessible than the parent symbol
-  ╭─ compiler/e2e/test/snapshot/symbol/symbol_is_more_accessible_than_parent/main.pnx:3:27
-  │
-2 │     private trait Test:
-  │                   ---- the parent symbol is accessible in `main::inner`
-3 │         internal function internalIsMoreAccessible()
-  │                           ^^^^^^^^^^^^^^^^^^^^^^^^ the symbol `internalIsMoreAccessible` in `main::inner::Test` is more accessible than the parent symbol
-  │
-  = the symbol `internalIsMoreAccessible` is accessible in `main` while the parent symbol is accessible in `main::inner`
+  [error]: the symbol is more accessible than the parent symbol
+   ╭─[compiler/e2e/test/snapshot/symbol/symbol_is_more_accessible_than_parent/main.pnx:2:19]
+ 1 │ private module inner:
+ 2 │     private trait Test:
+   ·                   ──┬─
+   ·                     ╰── the parent symbol is accessible in `main::inner`
+ 3 │         internal function internalIsMoreAccessible()
+ 4 │ 
+ 5 │         public function publicIsMoreAccessible()
+   ·                         ───────────┬──────────
+   ·                                    ╰── the symbol `publicIsMoreAccessible` in `main::inner::Test` is more accessible than the parent symbol
+   ╰────
+  help: the symbol `publicIsMoreAccessible` is publicly accessible while the parent symbol is accessible in `main::inner`
 
-error: the symbol is more accessible than the parent symbol
-  ╭─ compiler/e2e/test/snapshot/symbol/symbol_is_more_accessible_than_parent/main.pnx:5:25
-  │
-2 │     private trait Test:
-  │                   ---- the parent symbol is accessible in `main::inner`
-  ·
-5 │         public function publicIsMoreAccessible()
-  │                         ^^^^^^^^^^^^^^^^^^^^^^ the symbol `publicIsMoreAccessible` in `main::inner::Test` is more accessible than the parent symbol
-  │
-  = the symbol `publicIsMoreAccessible` is publicly accessible while the parent symbol is accessible in `main::inner`
+  [error]: the symbol is more accessible than the parent symbol
+   ╭─[compiler/e2e/test/snapshot/symbol/symbol_is_more_accessible_than_parent/main.pnx:2:19]
+ 1 │ private module inner:
+ 2 │     private trait Test:
+   ·                   ──┬─
+   ·                     ╰── the parent symbol is accessible in `main::inner`
+ 3 │         internal function internalIsMoreAccessible()
+   ·                           ────────────┬───────────
+   ·                                       ╰── the symbol `internalIsMoreAccessible` in `main::inner::Test` is more accessible than the parent symbol
+ 4 │ 
+   ╰────
+  help: the symbol `internalIsMoreAccessible` is accessible in `main` while the parent symbol is accessible in `main::inner`
 
-error: Compilation aborted due to 2 error(s)
+  [error]: Compilation aborted due to 2 error(s)
 
 
 

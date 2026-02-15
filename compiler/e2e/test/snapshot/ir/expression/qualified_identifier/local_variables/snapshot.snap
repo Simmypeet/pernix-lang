@@ -3,15 +3,16 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: the symbol `trait main::variable` cannot be used as an expression
-   ╭─ compiler/e2e/test/snapshot/ir/expression/qualified_identifier/local_variables/main.pnx:10:5
-   │
-10 │     variable # should refer to trait `variable`
-   │     ^^^^^^^^ cannot be used as an expression
-   │
-   = only variants, constants, functions, parameters, and variables can be used as expressions
+  [error]: the symbol `trait main::variable` cannot be used as an expression
+    ╭─[compiler/e2e/test/snapshot/ir/expression/qualified_identifier/local_variables/main.pnx:10:5]
+  9 │ public function notParameter():
+ 10 │     variable # should refer to trait `variable`
+    ·     ────┬───
+    ·         ╰── cannot be used as an expression
+    ╰────
+  help: only variants, constants, functions, parameters, and variables can be used as expressions
 
-error: Compilation aborted due to 1 error(s)
+  [error]: Compilation aborted due to 1 error(s)
 
 
 

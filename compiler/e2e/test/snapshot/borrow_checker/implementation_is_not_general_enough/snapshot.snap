@@ -3,19 +3,50 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: implementation is not general enough
-   ╭─ compiler/e2e/test/snapshot/borrow_checker/implementation_is_not_general_enough/main.pnx:59:2
-   │
-28 │ implements['a, 'c] DoSomething['a, Vector[&'c mut int32]]:
-   │                    -------------------------------------- this implementation was used but its lifetimes are not general enough
-   ·
-46 │         trait for['x] DoSomething['x, T]
-   │               -------------------------- the predicate is declared here
-   ·
-59 │     use(&mut vector)
-   │     ^^^^^^^^^^^^^^^^ the implementation is not general enought to satisfy the required forall lifetimes in the generic arguments: ['∀0, main::Vector[&mut int32]]
+  [error]: implementation is not general enough
+    ╭─[compiler/e2e/test/snapshot/borrow_checker/implementation_is_not_general_enough/main.pnx:28:20]
+ 27 │ 
+ 28 │ implements['a, 'c] DoSomething['a, Vector[&'c mut int32]]:
+    ·                    ───────────────────┬──────────────────
+    ·                                       ╰── this implementation was used but its lifetimes are not general enough
+ 29 │     where:
+ 30 │         'a: 'c
+ 31 │ 
+ 32 │     type Output = int32
+ 33 │ 
+ 34 │     function doSomething['b](
+ 35 │         self: &'b mut Vector[&'c mut int32], 
+ 36 │         object: &'a mut int32
+ 37 │     ):
+ 38 │         where:
+ 39 │             Vector[&'c mut int32]: 'b 
+ 40 │ 
+ 41 │         self.push(object)
+ 42 │ 
+ 43 │ 
+ 44 │ public function use['a, T](object: &'a mut T):
+ 45 │     where:
+ 46 │         trait for['x] DoSomething['x, T]
+    ·               ─────────────┬────────────
+    ·                            ╰── the predicate is declared here
+ 47 │         T: 'a
+ 48 │ 
+ 49 │     let mut number = 32
+ 50 │     
+ 51 │     # Call the method twice with the same mutable reference
+ 52 │     DoSomething::doSomething(object, &mut number)
+ 53 │     DoSomething::doSomething(object, &mut number)
+ 54 │ 
+ 55 │ 
+ 56 │ public function main():
+ 57 │     let mut vector = Vector[&mut int32]::new()
+ 58 │ 
+ 59 │     use(&mut vector)
+    ·     ────────┬───────
+    ·             ╰── the implementation is not general enought to satisfy the required forall lifetimes in the generic arguments: ['∀0, main::Vector[&mut int32]]
+    ╰────
 
-error: Compilation aborted due to 1 error(s)
+  [error]: Compilation aborted due to 1 error(s)
 
 
 

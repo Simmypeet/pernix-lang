@@ -3,47 +3,57 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: the variant `main::Option::Some` expects an associated value
-  ╭─ compiler/e2e/test/snapshot/ir/expression/function_call/associated_value/main.pnx:7:5
-  │
-7 │     Option[int32]::Some()              # expected 1 value
-  │     ^^^^^^^^^^^^^^^^^^^^^ associated value expected
-  │
-  = supply the associated value using the syntax `main::Option::Some(value)`
+  [error]: the variant `main::Option::Some` expects an associated value
+   ╭─[compiler/e2e/test/snapshot/ir/expression/function_call/associated_value/main.pnx:7:5]
+ 6 │ public function main():
+ 7 │     Option[int32]::Some()              # expected 1 value
+   ·     ──────────┬──────────
+   ·               ╰── associated value expected
+ 8 │     Option[int32]::Some(53, 42)        # expected 1 value
+   ╰────
+  help: supply the associated value using the syntax `main::Option::Some(value)`
 
-error: the variant `main::Option::Some` was supplied with too many arguments
-  ╭─ compiler/e2e/test/snapshot/ir/expression/function_call/associated_value/main.pnx:8:24
-  │
-8 │     Option[int32]::Some(53, 42)        # expected 1 value
-  │                        ^^^^^^^^ too many arguments
-  │
-  = only one argument is allowed for the associated value
+  [error]: the variant `main::Option::Some` was supplied with too many arguments
+   ╭─[compiler/e2e/test/snapshot/ir/expression/function_call/associated_value/main.pnx:8:24]
+ 7 │     Option[int32]::Some()              # expected 1 value
+ 8 │     Option[int32]::Some(53, 42)        # expected 1 value
+   ·                        ────┬───
+   ·                            ╰── too many arguments
+ 9 │     Option[int32]::None()       # can't call
+   ╰────
+  help: only one argument is allowed for the associated value
 
-error: the variant `main::Option::None` doesn't have an associated value
-  ╭─ compiler/e2e/test/snapshot/ir/expression/function_call/associated_value/main.pnx:9:5
-  │
-9 │     Option[int32]::None()       # can't call
-  │     ^^^^^^^^^^^^^^^^^^^^^ not callable
-  │
-  = remove the parentheses to use the variant as a value
+  [error]: the variant `main::Option::None` doesn't have an associated value
+    ╭─[compiler/e2e/test/snapshot/ir/expression/function_call/associated_value/main.pnx:9:5]
+  8 │     Option[int32]::Some(53, 42)        # expected 1 value
+  9 │     Option[int32]::None()       # can't call
+    ·     ──────────┬──────────
+    ·               ╰── not callable
+ 10 │     Option[int32]::None(32)     # can't call
+    ╰────
+  help: remove the parentheses to use the variant as a value
 
-error: the variant `main::Option::None` doesn't have an associated value
-   ╭─ compiler/e2e/test/snapshot/ir/expression/function_call/associated_value/main.pnx:10:5
-   │
-10 │     Option[int32]::None(32)     # can't call
-   │     ^^^^^^^^^^^^^^^^^^^^^^^ not callable
-   │
-   = remove the argument and the parentheses to use the variant as a value
+  [error]: the variant `main::Option::None` doesn't have an associated value
+    ╭─[compiler/e2e/test/snapshot/ir/expression/function_call/associated_value/main.pnx:10:5]
+  9 │     Option[int32]::None()       # can't call
+ 10 │     Option[int32]::None(32)     # can't call
+    ·     ───────────┬───────────
+    ·                ╰── not callable
+ 11 │     Option[int32]::None(32, 64) # can't call
+    ╰────
+  help: remove the argument and the parentheses to use the variant as a value
 
-error: the variant `main::Option::None` doesn't have an associated value
-   ╭─ compiler/e2e/test/snapshot/ir/expression/function_call/associated_value/main.pnx:11:5
-   │
-11 │     Option[int32]::None(32, 64) # can't call
-   │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^ not callable
-   │
-   = remove the arguments and the parentheses to use the variant as a value
+  [error]: the variant `main::Option::None` doesn't have an associated value
+    ╭─[compiler/e2e/test/snapshot/ir/expression/function_call/associated_value/main.pnx:11:5]
+ 10 │     Option[int32]::None(32)     # can't call
+ 11 │     Option[int32]::None(32, 64) # can't call
+    ·     ─────────────┬─────────────
+    ·                  ╰── not callable
+ 12 │     Option::Some(32)
+    ╰────
+  help: remove the arguments and the parentheses to use the variant as a value
 
-error: Compilation aborted due to 5 error(s)
+  [error]: Compilation aborted due to 5 error(s)
 
 
 

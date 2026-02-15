@@ -3,25 +3,35 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: unsatisfied predicate
-   ╭─ compiler/e2e/test/snapshot/semantic_element/wf_check/empty_struct_negative_marker_not_satisfied/main.pnx:21:31
-   │
-18 │         marker not Marker[T]
-   │                ------------- the required predicate was declared here
-   ·
-21 │ public type InstEmptyStruct = WithRequirement[EmptyStruct]
-   │                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the predicate `marker not main::Marker[main::EmptyStruct]` is not satisfied
+  [error]: unsatisfied predicate
+    ╭─[compiler/e2e/test/snapshot/semantic_element/wf_check/empty_struct_negative_marker_not_satisfied/main.pnx:18:16]
+ 17 │     where:
+ 18 │         marker not Marker[T]
+    ·                ──────┬──────
+    ·                      ╰── the required predicate was declared here
+ 19 │ 
+ 20 │ 
+ 21 │ public type InstEmptyStruct = WithRequirement[EmptyStruct]
+    ·                               ──────────────┬─────────────
+    ·                                             ╰── the predicate `marker not main::Marker[main::EmptyStruct]` is not satisfied
+ 22 │ public type InstEmptyEnum   = WithRequirement[EmptyEnum]
+    ╰────
 
-error: unsatisfied predicate
-   ╭─ compiler/e2e/test/snapshot/semantic_element/wf_check/empty_struct_negative_marker_not_satisfied/main.pnx:22:31
-   │
-18 │         marker not Marker[T]
-   │                ------------- the required predicate was declared here
-   ·
-22 │ public type InstEmptyEnum   = WithRequirement[EmptyEnum]
-   │                               ^^^^^^^^^^^^^^^^^^^^^^^^^^ the predicate `marker not main::Marker[main::EmptyEnum]` is not satisfied
+  [error]: unsatisfied predicate
+    ╭─[compiler/e2e/test/snapshot/semantic_element/wf_check/empty_struct_negative_marker_not_satisfied/main.pnx:18:16]
+ 17 │     where:
+ 18 │         marker not Marker[T]
+    ·                ──────┬──────
+    ·                      ╰── the required predicate was declared here
+ 19 │ 
+ 20 │ 
+ 21 │ public type InstEmptyStruct = WithRequirement[EmptyStruct]
+ 22 │ public type InstEmptyEnum   = WithRequirement[EmptyEnum]
+    ·                               ─────────────┬────────────
+    ·                                            ╰── the predicate `marker not main::Marker[main::EmptyEnum]` is not satisfied
+    ╰────
 
-error: Compilation aborted due to 2 error(s)
+  [error]: Compilation aborted due to 2 error(s)
 
 
 

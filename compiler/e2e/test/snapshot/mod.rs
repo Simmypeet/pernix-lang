@@ -86,6 +86,7 @@ async fn test(file_path: &Path) {
                     incremental_path: None,
                     chrome_tracing: false,
                     target_seed: Some(0),
+                    fancy: false,
                 },
             }),
         },
@@ -117,6 +118,7 @@ async fn test(file_path: &Path) {
                             ),
                             chrome_tracing: false,
                             target_seed: Some(0),
+                            fancy: false,
                         },
                     }),
                 }

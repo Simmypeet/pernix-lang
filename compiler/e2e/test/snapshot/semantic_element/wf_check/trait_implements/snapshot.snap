@@ -3,16 +3,25 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: unsatisfied predicate
-   ╭─ compiler/e2e/test/snapshot/semantic_element/wf_check/trait_implements/main.pnx:15:26
-   │
- 7 │         T: 'static
-   │            ------- the required predicate was declared here
-   ·
-15 │ public type UseFizz[T] = RequiresFizz[T]
-   │                          ^^^^^^^^^^^^^^^ the predicate `T: 'static` is not satisfied
+  [error]: unsatisfied predicate
+    ╭─[compiler/e2e/test/snapshot/semantic_element/wf_check/trait_implements/main.pnx:7:12]
+  6 │     where:
+  7 │         T: 'static
+    ·            ───┬───
+    ·               ╰── the required predicate was declared here
+  8 │ 
+  9 │ 
+ 10 │ public struct RequiresFizz[T]:
+ 11 │     where:
+ 12 │         trait Fizz[T]
+ 13 │ 
+ 14 │ 
+ 15 │ public type UseFizz[T] = RequiresFizz[T]
+    ·                          ───────┬───────
+    ·                                 ╰── the predicate `T: 'static` is not satisfied
+    ╰────
 
-error: Compilation aborted due to 1 error(s)
+  [error]: Compilation aborted due to 1 error(s)
 
 
 

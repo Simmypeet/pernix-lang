@@ -3,13 +3,15 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: unsatisfied predicate
-   ╭─ compiler/e2e/test/snapshot/memory_checker/move_in_with/main.pnx:28:18
-   │
-28 │             drop(nonCopyableOuter) # not fine
-   │                  ^^^^^^^^^^^^^^^^ the predicate `marker core::Copy[main::NonCopyable]` is not satisfied
+  [error]: unsatisfied predicate
+    ╭─[compiler/e2e/test/snapshot/memory_checker/move_in_with/main.pnx:28:18]
+ 27 │             drop(innerNoncopyable) # it's fine
+ 28 │             drop(nonCopyableOuter) # not fine
+    ·                  ────────┬───────
+    ·                          ╰── the predicate `marker core::Copy[main::NonCopyable]` is not satisfied
+    ╰────
 
-error: Compilation aborted due to 1 error(s)
+  [error]: Compilation aborted due to 1 error(s)
 
 
 

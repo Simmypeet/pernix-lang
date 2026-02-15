@@ -3,15 +3,17 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: the following effects are not handled by the caller: main::Effect[float32]
-   ╭─ compiler/e2e/test/snapshot/ir/expression/do/nested_effect_handler/main.pnx:11:13
-   │
-11 │             Effect[float32]::op() # effect isn't considered handled
-   │             ^^^^^^^^^^^^^^^^^^^^^ call to the `effect operation main::Effect::op`
-   │
-   = consider adding a `do` effect annotation to the current function to handle these effects
+  [error]: the following effects are not handled by the caller: main::Effect[float32]
+    ╭─[compiler/e2e/test/snapshot/ir/expression/do/nested_effect_handler/main.pnx:11:13]
+ 10 │         op():
+ 11 │             Effect[float32]::op() # effect isn't considered handled
+    ·             ──────────┬──────────
+    ·                       ╰── call to the `effect operation main::Effect::op`
+ 12 │ 
+    ╰────
+  help: consider adding a `do` effect annotation to the current function to handle these effects
 
-error: Compilation aborted due to 1 error(s)
+  [error]: Compilation aborted due to 1 error(s)
 
 
 

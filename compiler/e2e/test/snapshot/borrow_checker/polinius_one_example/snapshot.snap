@@ -3,18 +3,27 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: mutable access is done while it is borrowed
-   ╭─ compiler/e2e/test/snapshot/borrow_checker/polinius_one_example/main.pnx:17:5
-   │
-10 │     let mut q = &y  # Loan L1, borrowing `y`
-   │                 -- the borrow starts here
-   ·
-17 │     y += 1          # (D) Mutate `y` -- is this ok?
-   │     ^^^^^^ mutable access occurs here
-18 │     consume(*p)     # use `p` again here
-   │             -- the borrow is used here
+  [error]: mutable access is done while it is borrowed
+    ╭─[compiler/e2e/test/snapshot/borrow_checker/polinius_one_example/main.pnx:10:17]
+  9 │     y += 1          # (A) Mutate `y` -- is this ok?
+ 10 │     let mut q = &y  # Loan L1, borrowing `y`
+    ·                 ─┬
+    ·                  ╰── the borrow starts here
+ 11 │     if true:
+ 12 │         p = q       # `p` now points at `y`
+ 13 │         x += 1      # (B) Mutate `x` -- is this ok?
+ 14 │     else:
+ 15 │         y += 1      # (C) Mutate `y` -- is this ok?
+ 16 │     
+ 17 │     y += 1          # (D) Mutate `y` -- is this ok?
+    ·     ───┬──
+    ·        ╰── mutable access occurs here
+ 18 │     consume(*p)     # use `p` again here
+    ·             ─┬
+    ·              ╰── the borrow is used here
+    ╰────
 
-error: Compilation aborted due to 1 error(s)
+  [error]: Compilation aborted due to 1 error(s)
 
 
 

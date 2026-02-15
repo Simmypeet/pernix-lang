@@ -3,15 +3,17 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: mismatched types: expected `bool`, found `int32`
-   ╭─ compiler/e2e/test/snapshot/ir/expression/do/closure_parameters_monomorphization/main.pnx:19:23
-   │
-19 │             takesBool(a)
-   │                       ^ expected `bool`, found `int32`
-   │
-   = ensure the expression type matches the expected type
+  [error]: mismatched types: expected `bool`, found `int32`
+    ╭─[compiler/e2e/test/snapshot/ir/expression/do/closure_parameters_monomorphization/main.pnx:19:23]
+ 18 │         doSomething(a):
+ 19 │             takesBool(a)
+    ·                       ┬
+    ·                       ╰── expected `bool`, found `int32`
+ 20 │             takesInt(a)
+    ╰────
+  help: ensure the expression type matches the expected type
 
-error: Compilation aborted due to 1 error(s)
+  [error]: Compilation aborted due to 1 error(s)
 
 
 

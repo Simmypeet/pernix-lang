@@ -3,27 +3,32 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: access is done while it is mutably borrowed
-   ╭─ compiler/e2e/test/snapshot/borrow_checker/effect_annotation_invalidation/main.pnx:11:19
-   │
-10 │     Test::takeMut(x)
-   │                   - the mutable borrow starts here
-11 │     Test::takeMut(x) # This should error because `x` is borrowed as mutable already
-   │                   ^ access occurs here while it is mutably borrowed
-   │
-   = lifetime(s) 'a can access the borrow later
+  [error]: access is done while it is mutably borrowed
+    ╭─[compiler/e2e/test/snapshot/borrow_checker/effect_annotation_invalidation/main.pnx:15:19]
+ 14 │ public function anotherMain['a](x: &'a mut int32) do Test['a]:
+ 15 │     useIndirectly(x)
+    ·                   ┬
+    ·                   ╰── the mutable borrow starts here
+ 16 │     useIndirectly(x) # This should error because `x` is borrowed as mutable already
+    ·                   ┬
+    ·                   ╰── access occurs here while it is mutably borrowed
+    ╰────
+  help: lifetime(s) 'a can access the borrow later
 
-error: access is done while it is mutably borrowed
-   ╭─ compiler/e2e/test/snapshot/borrow_checker/effect_annotation_invalidation/main.pnx:16:19
-   │
-15 │     useIndirectly(x)
-   │                   - the mutable borrow starts here
-16 │     useIndirectly(x) # This should error because `x` is borrowed as mutable already
-   │                   ^ access occurs here while it is mutably borrowed
-   │
-   = lifetime(s) 'a can access the borrow later
+  [error]: access is done while it is mutably borrowed
+    ╭─[compiler/e2e/test/snapshot/borrow_checker/effect_annotation_invalidation/main.pnx:10:19]
+  9 │ public function test['a](x: &'a mut int32) do Test['a]:
+ 10 │     Test::takeMut(x)
+    ·                   ┬
+    ·                   ╰── the mutable borrow starts here
+ 11 │     Test::takeMut(x) # This should error because `x` is borrowed as mutable already
+    ·                   ┬
+    ·                   ╰── access occurs here while it is mutably borrowed
+ 12 │ 
+    ╰────
+  help: lifetime(s) 'a can access the borrow later
 
-error: Compilation aborted due to 2 error(s)
+  [error]: Compilation aborted due to 2 error(s)
 
 
 

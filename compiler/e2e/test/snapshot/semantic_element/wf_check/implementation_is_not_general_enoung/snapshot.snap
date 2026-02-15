@@ -3,19 +3,28 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: implementation is not general enough
-   ╭─ compiler/e2e/test/snapshot/semantic_element/wf_check/implementation_is_not_general_enoung/main.pnx:14:27
-   │
- 5 │ implements['a, T] Fizz['a, 'a, T]:
-   │                   --------------- this implementation was used but its lifetimes are not general enough
-   ·
-11 │         trait for['x, 'y] Fizz['x, 'y, T]
-   │               --------------------------- the predicate is declared here
-   ·
-14 │ public type Instantiate = Qux[int32]
-   │                           ^^^^^^^^^^ the implementation is not general enought to satisfy the required forall lifetimes in the generic arguments: ['∀0, '∀1, int32]
+  [error]: implementation is not general enough
+    ╭─[compiler/e2e/test/snapshot/semantic_element/wf_check/implementation_is_not_general_enoung/main.pnx:5:19]
+  4 │ 
+  5 │ implements['a, T] Fizz['a, 'a, T]:
+    ·                   ───────┬───────
+    ·                          ╰── this implementation was used but its lifetimes are not general enough
+  6 │     type Buzz = T
+  7 │ 
+  8 │ 
+  9 │ public type Qux[T] = T:
+ 10 │     where:
+ 11 │         trait for['x, 'y] Fizz['x, 'y, T]
+    ·               ─────────────┬─────────────
+    ·                            ╰── the predicate is declared here
+ 12 │ 
+ 13 │ 
+ 14 │ public type Instantiate = Qux[int32]
+    ·                           ─────┬────
+    ·                                ╰── the implementation is not general enought to satisfy the required forall lifetimes in the generic arguments: ['∀0, '∀1, int32]
+    ╰────
 
-error: Compilation aborted due to 1 error(s)
+  [error]: Compilation aborted due to 1 error(s)
 
 
 

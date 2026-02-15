@@ -131,6 +131,7 @@ async fn test(file_path: &Path) {
                 incremental_path: Some(temp_dir.path().to_path_buf()),
                 chrome_tracing: false,
                 target_seed: Some(0),
+                fancy: false,
             },
             output: pernixc_target::Output {
                 output: Some(output_path.clone()),

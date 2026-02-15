@@ -3,87 +3,113 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: expected a struct type to access its field members
-  ╭─ compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:9:5
-  │
-9 │     myTuple.nonExistingField 
-  │     ^^^^^^^ found type '(int32, (float32, int32), float32)'
+  [error]: cannot index past unpacked tuple element
+    ╭─[compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:26:13]
+ 25 │     # accessing past tuple unpacking
+ 26 │     myTuple.3
+    ·             ┬
+    ·             ╰── the tuple type is '(int32, bool, ...T, float32, float64)'
+ 27 │     myTuple.4
+    ╰────
+  help: if you try to access `float32`, try using `-1` instead
 
-error: expected a struct type to access its field members
-   ╭─ compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:10:5
-   │
-10 │     myTuple.1.nonExistingField
-   │     ^^^^^^^^^ found type '(float32, int32)'
+  [error]: cannot index past unpacked tuple element
+    ╭─[compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:27:13]
+ 26 │     myTuple.3
+ 27 │     myTuple.4
+    ·             ┬
+    ·             ╰── the tuple type is '(int32, bool, ...T, float32, float64)'
+ 28 │ 
+    ╰────
+  help: if you try to access `float64`, try using `-0` instead
 
-error: the tuple index is out of bounds
-   ╭─ compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:13:13
-   │
-13 │     myTuple.3 
-   │             ^
-   │
-   = the tuple has 3 element(s) but the accessed index is 3
+  [error]: cannot index past unpacked tuple element
+    ╭─[compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:30:13]
+ 29 │     # accessing past tuple unpacking, negative index
+ 30 │     myTuple.-3
+    ·             ─┬
+    ·              ╰── the tuple type is '(int32, bool, ...T, float32, float64)'
+ 31 │     myTuple.-4
+    ╰────
+  help: if you try to access `bool`, try using `1` instead
 
-error: the tuple index is out of bounds
-   ╭─ compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:14:15
-   │
-14 │     myTuple.1.2 
-   │               ^
-   │
-   = the tuple has 2 element(s) but the accessed index is 2
+  [error]: cannot index past unpacked tuple element
+    ╭─[compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:31:13]
+ 30 │     myTuple.-3
+ 31 │     myTuple.-4
+    ·             ─┬
+    ·              ╰── the tuple type is '(int32, bool, ...T, float32, float64)'
+ 32 │ 
+    ╰────
+  help: if you try to access `int32`, try using `0` instead
 
-error: the tuple index is out of bounds
-   ╭─ compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:16:16
-   │
-16 │     myTuple.1.-2
-   │                ^
-   │
-   = the tuple has 2 element(s) but the accessed index is 2
+  [error]: cannot index into unpacked tuple
+    ╭─[compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:34:13]
+ 33 │     # accessing the tuple index 
+ 34 │     myTuple.2
+    ·             ┬
+    ·             ╰── the tuple type is '(int32, bool, ...T, float32, float64)'
+ 35 │ 
+    ╰────
 
-error: the tuple index is too large
-   ╭─ compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:19:13
-   │
-19 │     myTuple.12345678901234567890123456789012345678901234567890
-   │             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  [error]: expected a struct type to access its field members
+    ╭─[compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:9:5]
+  8 │     # access, non-existing fields
+  9 │     myTuple.nonExistingField 
+    ·     ───┬───
+    ·        ╰── found type '(int32, (float32, int32), float32)'
+ 10 │     myTuple.1.nonExistingField
+    ╰────
 
-error: cannot index past unpacked tuple element
-   ╭─ compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:26:13
-   │
-26 │     myTuple.3
-   │             ^ the tuple type is '(int32, bool, ...T, float32, float64)'
-   │
-   = if you try to access `float32`, try using `-1` instead
+  [error]: expected a struct type to access its field members
+    ╭─[compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:10:5]
+  9 │     myTuple.nonExistingField 
+ 10 │     myTuple.1.nonExistingField
+    ·     ────┬────
+    ·         ╰── found type '(float32, int32)'
+ 11 │ 
+    ╰────
 
-error: cannot index past unpacked tuple element
-   ╭─ compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:27:13
-   │
-27 │     myTuple.4
-   │             ^ the tuple type is '(int32, bool, ...T, float32, float64)'
-   │
-   = if you try to access `float64`, try using `-0` instead
+  [error]: the tuple index is out of bounds
+    ╭─[compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:13:13]
+ 12 │     # access, out-of-bounds indices
+ 13 │     myTuple.3 
+    ·             ┬
+    ·             ╰── 
+ 14 │     myTuple.1.2 
+    ╰────
+  help: the tuple has 3 element(s) but the accessed index is 3
 
-error: cannot index past unpacked tuple element
-   ╭─ compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:30:13
-   │
-30 │     myTuple.-3
-   │             ^^ the tuple type is '(int32, bool, ...T, float32, float64)'
-   │
-   = if you try to access `bool`, try using `1` instead
+  [error]: the tuple index is out of bounds
+    ╭─[compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:14:15]
+ 13 │     myTuple.3 
+ 14 │     myTuple.1.2 
+    ·               ┬
+    ·               ╰── 
+ 15 │     myTuple.-2 
+    ╰────
+  help: the tuple has 2 element(s) but the accessed index is 2
 
-error: cannot index past unpacked tuple element
-   ╭─ compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:31:13
-   │
-31 │     myTuple.-4
-   │             ^^ the tuple type is '(int32, bool, ...T, float32, float64)'
-   │
-   = if you try to access `int32`, try using `0` instead
+  [error]: the tuple index is out of bounds
+    ╭─[compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:16:16]
+ 15 │     myTuple.-2 
+ 16 │     myTuple.1.-2
+    ·                ┬
+    ·                ╰── 
+ 17 │ 
+    ╰────
+  help: the tuple has 2 element(s) but the accessed index is 2
 
-error: cannot index into unpacked tuple
-   ╭─ compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:34:13
-   │
-34 │     myTuple.2
-   │             ^ the tuple type is '(int32, bool, ...T, float32, float64)'
+  [error]: the tuple index is too large
+    ╭─[compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:19:13]
+ 18 │     # very large index
+ 19 │     myTuple.12345678901234567890123456789012345678901234567890
+    ·             ─────────────────────────┬────────────────────────
+    ·                                      ╰── 
+ 20 │ 
+    ╰────
 
-error: Compilation aborted due to 11 error(s)
+  [error]: Compilation aborted due to 11 error(s)
 
 
 

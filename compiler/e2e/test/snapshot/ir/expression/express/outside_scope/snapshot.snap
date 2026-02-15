@@ -3,19 +3,24 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: `express` can only be used inside a scope expression
-  ╭─ compiler/e2e/test/snapshot/ir/expression/express/outside_scope/main.pnx:2:5
-  │
-2 │     express
-  │     ^^^^^^^
+  [error]: `express` can only be used inside a scope expression
+   ╭─[compiler/e2e/test/snapshot/ir/expression/express/outside_scope/main.pnx:2:5]
+ 1 │ public function main():
+ 2 │     express
+   ·     ───┬───
+   ·        ╰── 
+ 3 │ 
+   ╰────
 
-error: scope with the given label name was not found
-  ╭─ compiler/e2e/test/snapshot/ir/expression/express/outside_scope/main.pnx:7:18
-  │
-7 │         express 'notFound
-  │                  ^^^^^^^^
+  [error]: scope with the given label name was not found
+   ╭─[compiler/e2e/test/snapshot/ir/expression/express/outside_scope/main.pnx:7:18]
+ 6 │     scope:
+ 7 │         express 'notFound
+   ·                  ────┬───
+   ·                      ╰── 
+   ╰────
 
-error: Compilation aborted due to 2 error(s)
+  [error]: Compilation aborted due to 2 error(s)
 
 
 

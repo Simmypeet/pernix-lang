@@ -3,16 +3,30 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: unsatisfied predicate
-   ╭─ compiler/e2e/test/snapshot/semantic_element/wf_check/marker_with_constraints/main.pnx:24:28
-   │
-11 │         marker Fizz[T]
-   │                ------- the required predicate was declared here
-   ·
-24 │ public type InstMyStruct = WithRequirement[MyStruct]
-   │                            ^^^^^^^^^^^^^^^^^^^^^^^^^ the predicate `marker main::Fizz[bool]` is not satisfied
+  [error]: unsatisfied predicate
+    ╭─[compiler/e2e/test/snapshot/semantic_element/wf_check/marker_with_constraints/main.pnx:11:16]
+ 10 │     where:
+ 11 │         marker Fizz[T]
+    ·                ───┬───
+    ·                   ╰── the required predicate was declared here
+ 12 │ 
+ 13 │ 
+ 14 │ public struct MyStruct:
+ 15 │     public a: (int32,)
+ 16 │     public b: (bool,)
+ 17 │ 
+ 18 │ 
+ 19 │ public type WithRequirement[T] = T:
+ 20 │     where:
+ 21 │         marker Buzz[T]
+ 22 │ 
+ 23 │ 
+ 24 │ public type InstMyStruct = WithRequirement[MyStruct]
+    ·                            ────────────┬────────────
+    ·                                        ╰── the predicate `marker main::Fizz[bool]` is not satisfied
+    ╰────
 
-error: Compilation aborted due to 1 error(s)
+  [error]: Compilation aborted due to 1 error(s)
 
 
 

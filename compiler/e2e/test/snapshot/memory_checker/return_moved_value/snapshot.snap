@@ -3,15 +3,18 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: the value is used after it has been moved
-  ╭─ compiler/e2e/test/snapshot/memory_checker/return_moved_value/main.pnx:7:12
-  │
-6 │     let movedTo = param
-  │                   ----- the value was moved here
-7 │     return param
-  │            ^^^^^
+  [error]: the value is used after it has been moved
+   ╭─[compiler/e2e/test/snapshot/memory_checker/return_moved_value/main.pnx:6:19]
+ 5 │ public function test[T](param: T) -> T:
+ 6 │     let movedTo = param
+   ·                   ──┬──
+   ·                     ╰── the value was moved here
+ 7 │     return param
+   ·            ──┬──
+   ·              ╰── 
+   ╰────
 
-error: Compilation aborted due to 1 error(s)
+  [error]: Compilation aborted due to 1 error(s)
 
 
 

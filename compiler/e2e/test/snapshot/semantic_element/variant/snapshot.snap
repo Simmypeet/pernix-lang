@@ -3,25 +3,32 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: the symbol could not be found
-   ╭─ compiler/e2e/test/snapshot/semantic_element/variant/main.pnx:17:16
-   │
-17 │     UseUnknown(Unknown)
-   │                ^^^^^^^ the symbol named `Unknown` does not exist in `main`
+  [error]: the symbol could not be found
+    ╭─[compiler/e2e/test/snapshot/semantic_element/variant/main.pnx:17:16]
+ 16 │     UseTU((T, U))
+ 17 │     UseUnknown(Unknown)
+    ·                ───┬───
+    ·                   ╰── the symbol named `Unknown` does not exist in `main`
+ 18 │     Plain
+    ╰────
 
-error: unsatisfied predicate
-   ╭─ compiler/e2e/test/snapshot/semantic_element/variant/main.pnx:20:28
-   │
-20 │     UseTraitAssociatedType(Fizz['b, T]::Output)
-   │                            ^^^^^^^^^^^^^^^^^^^ the predicate `'a: 'b` is not satisfied
+  [error]: unsatisfied predicate
+    ╭─[compiler/e2e/test/snapshot/semantic_element/variant/main.pnx:20:28]
+ 19 │     UseAnother(MyStruct)
+ 20 │     UseTraitAssociatedType(Fizz['b, T]::Output)
+    ·                            ─────────┬─────────
+    ·                                     ╰── the predicate `'a: 'b` is not satisfied
+    ╰────
 
-error: unsatisfied predicate
-   ╭─ compiler/e2e/test/snapshot/semantic_element/variant/main.pnx:20:28
-   │
-20 │     UseTraitAssociatedType(Fizz['b, T]::Output)
-   │                            ^^^^^^^^^^^^^^^^^^^ the predicate `'b: 'a` is not satisfied
+  [error]: unsatisfied predicate
+    ╭─[compiler/e2e/test/snapshot/semantic_element/variant/main.pnx:20:28]
+ 19 │     UseAnother(MyStruct)
+ 20 │     UseTraitAssociatedType(Fizz['b, T]::Output)
+    ·                            ─────────┬─────────
+    ·                                     ╰── the predicate `'b: 'a` is not satisfied
+    ╰────
 
-error: Compilation aborted due to 3 error(s)
+  [error]: Compilation aborted due to 3 error(s)
 
 
 

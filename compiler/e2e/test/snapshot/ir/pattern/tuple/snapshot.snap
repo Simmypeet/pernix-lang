@@ -3,55 +3,79 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: mismatched pattern binding type: expected tuple but found `int32`
-  ╭─ compiler/e2e/test/snapshot/ir/pattern/tuple/main.pnx:2:1
-  │
-2 │     (first, second): int32 # expected tuple type
-  │ ^^^^^^^^^^^^^^^^^^^ this pattern expects tuple type but found `int32`
+  [error]: mismatched tuple pattern length
+    ╭─[compiler/e2e/test/snapshot/ir/pattern/tuple/main.pnx:38:1]
+ 37 │ public function mismatchedTuplePatternLength(
+ 38 │     (a, b, c): (int32, int32) # mismatched tuple
+    · ──────┬──────
+    ·       ╰── this pattern has 3 elements but the type has 2 elements
+ 39 │ ):
+    ╰────
 
-error: more than one packed tuple pattern found
-  ╭─ compiler/e2e/test/snapshot/ir/pattern/tuple/main.pnx:8:1
-  │
-8 │     (...first, ...second): (int32, int32) # more than one unpack
-  │ ^^^^^^^^^^^^^^^^^^^^^^^^^ only one packed tuple pattern is allowed
+  [error]: expected a packed tuple pattern here
+    ╭─[compiler/e2e/test/snapshot/ir/pattern/tuple/main.pnx:26:12]
+ 25 │ public function mismatchedTuplePackPosition[T: tuple](
+ 26 │     (...a, b, c): (int32, ...T, int32)
+    ·            ┬
+    ·            ╰── unpacked tuple type needs to be matched with a tuple pack pattern
+ 27 │ ):
+    ╰────
 
-error: mismatched tuple pattern length
-   ╭─ compiler/e2e/test/snapshot/ir/pattern/tuple/main.pnx:14:1
-   │
-14 │     (first, ...second, third): (int32) # mismatched tuple pattern length with unpack
-   │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this pattern has 3 elements but the type has 1 elements
+  [error]: mismatched pattern binding type: expected tuple but found `int32`
+   ╭─[compiler/e2e/test/snapshot/ir/pattern/tuple/main.pnx:2:1]
+ 1 │ public function expectedTupleType(
+ 2 │     (first, second): int32 # expected tuple type
+   · ─────────┬─────────
+   ·          ╰── this pattern expects tuple type but found `int32`
+ 3 │ ):
+   ╰────
 
-error: expected a packed tuple pattern here
-   ╭─ compiler/e2e/test/snapshot/ir/pattern/tuple/main.pnx:20:9
-   │
-20 │     (a, b, c): (int32, ...T, int32)
-   │         ^ unpacked tuple type needs to be matched with a tuple pack pattern
+  [error]: expected a packed tuple pattern here
+    ╭─[compiler/e2e/test/snapshot/ir/pattern/tuple/main.pnx:20:9]
+ 19 │ public function expectedTuplePackPattern[T: tuple](
+ 20 │     (a, b, c): (int32, ...T, int32)
+    ·         ┬
+    ·         ╰── unpacked tuple type needs to be matched with a tuple pack pattern
+ 21 │ ):
+    ╰────
 
-error: expected a packed tuple pattern here
-   ╭─ compiler/e2e/test/snapshot/ir/pattern/tuple/main.pnx:26:12
-   │
-26 │     (...a, b, c): (int32, ...T, int32)
-   │            ^ unpacked tuple type needs to be matched with a tuple pack pattern
+  [error]: mismatched tuple pattern length
+    ╭─[compiler/e2e/test/snapshot/ir/pattern/tuple/main.pnx:14:1]
+ 13 │ public function mismatchedTuplePatternLengthWithUnpack(
+ 14 │     (first, ...second, third): (int32) # mismatched tuple pattern length with unpack
+    · ──────────────┬──────────────
+    ·               ╰── this pattern has 3 elements but the type has 1 elements
+ 15 │ ):
+    ╰────
 
-error: more than one packed tuple pattern found
-   ╭─ compiler/e2e/test/snapshot/ir/pattern/tuple/main.pnx:32:1
-   │
-32 │     (...a, ...b, c): (int32, ...T, int32)
-   │ ^^^^^^^^^^^^^^^^^^^ only one packed tuple pattern is allowed
+  [error]: more than one packed tuple pattern found
+    ╭─[compiler/e2e/test/snapshot/ir/pattern/tuple/main.pnx:32:1]
+ 31 │ public function moreThanOnceUnpack2[T: tuple](
+ 32 │     (...a, ...b, c): (int32, ...T, int32)
+    · ─────────┬─────────
+    ·          ╰── only one packed tuple pattern is allowed
+ 33 │ ):
+    ╰────
 
-error: mismatched tuple pattern length
-   ╭─ compiler/e2e/test/snapshot/ir/pattern/tuple/main.pnx:38:1
-   │
-38 │     (a, b, c): (int32, int32) # mismatched tuple
-   │ ^^^^^^^^^^^^^ this pattern has 3 elements but the type has 2 elements
+  [error]: more than one packed tuple pattern found
+   ╭─[compiler/e2e/test/snapshot/ir/pattern/tuple/main.pnx:8:1]
+ 7 │ public function moreThanOnceUnpack(
+ 8 │     (...first, ...second): (int32, int32) # more than one unpack
+   · ────────────┬────────────
+   ·             ╰── only one packed tuple pattern is allowed
+ 9 │ ):
+   ╰────
 
-error: mismatched tuple pattern length
-   ╭─ compiler/e2e/test/snapshot/ir/pattern/tuple/main.pnx:60:12
-   │
-60 │     (a, ...({}, {}, {}), b): (int32, Empty, Empty, int32)
-   │            ^^^^^^^^^^^^ this pattern has 3 elements but the type has 2 elements
+  [error]: mismatched tuple pattern length
+    ╭─[compiler/e2e/test/snapshot/ir/pattern/tuple/main.pnx:60:12]
+ 59 │ public function packImmediatelyWithTupleButLengthMismatched(
+ 60 │     (a, ...({}, {}, {}), b): (int32, Empty, Empty, int32)
+    ·            ──────┬─────
+    ·                  ╰── this pattern has 3 elements but the type has 2 elements
+ 61 │ ):
+    ╰────
 
-error: Compilation aborted due to 8 error(s)
+  [error]: Compilation aborted due to 8 error(s)
 
 
 

@@ -3,16 +3,19 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: the value is used after it has been moved
-   ╭─ compiler/e2e/test/snapshot/memory_checker/dereference_move_mutable_reference/main.pnx:11:13
-   │
- 9 │     let movedToRef = ref
-   │                      --- the value was moved here
-10 │ 
-11 │     consume(*ref)
-   │             ^^^^
+  [error]: the value is used after it has been moved
+    ╭─[compiler/e2e/test/snapshot/memory_checker/dereference_move_mutable_reference/main.pnx:9:22]
+  8 │ 
+  9 │     let movedToRef = ref
+    ·                      ─┬─
+    ·                       ╰── the value was moved here
+ 10 │ 
+ 11 │     consume(*ref)
+    ·             ──┬─
+    ·               ╰── 
+    ╰────
 
-error: Compilation aborted due to 1 error(s)
+  [error]: Compilation aborted due to 1 error(s)
 
 
 

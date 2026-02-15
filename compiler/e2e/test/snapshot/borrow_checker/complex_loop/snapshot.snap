@@ -3,19 +3,42 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: access is done while it is mutably borrowed
-   ╭─ compiler/e2e/test/snapshot/borrow_checker/complex_loop/main.pnx:30:10
-   │
-11 │     let mut x = &mut a
-   │                 ------ the mutable borrow starts here
-   ·
-30 │     consume(&mut a)
-   │             ^^^^^^ access occurs here while it is mutably borrowed
-   ·
-34 │     consume(q)
-   │             - the borrow is used here
+  [error]: access is done while it is mutably borrowed
+    ╭─[compiler/e2e/test/snapshot/borrow_checker/complex_loop/main.pnx:11:14]
+ 10 │     let mut a = 32
+ 11 │     let mut x = &mut a
+    ·                 ───┬──
+    ·                    ╰── the mutable borrow starts here
+ 12 │     let mut q = create()    # create() No.1
+ 13 │ 
+ 14 │     loop:
+ 15 │         # first iteration -> p refers to the `a` variable
+ 16 │         # second iteration -> p refers to the `create() No.2` function
+ 17 │         let p = &mut *x
+ 18 │ 
+ 19 │         if cond:
+ 20 │             break
+ 21 │     
+ 22 │         # before loop -> q refers to the `create() No.1` function
+ 23 │         # first iteration -> q refers to the `a` variable
+ 24 │         # second iteration -> q refers to the `create() No.2` function
+ 25 │         q = p
+ 26 │ 
+ 27 │         x = create() # create() No.2
+ 28 │ 
+ 29 │ 
+ 30 │     consume(&mut a)
+    ·             ───┬──
+    ·                ╰── access occurs here while it is mutably borrowed
+ 31 │ 
+ 32 │     # q might refer to the `a` variable if the loop is executed twice 
+ 33 │     # (full first iteration, and second iteration hits the break)
+ 34 │     consume(q)
+    ·             ┬
+    ·             ╰── the borrow is used here
+    ╰────
 
-error: Compilation aborted due to 1 error(s)
+  [error]: Compilation aborted due to 1 error(s)
 
 
 

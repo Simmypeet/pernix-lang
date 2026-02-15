@@ -3,18 +3,18 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: ambiguous method call `coolMethod` for type `T`
-   ╭─ compiler/e2e/test/snapshot/ir/expression/method_call/ambiguous_trait/main.pnx:20:11
-   │
-20 │     value.coolMethod()  # ambiguous trait method call
-   │     ----- ^^^^^^^^^^
-   │     │     │
-   │     │     ambiguous method call `coolMethod`
-   │     │     candidate: `main::Second::coolMethod`
-   │     │     candidate: `main::First::coolMethod`
-   │     this expression has type `T`
+  [error]: ambiguous method call `coolMethod` for type `T`
+    ╭─[compiler/e2e/test/snapshot/ir/expression/method_call/ambiguous_trait/main.pnx:20:5]
+ 19 │ public function test[T](value: T):
+ 20 │     value.coolMethod()  # ambiguous trait method call
+    ·     ──┬── ─────┬────┬┬
+    ·       │        │    │╰── candidate: `main::Second::coolMethod`
+    ·       │        │    ╰── candidate: `main::First::coolMethod`
+    ·       │        ╰── ambiguous method call `coolMethod`
+    ·       ╰── this expression has type `T`
+    ╰────
 
-error: Compilation aborted due to 1 error(s)
+  [error]: Compilation aborted due to 1 error(s)
 
 
 

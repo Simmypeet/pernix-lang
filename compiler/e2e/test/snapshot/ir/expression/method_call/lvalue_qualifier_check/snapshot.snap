@@ -3,55 +3,78 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: the l-value has qualifier `immutable` but the reference of expression expects a qualifier `mutable`
-   ╭─ compiler/e2e/test/snapshot/ir/expression/method_call/lvalue_qualifier_check/main.pnx:21:17
-   │
-21 │     let first = p.getFirstMut()   # expect mut
-   │                 ^
+  [error]: the l-value has qualifier `immutable` but the reference of expression expects a qualifier `mutable`
+    ╭─[compiler/e2e/test/snapshot/ir/expression/method_call/lvalue_qualifier_check/main.pnx:21:17]
+ 20 │     let p = getPair()
+ 21 │     let first = p.getFirstMut()   # expect mut
+    ·                 ┬
+    ·                 ╰── 
+ 22 │     let second = p.getSecondMut() # expect mut
+    ╰────
 
-error: the l-value has qualifier `immutable` but the reference of expression expects a qualifier `mutable`
-   ╭─ compiler/e2e/test/snapshot/ir/expression/method_call/lvalue_qualifier_check/main.pnx:22:18
-   │
-22 │     let second = p.getSecondMut() # expect mut
-   │                  ^
+  [error]: the l-value has qualifier `immutable` but the reference of expression expects a qualifier `mutable`
+    ╭─[compiler/e2e/test/snapshot/ir/expression/method_call/lvalue_qualifier_check/main.pnx:22:18]
+ 21 │     let first = p.getFirstMut()   # expect mut
+ 22 │     let second = p.getSecondMut() # expect mut
+    ·                  ┬
+    ·                  ╰── 
+ 23 │ 
+    ╰────
 
-error: the l-value is behind a reference with qualifier `immutable` but the reference of expression expects a qualifier `mutable`
-   ╭─ compiler/e2e/test/snapshot/ir/expression/method_call/lvalue_qualifier_check/main.pnx:49:17
-   │
-49 │     let first = refPair.getFirstMut()   # expect error
-   │                 ^^^^^^^
+  [error]: the l-value is behind a reference with qualifier `immutable` but the reference of expression expects a qualifier `mutable`
+    ╭─[compiler/e2e/test/snapshot/ir/expression/method_call/lvalue_qualifier_check/main.pnx:49:17]
+ 48 │ 
+ 49 │     let first = refPair.getFirstMut()   # expect error
+    ·                 ───┬───
+    ·                    ╰── 
+ 50 │     let second = refPair.getSecondMut() # expect error
+    ╰────
 
-error: the l-value is behind a reference with qualifier `immutable` but the reference of expression expects a qualifier `mutable`
-   ╭─ compiler/e2e/test/snapshot/ir/expression/method_call/lvalue_qualifier_check/main.pnx:50:18
-   │
-50 │     let second = refPair.getSecondMut() # expect error
-   │                  ^^^^^^^
+  [error]: the l-value is behind a reference with qualifier `immutable` but the reference of expression expects a qualifier `mutable`
+    ╭─[compiler/e2e/test/snapshot/ir/expression/method_call/lvalue_qualifier_check/main.pnx:50:18]
+ 49 │     let first = refPair.getFirstMut()   # expect error
+ 50 │     let second = refPair.getSecondMut() # expect error
+    ·                  ───┬───
+    ·                     ╰── 
+ 51 │ 
+    ╰────
 
-error: the l-value is behind a reference with qualifier `immutable` but the reference of expression expects a qualifier `mutable`
-   ╭─ compiler/e2e/test/snapshot/ir/expression/method_call/lvalue_qualifier_check/main.pnx:52:17
-   │
-52 │     let first = mutRefPair.reference.getFirstMut()   # `.reference` is immutable
-   │                 ^^^^^^^^^^^^^^^^^^^^
+  [error]: the l-value is behind a reference with qualifier `immutable` but the reference of expression expects a qualifier `mutable`
+    ╭─[compiler/e2e/test/snapshot/ir/expression/method_call/lvalue_qualifier_check/main.pnx:52:17]
+ 51 │ 
+ 52 │     let first = mutRefPair.reference.getFirstMut()   # `.reference` is immutable
+    ·                 ──────────┬─────────
+    ·                           ╰── 
+ 53 │     let second = mutRefPair.reference.getSecondMut() # `.reference` is immutable
+    ╰────
 
-error: the l-value is behind a reference with qualifier `immutable` but the reference of expression expects a qualifier `mutable`
-   ╭─ compiler/e2e/test/snapshot/ir/expression/method_call/lvalue_qualifier_check/main.pnx:53:18
-   │
-53 │     let second = mutRefPair.reference.getSecondMut() # `.reference` is immutable
-   │                  ^^^^^^^^^^^^^^^^^^^^
+  [error]: the l-value is behind a reference with qualifier `immutable` but the reference of expression expects a qualifier `mutable`
+    ╭─[compiler/e2e/test/snapshot/ir/expression/method_call/lvalue_qualifier_check/main.pnx:53:18]
+ 52 │     let first = mutRefPair.reference.getFirstMut()   # `.reference` is immutable
+ 53 │     let second = mutRefPair.reference.getSecondMut() # `.reference` is immutable
+    ·                  ──────────┬─────────
+    ·                            ╰── 
+ 54 │ 
+    ╰────
 
-error: the l-value is behind a reference with qualifier `immutable` but the reference of expression expects a qualifier `mutable`
-   ╭─ compiler/e2e/test/snapshot/ir/expression/method_call/lvalue_qualifier_check/main.pnx:58:17
-   │
-58 │     let first = fakeMutPair.getFirstMut()   # expect error
-   │                 ^^^^^^^^^^^
+  [error]: the l-value is behind a reference with qualifier `immutable` but the reference of expression expects a qualifier `mutable`
+    ╭─[compiler/e2e/test/snapshot/ir/expression/method_call/lvalue_qualifier_check/main.pnx:58:17]
+ 57 │ 
+ 58 │     let first = fakeMutPair.getFirstMut()   # expect error
+    ·                 ─────┬─────
+    ·                      ╰── 
+ 59 │     let second = fakeMutPair.getSecondMut() # expect error
+    ╰────
 
-error: the l-value is behind a reference with qualifier `immutable` but the reference of expression expects a qualifier `mutable`
-   ╭─ compiler/e2e/test/snapshot/ir/expression/method_call/lvalue_qualifier_check/main.pnx:59:18
-   │
-59 │     let second = fakeMutPair.getSecondMut() # expect error
-   │                  ^^^^^^^^^^^
+  [error]: the l-value is behind a reference with qualifier `immutable` but the reference of expression expects a qualifier `mutable`
+    ╭─[compiler/e2e/test/snapshot/ir/expression/method_call/lvalue_qualifier_check/main.pnx:59:18]
+ 58 │     let first = fakeMutPair.getFirstMut()   # expect error
+ 59 │     let second = fakeMutPair.getSecondMut() # expect error
+    ·                  ─────┬─────
+    ·                       ╰── 
+    ╰────
 
-error: Compilation aborted due to 8 error(s)
+  [error]: Compilation aborted due to 8 error(s)
 
 
 
