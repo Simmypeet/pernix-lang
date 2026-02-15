@@ -9,7 +9,9 @@ use pernixc_target::{
     CORE_TARGET_SEED, Global, TargetID, get_invocation_arguments,
     get_target_seed,
 };
-use qbice::{Decode, Encode, Identifiable, Query, StableHash};
+use qbice::{
+    Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned,
+};
 use siphasher::sip128::Hasher128;
 
 pub mod accessibility;
@@ -262,7 +264,7 @@ pub async fn get_target_root_module_id(
     StableHash,
     Query,
 )]
-#[value(Arc<[ID]>)]
+#[value(Interned<[ID]>)]
 #[extend(name = get_all_symbol_ids, by_val)]
 pub struct AllSymbolIDKey {
     /// The target ID to get all symbol IDs for.

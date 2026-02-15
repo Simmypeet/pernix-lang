@@ -716,9 +716,12 @@ static MAP_EXECUTOR: Registration<Config> =
 async fn all_symbol_ids_executor(
     key: &AllSymbolIDKey,
     engine: &TrackedEngine,
-) -> Arc<[ID]> {
+) -> Interned<[ID]> {
     let map = engine.query(&MapKey(key.target_id)).await;
-    map.keys_by_symbol_id.keys().copied().collect()
+
+    engine.intern_unsized(
+        map.keys_by_symbol_id.keys().copied().collect::<Vec<_>>(),
+    )
 }
 
 #[distributed_slice(PERNIX_PROGRAM)]

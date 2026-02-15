@@ -31,7 +31,7 @@ pub struct ProjectionKey {
     pub module_id: Global<pernixc_symbol::ID>,
 }
 
-#[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
+#[executor(config = Config)]
 async fn projection_executor(
     &ProjectionKey { module_id }: &ProjectionKey,
     engine: &TrackedEngine,
