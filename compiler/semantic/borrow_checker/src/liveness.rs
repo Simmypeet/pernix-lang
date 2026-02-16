@@ -275,11 +275,11 @@ impl Assigned {
                 let inst = environment
                     .tracked_engine()
                     .get_instantiation(struct_id, generic_arguments)
-                    .await?
-                    .unwrap();
+                    .await
+                    .map_err(|_| UnrecoverableError::Reported)?;
 
                 let fields =
-                    environment.tracked_engine().get_fields(struct_id).await?;
+                    environment.tracked_engine().get_fields(struct_id).await;
 
                 if let Self::Whole(whole_proj) = proj {
                     // if have concluded, we should've returned earlier
@@ -444,8 +444,8 @@ impl Assigned {
                 let inst = environment
                     .tracked_engine()
                     .get_instantiation(enum_id, generic_arguments)
-                    .await?
-                    .unwrap();
+                    .await
+                    .map_err(|_| UnrecoverableError::Reported)?;
 
                 if let Self::Whole(whole_proj) = proj {
                     // if have concluded, we should've returned earlier
@@ -460,11 +460,11 @@ impl Assigned {
                 let variant_comp = environment
                     .tracked_engine()
                     .get_variant_associated_type(variant.id)
-                    .await?;
+                    .await
+                    .ok_or(UnrecoverableError::Reported)?;
 
                 (proj.as_variant_mut().unwrap().variant_projection.as_mut(), {
-                    let mut variant_ty =
-                        variant_comp.map(|x| (*x).clone()).unwrap();
+                    let mut variant_ty = variant_comp.as_ref().clone();
 
                     inst.instantiate(&mut variant_ty);
 
@@ -814,7 +814,7 @@ impl<N: Normalizer> Traverser for LiveBorrowTraverser<'_, N> {
                 .context
                 .values()
                 .simple_type_of_memory(memory_root, self.context.environment())
-                .await?;
+                .await;
 
             let Some(assigned_state) =
                 self.assigned_states_by_memory.get_mut(memory_root)
@@ -873,7 +873,7 @@ impl<N: Normalizer> Traverser for LiveBorrowTraverser<'_, N> {
                     self.context
                         .values()
                         .span_of_memory(memory_root, self.context.environment())
-                        .await?,
+                        .await,
                     true,
                 ),
             };

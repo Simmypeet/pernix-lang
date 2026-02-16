@@ -1,3 +1,6 @@
 [toolchain]
-channel = "nightly-2025-11-20"
+# currently, the latest nightly version as of "2026-01-25" has a subtle bug
+# with MacOS 26 Arm64 builds causing memory allocation failures.
+# See https://github.com/rust-lang/rust/issues/150898
+channel = "nightly-2025-07-20"
 components = ["clippy", "rustfmt"]

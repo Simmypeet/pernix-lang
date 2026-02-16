@@ -5,7 +5,6 @@ use pernixc_ir::transform::{
     ConstantTermSource, Element, Transformer, TypeTermSource,
 };
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::runtime::executor::CyclicError;
 use pernixc_term::{
     lifetime::Lifetime,
     sub_term::TermLocation,
@@ -75,8 +74,7 @@ impl Transformer<Lifetime> for ReplaceInference<'_> {
         _term: &mut Lifetime,
         _source: <Lifetime as pernixc_ir::transform::Transformable>::Source,
         _span: RelativeSpan,
-    ) -> Result<(), CyclicError> {
-        Ok(())
+    ) {
     }
 }
 
@@ -86,7 +84,7 @@ impl Transformer<Type> for ReplaceInference<'_> {
         term: &mut Type,
         source: TypeTermSource,
         span: RelativeSpan,
-    ) -> Result<(), CyclicError> {
+    ) {
         match self.environment.simplify(std::mem::take(term)).await {
             Ok(simplified) => {
                 *term = simplified.result.clone();
@@ -94,9 +92,6 @@ impl Transformer<Type> for ReplaceInference<'_> {
             Err(pernixc_type_system::Error::Overflow(overflow)) => {
                 overflow
                     .report_as_type_calculating_overflow(span, &self.handler);
-            }
-            Err(pernixc_type_system::Error::CyclicDependency(err)) => {
-                return Err(err);
             }
         }
 
@@ -110,8 +105,6 @@ impl Transformer<Type> for ReplaceInference<'_> {
 
         // Erase any remaining inference variables.
         visitor::accept_recursive_mut(term, &mut EraseInference);
-
-        Ok(())
     }
 }
 
@@ -121,7 +114,7 @@ impl Transformer<pernixc_term::constant::Constant> for ReplaceInference<'_> {
         term: &mut pernixc_term::constant::Constant,
         source: <pernixc_term::constant::Constant as pernixc_ir::transform::Transformable>::Source,
         span: RelativeSpan,
-    ) -> Result<(), CyclicError> {
+    ) {
         match self.environment.simplify(std::mem::take(term)).await {
             Ok(simplified) => {
                 *term = simplified.result.clone();
@@ -129,9 +122,6 @@ impl Transformer<pernixc_term::constant::Constant> for ReplaceInference<'_> {
             Err(pernixc_type_system::Error::Overflow(overflow)) => {
                 overflow
                     .report_as_type_calculating_overflow(span, &self.handler);
-            }
-            Err(pernixc_type_system::Error::CyclicDependency(err)) => {
-                return Err(err);
             }
         }
 
@@ -145,8 +135,6 @@ impl Transformer<pernixc_term::constant::Constant> for ReplaceInference<'_> {
 
         // Erase any remaining inference variables.
         visitor::accept_recursive_mut(term, &mut EraseInference);
-
-        Ok(())
     }
 }
 
@@ -154,7 +142,7 @@ impl Binder<'_> {
     pub(super) async fn transform_inference(
         &mut self,
         handler: &dyn Handler<Diagnostic>,
-    ) -> Result<(), CyclicError> {
+    ) {
         self.inference_context.fill_default_inferences();
 
         let mut transformer = ReplaceInference {
@@ -166,16 +154,14 @@ impl Binder<'_> {
             handler,
         };
 
-        self.ir.transform(&mut transformer, self.engine).await?;
-        self.ir_map.transform(&mut transformer, self.engine).await?;
+        self.ir.transform(&mut transformer, self.engine).await;
+        self.ir_map.transform(&mut transformer, self.engine).await;
         self.effect_handler_context
             .transform(&mut transformer, self.engine)
-            .await?;
+            .await;
         self.closure_parameters_map
             .transform(&mut transformer, self.engine)
-            .await?;
-        self.captures_map.transform(&mut transformer, self.engine).await?;
-
-        Ok(())
+            .await;
+        self.captures_map.transform(&mut transformer, self.engine).await;
     }
 }

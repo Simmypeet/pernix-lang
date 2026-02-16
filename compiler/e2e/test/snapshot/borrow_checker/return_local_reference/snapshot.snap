@@ -3,17 +3,19 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: the variable doesn't live long enough
-  ╭─ compiler/e2e/test/snapshot/borrow_checker/return_local_reference/main.pnx:2:9
-  │
-2 │     let local = 0
-  │         ^^^^^ the variable declared here doesn't live long enough
-3 │     return &local
-  │            ------ the borrow starts here
-  │
-  = lifetime(s) 'a can access the borrow later
+  [error]: the variable doesn't live long enough
+   ╭─[compiler/e2e/test/snapshot/borrow_checker/return_local_reference/main.pnx:2:9]
+ 1 │ public function test['a](param: &'a int32) -> &'a int32:
+ 2 │     let local = 0
+   ·         ──┬──
+   ·           ╰── the variable declared here doesn't live long enough
+ 3 │     return &local
+   ·            ───┬──
+   ·               ╰── the borrow starts here
+   ╰────
+  help: lifetime(s) 'a can access the borrow later
 
-error: Compilation aborted due to 1 error(s)
+  [error]: Compilation aborted due to 1 error(s)
 
 
 

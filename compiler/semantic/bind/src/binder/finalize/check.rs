@@ -42,7 +42,7 @@ async fn check_register_assignment<N: Normalizer>(
             let instantiation = value_environment
                 .tracked_engine()
                 .get_instantiation(st.struct_id, st.generic_arguments.clone())
-                .await?
+                .await
                 .expect("failed to get instantiation");
 
             value_environment
@@ -71,7 +71,7 @@ async fn check_register_assignment<N: Normalizer>(
             let instantiation = value_environment
                 .tracked_engine()
                 .get_instantiation(enum_id, variant.generic_arguments.clone())
-                .await?
+                .await
                 .expect("failed to get instantiation");
 
             value_environment
@@ -108,11 +108,10 @@ async fn check_register_assignment<N: Normalizer>(
                     let trait_arguments =
                         function_call.instantiation.create_generic_arguments(
                             parent_trait_id,
-                            &value_environment
+                            &*value_environment
                                 .tracked_engine()
                                 .get_generic_parameters(parent_trait_id)
-                                .await
-                                .unwrap(),
+                                .await,
                         );
 
                     // check extra trait satisfiability

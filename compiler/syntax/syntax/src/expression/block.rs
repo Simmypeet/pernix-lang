@@ -2,7 +2,7 @@ use enum_as_inner::EnumAsInner;
 use pernixc_lexical::tree::DelimiterKind;
 use pernixc_parser::{
     abstract_tree, expect,
-    parser::{Parser as _, ast},
+    parser::{ParserExt, ast},
 };
 
 use crate::{

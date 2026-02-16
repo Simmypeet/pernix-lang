@@ -3,13 +3,16 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: `resume` can only be used inside an operation handler
-  ╭─ compiler/e2e/test/snapshot/ir/expression/resume/resume_in_do_but_not_with/main.pnx:7:9
-  │
-7 │         resume(32)
-  │         ^^^^^^^^^^ `resume` can not be used outside the oepration handler (`with` construct)
+  [error]: `resume` can only be used inside an operation handler
+   ╭─[compiler/e2e/test/snapshot/ir/expression/resume/resume_in_do_but_not_with/main.pnx:7:9]
+ 6 │     do:
+ 7 │         resume(32)
+   ·         ─────┬────
+   ·              ╰── `resume` can not be used outside the oepration handler (`with` construct)
+ 8 │     with Test:
+   ╰────
 
-error: Compilation aborted due to 1 error(s)
+  [error]: Compilation aborted due to 1 error(s)
 
 
 

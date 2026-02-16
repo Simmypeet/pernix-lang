@@ -3,31 +3,43 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: the l-value has qualifier `immutable` but the reference of expression expects a qualifier `mutable`
-  ╭─ compiler/e2e/test/snapshot/ir/expression/prefix/borrow/main.pnx:3:13
-  │
-3 │     let b = &mut a
-  │             ^^^^^^
+  [error]: the l-value has qualifier `immutable` but the reference of expression expects a qualifier `mutable`
+   ╭─[compiler/e2e/test/snapshot/ir/expression/prefix/borrow/main.pnx:3:13]
+ 2 │     let a = 64
+ 3 │     let b = &mut a
+   ·             ───┬──
+   ·                ╰── 
+ 4 │ 
+   ╰────
 
-error: the l-value is behind a reference with qualifier `immutable` but the reference of expression expects a qualifier `mutable`
-  ╭─ compiler/e2e/test/snapshot/ir/expression/prefix/borrow/main.pnx:9:13
-  │
-9 │     let c = &mut *b
-  │             ^^^^^^^
+  [error]: the l-value is behind a reference with qualifier `immutable` but the reference of expression expects a qualifier `mutable`
+    ╭─[compiler/e2e/test/snapshot/ir/expression/prefix/borrow/main.pnx:9:13]
+  8 │     let b = &a
+  9 │     let c = &mut *b
+    ·             ───┬───
+    ·                ╰── 
+ 10 │ 
+    ╰────
 
-error: the l-value is behind a reference with qualifier `immutable` but the reference of expression expects a qualifier `mutable`
-   ╭─ compiler/e2e/test/snapshot/ir/expression/prefix/borrow/main.pnx:17:13
-   │
-17 │     let a = &mut c.x
-   │             ^^^^^^^^
+  [error]: the l-value is behind a reference with qualifier `immutable` but the reference of expression expects a qualifier `mutable`
+    ╭─[compiler/e2e/test/snapshot/ir/expression/prefix/borrow/main.pnx:17:13]
+ 16 │ public function test3(mut c: &S, d: &mut S):
+ 17 │     let a = &mut c.x
+    ·             ────┬───
+    ·                 ╰── 
+ 18 │     let b = &c.x
+    ╰────
 
-error: the l-value is behind a reference with qualifier `immutable` but the reference of expression expects a qualifier `mutable`
-   ╭─ compiler/e2e/test/snapshot/ir/expression/prefix/borrow/main.pnx:29:13
-   │
-29 │     let a = &mut u.a.x
-   │             ^^^^^^^^^^
+  [error]: the l-value is behind a reference with qualifier `immutable` but the reference of expression expects a qualifier `mutable`
+    ╭─[compiler/e2e/test/snapshot/ir/expression/prefix/borrow/main.pnx:29:13]
+ 28 │ public function test4(mut u: U):
+ 29 │     let a = &mut u.a.x
+    ·             ─────┬────
+    ·                  ╰── 
+ 30 │     let b = &u.a.x
+    ╰────
 
-error: Compilation aborted due to 4 error(s)
+  [error]: Compilation aborted due to 4 error(s)
 
 
 

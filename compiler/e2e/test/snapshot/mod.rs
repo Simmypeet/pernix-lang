@@ -57,16 +57,14 @@ fn main(resource: &str) {
 }
 
 async fn run(arguments: Arguments) -> String {
-    let mut err_writer =
-        codespan_reporting::term::termcolor::NoColor::new(Vec::new());
-    let mut out_writer =
-        codespan_reporting::term::termcolor::NoColor::new(Vec::new());
+    let mut err_writer = Vec::new();
+    let mut out_writer = Vec::new();
 
     let _ =
         pernixc_driver::run(arguments, &mut err_writer, &mut out_writer).await;
 
-    let stderr_string = String::from_utf8(err_writer.into_inner()).unwrap();
-    let stout_string = String::from_utf8(out_writer.into_inner()).unwrap();
+    let stderr_string = String::from_utf8(err_writer).unwrap();
+    let stout_string = String::from_utf8(out_writer).unwrap();
 
     format!("stderr:\n{stderr_string}\n\nstdout:\n{stout_string}")
 }
@@ -85,9 +83,10 @@ async fn test(file_path: &Path) {
                     file: file_path.to_path_buf(),
                     target_name: None,
                     library_paths: Vec::new(),
-                    incremental_path: Some(temp_dir.path().to_path_buf()),
+                    incremental_path: None,
                     chrome_tracing: false,
                     target_seed: Some(0),
+                    fancy: false,
                 },
             }),
         },
@@ -119,6 +118,7 @@ async fn test(file_path: &Path) {
                             ),
                             chrome_tracing: false,
                             target_seed: Some(0),
+                            fancy: false,
                         },
                     }),
                 }

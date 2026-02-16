@@ -4,9 +4,8 @@ use derive_more::Index;
 use pernixc_arena::{Arena, ID, OrderedArena};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_semantic_element::parameter::Parameters;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_term::{instantiation::Instantiation, r#type::Type};
+use qbice::{Decode, Encode, StableHash};
 
 use crate::transform;
 
@@ -20,8 +19,8 @@ use crate::transform;
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct ClosureParameter {
     /// The type of the parameter.
@@ -33,15 +32,7 @@ pub struct ClosureParameter {
 
 /// Represents a collection of parameters taken by a closure.
 #[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    Default,
-    StableHash,
-    Serialize,
-    Deserialize,
-    Index,
+    Debug, Clone, PartialEq, Eq, Default, StableHash, Encode, Decode, Index,
 )]
 pub struct ClosureParameters(OrderedArena<ClosureParameter>);
 
@@ -111,8 +102,8 @@ impl transform::Element for ClosureParameters {
     >(
         &mut self,
         transformer: &mut T,
-        _engine: &pernixc_query::TrackedEngine,
-    ) -> Result<(), pernixc_query::runtime::executor::CyclicError> {
+        _engine: &pernixc_qbice::TrackedEngine,
+    ) {
         for (_, parameter) in self.0.iter_mut_unordered() {
             transformer
                 .transform(
@@ -120,10 +111,8 @@ impl transform::Element for ClosureParameters {
                     transform::TypeTermSource::ClosureParameter,
                     parameter.span,
                 )
-                .await?;
+                .await;
         }
-
-        Ok(())
     }
 }
 
@@ -135,8 +124,8 @@ impl transform::Element for ClosureParameters {
     Eq,
     Default,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     derive_more::Index,
     derive_more::IndexMut,
 )]
@@ -169,12 +158,10 @@ impl transform::Element for ClosureParametersMap {
     >(
         &mut self,
         transformer: &mut T,
-        engine: &pernixc_query::TrackedEngine,
-    ) -> Result<(), pernixc_query::runtime::executor::CyclicError> {
+        engine: &pernixc_qbice::TrackedEngine,
+    ) {
         for (_, closure_parameters) in &mut self.arena {
-            closure_parameters.transform(transformer, engine).await?;
+            closure_parameters.transform(transformer, engine).await;
         }
-
-        Ok(())
     }
 }

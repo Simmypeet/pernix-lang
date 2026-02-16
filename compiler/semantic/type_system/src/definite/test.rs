@@ -1,6 +1,6 @@
 use std::{borrow::Cow, fmt::Debug, future::Future, pin::Pin, sync::Arc};
 
-use pernixc_query::Engine;
+use pernixc_qbice::Engine;
 use pernixc_target::Global;
 use pernixc_term::{
     constant::{self, Constant},
@@ -20,6 +20,7 @@ use crate::{
     environment::{Environment, Premise},
     normalizer,
     term::Term,
+    test::create_test_engine,
 };
 
 #[derive(
@@ -36,7 +37,7 @@ pub type BoxedFuture<'s, T> =
 pub trait Property<T>: 'static + Debug {
     fn generate<'s>(
         &'s self,
-        table: &'s mut Arc<Engine>,
+        table: &'s Arc<Engine>,
         premise: &'s mut Premise,
     ) -> BoxedFuture<'s, T>;
 
@@ -64,7 +65,7 @@ impl<T: Into<U> + Clone + Debug + 'static, U> Property<U>
 {
     fn generate<'s>(
         &'s self,
-        _: &'s mut Arc<Engine>,
+        _: &'s Arc<Engine>,
         _: &'s mut Premise,
     ) -> BoxedFuture<'s, U> {
         Box::pin(async move { Ok(self.0.clone().into()) })
@@ -115,7 +116,7 @@ where
 {
     fn generate<'s>(
         &'s self,
-        table: &'s mut Arc<Engine>,
+        table: &'s Arc<Engine>,
         premise: &'s mut Premise,
     ) -> BoxedFuture<'s, T> {
         Box::pin(async move {
@@ -190,13 +191,13 @@ async fn property_based_testing<T: Term + 'static>(
     property: &dyn Property<T>,
 ) -> TestCaseResult {
     let mut premise = Premise::default();
-    let mut engine = Arc::new(Engine::default());
+    let (engine, _dir) = create_test_engine().await;
 
-    let term = property.generate(&mut engine, &mut premise).await?;
+    let term = property.generate(&engine, &mut premise).await?;
 
     let environment = Environment::new(
         Cow::Borrowed(&premise),
-        Cow::Owned(engine.tracked()),
+        Cow::Owned(engine.tracked().await),
         normalizer::NO_OP,
     );
 

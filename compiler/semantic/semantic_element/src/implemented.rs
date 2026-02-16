@@ -1,12 +1,9 @@
 //! Defines a query for retrieving all the `implements` IDs that are associated
 //! with a given symbol.
 
-use std::sync::Arc;
-
 use pernixc_hash::HashSet;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
+use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 
 /// A query for retrieving all the `implements` IDs that implements this symbol.
 #[derive(
@@ -19,13 +16,16 @@ use pernixc_target::Global;
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
-    pernixc_query::Key,
+    Encode,
+    Decode,
+    Query,
 )]
-#[value(Arc<HashSet<Global<pernixc_symbol::ID>>>)]
-#[extend(method(get_implemented))]
-pub struct Key(pub Global<pernixc_symbol::ID>);
+#[value(Interned<HashSet<Global<pernixc_symbol::ID>>>)]
+#[extend(name = get_implemented, by_val)]
+pub struct Key {
+    /// The global ID of the symbol to get implementations for.
+    pub symbol_id: Global<pernixc_symbol::ID>,
+}
 
 /// A query for retrieving all the `implements` IDs that implements this symbol
 /// in a specific target.
@@ -38,12 +38,12 @@ pub struct Key(pub Global<pernixc_symbol::ID>);
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
-    pernixc_query::Key,
+    Query,
 )]
-#[value(Arc<HashSet<Global<pernixc_symbol::ID>>>)]
+#[value(Interned<HashSet<Global<pernixc_symbol::ID>>>)]
 pub struct InTargetKey {
     /// The ID of the implementable (trait or marker).
     pub implementable_id: Global<pernixc_symbol::ID>,

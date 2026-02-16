@@ -5,14 +5,11 @@ use std::ops::Deref;
 use enum_as_inner::EnumAsInner;
 use pernixc_arena::ID;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::runtime::executor::CyclicError;
 use pernixc_semantic_element::{
     fields::{self, get_fields},
     parameter::{Parameter, get_parameters},
     variant::get_variant_associated_type,
 };
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 use pernixc_term::{
     generic_arguments::Symbol,
@@ -22,6 +19,7 @@ use pernixc_term::{
     r#type::{self, Qualifier, Type},
 };
 use pernixc_type_system::{Error, Succeeded, normalizer::Normalizer};
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Values,
@@ -41,8 +39,8 @@ use crate::{
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Field {
@@ -62,8 +60,8 @@ pub struct Field {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Index {
@@ -86,8 +84,8 @@ pub struct Index {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub enum Offset {
@@ -141,8 +139,8 @@ impl Offset {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Variant {
@@ -162,8 +160,8 @@ pub struct Variant {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Tuple {
@@ -194,8 +192,8 @@ pub struct Tuple {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Reference {
@@ -219,8 +217,8 @@ pub struct Reference {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
     EnumAsInner,
 )]
@@ -258,8 +256,8 @@ impl Memory {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
     EnumAsInner,
 )]
@@ -439,34 +437,32 @@ impl Values {
         &self,
         address: &Memory,
         envionment: &Environment<'_, impl Normalizer>,
-    ) -> Result<Type, CyclicError> {
+    ) -> Type {
         match address {
             Memory::Parameter(id) => {
                 let function_signature = envionment
                     .tracked_engine()
                     .get_parameters(envionment.current_site)
-                    .await?;
+                    .await;
 
-                let ty = function_signature.parameters[*id].r#type.clone();
-
-                Ok(ty)
+                function_signature.parameters[*id].r#type.clone()
             }
 
             Memory::Alloca(id) => {
                 let alloca = &self.allocas[*id];
 
-                Ok(alloca.r#type.clone())
+                alloca.r#type.clone()
             }
 
             Memory::ClosureParameter(id) => {
                 let closure_parameter = &envionment.closure_parameters()[*id];
 
-                Ok(closure_parameter.r#type.clone())
+                closure_parameter.r#type.clone()
             }
             Memory::Capture(id) => {
                 let capture = &envionment.captures()[*id];
 
-                Ok(capture.address_type.clone())
+                capture.address_type.clone()
             }
         }
     }
@@ -484,7 +480,7 @@ impl TypeOf<&Address> for Values {
                 let function_signature = environment
                     .tracked_engine()
                     .get_parameters(environment.current_site)
-                    .await?;
+                    .await;
 
                 let ty =
                     function_signature.parameters[*parameter].r#type.clone();
@@ -561,10 +557,10 @@ impl TypeOf<&Address> for Values {
                 let generic_parameters = environment
                     .tracked_engine()
                     .get_generic_parameters(struct_id)
-                    .await?;
+                    .await;
 
                 let fields =
-                    environment.tracked_engine().get_fields(struct_id).await?;
+                    environment.tracked_engine().get_fields(struct_id).await;
 
                 let instantiation = Instantiation::from_generic_arguments(
                     generic_arguments,
@@ -655,7 +651,7 @@ impl TypeOf<&Address> for Values {
                 let enum_generic_params = environment
                     .tracked_engine()
                     .get_generic_parameters(enum_id)
-                    .await?;
+                    .await;
 
                 let instantiation = Instantiation::from_generic_arguments(
                     generic_arguments,
@@ -667,9 +663,12 @@ impl TypeOf<&Address> for Values {
                 let variant = environment
                     .tracked_engine()
                     .get_variant_associated_type(variant.id)
-                    .await?;
+                    .await
+                    .ok_or(pernixc_type_system::Error::Overflow(
+                        pernixc_type_system::OverflowError,
+                    ))?;
 
-                let mut variant_ty = variant.as_deref().cloned().unwrap();
+                let mut variant_ty = variant.as_ref().clone();
 
                 instantiation.instantiate(&mut variant_ty);
 
@@ -697,10 +696,10 @@ impl Address {
     pub async fn transform<T: Transformer<Type>>(
         mut self: &mut Self,
         transformer: &mut T,
-    ) -> Result<(), CyclicError> {
+    ) {
         loop {
             match self {
-                Self::Memory(_) => return Ok(()),
+                Self::Memory(_) => return,
 
                 Self::Field(field) => {
                     self = field.struct_address.as_mut();
@@ -710,7 +709,7 @@ impl Address {
                 }
                 Self::Index(index) => {
                     if let Value::Literal(literal) = &mut index.indexing_value {
-                        literal.transform(transformer).await?;
+                        literal.transform(transformer).await;
                     }
 
                     self = index.array_address.as_mut();
@@ -732,25 +731,25 @@ impl Values {
         &self,
         address: &Memory,
         environment: &Environment<'_, N>,
-    ) -> Result<RelativeSpan, CyclicError> {
+    ) -> RelativeSpan {
         match address {
             Memory::Parameter(id) => {
                 let parameters = environment
                     .tracked_engine()
                     .get_parameters(environment.current_site)
-                    .await?;
+                    .await;
 
-                Ok(parameters.parameters[*id]
+                parameters.parameters[*id]
                     .span
-                    .expect("local target should've included span"))
+                    .expect("local target should've included span")
             }
 
-            Memory::Alloca(id) => Ok(self.allocas[*id].span),
+            Memory::Alloca(id) => self.allocas[*id].span,
 
-            Memory::Capture(id) => Ok(environment.captures()[*id].span),
+            Memory::Capture(id) => environment.captures()[*id].span,
 
             Memory::ClosureParameter(id) => {
-                Ok(environment.closure_parameters()[*id].span)
+                environment.closure_parameters()[*id].span
             }
         }
     }

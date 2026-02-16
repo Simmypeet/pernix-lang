@@ -1,9 +1,8 @@
 use pernixc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::source_map::to_absolute_span;
+use qbice::{Decode, Encode, StableHash};
 
 /// Enumeration of all operations that required unsafe scope.
 #[derive(
@@ -16,8 +15,8 @@ use pernixc_symbol::source_map::to_absolute_span;
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub enum UnsafeOperation {
     /// Casting another type to reference type.
@@ -41,8 +40,8 @@ pub enum UnsafeOperation {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct UnsafeRequired {
     /// The span of the expression where the unsafe operation is performed.
@@ -53,10 +52,7 @@ pub struct UnsafeRequired {
 }
 
 impl Report for UnsafeRequired {
-    async fn report(
-        &self,
-        engine: &TrackedEngine,
-    ) -> Result<Rendered<ByteIndex>, CyclicError> {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         let operation_string = match self.operation {
             UnsafeOperation::ReferenceTypeCast => {
                 "casting to reference type".to_string()
@@ -76,7 +72,7 @@ impl Report for UnsafeRequired {
              unsafe scope"
         );
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message(message)
             .primary_highlight(
                 Highlight::builder()
@@ -88,6 +84,6 @@ impl Report for UnsafeRequired {
                 "these operations require an extra level of caution and must \
                  be performed within an `unsafe scope`",
             )
-            .build())
+            .build()
     }
 }

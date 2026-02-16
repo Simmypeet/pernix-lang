@@ -210,14 +210,13 @@
 use enum_as_inner::EnumAsInner;
 use pernixc_handler::Handler;
 use pernixc_ir::{IR, value::Environment};
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_term::{
     generic_parameters::LifetimeParameterID,
     inference,
     lifetime::{ElidedLifetimeID, Lifetime},
 };
 use pernixc_type_system::{UnrecoverableError, normalizer::Normalizer};
+use qbice::{Decode, Encode, StableHash};
 
 use crate::diagnostic::Diagnostic;
 
@@ -244,8 +243,8 @@ pub mod diagnostic;
     Hash,
     EnumAsInner,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 #[allow(missing_docs)]
 pub enum NonStaticUniversalRegion {
@@ -269,8 +268,8 @@ pub enum NonStaticUniversalRegion {
     Hash,
     EnumAsInner,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 #[allow(missing_docs)]
 pub enum UniversalRegion {
@@ -373,7 +372,7 @@ pub async fn borrow_check<N: Normalizer>(
         &mut ir,
         value_environment.tracked_engine(),
     )
-    .await?;
+    .await;
 
     let context =
         context::Context::new(&ir, value_environment, handler).await?;

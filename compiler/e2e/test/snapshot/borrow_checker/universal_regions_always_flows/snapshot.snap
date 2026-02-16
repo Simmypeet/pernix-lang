@@ -3,18 +3,22 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: the variable doesn't live long enough
-   ╭─ compiler/e2e/test/snapshot/borrow_checker/universal_regions_always_flows/main.pnx:9:6
-   │
- 9 │     let inner = 32
-   │         ^^^^^ the variable declared here doesn't live long enough
-   ·
-12 │     test.first = &inner
-   │                  ------ the borrow starts here
-   │
-   = lifetime(s) 'a, 'b can access the borrow later
+  [error]: the variable doesn't live long enough
+    ╭─[compiler/e2e/test/snapshot/borrow_checker/universal_regions_always_flows/main.pnx:9:6]
+  8 │ 
+  9 │     let inner = 32
+    ·         ──┬──
+    ·           ╰── the variable declared here doesn't live long enough
+ 10 │     let copy = test.first
+ 11 │ 
+ 12 │     test.first = &inner
+    ·                  ───┬──
+    ·                     ╰── the borrow starts here
+ 13 │     test.first = copy
+    ╰────
+  help: lifetime(s) 'a, 'b can access the borrow later
 
-error: Compilation aborted due to 1 error(s)
+  [error]: Compilation aborted due to 1 error(s)
 
 
 

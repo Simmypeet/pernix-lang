@@ -4,8 +4,9 @@ use std::ops::Deref;
 
 use pernixc_handler::Handler;
 use pernixc_ir::{address::Address, typer::Typer, value::TypeOf};
-use pernixc_stable_hash::StableHash;
+use pernixc_qbice::TrackedEngine;
 use pernixc_type_system::UnrecoverableError;
+use qbice::StableHash;
 
 use crate::binder::{Binder, inference_context::InferenceContext};
 
@@ -63,7 +64,7 @@ impl Typer<Address> for BinderTyper<'_> {
             Err(err) => Err(err.report_as_type_calculating_overflow(
                 env.values()
                     .span_of_memory(value.get_root_memory(), &environment)
-                    .await?,
+                    .await,
                 &self.handler,
             )),
         }
@@ -76,7 +77,7 @@ pub struct Environment<'s> {
     captures: Option<&'s pernixc_ir::capture::Captures>,
     closure_parameters:
         Option<&'s pernixc_ir::closure_parameters::ClosureParameters>,
-    tracked_engine: &'s pernixc_query::TrackedEngine,
+    tracked_engine: &'s TrackedEngine,
     current_site: pernixc_target::Global<pernixc_symbol::ID>,
     scope_tree: &'s pernixc_ir::scope::Tree,
     values: &'s pernixc_ir::Values,
@@ -95,9 +96,7 @@ impl pernixc_ir::typer::Environment for Environment<'_> {
 
     fn values(&self) -> &pernixc_ir::Values { self.values }
 
-    fn tracked_engine(&self) -> &pernixc_query::TrackedEngine {
-        self.tracked_engine
-    }
+    fn tracked_engine(&self) -> &TrackedEngine { self.tracked_engine }
 
     fn current_site(&self) -> pernixc_target::Global<pernixc_symbol::ID> {
         self.current_site

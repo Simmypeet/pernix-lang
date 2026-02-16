@@ -1,7 +1,7 @@
 //! Formats accessibility of a symbols for hover information.
 
 use pernixc_extend::extend;
-use pernixc_query::TrackedEngine;
+use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::{
     accessibility::get_accessibility,
     get_target_root_module_id,

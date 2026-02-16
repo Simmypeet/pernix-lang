@@ -1,12 +1,14 @@
 use std::sync::{Arc, atomic::AtomicU64};
 
-use pernixc_query::Engine;
+use pernixc_qbice::{Engine, InMemoryFactory};
 use pernixc_term::{
     inference,
     tuple::{Element, Tuple},
     r#type::{Primitive, Type},
 };
 use pernixc_type_system::environment::Premise;
+use qbice::{serialize::Plugin, stable_hash::SeededStableHasherBuilder};
+use tempfile::tempdir;
 
 use super::{InferenceContext, UnifyError};
 use crate::infer::{constraint, table::Inference};
@@ -58,10 +60,23 @@ fn get_known_type(
     }
 }
 
+pub async fn create_test_engine() -> (Arc<Engine>, tempfile::TempDir) {
+    let tempdir = tempdir().unwrap();
+    let engine = Engine::new_with(
+        Plugin::default(),
+        InMemoryFactory,
+        SeededStableHasherBuilder::new(0),
+    )
+    .await
+    .unwrap();
+
+    (Arc::new(engine), tempdir)
+}
+
 #[tokio::test]
 async fn inference_variable_unification_with_known_type() {
     let mut context = InferenceContext::default();
-    let engine = Arc::new(Engine::default());
+    let (engine, _dir) = create_test_engine().await;
     let premise = Premise::default();
 
     // Create an inference variable
@@ -78,7 +93,7 @@ async fn inference_variable_unification_with_known_type() {
 
     // Unify inference variable with known type
     let result = context
-        .unify(&inference_type, &known_type, &premise, &engine.tracked())
+        .unify(&inference_type, &known_type, &premise, &engine.tracked().await)
         .await;
     assert!(result.is_ok());
 
@@ -90,7 +105,7 @@ async fn inference_variable_unification_with_known_type() {
 #[tokio::test]
 async fn two_inference_variables_unification() {
     let mut context = InferenceContext::default();
-    let engine = Arc::new(Engine::default());
+    let (engine, _dir) = create_test_engine().await;
     let premise = Premise::default();
 
     // Create two inference variables
@@ -113,7 +128,12 @@ async fn two_inference_variables_unification() {
 
     // Unify the two inference variables
     let result = context
-        .unify(&inference_type1, &inference_type2, &premise, &engine.tracked())
+        .unify(
+            &inference_type1,
+            &inference_type2,
+            &premise,
+            &engine.tracked().await,
+        )
         .await;
     assert!(result.is_ok());
 
@@ -129,7 +149,7 @@ async fn two_inference_variables_unification() {
 #[tokio::test]
 async fn tuple_unification() {
     let mut context = InferenceContext::default();
-    let engine = Arc::new(Engine::default());
+    let (engine, _dir) = create_test_engine().await;
     let premise = Premise::default();
 
     // Create an inference variable
@@ -151,7 +171,7 @@ async fn tuple_unification() {
             &tuple_with_inference,
             &tuple_with_concrete,
             &premise,
-            &engine.tracked(),
+            &engine.tracked().await,
         )
         .await;
     assert!(result.is_ok());
@@ -164,7 +184,7 @@ async fn tuple_unification() {
 #[tokio::test]
 async fn nested_tuple_unification() {
     let mut context = InferenceContext::default();
-    let engine = Arc::new(Engine::default());
+    let (engine, _dir) = create_test_engine().await;
     let premise = Premise::default();
 
     // Create inference variables
@@ -200,7 +220,7 @@ async fn nested_tuple_unification() {
             &outer_tuple_with_inference,
             &outer_tuple_concrete,
             &premise,
-            &engine.tracked(),
+            &engine.tracked().await,
         )
         .await;
     assert!(result.is_ok());
@@ -213,7 +233,7 @@ async fn nested_tuple_unification() {
 #[tokio::test]
 async fn cyclic_inference_detection() {
     let mut context = InferenceContext::default();
-    let engine = Arc::new(Engine::default());
+    let (engine, _dir) = create_test_engine().await;
     let premise = Premise::default();
 
     // Create an inference variable
@@ -231,7 +251,12 @@ async fn cyclic_inference_detection() {
 
     // Try to unify ?T with (?T, int32) - should detect cycle
     let result = context
-        .unify(&inference_type, &cyclic_tuple, &premise, &engine.tracked())
+        .unify(
+            &inference_type,
+            &cyclic_tuple,
+            &premise,
+            &engine.tracked().await,
+        )
         .await;
 
     assert!(matches!(result, Err(UnifyError::CyclicTypeInference(_))));
@@ -240,7 +265,7 @@ async fn cyclic_inference_detection() {
 #[tokio::test]
 async fn cyclic_inference_with_tuple_elements() {
     let mut context = InferenceContext::default();
-    let engine = Arc::new(Engine::default());
+    let (engine, _dir) = create_test_engine().await;
     let premise = Premise::default();
 
     // Create two inference variables
@@ -271,7 +296,7 @@ async fn cyclic_inference_with_tuple_elements() {
             &Type::Inference(inference_var1),
             &tuple_with_type2,
             &premise,
-            &engine.tracked(),
+            &engine.clone().tracked().await,
         )
         .await;
     assert!(result1.is_ok());
@@ -282,7 +307,7 @@ async fn cyclic_inference_with_tuple_elements() {
             &Type::Inference(inference_var2),
             &tuple_with_type1,
             &premise,
-            &engine.tracked(),
+            &engine.tracked().await,
         )
         .await;
     assert!(matches!(result2, Err(UnifyError::CyclicTypeInference(_))));
@@ -291,7 +316,7 @@ async fn cyclic_inference_with_tuple_elements() {
 #[tokio::test]
 async fn multiple_inference_variables_in_tuple() {
     let mut context = InferenceContext::default();
-    let engine = Arc::new(Engine::default());
+    let (engine, _dir) = create_test_engine().await;
     let premise = Premise::default();
 
     // Create multiple inference variables
@@ -329,7 +354,7 @@ async fn multiple_inference_variables_in_tuple() {
             &tuple_with_inferences,
             &tuple_concrete,
             &premise,
-            &engine.tracked(),
+            &engine.tracked().await,
         )
         .await;
     assert!(result.is_ok());
@@ -344,7 +369,7 @@ async fn multiple_inference_variables_in_tuple() {
 fn partial_tuple_unification() {
     let test = async {
         let mut context = InferenceContext::default();
-        let engine = Arc::new(Engine::default());
+        let (engine, _dir) = create_test_engine().await;
         let premise = Premise::default();
 
         // Create an inference variable
@@ -363,7 +388,7 @@ fn partial_tuple_unification() {
 
         // Try to unify tuples of different lengths
         let result = context
-            .unify(&tuple_short, &tuple_long, &premise, &engine.tracked())
+            .unify(&tuple_short, &tuple_long, &premise, &engine.tracked().await)
             .await;
         assert!(matches!(result, Err(UnifyError::IncompatibleTypes { .. })));
     };
@@ -378,7 +403,7 @@ fn partial_tuple_unification() {
 #[tokio::test]
 async fn inference_variable_with_constraint_mismatch() {
     let mut context = InferenceContext::default();
-    let engine = Arc::new(Engine::default());
+    let (engine, _dir) = create_test_engine().await;
     let premise = Premise::default();
 
     // Create an inference variable with integer constraint
@@ -398,7 +423,7 @@ async fn inference_variable_with_constraint_mismatch() {
     // satisfies Integer constraint or fail if constraints are
     // strictly enforced during unification
     let result = context
-        .unify(&inference_type, &float_type, &premise, &engine.tracked())
+        .unify(&inference_type, &float_type, &premise, &engine.tracked().await)
         .await;
     assert!(matches!(result, Err(UnifyError::UnsatisfiedConstraint { .. })));
 }

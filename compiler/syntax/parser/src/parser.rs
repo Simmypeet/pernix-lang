@@ -1,6 +1,8 @@
 //! Contains the [`Parser`] trait and various combinators.
 use std::marker::PhantomData;
 
+use pernixc_qbice::Interner;
+
 use crate::{
     abstract_tree::AbstractTree,
     expect::{self, Expect},
@@ -14,10 +16,13 @@ pub struct Unexpected;
 
 /// Represents a parser that manipulates the state machine and produces an
 /// syntax tree.
-pub trait Parser {
+pub trait Parser<I: Interner> {
     /// Starts the parsing process.
-    fn parse(&self, state: &mut State) -> Result<(), Unexpected>;
+    fn parse(&self, state: &mut State<'_, '_, I>) -> Result<(), Unexpected>;
+}
 
+/// A convenience trait for various parser combinators.
+pub trait ParserExt {
     /// Optionally parse the given parser, if successful, the result of the
     /// parsing will be used, otherwise, skip this parser.
     ///
@@ -43,10 +48,7 @@ pub trait Parser {
     /// Repeats this parser under the condition that in each iteration, the
     /// `commit` parser succeedds. Once the commit succeeds, the main parser
     /// should be successful as well.
-    fn repeat_with_commit<C: Parser>(
-        self,
-        commit: C,
-    ) -> RepeatWithCommit<C, Self>
+    fn repeat_with_commit<C>(self, commit: C) -> RepeatWithCommit<C, Self>
     where
         Self: Sized,
     {
@@ -75,7 +77,7 @@ pub trait Parser {
     ///
     /// Once the `commit` parser is successful, the main parser must be
     /// successful as well.
-    fn commit_if<C: Parser>(self, commit: C) -> CommitIf<C, Self>
+    fn commit_if<C>(self, commit: C) -> CommitIf<C, Self>
     where
         Self: Sized,
     {
@@ -89,7 +91,7 @@ pub trait Parser {
     /// This parser allows trailing separators
     ///
     /// Grammatically, this is equivalent to `(self (separator self)*)?`.
-    fn repeat_all_with_separator<S: Parser>(
+    fn repeat_all_with_separator<S>(
         self,
         separator: S,
     ) -> RepeatAllWithSeparator<Self, S>
@@ -104,7 +106,7 @@ pub trait Parser {
     /// separators.
     ///
     /// Grammatically, this is equivalent to `(self (separator self)+)?`.
-    fn repeat_with_separator<S: Parser>(
+    fn repeat_with_separator<S>(
         self,
         separator: S,
     ) -> RepeatWithSeparator<Self, S>
@@ -118,7 +120,7 @@ pub trait Parser {
     /// successful parse of the `self` parser.
     ///
     /// Grammatically, this is equivalent to `self (separator self)*`.
-    fn repeat_with_separator_at_least_once<S: Parser>(
+    fn repeat_with_separator_at_least_once<S>(
         self,
         separator: S,
     ) -> RepeatWithSeparatorAtLeastOnce<Self, S>
@@ -148,16 +150,25 @@ pub trait Parser {
     }
 }
 
-impl<F: Fn(&mut State) -> Result<(), Unexpected>> Parser for F {
-    fn parse(&self, state_machine: &mut State) -> Result<(), Unexpected> {
+impl<T> ParserExt for T {}
+
+impl<
+    I: Interner,
+    F: for<'x, 'y> Fn(&mut State<'x, 'y, I>) -> Result<(), Unexpected>,
+> Parser<I> for F
+{
+    fn parse(
+        &self,
+        state_machine: &mut State<'_, '_, I>,
+    ) -> Result<(), Unexpected> {
         self(state_machine)
     }
 }
 
 macro_rules! expect_impl_parser {
     { $(~$inner:ident)? $name:ty $({$generic_param:ident : $($bound:tt)* })? } => {
-        impl $(< $generic_param : $($bound)*>)? Parser for $name {
-            fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
+        impl <I: Interner, $( $generic_param : $($bound)*)? > Parser<I> for $name {
+            fn parse(&self, state: &mut State<'_, '_, I>) -> Result<(), Unexpected> {
                 expect_impl_parser! { #self #state $(#$inner)?}
             }
         }
@@ -230,8 +241,8 @@ expect_impl_parser! {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Ast<T>(pub PhantomData<T>);
 
-impl<T: AbstractTree> Parser for Ast<T> {
-    fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
+impl<I: Interner, T: AbstractTree> Parser<I> for Ast<T> {
+    fn parse(&self, state: &mut State<I>) -> Result<(), Unexpected> {
         let (result, _) = state.start_node::<T, _>(|state| {
             let parser = T::parser();
             parser.parse(state)
@@ -274,8 +285,8 @@ pub const fn ast_always_step_into_fragment<A: AbstractTree>()
     AstAlwaysStepIntoFragment(PhantomData)
 }
 
-impl<T: AbstractTree> Parser for AstAlwaysStepIntoFragment<T> {
-    fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
+impl<I: Interner, T: AbstractTree> Parser<I> for AstAlwaysStepIntoFragment<T> {
+    fn parse(&self, state: &mut State<I>) -> Result<(), Unexpected> {
         let (result, stepped_into) = state.start_node::<T, _>(|state| {
             let parser = T::parser();
             parser.parse(state)
@@ -315,8 +326,8 @@ impl<T: AbstractTree> Output for AstAlwaysStepIntoFragment<T> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Optional<T>(pub T);
 
-impl<T: Parser> Parser for Optional<T> {
-    fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
+impl<I: Interner, T: Parser<I>> Parser<I> for Optional<T> {
+    fn parse(&self, state: &mut State<I>) -> Result<(), Unexpected> {
         let checkpoint = state.checkpoint();
 
         if self.0.parse(state) == Err(Unexpected) {
@@ -363,11 +374,11 @@ macro_rules! implements_choice {
     };
 
     (~ $head:ident $($rest:ident)+) => {
-        impl<$head: Parser, $($rest: Parser),*> Parser
+        impl<I: Interner, $head: Parser<I>, $($rest: Parser<I>),*> Parser<I>
             for Choice<($head, $($rest),*)> {
 
             #[allow(non_snake_case, unused_assignments)]
-            fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
+            fn parse(&self, state: &mut State<I>) -> Result<(), Unexpected> {
                 let Choice(($head, $($rest),*)) = self;
 
                 let starting_state = state.state_checkpoint();
@@ -455,7 +466,7 @@ macro_rules! implements_choice {
             }
         }
 
-        impl<$head: Parser, $($rest: Parser),*>
+        impl<$head, $($rest),*>
             IntoChoice for ($head, $($rest),*) {
             type Output = Choice<Self>;
 
@@ -466,8 +477,8 @@ macro_rules! implements_choice {
     };
 
     (~ $head:ident) => {
-        impl<$head: Parser> Parser for Choice<($head,)> {
-            fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
+        impl<I: Interner, $head: Parser<I>> Parser<I> for Choice<($head,)> {
+            fn parse(&self, state: &mut State<I>) -> Result<(), Unexpected> {
                 self.0.0.parse(state)
             }
         }
@@ -496,7 +507,7 @@ macro_rules! implements_choice {
 }
 
 implements_choice!(
-    A B C D E F G H I J K L M N O P Q R S T U V W X Y Z
+    A B C D E F G H Ix J K L M N O P Q R S T U V W X Y Z
     A1 B1 C1 D1 E1 F1 G1 H1 I1 J1 K1 L1 M1 N1 O1 P1 Q1 R1 S1 T1 U1 V1 W1 X1 Y1
     Z1
 );
@@ -512,8 +523,10 @@ pub struct RepeatWithCommit<C, T> {
     pub parser: T,
 }
 
-impl<C: Parser, T: Parser> Parser for RepeatWithCommit<C, T> {
-    fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
+impl<I: Interner, C: Parser<I>, T: Parser<I>> Parser<I>
+    for RepeatWithCommit<C, T>
+{
+    fn parse(&self, state: &mut State<I>) -> Result<(), Unexpected> {
         let mut checkpoint = state.checkpoint();
 
         loop {
@@ -535,7 +548,7 @@ impl<C: Parser, T: Parser> Parser for RepeatWithCommit<C, T> {
     }
 }
 
-impl<C: Parser, T: Output<Extract = One>> Output for RepeatWithCommit<C, T> {
+impl<C, T: Output<Extract = One>> Output for RepeatWithCommit<C, T> {
     type Extract = Multiple;
     type Output<'a> = T::Output<'a>;
 
@@ -551,8 +564,8 @@ impl<C: Parser, T: Output<Extract = One>> Output for RepeatWithCommit<C, T> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Repeat<T>(pub T);
 
-impl<T: Parser> Parser for Repeat<T> {
-    fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
+impl<I: Interner, T: Parser<I>> Parser<I> for Repeat<T> {
+    fn parse(&self, state: &mut State<I>) -> Result<(), Unexpected> {
         let mut checkpoint = state.checkpoint();
 
         loop {
@@ -584,8 +597,10 @@ impl<T: Output<Extract = One>> Output for Repeat<T> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RepeatWithSeparator<T, S>(pub T, pub S);
 
-impl<T: Parser, S: Parser> Parser for RepeatWithSeparator<T, S> {
-    fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
+impl<I: Interner, T: Parser<I>, S: Parser<I>> Parser<I>
+    for RepeatWithSeparator<T, S>
+{
+    fn parse(&self, state: &mut State<I>) -> Result<(), Unexpected> {
         let mut checkpoint = state.checkpoint();
         let mut expect_separator = false;
 
@@ -629,8 +644,10 @@ impl<T: Output<Extract = One>, S> Output for RepeatWithSeparator<T, S> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RepeatWithSeparatorAtLeastOnce<T, S>(pub T, pub S);
 
-impl<T: Parser, S: Parser> Parser for RepeatWithSeparatorAtLeastOnce<T, S> {
-    fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
+impl<I: Interner, T: Parser<I>, S: Parser<I>> Parser<I>
+    for RepeatWithSeparatorAtLeastOnce<T, S>
+{
+    fn parse(&self, state: &mut State<I>) -> Result<(), Unexpected> {
         if self.0.parse(state) == Err(Unexpected) {
             return Err(Unexpected);
         }
@@ -669,8 +686,8 @@ impl<T: Output<Extract = One>, S> Output
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RepeatAll<T>(pub T);
 
-impl<T: Parser> Parser for RepeatAll<T> {
-    fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
+impl<I: Interner, T: Parser<I>> Parser<I> for RepeatAll<T> {
+    fn parse(&self, state: &mut State<I>) -> Result<(), Unexpected> {
         while state.peek().is_some() {
             let Err(Unexpected) = self.0.parse(state) else {
                 // if the parser is successful, continue parsing
@@ -714,11 +731,13 @@ impl<T: Output<Extract = One>> Output for RepeatAll<T> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RepeatAllWithSeparator<T, S>(pub T, pub S);
 
-impl<T: Parser, S: Parser> Parser for RepeatAllWithSeparator<T, S> {
-    fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
-        fn parse_with_separator<T: Parser, S: Parser>(
+impl<I: Interner, T: Parser<I>, S: Parser<I>> Parser<I>
+    for RepeatAllWithSeparator<T, S>
+{
+    fn parse(&self, state: &mut State<I>) -> Result<(), Unexpected> {
+        fn parse_with_separator<I: Interner, T: Parser<I>, S: Parser<I>>(
             repeat: &RepeatAllWithSeparator<T, S>,
-            state: &mut State,
+            state: &mut State<I>,
             expect_separator: bool,
         ) -> Result<(), Unexpected> {
             if expect_separator {
@@ -784,8 +803,8 @@ impl<T: Output<Extract = One>, S> Output for RepeatAllWithSeparator<T, S> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Line<T>(pub T);
 
-impl<T: Parser> Parser for Line<T> {
-    fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
+impl<I: Interner, T: Parser<I>> Parser<I> for Line<T> {
+    fn parse(&self, state: &mut State<I>) -> Result<(), Unexpected> {
         // skip new line
         if let Some((_, peeked_node_index)) = state.peek() {
             state.eat_token(peeked_node_index - state.node_index());
@@ -862,8 +881,8 @@ impl<T: Output> Output for Line<T> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NewLineSignificant<T>(pub T, pub bool);
 
-impl<T: Parser> Parser for NewLineSignificant<T> {
-    fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
+impl<I: Interner, T: Parser<I>> Parser<I> for NewLineSignificant<T> {
+    fn parse(&self, state: &mut State<I>) -> Result<(), Unexpected> {
         state.set_new_line_significant(self.1, |state| self.0.parse(state))
     }
 }
@@ -893,8 +912,8 @@ pub struct CommitIf<C, P> {
     pub parser: P,
 }
 
-impl<C: Parser, P: Parser> Parser for CommitIf<C, P> {
-    fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
+impl<I: Interner, C: Parser<I>, P: Parser<I>> Parser<I> for CommitIf<C, P> {
+    fn parse(&self, state: &mut State<I>) -> Result<(), Unexpected> {
         let checkpoint = state.checkpoint();
 
         if self.commit.parse(state) == Ok(()) {
@@ -906,7 +925,7 @@ impl<C: Parser, P: Parser> Parser for CommitIf<C, P> {
     }
 }
 
-impl<C: Parser, P: Output<Extract = One>> Output for CommitIf<C, P> {
+impl<C, P: Output<Extract = One>> Output for CommitIf<C, P> {
     type Extract = One;
     type Output<'a> = P::Output<'a>;
 

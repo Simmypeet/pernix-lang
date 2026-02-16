@@ -1,0 +1,19 @@
+[package]
+name = "pernixc_syntax_impl"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+pernixc_syntax.path = "../syntax"
+pernixc_qbice.path = "../../base/qbice"
+pernixc_parser.path = "../parser"
+pernixc_source_file.path = "../../base/source_file"
+pernixc_lexical.path = "../lexical"
+qbice.workspace = true
+linkme.workspace = true
+
+[lints]
+workspace = true

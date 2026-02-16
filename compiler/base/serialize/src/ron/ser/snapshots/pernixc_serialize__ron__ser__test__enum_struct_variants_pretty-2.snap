@@ -1,9 +1,0 @@
----
-source: compiler/base/serialize/src/ron/ser/test.rs
-expression: "to_ron_string_with_config(&image, config.clone()).unwrap()"
----
-Image {
-    url: "https://example.com/pic.jpg",
-    width: 800,
-    height: 600,
-}

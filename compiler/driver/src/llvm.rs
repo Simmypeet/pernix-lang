@@ -1,6 +1,5 @@
 use std::{io::ErrorKind, path::Path};
 
-use codespan_reporting::diagnostic::Diagnostic;
 use inkwell::{
     passes::PassBuilderOptions,
     targets::{
@@ -9,11 +8,11 @@ use inkwell::{
     },
 };
 use pernixc_diagnostic::Report;
-use pernixc_query::TrackedEngine;
+use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::{get_target_root_module_id, member::get_members};
 use pernixc_target::{Global, OptimizationLevel, TargetID};
 
-use crate::{ReportTerm, diagnostic::pernix_diagnostic_to_codespan_diagnostic};
+use crate::ReportTerm;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum MachineCodeKind {
@@ -29,7 +28,7 @@ pub(super) async fn emit_as_machine_code(
     output_path: &Path,
     opt_level: OptimizationLevel,
     kind: MachineCodeKind,
-    report_term: &mut ReportTerm<'_, '_>,
+    report_term: &mut ReportTerm<'_>,
 ) -> bool {
     // initialize the traget
     inkwell::targets::Target::initialize_native(
@@ -72,10 +71,8 @@ pub(super) async fn emit_as_machine_code(
         })
         .await
     } else {
-        report_term.report(
-            &Diagnostic::error()
-                .with_message("no `main` function found in the target"),
-        );
+        report_term
+            .report_simple_error("no `main` function found in the target");
         return false;
     };
 
@@ -134,11 +131,9 @@ pub(super) async fn emit_as_machine_code(
         };
 
         if let Err(error) = result {
-            report_term.report(
-                &Diagnostic::error().with_message(format!(
-                    "failed to write object file: {error}"
-                )),
-            );
+            report_term.report_simple_error(format!(
+                "failed to write object file: {error}"
+            ));
 
             return false;
         }
@@ -149,11 +144,11 @@ pub(super) async fn emit_as_machine_code(
                 output_path,
                 report_term,
             ) {
-                report_term.report(&Diagnostic::note().with_message(format!(
+                report_term.report_simple_note(format!(
                     "you can continue to link the object file manually using \
                      the appropriate linker command at `{}`",
                     temp_obj_path.as_ref().unwrap().display()
-                )));
+                ));
                 return false;
             }
 
@@ -161,8 +156,8 @@ pub(super) async fn emit_as_machine_code(
             if let Err(error) =
                 std::fs::remove_file(temp_obj_path.as_ref().unwrap())
             {
-                report_term.report(&Diagnostic::warning().with_message(
-                    format!("failed to delete temporary object file: {error}"),
+                report_term.report_simple_warning(format!(
+                    "failed to delete temporary object file: {error}"
                 ));
 
                 return false;
@@ -172,10 +167,9 @@ pub(super) async fn emit_as_machine_code(
         true
     } else {
         for error in storage.into_vec() {
-            let diag = error.report(engine).await.unwrap();
-            let diag = pernix_diagnostic_to_codespan_diagnostic(&diag);
+            let diag = error.report(engine).await;
 
-            report_term.report(&diag);
+            report_term.report_rendered(&diag);
         }
 
         false
@@ -204,7 +198,7 @@ fn linker_command(obj: &Path, out: &Path) -> std::process::Command {
 fn invoke_linker(
     temp_obj_path: &Path,
     output_path: &Path,
-    report_term: &mut ReportTerm<'_, '_>,
+    report_term: &mut ReportTerm<'_>,
 ) -> bool {
     let mut cmd = linker_command(temp_obj_path, output_path);
 
@@ -237,15 +231,16 @@ fn invoke_linker(
                 None
             };
 
-            let mut diag = Diagnostic::error()
-                .with_message(format!("failed to spawn linker: {err}"));
-            diag = if let Some(message) = message {
-                diag.with_notes(vec![message.to_string()])
+            if let Some(help) = message {
+                report_term.report_simple_error_with_help(
+                    format!("failed to spawn linker: {err}"),
+                    help.to_string(),
+                );
             } else {
-                diag
-            };
-
-            report_term.report(&diag);
+                report_term.report_simple_error(format!(
+                    "failed to spawn linker: {err}"
+                ));
+            }
 
             return false;
         }
@@ -254,19 +249,19 @@ fn invoke_linker(
     let status = match child.wait() {
         Ok(status) => status,
         Err(err) => {
-            report_term.report(&Diagnostic::error().with_message(format!(
+            report_term.report_simple_error(format!(
                 "failed to wait for linker process: {err}"
-            )));
+            ));
 
             return false;
         }
     };
 
     if !status.success() {
-        report_term.report(&Diagnostic::error().with_message(format!(
+        report_term.report_simple_error(format!(
             "linker process exited with status code: {}",
             status.code().map_or("unknown".to_string(), |c| c.to_string())
-        )));
+        ));
 
         return false;
     }

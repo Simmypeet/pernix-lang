@@ -3,17 +3,14 @@
 use std::ops::Deref;
 
 use enum_as_inner::EnumAsInner;
-use flexstr::SharedStr;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::runtime::executor::CyclicError;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_term::{
     lifetime::Lifetime,
     tuple,
     r#type::{Array, Primitive, Qualifier, Reference, Type},
 };
 use pernixc_type_system::normalizer::Normalizer;
+use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
 use crate::{
     Values,
@@ -30,16 +27,16 @@ use crate::{
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Numeric {
     /// The numeric value for the integer part as a string.
-    pub integer_string: SharedStr,
+    pub integer_string: Interned<str>,
 
     /// The numeric value for the decimal part as a string.
-    pub decimal_string: Option<SharedStr>,
+    pub decimal_string: Option<Interned<str>>,
 
     /// The type of the numeric value.
     ///
@@ -61,8 +58,8 @@ pub struct Numeric {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Boolean {
@@ -82,8 +79,8 @@ pub struct Boolean {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Error {
@@ -104,8 +101,8 @@ pub struct Error {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Unit {
@@ -124,8 +121,8 @@ pub struct Unit {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Unreachable {
@@ -145,13 +142,13 @@ pub struct Unreachable {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct String {
     /// The value of the string.
-    pub value: SharedStr,
+    pub value: Interned<str>,
 
     /// The span location of the string.
     pub span: RelativeSpan,
@@ -166,8 +163,8 @@ pub struct String {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Character {
@@ -193,8 +190,8 @@ pub struct Character {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Phantom {
@@ -220,8 +217,8 @@ pub struct Phantom {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     EnumAsInner,
     StableHash,
     derive_more::From,
@@ -302,7 +299,7 @@ impl Literal {
     pub async fn transform<T: Transformer<Type>>(
         &mut self,
         transformer: &mut T,
-    ) -> Result<(), CyclicError> {
+    ) {
         match self {
             Self::Numeric(numeric) => {
                 transformer
@@ -311,7 +308,7 @@ impl Literal {
                         TypeTermSource::Numeric,
                         numeric.span,
                     )
-                    .await
+                    .await;
             }
 
             Self::Error(error) => {
@@ -321,7 +318,7 @@ impl Literal {
                         TypeTermSource::Error,
                         error.span,
                     )
-                    .await
+                    .await;
             }
 
             Self::Character(character) => {
@@ -331,7 +328,7 @@ impl Literal {
                         TypeTermSource::Character,
                         character.span,
                     )
-                    .await
+                    .await;
             }
 
             Self::Unreachable(unreachable) => {
@@ -341,7 +338,7 @@ impl Literal {
                         TypeTermSource::Error,
                         unreachable.span,
                     )
-                    .await
+                    .await;
             }
 
             Self::Phantom(phantom) => {
@@ -351,10 +348,10 @@ impl Literal {
                         TypeTermSource::Phantom,
                         phantom.span,
                     )
-                    .await
+                    .await;
             }
 
-            Self::String(_) | Self::Unit(_) | Self::Boolean(_) => Ok(()),
+            Self::String(_) | Self::Unit(_) | Self::Boolean(_) => {}
         }
     }
 }

@@ -1,22 +1,19 @@
-use std::sync::Arc;
-
+use linkme::distributed_slice;
 use pernixc_hash::HashSet;
-use pernixc_query::{TrackedEngine, runtime::executor};
+use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_semantic_element::{
     implemented::InTargetKey, implements::get_implements,
 };
 use pernixc_symbol::get_all_implements_ids;
 use pernixc_target::{Global, TargetID, get_all_target_ids};
 use pernixc_tokio::{chunk::chunk_for_tasks, scoped};
+use qbice::{executor, program::Registration, storage::intern::Interned};
 
-#[pernixc_query::executor(key(InTargetKey), name(InTargetExecutor))]
-pub async fn implemented_in_target_executor(
+#[executor(config = Config)]
+pub async fn in_target_executor(
     key: &InTargetKey,
     engine: &TrackedEngine,
-) -> Result<
-    Arc<HashSet<Global<pernixc_symbol::ID>>>,
-    pernixc_query::runtime::executor::CyclicError,
-> {
+) -> Interned<HashSet<Global<pernixc_symbol::ID>>> {
     if key.target_id == TargetID::CORE {
         assert_ne!(
             key.implementable_id.target_id,
@@ -27,117 +24,109 @@ pub async fn implemented_in_target_executor(
 
         // core library will never implement traits or markers from other
         // targets
-        return Ok(Arc::new(HashSet::default()));
+        return engine.intern(HashSet::default());
     }
 
     let implementations = engine.get_all_implements_ids(key.target_id).await;
 
-    // SAFETY: invokes implements calculation in parallel
-    unsafe {
-        engine.start_parallel();
-    }
+    let result = scoped!(|scoped| async move {
+        let mut results = HashSet::default();
 
-    let result: Result<_, executor::CyclicError> =
-        scoped!(|scoped| async move {
-            let mut results = HashSet::default();
+        // PARALLEL: invokes implements calculation in parallel
+        unsafe {
+            engine.start_unordered_callee_group();
+        }
 
-            for implementation in implementations.chunk_for_tasks().map(|x| {
-                x.iter()
-                    .map(|x| key.target_id.make_global(*x))
-                    .collect::<Vec<_>>()
-            }) {
-                let engine = engine.clone();
+        for implementation in implementations.chunk_for_tasks().map(|x| {
+            x.iter().map(|x| key.target_id.make_global(*x)).collect::<Vec<_>>()
+        }) {
+            let engine = engine.clone();
 
-                scoped.spawn(async move {
-                    let mut results = Vec::new();
+            scoped.spawn(async move {
+                let mut results = Vec::new();
 
-                    for implementation in implementation {
-                        let Some(implemented_id) = engine
-                            .get_implements(implementation)
-                            .await?
-                            .map(|x| (implementation, x))
-                        else {
-                            continue;
-                        };
+                for implementation in implementation {
+                    let Some(implemented_id) = engine
+                        .get_implements(implementation)
+                        .await
+                        .map(|x| (implementation, x))
+                    else {
+                        continue;
+                    };
 
-                        results.push(implemented_id);
-                    }
+                    results.push(implemented_id);
+                }
 
-                    Ok(results)
-                });
-            }
+                results
+            });
+        }
 
-            while let Some(result) = scoped.next().await {
-                for (implementation_id, implemented_id) in result? {
-                    if implemented_id == key.implementable_id {
-                        results.insert(implementation_id);
-                    }
+        while let Some(result) = scoped.next().await {
+            for (implementation_id, implemented_id) in result {
+                if implemented_id == key.implementable_id {
+                    results.insert(implementation_id);
                 }
             }
+        }
 
-            Ok(Arc::new(results))
-        });
+        // End of parallel section
+        unsafe {
+            engine.end_unordered_callee_group();
+        }
 
-    // SAFETY: invokes implements calculation in parallel
-    unsafe {
-        engine.end_parallel();
-    }
+        engine.intern_unsized(results)
+    });
+
+    // PARALLEL: invokes implements calculation in parallel
 
     result
 }
 
-pernixc_register::register!(InTargetKey, InTargetExecutor);
+#[distributed_slice(PERNIX_PROGRAM)]
+static IN_TARGET_EXECUTOR: Registration<Config> =
+    Registration::new::<InTargetKey, InTargetExecutor>();
 
-pernixc_register::register!(
+#[distributed_slice(PERNIX_PROGRAM)]
+static IMPLEMENTED_EXECUTOR: Registration<Config> = Registration::new::<
     pernixc_semantic_element::implemented::Key,
-    Executor
-);
+    ImplementedExecutor,
+>();
 
-#[pernixc_query::executor(
-    key(pernixc_semantic_element::implemented::Key),
-    name(Executor)
-)]
+#[executor(config = Config)]
 pub async fn implemented_executor(
     key: &pernixc_semantic_element::implemented::Key,
     engine: &TrackedEngine,
-) -> Result<
-    Arc<HashSet<Global<pernixc_symbol::ID>>>,
-    pernixc_query::runtime::executor::CyclicError,
-> {
+) -> Interned<HashSet<Global<pernixc_symbol::ID>>> {
     let target_ids = engine.get_all_target_ids().await;
 
-    // SAFETY: invokes implements calculation in parallel
-    unsafe {
-        engine.start_parallel();
-    }
+    let result = scoped!(|scoped| async move {
+        let mut results = HashSet::default();
 
-    let result: Result<_, executor::CyclicError> =
-        scoped!(|scoped| async move {
-            let mut results = HashSet::default();
+        // PARALLEL: invokes implements calculation in parallel
+        unsafe {
+            engine.start_unordered_callee_group();
+        }
 
-            for target_id in target_ids.iter() {
-                let engine = engine.clone();
-                let key = InTargetKey {
-                    implementable_id: key.0,
-                    target_id: *target_id,
-                };
+        for target_id in target_ids.iter() {
+            let engine = engine.clone();
+            let key = InTargetKey {
+                implementable_id: key.symbol_id,
+                target_id: *target_id,
+            };
 
-                scoped.spawn(async move { engine.query(&key).await });
-            }
+            scoped.spawn(async move { engine.query(&key).await });
+        }
 
-            while let Some(result) = scoped.next().await {
-                let result = result?;
+        while let Some(result) = scoped.next().await {
+            results.extend(result.iter().copied());
+        }
 
-                results.extend(result.iter().copied());
-            }
+        unsafe {
+            engine.end_unordered_callee_group();
+        }
 
-            Ok(Arc::new(results))
-        });
-
-    // SAFETY: invokes implements calculation in parallel
-    unsafe {
-        engine.end_parallel();
-    }
+        engine.intern(results)
+    });
 
     result
 }

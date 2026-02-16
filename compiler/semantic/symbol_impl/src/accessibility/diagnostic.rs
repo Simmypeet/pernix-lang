@@ -1,10 +1,8 @@
 //! Contains the diagnostics related to accessibility of symbols.
 
 use pernixc_diagnostic::{Highlight, Report, Severity};
-use pernixc_query::{TrackedEngine, runtime::executor};
-use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_qbice::TrackedEngine;
 use pernixc_source_file::ByteIndex;
-use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{
     ID,
     accessibility::{accessibility_description, get_accessibility},
@@ -13,6 +11,7 @@ use pernixc_symbol::{
     span::get_span,
 };
 use pernixc_target::TargetID;
+use qbice::{Decode, Encode, Identifiable, StableHash};
 
 /// Enumeration of all diagnostics related to accessibility.
 #[derive(
@@ -24,9 +23,10 @@ use pernixc_target::TargetID;
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
+    Identifiable,
 )]
 #[allow(missing_docs)]
 pub enum Diagnostic {
@@ -37,8 +37,7 @@ impl Report for Diagnostic {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         match self {
             Self::SymbolIsMoreAccessibleThanParent(diagnostic) => {
                 diagnostic.report(engine).await
@@ -57,8 +56,8 @@ impl Report for Diagnostic {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct SymbolIsMoreAccessibleThanParent {
@@ -76,8 +75,7 @@ impl Report for SymbolIsMoreAccessibleThanParent {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let symbol_id = self.target_id.make_global(self.symbol_id);
         let parent_id = self.target_id.make_global(self.parent_id);
 
@@ -111,14 +109,14 @@ impl Report for SymbolIsMoreAccessibleThanParent {
             )
             .await;
 
-        Ok(pernixc_diagnostic::Rendered {
+        pernixc_diagnostic::Rendered {
             primary_highlight: symbol_span.map(|span| {
                 Highlight::new(
                     span,
                     Some(format!(
                         "the symbol `{}` in `{parent_qualified_name}` is more \
                          accessible than the parent symbol",
-                        symbol_name.as_str()
+                        symbol_name.as_ref(),
                     )),
                 )
             }),
@@ -130,7 +128,7 @@ impl Report for SymbolIsMoreAccessibleThanParent {
             help_message: Some(format!(
                 "the symbol `{}` is {symbol_accessibility_description} while \
                  the parent symbol is {parent_accessibility_description}",
-                symbol_name.as_str()
+                symbol_name.as_ref(),
             )),
             related: parent_span
                 .map(|x| {
@@ -144,6 +142,6 @@ impl Report for SymbolIsMoreAccessibleThanParent {
                 })
                 .into_iter()
                 .collect(),
-        })
+        }
     }
 }

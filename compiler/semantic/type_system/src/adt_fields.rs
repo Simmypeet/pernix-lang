@@ -1,8 +1,12 @@
 //! Defines the convenient helper query [`get_adt_fields`].
 
-use std::{ops::Deref, sync::Arc};
+use std::ops::Deref;
 
-use pernixc_query::{TrackedEngine, runtime::executor};
+use linkme::distributed_slice;
+use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
+use pernixc_semantic_element::{
+    fields::get_fields, variant::get_variant_associated_type,
+};
 use pernixc_symbol::{
     kind::{Kind, get_kind},
     member::get_members,
@@ -12,22 +16,41 @@ use pernixc_term::{
     generic_parameters::get_generic_parameters, instantiation::Instantiation,
     r#type::Type,
 };
+use qbice::{
+    Decode, Encode, Query, StableHash, executor, program::Registration,
+    storage::intern::Interned,
+};
 
 /// Retrieves all the type terms that appear as field in the given ADT (struct
 /// or enum) ID.
-#[pernixc_query::query(
-    key(Key),
-    value(Arc<[Type]>),
-    id(Global<pernixc_symbol::ID>),
-    executor(Executor),
-    extend(method(get_adt_fields))
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Query,
 )]
-pub async fn adt_fields(
-    adt_id: Global<pernixc_symbol::ID>,
+#[value(Interned<[Type]>)]
+#[extend(name = get_adt_fields, by_val)]
+pub struct Key {
+    /// The global ID of the ADT (struct or enum) symbol.
+    pub adt_id: Global<pernixc_symbol::ID>,
+}
+
+#[executor(config = Config)]
+async fn adt_fields_executor(
+    &Key { adt_id }: &Key,
     engine: &TrackedEngine,
-) -> Result<Arc<[Type]>, executor::CyclicError> {
+) -> Interned<[Type]> {
     let kind = engine.get_kind(adt_id).await;
-    let mut results = Vec::new();
+    let mut results: Vec<Type> = Vec::new();
 
     match kind {
         Kind::Enum => {
@@ -40,10 +63,10 @@ pub async fn adt_fields(
                 .chain(variants.unnameds.iter().copied())
             {
                 let Some(ty) = engine
-                    .query(&pernixc_semantic_element::variant::Key(
+                    .get_variant_associated_type(
                         adt_id.target_id.make_global(variant_id),
-                    ))
-                    .await?
+                    )
+                    .await
                 else {
                     continue;
                 };
@@ -55,8 +78,8 @@ pub async fn adt_fields(
         Kind::Struct => {
             results.extend(
                 engine
-                    .query(&pernixc_semantic_element::fields::Key(adt_id))
-                    .await?
+                    .get_fields(adt_id)
+                    .await
                     .fields
                     .iter()
                     .map(|x| x.1.r#type.clone()),
@@ -66,10 +89,12 @@ pub async fn adt_fields(
         _ => panic!("should've been either an `enum` or `struct` symbol"),
     }
 
-    Ok(results.into())
+    engine.intern_unsized(results)
 }
 
-pernixc_register::register!(Key, Executor);
+#[distributed_slice(PERNIX_PROGRAM)]
+static ADT_FIELDS_EXECUTOR: Registration<Config> =
+    Registration::new::<Key, AdtFieldsExecutor>();
 
 /// Retrieves all the fields of an ADT (struct or enum) with an instantiation
 /// from the given [`generic_arguments`] applied.
@@ -78,9 +103,9 @@ pub async fn get_instantiated_adt_fields(
     self: &TrackedEngine,
     adt_id: Global<pernixc_symbol::ID>,
     generic_arguments: &pernixc_term::generic_arguments::GenericArguments,
-) -> Result<Vec<Type>, executor::CyclicError> {
-    let types = self.get_adt_fields(adt_id).await?;
-    let generic_parameters = self.get_generic_parameters(adt_id).await?;
+) -> Vec<Type> {
+    let types = self.get_adt_fields(adt_id).await;
+    let generic_parameters = self.get_generic_parameters(adt_id).await;
 
     let instantiation = Instantiation::from_generic_arguments(
         generic_arguments.clone(),
@@ -96,5 +121,5 @@ pub async fn get_instantiated_adt_fields(
         results.push(ty);
     }
 
-    Ok(results)
+    results
 }

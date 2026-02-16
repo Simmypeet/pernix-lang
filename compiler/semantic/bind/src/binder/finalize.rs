@@ -98,7 +98,7 @@ impl Binder<'_> {
             let symbol_kind = self.engine.get_kind(self.current_site()).await;
             if symbol_kind.has_function_body() {
                 let return_ty =
-                    self.engine.get_return_type(self.current_site()).await?;
+                    self.engine.get_return_type(self.current_site()).await;
 
                 // no checking need
                 if *return_ty
@@ -127,7 +127,7 @@ impl Binder<'_> {
         }
 
         // transform inference types
-        self.transform_inference(handler).await?;
+        self.transform_inference(handler).await;
 
         let current_site = self.current_site();
         let ty_env = TyEnvironment::new(

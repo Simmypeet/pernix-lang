@@ -7,8 +7,9 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-fnv = { workspace = true }
+fxhash = { workspace = true }
 dashmap = { workspace = true }
+qbice.workspace = true
 
 [lints]
 workspace = true

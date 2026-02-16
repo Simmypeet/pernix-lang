@@ -12,8 +12,7 @@ pub use constant_type::ConstantType;
 use enum_as_inner::EnumAsInner;
 pub use marker::{Negative as NegativeMarker, Positive as PositiveMarker};
 pub use outlives::Outlives;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode, StableHash};
 pub use r#trait::{Negative as NegativeTrait, Positive as PositiveTrait};
 pub use tuple::Tuple;
 
@@ -33,8 +32,8 @@ use crate::{
     Hash,
     EnumAsInner,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     derive_more::From,
 )]
 #[allow(missing_docs)]
@@ -116,7 +115,7 @@ impl Compatible<TraitMember, Type> {
 impl crate::display::Display for Predicate {
     async fn fmt(
         &self,
-        engine: &pernixc_query::TrackedEngine,
+        engine: &pernixc_qbice::TrackedEngine,
         formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
         match self {

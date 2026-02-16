@@ -1,7 +1,7 @@
 //! Contains the [`get_variance_of`] function.
 
 use pernixc_extend::extend;
-use pernixc_query::TrackedEngine;
+use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::variance::{Variance, get_variances};
 use pernixc_symbol::kind::{Kind, get_kind};
 use pernixc_term::{
@@ -30,14 +30,14 @@ pub async fn get_variance_of(
     ty: &Type,
     parent_variance: Variance,
     mut locations: impl Iterator<Item = TermLocation>,
-) -> Result<Variance, pernixc_query::runtime::executor::CyclicError> {
+) -> Variance {
     let Some(location) = locations.next() else {
-        return Ok(parent_variance);
+        return parent_variance;
     };
 
     // early return if the parent variance is invariant
     if parent_variance == Variance::Invariant {
-        return Ok(Variance::Invariant);
+        return Variance::Invariant;
     }
 
     match location {
@@ -58,21 +58,21 @@ pub async fn get_variance_of(
                     if kind.is_adt() {
                         let id = *self
                             .get_generic_parameters(symbol.id)
-                            .await?
+                            .await
                             .lifetime_order()
                             .get(location.0)
                             .unwrap();
 
-                        Ok(parent_variance.xfrom(
+                        parent_variance.xfrom(
                             self.get_variances(symbol.id)
-                                .await?
+                                .await
                                 .variances_by_lifetime_ids
                                 .get(&id)
                                 .copied()
                                 .unwrap(),
-                        ))
+                        )
                     } else {
-                        Ok(parent_variance.xfrom(Variance::Invariant))
+                        parent_variance.xfrom(Variance::Invariant)
                     }
                 }
 
@@ -88,7 +88,7 @@ pub async fn get_variance_of(
                     // there's no sub-term in the lifetime
                     assert!(locations.next().is_none());
 
-                    Ok(parent_variance.xfrom(Variance::Invariant))
+                    parent_variance.xfrom(Variance::Invariant)
                 }
 
                 // lifetime in the reference
@@ -99,7 +99,7 @@ pub async fn get_variance_of(
                     // there's no sub-term in the lifetime
                     assert!(locations.next().is_none());
 
-                    Ok(parent_variance.xfrom(Variance::Covariant))
+                    parent_variance.xfrom(Variance::Covariant)
                 }
 
                 _ => panic!("invalid location; found {location:?} {ty:?}"),
@@ -119,14 +119,14 @@ pub async fn get_variance_of(
                     if kind.is_adt() {
                         let id = *self
                             .get_generic_parameters(symbol.id)
-                            .await?
+                            .await
                             .type_order()
                             .get(location.0)
                             .unwrap();
 
                         let next_variance = parent_variance.xfrom(
                             self.get_variances(symbol.id)
-                                .await?
+                                .await
                                 .variances_by_type_ids
                                 .get(&id)
                                 .copied()
@@ -146,7 +146,7 @@ pub async fn get_variance_of(
                         ))
                         .await
                     } else if kind == Kind::Function {
-                        Ok(parent_variance.xfrom(Variance::Invariant))
+                        parent_variance.xfrom(Variance::Invariant)
                     } else {
                         panic!("expected adt or function but found {kind:?}",);
                     }

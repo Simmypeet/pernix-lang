@@ -1,11 +1,11 @@
 //! Contains the logic for building the cpatures.
 
-use flexstr::SharedStr;
 use getset::Getters;
 use pernixc_arena::Arena;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_semantic_element::{fields::get_fields, parameter::get_parameters};
 use pernixc_term::r#type::Type;
+use qbice::storage::intern::Interned;
 
 use crate::{
     address::{self, Address, Memory},
@@ -30,7 +30,7 @@ impl Builder {
     /// be already inserted.
     pub fn insert_named_binding(
         &mut self,
-        new_name: SharedStr,
+        new_name: Interned<str>,
         name_binding: &NameBinding,
         address_ty: Type,
     ) {
@@ -374,7 +374,7 @@ impl DropOrder {
                         let parameters = env
                             .tracked_engine()
                             .get_parameters(env.current_site())
-                            .await?;
+                            .await;
 
                         RootOrder::Parameter(ParameterOrder {
                             declaration_order: parameters
@@ -439,7 +439,7 @@ impl DropOrder {
                 let struct_ty = ty.as_symbol().unwrap();
                 let struct_id = struct_ty.id;
 
-                let fields = env.tracked_engine().get_fields(struct_id).await?;
+                let fields = env.tracked_engine().get_fields(struct_id).await;
 
                 let field_index = fields
                     .field_declaration_order

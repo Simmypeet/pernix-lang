@@ -1,23 +1,43 @@
 //! Contains the definition of [`GenericParameters`] component.
-use std::{collections::hash_map::Entry, sync::Arc};
+use std::collections::hash_map::Entry;
 
-use flexstr::SharedStr;
 use getset::Getters;
 use paste::paste;
 use pernixc_arena::Arena;
 use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::Value;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
-use pernixc_stable_type_id::Identifiable;
 use pernixc_symbol::MemberID;
 use pernixc_target::Global;
+use qbice::{
+    Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned,
+};
 
 use crate::{
     constant::Constant, generic_arguments::GenericArguments,
     lifetime::Lifetime, r#type::Type,
 };
+
+/// Key for querying generic parameters for a given global symbol ID.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Query,
+)]
+#[value(Interned<GenericParameters>)]
+#[extend(name = get_generic_parameters, by_val)]
+pub struct Key {
+    /// The global symbol ID to get the generic parameters for.
+    pub symbol_id: Global<pernixc_symbol::ID>,
+}
 
 /// Represents the generic parameters (e.g. `['a, T, const C: TYPE]`).
 /// It contains the list of lifetime parameters, type parameters, and constant
@@ -29,16 +49,12 @@ use crate::{
     PartialEq,
     Eq,
     Default,
-    Identifiable,
     Getters,
     StableHash,
-    Serialize,
-    Deserialize,
-    Value,
+    Encode,
+    Decode,
+    Identifiable,
 )]
-#[id(Global<pernixc_symbol::ID>)]
-#[value(Arc<GenericParameters>)]
-#[extend(method(get_generic_parameters))]
 pub struct GenericParameters {
     /// List of defined lifetime parameters.
     #[get = "pub"]
@@ -67,17 +83,17 @@ pub struct GenericParameters {
     /// Maps the name of the lifetime parameter to its ID.
     #[get = "pub"]
     lifetime_parameter_ids_by_name:
-        HashMap<SharedStr, pernixc_arena::ID<LifetimeParameter>>,
+        HashMap<Interned<str>, pernixc_arena::ID<LifetimeParameter>>,
 
     /// Maps the name of the type parameter to its ID.
     #[get = "pub"]
     type_parameter_ids_by_name:
-        HashMap<SharedStr, pernixc_arena::ID<TypeParameter>>,
+        HashMap<Interned<str>, pernixc_arena::ID<TypeParameter>>,
 
     /// Maps the name of the constant parameter to its ID.
     #[get = "pub"]
     constant_parameter_ids_by_name:
-        HashMap<SharedStr, pernixc_arena::ID<ConstantParameter>>,
+        HashMap<Interned<str>, pernixc_arena::ID<ConstantParameter>>,
 
     /// List of default type parameters to be used when the generic parameters
     /// are not specified.
@@ -97,7 +113,7 @@ pub trait GenericParameter: Sized + Send + Sync + 'static {
     ///
     /// If the generic parameter is anonymous, (i.e. elided lifetime parameter),
     /// then this method returns `None`.
-    fn name(&self) -> &SharedStr;
+    fn name(&self) -> &Interned<str>;
 
     /// Gets the span where the generic parameter is declared.
     fn span(&self) -> Option<&RelativeSpan>;
@@ -120,7 +136,7 @@ pub trait GenericParameter: Sized + Send + Sync + 'static {
     /// id.
     fn get_generic_parameters_ids_by_name_map(
         generic_parameters: &GenericParameters,
-    ) -> &HashMap<SharedStr, pernixc_arena::ID<Self>>;
+    ) -> &HashMap<Interned<str>, pernixc_arena::ID<Self>>;
 
     /// Adds a new generic parameter to the list of generic parameters.
     ///
@@ -144,20 +160,21 @@ pub trait GenericParameter: Sized + Send + Sync + 'static {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
+    Identifiable,
 )]
 pub struct LifetimeParameter {
     /// The name of the lifetime parameter (if none, then it is anonymous
     /// lifetime parameter )
-    pub name: SharedStr,
+    pub name: Interned<str>,
 
     /// Location of where the lifetime parameter is declared.
     pub span: Option<RelativeSpan>,
 }
 
 impl GenericParameter for LifetimeParameter {
-    fn name(&self) -> &SharedStr { &self.name }
+    fn name(&self) -> &Interned<str> { &self.name }
 
     fn span(&self) -> Option<&RelativeSpan> { self.span.as_ref() }
 
@@ -177,7 +194,7 @@ impl GenericParameter for LifetimeParameter {
 
     fn get_generic_parameters_ids_by_name_map(
         generic_parameters: &GenericParameters,
-    ) -> &HashMap<SharedStr, pernixc_arena::ID<Self>> {
+    ) -> &HashMap<Interned<str>, pernixc_arena::ID<Self>> {
         &generic_parameters.lifetime_parameter_ids_by_name
     }
 
@@ -199,19 +216,19 @@ impl GenericParameter for LifetimeParameter {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct TypeParameter {
     /// The name of the type parameter.
-    pub name: SharedStr,
+    pub name: Interned<str>,
 
     /// The kind of the type parameter.
     pub span: Option<RelativeSpan>,
 }
 
 impl GenericParameter for TypeParameter {
-    fn name(&self) -> &SharedStr { &self.name }
+    fn name(&self) -> &Interned<str> { &self.name }
 
     fn span(&self) -> Option<&RelativeSpan> { self.span.as_ref() }
 
@@ -231,7 +248,7 @@ impl GenericParameter for TypeParameter {
 
     fn get_generic_parameters_ids_by_name_map(
         generic_parameters: &GenericParameters,
-    ) -> &HashMap<SharedStr, pernixc_arena::ID<Self>> {
+    ) -> &HashMap<Interned<str>, pernixc_arena::ID<Self>> {
         &generic_parameters.type_parameter_ids_by_name
     }
 
@@ -253,23 +270,21 @@ impl GenericParameter for TypeParameter {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct ConstantParameter {
     /// The name of the constant parameter.
-    pub name: SharedStr,
+    pub name: Interned<str>,
 
     /// The type of the constant parameter.
     pub r#type: Type,
 
     /// The type of the constant parameter.
-    #[serde(skip)]
     pub span: Option<RelativeSpan>,
 }
-
 impl GenericParameter for ConstantParameter {
-    fn name(&self) -> &SharedStr { &self.name }
+    fn name(&self) -> &Interned<str> { &self.name }
 
     fn span(&self) -> Option<&RelativeSpan> { self.span.as_ref() }
 
@@ -289,7 +304,7 @@ impl GenericParameter for ConstantParameter {
 
     fn get_generic_parameters_ids_by_name_map(
         generic_parameters: &GenericParameters,
-    ) -> &HashMap<SharedStr, pernixc_arena::ID<Self>> {
+    ) -> &HashMap<Interned<str>, pernixc_arena::ID<Self>> {
         &generic_parameters.constant_parameter_ids_by_name
     }
 
@@ -312,8 +327,8 @@ impl GenericParameter for ConstantParameter {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 #[allow(missing_docs)]
 pub enum GenericKind {

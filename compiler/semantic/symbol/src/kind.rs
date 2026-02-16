@@ -2,10 +2,8 @@
 
 use std::{fmt::Debug, hash::Hash};
 
-use pernixc_query::Value;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
+use qbice::{Decode, Encode, Identifiable, Query, StableHash};
 
 use crate::ID;
 
@@ -21,15 +19,13 @@ use crate::ID;
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     Default,
     StableHash,
-    Value,
+    Identifiable,
 )]
 #[allow(missing_docs)]
-#[id(Global<ID>)]
-#[extend(method(get_kind), no_cyclic)]
 pub enum Kind {
     #[default]
     Module,
@@ -52,6 +48,28 @@ pub enum Kind {
     ImplementationType,
     ImplementationFunction,
     ImplementationConstant,
+}
+
+/// The key type used with [`TrackedEngine`] to access the kind of a symbol.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    Query,
+    StableHash,
+)]
+#[value(Kind)]
+#[extend(name = get_kind, by_val)]
+pub struct Key {
+    /// The global ID of the symbol to get the kind for.
+    pub symbol_id: Global<ID>,
 }
 
 impl Kind {

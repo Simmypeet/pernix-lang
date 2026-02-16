@@ -1,10 +1,9 @@
 use std::fmt::Write;
 
 use derive_new::new;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_symbol::name::get_qualified_name;
 use pernixc_target::Global;
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     generic_arguments::GenericArguments, instantiation::Instantiation,
@@ -20,8 +19,8 @@ use crate::{
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     new,
 )]
 pub struct Positive {
@@ -48,7 +47,7 @@ impl Positive {
 impl crate::display::Display for Positive {
     async fn fmt(
         &self,
-        engine: &pernixc_query::TrackedEngine,
+        engine: &pernixc_qbice::TrackedEngine,
         formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
         let qualified_name = engine.get_qualified_name(self.marker_id).await;
@@ -67,8 +66,8 @@ impl crate::display::Display for Positive {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     new,
 )]
 pub struct Negative {
@@ -95,7 +94,7 @@ impl Negative {
 impl crate::display::Display for Negative {
     async fn fmt(
         &self,
-        engine: &pernixc_query::TrackedEngine,
+        engine: &pernixc_qbice::TrackedEngine,
         formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
         let qualified_name = engine.get_qualified_name(self.marker_id).await;

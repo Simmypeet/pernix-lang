@@ -4,10 +4,8 @@ use std::ops::Deref;
 
 use pernixc_arena::ID;
 use pernixc_hash::HashMap;
-use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
+use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::fields::Field;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
@@ -15,6 +13,7 @@ use pernixc_term::{
     lifetime::Lifetime,
     r#type::Type,
 };
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Values,
@@ -26,7 +25,7 @@ use crate::{
 };
 
 /// Represents a struct value.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, StableHash)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, StableHash)]
 pub struct Struct {
     /// The struct ID of the struct.
     pub struct_id: Global<pernixc_symbol::ID>,
@@ -64,10 +63,10 @@ pub(super) async fn transform_struct<
     transformer: &mut T,
     span: pernixc_lexical::tree::RelativeSpan,
     engine: &TrackedEngine,
-) -> Result<(), CyclicError> {
+) {
     for value in st.initializers_by_field_id.values_mut() {
         if let Some(literal) = value.as_literal_mut() {
-            literal.transform(transformer).await?;
+            literal.transform(transformer).await;
         }
     }
 
@@ -78,7 +77,7 @@ pub(super) async fn transform_struct<
         engine,
         &mut st.generic_arguments,
     )
-    .await
+    .await;
 }
 
 impl TypeOf<&Struct> for Values {

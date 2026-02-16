@@ -2,9 +2,8 @@
 
 use pernixc_arena::ID;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_term::r#type::Type;
+use qbice::{Decode, Encode, StableHash};
 
 use crate::scope;
 
@@ -17,8 +16,8 @@ use crate::scope;
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Alloca {

@@ -1,6 +1,5 @@
-use std::sync::Arc;
-
-use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
+use linkme::distributed_slice;
+use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_symbol::{
     ID,
     accessibility::{
@@ -14,6 +13,10 @@ use pernixc_symbol::{
     syntax::get_implements_member_access_modifier,
 };
 use pernixc_target::Global;
+use qbice::{
+    Decode, Encode, Query, StableHash, executor, program::Registration,
+    storage::intern::Interned,
+};
 
 use crate::{
     accessibility::diagnostic::SymbolIsMoreAccessibleThanParent,
@@ -22,11 +25,43 @@ use crate::{
 
 pub mod diagnostic;
 
-#[pernixc_query::executor(key(Key), name(Executor))]
-pub async fn executor(
-    &Key(id): &Key,
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    Query,
+)]
+#[value(Option<Accessibility<ID>>)]
+pub struct ProjectionKey {
+    pub symbol_id: Global<pernixc_symbol::ID>,
+}
+
+#[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
+async fn projection_executor(
+    key: &ProjectionKey,
     engine: &TrackedEngine,
-) -> Result<Accessibility<ID>, CyclicError> {
+) -> Option<Accessibility<ID>> {
+    let table = engine.get_table_of_symbol(key.symbol_id).await?;
+    table.accessibilities.get(&key.symbol_id.id).copied()
+}
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static PROJECTION_EXECUTOR: Registration<Config> =
+    Registration::new::<ProjectionKey, ProjectionExecutor>();
+
+#[executor(config = Config)]
+async fn accessibility_executor(
+    &Key { symbol_id: id }: &Key,
+    engine: &TrackedEngine,
+) -> Accessibility<ID> {
     match engine.get_kind(id).await {
         Kind::Module
         | Kind::Struct
@@ -41,21 +76,22 @@ pub async fn executor(
         | Kind::ExternFunction
         | Kind::Effect
         | Kind::Function => {
-            let table = engine.get_table_of_symbol(id).await;
-            Ok(table.accessibilities.get(&id.id).copied().unwrap())
+            engine.query(&ProjectionKey { symbol_id: id }).await.unwrap()
         }
 
-        Kind::EffectOperation | Kind::Variant => Ok(engine
-            .get_accessibility(Global::new(
-                id.target_id,
-                engine.get_parent(id).await.unwrap(),
-            ))
-            .await),
+        Kind::EffectOperation | Kind::Variant => {
+            engine
+                .get_accessibility(Global::new(
+                    id.target_id,
+                    engine.get_parent(id).await.unwrap(),
+                ))
+                .await
+        }
 
         Kind::PositiveImplementation | Kind::NegativeImplementation => {
             // normally, you wouldn't retrieve the accessibility of the
             // implementation we'll return default public
-            Ok(Accessibility::Public)
+            Accessibility::Public
         }
         Kind::ImplementationType
         | Kind::ImplementationFunction
@@ -66,44 +102,60 @@ pub async fn executor(
             match access_modifier {
                 Some(pernixc_syntax::AccessModifier::Private(_)) => {
                     let module_id = engine.get_closest_module_id(id).await;
-                    Ok(Accessibility::Scoped(module_id))
+                    Accessibility::Scoped(module_id)
                 }
 
                 Some(pernixc_syntax::AccessModifier::Public(_)) => {
-                    Ok(Accessibility::Public)
+                    Accessibility::Public
                 }
 
                 Some(pernixc_syntax::AccessModifier::Internal(_)) => {
-                    Ok(Accessibility::Scoped(
+                    Accessibility::Scoped(
                         engine.get_target_root_module_id(id.target_id).await,
-                    ))
+                    )
                 }
 
-                None => Ok(Accessibility::Public),
+                None => Accessibility::Public,
             }
         }
     }
 }
 
-pernixc_register::register!(Key, Executor);
+#[distributed_slice(PERNIX_PROGRAM)]
+static ACCESSIBILITY_EXECUTOR: Registration<Config> =
+    Registration::new::<Key, AccessibilityExecutor>();
 
 /// A query for checking if the trait has members that are more accessible than
 /// itself.
-#[pernixc_query::query(
-    key(MemberIsMoreAaccessibleKey),
-    id(Global<ID>),
-    value(Option<Arc<[diagnostic::Diagnostic]>>),
-    executor(MemberIsMoreAccessibleExecutor)
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    qbice::Encode,
+    qbice::Decode,
+    qbice::StableHash,
+    qbice::Query,
 )]
-pub async fn member_is_more_accessible_executor(
-    trait_id: Global<ID>,
+#[value(Option<Interned<[diagnostic::Diagnostic]>>)]
+pub struct MemberIsMoreAaccessibleKey {
+    pub trait_id: Global<ID>,
+}
+
+#[executor(config = Config)]
+async fn member_is_more_accessible_executor(
+    key: &MemberIsMoreAaccessibleKey,
     tracked_engine: &TrackedEngine,
-) -> Result<Option<Arc<[diagnostic::Diagnostic]>>, CyclicError> {
+) -> Option<Interned<[diagnostic::Diagnostic]>> {
+    let trait_id = key.trait_id;
     let trait_accessibility: Accessibility<ID> =
         tracked_engine.get_accessibility(trait_id).await;
 
-    let members: Arc<pernixc_symbol::member::Member> =
-        tracked_engine.get_members(trait_id).await;
+    let members = tracked_engine.get_members(trait_id).await;
 
     let mut diagnostic = Vec::new();
 
@@ -141,13 +193,15 @@ pub async fn member_is_more_accessible_executor(
     }
 
     if diagnostic.is_empty() {
-        Ok(None)
+        None
     } else {
-        Ok(Some(Arc::from(diagnostic)))
+        Some(tracked_engine.intern_unsized(diagnostic))
     }
 }
 
-pernixc_register::register!(
-    MemberIsMoreAaccessibleKey,
-    MemberIsMoreAccessibleExecutor
-);
+#[distributed_slice(PERNIX_PROGRAM)]
+static MEMBER_IS_MORE_ACCESSIBLE_EXECUTOR: Registration<Config> =
+    Registration::new::<
+        MemberIsMoreAaccessibleKey,
+        MemberIsMoreAccessibleExecutor,
+    >();

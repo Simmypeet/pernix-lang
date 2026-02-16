@@ -2,16 +2,14 @@
 
 use std::{fmt::Debug, marker::PhantomData};
 
-use pernixc_serialize::{
-    Deserialize, Serialize, de::Deserializer, ser::Serializer,
-};
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode, StableHash};
 
 /// A new type wrapper for representing inference tyep variable when building
 /// the IR.
 ///
 /// Since the language only allows type inference in the function body, this
 /// inference instance should only exist in the function body.
+#[derive(Encode, Decode)]
 pub struct Variable<T: ?Sized> {
     index: u64,
 
@@ -76,29 +74,10 @@ impl<T> std::hash::Hash for Variable<T> {
 }
 
 impl<T> StableHash for Variable<T> {
-    fn stable_hash<H: pernixc_stable_hash::StableHasher + ?Sized>(
+    fn stable_hash<H: qbice::stable_hash::StableHasher + ?Sized>(
         &self,
         state: &mut H,
     ) {
         self.index.stable_hash(state);
-    }
-}
-
-impl<S: Serializer<E>, E, T> Serialize<S, E> for Variable<T> {
-    fn serialize(
-        &self,
-        serializer: &mut S,
-        extension: &E,
-    ) -> Result<(), S::Error> {
-        self.index.serialize(serializer, extension)
-    }
-}
-
-impl<D: Deserializer<E>, E, T> Deserialize<D, E> for Variable<T> {
-    fn deserialize(
-        deserializer: &mut D,
-        extension: &E,
-    ) -> Result<Self, D::Error> {
-        u64::deserialize(deserializer, extension).map(Self::new)
     }
 }

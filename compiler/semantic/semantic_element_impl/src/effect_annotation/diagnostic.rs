@@ -1,14 +1,13 @@
 use pernixc_diagnostic::{ByteIndex, Highlight, Report};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor};
+use pernixc_qbice::TrackedEngine;
 use pernixc_resolution::diagnostic::ForallLifetimeRedefinition;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{
     kind::get_kind, name::get_qualified_name, source_map::to_absolute_span,
 };
 use pernixc_target::Global;
 use pernixc_term::{display::Display, effect};
+use qbice::{Decode, Encode, Identifiable, StableHash};
 
 #[derive(
     Debug,
@@ -19,8 +18,9 @@ use pernixc_term::{display::Display, effect};
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
+    Identifiable,
     derive_more::From,
 )]
 #[allow(clippy::large_enum_variant)]
@@ -36,8 +36,7 @@ impl Report for Diagnostic {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         match self {
             Self::Resolution(d) => d.report(engine).await,
             Self::TypeSystem(d) => d.report(engine).await,
@@ -59,8 +58,8 @@ impl Report for Diagnostic {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct EffectExpected {
     /// The span of the unexpected symbol.
@@ -74,8 +73,7 @@ impl Report for EffectExpected {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let q_name = engine.get_qualified_name(self.found).await;
         let kind = engine.get_kind(self.found).await;
 
@@ -86,7 +84,7 @@ impl Report for EffectExpected {
             kind.kind_str(),
         );
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message(message)
             .primary_highlight(
                 Highlight::builder()
@@ -95,7 +93,7 @@ impl Report for EffectExpected {
                     .build(),
             )
             .severity(pernixc_diagnostic::Severity::Error)
-            .build())
+            .build()
     }
 }
 
@@ -110,8 +108,8 @@ impl Report for EffectExpected {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct AmbiguousEffectDefinition {
     /// The effect that was first defined with these arguments.
@@ -125,8 +123,7 @@ impl Report for AmbiguousEffectDefinition {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let effect_string =
             self.first_effect.write_to_string(engine).await.unwrap();
 
@@ -145,7 +142,7 @@ impl Report for AmbiguousEffectDefinition {
         let primary_span =
             engine.to_absolute_span(&self.ambiguos_spans[0]).await;
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message(message)
             .primary_highlight(
                 Highlight::builder()
@@ -157,6 +154,6 @@ impl Report for AmbiguousEffectDefinition {
             )
             .related(related)
             .severity(pernixc_diagnostic::Severity::Error)
-            .build())
+            .build()
     }
 }

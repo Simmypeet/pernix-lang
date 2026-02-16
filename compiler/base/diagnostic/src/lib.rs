@@ -3,12 +3,11 @@
 use std::future::Future;
 
 use bon::Builder;
-use pernixc_query::{TrackedEngine, runtime::executor};
-use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_qbice::TrackedEngine;
 // re-export
 pub use pernixc_source_file::ByteIndex;
 use pernixc_source_file::Span;
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode, Identifiable, StableHash};
 
 /// Implement this trait for a type that can report a diagnostic.
 ///
@@ -26,9 +25,7 @@ pub trait Report {
     fn report<'s, 'e>(
         &'s self,
         parameter: &'e TrackedEngine,
-    ) -> impl Future<Output = Result<Rendered<ByteIndex>, executor::CyclicError>>
-    + Send
-    + use<'s, 'e, Self>;
+    ) -> impl Future<Output = Rendered<ByteIndex>> + Send + use<'s, 'e, Self>;
 }
 
 /// Enumeration of the severity levels of a diagnostic.
@@ -41,20 +38,20 @@ pub trait Report {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub enum Severity {
-    /// An error that prevents the program from compiling.
-    Error,
+    /// An informational message that does not prevent the program from
+    /// compiling.
+    Info,
 
     /// A warning that does not prevent the program from compiling.
     Warning,
 
-    /// An informational message that does not prevent the program from
-    /// compiling.
-    Info,
+    /// An error that prevents the program from compiling.
+    Error,
 }
 
 /// Represents a region got displayed to the user with additional information
@@ -68,8 +65,8 @@ pub enum Severity {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     derive_new::new,
     Builder,
 )]
@@ -93,22 +90,23 @@ pub struct Highlight<L> {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
     Builder,
+    Identifiable,
 )]
 pub struct Rendered<L> {
+    /// The severity of the diagnostic.
+    #[builder(default = Severity::Error)]
+    pub severity: Severity,
+
     /// The span location where the diagnostic occurred.
     pub primary_highlight: Option<Highlight<L>>,
 
     /// The message to display to the user.
     #[builder(into)]
     pub message: String,
-
-    /// The severity of the diagnostic.
-    #[builder(default = Severity::Error)]
-    pub severity: Severity,
 
     /// The optional help message to display to the user. This will be
     /// displayed alongside the main message.

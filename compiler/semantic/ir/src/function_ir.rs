@@ -1,13 +1,12 @@
 //! Defines the intermediate representation of a function.
 
-use std::sync::Arc;
-
 use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 use pernixc_type_system::normalizer::Normalizer;
+use qbice::{
+    Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
+};
 
 use crate::{
     IRWithContext,
@@ -25,15 +24,12 @@ use crate::{
     PartialEq,
     Eq,
     Default,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
     Getters,
-    pernixc_query::Value,
+    Identifiable,
 )]
-#[id(Global<pernixc_symbol::ID>)]
-#[value(Arc<FunctionIR>)]
-#[extend(method(get_ir))]
 pub struct FunctionIR {
     /// The collection of all handler groups defined in the function body.
     #[get = "pub"]
@@ -91,8 +87,8 @@ impl FunctionIR {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     CopyGetters,
 )]
 pub struct OperationHandlerContext {
@@ -127,8 +123,8 @@ impl OperationHandlerContext {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     CopyGetters,
 )]
 pub struct DoContext {
@@ -154,8 +150,8 @@ impl DoContext {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 #[allow(missing_docs)]
 pub enum IRContext {
@@ -332,4 +328,26 @@ impl FunctionIR {
             },
         )
     }
+}
+
+/// Query key for retrieving [`FunctionIR`].
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    qbice::Query,
+)]
+#[value(Interned<FunctionIR>)]
+#[extend(name = get_function_ir, by_val)]
+pub struct Key {
+    /// The global ID of the function symbol.
+    pub function_id: Global<pernixc_symbol::ID>,
 }

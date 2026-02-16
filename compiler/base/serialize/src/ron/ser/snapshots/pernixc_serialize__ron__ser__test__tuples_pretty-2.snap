@@ -1,7 +1,0 @@
----
-source: compiler/base/serialize/src/ron/ser.rs
-expression: "to_ron_string_with_config(&single, config.clone()).unwrap()"
----
-(
-    42,
-)

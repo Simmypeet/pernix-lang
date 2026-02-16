@@ -3,16 +3,33 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: unsatisfied predicate
-   ╭─ compiler/e2e/test/snapshot/semantic_element/wf_check/forall_lifetimes_as_an_operand_in_outlives/main.pnx:27:29
-   │
-12 │         'b: 'a
-   │         ------ the required predicate was declared here
-   ·
-27 │ public type Second['a, T] = WithRequirement[&'a mut T]:
-   │                             ^^^^^^^^^^^^^^^^^^^^^^^^^^ the predicate `'a: 'static` is not satisfied
+  [error]: unsatisfied predicate
+    ╭─[compiler/e2e/test/snapshot/semantic_element/wf_check/forall_lifetimes_as_an_operand_in_outlives/main.pnx:12:9]
+ 11 │     where:
+ 12 │         'b: 'a
+    ·         ───┬──
+    ·            ╰── the required predicate was declared here
+ 13 │ 
+ 14 │ 
+ 15 │ public type WithRequirement[T] = T:
+ 16 │     where:
+ 17 │         trait for['x] Fizz['x, T]
+ 18 │ 
+ 19 │ 
+ 20 │ # this instantiation is valid
+ 21 │ public type First['a, T] = WithRequirement[&'a T]:
+ 22 │     where:
+ 23 │         T: 'a
+ 24 │ 
+ 25 │ 
+ 26 │ # this instantiation is invalid ('a: 'static is not satisfied) 
+ 27 │ public type Second['a, T] = WithRequirement[&'a mut T]:
+    ·                             ─────────────┬────────────
+    ·                                          ╰── the predicate `'a: 'static` is not satisfied
+ 28 │     where:
+    ╰────
 
-error: Compilation aborted due to 1 error(s)
+  [error]: Compilation aborted due to 1 error(s)
 
 
 

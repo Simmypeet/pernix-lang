@@ -2,7 +2,7 @@
 
 //! Contains all the definitions of the syntax tree
 
-use std::{path::Path, sync::Arc};
+use std::path::Path;
 
 use enum_as_inner::EnumAsInner;
 use expression::Expression;
@@ -14,12 +14,10 @@ use pernixc_lexical::{
 use pernixc_parser::{
     abstract_tree::{self, AbstractTree},
     expect::{self, Ext as _},
-    parser::{Parser as _, ast, ast_always_step_into_fragment},
+    parser::{ParserExt, ast, ast_always_step_into_fragment},
 };
-use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_target::TargetID;
+use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 use r#type::Type;
 
 pub mod expression;
@@ -63,8 +61,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         EnumAsInner,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
         StableHash
     )]
     pub enum AccessModifier {
@@ -92,8 +90,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize
+        Encode,
+        Decode,
     )]
     pub struct Elided {
         pub first_dot = '.',
@@ -120,8 +118,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize
+        Encode,
+        Decode,
     )]
     pub struct Lifetime {
         pub apostrophe: Punctuation = '\'',
@@ -216,8 +214,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize
+        Encode,
+        Decode,
     )]
     pub struct QualifiedIdentifier {
         pub root: QualifiedIdentifierRoot = ast::<QualifiedIdentifierRoot>(),
@@ -289,53 +287,22 @@ abstract_tree::abstract_tree! {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
-    pernixc_query::Key,
+    Encode,
+    Decode,
+    Query,
 )]
 #[value(
     Result<
-        (Option<item::module::Content>, Arc<[pernixc_parser::error::Error]>),
+        (Option<item::module::Content>, Interned<[pernixc_parser::error::Error]>),
         pernixc_source_file::Error
     >
 )]
 pub struct Key {
     /// The path to load the source file.
-    pub path: Arc<Path>,
+    pub path: Interned<Path>,
 
     /// The target ID that requested the source file parsing.
     pub target_id: TargetID,
-}
-
-pernixc_register::register!(Key, Executor, skip_cache);
-
-#[pernixc_query::executor(key(Key), name(Executor))]
-#[allow(clippy::type_complexity)]
-pub async fn parse_executor(
-    key: &Key,
-    engine: &TrackedEngine,
-) -> Result<
-    Result<
-        (Option<item::module::Content>, Arc<[pernixc_parser::error::Error]>),
-        pernixc_source_file::Error,
-    >,
-    CyclicError,
-> {
-    // load the token tree
-    let token_tree = match engine
-        .query(&pernixc_lexical::Key {
-            path: key.path.clone(),
-            target_id: key.target_id,
-        })
-        .await?
-    {
-        Ok(source_code) => source_code,
-        Err(error) => return Ok(Err(error)),
-    };
-
-    let (module, errors) = item::module::Content::parse(&token_tree.0);
-
-    Ok(Ok((module, Arc::from(errors.into_boxed_slice()))))
 }
 
 /// A key for retrieving the diagnostics that occurred while parsing the token
@@ -349,31 +316,12 @@ pub async fn parse_executor(
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
-    pernixc_query::Key,
+    Encode,
+    Decode,
+    Query,
 )]
-#[value(Result<Arc<[pernixc_parser::error::Error]>, pernixc_source_file::Error>)]
+#[value(Result<Interned<[pernixc_parser::error::Error]>, pernixc_source_file::Error>)]
 pub struct DiagnosticKey(pub Key);
-
-pernixc_register::register!(DiagnosticKey, DiagnosticExecutor);
-
-#[pernixc_query::executor(key(DiagnosticKey), name(DiagnosticExecutor))]
-#[allow(clippy::type_complexity)]
-pub async fn diagnostic_executor(
-    DiagnosticKey(key): &DiagnosticKey,
-    engine: &TrackedEngine,
-) -> Result<
-    Result<Arc<[pernixc_parser::error::Error]>, pernixc_source_file::Error>,
-    CyclicError,
-> {
-    let token_tree = match engine.query(key).await? {
-        Ok(token_tree) => token_tree,
-        Err(error) => return Ok(Err(error)),
-    };
-
-    Ok(Ok(token_tree.1))
-}
 
 #[cfg(test)]
 mod test;

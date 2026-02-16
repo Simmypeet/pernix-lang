@@ -10,20 +10,18 @@ rust-version.workspace = true
 arbitrary = ["dep:proptest", "pernixc_target/arbitrary"]
 
 [dependencies]
-pernixc_serialize = { path = "../../base/serialize" }
-pernixc_stable_hash = { path = "../../base/stable_hash" }
 pernixc_target = { path = "../../base/target" }
 pernixc_arena = { path = "../../base/arena" }
-pernixc_query = { path = "../../base/query" }
 pernixc_extend = { path = "../../base/extend" }
 pernixc_hash = { path = "../../base/hash" }
 pernixc_diagnostic = { path = "../../base/diagnostic" }
 pernixc_source_file = { path = "../../base/source_file" }
 pernixc_syntax = { path = "../../syntax/syntax" }
 pernixc_lexical = { path = "../../syntax/lexical" }
-pernixc_register = { path = "../../base/register" }
+pernixc_qbice.path = "../../base/qbice"
+qbice.workspace = true
+linkme.workspace = true
 siphasher = { workspace = true }
-flexstr = { workspace = true }
 enum-as-inner = { workspace = true }
 derive_more = { workspace = true }
 derive-new = { workspace = true }

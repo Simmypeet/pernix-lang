@@ -1,8 +1,0 @@
----
-source: compiler/base/serialize/src/ron/ser/test.rs
-expression: "to_ron_string_with_config(&simple_map, config.clone()).unwrap()"
----
-{
-    "key1": 1,
-    "key2": 2,
-}

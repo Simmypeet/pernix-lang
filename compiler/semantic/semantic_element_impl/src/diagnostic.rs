@@ -1,10 +1,9 @@
 //! Contains the query for retrieving the diagnostics from the whole compilation
 //! process
 
-use std::sync::Arc;
-
+use linkme::distributed_slice;
 use pernixc_diagnostic::Report;
-use pernixc_query::{TrackedEngine, runtime::executor};
+use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_semantic_element::{
     effect_annotation::Key as DoEffectKey, fields::Key as FieldsKey,
     import::Key as ImportKey, type_alias::Key as TypeAliasKey,
@@ -18,6 +17,10 @@ use pernixc_symbol::{
 use pernixc_target::{Global, TargetID};
 use pernixc_term::generic_parameters::Key as GenericParametersKey;
 use pernixc_tokio::{chunk::chunk_for_tasks, scoped};
+use qbice::{
+    Decode, Encode, Query, StableHash, executor, program::Registration,
+    storage::intern::Interned,
+};
 
 use crate::{
     build::DiagnosticKey as BuildDiagnosticKey,
@@ -26,170 +29,184 @@ use crate::{
     wf_check,
 };
 
-#[pernixc_query::query(
-    key(SingleRenderedKey),
-    executor(SingleRenderedExecutor),
-    value(Arc<[pernixc_diagnostic::Rendered<ByteIndex>]>),
-    id(Global<pernixc_symbol::ID>)
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, StableHash, Encode, Decode, Query,
 )]
+#[value(Interned<[pernixc_diagnostic::Rendered<ByteIndex>]>)]
+struct SingleRenderedKey {
+    pub symbol_id: Global<pernixc_symbol::ID>,
+}
+
+#[executor(config = Config)]
 #[allow(clippy::cognitive_complexity)]
-pub async fn single_rendered_executor(
-    id: Global<pernixc_symbol::ID>,
+async fn single_rendered_executor(
+    &SingleRenderedKey { symbol_id }: &SingleRenderedKey,
     engine: &TrackedEngine,
-) -> Result<Arc<[pernixc_diagnostic::Rendered<ByteIndex>]>, executor::CyclicError>
-{
+) -> Interned<[pernixc_diagnostic::Rendered<ByteIndex>]> {
     let mut final_diagnostics = Vec::new();
-    let kind = engine.get_kind(id).await;
+    let kind = engine.get_kind(symbol_id).await;
 
     if kind == Kind::Module {
-        let diags =
-            engine.query(&BuildDiagnosticKey::new(ImportKey(id))).await?;
+        let diags = engine
+            .query(&BuildDiagnosticKey::new(ImportKey { symbol_id }))
+            .await;
 
         for diag in diags.iter() {
-            final_diagnostics.push(diag.report(engine).await?);
+            final_diagnostics.push(diag.report(engine).await);
         }
     }
 
     if kind.has_generic_parameters() {
         let diags = engine
-            .query(&BuildDiagnosticKey::new(GenericParametersKey(id)))
-            .await?;
+            .query(&BuildDiagnosticKey::new(GenericParametersKey { symbol_id }))
+            .await;
 
         for diag in diags.iter() {
-            final_diagnostics.push(diag.report(engine).await?);
+            final_diagnostics.push(diag.report(engine).await);
         }
     }
 
     if kind.has_where_clause() {
-        let diags =
-            engine.query(&BuildDiagnosticKey::new(WhereClauseKey(id))).await?;
+        let diags = engine
+            .query(&BuildDiagnosticKey::new(WhereClauseKey { symbol_id }))
+            .await;
 
         for diag in diags.iter() {
-            final_diagnostics.push(diag.report(engine).await?);
+            final_diagnostics.push(diag.report(engine).await);
         }
     }
 
     if kind.has_type_alias() {
-        let diags =
-            engine.query(&BuildDiagnosticKey::new(TypeAliasKey(id))).await?;
+        let diags = engine
+            .query(&BuildDiagnosticKey::new(TypeAliasKey { symbol_id }))
+            .await;
 
         for diag in diags.iter() {
-            final_diagnostics.push(diag.report(engine).await?);
+            final_diagnostics.push(diag.report(engine).await);
         }
     }
 
     if kind.has_fields() {
-        let diags =
-            engine.query(&BuildDiagnosticKey::new(FieldsKey(id))).await?;
+        let diags = engine
+            .query(&BuildDiagnosticKey::new(FieldsKey { symbol_id }))
+            .await;
 
         for diag in diags.iter() {
-            final_diagnostics.push(diag.report(engine).await?);
+            final_diagnostics.push(diag.report(engine).await);
         }
     }
 
     if kind.has_variant_associated_type() {
-        let diags =
-            engine.query(&BuildDiagnosticKey::new(VariantKey(id))).await?;
+        let diags = engine
+            .query(&BuildDiagnosticKey::new(VariantKey { symbol_id }))
+            .await;
 
         for diag in diags.iter() {
-            final_diagnostics.push(diag.report(engine).await?);
+            final_diagnostics.push(diag.report(engine).await);
         }
     }
 
     if kind.is_implementation() {
         let diags = engine
-            .query(&BuildDiagnosticKey::new(ImplementsQualifiedIdentifierKey(
-                id,
-            )))
-            .await?;
+            .query(&BuildDiagnosticKey::new(ImplementsQualifiedIdentifierKey {
+                symbol_id,
+            }))
+            .await;
 
         for diag in diags.iter() {
-            final_diagnostics.push(diag.report(engine).await?);
+            final_diagnostics.push(diag.report(engine).await);
         }
     }
 
     if kind.has_function_signature() {
         let diags = engine
-            .query(&BuildDiagnosticKey::new(FunctionSignatureKey(id)))
-            .await?;
+            .query(&BuildDiagnosticKey::new(FunctionSignatureKey { symbol_id }))
+            .await;
 
         for diag in diags.iter() {
-            final_diagnostics.push(diag.report(engine).await?);
+            final_diagnostics.push(diag.report(engine).await);
         }
     }
 
     if kind.has_capabilities() {
-        let diags =
-            engine.query(&BuildDiagnosticKey::new(DoEffectKey(id))).await?;
+        let diags = engine
+            .query(&BuildDiagnosticKey::new(DoEffectKey { symbol_id }))
+            .await;
 
         for diag in diags.iter() {
-            final_diagnostics.push(diag.report(engine).await?);
+            final_diagnostics.push(diag.report(engine).await);
         }
     }
 
     {
-        let diags = engine.query(&wf_check::Key(id)).await?;
+        let diags = engine.query(&wf_check::Key { symbol_id }).await;
         for diag in diags.iter() {
-            final_diagnostics.push(diag.report(engine).await?);
+            final_diagnostics.push(diag.report(engine).await);
         }
     }
 
-    Ok(final_diagnostics.into())
+    engine.intern_unsized(final_diagnostics)
 }
 
-pernixc_register::register!(SingleRenderedKey, SingleRenderedExecutor);
+#[distributed_slice(PERNIX_PROGRAM)]
+static SINGLE_RENDERED_EXECUTOR: Registration<Config> =
+    Registration::<Config>::new::<SingleRenderedKey, SingleRenderedExecutor>();
 
-#[pernixc_query::query(
-    key(AllRenderedKey),
-    executor(AllRenderedExecutor),
-    value(Arc<[Arc<[pernixc_diagnostic::Rendered<ByteIndex>]>]>),
-    id(TargetID)
+/// A query for retrieving all rendered diagnostics for a specific target.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, StableHash, Encode, Decode, Query,
 )]
-pub async fn all_rendered_executor(
-    id: TargetID,
+#[value(Interned<[Interned<[pernixc_diagnostic::Rendered<ByteIndex>]>]>)]
+pub struct AllRenderedKey {
+    /// The target ID to get all diagnostics for.
+    pub target_id: TargetID,
+}
+
+#[executor(config = Config)]
+async fn all_rendered_executor(
+    &AllRenderedKey { target_id }: &AllRenderedKey,
     engine: &TrackedEngine,
-) -> Result<
-    Arc<[Arc<[pernixc_diagnostic::Rendered<ByteIndex>]>]>,
-    executor::CyclicError,
-> {
+) -> Interned<[Interned<[pernixc_diagnostic::Rendered<ByteIndex>]>]> {
     scoped!(|handles| async move {
         let mut diagnostics = Vec::new();
-        let all_ids = engine.get_all_symbol_ids(id).await;
+        let all_ids = engine.get_all_symbol_ids(target_id).await;
 
-        // SAFETY: the spawned tasks are independent and do not access shared
+        // PARALLEL: the spawned tasks are independent and do not access shared
         // state therefore they can be safely parallelly re-verified.
         unsafe {
-            engine.start_parallel();
+            engine.start_unordered_callee_group();
         }
 
-        for chunk in all_ids
-            .chunk_for_tasks()
-            .map(|x| x.iter().map(|x| Global::new(id, *x)).collect::<Vec<_>>())
-        {
+        for chunk in all_ids.chunk_for_tasks().map(|x| {
+            x.iter().map(|x| Global::new(target_id, *x)).collect::<Vec<_>>()
+        }) {
             let engine = engine.clone();
             handles.spawn(async move {
                 let mut chunk_diagnostics = Vec::new();
-                for id in chunk {
-                    chunk_diagnostics
-                        .push(engine.query(&SingleRenderedKey(id)).await?);
+                for symbol_id in chunk {
+                    chunk_diagnostics.push(
+                        engine.query(&SingleRenderedKey { symbol_id }).await,
+                    );
                 }
 
-                Ok::<_, executor::CyclicError>(chunk_diagnostics)
+                chunk_diagnostics
             });
         }
 
         while let Some(handle) = handles.next().await {
-            for diag in handle? {
+            for diag in handle {
                 diagnostics.push(diag);
             }
         }
 
         unsafe {
-            engine.end_parallel();
+            engine.end_unordered_callee_group();
         }
 
-        Ok(diagnostics.into())
+        engine.intern_unsized(diagnostics)
     })
 }
 
-pernixc_register::register!(AllRenderedKey, AllRenderedExecutor);
+#[distributed_slice(PERNIX_PROGRAM)]
+static ALL_RENDERED_EXECUTOR: Registration<Config> =
+    Registration::<Config>::new::<AllRenderedKey, AllRenderedExecutor>();

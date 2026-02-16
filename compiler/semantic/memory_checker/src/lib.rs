@@ -24,7 +24,7 @@ use pernixc_ir::{
     },
 };
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::TrackedEngine;
+use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::parameter::get_parameters;
 use pernixc_symbol::{kind::get_kind, name::get_by_qualified_name};
 use pernixc_target::Global;
@@ -76,8 +76,7 @@ async fn handle_store<N: Normalizer>(
 
     Ok(state
         .get_drop_instructions(&target_address, ty_environment.tracked_engine())
-        .await
-        .unwrap())
+        .await)
 }
 
 fn handle_borrow(
@@ -267,7 +266,7 @@ impl<N: Normalizer> Checker<'_, N> {
         addresses: &mut [Memory],
     ) -> Result<(), UnrecoverableError> {
         let function_signature =
-            self.engine().get_parameters(self.current_site()).await?;
+            self.engine().get_parameters(self.current_site()).await;
 
         addresses.sort_by(|x, y| match (x, y) {
             (Memory::Parameter(x_id), Memory::Parameter(y_id)) => {
@@ -344,7 +343,7 @@ impl<N: Normalizer> Checker<'_, N> {
             .has_function_signature()
         {
             let function_signature =
-                self.engine().get_parameters(self.current_site()).await?;
+                self.engine().get_parameters(self.current_site()).await;
 
             for (parameter_id, parameter) in function_signature
                 .parameter_order
@@ -462,7 +461,7 @@ impl<N: Normalizer> Checker<'_, N> {
                         &Address::Memory(memory),
                         self.value_environment.tracked_engine(),
                     )
-                    .await?,
+                    .await,
             );
         }
 
@@ -791,8 +790,7 @@ impl<N: Normalizer> Checker<'_, N> {
                                     &Address::Memory(memory_to_drop),
                                     self.value_environment.tracked_engine(),
                                 )
-                                .await
-                                .unwrap(),
+                                .await,
                         );
                     }
                 }
@@ -850,8 +848,7 @@ impl<N: Normalizer> Checker<'_, N> {
                             &Address::Memory(memory),
                             self.value_environment.tracked_engine(),
                         )
-                        .await
-                        .unwrap();
+                        .await;
 
                     let block = cfg.get_block_mut(block_id).unwrap();
                     block.insert_instructions(

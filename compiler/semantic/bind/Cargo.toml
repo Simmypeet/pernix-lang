@@ -8,11 +8,8 @@ rust-version.workspace = true
 
 [dependencies]
 pernixc_arena = { path = "../../base/arena" }
-pernixc_query = { path = "../../base/query" }
 pernixc_target = { path = "../../base/target" }
 pernixc_source_file = { path = "../../base/source_file" }
-pernixc_stable_hash = { path = "../../base/stable_hash" }
-pernixc_serialize = { path = "../../base/serialize" }
 pernixc_handler = { path = "../../base/handler" }
 pernixc_extend = { path = "../../base/extend" }
 pernixc_diagnostic = { path = "../../base/diagnostic" }
@@ -27,12 +24,14 @@ pernixc_semantic_element = { path = "../semantic_element" }
 pernixc_hash = { path = "../../base/hash" }
 pernixc_parser = { path = "../../syntax/parser" }
 pernixc_corelib = { path = "../corelib" }
+pernixc_qbice.path = "../../base/qbice"
+qbice.workspace = true
+linkme.workspace = true
 getset = { workspace = true }
 enum-as-inner = { workspace = true }
 thiserror = { workspace = true }
 derive_more = { workspace = true }
 derive-new = { workspace = true }
-flexstr = { workspace = true }
 bon = { workspace = true }
 bit-vec = { workspace = true }
 drain_filter_polyfill = { workspace = true }
@@ -40,6 +39,7 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
+tempfile.workspace = true
 
 [lints]
 workspace = true

@@ -3,61 +3,80 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: struct has uninitialized fields
-   ╭─ compiler/e2e/test/snapshot/ir/expression/struct/initialization/main.pnx:12:5
-   │
-12 │     Test { first: 32, second: 0.12f32 }
-   │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ field 'third' of struct 'main::Test' is not initialized
+  [error]: struct has uninitialized fields
+    ╭─[compiler/e2e/test/snapshot/ir/expression/struct/initialization/main.pnx:12:5]
+ 11 │     # missing field
+ 12 │     Test { first: 32, second: 0.12f32 }
+    ·     ─────────────────┬─────────────────
+    ·                      ╰── field 'third' of struct 'main::Test' is not initialized
+ 13 │     Test { first: 32, third: true }
+    ╰────
 
-error: struct has uninitialized fields
-   ╭─ compiler/e2e/test/snapshot/ir/expression/struct/initialization/main.pnx:13:5
-   │
-13 │     Test { first: 32, third: true }
-   │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ field 'second' of struct 'main::Test' is not initialized
+  [error]: struct has uninitialized fields
+    ╭─[compiler/e2e/test/snapshot/ir/expression/struct/initialization/main.pnx:13:5]
+ 12 │     Test { first: 32, second: 0.12f32 }
+ 13 │     Test { first: 32, third: true }
+    ·     ───────────────┬───────────────
+    ·                    ╰── field 'second' of struct 'main::Test' is not initialized
+ 14 │     Test { second: 0.12f32, third: true }
+    ╰────
 
-error: struct has uninitialized fields
-   ╭─ compiler/e2e/test/snapshot/ir/expression/struct/initialization/main.pnx:14:5
-   │
-14 │     Test { second: 0.12f32, third: true }
-   │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ field 'first' of struct 'main::Test' is not initialized
+  [error]: struct has uninitialized fields
+    ╭─[compiler/e2e/test/snapshot/ir/expression/struct/initialization/main.pnx:14:5]
+ 13 │     Test { first: 32, third: true }
+ 14 │     Test { second: 0.12f32, third: true }
+    ·     ──────────────────┬──────────────────
+    ·                       ╰── field 'first' of struct 'main::Test' is not initialized
+ 15 │ 
+    ╰────
 
-error: struct has uninitialized fields
-   ╭─ compiler/e2e/test/snapshot/ir/expression/struct/initialization/main.pnx:17:5
-   │
-17 │     Test {}
-   │     ^^^^^^^ fields 'second', 'first' and 'third' of struct 'main::Test' are not initialized
+  [error]: struct has uninitialized fields
+    ╭─[compiler/e2e/test/snapshot/ir/expression/struct/initialization/main.pnx:17:5]
+ 16 │     # all fields missing
+ 17 │     Test {}
+    ·     ───┬───
+    ·        ╰── fields 'first', 'second' and 'third' of struct 'main::Test' are not initialized
+ 18 │ 
+    ╰────
 
-error: field is initialized multiple times
-   ╭─ compiler/e2e/test/snapshot/ir/expression/struct/initialization/main.pnx:20:53
-   │
-20 │     Test { first: 32, second: 0.12f32, third: true, first: 54 }
-   │            ---------                                ^^^^^^^^^ field 'first' of struct 'main::Test' is initialized here again
-   │            │                                         
-   │            field was first initialized here
+  [error]: field is initialized multiple times
+    ╭─[compiler/e2e/test/snapshot/ir/expression/struct/initialization/main.pnx:20:12]
+ 19 │     # duplicate fields
+ 20 │     Test { first: 32, second: 0.12f32, third: true, first: 54 }
+    ·            ────┬────                                ────┬────
+    ·                │                                        ╰── field 'first' of struct 'main::Test' is initialized here again
+    ·                ╰── field was first initialized here
+ 21 │     Test { first: 32, second: 0.12f32, second: 0.54f32, third: true }
+    ╰────
 
-error: field is initialized multiple times
-   ╭─ compiler/e2e/test/snapshot/ir/expression/struct/initialization/main.pnx:21:40
-   │
-21 │     Test { first: 32, second: 0.12f32, second: 0.54f32, third: true }
-   │                       ---------------  ^^^^^^^^^^^^^^^ field 'second' of struct 'main::Test' is initialized here again
-   │                       │                 
-   │                       field was first initialized here
+  [error]: field is initialized multiple times
+    ╭─[compiler/e2e/test/snapshot/ir/expression/struct/initialization/main.pnx:21:23]
+ 20 │     Test { first: 32, second: 0.12f32, third: true, first: 54 }
+ 21 │     Test { first: 32, second: 0.12f32, second: 0.54f32, third: true }
+    ·                       ───────┬───────  ───────┬───────
+    ·                              │                ╰── field 'second' of struct 'main::Test' is initialized here again
+    ·                              ╰── field was first initialized here
+ 22 │ 
+    ╰────
 
-error: struct has uninitialized fields
-   ╭─ compiler/e2e/test/snapshot/ir/expression/struct/initialization/main.pnx:24:5
-   │
-24 │     Test { first: 32, second: 0.12f32, first: 54 }
-   │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ field 'third' of struct 'main::Test' is not initialized
+  [error]: struct has uninitialized fields
+    ╭─[compiler/e2e/test/snapshot/ir/expression/struct/initialization/main.pnx:24:5]
+ 23 │     # missing fields and duplicate fields
+ 24 │     Test { first: 32, second: 0.12f32, first: 54 }
+    ·     ───────────────────────┬──────────────────────
+    ·                            ╰── field 'third' of struct 'main::Test' is not initialized
+    ╰────
 
-error: field is initialized multiple times
-   ╭─ compiler/e2e/test/snapshot/ir/expression/struct/initialization/main.pnx:24:40
-   │
-24 │     Test { first: 32, second: 0.12f32, first: 54 }
-   │            ---------                   ^^^^^^^^^ field 'first' of struct 'main::Test' is initialized here again
-   │            │                            
-   │            field was first initialized here
+  [error]: field is initialized multiple times
+    ╭─[compiler/e2e/test/snapshot/ir/expression/struct/initialization/main.pnx:24:12]
+ 23 │     # missing fields and duplicate fields
+ 24 │     Test { first: 32, second: 0.12f32, first: 54 }
+    ·            ────┬────                   ────┬────
+    ·                │                           ╰── field 'first' of struct 'main::Test' is initialized here again
+    ·                ╰── field was first initialized here
+    ╰────
 
-error: Compilation aborted due to 8 error(s)
+  [error]: Compilation aborted due to 8 error(s)
 
 
 

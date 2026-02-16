@@ -1,10 +1,8 @@
 //! Contains the builder for the where clause.
 
-use std::sync::Arc;
-
 use pernixc_handler::{Handler, Storage};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor};
+use pernixc_qbice::TrackedEngine;
 use pernixc_resolution::{
     Config, ExtraNamespace,
     forall_lifetimes::create_forall_lifetimes,
@@ -50,9 +48,9 @@ async fn create_trait_member_predicates(
     where_clause: &mut Vec<where_clause::Predicate>,
     occurrences: &mut Occurrences,
     handler: &Storage<Diagnostic>,
-) -> Result<(), executor::CyclicError> {
+) {
     let (Some(lhs), Some(rhs)) = (syntax_tree.lhs(), syntax_tree.rhs()) else {
-        return Ok(());
+        return;
     };
 
     let with_forall_lifetime = syntax_tree.higher_ranked_lifetimes().map(|x| {
@@ -71,7 +69,7 @@ async fn create_trait_member_predicates(
         .extra_namespace(extra_namespace)
         .build();
 
-    let ty = engine.resolve_type(&lhs, config.reborrow(), handler).await?;
+    let ty = engine.resolve_type(&lhs, config.reborrow(), handler).await;
 
     match ty {
         // trait type
@@ -80,7 +78,7 @@ async fn create_trait_member_predicates(
             member_generic_arguments,
             parent_generic_arguments,
         })) if engine.get_kind(id).await == Kind::TraitType => {
-            let resolve_ty = engine.resolve_type(&rhs, config, handler).await?;
+            let resolve_ty = engine.resolve_type(&rhs, config, handler).await;
 
             where_clause.push(where_clause::Predicate {
                 predicate: predicate::Predicate::TraitTypeCompatible(
@@ -107,8 +105,6 @@ async fn create_trait_member_predicates(
             ));
         }
     }
-
-    Ok(())
 }
 
 async fn create_trait_predicates(
@@ -119,7 +115,7 @@ async fn create_trait_predicates(
     where_clause: &mut Vec<where_clause::Predicate>,
     occurrences: &mut Occurrences,
     handler: &Storage<Diagnostic>,
-) -> Result<(), executor::CyclicError> {
+) {
     for trait_predicate in syntax_tree.bounds() {
         let Some(qualified_identifier) = trait_predicate.qualified_identifier()
         else {
@@ -157,11 +153,7 @@ async fn create_trait_predicates(
 
             // couldn't resolve a symbol, couldn't go further
             Err(pernixc_resolution::Error::Abort) => {
-                return Ok(());
-            }
-
-            Err(pernixc_resolution::Error::Cyclic(error)) => {
-                return Err(error);
+                return;
             }
         };
 
@@ -203,8 +195,6 @@ async fn create_trait_predicates(
             }
         }
     }
-
-    Ok(())
 }
 
 #[allow(clippy::too_many_lines)]
@@ -216,10 +206,10 @@ async fn create_outlives_predicates(
     where_clause: &mut Vec<where_clause::Predicate>,
     occurrences: &mut Occurrences,
     handler: &Storage<Diagnostic>,
-) -> Result<(), executor::CyclicError> {
+) {
     let Some(operand) = syntax_tree.operand().and_then(|x| x.identifier())
     else {
-        return Ok(());
+        return;
     };
 
     let mut bounds = Vec::new();
@@ -239,7 +229,7 @@ async fn create_outlives_predicates(
     }
 
     let Some(operand) =
-        extra_namespace.lifetimes.get(operand.kind.0.as_str()).cloned()
+        extra_namespace.lifetimes.get(operand.kind.0.as_ref()).cloned()
     else {
         handler.receive(
             pernixc_resolution::diagnostic::LifetimeParameterNotFound {
@@ -249,7 +239,7 @@ async fn create_outlives_predicates(
             },
         );
 
-        return Ok(());
+        return;
     };
 
     for bound in bounds {
@@ -260,8 +250,6 @@ async fn create_outlives_predicates(
             span: Some(syntax_tree.span()),
         });
     }
-
-    Ok(())
 }
 
 async fn create_marker_predicate(
@@ -272,7 +260,7 @@ async fn create_marker_predicate(
     where_clause: &mut Vec<where_clause::Predicate>,
     occurrences: &mut Occurrences,
     handler: &Storage<Diagnostic>,
-) -> Result<(), executor::CyclicError> {
+) {
     for marker_bound in syntax_tree.bounds() {
         let Some(qualified_identifier) = marker_bound.qualified_identifier()
         else {
@@ -308,7 +296,6 @@ async fn create_marker_predicate(
         {
             Ok(resolution) => resolution,
             Err(pernixc_resolution::Error::Abort) => continue,
-            Err(pernixc_resolution::Error::Cyclic(error)) => return Err(error),
         };
 
         match resolution {
@@ -344,8 +331,6 @@ async fn create_marker_predicate(
             }
         }
     }
-
-    Ok(())
 }
 
 async fn create_type_bound_predicates(
@@ -356,8 +341,8 @@ async fn create_type_bound_predicates(
     where_clause: &mut Vec<where_clause::Predicate>,
     occurrences: &mut Occurrences,
     handler: &Storage<Diagnostic>,
-) -> Result<(), executor::CyclicError> {
-    let Some(ty_syn) = syntax_tree.r#type() else { return Ok(()) };
+) {
+    let Some(ty_syn) = syntax_tree.r#type() else { return };
 
     let with_forall_lifetime = syntax_tree.higher_ranked_lifetimes().map(|x| {
         let mut extra_namespace = extra_namespace.clone();
@@ -375,7 +360,7 @@ async fn create_type_bound_predicates(
         .referring_site(global_id)
         .build();
 
-    let ty = engine.resolve_type(&ty_syn, config.reborrow(), handler).await?;
+    let ty = engine.resolve_type(&ty_syn, config.reborrow(), handler).await;
 
     create_type_bound_predicates_internal(
         engine,
@@ -386,7 +371,7 @@ async fn create_type_bound_predicates(
         where_clause,
         handler,
     )
-    .await
+    .await;
 }
 
 #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
@@ -398,7 +383,7 @@ async fn create_type_bound_predicates_internal(
     mut config: Config<'_, '_, '_, '_, '_>,
     where_clause: &mut Vec<where_clause::Predicate>,
     handler: &Storage<Diagnostic>,
-) -> Result<(), executor::CyclicError> {
+) {
     for bound in bounds {
         match bound {
             pernixc_syntax::predicate::TypeBound::QualifiedIdentifier(
@@ -447,9 +432,6 @@ async fn create_type_bound_predicates_internal(
                 {
                     Ok(resolution) => resolution,
                     Err(pernixc_resolution::Error::Abort) => continue,
-                    Err(pernixc_resolution::Error::Cyclic(error)) => {
-                        return Err(error);
-                    }
                 };
 
                 let resolved_kind =
@@ -579,21 +561,16 @@ async fn create_type_bound_predicates_internal(
             }
         }
     }
-
-    Ok(())
 }
 
 impl build::Build for pernixc_semantic_element::where_clause::Key {
     type Diagnostic = diagnostic::Diagnostic;
 
     #[allow(clippy::too_many_lines)]
-    async fn execute(
-        engine: &pernixc_query::TrackedEngine,
-        key: &Self,
-    ) -> Result<Output<Self>, executor::CyclicError> {
-        let kind = engine.get_kind(key.0).await;
+    async fn execute(engine: &TrackedEngine, key: &Self) -> Output<Self> {
+        let kind = engine.get_kind(key.symbol_id).await;
         let where_clause_syntax_tree =
-            engine.get_where_clause_syntax(key.0).await;
+            engine.get_where_clause_syntax(key.symbol_id).await;
 
         let mut where_clause = Vec::default();
 
@@ -601,7 +578,7 @@ impl build::Build for pernixc_semantic_element::where_clause::Key {
         let storage = Storage::<Diagnostic>::new();
 
         let extra_namespace =
-            engine.get_generic_parameter_namespace(key.0).await?;
+            engine.get_generic_parameter_namespace(key.symbol_id).await;
 
         for predicate in where_clause_syntax_tree
             .into_iter()
@@ -612,14 +589,14 @@ impl build::Build for pernixc_semantic_element::where_clause::Key {
                 pernixc_syntax::predicate::Predicate::Type(ty_bound) => {
                     create_type_bound_predicates(
                         engine,
-                        key.0,
+                        key.symbol_id,
                         &ty_bound,
                         &extra_namespace,
                         &mut where_clause,
                         &mut occurrences,
                         &storage,
                     )
-                    .await?;
+                    .await;
                 }
 
                 pernixc_syntax::predicate::Predicate::TraitTypeEquality(
@@ -627,27 +604,27 @@ impl build::Build for pernixc_semantic_element::where_clause::Key {
                 ) => {
                     create_trait_member_predicates(
                         engine,
-                        key.0,
+                        key.symbol_id,
                         &trait_type_equality,
                         &extra_namespace,
                         &mut where_clause,
                         &mut occurrences,
                         &storage,
                     )
-                    .await?;
+                    .await;
                 }
 
                 pernixc_syntax::predicate::Predicate::Trait(tr) => {
                     create_trait_predicates(
                         engine,
-                        key.0,
+                        key.symbol_id,
                         &tr,
                         &extra_namespace,
                         &mut where_clause,
                         &mut occurrences,
                         &storage,
                     )
-                    .await?;
+                    .await;
                 }
 
                 pernixc_syntax::predicate::Predicate::LifetimeOutlives(
@@ -655,27 +632,27 @@ impl build::Build for pernixc_semantic_element::where_clause::Key {
                 ) => {
                     create_outlives_predicates(
                         engine,
-                        key.0,
+                        key.symbol_id,
                         &lifetime_outlives,
                         &extra_namespace,
                         &mut where_clause,
                         &mut occurrences,
                         &storage,
                     )
-                    .await?;
+                    .await;
                 }
 
                 pernixc_syntax::predicate::Predicate::Marker(marker) => {
                     create_marker_predicate(
                         engine,
-                        key.0,
+                        key.symbol_id,
                         &marker,
                         &extra_namespace,
                         &mut where_clause,
                         &mut occurrences,
                         &storage,
                     )
-                    .await?;
+                    .await;
                 }
             }
         }
@@ -683,10 +660,10 @@ impl build::Build for pernixc_semantic_element::where_clause::Key {
         {
             if kind.has_generic_parameters() {
                 let generic_parameters_syn =
-                    engine.get_generic_parameters_syntax(key.0).await;
+                    engine.get_generic_parameters_syntax(key.symbol_id).await;
 
                 let generic_parameters =
-                    engine.get_generic_parameters(key.0).await?;
+                    engine.get_generic_parameters(key.symbol_id).await;
 
                 for (ty_param, bounds) in generic_parameters_syn
                     .into_iter()
@@ -700,34 +677,37 @@ impl build::Build for pernixc_semantic_element::where_clause::Key {
 
                     let Some(id) = generic_parameters
                         .type_parameter_ids_by_name()
-                        .get(identifier.kind.0.as_str())
+                        .get(identifier.kind.0.as_ref())
                     else {
                         continue;
                     };
 
                     create_type_bound_predicates_internal(
                         engine,
-                        &Type::Parameter(TypeParameterID::new(key.0, *id)),
+                        &Type::Parameter(TypeParameterID::new(
+                            key.symbol_id,
+                            *id,
+                        )),
                         &identifier.span,
                         bounds.bounds(),
                         Config::builder()
                             .observer(&mut occurrences)
                             .extra_namespace(&extra_namespace)
-                            .referring_site(key.0)
+                            .referring_site(key.symbol_id)
                             .build(),
                         &mut where_clause,
                         &storage,
                     )
-                    .await?;
+                    .await;
                 }
             }
         }
 
-        Ok(Output {
-            item: where_clause.into(),
-            diagnostics: storage.into_vec().into(),
-            occurrences: Arc::new(occurrences),
-        })
+        Output {
+            item: engine.intern_unsized(where_clause),
+            diagnostics: engine.intern_unsized(storage.into_vec()),
+            occurrences: engine.intern(occurrences),
+        }
     }
 }
 

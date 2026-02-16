@@ -7,8 +7,7 @@ use pernixc_lexical::{
     kind, token,
     tree::{DelimiterKind, RelativeLocation},
 };
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode, StableHash};
 
 use crate::output::{One, Output};
 
@@ -30,8 +29,8 @@ pub trait Expect: Output + Into<Expected> {
     Ord,
     Hash,
     Default,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Identifier;
@@ -72,8 +71,8 @@ impl Expect for Identifier {
     Ord,
     Hash,
     Display,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 #[allow(missing_docs)]
@@ -104,7 +103,7 @@ impl Output for IdentifierValue {
             x.kind
                 .as_identifier()
                 .cloned()
-                .filter(|y| y.0 == self.expected_string())
+                .filter(|y| y.0.as_ref() == self.expected_string())
                 .map(|y| token::Token {
                     kind: y,
                     span: x.span,
@@ -119,7 +118,7 @@ impl Expect for IdentifierValue {
         terminal
             .kind
             .as_identifier()
-            .is_some_and(|x| x.0.as_str() == self.expected_string())
+            .is_some_and(|x| x.0.as_ref() == self.expected_string())
     }
 }
 
@@ -133,8 +132,8 @@ impl Expect for IdentifierValue {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct String;
@@ -173,8 +172,8 @@ impl Expect for String {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Character;
@@ -213,8 +212,8 @@ impl Expect for Character {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Numeric;
@@ -282,8 +281,8 @@ impl Expect for Punctuation {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct NewLine;
@@ -351,8 +350,8 @@ impl Expect for Keyword {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct NoPriorInsignificant<T>(pub T);
@@ -409,8 +408,8 @@ impl<T: Sized + Expect> Ext for T {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 #[allow(missing_docs)]
@@ -431,8 +430,8 @@ pub enum Fragment {
     Hash,
     EnumAsInner,
     From,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 #[allow(missing_docs)]

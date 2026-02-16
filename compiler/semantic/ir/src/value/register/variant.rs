@@ -3,9 +3,7 @@
 use std::ops::Deref;
 
 use pernixc_arena::ID;
-use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::parent::get_parent;
 use pernixc_target::Global;
 use pernixc_term::{
@@ -14,6 +12,7 @@ use pernixc_term::{
     lifetime::Lifetime,
     r#type::Type,
 };
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Values,
@@ -33,8 +32,8 @@ use crate::{
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Variant {
@@ -76,11 +75,11 @@ pub(super) async fn transform_variant<
     transformer: &mut T,
     span: pernixc_lexical::tree::RelativeSpan,
     engine: &TrackedEngine,
-) -> Result<(), CyclicError> {
+) {
     if let Some(value) = variant.associated_value.as_mut()
         && let Some(literal) = value.as_literal_mut()
     {
-        literal.transform(transformer).await?;
+        literal.transform(transformer).await;
     }
 
     transform_generic_arguments(
@@ -93,7 +92,7 @@ pub(super) async fn transform_variant<
         engine,
         &mut variant.generic_arguments,
     )
-    .await
+    .await;
 }
 
 impl TypeOf<&Variant> for Values {

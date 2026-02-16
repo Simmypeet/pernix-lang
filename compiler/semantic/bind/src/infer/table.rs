@@ -11,6 +11,7 @@ use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_arena::{Arena, ID};
 use pernixc_term::inference;
+use qbice::storage::intern::Interned;
 
 use crate::infer::{constraint::Constraint, table::history::History};
 
@@ -327,7 +328,9 @@ impl<C: Constraint> Table<C> {
                     (
                         *var,
                         pernixc_term::display::InferenceRendering::Rendered(
-                            constraint.to_string().into(),
+                            Interned::new_duplicating_unsized(
+                                constraint.to_string(),
+                            ),
                         ),
                     )
                 }

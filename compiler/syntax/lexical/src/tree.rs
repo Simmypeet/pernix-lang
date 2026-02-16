@@ -7,15 +7,17 @@ use std::{
 
 use derive_more::Deref;
 use enum_as_inner::EnumAsInner;
-use fnv::FnvHasher;
+use fxhash::FxHasher;
 use getset::CopyGetters;
 use pernixc_arena::{Arena, ID, state};
 use pernixc_handler::Handler;
-use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_qbice::Interner;
 use pernixc_source_file::{
     AbsoluteSpan, ByteIndex, GlobalSourceID, Location, SourceFile, Span,
 };
-use pernixc_stable_hash::StableHash;
+use qbice::{
+    Decode, Encode, Identifiable, StableHash, stable_hash::StableHasher,
+};
 use strum_macros::EnumIter;
 
 use crate::{
@@ -43,8 +45,8 @@ pub mod arbitrary;
     Ord,
     Hash,
     EnumIter,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub enum DelimiterKind {
@@ -87,8 +89,8 @@ impl DelimiterKind {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     EnumAsInner,
     StableHash,
 )]
@@ -110,8 +112,8 @@ pub enum FragmentKind {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Delimiter {
@@ -135,8 +137,8 @@ pub struct Delimiter {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Indentation {
@@ -165,8 +167,8 @@ pub struct Indentation {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub enum OffsetMode {
@@ -195,9 +197,10 @@ pub enum OffsetMode {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
+    Identifiable,
 )]
 pub struct RelativeLocation {
     /// The byte offset from the branch.
@@ -223,8 +226,8 @@ pub type RelativeSpan = Span<RelativeLocation>;
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     EnumAsInner,
     StableHash,
 )]
@@ -243,8 +246,8 @@ pub enum Node {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct FragmentBranch {
@@ -267,8 +270,8 @@ pub struct FragmentBranch {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     EnumAsInner,
     StableHash,
 )]
@@ -289,8 +292,8 @@ pub enum BranchKind {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Branch {
@@ -327,7 +330,7 @@ pub const ROOT_BRANCH_ID: ID<Branch> = ID::new(0);
 ///
 /// This is useful for easy traversal of the tree and for incremental
 /// compilation compatibility.
-#[derive(Debug, Clone, Deref, Serialize, Deserialize, CopyGetters)]
+#[derive(Debug, Clone, Deref, Encode, Decode, CopyGetters, Identifiable)]
 pub struct Tree {
     #[deref]
     arena: Arena<Branch, state::Default>,
@@ -338,10 +341,7 @@ pub struct Tree {
 }
 
 impl StableHash for Tree {
-    fn stable_hash<H: pernixc_stable_hash::StableHasher + ?Sized>(
-        &self,
-        state: &mut H,
-    ) {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
         self.source_id.stable_hash(state);
         self.arena.stable_hash(state);
     }
@@ -359,15 +359,14 @@ impl Tree {
     /// Creates a new [`Tree`] from the given source code and source ID.
     ///
     /// The `source_id` will be assigned to all the spans in the tree.
-    pub fn from_source(
-        source: &str,
+    pub fn from_source<I: Interner>(
+        source: &SourceFile,
         source_id: GlobalSourceID,
+        interner: &I,
         handler: &dyn Handler<error::Error>,
     ) -> Self {
         let mut converter = Converter {
-            tokenizer: Tokenizer::new(source, source_id, handler),
-            source,
-            handler,
+            tokenizer: Tokenizer::new(source, source_id, interner, handler),
             delimiter_stack: Vec::new(),
             indentation_stack: Vec::new(),
             current_nodes: Vec::new(),
@@ -384,7 +383,7 @@ impl Tree {
             );
         }
 
-        Converter::make_branch_relative(
+        Converter::<I>::make_branch_relative(
             &mut converter.tree.arena,
             ROOT_BRANCH_ID,
             0,
@@ -406,6 +405,7 @@ impl Tree {
                 0
             };
 
+        let source_len = converter.tokenizer.source_file().len_bytes();
         converter
             .tree
             .arena
@@ -413,7 +413,7 @@ impl Tree {
                 kind: BranchKind::Root,
                 nodes: converter.current_nodes,
                 absolute_start_byte_index: 0,
-                absolute_end_byte_index: root_end_position.max(source.len()),
+                absolute_end_byte_index: root_end_position.max(source_len),
             })
             .unwrap();
 
@@ -521,10 +521,8 @@ struct IndentationMarker {
     colon_index: usize,
 }
 
-struct Converter<'source, 'handler> {
-    tokenizer: Tokenizer<'source, 'handler>,
-    source: &'source str,
-    handler: &'handler dyn Handler<error::Error>,
+struct Converter<'a, I> {
+    tokenizer: Tokenizer<'a, I>,
 
     delimiter_stack: Vec<DelimiterMarker>,
     indentation_stack: Vec<IndentationMarker>,
@@ -533,11 +531,10 @@ struct Converter<'source, 'handler> {
     tree: Tree,
 }
 
-impl std::fmt::Debug for Converter<'_, '_> {
+impl<I> std::fmt::Debug for Converter<'_, I> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Converter")
             .field("tokenizer", &self.tokenizer)
-            .field("source", &self.source)
             .field("delimiter_stack", &self.delimiter_stack)
             .field("indentation_stack", &self.indentation_stack)
             .field("current_nodes", &self.current_nodes)
@@ -562,10 +559,10 @@ enum GeneralBranchKind {
 fn calculate_branch_hash<'a>(
     tokens: impl Iterator<Item = &'a Kind<RelativeLocation>>,
     node_kind: GeneralBranchKind,
-    source: &str,
+    source: &SourceFile,
     arena: &Arena<Branch, state::Default>,
 ) -> ID<Branch> {
-    let mut hasher = FnvHasher::default();
+    let mut hasher = FxHasher::default();
     node_kind.hash(&mut hasher);
 
     // hash the string content of the tokens
@@ -576,16 +573,13 @@ fn calculate_branch_hash<'a>(
             .map_or_else(|| token.span.start.offset, |x| x.start.offset);
 
         let end_byte = token.span.end.offset;
-        let str = &source[start_byte..end_byte];
 
-        str.hash(&mut hasher);
+        source.hashable_view(start_byte..end_byte).hash(&mut hasher);
     }
 
     let mut attempt = 0;
     loop {
-        // for some reason, FnvHasher doesn't implement `Clone` trait.
-        // this is the work around to clone
-        let mut final_hasher = FnvHasher::with_key(hasher.finish());
+        let mut final_hasher = hasher.clone();
         attempt.hash(&mut final_hasher);
 
         let candidate_branch_id = ID::new(final_hasher.finish());
@@ -601,7 +595,7 @@ fn calculate_branch_hash<'a>(
     }
 }
 
-impl Converter<'_, '_> {
+impl<'a, I: Interner> Converter<'a, I> {
     const TAB_INDENT_SIZE: usize = 4;
 
     #[allow(clippy::too_many_lines)]
@@ -750,6 +744,14 @@ impl Converter<'_, '_> {
         }
     }
 
+    const fn source_file(&self) -> &'a SourceFile {
+        self.tokenizer.source_file()
+    }
+
+    fn handler(&self) -> &'a dyn Handler<error::Error> {
+        self.tokenizer.handler()
+    }
+
     #[allow(clippy::too_many_lines)]
     fn handle_indentation(
         &mut self,
@@ -759,8 +761,8 @@ impl Converter<'_, '_> {
     ) {
         // calculate the indentation size
         let indentation_size = prior_insignificant.map_or(0usize, |x| {
-            self.source[x.start..x.end]
-                .chars()
+            self.source_file()
+                .chars_range(x.start..x.end)
                 .map(|x| if x == '\t' { Self::TAB_INDENT_SIZE } else { 1 })
                 .sum()
         });
@@ -775,7 +777,7 @@ impl Converter<'_, '_> {
 
             // must be deeper indentation
             if indentation_size == 0 {
-                self.handler.receive(error::Error::ExpectIndentation(
+                self.handler().receive(error::Error::ExpectIndentation(
                     ExpectIndentation {
                         span: token_span,
                         indentation_start: self
@@ -792,7 +794,7 @@ impl Converter<'_, '_> {
                 if indentation_size
                     <= prior_indentation.indentation_size.unwrap()
                 {
-                    self.handler.receive(
+                    self.handler().receive(
                         error::Error::InvalidNewIndentationLevel(
                             InvalidNewIndentationLevel {
                                 span: token_span,
@@ -864,7 +866,7 @@ impl Converter<'_, '_> {
                 });
 
                 if error {
-                    self.handler.receive(error::Error::InvalidIndentation(
+                    self.handler().receive(error::Error::InvalidIndentation(
                         InvalidIndentation {
                             span: token_span,
                             found_indentation: indentation_size,
@@ -909,14 +911,16 @@ impl Converter<'_, '_> {
         if let Some(last) = self.delimiter_stack.pop() {
             // mismatched closing delimiter
             if last.delimiter != expected_delimiter {
-                self.handler.receive(error::Error::MismatchedClosingDelimiter(
-                    MismatchedClosingDelimiter {
-                        span: token_span,
-                        opening_span: last.location,
-                        closing_delimiter: expected_delimiter,
-                        opening_delimiter: last.delimiter,
-                    },
-                ));
+                self.handler().receive(
+                    error::Error::MismatchedClosingDelimiter(
+                        MismatchedClosingDelimiter {
+                            span: token_span,
+                            opening_span: last.location,
+                            closing_delimiter: expected_delimiter,
+                            opening_delimiter: last.delimiter,
+                        },
+                    ),
+                );
             }
 
             // force pop all indentations
@@ -957,7 +961,7 @@ impl Converter<'_, '_> {
             let branch_id = calculate_branch_hash(
                 nodes.iter().filter_map(Node::as_leaf),
                 GeneralBranchKind::Delimited(expected_delimiter),
-                self.source,
+                self.source_file(),
                 &self.tree,
             );
 
@@ -1003,7 +1007,7 @@ impl Converter<'_, '_> {
                 .insert(last.open_puncutation_index, Node::Branch(branch_id));
         } else {
             // unexpected closing delimiter
-            self.handler.receive(error::Error::UnexpectedClosingDelimiter(
+            self.handler().receive(error::Error::UnexpectedClosingDelimiter(
                 UnexpectedClosingDelimiter {
                     span: token_span,
                     closing_delimiter: expected_delimiter,
@@ -1038,15 +1042,15 @@ impl Converter<'_, '_> {
             .unwrap()
             + 1;
 
-        let end_byte_index =
-            self.current_nodes.get(end_index).map_or(self.source.len(), |x| {
-                match x {
-                    Node::Leaf(token) => token.start_location().offset,
-                    Node::Branch(id) => {
-                        self.tree.arena[*id].absolute_start_byte_index
-                    }
+        let end_byte_index = self.current_nodes.get(end_index).map_or(
+            self.source_file().len_bytes(),
+            |x| match x {
+                Node::Leaf(token) => token.start_location().offset,
+                Node::Branch(id) => {
+                    self.tree.arena[*id].absolute_start_byte_index
                 }
-            });
+            },
+        );
 
         for _ in 0..pop_count {
             let marker = self.indentation_stack.pop().unwrap();
@@ -1076,7 +1080,7 @@ impl Converter<'_, '_> {
             let branch_hash = calculate_branch_hash(
                 nodes.iter().filter_map(Node::as_leaf),
                 GeneralBranchKind::Indented,
-                self.source,
+                self.source_file(),
                 &self.tree,
             );
 
@@ -1186,7 +1190,7 @@ impl Converter<'_, '_> {
         let branch_id = calculate_branch_hash(
             std::iter::empty(),
             GeneralBranchKind::Indented,
-            self.source,
+            self.source_file(),
             &self.tree,
         );
 

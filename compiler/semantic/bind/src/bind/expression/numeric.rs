@@ -29,7 +29,7 @@ impl Bind<&pernixc_syntax::expression::unit::Numeric> for Binder<'_> {
     ) -> Result<Expression, Error> {
         let numeric_ty = if let Some(suffix) = syntax_tree.identifier() {
             // the literal type is specified, no need to infer
-            let primitive_type = match suffix.kind.0.as_str() {
+            let primitive_type = match suffix.kind.0.as_ref() {
                 "i8" => Primitive::Int8,
                 "i16" => Primitive::Int16,
                 "i32" => Primitive::Int32,

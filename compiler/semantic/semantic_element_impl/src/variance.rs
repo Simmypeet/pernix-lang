@@ -1,15 +1,12 @@
-use std::sync::Arc;
-
+use linkme::distributed_slice;
 use pernixc_arena::ID;
 use pernixc_hash::HashMap;
-use pernixc_query::{TrackedEngine, runtime::executor};
+use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_semantic_element::{
     fields::get_fields,
     variance::{Variance, Variances, get_variances},
     variant::get_variant_associated_type,
 };
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{
     get_all_adt_ids,
     kind::{Kind, get_kind},
@@ -24,12 +21,16 @@ use pernixc_term::{
     r#type::{Qualifier, Type},
 };
 use pernixc_tokio::scoped;
+use qbice::{
+    Decode, Encode, Identifiable, Query, StableHash, executor,
+    program::Registration, storage::intern::Interned,
+};
 
 /// An enumeration used for inferring variance of type/lifetime parameters.
 ///
 /// FIXME: Find a better data structure for this; currently, this looks like
 /// a linked list.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, StableHash)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, StableHash)]
 enum VarianceVariable {
     /// The variance is already known.
     Constant(Variance),
@@ -58,7 +59,7 @@ impl VarianceVariable {
     }
 }
 
-#[derive(Debug, Default, Serialize, Deserialize, StableHash)]
+#[derive(Debug, Default, Encode, Decode, StableHash, Identifiable)]
 pub struct Constraints {
     type_parameter_constraints:
         Vec<(ID<TypeParameter>, pernixc_symbol::ID, VarianceVariable)>,
@@ -66,24 +67,36 @@ pub struct Constraints {
         Vec<(ID<LifetimeParameter>, pernixc_symbol::ID, VarianceVariable)>,
 }
 
-pernixc_register::register!(ConstraintsKey, ConstraintsExecutor);
-
-#[pernixc_query::query(
-    key(ConstraintsKey),
-    value(Arc<Constraints>),
-    id(Global<pernixc_symbol::ID>),
-    executor(ConstraintsExecutor)
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    Query,
 )]
+#[value(Interned<Constraints>)]
+pub struct ConstraintsKey {
+    pub adt_id: Global<pernixc_symbol::ID>,
+}
+
+#[executor(config = Config)]
 pub async fn constraints_executor(
-    adt_id: Global<pernixc_symbol::ID>,
+    &ConstraintsKey { adt_id }: &ConstraintsKey,
     engine: &TrackedEngine,
-) -> Result<Arc<Constraints>, executor::CyclicError> {
+) -> Interned<Constraints> {
     let mut constraints = Constraints::default();
     let kind = engine.get_kind(adt_id).await;
 
     match kind {
         Kind::Struct => {
-            let fields = engine.get_fields(adt_id).await?;
+            let fields = engine.get_fields(adt_id).await;
 
             for field in fields.fields.items() {
                 constraints
@@ -93,7 +106,7 @@ pub async fn constraints_executor(
                         VarianceVariable::Constant(Variance::Covariant),
                         engine,
                     )
-                    .await?;
+                    .await;
             }
         }
 
@@ -108,7 +121,7 @@ pub async fn constraints_executor(
                 .map(|x| adt_id.target_id.make_global(x))
             {
                 let Some(ty) =
-                    engine.get_variant_associated_type(variant_id).await?
+                    engine.get_variant_associated_type(variant_id).await
                 else {
                     continue;
                 };
@@ -120,14 +133,14 @@ pub async fn constraints_executor(
                         VarianceVariable::Constant(Variance::Covariant),
                         engine,
                     )
-                    .await?;
+                    .await;
             }
         }
 
         _ => unreachable!("should've been invoked with adt"),
     }
 
-    Ok(Arc::new(constraints))
+    engine.intern(constraints)
 }
 
 fn evaluate(
@@ -204,9 +217,9 @@ impl Constraints {
         ty: &Type,
         current_variance: VarianceVariable,
         engine: &TrackedEngine,
-    ) -> Result<(), executor::CyclicError> {
+    ) {
         match ty {
-            Type::Error(_) | Type::Primitive(_) => Ok(()),
+            Type::Error(_) | Type::Primitive(_) => {}
 
             Type::Parameter(member_id) => {
                 // add the constraint to the context
@@ -217,8 +230,6 @@ impl Constraints {
                         current_variance,
                     ));
                 }
-
-                Ok(())
             }
 
             Type::FunctionSignature(function_signature) => {
@@ -234,7 +245,7 @@ impl Constraints {
                             new_variance,
                             engine,
                         )
-                        .await?;
+                        .await;
                     }
 
                     let new_variance = current_variance
@@ -246,9 +257,9 @@ impl Constraints {
                         new_variance,
                         engine,
                     )
-                    .await
+                    .await;
                 })
-                .await
+                .await;
             }
 
             Type::Inference(_) => {
@@ -266,11 +277,11 @@ impl Constraints {
                 let variance_map = if symbol.id.target_id == target_id {
                     None
                 } else {
-                    Some(engine.get_variances(symbol.id).await?)
+                    Some(engine.get_variances(symbol.id).await)
                 };
 
                 let generic_parameters =
-                    engine.get_generic_parameters(symbol.id).await?;
+                    engine.get_generic_parameters(symbol.id).await;
 
                 for (lifetime, id) in symbol
                     .generic_arguments
@@ -325,10 +336,8 @@ impl Constraints {
                         new_variance,
                         engine,
                     ))
-                    .await?;
+                    .await;
                 }
-
-                Ok(())
             }
 
             Type::Pointer(pointer) => {
@@ -341,7 +350,7 @@ impl Constraints {
                     new_variance,
                     engine,
                 ))
-                .await
+                .await;
             }
 
             Type::Reference(reference) => {
@@ -365,7 +374,7 @@ impl Constraints {
                     new_variance,
                     engine,
                 ))
-                .await
+                .await;
             }
 
             Type::Array(array) => {
@@ -375,7 +384,7 @@ impl Constraints {
                     current_variance,
                     engine,
                 ))
-                .await
+                .await;
             }
 
             Type::Tuple(tuple) => {
@@ -387,12 +396,10 @@ impl Constraints {
                             current_variance.clone(),
                             engine,
                         )
-                        .await?;
+                        .await;
                     }
-
-                    Ok(())
                 })
-                .await
+                .await;
             }
 
             Type::Phantom(phantom) => {
@@ -402,7 +409,7 @@ impl Constraints {
                     current_variance,
                     engine,
                 ))
-                .await
+                .await;
             }
 
             Type::MemberSymbol(_) => {
@@ -458,21 +465,23 @@ impl Constraints {
                             new_variance,
                             engine,
                         )
-                        .await?;
+                        .await;
                     }
-
-                    Ok(())
                 })
-                .await
+                .await;
             }
         }
     }
 }
 
+#[distributed_slice(PERNIX_PROGRAM)]
+static CONSTRAINTS_EXECUTOR: Registration<Config> =
+    Registration::new::<ConstraintsKey, ConstraintsExecutor>();
+
 async fn collect_constraints(
     target_id: TargetID,
     engine: &TrackedEngine,
-) -> Result<Vec<Arc<Constraints>>, executor::CyclicError> {
+) -> Vec<Interned<Constraints>> {
     // SAFETY: parallely collects the constraints for each ADT
 
     // NOTE: We have to retrieve all ADT ids first before entering parallel
@@ -480,51 +489,60 @@ async fn collect_constraints(
     // any of the constraint queries are being invoked.
     let adt_ids = engine.get_all_adt_ids(target_id).await;
 
-    // Gets a list of constraints for each ADT id
-    unsafe {
-        engine.start_parallel();
-    }
-
     let constraints_list = scoped!(|scoped| async move {
         let mut constraints_list = Vec::new();
+
+        // PARALLEL: Gets a list of constraints for each ADT id
+        unsafe {
+            engine.start_unordered_callee_group();
+        }
 
         for constraint_id in adt_ids.iter().map(|x| target_id.make_global(*x)) {
             let engine = engine.clone();
             scoped.spawn(async move {
-                engine.query(&ConstraintsKey(constraint_id)).await
+                engine.query(&ConstraintsKey { adt_id: constraint_id }).await
             });
         }
 
         while let Some(res) = scoped.next().await {
-            constraints_list.push(res?);
+            constraints_list.push(res);
         }
 
-        Ok(constraints_list)
-    })?;
+        unsafe {
+            engine.end_unordered_callee_group();
+        }
 
-    unsafe {
-        engine.end_parallel();
-    }
+        constraints_list
+    });
 
-    Ok(constraints_list)
+    constraints_list
 }
 
-pernixc_register::register!(MapKey, MapExecutor);
-
-#[pernixc_query::query(
-    key(MapKey),
-    value(Arc<HashMap<pernixc_symbol::ID, Arc<Variances>>>),
-    id(TargetID),
-    executor(MapExecutor)
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    Query,
 )]
-pub async fn get_variance_maps(
-    target_id: TargetID,
+#[value(Interned<HashMap<pernixc_symbol::ID, Interned<Variances>>>)]
+pub struct MapKey {
+    pub target_id: TargetID,
+}
+
+#[executor(config = Config, style = qbice::ExecutionStyle::Firewall)]
+pub async fn map_executor(
+    &MapKey { target_id }: &MapKey,
     engine: &TrackedEngine,
-) -> Result<
-    Arc<HashMap<pernixc_symbol::ID, Arc<Variances>>>,
-    executor::CyclicError,
-> {
-    let constraints_list = collect_constraints(target_id, engine).await?;
+) -> Interned<HashMap<pernixc_symbol::ID, Interned<Variances>>> {
+    let constraints_list = collect_constraints(target_id, engine).await;
 
     let mut variances_map = {
         let mut variances_map = HashMap::default();
@@ -603,7 +621,7 @@ pub async fn get_variance_maps(
         .iter()
         .map(|x| target_id.make_global(*x))
     {
-        let generic_parameters = engine.get_generic_parameters(adt_id).await?;
+        let generic_parameters = engine.get_generic_parameters(adt_id).await;
 
         let map = variances_map.entry(adt_id.id).or_default();
 
@@ -620,24 +638,56 @@ pub async fn get_variance_maps(
         }
     }
 
-    Ok(Arc::new(
-        variances_map.into_iter().map(|(k, v)| (k, Arc::new(v))).collect(),
-    ))
+    engine.intern(
+        variances_map.into_iter().map(|(k, v)| (k, engine.intern(v))).collect(),
+    )
 }
 
-pernixc_register::register!(pernixc_semantic_element::variance::Key, Executor);
+#[distributed_slice(PERNIX_PROGRAM)]
+static MAP_EXECUTOR: Registration<Config> =
+    Registration::new::<MapKey, MapExecutor>();
 
-#[pernixc_query::executor(
-    key(pernixc_semantic_element::variance::Key),
-    name(Executor)
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    Query,
 )]
-pub async fn executor(
+#[value(Option<Interned<Variances>>)]
+pub struct ProjectionKey {
+    pub symbol_id: Global<pernixc_symbol::ID>,
+}
+
+#[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
+async fn projection_executor(
+    key: &ProjectionKey,
+    engine: &TrackedEngine,
+) -> Option<Interned<Variances>> {
+    let id = key.symbol_id;
+    let map = engine.query(&MapKey { target_id: id.target_id }).await;
+    map.get(&id.id).cloned()
+}
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static PROJECTION_EXECUTOR: Registration<Config> =
+    Registration::new::<ProjectionKey, ProjectionExecutor>();
+
+#[executor(config = Config)]
+async fn executor(
     key: &pernixc_semantic_element::variance::Key,
     engine: &TrackedEngine,
-) -> Result<Arc<Variances>, executor::CyclicError> {
-    let variance_maps = engine.query(&MapKey(key.0.target_id)).await?;
-
-    let variances = variance_maps.get(&key.0.id).cloned().unwrap();
-
-    Ok(variances)
+) -> Interned<Variances> {
+    engine.query(&ProjectionKey { symbol_id: key.symbol_id }).await.unwrap()
 }
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static VARIANCE_EXECUTOR: Registration<Config> =
+    Registration::new::<pernixc_semantic_element::variance::Key, Executor>();

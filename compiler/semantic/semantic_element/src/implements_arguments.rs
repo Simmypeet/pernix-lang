@@ -1,11 +1,8 @@
 //! Contains the query definition for retrieving `implements` generic arguments.
 
-use std::sync::Arc;
-
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 use pernixc_term::generic_arguments::GenericArguments;
+use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 
 /// A query for retrieving the generic arguments supplied to the `implements`
 /// item (`implements[GENERIC_PARAMETERS] symbol[IMPLEMENTS_ARGUMENTS]`)
@@ -19,10 +16,13 @@ use pernixc_term::generic_arguments::GenericArguments;
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
-    pernixc_query::Key,
+    Encode,
+    Decode,
+    Query,
 )]
-#[value(Option<Arc<GenericArguments>>)]
-#[extend(method(get_implements_argument))]
-pub struct Key(pub Global<pernixc_symbol::ID>);
+#[value(Option<Interned<GenericArguments>>)]
+#[extend(name = get_implements_argument, by_val)]
+pub struct Key {
+    /// The global ID of the implements symbol.
+    pub symbol_id: Global<pernixc_symbol::ID>,
+}

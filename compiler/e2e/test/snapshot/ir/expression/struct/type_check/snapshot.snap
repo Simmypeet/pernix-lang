@@ -3,39 +3,47 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: mismatched types: expected `int32`, found `{floating}`
-   ╭─ compiler/e2e/test/snapshot/ir/expression/struct/type_check/main.pnx:17:23
-   │
-17 │     Point { x: 32, y: 64.0 }
-   │                       ^^^^ expected `int32`, found `{floating}`
-   │
-   = ensure the expression type matches the expected type
+  [error]: mismatched types: expected `int32`, found `{floating}`
+    ╭─[compiler/e2e/test/snapshot/ir/expression/struct/type_check/main.pnx:17:23]
+ 16 │     # y is {{float}} but should be int32
+ 17 │     Point { x: 32, y: 64.0 }
+    ·                       ──┬─
+    ·                         ╰── expected `int32`, found `{floating}`
+ 18 │ 
+    ╰────
+  help: ensure the expression type matches the expected type
 
-error: mismatched types: expected `int32`, found `int64`
-   ╭─ compiler/e2e/test/snapshot/ir/expression/struct/type_check/main.pnx:23:16
-   │
-23 │         third: 128i64,
-   │                ^^^^^^ expected `int32`, found `int64`
-   │
-   = ensure the expression type matches the expected type
+  [error]: mismatched types: expected `int32`, found `int64`
+    ╭─[compiler/e2e/test/snapshot/ir/expression/struct/type_check/main.pnx:23:16]
+ 22 │         second: 64i32,
+ 23 │         third: 128i64,
+    ·                ───┬──
+    ·                   ╰── expected `int32`, found `int64`
+ 24 │ 
+    ╰────
+  help: ensure the expression type matches the expected type
 
-error: mismatched types: expected `float64`, found `bool`
-   ╭─ compiler/e2e/test/snapshot/ir/expression/struct/type_check/main.pnx:27:16
-   │
-27 │         sixth: true,
-   │                ^^^^ expected `float64`, found `bool`
-   │
-   = ensure the expression type matches the expected type
+  [error]: mismatched types: expected `float64`, found `bool`
+    ╭─[compiler/e2e/test/snapshot/ir/expression/struct/type_check/main.pnx:27:16]
+ 26 │         fifth: 0.54f64,
+ 27 │         sixth: true,
+    ·                ──┬─
+    ·                  ╰── expected `float64`, found `bool`
+ 28 │     }
+    ╰────
+  help: ensure the expression type matches the expected type
 
-error: mismatched types: expected `int64`, found `{floating}`
-   ╭─ compiler/e2e/test/snapshot/ir/expression/struct/type_check/main.pnx:37:16
-   │
-37 │         sixth: 123.3,
-   │                ^^^^^ expected `int64`, found `{floating}`
-   │
-   = ensure the expression type matches the expected type
+  [error]: mismatched types: expected `int64`, found `{floating}`
+    ╭─[compiler/e2e/test/snapshot/ir/expression/struct/type_check/main.pnx:37:16]
+ 36 │         fifth: 123,
+ 37 │         sixth: 123.3,
+    ·                ──┬──
+    ·                  ╰── expected `int64`, found `{floating}`
+ 38 │     }
+    ╰────
+  help: ensure the expression type matches the expected type
 
-error: Compilation aborted due to 4 error(s)
+  [error]: Compilation aborted due to 4 error(s)
 
 
 

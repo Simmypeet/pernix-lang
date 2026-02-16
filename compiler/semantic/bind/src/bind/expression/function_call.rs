@@ -65,7 +65,7 @@ async fn map_elided_lifetimes_to_erased(
     id: Global<pernixc_symbol::ID>,
     inst: &mut Instantiation,
 ) -> Result<(), Error> {
-    let elided_lts = binder.engine().get_elided_lifetimes(id).await?;
+    let elided_lts = binder.engine().get_elided_lifetimes(id).await;
 
     inst.lifetimes.extend(elided_lts.ids().map(|x| {
         (
@@ -110,7 +110,7 @@ async fn get_function_instantiation(
                     ),
                     variant.generic_arguments,
                 )
-                .await?
+                .await
                 .unwrap(),
         ),
         Resolution::Generic(generic)
@@ -124,7 +124,7 @@ async fn get_function_instantiation(
                 binder
                     .engine()
                     .get_instantiation(generic.id, generic.generic_arguments)
-                    .await?
+                    .await
                     .unwrap(),
             )
         }
@@ -148,7 +148,7 @@ async fn get_function_instantiation(
                             member_generic.parent_generic_arguments,
                             member_generic.member_generic_arguments,
                         )
-                        .await?
+                        .await
                         .unwrap(),
                 );
             }
@@ -158,7 +158,7 @@ async fn get_function_instantiation(
             );
 
             let Some(impl_args) =
-                binder.engine().get_implements_argument(parent_impl_id).await?
+                binder.engine().get_implements_argument(parent_impl_id).await
             else {
                 return Err(Error::Binding(BindingError(syntax_tree.span())));
             };
@@ -198,12 +198,6 @@ async fn get_function_instantiation(
                     )));
                 }
 
-                Err(deduction::Error::CyclicDependency(cyclic)) => {
-                    return Err(Error::Unrecoverable(
-                        UnrecoverableError::CyclicDependency(cyclic),
-                    ));
-                }
-
                 Err(deduction::Error::Overflow(overflow)) => {
                     overflow.report_as_type_calculating_overflow(
                         syntax_tree.span(),
@@ -224,7 +218,7 @@ async fn get_function_instantiation(
                     binder
                         .engine()
                         .get_generic_parameters(member_generic.id)
-                        .await?
+                        .await
                         .as_ref(),
                 )
                 .expect("should have correct generic arguments count");
@@ -261,7 +255,7 @@ async fn get_callable_expected_types(
         let associated_type = binder
             .engine()
             .get_variant_associated_type(callable_id)
-            .await?
+            .await
             .as_deref()
             .cloned();
 
@@ -273,7 +267,7 @@ async fn get_callable_expected_types(
 
         Ok(vec![associated_type])
     } else {
-        let parameters = binder.engine().get_parameters(callable_id).await?;
+        let parameters = binder.engine().get_parameters(callable_id).await;
 
         let mut expected_types =
             Vec::with_capacity(parameters.parameters.len());
@@ -383,7 +377,7 @@ impl Bind<&pernixc_syntax::expression::unit::FunctionCall> for Binder<'_> {
                     self.engine().get_parent(callable_id).await.unwrap(),
                 );
                 let generic_parameters =
-                    self.engine().get_generic_parameters(enum_id).await?;
+                    self.engine().get_generic_parameters(enum_id).await;
 
                 let register_id = self.create_register_assignment(
                     Assignment::Variant(Variant {
@@ -590,7 +584,7 @@ impl Binder<'_> {
         }
 
         let capabilities =
-            self.engine().get_effect_annotation(self.current_site()).await?;
+            self.engine().get_effect_annotation(self.current_site()).await;
 
         let capability_arguments = self
             .effect_check(
@@ -655,7 +649,7 @@ impl Binder<'_> {
         UnrecoverableError,
     > {
         let required_capabilities =
-            self.engine().get_effect_annotation(callable_id).await?;
+            self.engine().get_effect_annotation(callable_id).await;
 
         self.check_effect_units(
             available_capabilities,

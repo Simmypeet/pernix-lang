@@ -3,39 +3,46 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: the symbol `module main::moduleSymbol` cannot be used as an expression
-   ╭─ compiler/e2e/test/snapshot/ir/expression/qualified_identifier/symbol_cannot_be_used/main.pnx:21:5
-   │
-21 │     moduleSymbol
-   │     ^^^^^^^^^^^^ cannot be used as an expression
-   │
-   = only variants, constants, functions, parameters, and variables can be used as expressions
+  [error]: the symbol `module main::moduleSymbol` cannot be used as an expression
+    ╭─[compiler/e2e/test/snapshot/ir/expression/qualified_identifier/symbol_cannot_be_used/main.pnx:21:5]
+ 20 │ public function main():
+ 21 │     moduleSymbol
+    ·     ──────┬─────
+    ·           ╰── cannot be used as an expression
+ 22 │     MyStruct
+    ╰────
+  help: only variants, constants, functions, parameters, and variables can be used as expressions
 
-error: the symbol `struct main::MyStruct` cannot be used as an expression
-   ╭─ compiler/e2e/test/snapshot/ir/expression/qualified_identifier/symbol_cannot_be_used/main.pnx:22:5
-   │
-22 │     MyStruct
-   │     ^^^^^^^^ cannot be used as an expression
-   │
-   = only variants, constants, functions, parameters, and variables can be used as expressions
+  [error]: the symbol `struct main::MyStruct` cannot be used as an expression
+    ╭─[compiler/e2e/test/snapshot/ir/expression/qualified_identifier/symbol_cannot_be_used/main.pnx:22:5]
+ 21 │     moduleSymbol
+ 22 │     MyStruct
+    ·     ────┬───
+    ·         ╰── cannot be used as an expression
+ 23 │     myFunction
+    ╰────
+  help: only variants, constants, functions, parameters, and variables can be used as expressions
 
-error: the symbol `function main::myFunction` cannot be used as an expression
-   ╭─ compiler/e2e/test/snapshot/ir/expression/qualified_identifier/symbol_cannot_be_used/main.pnx:23:5
-   │
-23 │     myFunction
-   │     ^^^^^^^^^^ cannot be used as an expression
-   │
-   = only variants, constants, functions, parameters, and variables can be used as expressions
+  [error]: the symbol `function main::myFunction` cannot be used as an expression
+    ╭─[compiler/e2e/test/snapshot/ir/expression/qualified_identifier/symbol_cannot_be_used/main.pnx:23:5]
+ 22 │     MyStruct
+ 23 │     myFunction
+    ·     ─────┬────
+    ·          ╰── cannot be used as an expression
+ 24 │     MyEnum 
+    ╰────
+  help: only variants, constants, functions, parameters, and variables can be used as expressions
 
-error: the symbol `enum main::MyEnum` cannot be used as an expression
-   ╭─ compiler/e2e/test/snapshot/ir/expression/qualified_identifier/symbol_cannot_be_used/main.pnx:24:5
-   │
-24 │     MyEnum 
-   │     ^^^^^^ cannot be used as an expression
-   │
-   = only variants, constants, functions, parameters, and variables can be used as expressions
+  [error]: the symbol `enum main::MyEnum` cannot be used as an expression
+    ╭─[compiler/e2e/test/snapshot/ir/expression/qualified_identifier/symbol_cannot_be_used/main.pnx:24:5]
+ 23 │     myFunction
+ 24 │     MyEnum 
+    ·     ───┬──
+    ·        ╰── cannot be used as an expression
+    ╰────
+  help: only variants, constants, functions, parameters, and variables can be used as expressions
 
-error: Compilation aborted due to 4 error(s)
+  [error]: Compilation aborted due to 4 error(s)
 
 
 

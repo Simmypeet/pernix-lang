@@ -3,23 +3,27 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: mismatched types: expected `main::Pair[{number}, {number}]`, found `main::Pair[bool, {number}]`
-   ╭─ compiler/e2e/test/snapshot/ir/expression/method_call/mismatched_impl/main.pnx:16:13
-   │
-16 │     let b = a.swap()
-   │             ^ expected `main::Pair[{number}, {number}]`, found `main::Pair[bool, {number}]`
-   │
-   = ensure the expression type matches the expected type
+  [error]: mismatched types: expected `main::Pair[{number}, {number}]`, found `main::Pair[bool, {number}]`
+    ╭─[compiler/e2e/test/snapshot/ir/expression/method_call/mismatched_impl/main.pnx:16:13]
+ 15 │     let a = Pair { first: true, second: 32 }
+ 16 │     let b = a.swap()
+    ·             ┬
+    ·             ╰── expected `main::Pair[{number}, {number}]`, found `main::Pair[bool, {number}]`
+ 17 │     
+    ╰────
+  help: ensure the expression type matches the expected type
 
-error: mismatched types: expected `main::Pair[{number}, {number}]`, found `main::Pair[{number}, bool]`
-   ╭─ compiler/e2e/test/snapshot/ir/expression/method_call/mismatched_impl/main.pnx:19:13
-   │
-19 │     let d = c.swap()
-   │             ^ expected `main::Pair[{number}, {number}]`, found `main::Pair[{number}, bool]`
-   │
-   = ensure the expression type matches the expected type
+  [error]: mismatched types: expected `main::Pair[{number}, {number}]`, found `main::Pair[{number}, bool]`
+    ╭─[compiler/e2e/test/snapshot/ir/expression/method_call/mismatched_impl/main.pnx:19:13]
+ 18 │     let c = Pair { first: 32, second: true }
+ 19 │     let d = c.swap()
+    ·             ┬
+    ·             ╰── expected `main::Pair[{number}, {number}]`, found `main::Pair[{number}, bool]`
+ 20 │ 
+    ╰────
+  help: ensure the expression type matches the expected type
 
-error: Compilation aborted due to 2 error(s)
+  [error]: Compilation aborted due to 2 error(s)
 
 
 

@@ -3,31 +3,37 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-warning: unreachable match arm
-  ╭─ compiler/e2e/test/snapshot/ir/expression/match/unreachable/main.pnx:4:13
-  │
-4 │         true:  2  # unreachable
-  │             ^^^^
-  │
-  = this match arm is unreachable due to prior arms covering all possible cases
+  [warning]: unreachable match arm
+   ╭─[compiler/e2e/test/snapshot/ir/expression/match/unreachable/main.pnx:4:13]
+ 3 │         true:  1
+ 4 │         true:  2  # unreachable
+   ·             ──┬─
+   ·               ╰── 
+ 5 │         false: 3 
+   ╰────
+  help: this match arm is unreachable due to prior arms covering all possible cases
 
-warning: unreachable match arm
-   ╭─ compiler/e2e/test/snapshot/ir/expression/match/unreachable/main.pnx:18:19
-   │
-18 │         case First:  3  # unreachable
-   │                   ^^^^
-   │
-   = this match arm is unreachable due to prior arms covering all possible cases
+  [warning]: unreachable match arm
+    ╭─[compiler/e2e/test/snapshot/ir/expression/match/unreachable/main.pnx:18:19]
+ 17 │         case Second: 2
+ 18 │         case First:  3  # unreachable
+    ·                   ──┬─
+    ·                     ╰── 
+ 19 │         case Third:  4
+    ╰────
+  help: this match arm is unreachable due to prior arms covering all possible cases
 
-warning: unreachable match arm
-   ╭─ compiler/e2e/test/snapshot/ir/expression/match/unreachable/main.pnx:26:19
-   │
-26 │         case Third:  4 # unreachable
-   │                   ^^^^
-   │
-   = this match arm is unreachable due to prior arms covering all possible cases
+  [warning]: unreachable match arm
+    ╭─[compiler/e2e/test/snapshot/ir/expression/match/unreachable/main.pnx:26:19]
+ 25 │         name:        3 
+ 26 │         case Third:  4 # unreachable
+    ·                   ──┬─
+    ·                     ╰── 
+ 27 │ 
+    ╰────
+  help: this match arm is unreachable due to prior arms covering all possible cases
 
-error: Compilation aborted due to 3 error(s)
+  [error]: Compilation aborted due to 3 error(s)
 
 
 

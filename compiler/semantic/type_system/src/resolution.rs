@@ -10,7 +10,7 @@ use pernixc_semantic_element::{
     where_clause::{self, get_where_clause},
 };
 use pernixc_symbol::{
-    final_implements::is_implements_final,
+    final_implements::get_is_implements_final,
     kind::{Kind, get_kind},
     parent::scope_walker,
 };
@@ -19,6 +19,7 @@ use pernixc_term::{
     generic_arguments::GenericArguments, instantiation::Instantiation,
     predicate::Predicate, r#type::Type,
 };
+use qbice::storage::intern::Interned;
 
 use crate::{
     Error, Succeeded,
@@ -105,7 +106,7 @@ impl Query for Resolve {
             let implementations = environment
                 .tracked_engine()
                 .get_implemented(self.implemented_id)
-                .await?
+                .await
                 .iter()
                 .copied()
                 .collect::<Vec<_>>();
@@ -114,8 +115,7 @@ impl Query for Resolve {
                 let Some(implementation_generic_arguments) = environment
                     .tracked_engine()
                     .get_implements_argument(current_impl_id)
-                    .await?
-                    .clone()
+                    .await
                 else {
                     continue;
                 };
@@ -137,10 +137,6 @@ impl Query for Resolve {
                         return Err(error.into());
                     }
 
-                    Err(deduction::Error::CyclicDependency(cyclic)) => {
-                        return Err(cyclic.into());
-                    }
-
                     Err(
                         deduction::Error::MismatchedGenericArgumentCount(_)
                         | deduction::Error::UnificationFailure(_),
@@ -151,7 +147,7 @@ impl Query for Resolve {
                     Kind::Trait => {
                         environment
                             .tracked_engine()
-                            .is_implements_final(current_impl_id)
+                            .get_is_implements_final(current_impl_id)
                             .await
                     }
 
@@ -172,7 +168,7 @@ impl Query for Resolve {
                     let where_clause = environment
                         .tracked_engine()
                         .get_where_clause(current_impl_id)
-                        .await?;
+                        .await;
 
                     if !predicate_satisfies(
                         where_clause,
@@ -200,7 +196,7 @@ impl Query for Resolve {
                                 current_impl_id,
                                 *candidate_id,
                             ))
-                            .await?
+                            .await
                         {
                             Ok(Some(
                                 Order::Ambiguous | Order::Incompatible,
@@ -290,7 +286,7 @@ async fn is_in_active_implementation(
         }
 
         // must be an implementation
-        if environment.tracked_engine().get_implements(current_id).await?
+        if environment.tracked_engine().get_implements(current_id).await
             != Some(implemented_id)
         {
             continue;
@@ -299,8 +295,7 @@ async fn is_in_active_implementation(
         let Some(implementation_arguments) = environment
             .tracked_engine()
             .get_implements_argument(current_id)
-            .await?
-            .clone()
+            .await
         else {
             continue;
         };
@@ -332,10 +327,6 @@ async fn is_in_active_implementation(
                 }));
             }
 
-            Err(deduction::Error::CyclicDependency(err)) => {
-                return Err(Error::CyclicDependency(err));
-            }
-
             Err(deduction::Error::Overflow(err)) => {
                 return Err(Error::Overflow(err));
             }
@@ -348,7 +339,7 @@ async fn is_in_active_implementation(
 }
 
 async fn predicate_satisfies(
-    predicates: Arc<[where_clause::Predicate]>,
+    predicates: Interned<[where_clause::Predicate]>,
     substitution: &Instantiation,
     environment: &Environment<'_, impl Normalizer>,
 ) -> Result<bool, Error> {

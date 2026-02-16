@@ -4,7 +4,6 @@ use std::{collections::BTreeSet, sync::Arc};
 
 use pernixc_handler::Handler;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::runtime::executor;
 use pernixc_semantic_element::variance::Variance;
 use pernixc_term::{r#type::Type, visitor::AsyncMutable};
 
@@ -187,7 +186,7 @@ impl<N: Normalizer> Environment<'_, N> {
         ty: &Type,
         type_span: &RelativeSpan,
         handler: &dyn Handler<Diagnostic>,
-    ) -> Result<Type, executor::CyclicError> {
+    ) -> Type {
         match self.query(&Simplify(ty.clone())).await {
             Ok(Some(result)) => {
                 self.check_lifetime_constraints(
@@ -195,21 +194,17 @@ impl<N: Normalizer> Environment<'_, N> {
                     type_span,
                     handler,
                 )
-                .await?;
+                .await;
 
-                Ok(result.result.clone())
+                result.result.clone()
             }
 
             Ok(None) => unreachable!(),
 
-            Err(Error::CyclicDependency(error)) => Err(error),
-
             Err(Error::Overflow(error)) => {
                 error.report_as_type_calculating_overflow(*type_span, handler);
 
-                Ok(pernixc_term::r#type::Type::Error(
-                    pernixc_term::error::Error,
-                ))
+                pernixc_term::r#type::Type::Error(pernixc_term::error::Error)
             }
         }
     }

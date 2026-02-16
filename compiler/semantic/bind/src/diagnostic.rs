@@ -2,13 +2,10 @@
 
 use std::fmt::Write;
 
-use flexstr::SharedStr;
 use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor};
-use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_qbice::TrackedEngine;
 use pernixc_source_file::ByteIndex;
-use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{
     kind::get_kind,
     name::{get_name, get_qualified_name},
@@ -26,6 +23,7 @@ use pernixc_term::{
     },
     r#type::Type,
 };
+use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
 use crate::{binder, pattern};
 
@@ -38,8 +36,8 @@ diagnostic_enum! {
         PartialEq,
         Eq,
         StableHash,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
         derive_more::From,
     )]
     #[allow(clippy::large_enum_variant, missing_docs)]
@@ -120,11 +118,8 @@ macro_rules! diagnostic_enum {
         impl pernixc_diagnostic::Report for Diagnostic {
             async fn report(
                 &self,
-                engine: &pernixc_query::TrackedEngine,
-            ) -> Result<
-                pernixc_diagnostic::Rendered<pernixc_diagnostic::ByteIndex>,
-                pernixc_query::runtime::executor::CyclicError
-            > {
+                engine: &::pernixc_qbice::TrackedEngine,
+            ) -> pernixc_diagnostic::Rendered<pernixc_diagnostic::ByteIndex> {
                 match self {
                     $(
                         Diagnostic::$variant(inner) => inner.report(engine).await,
@@ -150,8 +145,8 @@ use crate::bind::expression;
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct ExpectedLValue {
     /// The span of the r-value.
@@ -162,9 +157,8 @@ impl Report for ExpectedLValue {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
-        Ok(pernixc_diagnostic::Rendered::builder()
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        pernixc_diagnostic::Rendered::builder()
             .primary_highlight(
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.expression_span).await)
@@ -177,7 +171,7 @@ impl Report for ExpectedLValue {
                  location,
                         for example, a variable or a dereferenced pointer",
             )
-            .build())
+            .build()
     }
 }
 
@@ -192,8 +186,8 @@ impl Report for ExpectedLValue {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct AssignToNonMutable {
     /// The span of the assignment.
@@ -204,9 +198,8 @@ impl Report for AssignToNonMutable {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
-        Ok(pernixc_diagnostic::Rendered::builder()
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        pernixc_diagnostic::Rendered::builder()
             .primary_highlight(
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.span).await)
@@ -218,7 +211,7 @@ impl Report for AssignToNonMutable {
                 "only mutable l-values can be assigned to; consider declaring \
                  the variable as `mut`",
             )
-            .build())
+            .build()
     }
 }
 
@@ -233,8 +226,8 @@ impl Report for AssignToNonMutable {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 #[allow(missing_docs)]
 pub enum BinaryOperatorKind {
@@ -244,7 +237,7 @@ pub enum BinaryOperatorKind {
 }
 
 /// The type of the left-hand side of a binary operator is invalid.
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct InvalidTypeInBinaryOperator {
     /// The span of the left-hand side expression.
     pub lhs_span: RelativeSpan,
@@ -265,11 +258,8 @@ pub struct InvalidTypeInBinaryOperator {
 impl Report for InvalidTypeInBinaryOperator {
     async fn report(
         &self,
-        parameter: &pernixc_query::TrackedEngine,
-    ) -> Result<
-        pernixc_diagnostic::Rendered<pernixc_diagnostic::ByteIndex>,
-        pernixc_query::runtime::executor::CyclicError,
-    > {
+        parameter: &TrackedEngine,
+    ) -> pernixc_diagnostic::Rendered<pernixc_diagnostic::ByteIndex> {
         let mut message = match self.operator_kind {
             BinaryOperatorKind::Arithmetic => {
                 "the left-hand side of an arithmetic operator must be a number \
@@ -299,7 +289,7 @@ impl Report for InvalidTypeInBinaryOperator {
 
         message.push('`');
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message(message)
             .primary_highlight(
                 Highlight::builder()
@@ -320,14 +310,12 @@ impl Report for InvalidTypeInBinaryOperator {
                     "only an integer type can be used with bitwise operators"
                 }
             })
-            .build())
+            .build()
     }
 }
 
 /// Not all control flow paths in a function return a value.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, StableHash, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct NotAllFlowPathsReturnAValue {
     /// The ID of the callable that does not return a value on all paths.
     pub callable_id: Global<pernixc_symbol::ID>,
@@ -337,15 +325,14 @@ impl Report for NotAllFlowPathsReturnAValue {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let span = engine
             .to_absolute_span(&engine.get_span(self.callable_id).await.unwrap())
             .await;
 
         let qualified_name = engine.get_qualified_name(self.callable_id).await;
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .primary_highlight(Highlight::builder().span(span).build())
             .severity(Severity::Error)
             .message(format!(
@@ -355,14 +342,12 @@ impl Report for NotAllFlowPathsReturnAValue {
             .help_message(
                 "consider adding a return statement to all control flow paths",
             )
-            .build())
+            .build()
     }
 }
 
 /// Return expression is used outside the function.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, StableHash, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct ReturnIsNotAllowed {
     /// The span of the return expression.
     pub return_span: RelativeSpan,
@@ -372,9 +357,8 @@ impl Report for ReturnIsNotAllowed {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
-        Ok(pernixc_diagnostic::Rendered::builder()
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        pernixc_diagnostic::Rendered::builder()
             .primary_highlight(
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.return_span).await)
@@ -383,14 +367,12 @@ impl Report for ReturnIsNotAllowed {
             .severity(Severity::Error)
             .message("`return` is only allowed inside a function")
             .help_message("consider removing the `return` statement")
-            .build())
+            .build()
     }
 }
 
 /// A type annotation is required for a generic type parameter.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, StableHash, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct TypeAnnotationRequired {
     /// The span where the type annotation is required.
     pub span: RelativeSpan,
@@ -403,24 +385,24 @@ impl Report for TypeAnnotationRequired {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let qualified_name =
             engine.get_qualified_name(self.generic_parameter.parent_id).await;
 
         let generic_parameters = engine
             .get_generic_parameters(self.generic_parameter.parent_id)
-            .await?;
+            .await;
 
         let ty_parameter =
             &generic_parameters.types()[self.generic_parameter.id];
 
         let message = format!(
             "type annotation is required for generic parameter `{}` of `{}`",
-            ty_parameter.name, qualified_name
+            ty_parameter.name.as_ref(),
+            qualified_name
         );
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message(message)
             .primary_highlight(
                 Highlight::builder()
@@ -432,14 +414,12 @@ impl Report for TypeAnnotationRequired {
                 "consider adding a type annotation using syntax such as \
                  `{qualified_name}[Type]`"
             ))
-            .build())
+            .build()
     }
 }
 
 /// A constant argument annotation is required for a generic constant parameter.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, StableHash, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct ConstantAnnotationRequired {
     /// The span where the type annotation is required.
     pub span: RelativeSpan,
@@ -452,14 +432,13 @@ impl Report for ConstantAnnotationRequired {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let qualified_name =
             engine.get_qualified_name(self.generic_parameter.parent_id).await;
 
         let generic_parameters = engine
             .get_generic_parameters(self.generic_parameter.parent_id)
-            .await?;
+            .await;
 
         let const_parameter =
             &generic_parameters.constants()[self.generic_parameter.id];
@@ -467,10 +446,11 @@ impl Report for ConstantAnnotationRequired {
         let message = format!(
             "constant annotation is required for generic parameter `{}` of \
              `{}`",
-            const_parameter.name, qualified_name
+            const_parameter.name.as_ref(),
+            qualified_name
         );
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message(message)
             .primary_highlight(
                 Highlight::builder()
@@ -482,7 +462,7 @@ impl Report for ConstantAnnotationRequired {
                 "consider adding a constant annotation using syntax such as \
                  `{qualified_name}[ {{ EXPR }} ]`"
             ))
-            .build())
+            .build()
     }
 }
 
@@ -497,8 +477,8 @@ impl Report for ConstantAnnotationRequired {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct NotAllFlowPathsExpressValue {
     /// The span of the scope expression.
@@ -509,9 +489,8 @@ impl Report for NotAllFlowPathsExpressValue {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
-        Ok(pernixc_diagnostic::Rendered::builder()
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        pernixc_diagnostic::Rendered::builder()
             .primary_highlight(
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.span).await)
@@ -525,7 +504,7 @@ impl Report for NotAllFlowPathsExpressValue {
                 "consider adding an `express` expression to all control flow \
                  paths",
             )
-            .build())
+            .build()
     }
 }
 
@@ -540,8 +519,8 @@ impl Report for NotAllFlowPathsExpressValue {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct ScopeWithGivenLableNameNotFound {
     /// The span of the label identifier.
@@ -552,9 +531,8 @@ impl Report for ScopeWithGivenLableNameNotFound {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
-        Ok(pernixc_diagnostic::Rendered::builder()
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        pernixc_diagnostic::Rendered::builder()
             .primary_highlight(
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.span).await)
@@ -562,7 +540,7 @@ impl Report for ScopeWithGivenLableNameNotFound {
             )
             .severity(Severity::Error)
             .message("scope with the given label name was not found")
-            .build())
+            .build()
     }
 }
 
@@ -577,8 +555,8 @@ impl Report for ScopeWithGivenLableNameNotFound {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct ExpressOutsideScope {
     /// The span of the expression.
@@ -589,9 +567,8 @@ impl Report for ExpressOutsideScope {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
-        Ok(pernixc_diagnostic::Rendered::builder()
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        pernixc_diagnostic::Rendered::builder()
             .primary_highlight(
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.span).await)
@@ -599,16 +576,14 @@ impl Report for ExpressOutsideScope {
             )
             .severity(Severity::Error)
             .message("`express` can only be used inside a scope expression")
-            .build())
+            .build()
     }
 }
 
 /// The `express` expression is expected to have a value since the earlier
 /// `express` expression in the same scope has a value with a type other than
 /// unit.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, StableHash, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct ExpressExpectedAValue {
     /// The span of the `express` expression with no value.
     pub span: RelativeSpan,
@@ -618,9 +593,8 @@ impl Report for ExpressExpectedAValue {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
-        Ok(pernixc_diagnostic::Rendered::builder()
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        pernixc_diagnostic::Rendered::builder()
             .primary_highlight(
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.span).await)
@@ -633,15 +607,13 @@ impl Report for ExpressExpectedAValue {
                  with a type other than unit (`()`). Consider adding a value \
                  to this `express` expression.",
             )
-            .build())
+            .build()
     }
 }
 
 /// The `if` expression `express` a value having type other than unit, but
 /// doesn't have an `else` branch.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, StableHash, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct IfMissingElseBranch {
     /// The span of the `if` expression.
     pub if_span: RelativeSpan,
@@ -651,9 +623,8 @@ impl Report for IfMissingElseBranch {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
-        Ok(pernixc_diagnostic::Rendered::builder()
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        pernixc_diagnostic::Rendered::builder()
             .primary_highlight(
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.if_span).await)
@@ -668,7 +639,7 @@ impl Report for IfMissingElseBranch {
                  unit, so an `else` branch expressing a value of the same \
                  type is required",
             )
-            .build())
+            .build()
     }
 }
 
@@ -683,8 +654,8 @@ impl Report for IfMissingElseBranch {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     derive_more::Display,
 )]
 #[allow(missing_docs)]
@@ -707,8 +678,8 @@ pub enum LoopControlFlow {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct LoopWithGivenLabelNameNotFound {
     /// The span of the label identifier.
@@ -719,9 +690,8 @@ impl Report for LoopWithGivenLabelNameNotFound {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
-        Ok(pernixc_diagnostic::Rendered::builder()
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        pernixc_diagnostic::Rendered::builder()
             .primary_highlight(
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.span).await)
@@ -731,7 +701,7 @@ impl Report for LoopWithGivenLabelNameNotFound {
             .message(
                 "`loop` or `while` with the given label name was not found",
             )
-            .build())
+            .build()
     }
 }
 
@@ -746,8 +716,8 @@ impl Report for LoopWithGivenLabelNameNotFound {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct LoopControlFlowOutsideLoop {
     /// The span of the break expression.
@@ -761,9 +731,8 @@ impl Report for LoopControlFlowOutsideLoop {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
-        Ok(pernixc_diagnostic::Rendered::builder()
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        pernixc_diagnostic::Rendered::builder()
             .primary_highlight(
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.span).await)
@@ -774,7 +743,7 @@ impl Report for LoopControlFlowOutsideLoop {
                 "`{}` can only be used inside a `loop` or `while`",
                 self.control_flow
             ))
-            .build())
+            .build()
     }
 }
 
@@ -789,8 +758,8 @@ impl Report for LoopControlFlowOutsideLoop {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct UnreachableMatchArm {
     /// The span of the match arm.
@@ -801,9 +770,8 @@ impl Report for UnreachableMatchArm {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
-        Ok(pernixc_diagnostic::Rendered::builder()
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        pernixc_diagnostic::Rendered::builder()
             .primary_highlight(
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.match_arm_span).await)
@@ -815,7 +783,7 @@ impl Report for UnreachableMatchArm {
                 "this match arm is unreachable due to prior arms covering all \
                  possible cases",
             )
-            .build())
+            .build()
     }
 }
 
@@ -830,8 +798,8 @@ impl Report for UnreachableMatchArm {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct NonExhaustiveMatch {
     /// The span of the match expression.
@@ -842,9 +810,8 @@ impl Report for NonExhaustiveMatch {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
-        Ok(pernixc_diagnostic::Rendered::builder()
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        pernixc_diagnostic::Rendered::builder()
             .primary_highlight(
                 Highlight::builder()
                     .span(
@@ -860,7 +827,7 @@ impl Report for NonExhaustiveMatch {
                 "this match expression does not cover all possible cases; \
                  consider adding a wildcard (`_`) arm",
             )
-            .build())
+            .build()
     }
 }
 
@@ -876,8 +843,8 @@ impl Report for NonExhaustiveMatch {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct FoundPackTuplePatternInMatchArmPattern {
     /// The span of the pack tuple pattern.
@@ -888,9 +855,8 @@ impl Report for FoundPackTuplePatternInMatchArmPattern {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
-        Ok(pernixc_diagnostic::Rendered::builder()
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        pernixc_diagnostic::Rendered::builder()
             .primary_highlight(
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.pattern_span).await)
@@ -901,12 +867,12 @@ impl Report for FoundPackTuplePatternInMatchArmPattern {
                 "pack tuple patterns (e.g. `(A, ...B, C)`) are not allowed in \
                  match arm patterns",
             )
-            .build())
+            .build()
     }
 }
 
 /// Some effects that a function may perform are not handled by the caller.
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct UnhandledEffects {
     /// The effects that are not handled by the caller.
     pub effects: Vec<effect::Unit>,
@@ -928,8 +894,7 @@ impl Report for UnhandledEffects {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let mut message =
             "the following effects are not handled by the caller: ".to_string();
 
@@ -955,7 +920,7 @@ impl Report for UnhandledEffects {
             engine.get_qualified_name(self.callable_id).await;
         let kind = engine.get_kind(self.callable_id).await;
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message(message)
             .primary_highlight(
                 Highlight::builder()
@@ -972,14 +937,12 @@ impl Report for UnhandledEffects {
                 "consider adding a `do` effect annotation to the current \
                  function to handle these effects",
             )
-            .build())
+            .build()
     }
 }
 
 /// A resolved qualified identifier was expected to be an effect, but was not.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, StableHash, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct EffectExpected {
     /// The span of the qualified identifier.
     pub span: RelativeSpan,
@@ -992,12 +955,11 @@ impl Report for EffectExpected {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let qualified_name = engine.get_qualified_name(self.global_id).await;
         let kind = engine.get_kind(self.global_id).await;
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message(format!(
                 "expected `{} {}` to be an effect",
                 kind.kind_str(),
@@ -1018,12 +980,12 @@ impl Report for EffectExpected {
                 "only effects can be used in a `with` clause in a `do` \
                  expression",
             )
-            .build())
+            .build()
     }
 }
 
 /// The same effect is handled more than once in a `do` expression.
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct DuplicatedEffectHandler {
     /// The ID of the duplicated effect.
     pub effect_id: Global<pernixc_symbol::ID>,
@@ -1048,8 +1010,7 @@ impl Report for DuplicatedEffectHandler {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let qualified_name = engine.get_qualified_name(self.effect_id).await;
         let generic_arguments = self
             .generic_arguments
@@ -1065,7 +1026,7 @@ impl Report for DuplicatedEffectHandler {
 
         let kind = engine.get_kind(self.effect_id).await;
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message(format!(
                 "the effect `{}{}` is handled more than once",
                 kind.kind_str(),
@@ -1094,18 +1055,18 @@ impl Report for DuplicatedEffectHandler {
                  handled by the first handler; consider removing the second \
                  handler"
             ))
-            .build())
+            .build()
     }
 }
 
 /// Attempted to handle an unknown effect operation in a `with` clause.
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct UnknownEffectOperation {
     /// The ID of the effect being handled.
     pub effect_id: Global<pernixc_symbol::ID>,
 
     /// The name of the unknown operation.
-    pub operation_name: SharedStr,
+    pub operation_name: Interned<str>,
 
     /// The span of the operation name.
     pub operation_span: RelativeSpan,
@@ -1115,38 +1076,39 @@ impl Report for UnknownEffectOperation {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let qualified_name = engine.get_qualified_name(self.effect_id).await;
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message(format!(
                 "the effect `{}` has no operation named `{}`",
-                qualified_name, self.operation_name
+                qualified_name,
+                self.operation_name.as_ref()
             ))
             .primary_highlight(
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.operation_span).await)
                     .message(format!(
                         "`{}` is not an operation of `{}` effect",
-                        self.operation_name, qualified_name
+                        self.operation_name.as_ref(),
+                        qualified_name
                     ))
                     .build(),
             )
             .severity(pernixc_diagnostic::Severity::Error)
-            .build())
+            .build()
     }
 }
 
 /// Attempted to handle the same effect operation more than once in a `with`
 /// clause.
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct DuplicatedEffectOperationHandler {
     /// The ID of the effect being handled.
     pub effect_id: Global<pernixc_symbol::ID>,
 
     /// The name of the duplicated operation.
-    pub operation_name: SharedStr,
+    pub operation_name: Interned<str>,
 
     /// The span of the first operation name.
     pub first_span: RelativeSpan,
@@ -1159,14 +1121,14 @@ impl Report for DuplicatedEffectOperationHandler {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let qualified_name = engine.get_qualified_name(self.effect_id).await;
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message(format!(
                 "the operation `{}` of effect `{}` is handled more than once",
-                self.operation_name, qualified_name
+                self.operation_name.as_ref(),
+                qualified_name
             ))
             .primary_highlight(
                 Highlight::builder()
@@ -1184,22 +1146,24 @@ impl Report for DuplicatedEffectOperationHandler {
                     .message(format!(
                         "the first handler for operation `{}` of effect `{}` \
                          is defined here",
-                        self.operation_name, qualified_name
+                        self.operation_name.as_ref(),
+                        qualified_name
                     ))
                     .build(),
             ])
             .help_message(format!(
                 "the operation `{}` of effect `{}` is already handled by the \
                  first handler; consider removing the second handler",
-                self.operation_name, qualified_name
+                self.operation_name.as_ref(),
+                qualified_name
             ))
-            .build())
+            .build()
     }
 }
 
 /// Not all the effect operations declared by an effect are handled in a `with`
 /// clause.
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct UnhandledEffectOperations {
     /// The effect operations that are not handled.
     pub unhandled_effect_operations: Vec<Global<pernixc_symbol::ID>>,
@@ -1215,8 +1179,7 @@ impl Report for UnhandledEffectOperations {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let mut message =
             "the following effect operations are not handled: ".to_string();
 
@@ -1228,12 +1191,12 @@ impl Report for UnhandledEffectOperations {
             }
 
             let operation_name = engine.get_name(*operation_id).await;
-            write!(message, "`{operation_name}`").unwrap();
+            write!(message, "`{}`", operation_name.as_ref()).unwrap();
         }
 
         let qualified_name = engine.get_qualified_name(self.effect_id).await;
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message(message)
             .primary_highlight(
                 Highlight::builder()
@@ -1246,15 +1209,13 @@ impl Report for UnhandledEffectOperations {
                 "consider adding handlers for all the effect operations of \
                  `{qualified_name}`"
             ))
-            .build())
+            .build()
     }
 }
 
 /// The number of arguments in an effect operation handler does not match the
 /// number of parameters declared by the effect operation.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, StableHash, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct MismatchedArgumentCountInEffectOperationHandler {
     /// The number of parameters declared by the effect operation.
     pub expected: usize,
@@ -1273,14 +1234,14 @@ impl Report for MismatchedArgumentCountInEffectOperationHandler {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let operation_name = engine.get_name(self.operation_id).await;
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message(format!(
-                "the effect operation `{operation_name}` expects {} argument \
-                 {}, but the handler has {} argument{}",
+                "the effect operation `{}` expects {} argument {}, but the \
+                 handler has {} argument{}",
+                operation_name.as_ref(),
                 self.expected,
                 if self.expected == 1 { "" } else { "s" },
                 self.found,
@@ -1290,7 +1251,8 @@ impl Report for MismatchedArgumentCountInEffectOperationHandler {
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.span).await)
                     .message(format!(
-                        "handler for operation `{operation_name}` of effect"
+                        "handler for operation `{}` of effect",
+                        operation_name.as_ref()
                     ))
                     .build(),
             )
@@ -1300,12 +1262,12 @@ impl Report for MismatchedArgumentCountInEffectOperationHandler {
                  be {}",
                 self.expected
             ))
-            .build())
+            .build()
     }
 }
 
 /// The return type of a closure does not match the expected return type.
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct MismatchedClosureReturnType {
     /// The expected return type of the closure.
     pub expected: Type,
@@ -1331,8 +1293,7 @@ impl Report for MismatchedClosureReturnType {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let expected = self
             .expected
             .write_to_string_with_configuration(
@@ -1370,7 +1331,7 @@ impl Report for MismatchedClosureReturnType {
             )
         };
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message(message)
             .primary_highlight(
                 Highlight::builder()
@@ -1382,12 +1343,12 @@ impl Report for MismatchedClosureReturnType {
                 "consider changing the closure body to return the expected \
                  type",
             )
-            .build())
+            .build()
     }
 }
 
 /// Not all flow paths in a closure return a value.
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct NotAllFlowPathsReturnAValueInClosure {
     /// The span of the closure expression
     pub closure_span: RelativeSpan,
@@ -1406,8 +1367,7 @@ impl Report for NotAllFlowPathsReturnAValueInClosure {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let return_type = self
             .return_type
             .write_to_string_with_configuration(
@@ -1420,7 +1380,7 @@ impl Report for NotAllFlowPathsReturnAValueInClosure {
             .await
             .unwrap();
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message(format!(
                 "not all flow paths in this closure return a value of type \
                  `{return_type}`",
@@ -1434,14 +1394,12 @@ impl Report for NotAllFlowPathsReturnAValueInClosure {
             .help_message(
                 "consider adding a return expression to all control flow paths",
             )
-            .build())
+            .build()
     }
 }
 
 /// The `resume` call is used outside of an operation handler clause.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, StableHash, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct ResumeCallOutsideOperationHandler {
     /// The span of the `resume` call expression.
     pub span: RelativeSpan,
@@ -1451,9 +1409,8 @@ impl Report for ResumeCallOutsideOperationHandler {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
-        Ok(pernixc_diagnostic::Rendered::builder()
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        pernixc_diagnostic::Rendered::builder()
             .message("`resume` can only be used inside an operation handler")
             .primary_highlight(
                 Highlight::builder()
@@ -1465,6 +1422,6 @@ impl Report for ResumeCallOutsideOperationHandler {
                     .build(),
             )
             .severity(pernixc_diagnostic::Severity::Error)
-            .build())
+            .build()
     }
 }

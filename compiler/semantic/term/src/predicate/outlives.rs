@@ -1,7 +1,6 @@
 use std::fmt::Write;
 
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode, StableHash};
 
 use super::contains_error;
 use crate::{
@@ -20,8 +19,8 @@ use crate::{
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     derive_new::new,
 )]
 pub struct Outlives<T> {
@@ -56,7 +55,7 @@ impl<T> Outlives<T> {
 impl<T: crate::display::Display> crate::display::Display for Outlives<T> {
     async fn fmt(
         &self,
-        engine: &pernixc_query::TrackedEngine,
+        engine: &pernixc_qbice::TrackedEngine,
         formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
         self.operand.fmt(engine, formatter).await?;

@@ -1,10 +1,9 @@
 use std::{collections::hash_map, sync::Arc};
 
-use flexstr::SharedStr;
 use pernixc_handler::Storage;
 use pernixc_hash::{DashMap, HashMap, HashSet};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::TrackedEngine;
+use pernixc_qbice::TrackedEngine;
 use pernixc_source_file::SourceFile;
 use pernixc_symbol::{
     ID, accessibility::Accessibility, calculate_qualified_name_id,
@@ -12,6 +11,7 @@ use pernixc_symbol::{
 };
 use pernixc_syntax::AccessModifier;
 use pernixc_target::TargetID;
+use qbice::storage::intern::Interned;
 
 use crate::{
     diagnostic::{Diagnostic, ItemRedefinition},
@@ -25,15 +25,15 @@ pub struct Builder {
     target_id: TargetID,
 
     kinds: DashMap<ID, Kind>,
-    names: DashMap<ID, SharedStr>,
+    names: DashMap<ID, Interned<str>>,
     spans: DashMap<ID, Option<RelativeSpan>>,
-    members: DashMap<ID, Arc<Member>>,
+    members: DashMap<ID, Interned<Member>>,
     accessibilities: DashMap<ID, Accessibility<ID>>,
 
     implements_access_modifier_syntaxes:
         DashMap<ID, Option<pernixc_syntax::AccessModifier>>,
 
-    external_submodules: DashMap<ID, Arc<ExternalSubmodule>>,
+    external_submodules: DashMap<ID, Interned<ExternalSubmodule>>,
 
     generic_parameter_syntaxes: DashMap<
         ID,
@@ -63,7 +63,8 @@ pub struct Builder {
     variant_associated_type_syntaxes:
         DashMap<ID, Option<pernixc_syntax::r#type::Type>>,
     variant_declaration_orders: DashMap<ID, usize>,
-    import_syntaxes: DashMap<ID, Arc<[pernixc_syntax::item::module::Import]>>,
+    import_syntaxes:
+        DashMap<ID, Interned<[pernixc_syntax::item::module::Import]>>,
     implements_qualified_identifier_syntaxes:
         DashMap<ID, pernixc_syntax::QualifiedIdentifier>,
     final_keywords: DashMap<ID, Option<pernixc_syntax::Keyword>>,
@@ -82,8 +83,8 @@ pub struct Builder {
 
     scope_spans: DashMap<ID, Option<RelativeSpan>>,
 
-    token_tree: Option<Arc<pernixc_lexical::tree::Tree>>,
-    source_file: Option<Arc<SourceFile>>,
+    token_tree: Option<Interned<pernixc_lexical::tree::Tree>>,
+    source_file: Option<SourceFile>,
 
     is_root: bool,
 }
@@ -93,8 +94,8 @@ impl Builder {
     pub fn new(
         engine: TrackedEngine,
         storage: Storage<Diagnostic>,
-        source_file: Option<Arc<SourceFile>>,
-        token_tree: Option<Arc<pernixc_lexical::tree::Tree>>,
+        source_file: Option<SourceFile>,
+        token_tree: Option<Interned<pernixc_lexical::tree::Tree>>,
         target_id: TargetID,
         is_root: bool,
     ) -> Self {
@@ -142,68 +143,82 @@ impl Builder {
 
     /// Finiailizes the builder into an immutable [`super::Table`].
     #[must_use]
-    pub fn into_table(self, module_id: ID) -> Arc<super::Table> {
-        Arc::new(Table {
-            kinds: Arc::new(self.kinds.into_read_only()),
-            names: Arc::new(self.names.into_read_only()),
-            spans: Arc::new(self.spans.into_read_only()),
-            members: Arc::new(self.members.into_read_only()),
-            accessibilities: Arc::new(self.accessibilities.into_read_only()),
-            implements_access_modifier_syntaxes: Arc::new(
-                self.implements_access_modifier_syntaxes.into_read_only(),
+    pub fn into_table(self, module_id: ID) -> Interned<super::Table> {
+        self.engine.intern(Table {
+            kinds: self.engine.intern(self.kinds.into_iter().collect()),
+            names: self.engine.intern(self.names.into_iter().collect()),
+            spans: self.engine.intern(self.spans.into_iter().collect()),
+            members: self.engine.intern(self.members.into_iter().collect()),
+            accessibilities: self
+                .engine
+                .intern(self.accessibilities.into_iter().collect()),
+            implements_access_modifier_syntaxes: self.engine.intern(
+                self.implements_access_modifier_syntaxes.into_iter().collect(),
             ),
 
             // syntax extractions
-            generic_parameter_syntaxes: Arc::new(
-                self.generic_parameter_syntaxes.into_read_only(),
+            generic_parameter_syntaxes: self
+                .engine
+                .intern(self.generic_parameter_syntaxes.into_iter().collect()),
+            where_clause_syntaxes: self
+                .engine
+                .intern(self.where_clause_syntaxes.into_iter().collect()),
+            type_alias_syntaxes: self
+                .engine
+                .intern(self.type_alias_syntaxes.into_iter().collect()),
+            constant_type_annotation_syntaxes: self.engine.intern(
+                self.constant_type_annotation_syntaxes.into_iter().collect(),
             ),
-            where_clause_syntaxes: Arc::new(
-                self.where_clause_syntaxes.into_read_only(),
+            constant_expression_syntaxes: self.engine.intern(
+                self.constant_expression_syntaxes.into_iter().collect(),
             ),
-            type_alias_syntaxes: Arc::new(
-                self.type_alias_syntaxes.into_read_only(),
+            function_signature_syntaxes: self
+                .engine
+                .intern(self.function_signature_syntaxes.into_iter().collect()),
+            fields_syntaxes: self
+                .engine
+                .intern(self.fields_syntaxes.into_iter().collect()),
+            variant_associated_type_syntaxes: self.engine.intern(
+                self.variant_associated_type_syntaxes.into_iter().collect(),
             ),
-            constant_type_annotation_syntaxes: Arc::new(
-                self.constant_type_annotation_syntaxes.into_read_only(),
+            variant_declaration_orders: self
+                .engine
+                .intern(self.variant_declaration_orders.into_iter().collect()),
+            import_syntaxes: self
+                .engine
+                .intern(self.import_syntaxes.into_iter().collect()),
+            implements_qualified_identifier_syntaxes: self.engine.intern(
+                self.implements_qualified_identifier_syntaxes
+                    .into_iter()
+                    .collect(),
             ),
-            constant_expression_syntaxes: Arc::new(
-                self.constant_expression_syntaxes.into_read_only(),
+            final_keywords: self
+                .engine
+                .intern(self.final_keywords.into_iter().collect()),
+            function_body_syntaxes: self
+                .engine
+                .intern(self.function_body_syntaxes.into_iter().collect()),
+            function_linkages: self
+                .engine
+                .intern(self.function_linkages.into_iter().collect()),
+            function_effect_annotation_syntaxes: self.engine.intern(
+                self.function_effect_annotation_syntaxes.into_iter().collect(),
             ),
-            function_signature_syntaxes: Arc::new(
-                self.function_signature_syntaxes.into_read_only(),
-            ),
-            fields_syntaxes: Arc::new(self.fields_syntaxes.into_read_only()),
-            variant_associated_type_syntaxes: Arc::new(
-                self.variant_associated_type_syntaxes.into_read_only(),
-            ),
-            variant_declaration_orders: Arc::new(
-                self.variant_declaration_orders.into_read_only(),
-            ),
-            import_syntaxes: Arc::new(self.import_syntaxes.into_read_only()),
-            implements_qualified_identifier_syntaxes: Arc::new(
-                self.implements_qualified_identifier_syntaxes.into_read_only(),
-            ),
-            final_keywords: Arc::new(self.final_keywords.into_read_only()),
-            function_body_syntaxes: Arc::new(
-                self.function_body_syntaxes.into_read_only(),
-            ),
-            function_linkages: Arc::new(
-                self.function_linkages.into_read_only(),
-            ),
-            function_effect_annotation_syntaxes: Arc::new(
-                self.function_effect_annotation_syntaxes.into_read_only(),
-            ),
-            function_unsafe_keywords: Arc::new(
-                self.function_unsafe_keywords.into_read_only(),
-            ),
-            scope_spans: Arc::new(self.scope_spans.into_read_only()),
+            function_unsafe_keywords: self
+                .engine
+                .intern(self.function_unsafe_keywords.into_iter().collect()),
+            scope_spans: self
+                .engine
+                .intern(self.scope_spans.into_iter().collect()),
 
-            external_submodules: Arc::new(
-                self.external_submodules.into_read_only(),
-            ),
-            diagnostics: Arc::new(
-                self.storage.into_vec().into_iter().collect(),
-            ),
+            external_submodules: self
+                .engine
+                .intern(self.external_submodules.into_iter().collect()),
+            diagnostics: self.engine.intern_unsized({
+                let mut storage = self.storage.into_vec();
+                storage.sort();
+                storage
+            }),
             module_id,
         })
     }
@@ -243,17 +258,16 @@ impl Builder {
     pub fn implements_qualified_identifier_name(
         &self,
         qualified_identifier_span: &RelativeSpan,
-    ) -> SharedStr {
+    ) -> Interned<str> {
         let source_file = self.source_file.as_ref().unwrap();
         let token_tree = self.token_tree.as_ref().unwrap();
 
-        format!(
+        self.engine.intern_unsized(format!(
             "[implements {}]",
             &source_file.content()[qualified_identifier_span
                 .to_absolute_span(source_file, token_tree)
                 .range()]
-        )
-        .into()
+        ))
     }
 }
 
@@ -273,7 +287,7 @@ impl Builder {
             self.members
                 .insert(
                     id,
-                    Arc::new(Member {
+                    self.engine.intern(Member {
                         member_ids_by_name: member.member_ids_by_name,
                         unnameds: member.unnameds,
                     }),
@@ -289,12 +303,16 @@ impl Builder {
         );
     }
 
-    pub fn insert_member(&self, id: pernixc_symbol::ID, member: Arc<Member>) {
-        assert!(self.members.insert(id, member,).is_none());
+    pub fn insert_member(
+        &self,
+        id: pernixc_symbol::ID,
+        member: Interned<Member>,
+    ) {
+        assert!(self.members.insert(id, member).is_none());
     }
 
     /// Inserts a name into the builder.
-    pub fn insert_name(&self, id: pernixc_symbol::ID, name: SharedStr) {
+    pub fn insert_name(&self, id: pernixc_symbol::ID, name: Interned<str>) {
         assert!(self.names.insert(id, name).is_none());
     }
 
@@ -529,7 +547,7 @@ impl Builder {
     pub fn insert_imports(
         &self,
         id: pernixc_symbol::ID,
-        imports: Arc<[pernixc_syntax::item::module::Import]>,
+        imports: Interned<[pernixc_syntax::item::module::Import]>,
     ) {
         assert!(self.import_syntaxes.insert(id, imports).is_none());
     }
@@ -538,7 +556,7 @@ impl Builder {
     pub fn insert_external_submodule(
         &self,
         id: pernixc_symbol::ID,
-        external_submodule: Arc<ExternalSubmodule>,
+        external_submodule: Interned<ExternalSubmodule>,
     ) {
         assert!(
             self.external_submodules.insert(id, external_submodule).is_none()
@@ -549,11 +567,11 @@ impl Builder {
 /// A builder for building [`pernixc_symbol::member::Member`] instances.
 pub struct MemberBuilder {
     symbol_id: ID,
-    symbol_qualified_name: Arc<[SharedStr]>,
+    symbol_qualified_name: Arc<[Interned<str>]>,
     target_id: TargetID,
 
-    member_ids_by_name: HashMap<SharedStr, ID>,
-    name_occurrences: HashMap<SharedStr, usize>,
+    member_ids_by_name: HashMap<Interned<str>, ID>,
+    name_occurrences: HashMap<Interned<str>, usize>,
     unnameds: HashSet<ID>,
 
     redefinition_errors: HashSet<ItemRedefinition>,
@@ -569,7 +587,7 @@ impl MemberBuilder {
     /// - `target_id`: The target ID of the member being built.
     pub fn new(
         symbol_id: ID,
-        symbol_qualified_name: Arc<[SharedStr]>,
+        symbol_qualified_name: Arc<[Interned<str>]>,
         target_id: TargetID,
     ) -> Self {
         assert!(!symbol_qualified_name.is_empty());
@@ -597,7 +615,7 @@ impl MemberBuilder {
     pub const fn current_symbol_id(&self) -> ID { self.symbol_id }
 
     /// Retrieves the last name in the qualified name.
-    pub fn last_name(&self) -> &SharedStr {
+    pub fn last_name(&self) -> &Interned<str> {
         self.symbol_qualified_name
             .last()
             .expect("symbol qualified name is empty")
@@ -606,8 +624,8 @@ impl MemberBuilder {
     /// Extends the qualified name sequence with a new name.
     pub fn extend_qualified_name_sequence(
         &mut self,
-        name: SharedStr,
-    ) -> Arc<[SharedStr]> {
+        name: Interned<str>,
+    ) -> Arc<[Interned<str>]> {
         self.symbol_qualified_name
             .iter()
             .cloned()
@@ -631,8 +649,8 @@ impl MemberBuilder {
             .calculate_qualified_name_id(
                 self.symbol_qualified_name
                     .iter()
-                    .map(flexstr::FlexStr::as_str)
-                    .chain(std::iter::once(identifier.kind.0.as_str())),
+                    .map(AsRef::as_ref)
+                    .chain(std::iter::once(identifier.kind.0.as_ref())),
                 self.target_id,
                 Some(self.symbol_id),
                 current_count,
@@ -676,8 +694,8 @@ impl MemberBuilder {
             .calculate_qualified_name_id(
                 self.symbol_qualified_name
                     .iter()
-                    .map(flexstr::FlexStr::as_str)
-                    .chain(std::iter::once(identifier.kind.0.as_str())),
+                    .map(AsRef::as_ref)
+                    .chain(std::iter::once(identifier.kind.0.as_ref())),
                 self.target_id,
                 Some(self.symbol_id),
                 current_count,

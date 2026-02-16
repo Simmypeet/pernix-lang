@@ -28,7 +28,7 @@ impl Bind<&pernixc_syntax::expression::terminator::Express> for Binder<'_> {
     ) -> Result<Expression, Error> {
         let label_ident = syntax_tree.label().and_then(|x| x.identifier());
         let scope_id = self.search_block_scope_id(
-            label_ident.as_ref().map(|x| x.kind.0.as_str()),
+            label_ident.as_ref().map(|x| x.kind.0.as_ref()),
         );
 
         let Some(scope_id) = scope_id else {

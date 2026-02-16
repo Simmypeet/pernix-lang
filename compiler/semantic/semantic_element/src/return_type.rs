@@ -1,11 +1,8 @@
 //! Contains the query definition for the return type of the function symbol.
 
-use std::sync::Arc;
-
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 use pernixc_term::r#type::Type;
+use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 
 /// A query for retrieving the return type of the function symbol.
 #[derive(
@@ -18,10 +15,13 @@ use pernixc_term::r#type::Type;
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
-    pernixc_query::Key,
+    Encode,
+    Decode,
+    Query,
 )]
-#[value(Arc<Type>)]
-#[extend(method(get_return_type))]
-pub struct Key(pub Global<pernixc_symbol::ID>);
+#[value(Interned<Type>)]
+#[extend(name = get_return_type, by_val)]
+pub struct Key {
+    /// The global ID of the function symbol.
+    pub symbol_id: Global<pernixc_symbol::ID>,
+}

@@ -28,18 +28,19 @@ impl<N: Normalizer> Context<'_, N> {
         let variant_sym = self
             .tracked_engine()
             .get_variant_associated_type(variant.variant_id)
-            .await?;
+            .await;
 
         let instantiation = self
             .tracked_engine()
             .get_instantiation(enum_id, variant.generic_arguments.clone())
-            .await?
-            .unwrap();
+            .await
+            .map_err(|_| UnrecoverableError::Reported)?;
 
         let mut lifetime_constraints = BTreeSet::new();
 
         // compare each values in the field to the struct's field type
-        if let Some(mut associated_type) = variant_sym.as_deref().cloned() {
+        if let Some(variant_sym) = variant_sym {
+            let mut associated_type = (*variant_sym).clone();
             instantiation.instantiate(&mut associated_type);
 
             let associated_value = variant.associated_value.as_ref().unwrap();

@@ -22,11 +22,11 @@ impl<N: Normalizer> Context<'_, N> {
                 struct_lit.struct_id,
                 struct_lit.generic_arguments.clone(),
             )
-            .await?
-            .unwrap();
+            .await
+            .map_err(|_| UnrecoverableError::Reported)?;
 
         let fields =
-            self.tracked_engine().get_fields(struct_lit.struct_id).await?;
+            self.tracked_engine().get_fields(struct_lit.struct_id).await;
 
         let mut lifetime_constraints = BTreeSet::new();
 

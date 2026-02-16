@@ -1,5 +1,0 @@
----
-source: compiler/base/serialize/src/ron/ser/test.rs
-expression: to_ron_string_compact(&simple_map).unwrap()
----
-{"key1":1,"key2":2}

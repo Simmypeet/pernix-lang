@@ -143,12 +143,8 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         struct_lit: &register::Struct,
         reg_id: ID<Register>,
     ) -> Result<Option<LlvmValue<'ctx>>, Error> {
-        let fields = self
-            .context
-            .engine()
-            .get_fields(struct_lit.struct_id)
-            .await
-            .unwrap();
+        let fields =
+            self.context.engine().get_fields(struct_lit.struct_id).await;
 
         let values = fields
             .field_declaration_order
@@ -364,14 +360,12 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     .context
                     .engine()
                     .get_generic_parameters(parent_trait_id)
-                    .await
-                    .unwrap();
+                    .await;
                 let trait_func_generic_params = self
                     .context
                     .engine()
                     .get_generic_parameters(function_call.callable_id)
-                    .await
-                    .unwrap();
+                    .await;
 
                 let trait_generic_args = calling_inst.create_generic_arguments(
                     parent_trait_id,
@@ -411,14 +405,12 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     .context
                     .engine()
                     .get_generic_parameters(trait_impl_fun_id)
-                    .await
-                    .unwrap();
+                    .await;
                 let trait_impl_fun_elided_lts = self
                     .context
                     .engine()
                     .get_elided_lifetimes(trait_impl_fun_id)
-                    .await
-                    .unwrap();
+                    .await;
 
                 // populate the new_inst will the generic arguments of the trait
                 // func args

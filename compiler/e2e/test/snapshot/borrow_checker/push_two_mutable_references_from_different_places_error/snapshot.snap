@@ -3,18 +3,27 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: access is done while it is mutably borrowed
-   ╭─ compiler/e2e/test/snapshot/borrow_checker/push_two_mutable_references_from_different_places_error/main.pnx:30:17
-   │
-21 │     vector.push(&mut *ref)
-   │                 --------- the mutable borrow starts here
-   ·
-30 │     vector.push(&mut *ref)
-   │     ------      ^^^^^^^^^ access occurs here while it is mutably borrowed
-   │     │            
-   │     the borrow is used here
+  [error]: access is done while it is mutably borrowed
+    ╭─[compiler/e2e/test/snapshot/borrow_checker/push_two_mutable_references_from_different_places_error/main.pnx:21:17]
+ 20 │     let mut ref = &mut first
+ 21 │     vector.push(&mut *ref)
+    ·                 ────┬────
+    ·                     ╰── the mutable borrow starts here
+ 22 │ 
+ 23 │     if cond:
+ 24 │         ref = &mut second
+ 25 │     else:
+ 26 │         # no reassignment, will error
+ 27 │         pass
+ 28 │ 
+ 29 │     
+ 30 │     vector.push(&mut *ref)
+    ·     ───┬──      ────┬────
+    ·        │            ╰── access occurs here while it is mutably borrowed
+    ·        ╰── the borrow is used here
+    ╰────
 
-error: Compilation aborted due to 1 error(s)
+  [error]: Compilation aborted due to 1 error(s)
 
 
 

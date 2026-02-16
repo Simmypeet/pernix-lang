@@ -1,11 +1,9 @@
 //! Contains the definition of the [`Binary`] register.
 
 use pernixc_arena::ID;
-use pernixc_query::runtime::executor::CyclicError;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_term::r#type::Type;
 use pernixc_type_system::{Error, Succeeded, normalizer::Normalizer};
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Values,
@@ -26,8 +24,8 @@ use crate::{
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub enum ArithmeticOperator {
@@ -60,8 +58,8 @@ pub enum ArithmeticOperator {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub enum RelationalOperator {
@@ -97,8 +95,8 @@ pub enum RelationalOperator {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub enum BitwiseOperator {
@@ -133,8 +131,8 @@ pub enum BitwiseOperator {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 #[allow(missing_docs)]
@@ -153,8 +151,8 @@ pub enum BinaryOperator {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Binary {
@@ -192,16 +190,14 @@ pub(super) async fn transform_binary<T: Transformer<Type>>(
     binary: &mut Binary,
     transformer: &mut T,
     _span: pernixc_lexical::tree::RelativeSpan,
-) -> Result<(), CyclicError> {
+) {
     if let Some(literal) = binary.lhs.as_literal_mut() {
-        literal.transform(transformer).await?;
+        literal.transform(transformer).await;
     }
 
     if let Some(literal) = binary.rhs.as_literal_mut() {
-        literal.transform(transformer).await?;
+        literal.transform(transformer).await;
     }
-
-    Ok(())
 }
 
 impl TypeOf<&Binary> for Values {

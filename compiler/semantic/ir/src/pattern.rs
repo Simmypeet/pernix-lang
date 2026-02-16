@@ -2,7 +2,6 @@
 
 use diagnostic::AlreadyBoundName;
 use enum_as_inner::EnumAsInner;
-use flexstr::SharedStr;
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
 use pernixc_hash::HashMap;
@@ -11,6 +10,7 @@ use pernixc_semantic_element::fields::Field;
 use pernixc_source_file::SourceElement;
 use pernixc_target::Global;
 use pernixc_term::r#type::Qualifier;
+use qbice::storage::intern::Interned;
 
 use crate::{address::Address, instruction::SwitchValue};
 
@@ -40,7 +40,7 @@ pub struct Boolean {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Named {
     /// The name of the pattern.
-    pub name: SharedStr,
+    pub name: Interned<str>,
 
     /// Whether the binding is mutable or not.
     pub is_mutable: bool,
@@ -190,7 +190,7 @@ pub struct NameBinding {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct NameBindingPoint {
     /// Mapping from the name of the binding to the named pattern.
-    pub named_patterns_by_name: HashMap<SharedStr, NameBinding>,
+    pub named_patterns_by_name: HashMap<Interned<str>, NameBinding>,
 }
 
 impl NameBindingPoint {
@@ -203,7 +203,7 @@ impl NameBindingPoint {
     #[allow(clippy::result_large_err)]
     pub fn insert(
         &mut self,
-        name: SharedStr,
+        name: Interned<str>,
         name_binding: NameBinding,
         handler: &dyn Handler<diagnostic::AlreadyBoundName>,
     ) -> Result<(), NameBinding> {

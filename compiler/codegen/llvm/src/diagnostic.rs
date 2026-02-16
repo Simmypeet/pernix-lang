@@ -1,7 +1,7 @@
 //! Contains the diagnostics used in the code generation process.
 
 use pernixc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
-use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
+use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::{source_map::to_absolute_span, span::get_span};
 use pernixc_target::Global;
 
@@ -20,10 +20,7 @@ pub enum Diagnostic {
 }
 
 impl Report for Diagnostic {
-    async fn report(
-        &self,
-        engine: &TrackedEngine,
-    ) -> Result<Rendered<ByteIndex>, CyclicError> {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
         match self {
             Self::MainIsNotAFunction(diag) => diag.report(engine).await,
             Self::InvalidMainFunctionSignature(diag) => {
@@ -47,24 +44,21 @@ pub struct MainIsNotAFunction {
 }
 
 impl Report for MainIsNotAFunction {
-    async fn report(
-        &self,
-        parameter: &TrackedEngine,
-    ) -> Result<Rendered<ByteIndex>, CyclicError> {
+    async fn report(&self, parameter: &TrackedEngine) -> Rendered<ByteIndex> {
         let span = parameter
             .to_absolute_span(
                 &parameter.get_span(self.main_function_id).await.unwrap(),
             )
             .await;
 
-        Ok(Rendered::builder()
+        Rendered::builder()
             .message(
                 "the `main` symbol is reserved for the main function and must \
                  be a function with the signature `function() -> int32`",
             )
             .primary_highlight(Highlight::builder().span(span).build())
             .help_message("consider renaming this symbol to something else")
-            .build())
+            .build()
     }
 }
 
@@ -76,17 +70,14 @@ pub struct InvalidMainFunctionSignature {
 }
 
 impl Report for InvalidMainFunctionSignature {
-    async fn report(
-        &self,
-        parameter: &TrackedEngine,
-    ) -> Result<Rendered<ByteIndex>, CyclicError> {
+    async fn report(&self, parameter: &TrackedEngine) -> Rendered<ByteIndex> {
         let span = parameter
             .to_absolute_span(
                 &parameter.get_span(self.main_function_id).await.unwrap(),
             )
             .await;
 
-        Ok(Rendered::builder()
+        Rendered::builder()
             .message(
                 "the `main` function must have the signature `function() -> \
                  int32`",
@@ -95,7 +86,7 @@ impl Report for InvalidMainFunctionSignature {
             .help_message(
                 "consider changing the signature of the main function",
             )
-            .build())
+            .build()
     }
 }
 
@@ -107,23 +98,20 @@ pub struct GenericParametersAreNotAllowedInMainFunction {
 }
 
 impl Report for GenericParametersAreNotAllowedInMainFunction {
-    async fn report(
-        &self,
-        parameter: &TrackedEngine,
-    ) -> Result<Rendered<ByteIndex>, CyclicError> {
+    async fn report(&self, parameter: &TrackedEngine) -> Rendered<ByteIndex> {
         let span = parameter
             .to_absolute_span(
                 &parameter.get_span(self.main_function_id).await.unwrap(),
             )
             .await;
 
-        Ok(Rendered::builder()
+        Rendered::builder()
             .message(
                 "the `main` function is not allowed to have generic parameters",
             )
             .primary_highlight(Highlight::builder().span(span).build())
             .help_message("consider removing the generic parameters")
-            .build())
+            .build()
     }
 }
 
@@ -135,23 +123,20 @@ pub struct WhereClausePredicatesAreNotAllowedInMainFunction {
 }
 
 impl Report for WhereClausePredicatesAreNotAllowedInMainFunction {
-    async fn report(
-        &self,
-        parameter: &TrackedEngine,
-    ) -> Result<Rendered<ByteIndex>, CyclicError> {
+    async fn report(&self, parameter: &TrackedEngine) -> Rendered<ByteIndex> {
         let span = parameter
             .to_absolute_span(
                 &parameter.get_span(self.main_function_id).await.unwrap(),
             )
             .await;
 
-        Ok(Rendered::builder()
+        Rendered::builder()
             .message(
                 "the `main` function is not allowed to have where clause \
                  predicates",
             )
             .primary_highlight(Highlight::builder().span(span).build())
             .help_message("consider removing the where clause predicates")
-            .build())
+            .build()
     }
 }

@@ -1,17 +1,17 @@
-use std::{fmt::Debug, hash::Hash, marker::PhantomData, sync::Arc};
+use std::{fmt::Debug, hash::Hash, marker::PhantomData};
 
-use pernixc_query::runtime::executor;
+use pernixc_qbice::{Config, TrackedEngine};
+use qbice::{
+    Decode, Encode, Executor, Identifiable, Query, StableHash,
+    storage::intern::Interned,
+};
+
 #[allow(unused)]
-pub use pernixc_register;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
-use pernixc_stable_type_id::Identifiable;
-
 use crate::occurrences::Occurrences;
 
 macro_rules! impl_key {
     ($k:ident, $key:ident, $value:ty) => {
-        #[derive(Identifiable, StableHash, Serialize, Deserialize)]
+        #[derive(Identifiable, StableHash, Encode, Decode)]
         pub struct $key<$k> {
             pub id: $k,
             _marker: PhantomData<$k>,
@@ -64,25 +64,21 @@ macro_rules! impl_key {
             }
         }
 
-        impl<$k: $crate::build::Build> pernixc_query::Key for $key<$k> {
+        impl<$k: $crate::build::Build> Query for $key<$k> {
             type Value = $value;
         }
     };
 }
 
 impl_key!(T, Key, Output<T>);
-impl_key!(T, DiagnosticKey, Arc<[T::Diagnostic]>);
-impl_key!(T, OccurrencesKey, Arc<Occurrences>);
+impl_key!(T, DiagnosticKey, Interned<[T::Diagnostic]>);
+impl_key!(T, OccurrencesKey, Interned<Occurrences>);
 
 #[derive(Debug, Default)]
 pub struct BuildExecutor;
 
-impl<T: Build> executor::Executor<Key<T>> for BuildExecutor {
-    async fn execute(
-        &self,
-        engine: &pernixc_query::TrackedEngine,
-        key: &Key<T>,
-    ) -> Result<Output<T>, executor::CyclicError> {
+impl<T: Build> Executor<Key<T>, Config> for BuildExecutor {
+    async fn execute(&self, key: &Key<T>, engine: &TrackedEngine) -> Output<T> {
         T::execute(engine, &key.id).await
     }
 }
@@ -90,75 +86,85 @@ impl<T: Build> executor::Executor<Key<T>> for BuildExecutor {
 #[derive(Debug, Default)]
 pub struct DiagnosticExecutor;
 
-impl<T: Build> executor::Executor<DiagnosticKey<T>> for DiagnosticExecutor {
+impl<T: Build> Executor<DiagnosticKey<T>, Config> for DiagnosticExecutor {
     async fn execute(
         &self,
-        engine: &pernixc_query::TrackedEngine,
         key: &DiagnosticKey<T>,
-    ) -> Result<Arc<[T::Diagnostic]>, executor::CyclicError> {
-        let build_result = engine.query(&Key::<T>::new(key.id.clone())).await?;
-
-        Ok(build_result.diagnostics)
+        engine: &TrackedEngine,
+    ) -> Interned<[T::Diagnostic]> {
+        engine.query(&Key::<T>::new(key.id.clone())).await.diagnostics
     }
 }
 
 #[derive(Debug, Default)]
 pub struct OccurrencesExecutor;
 
-impl<T: Build> executor::Executor<OccurrencesKey<T>> for OccurrencesExecutor {
+impl<T: Build> Executor<OccurrencesKey<T>, Config> for OccurrencesExecutor {
     async fn execute(
         &self,
-        engine: &pernixc_query::TrackedEngine,
         key: &OccurrencesKey<T>,
-    ) -> Result<Arc<Occurrences>, executor::CyclicError> {
-        let build_result = engine.query(&Key::<T>::new(key.id.clone())).await?;
+        engine: &TrackedEngine,
+    ) -> Interned<Occurrences> {
+        let build_result = engine.query(&Key::<T>::new(key.id.clone())).await;
 
-        Ok(build_result.occurrences)
+        build_result.occurrences
     }
 }
 
 #[derive(Debug, Default)]
 pub struct ElementExtractExecutor;
 
-impl<T: Build> executor::Executor<T> for ElementExtractExecutor {
-    async fn execute(
-        &self,
-        engine: &pernixc_query::TrackedEngine,
-        key: &T,
-    ) -> Result<T::Value, executor::CyclicError> {
-        let build_result = engine.query(&Key::<T>::new(key.clone())).await?;
+impl<T: Build> Executor<T, Config> for ElementExtractExecutor {
+    async fn execute(&self, key: &T, engine: &TrackedEngine) -> T::Value {
+        let build_result = engine.query(&Key::<T>::new(key.clone())).await;
 
-        Ok(build_result.item)
+        build_result.item
     }
 }
 
 /// A helper structs that groups the side-effects of building a query.
-#[derive(
-    Debug,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    StableHash,
-    Serialize,
-    Deserialize,
-)]
-#[serde(
-    ser_bound(T::Diagnostic: Serialize<__S, __E>, T::Value: Serialize<__S, __E>),
-    de_bound(T::Diagnostic: Deserialize<__D, __E>, T::Value: Deserialize<__D, __E>),
-)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash)]
 pub struct Output<T: Build> {
     /// The main result of the query.
     pub item: T::Value,
 
     /// The diagnostics produced while building the query.
-    pub diagnostics: Arc<[T::Diagnostic]>,
+    pub diagnostics: Interned<[T::Diagnostic]>,
 
     /// The occurrences produced while building the query.
     ///
     /// This will be later used for well-formedness checking.
-    pub occurrences: Arc<Occurrences>,
+    pub occurrences: Interned<Occurrences>,
+}
+
+impl<T: Encode + Build> Encode for Output<T> {
+    fn encode<E: qbice::serialize::Encoder + ?Sized>(
+        &self,
+        encoder: &mut E,
+        plugin: &qbice::serialize::Plugin,
+        session: &mut qbice::serialize::session::Session,
+    ) -> std::io::Result<()> {
+        self.item.encode(encoder, plugin, session)?;
+        self.diagnostics.encode(encoder, plugin, session)?;
+        self.occurrences.encode(encoder, plugin, session)?;
+        Ok(())
+    }
+}
+
+impl<T: Decode + Build> Decode for Output<T> {
+    fn decode<D: qbice::serialize::Decoder + ?Sized>(
+        decoder: &mut D,
+        plugin: &qbice::serialize::Plugin,
+        session: &mut qbice::serialize::session::Session,
+    ) -> std::io::Result<Self> {
+        let item = T::Value::decode(decoder, plugin, session)?;
+        let diagnostics =
+            Interned::<[T::Diagnostic]>::decode(decoder, plugin, session)?;
+        let occurrences =
+            Interned::<Occurrences>::decode(decoder, plugin, session)?;
+
+        Ok(Self { item, diagnostics, occurrences })
+    }
 }
 
 impl<T: Build> Clone for Output<T> {
@@ -171,41 +177,56 @@ impl<T: Build> Clone for Output<T> {
     }
 }
 
-pub trait Build: pernixc_query::Key {
-    type Diagnostic: Debug + StableHash + Send + Sync + 'static;
+pub trait Build: Query {
+    type Diagnostic: Debug
+        + StableHash
+        + Send
+        + Sync
+        + 'static
+        + Identifiable
+        + Encode
+        + Decode;
 
     fn execute<'x, 'y>(
-        engine: &'x pernixc_query::TrackedEngine,
+        engine: &'x TrackedEngine,
         key: &'y Self,
-    ) -> impl std::future::Future<
-        Output = Result<Output<Self>, executor::CyclicError>,
-    > + use<'x, 'y, Self>
-    + Send;
+    ) -> impl std::future::Future<Output = Output<Self>> + use<'x, 'y, Self> + Send;
 }
 
 /// Registers the necessary executors for the given type.
 #[macro_export]
 macro_rules! register_build {
     ($ty:ty) => {
-        $crate::build::pernixc_register::register!(
-            $crate::build::Key<$ty>,
-            $crate::build::BuildExecutor
-        );
+        const _: () = {
+            #[::linkme::distributed_slice(::pernixc_qbice::PERNIX_PROGRAM)]
+            static BUILD_EXECUTOR: ::qbice::program::Registration<
+                ::pernixc_qbice::Config,
+            > = ::qbice::program::Registration::<
+                ::pernixc_qbice::Config,
+            >::new::<$crate::build::Key<$ty>, $crate::build::BuildExecutor>();
 
-        $crate::build::pernixc_register::register!(
-            $crate::build::DiagnosticKey<$ty>,
-            $crate::build::DiagnosticExecutor
-        );
 
-        $crate::build::pernixc_register::register!(
-            $crate::build::OccurrencesKey<$ty>,
-            $crate::build::OccurrencesExecutor
-        );
+            #[::linkme::distributed_slice(::pernixc_qbice::PERNIX_PROGRAM)]
+            static DIAGNOSTIC_EXECUTOR: ::qbice::program::Registration<
+                ::pernixc_qbice::Config,
+            > = ::qbice::program::Registration::<
+                ::pernixc_qbice::Config,
+            >::new::<$crate::build::DiagnosticKey<$ty>, $crate::build::DiagnosticExecutor>();
 
-        $crate::build::pernixc_register::register!(
-            $ty,
-            $crate::build::ElementExtractExecutor
-        );
+            #[::linkme::distributed_slice(::pernixc_qbice::PERNIX_PROGRAM)]
+            static OCCURRENCES_EXECUTOR: ::qbice::program::Registration<
+                ::pernixc_qbice::Config,
+            > = ::qbice::program::Registration::<
+                ::pernixc_qbice::Config,
+            >::new::<$crate::build::OccurrencesKey<$ty>, $crate::build::OccurrencesExecutor>();
+
+            #[::linkme::distributed_slice(::pernixc_qbice::PERNIX_PROGRAM)]
+            static ELEMENT_EXTRACT_EXECUTOR: ::qbice::program::Registration<
+                ::pernixc_qbice::Config,
+            > = ::qbice::program::Registration::<
+                ::pernixc_qbice::Config,
+            >::new::<$ty, $crate::build::ElementExtractExecutor>();
+        };
     };
 }
 

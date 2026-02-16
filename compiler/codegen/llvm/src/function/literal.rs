@@ -62,7 +62,8 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     |decimal_string| {
                         format!(
                             "{}.{}",
-                            numeric_value.integer_string, decimal_string
+                            numeric_value.integer_string.as_ref(),
+                            decimal_string.as_ref()
                         )
                         .parse::<f64>()
                         .unwrap()

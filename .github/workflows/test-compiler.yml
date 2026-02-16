@@ -27,7 +27,7 @@ jobs:
                 os:
                     [
                         windows-latest,
-                        macOS-latest,
+                        macOS-15,
                         macOS-15-intel,
                         ubuntu-24.04,
                         ubuntu-24.04-arm,
@@ -40,7 +40,7 @@ jobs:
               uses: Swatinem/rust-cache@v2
 
             - name: Install Cargo Nextest
-              run: cargo install cargo-nextest
+              run: cargo install cargo-nextest --locked
 
             - name: Build LLVM on Unix-like
               if: runner.os != 'Windows'

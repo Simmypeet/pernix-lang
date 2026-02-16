@@ -3,23 +3,27 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: invalid numeric suffix
-  ╭─ compiler/e2e/test/snapshot/ir/expression/numeric/main.pnx:2:7
-  │
-2 │     32test
-  │       ^^^^ this suffix is not recognized
-  │
-  = valid suffixes are: i8, i16, i32, i64, u8, u16, u32, u64, f32, f64, us, is
+  [error]: invalid numeric suffix
+   ╭─[compiler/e2e/test/snapshot/ir/expression/numeric/main.pnx:2:7]
+ 1 │ public function main():
+ 2 │     32test
+   ·       ──┬─
+   ·         ╰── this suffix is not recognized
+ 3 │     0.12f32
+   ╰────
+  help: valid suffixes are: i8, i16, i32, i64, u8, u16, u32, u64, f32, f64, us, is
 
-error: floating point literal has integral suffix
-  ╭─ compiler/e2e/test/snapshot/ir/expression/numeric/main.pnx:5:5
-  │
-5 │     0.12i32
-  │     ^^^^^^^ a floating point literal cannot have an integral suffix
-  │
-  = remove the decimal point or change the suffix to a floating point type (such as f32 or f64)
+  [error]: floating point literal has integral suffix
+   ╭─[compiler/e2e/test/snapshot/ir/expression/numeric/main.pnx:5:5]
+ 4 │     0.54f64
+ 5 │     0.12i32
+   ·     ───┬───
+   ·        ╰── a floating point literal cannot have an integral suffix
+ 6 │     0us
+   ╰────
+  help: remove the decimal point or change the suffix to a floating point type (such as f32 or f64)
 
-error: Compilation aborted due to 2 error(s)
+  [error]: Compilation aborted due to 2 error(s)
 
 
 

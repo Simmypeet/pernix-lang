@@ -3,29 +3,43 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: the variable doesn't live long enough
-   ╭─ compiler/e2e/test/snapshot/borrow_checker/variable_does_not_live_long_enough_in_inner_loop/main.pnx:6:13
-   │
- 6 │         let inner = 0
-   │             ^^^^^ the variable declared here doesn't live long enough
- 7 │         numberRef = &inner
-   │                     ------ the borrow starts here
-   ·
-14 │     let a = *numberRef
-   │             ---------- the borrow is used here
+  [error]: the variable doesn't live long enough
+    ╭─[compiler/e2e/test/snapshot/borrow_checker/variable_does_not_live_long_enough_in_inner_loop/main.pnx:6:13]
+  5 │     while cond:
+  6 │         let inner = 0
+    ·             ──┬──
+    ·               ╰── the variable declared here doesn't live long enough
+  7 │         numberRef = &inner
+    ·                     ───┬──
+    ·                        ╰── the borrow starts here
+  8 │ 
+  9 │         while cond:
+ 10 │             let innerInner = 0
+ 11 │             numberRef = &innerInner
+ 12 │ 
+ 13 │ 
+ 14 │     let a = *numberRef
+    ·             ─────┬────
+    ·                  ╰── the borrow is used here
+    ╰────
 
-error: the variable doesn't live long enough
-   ╭─ compiler/e2e/test/snapshot/borrow_checker/variable_does_not_live_long_enough_in_inner_loop/main.pnx:10:17
-   │
-10 │             let innerInner = 0
-   │                 ^^^^^^^^^^ the variable declared here doesn't live long enough
-11 │             numberRef = &innerInner
-   │                         ----------- the borrow starts here
-   ·
-14 │     let a = *numberRef
-   │             ---------- the borrow is used here
+  [error]: the variable doesn't live long enough
+    ╭─[compiler/e2e/test/snapshot/borrow_checker/variable_does_not_live_long_enough_in_inner_loop/main.pnx:10:17]
+  9 │         while cond:
+ 10 │             let innerInner = 0
+    ·                 ─────┬────
+    ·                      ╰── the variable declared here doesn't live long enough
+ 11 │             numberRef = &innerInner
+    ·                         ─────┬─────
+    ·                              ╰── the borrow starts here
+ 12 │ 
+ 13 │ 
+ 14 │     let a = *numberRef
+    ·             ─────┬────
+    ·                  ╰── the borrow is used here
+    ╰────
 
-error: Compilation aborted due to 2 error(s)
+  [error]: Compilation aborted due to 2 error(s)
 
 
 

@@ -1,21 +1,13 @@
 //! Contains the diagnostics that can be reported while building the
 //! symbol table tree.
 
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::path::{Path, PathBuf};
 
+use linkme::distributed_slice;
 use pernixc_diagnostic::{Highlight, Report};
-use pernixc_hash::HashSet;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{
-    TrackedEngine,
-    runtime::executor::{self, CyclicError},
-};
-use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_source_file::ByteIndex;
-use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{
     ID,
     kind::Kind,
@@ -25,6 +17,10 @@ use pernixc_symbol::{
 };
 use pernixc_target::{Global, TargetID};
 use pernixc_tokio::{join_list::JoinList, scoped};
+use qbice::{
+    Decode, Encode, Identifiable, Query, StableHash, executor,
+    program::Registration, storage::intern::Interned,
+};
 
 use crate::{
     kind::get_all_symbols_of_kind,
@@ -42,8 +38,9 @@ use crate::{
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
+    Identifiable,
 )]
 #[allow(missing_docs)]
 pub enum Diagnostic {
@@ -56,8 +53,7 @@ impl Report for Diagnostic {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         match self {
             Self::ItemRedefinition(diagnostic) => {
                 diagnostic.report(engine).await
@@ -83,8 +79,8 @@ impl Report for Diagnostic {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct ItemRedefinition {
     /// The ID of the existing symbol.
@@ -101,21 +97,20 @@ impl Report for ItemRedefinition {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let existing_symbol_span = engine.get_span(self.existing_id).await;
         let existing_symbol_name = engine.get_name(self.existing_id).await;
         let in_name = engine.get_qualified_name(self.in_id).await;
 
-        Ok(pernixc_diagnostic::Rendered {
+        pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.redefinition_span).await,
                 Some("redefinition here".to_string()),
             )),
 
             message: format!(
-                "symbol `{existing_symbol_name}` is already defined in the \
-                 scope `{in_name}`"
+                "symbol `{}` is already defined in the scope `{in_name}`",
+                existing_symbol_name.as_ref(),
             ),
             severity: pernixc_diagnostic::Severity::Error,
             help_message: None,
@@ -123,13 +118,13 @@ impl Report for ItemRedefinition {
                 Some(span) => vec![pernixc_diagnostic::Highlight::new(
                     engine.to_absolute_span(span).await,
                     Some(format!(
-                        "symbol `{existing_symbol_name}` is already defined \
-                         here"
+                        "symbol `{}` is already defined here",
+                        existing_symbol_name.as_ref()
                     )),
                 )],
                 None => Vec::new(),
             },
-        })
+        }
     }
 }
 
@@ -145,8 +140,8 @@ impl Report for ItemRedefinition {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct RecursiveFileRequest {
     /// The span of the submodule declaration in the root file.
@@ -160,9 +155,8 @@ impl Report for RecursiveFileRequest {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
-        Ok(pernixc_diagnostic::Rendered {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.submodule_span).await,
                 Some(
@@ -181,7 +175,7 @@ impl Report for RecursiveFileRequest {
                 self.path.file_stem().unwrap_or_default().to_string_lossy()
             )),
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -195,15 +189,15 @@ impl Report for RecursiveFileRequest {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct SourceFileLoadFail {
     /// The error message from the file loading failure.
     pub error_message: String,
 
     /// The path to the source file that failed to load.
-    pub path: Arc<Path>,
+    pub path: Interned<Path>,
 
     /// The span of the submodule identifier declaration, if this failure
     /// occurred when loading a submodule. `None` for root file load failures.
@@ -214,8 +208,7 @@ impl Report for SourceFileLoadFail {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let (highlight, context_message) = match self.submodule_span.as_ref() {
             Some(submodule_span) => (
                 Some(Highlight::new(
@@ -233,7 +226,7 @@ impl Report for SourceFileLoadFail {
             ),
         };
 
-        Ok(pernixc_diagnostic::Rendered {
+        pernixc_diagnostic::Rendered {
             primary_highlight: highlight,
             message: format!("{}: {}", context_message, self.error_message),
             severity: pernixc_diagnostic::Severity::Error,
@@ -241,7 +234,7 @@ impl Report for SourceFileLoadFail {
                 "check if the file exists and is accessible".to_string(),
             ),
             related: Vec::new(),
-        })
+        }
     }
 }
 
@@ -255,29 +248,27 @@ impl Report for SourceFileLoadFail {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
-    pernixc_query::Key,
+    Query,
 )]
-#[value(Arc<[pernixc_diagnostic::Rendered<pernixc_source_file::ByteIndex>]>)]
+#[value(Interned<[pernixc_diagnostic::Rendered<pernixc_source_file::ByteIndex>]>)]
 pub struct RenderedKey(pub TargetID);
 
-pernixc_register::register!(RenderedKey, RenderedExecutor);
-
 struct FileError {
-    lexicals: Option<Arc<[pernixc_lexical::error::Error]>>,
-    syntaxes: Option<Arc<[pernixc_parser::error::Error]>>,
-    symbols: Arc<HashSet<Diagnostic>>,
+    lexicals: Option<Interned<[pernixc_lexical::error::Error]>>,
+    syntaxes: Option<Interned<[pernixc_parser::error::Error]>>,
+    symbols: Interned<[Diagnostic]>,
 }
 
 fn populate_file_errors(
     engine: &TrackedEngine,
     target_id: TargetID,
-    file_errors_list: &mut JoinList<Result<FileError, CyclicError>>,
+    file_errors_list: &mut JoinList<FileError>,
     map: &Map,
 ) {
-    for path in map.paths_by_source_id.values().chain(map.failed_paths.keys()) {
+    for path in map.paths_by_source_id.values().chain(map.failed_paths.iter()) {
         let external_submodule_opt = path.1.clone();
         let path_key = path.0.clone();
         let engine = engine.clone();
@@ -293,8 +284,8 @@ fn populate_file_errors(
                 },
             );
 
-            Ok(FileError {
-                symbols: engine.query(&DiagnosticKey(table_key)).await?,
+            FileError {
+                symbols: engine.query(&DiagnosticKey(table_key)).await,
                 syntaxes: engine
                     .query(&pernixc_syntax::DiagnosticKey(
                         pernixc_syntax::Key {
@@ -302,7 +293,7 @@ fn populate_file_errors(
                             target_id,
                         },
                     ))
-                    .await?
+                    .await
                     .ok(),
                 lexicals: engine
                     .query(&pernixc_lexical::DiagnosticKey(
@@ -311,9 +302,9 @@ fn populate_file_errors(
                             target_id,
                         },
                     ))
-                    .await?
+                    .await
                     .ok(),
-            })
+            }
         });
     }
 }
@@ -322,12 +313,9 @@ async fn populate_member_is_more_accessible_diagnostics(
     engine: &TrackedEngine,
     target_id: TargetID,
     module_import_diagnostics: &mut JoinList<
-        Result<
-            Option<Arc<[crate::accessibility::diagnostic::Diagnostic]>>,
-            CyclicError,
-        >,
+        Option<Interned<[crate::accessibility::diagnostic::Diagnostic]>>,
     >,
-) -> Result<(), CyclicError> {
+) {
     let all_traits =
         engine.get_all_symbols_of_kind(target_id, Kind::Trait).await;
 
@@ -335,53 +323,46 @@ async fn populate_member_is_more_accessible_diagnostics(
         let engine = engine.clone();
 
         module_import_diagnostics.spawn(async move {
-            let diagnostic = engine
-                .query(&crate::accessibility::MemberIsMoreAaccessibleKey(
-                    target_id.make_global(trait_id),
-                ))
-                .await?;
-
-            Ok::<_, CyclicError>(diagnostic)
+            engine
+                .query(&crate::accessibility::MemberIsMoreAaccessibleKey {
+                    trait_id: target_id.make_global(trait_id),
+                })
+                .await
         });
     }
-
-    Ok(())
 }
 
-#[pernixc_query::executor(key(RenderedKey), name(RenderedExecutor))]
+#[executor(config = Config)]
 #[allow(clippy::too_many_lines)]
-pub async fn rendered_executor(
-    &RenderedKey(target_id): &RenderedKey,
+async fn rendered_executor(
+    key: &RenderedKey,
     engine: &TrackedEngine,
-) -> Result<
-    Arc<[pernixc_diagnostic::Rendered<ByteIndex>]>,
-    pernixc_query::runtime::executor::CyclicError,
-> {
+) -> Interned<[pernixc_diagnostic::Rendered<ByteIndex>]> {
+    let RenderedKey(target_id) = key;
     scoped!(|file_diagnostics,
              member_is_moere_accessible_diagnostics,
              diagnostic_handles| async move {
         // Get the map for this target to discover all table keys
-        let map = engine.query(&MapKey(target_id)).await?;
+        let map = engine.query(&MapKey(*target_id)).await;
 
-        populate_file_errors(engine, target_id, file_diagnostics, &map);
+        populate_file_errors(engine, *target_id, file_diagnostics, &map);
 
         populate_member_is_more_accessible_diagnostics(
             engine,
-            target_id,
+            *target_id,
             member_is_moere_accessible_diagnostics,
         )
-        .await?;
+        .await;
 
         while let Some(file_diagnostic) = file_diagnostics.next().await {
-            let FileError { lexicals, syntaxes, symbols } = file_diagnostic?;
+            let FileError { lexicals, syntaxes, symbols } = file_diagnostic;
 
             for diagnostic in symbols.iter() {
                 let engine = engine.clone();
                 let diagnostic = diagnostic.clone();
 
-                diagnostic_handles.spawn(async move {
-                    Ok::<_, CyclicError>(diagnostic.report(&engine).await)
-                });
+                diagnostic_handles
+                    .spawn(async move { diagnostic.report(&engine).await });
             }
 
             for diagnostic in syntaxes.iter().flat_map(|x| x.iter()) {
@@ -389,7 +370,7 @@ pub async fn rendered_executor(
                 let diagnostic = diagnostic.clone();
 
                 diagnostic_handles
-                    .spawn(async move { Ok(diagnostic.report(&engine).await) });
+                    .spawn(async move { diagnostic.report(&engine).await });
             }
 
             for diagnostic in lexicals.iter().flat_map(|x| x.iter()) {
@@ -397,20 +378,19 @@ pub async fn rendered_executor(
                 let engine = engine.clone();
 
                 diagnostic_handles
-                    .spawn(async move { Ok(diagnostic.report(&engine).await) });
+                    .spawn(async move { diagnostic.report(&engine).await });
             }
         }
 
         while let Some(member_is_more_accessible_diagnostic) =
             member_is_moere_accessible_diagnostics.next().await
         {
-            if let Some(diagnostic) = member_is_more_accessible_diagnostic? {
+            if let Some(diagnostic) = member_is_more_accessible_diagnostic {
                 for &diagnostic in diagnostic.iter() {
                     let engine = engine.clone();
 
-                    diagnostic_handles.spawn(async move {
-                        Ok(diagnostic.report(&engine).await)
-                    });
+                    diagnostic_handles
+                        .spawn(async move { diagnostic.report(&engine).await });
                 }
             }
         }
@@ -418,10 +398,14 @@ pub async fn rendered_executor(
         let mut diagnostics = Vec::new();
 
         while let Some(handle) = diagnostic_handles.next().await {
-            let rendered_diagnostic = handle??;
+            let rendered_diagnostic = handle;
             diagnostics.push(rendered_diagnostic);
         }
 
-        Ok(Arc::from(diagnostics))
+        engine.intern_unsized(diagnostics)
     })
 }
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static RENDERED_EXECUTOR: Registration<Config> =
+    Registration::new::<RenderedKey, RenderedExecutor>();

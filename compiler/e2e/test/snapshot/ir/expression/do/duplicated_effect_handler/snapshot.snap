@@ -3,57 +3,88 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: the effect `effectmain::UseLifetime` is handled more than once
-   ╭─ compiler/e2e/test/snapshot/ir/expression/do/duplicated_effect_handler/main.pnx:17:10
-   │
-13 │     with UseLifetime['x]:
-   │          --------------- the first handler for `main::UseLifetime['y]` is defined here
-   ·
-17 │     with UseLifetime['y]: # different lifetime, but still the same effect
-   │          ^^^^^^^^^^^^^^^ the duplicated handler is defined here
-   │
-   = the effect `main::UseLifetime['y]` is already handled by the first handler; consider removing the second handler
+  [error]: the effect `effectmain::UseLifetime` is handled more than once
+    ╭─[compiler/e2e/test/snapshot/ir/expression/do/duplicated_effect_handler/main.pnx:13:10]
+ 12 │ 
+ 13 │     with UseLifetime['x]:
+    ·          ───────┬───────
+    ·                 ╰── the first handler for `main::UseLifetime['y]` is defined here
+ 14 │         useLifetime():
+ 15 │             pass
+ 16 │     
+ 17 │     with UseLifetime['y]: # different lifetime, but still the same effect
+    ·          ───────┬───────
+    ·                 ╰── the duplicated handler is defined here
+ 18 │         useLifetime():
+    ╰────
+  help: the effect `main::UseLifetime['y]` is already handled by the first handler; consider removing the second handler
 
-error: the effect `effectmain::UseLifetime` is handled more than once
-   ╭─ compiler/e2e/test/snapshot/ir/expression/do/duplicated_effect_handler/main.pnx:21:10
-   │
-13 │     with UseLifetime['x]:
-   │          --------------- the first handler for `main::UseLifetime` is defined here
-   ·
-21 │     with UseLifetime: # still the same effect, but without a lifetime parameter
-   │          ^^^^^^^^^^^ the duplicated handler is defined here
-   │
-   = the effect `main::UseLifetime` is already handled by the first handler; consider removing the second handler
+  [error]: the effect `effectmain::UseLifetime` is handled more than once
+    ╭─[compiler/e2e/test/snapshot/ir/expression/do/duplicated_effect_handler/main.pnx:13:10]
+ 12 │ 
+ 13 │     with UseLifetime['x]:
+    ·          ───────┬───────
+    ·                 ╰── the first handler for `main::UseLifetime` is defined here
+ 14 │         useLifetime():
+ 15 │             pass
+ 16 │     
+ 17 │     with UseLifetime['y]: # different lifetime, but still the same effect
+ 18 │         useLifetime():
+ 19 │             pass
+ 20 │ 
+ 21 │     with UseLifetime: # still the same effect, but without a lifetime parameter
+    ·          ─────┬─────
+    ·               ╰── the duplicated handler is defined here
+ 22 │         useLifetime():
+    ╰────
+  help: the effect `main::UseLifetime` is already handled by the first handler; consider removing the second handler
 
-error: the effect `effectmain::UseLifetime` is handled more than once
-   ╭─ compiler/e2e/test/snapshot/ir/expression/do/duplicated_effect_handler/main.pnx:21:10
-   │
-17 │     with UseLifetime['y]: # different lifetime, but still the same effect
-   │          --------------- the first handler for `main::UseLifetime` is defined here
-   ·
-21 │     with UseLifetime: # still the same effect, but without a lifetime parameter
-   │          ^^^^^^^^^^^ the duplicated handler is defined here
-   │
-   = the effect `main::UseLifetime` is already handled by the first handler; consider removing the second handler
+  [error]: the effect `effectmain::UseLifetime` is handled more than once
+    ╭─[compiler/e2e/test/snapshot/ir/expression/do/duplicated_effect_handler/main.pnx:17:10]
+ 16 │     
+ 17 │     with UseLifetime['y]: # different lifetime, but still the same effect
+    ·          ───────┬───────
+    ·                 ╰── the first handler for `main::UseLifetime` is defined here
+ 18 │         useLifetime():
+ 19 │             pass
+ 20 │ 
+ 21 │     with UseLifetime: # still the same effect, but without a lifetime parameter
+    ·          ─────┬─────
+    ·               ╰── the duplicated handler is defined here
+ 22 │         useLifetime():
+    ╰────
+  help: the effect `main::UseLifetime` is already handled by the first handler; consider removing the second handler
 
-error: the effect `effectmain::UseTypeParameter` is handled more than once
-   ╭─ compiler/e2e/test/snapshot/ir/expression/do/duplicated_effect_handler/main.pnx:33:10
-   │
-25 │     with UseTypeParameter[int32]:
-   │          ----------------------- the first handler for `main::UseTypeParameter[int32]` is defined here
-   ·
-33 │     with UseTypeParameter[int32]: # duplicated type parameter
-   │          ^^^^^^^^^^^^^^^^^^^^^^^ the duplicated handler is defined here
-   │
-   = the effect `main::UseTypeParameter[int32]` is already handled by the first handler; consider removing the second handler
+  [error]: the effect `effectmain::UseTypeParameter` is handled more than once
+    ╭─[compiler/e2e/test/snapshot/ir/expression/do/duplicated_effect_handler/main.pnx:25:10]
+ 24 │     
+ 25 │     with UseTypeParameter[int32]:
+    ·          ───────────┬───────────
+    ·                     ╰── the first handler for `main::UseTypeParameter[int32]` is defined here
+ 26 │         useTypeParameter():
+ 27 │             pass
+ 28 │     
+ 29 │     with UseTypeParameter[float32]:
+ 30 │         useTypeParameter():
+ 31 │             pass
+ 32 │     
+ 33 │     with UseTypeParameter[int32]: # duplicated type parameter
+    ·          ───────────┬───────────
+    ·                     ╰── the duplicated handler is defined here
+ 34 │         useTypeParameter():
+    ╰────
+  help: the effect `main::UseTypeParameter[int32]` is already handled by the first handler; consider removing the second handler
 
-error: mismatched generic argument count
-   ╭─ compiler/e2e/test/snapshot/ir/expression/do/duplicated_effect_handler/main.pnx:37:10
-   │
-37 │     with UseTypeParameter: # error, no type inference here!
-   │          ^^^^^^^^^^^^^^^^ expected 1 type arguments, but 0 were supplied
+  [error]: mismatched generic argument count
+    ╭─[compiler/e2e/test/snapshot/ir/expression/do/duplicated_effect_handler/main.pnx:37:10]
+ 36 │     
+ 37 │     with UseTypeParameter: # error, no type inference here!
+    ·          ────────┬───────
+    ·                  ╰── expected 1 type arguments, but 0 were supplied
+ 38 │         useTypeParameter():
+    ╰────
 
-error: Compilation aborted due to 5 error(s)
+  [error]: Compilation aborted due to 5 error(s)
 
 
 

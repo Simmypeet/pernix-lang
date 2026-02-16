@@ -1,7 +1,7 @@
 //! Formats generic parameters for hover display.
 
 use pernixc_extend::extend;
-use pernixc_query::TrackedEngine;
+use pernixc_qbice::TrackedEngine;
 use pernixc_term::{
     display::{self, Display},
     generic_parameters::GenericParameters,
@@ -28,7 +28,7 @@ pub(super) async fn format_generic_parameters(
         }
         first = false;
 
-        write!(buffer, "'{}", lifetime.name).unwrap();
+        write!(buffer, "'{}", lifetime.name.as_ref()).unwrap();
     }
 
     for (_, type_parameter) in generic_parameters.type_parameters_as_order() {
@@ -37,7 +37,7 @@ pub(super) async fn format_generic_parameters(
         }
         first = false;
 
-        write!(buffer, "{}", type_parameter.name).unwrap();
+        write!(buffer, "{}", type_parameter.name.as_ref()).unwrap();
     }
 
     let configuration = display::Configuration::builder()
@@ -52,7 +52,7 @@ pub(super) async fn format_generic_parameters(
         }
         first = false;
 
-        write!(buffer, "{}", constant_parameter.name).unwrap();
+        write!(buffer, "{}", constant_parameter.name.as_ref()).unwrap();
 
         constant_parameter
             .r#type

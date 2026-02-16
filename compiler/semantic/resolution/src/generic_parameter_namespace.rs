@@ -1,9 +1,10 @@
 //! Contains the helper query for creating an extra namespace that includes all
 //! the generic parameters scope.
 
-use std::{collections::hash_map::Entry, sync::Arc};
+use std::collections::hash_map::Entry;
 
-use pernixc_query::{TrackedEngine, runtime::executor};
+use linkme::distributed_slice;
+use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_symbol::{kind::get_kind, parent::scope_walker};
 use pernixc_target::Global;
 use pernixc_term::{
@@ -15,34 +16,54 @@ use pernixc_term::{
     lifetime::Lifetime,
     r#type::Type,
 };
+use qbice::{
+    Decode, Encode, Query, StableHash, executor, program::Registration,
+    storage::intern::Interned,
+};
 
 use crate::ExtraNamespace;
 
+/// The key type used to query the generic parameter namespace.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    Query,
+)]
+#[value(Interned<ExtraNamespace>)]
+#[extend(name = get_generic_parameter_namespace, by_val)]
+pub struct Key {
+    /// The global ID of the symbol.
+    pub symbol_id: Global<pernixc_symbol::ID>,
+}
+
 /// Gets the [`ExtraNamespace`] that includes all the generic parameters in the
 /// scope.
-#[pernixc_query::query(
-    key(Key),
-    executor(Executor),
-    value(Arc<ExtraNamespace>),
-    id(Global<pernixc_symbol::ID>),
-    extend(method(get_generic_parameter_namespace))
-)]
-pub async fn get_generic_parameter_namespace(
-    global_id: Global<pernixc_symbol::ID>,
+#[executor(config = Config)]
+async fn get_generic_parameter_namespace_executor(
+    key: &Key,
     engine: &TrackedEngine,
-) -> Result<Arc<ExtraNamespace>, executor::CyclicError> {
+) -> Interned<ExtraNamespace> {
     let mut extra_namespace = ExtraNamespace::default();
 
-    let mut scope_walker = engine.scope_walker(global_id);
+    let mut scope_walker = engine.scope_walker(key.symbol_id);
     while let Some(scope) = scope_walker.next().await {
-        let scope = Global::new(global_id.target_id, scope);
+        let scope = Global::new(key.symbol_id.target_id, scope);
         let symbol_kind = engine.get_kind(scope).await;
 
         if !symbol_kind.has_generic_parameters() {
             continue;
         }
 
-        let generic_parameter = engine.get_generic_parameters(scope).await?;
+        let generic_parameter = engine.get_generic_parameters(scope).await;
 
         for (name, lt) in generic_parameter.lifetime_parameter_ids_by_name() {
             if let Entry::Vacant(entry) =
@@ -80,7 +101,9 @@ pub async fn get_generic_parameter_namespace(
         }
     }
 
-    Ok(Arc::new(extra_namespace))
+    engine.intern(extra_namespace)
 }
 
-pernixc_register::register!(Key, Executor);
+#[distributed_slice(PERNIX_PROGRAM)]
+static GET_GENERIC_PARAMETER_NAMESPACE_EXECUTOR: Registration<Config> =
+    Registration::new::<Key, GetGenericParameterNamespaceExecutor>();

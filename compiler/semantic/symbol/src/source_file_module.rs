@@ -1,9 +1,8 @@
 //! Defines the query key for retrieving the module ID that a source file
 //! corresponds to.
 
-use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::GlobalSourceID;
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode, Query, StableHash};
 
 use crate::ID;
 
@@ -17,11 +16,14 @@ use crate::ID;
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
-    pernixc_query::Key,
+    Encode,
+    Decode,
+    Query,
     StableHash,
 )]
-#[extend(method(get_source_file_module), no_cyclic)]
+#[extend(name = get_source_file_module, by_val)]
 #[value(ID)]
-pub struct Key(pub GlobalSourceID);
+pub struct Key {
+    /// The global source file ID to get the module ID for.
+    pub source_file_id: GlobalSourceID,
+}

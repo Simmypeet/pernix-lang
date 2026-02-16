@@ -1,9 +1,8 @@
 //! Testing configuration for the LSP server.
 
 use pernixc_extend::extend;
-use pernixc_query::{Key, TrackedEngine};
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use pernixc_qbice::TrackedEngine;
+use qbice::{Decode, Encode, Query, StableHash};
 
 /// A query key to determine if the LSP server is running in test mode.
 ///
@@ -23,9 +22,9 @@ use pernixc_stable_hash::StableHash;
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
-    Key,
+    Encode,
+    Decode,
+    Query,
 )]
 #[value(bool)]
 pub struct TestConfig;
@@ -33,5 +32,5 @@ pub struct TestConfig;
 /// Checks if the LSP server is running in test mode.
 #[extend]
 pub async fn is_testing_lsp(self: &TrackedEngine) -> bool {
-    self.query(&TestConfig).await.unwrap()
+    self.query(&TestConfig).await
 }

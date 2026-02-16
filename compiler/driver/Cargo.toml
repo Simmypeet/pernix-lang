@@ -13,16 +13,21 @@ pernixc_source_file = { path = "../base/source_file" }
 pernixc_diagnostic = { path = "../base/diagnostic" }
 pernixc_handler = { path = "../base/handler" }
 pernixc_target = { path = "../base/target" }
-pernixc_query = { path = "../base/query" }
 pernixc_corelib = { path = "../semantic/corelib" }
 pernixc_symbol = { path = "../semantic/symbol" }
 pernixc_symbol_impl = { path = "../semantic/symbol_impl" }
 pernixc_check = { path = "../semantic/check" }
-pernixc_register = { path = "../base/register" }
 pernixc_llvm = { path = "../codegen/llvm" }
-codespan-reporting = { workspace = true }
+pernixc_qbice.path = "../base/qbice"
+pernixc_source_file_impl.path = "../base/source_file_impl"
+pernixc_lexical_impl.path = "../syntax/lexical_impl"
+pernixc_syntax_impl.path = "../syntax/syntax_impl"
+qbice.workspace = true
+linkme.workspace = true
 inkwell = { workspace = true }
 tracing = { workspace = true }
+miette.workspace = true
+ansi_term.workspace = true
 
 [lints]
 workspace = true

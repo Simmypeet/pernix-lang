@@ -2,15 +2,15 @@
 //! term/information.
 
 use bon::Builder;
-use flexstr::SharedStr;
 use pernixc_handler::Handler;
 use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor};
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use pernixc_qbice::TrackedEngine;
 use pernixc_target::Global;
 use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
+use qbice::{
+    Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
+};
 
 use crate::{diagnostic::Diagnostic, qualified_identifier::Resolution};
 
@@ -29,13 +29,21 @@ pub trait ElidedTermProvider<T>: Send {
 /// The extra namespace that is used to resolve the symbols prior to the
 /// resolution process.
 #[derive(
-    Debug, Clone, PartialEq, Eq, Default, StableHash, Serialize, Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
 )]
 #[allow(missing_docs)]
 pub struct ExtraNamespace {
-    pub lifetimes: HashMap<SharedStr, Lifetime>,
-    pub types: HashMap<SharedStr, Type>,
-    pub constants: HashMap<SharedStr, Constant>,
+    pub lifetimes: HashMap<Interned<str>, Lifetime>,
+    pub types: HashMap<Interned<str>, Type>,
+    pub constants: HashMap<Interned<str>, Constant>,
 }
 
 /// A trait for observing the resolution process.
@@ -190,5 +198,4 @@ impl Config<'_, '_, '_, '_, '_> {
 pub enum Error {
     /// Encounters a fatal error during the resolution.
     Abort,
-    Cyclic(executor::CyclicError),
 }

@@ -3,55 +3,66 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: generic parameter `a` is already defined in the `main::First`
-  ╭─ compiler/e2e/test/snapshot/semantic_element/generic_parameters/redefinition/main.pnx:1:24
-  │
-1 │ public type First['a, 'a, 'b] = &'a int32
-  │                    -   ^ redefinition here
-  │                    │    
-  │                    previously defined here
+  [error]: generic parameter `a` is already defined in the `main::First`
+   ╭─[compiler/e2e/test/snapshot/semantic_element/generic_parameters/redefinition/main.pnx:1:20]
+ 1 │ public type First['a, 'a, 'b] = &'a int32
+   ·                    ┬   ┬
+   ·                    │   ╰── redefinition here
+   ·                    ╰── previously defined here
+ 2 │ 
+   ╰────
 
-error: generic parameter `T` is already defined in the `main::Second`
-  ╭─ compiler/e2e/test/snapshot/semantic_element/generic_parameters/redefinition/main.pnx:3:23
-  │
-3 │ public type Second[T, T, U] = T
-  │                    -  ^ redefinition here
-  │                    │   
-  │                    previously defined here
+  [error]: generic parameter `T` is already defined in the `main::Second`
+   ╭─[compiler/e2e/test/snapshot/semantic_element/generic_parameters/redefinition/main.pnx:3:20]
+ 2 │ 
+ 3 │ public type Second[T, T, U] = T
+   ·                    ┬  ┬
+   ·                    │  ╰── redefinition here
+   ·                    ╰── previously defined here
+ 4 │ 
+   ╰────
 
-error: generic parameter `N` is already defined in the `main::Third`
-  ╭─ compiler/e2e/test/snapshot/semantic_element/generic_parameters/redefinition/main.pnx:5:41
-  │
-5 │ public type Third[const N: usize, const N: usize, const M: float32] = int32
-  │                         -               ^ redefinition here
-  │                         │                
-  │                         previously defined here
+  [error]: generic parameter `N` is already defined in the `main::Third`
+   ╭─[compiler/e2e/test/snapshot/semantic_element/generic_parameters/redefinition/main.pnx:5:25]
+ 4 │ 
+ 5 │ public type Third[const N: usize, const N: usize, const M: float32] = int32
+   ·                         ┬               ┬
+   ·                         │               ╰── redefinition here
+   ·                         ╰── previously defined here
+ 6 │ 
+   ╰────
 
-error: generic parameter `a` is already defined in the `main::Fourth`
-  ╭─ compiler/e2e/test/snapshot/semantic_element/generic_parameters/redefinition/main.pnx:8:10
-  │
-8 │     'a, 'a,
-  │      -   ^ redefinition here
-  │      │    
-  │      previously defined here
+  [error]: generic parameter `a` is already defined in the `main::Fourth`
+   ╭─[compiler/e2e/test/snapshot/semantic_element/generic_parameters/redefinition/main.pnx:8:6]
+ 7 │ public type Fourth[
+ 8 │     'a, 'a,
+   ·      ┬   ┬
+   ·      │   ╰── redefinition here
+   ·      ╰── previously defined here
+ 9 │     T, T,
+   ╰────
 
-error: generic parameter `T` is already defined in the `main::Fourth`
-  ╭─ compiler/e2e/test/snapshot/semantic_element/generic_parameters/redefinition/main.pnx:9:8
-  │
-9 │     T, T,
-  │     -  ^ redefinition here
-  │     │   
-  │     previously defined here
+  [error]: generic parameter `T` is already defined in the `main::Fourth`
+    ╭─[compiler/e2e/test/snapshot/semantic_element/generic_parameters/redefinition/main.pnx:9:5]
+  8 │     'a, 'a,
+  9 │     T, T,
+    ·     ┬  ┬
+    ·     │  ╰── redefinition here
+    ·     ╰── previously defined here
+ 10 │     const N: usize, const N: usize
+    ╰────
 
-error: generic parameter `N` is already defined in the `main::Fourth`
-   ╭─ compiler/e2e/test/snapshot/semantic_element/generic_parameters/redefinition/main.pnx:10:27
-   │
-10 │     const N: usize, const N: usize
-   │           -               ^ redefinition here
-   │           │                
-   │           previously defined here
+  [error]: generic parameter `N` is already defined in the `main::Fourth`
+    ╭─[compiler/e2e/test/snapshot/semantic_element/generic_parameters/redefinition/main.pnx:10:11]
+  9 │     T, T,
+ 10 │     const N: usize, const N: usize
+    ·           ┬               ┬
+    ·           │               ╰── redefinition here
+    ·           ╰── previously defined here
+ 11 │ ] = &'a T:
+    ╰────
 
-error: Compilation aborted due to 6 error(s)
+  [error]: Compilation aborted due to 6 error(s)
 
 
 

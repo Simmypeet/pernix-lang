@@ -1,10 +1,8 @@
 use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor};
+use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::implements_arguments::get_implements_argument;
-use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
-use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{
     kind::get_kind, name::get_qualified_name, source_map::to_absolute_span,
     span::get_span,
@@ -16,6 +14,7 @@ use pernixc_term::{
     generic_arguments::GenericArguments,
     r#type::Type,
 };
+use qbice::{Decode, Encode, StableHash};
 
 use crate::diagnostic_enum;
 
@@ -26,8 +25,8 @@ diagnostic_enum! {
         PartialEq,
         Eq,
         StableHash,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
     )]
     pub enum Diagnostic {
         SymbolIsNotCallable(SymbolIsNotCallable),
@@ -57,8 +56,8 @@ diagnostic_enum! {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct SymbolIsNotCallable {
     /// The ID of the symbol that cannot be called.
@@ -72,13 +71,12 @@ impl Report for SymbolIsNotCallable {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let span = engine.to_absolute_span(&self.span).await;
         let kind = engine.get_kind(self.symbol_id).await;
         let qualified_name = engine.get_qualified_name(self.symbol_id).await;
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message(format!(
                 "the symbol `{} {qualified_name}` cannot be called",
                 kind.kind_str()
@@ -91,7 +89,7 @@ impl Report for SymbolIsNotCallable {
                 "only functions, effect operation or enum with associated \
                  value can be called",
             )
-            .build())
+            .build()
     }
 }
 
@@ -106,8 +104,8 @@ impl Report for SymbolIsNotCallable {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct VariantDoesntHaveAssociatedValue {
     /// The ID of the variant that doesn't have an associated value but was
@@ -125,12 +123,11 @@ impl Report for VariantDoesntHaveAssociatedValue {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let span = engine.to_absolute_span(&self.span).await;
         let qualified_name = engine.get_qualified_name(self.variant_id).await;
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message(format!(
                 "the variant `{qualified_name}` doesn't have an associated \
                  value",
@@ -148,7 +145,7 @@ impl Report for VariantDoesntHaveAssociatedValue {
                 "remove the arguments and the parentheses to use the variant \
                  as a value"
             })
-            .build())
+            .build()
     }
 }
 
@@ -163,8 +160,8 @@ impl Report for VariantDoesntHaveAssociatedValue {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct VariantAssociatedValueExpected {
     /// The ID of the variant that expects an associated value but was called
@@ -179,12 +176,11 @@ impl Report for VariantAssociatedValueExpected {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let span = engine.to_absolute_span(&self.span).await;
         let qualified_name = engine.get_qualified_name(self.variant_id).await;
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message(format!(
                 "the variant `{qualified_name}` expects an associated value",
             ))
@@ -199,7 +195,7 @@ impl Report for VariantAssociatedValueExpected {
                 "supply the associated value using the syntax \
                  `{qualified_name}(value)`"
             ))
-            .build())
+            .build()
     }
 }
 
@@ -214,8 +210,8 @@ impl Report for VariantAssociatedValueExpected {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct ExtraneousArgumentsToAssociatedValue {
     /// The ID of the variant that was supplied with too many arguments.
@@ -232,12 +228,11 @@ impl Report for ExtraneousArgumentsToAssociatedValue {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let span = engine.to_absolute_span(&self.span).await;
         let qualified_name = engine.get_qualified_name(self.variant_id).await;
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message(format!(
                 "the variant `{qualified_name}` was supplied with too many \
                  arguments",
@@ -252,7 +247,7 @@ impl Report for ExtraneousArgumentsToAssociatedValue {
             .help_message(
                 "only one argument is allowed for the associated value",
             )
-            .build())
+            .build()
     }
 }
 
@@ -268,8 +263,8 @@ impl Report for ExtraneousArgumentsToAssociatedValue {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct MismatchedArgumentsCount {
     /// The ID of the function that was called with the wrong number of
@@ -290,12 +285,11 @@ impl Report for MismatchedArgumentsCount {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let span = engine.to_absolute_span(&self.span).await;
         let qualified_name = engine.get_qualified_name(self.function_id).await;
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message(format!(
                 "the function `{qualified_name}` was called with the wrong \
                  number of arguments (expected {}, found {})",
@@ -313,13 +307,13 @@ impl Report for MismatchedArgumentsCount {
                     .build(),
             )
             .severity(Severity::Error)
-            .build())
+            .build()
     }
 }
 
 /// The generic arguments are not compatible with the generic arguments defined
 /// in the implementation.
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct MismatchedImplementationArguments {
     /// The ID of the ADT implementation where the generic arguments are
     /// mismatched.
@@ -342,8 +336,7 @@ impl Report for MismatchedImplementationArguments {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let impl_span =
             if let Some(span) = engine.get_span(self.implementation_id).await {
                 Some(engine.to_absolute_span(&span).await)
@@ -354,10 +347,9 @@ impl Report for MismatchedImplementationArguments {
         let impl_arguments = engine
             .get_implements_argument(self.implementation_id)
             .await
-            .unwrap()
             .unwrap();
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message(
                 "the generic arguments are not compatible with the generic \
                  arguments defined in the implementation",
@@ -408,7 +400,7 @@ impl Report for MismatchedImplementationArguments {
                     .into_iter()
                     .collect(),
             )
-            .build())
+            .build()
     }
 }
 
@@ -424,8 +416,8 @@ impl Report for MismatchedImplementationArguments {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct UnsafeFunctionCallOutsideUnsafeScope {
     /// The span of the function call expression.
@@ -439,8 +431,7 @@ impl Report for UnsafeFunctionCallOutsideUnsafeScope {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let function_name = engine.get_qualified_name(self.function_id).await;
         let function_span = engine.get_span(self.function_id).await;
         let absolute_call_span = engine.to_absolute_span(&self.call_span).await;
@@ -450,7 +441,7 @@ impl Report for UnsafeFunctionCallOutsideUnsafeScope {
             None
         };
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message("unsafe function call outside unsafe scope")
             .primary_highlight(
                 Highlight::builder()
@@ -476,6 +467,6 @@ impl Report for UnsafeFunctionCallOutsideUnsafeScope {
                     })
                     .collect(),
             )
-            .build())
+            .build()
     }
 }

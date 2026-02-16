@@ -1,9 +1,8 @@
 //! Defines the scope span key for symbols.
 
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
+use qbice::{Decode, Encode, Query, StableHash};
 
 /// Points to the whole range in the source code where the given symbol is
 /// scoped, typically used for determining the symbol scope at a particular
@@ -21,11 +20,14 @@ use pernixc_target::Global;
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
-    pernixc_query::Key,
+    Encode,
+    Decode,
+    Query,
     StableHash,
 )]
-#[extend(method(get_scope_span), no_cyclic)]
+#[extend(name = get_scope_span, by_val)]
 #[value(Option<RelativeSpan>)]
-pub struct Key(pub Global<crate::ID>);
+pub struct Key {
+    /// The global ID of the symbol to get the scope span for.
+    pub symbol_id: Global<crate::ID>,
+}

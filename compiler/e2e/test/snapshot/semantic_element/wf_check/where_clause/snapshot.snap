@@ -3,34 +3,55 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: unsatisfied predicate
-   ╭─ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:20:43
-   │
-20 │ public type UseInvariant['x, 'a, 'b, T] = ConstrainedInvariant['x, 'a, T]:
-   │                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the predicate `'a: 'b` is not satisfied
+  [error]: unsatisfied predicate
+    ╭─[compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:20:43]
+ 19 │ # should error with 'b: 'a and 'a: 'b
+ 20 │ public type UseInvariant['x, 'a, 'b, T] = ConstrainedInvariant['x, 'a, T]:
+    ·                                           ───────────────┬───────────────
+    ·                                                          ╰── the predicate `'a: 'b` is not satisfied
+ 21 │     where:
+    ╰────
 
-error: unsatisfied predicate
-   ╭─ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:20:43
-   │
-20 │ public type UseInvariant['x, 'a, 'b, T] = ConstrainedInvariant['x, 'a, T]:
-   │                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the predicate `'b: 'a` is not satisfied
+  [error]: unsatisfied predicate
+    ╭─[compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:20:43]
+ 19 │ # should error with 'b: 'a and 'a: 'b
+ 20 │ public type UseInvariant['x, 'a, 'b, T] = ConstrainedInvariant['x, 'a, T]:
+    ·                                           ───────────────┬───────────────
+    ·                                                          ╰── the predicate `'b: 'a` is not satisfied
+ 21 │     where:
+    ╰────
 
-error: unsatisfied predicate
-   ╭─ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:39:37
-   │
-39 │ public type UseVariant['a, 'b, T] = ConstrainedCovariant['a, T]:
-   │                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^ the predicate `'b: 'a` is not satisfied
+  [error]: unsatisfied predicate
+    ╭─[compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:39:37]
+ 38 │ # should error with 'b: 'a
+ 39 │ public type UseVariant['a, 'b, T] = ConstrainedCovariant['a, T]:
+    ·                                     ─────────────┬─────────────
+    ·                                                  ╰── the predicate `'b: 'a` is not satisfied
+ 40 │     where:
+    ╰────
 
-error: unsatisfied predicate
-   ╭─ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:57:44
-   │
-47 │         T: 'a
-   │            -- the required predicate was declared here
-   ·
-57 │ public type UseConstraintLifetime['a, T] = ConstraintLifetime['a, T]
-   │                                            ^^^^^^^^^^^^^^^^^^^^^^^^^ the predicate `T: 'a` is not satisfied
+  [error]: unsatisfied predicate
+    ╭─[compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:47:12]
+ 46 │     where:
+ 47 │         T: 'a
+    ·            ─┬
+    ·             ╰── the required predicate was declared here
+ 48 │ 
+ 49 │ 
+ 50 │ # should have no error since T: 'static
+ 51 │ public type UseConstraintLifetimeWithStatic['a, T] = ConstraintLifetime['a, T]:
+ 52 │     where:
+ 53 │         T: 'static 
+ 54 │ 
+ 55 │ 
+ 56 │ # should error with T: 'a
+ 57 │ public type UseConstraintLifetime['a, T] = ConstraintLifetime['a, T]
+    ·                                            ────────────┬────────────
+    ·                                                        ╰── the predicate `T: 'a` is not satisfied
+ 58 │ 
+    ╰────
 
-error: Compilation aborted due to 4 error(s)
+  [error]: Compilation aborted due to 4 error(s)
 
 
 

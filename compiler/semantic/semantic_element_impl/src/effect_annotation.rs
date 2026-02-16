@@ -1,10 +1,10 @@
-use std::{borrow::Cow, sync::Arc};
+use std::borrow::Cow;
 
 use pernixc_arena::OrderedArena;
 use pernixc_handler::{Handler, Storage};
 use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
+use pernixc_qbice::TrackedEngine;
 use pernixc_resolution::{
     Config, ExtraNamespace,
     forall_lifetimes::create_forall_lifetimes,
@@ -85,10 +85,8 @@ async fn build_effect_annotation(
     observer: &mut Occurrences,
     extra_namespace: &ExtraNamespace,
     handler: &Storage<diagnostic::Diagnostic>,
-) -> Result<Option<(effect::Unit, RelativeSpan)>, CyclicError> {
-    let Some(q_ident) = effect_unit_syntax.qualified_identifier() else {
-        return Ok(None);
-    };
+) -> Option<(effect::Unit, RelativeSpan)> {
+    let q_ident = effect_unit_syntax.qualified_identifier()?;
 
     let with_forall_lifetime =
         effect_unit_syntax.higher_ranked_lifetimes().map(|x| {
@@ -122,10 +120,7 @@ async fn build_effect_annotation(
     {
         Ok(resolution) => resolution,
         Err(er) => match er {
-            pernixc_resolution::Error::Abort => return Ok(None),
-            pernixc_resolution::Error::Cyclic(cyclic_error) => {
-                return Err(cyclic_error);
-            }
+            pernixc_resolution::Error::Abort => return None,
         },
     };
     let id = resolution.global_id();
@@ -139,9 +134,9 @@ async fn build_effect_annotation(
                 },
             ));
 
-            Ok(None)
+            None
         },
-        |effect| Ok(Some((effect, effect_unit_syntax.span()))),
+        |effect| Some((effect, effect_unit_syntax.span())),
     )
 }
 
@@ -254,7 +249,7 @@ async fn detect_duplicating_group<
     effects: I,
     handler: &Storage<diagnostic::Diagnostic>,
 ) -> Result<OrderedArena<effect::Unit>, UnrecoverableError> {
-    let active_premise = engine.get_active_premise(symbol_id).await?;
+    let active_premise = engine.get_active_premise(symbol_id).await;
     let env = Environment::new(
         Cow::Borrowed(&active_premise),
         Cow::Borrowed(engine),
@@ -310,18 +305,15 @@ async fn detect_duplicating_group<
 impl Build for effect_annotation::Key {
     type Diagnostic = diagnostic::Diagnostic;
 
-    async fn execute(
-        engine: &TrackedEngine,
-        key: &Self,
-    ) -> Result<Output<Self>, CyclicError> {
-        let kind = engine.get_kind(key.0).await;
+    async fn execute(engine: &TrackedEngine, key: &Self) -> Output<Self> {
+        let kind = engine.get_kind(key.symbol_id).await;
 
         if kind == Kind::EffectOperation {
             // simply return the parent effect's do effect
             let parent_effect_id =
-                engine.get_parent_global(key.0).await.unwrap();
+                engine.get_parent_global(key.symbol_id).await.unwrap();
             let parent_generic_parameters =
-                engine.get_generic_parameters(parent_effect_id).await?;
+                engine.get_generic_parameters(parent_effect_id).await;
 
             let arguments = parent_generic_parameters
                 .create_identity_generic_arguments(parent_effect_id);
@@ -332,18 +324,18 @@ impl Build for effect_annotation::Key {
                 generic_arguments: arguments,
             }));
 
-            return Ok(Output {
-                item: Arc::new(arena),
-                diagnostics: Arc::default(),
-                occurrences: Arc::new(Occurrences::default()),
-            });
+            return Output {
+                item: engine.intern(arena),
+                diagnostics: engine.intern_unsized([]),
+                occurrences: engine.intern(Occurrences::default()),
+            };
         }
 
         let effect_annotation_syntax =
-            engine.get_function_effect_annotation_syntax(key.0).await;
+            engine.get_function_effect_annotation_syntax(key.symbol_id).await;
 
         let generic_namespace =
-            engine.get_generic_parameter_namespace(key.0).await?;
+            engine.get_generic_parameter_namespace(key.symbol_id).await;
         let mut observer = Occurrences::default();
         let mut effect_annotations = HashMap::default();
         let storage = Storage::<diagnostic::Diagnostic>::default();
@@ -358,12 +350,12 @@ impl Build for effect_annotation::Key {
                         if let Some(effect_unit) = build_effect_annotation(
                             engine,
                             effect_unit,
-                            key.0,
+                            key.symbol_id,
                             &mut observer,
                             &generic_namespace,
                             &storage,
                         )
-                        .await?
+                        .await
                         {
                             let len = effect_annotations.len();
                             effect_annotations
@@ -381,12 +373,12 @@ impl Build for effect_annotation::Key {
                         if let Some(effect_unit) = build_effect_annotation(
                             engine,
                             effect_unit,
-                            key.0,
+                            key.symbol_id,
                             &mut observer,
                             &generic_namespace,
                             &storage,
                         )
-                        .await?
+                        .await
                         {
                             let len = effect_annotations.len();
                             effect_annotations
@@ -398,25 +390,20 @@ impl Build for effect_annotation::Key {
             }
         }
 
-        let effects = match detect_duplicating_group(
+        let effects = detect_duplicating_group(
             engine,
-            key.0,
+            key.symbol_id,
             effect_annotations.iter(),
             &storage,
         )
         .await
-        {
-            Ok(effect) => effect,
+        .unwrap_or_default();
 
-            Err(UnrecoverableError::Reported) => OrderedArena::default(),
-            Err(UnrecoverableError::CyclicDependency(e)) => return Err(e),
-        };
-
-        Ok(Output {
-            item: Arc::new(effects),
-            diagnostics: storage.into_vec().into(),
-            occurrences: Arc::new(observer),
-        })
+        Output {
+            item: engine.intern(effects),
+            diagnostics: engine.intern_unsized(storage.into_vec()),
+            occurrences: engine.intern(observer),
+        }
     }
 }
 

@@ -4,10 +4,9 @@ use std::{fmt::Write, ops::Deref};
 
 use derive_more::Display;
 use enum_as_inner::EnumAsInner;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_symbol::name::get_qualified_name;
 use pernixc_target::Global;
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Never,
@@ -35,8 +34,8 @@ pub mod arbitrary;
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     EnumAsInner,
     Display,
 )]
@@ -76,8 +75,8 @@ pub enum Primitive {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct Struct {
     /// The ID to the struct.
@@ -97,8 +96,8 @@ pub struct Struct {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct Enum {
     /// The variant that the enum constant value is.
@@ -118,8 +117,8 @@ pub struct Enum {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct Array {
     /// The value of each element in the array constant value.
@@ -140,8 +139,8 @@ pub type Tuple = crate::tuple::Tuple<Constant>;
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     EnumAsInner,
     derive_more::From,
 )]
@@ -478,7 +477,7 @@ impl Match for Constant {
 impl crate::display::Display for Constant {
     async fn fmt(
         &self,
-        engine: &pernixc_query::TrackedEngine,
+        engine: &pernixc_qbice::TrackedEngine,
         formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
         match self {
@@ -498,21 +497,19 @@ impl crate::display::Display for Constant {
                         Box::pin(ty.fmt(engine, formatter)).await
                     }
                     crate::display::InferenceRendering::Rendered(flex_str) => {
-                        write!(formatter, "{flex_str}")
+                        write!(formatter, "{}", flex_str.as_ref())
                     }
                 }
             }
 
             Self::Parameter(member_id) => {
-                let generic_parameters = engine
-                    .get_generic_parameters(member_id.parent_id)
-                    .await
-                    .unwrap();
+                let generic_parameters =
+                    engine.get_generic_parameters(member_id.parent_id).await;
 
                 write!(
                     formatter,
                     "{}",
-                    generic_parameters.constants()[member_id.id].name
+                    &*generic_parameters.constants()[member_id.id].name
                 )
             }
 

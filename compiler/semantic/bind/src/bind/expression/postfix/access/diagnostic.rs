@@ -3,24 +3,21 @@ use std::fmt::Write;
 use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_ir::address::{self, Offset};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor};
-use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_qbice::TrackedEngine;
 use pernixc_source_file::ByteIndex;
-use pernixc_stable_hash::StableHash;
 use pernixc_symbol::source_map::to_absolute_span;
 use pernixc_term::{
     constant::Constant,
     display::{Display, InferenceRenderingMap},
     r#type::Type,
 };
+use qbice::{Decode, Encode, StableHash};
 
 pub use crate::pattern::bind::diagnostic::{
     FieldIsNotAccessible, FieldNotFound,
 };
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, StableHash, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, StableHash, Encode, Decode)]
 pub enum ExpectedType {
     Struct,
     Tuple,
@@ -28,7 +25,7 @@ pub enum ExpectedType {
 }
 
 /// Expected a particular kind of type to access a particular kind of field.
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct UnexpectedTypeForAccess {
     /// The expected type.
     pub expected_type: ExpectedType,
@@ -50,8 +47,7 @@ impl Report for UnexpectedTypeForAccess {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let span = engine.to_absolute_span(&self.span).await;
 
         // Format the found type with inference rendering maps
@@ -67,7 +63,7 @@ impl Report for UnexpectedTypeForAccess {
             .await
             .unwrap();
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .severity(Severity::Error)
             .message(format!(
                 "expected a {} type to {}",
@@ -88,7 +84,7 @@ impl Report for UnexpectedTypeForAccess {
                     .span(span)
                     .build(),
             )
-            .build())
+            .build()
     }
 }
 
@@ -102,8 +98,8 @@ impl Report for UnexpectedTypeForAccess {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct TooLargeTupleIndex {
@@ -115,9 +111,8 @@ impl Report for TooLargeTupleIndex {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
-        Ok(pernixc_diagnostic::Rendered::builder()
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        pernixc_diagnostic::Rendered::builder()
             .primary_highlight(
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.access_span).await)
@@ -125,7 +120,7 @@ impl Report for TooLargeTupleIndex {
             )
             .message("the tuple index is too large".to_string())
             .severity(Severity::Error)
-            .build())
+            .build()
     }
 }
 
@@ -139,8 +134,8 @@ impl Report for TooLargeTupleIndex {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct TupleIndexOutOfBounds {
@@ -158,9 +153,8 @@ impl Report for TupleIndexOutOfBounds {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
-        Ok(pernixc_diagnostic::Rendered::builder()
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        pernixc_diagnostic::Rendered::builder()
             .primary_highlight(
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.access_span).await)
@@ -172,12 +166,12 @@ impl Report for TupleIndexOutOfBounds {
                 "the tuple has {} element(s) but the accessed index is {}",
                 self.element_count, self.accessed_index
             ))
-            .build())
+            .build()
     }
 }
 
 /// Indexing past the unpacked element in tuple is not allowed.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, StableHash)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, StableHash)]
 pub struct CannotIndexPastUnpackedTuple {
     /// The span of the index.
     pub index_span: RelativeSpan,
@@ -202,8 +196,7 @@ impl Report for CannotIndexPastUnpackedTuple {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let index_span = engine.to_absolute_span(&self.index_span).await;
 
         // Format the tuple type with inference rendering maps
@@ -219,7 +212,7 @@ impl Report for CannotIndexPastUnpackedTuple {
             .await
             .unwrap();
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .severity(Severity::Error)
             .message(match &self.offset {
                 address::Offset::FromStart(_) | address::Offset::FromEnd(_) => {
@@ -266,6 +259,6 @@ impl Report for CannotIndexPastUnpackedTuple {
 
                 Offset::Unpacked => None,
             })
-            .build())
+            .build()
     }
 }

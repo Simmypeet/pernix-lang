@@ -1,7 +1,6 @@
 //! Contains the definition of the [`Error`] term.
 
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     constant::Constant,
@@ -23,8 +22,8 @@ use crate::{
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct Error;
 

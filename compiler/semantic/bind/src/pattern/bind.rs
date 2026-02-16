@@ -212,7 +212,7 @@ impl Binder<'_> {
             return Ok(None);
         };
 
-        let value = match numeric_str.kind.0.as_str().parse::<u64>() {
+        let value = match numeric_str.kind.0.as_ref().parse::<u64>() {
             Ok(value) => value,
             Err(err) => match err.kind() {
                 std::num::IntErrorKind::NegOverflow
@@ -555,7 +555,7 @@ impl Binder<'_> {
         let struct_id = *struct_id;
 
         let struct_generic_parameters =
-            self.engine().get_generic_parameters(struct_id).await?;
+            self.engine().get_generic_parameters(struct_id).await;
 
         let instantiation = Instantiation::from_generic_arguments(
             generic_arguments.clone(),
@@ -564,7 +564,7 @@ impl Binder<'_> {
         )
         .unwrap();
 
-        let fields = self.engine().get_fields(struct_id).await?;
+        let fields = self.engine().get_fields(struct_id).await;
 
         let mut patterns_by_field_id = HashMap::<_, T>::default();
 
@@ -589,7 +589,7 @@ impl Binder<'_> {
             // get the field id
             let Some((field_sym, field_id)) = fields
                 .field_ids_by_name
-                .get(field_name.kind.0.as_str())
+                .get(field_name.kind.0.as_ref())
                 .copied()
                 .map(|x| (&fields.fields[x], x))
             else {
@@ -754,12 +754,12 @@ impl Binder<'_> {
 
         let member = self.engine().get_members(enum_id).await;
         let enum_generic_param =
-            self.engine().get_generic_parameters(enum_id).await?;
+            self.engine().get_generic_parameters(enum_id).await;
 
         // variant not found
         let Some(variant_id) = member
             .member_ids_by_name
-            .get(identifier.kind.0.as_str())
+            .get(identifier.kind.0.as_ref())
             .copied()
             .map(|x| enum_id.target_id.make_global(x))
         else {
@@ -801,7 +801,7 @@ impl Binder<'_> {
         }
 
         let variant_sym =
-            self.engine().get_variant_associated_type(variant_id).await?;
+            self.engine().get_variant_associated_type(variant_id).await;
 
         match (
             &variant_sym,

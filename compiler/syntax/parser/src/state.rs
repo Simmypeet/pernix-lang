@@ -1,20 +1,18 @@
 //! Contains the definition of the [`State`].
 
-use std::{collections::HashSet, sync::Arc};
+use std::collections::HashSet;
 
 use enum_as_inner::EnumAsInner;
-#[cfg(debug_assertions)]
-use flexstr::SharedStr;
 use getset::CopyGetters;
 use pernixc_arena::ID;
 use pernixc_lexical::{kind::Kind, token::Token, tree::ROOT_BRANCH_ID};
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use pernixc_qbice::Interner;
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     abstract_tree::AbstractTree,
     cache::Cache,
-    concrete_tree::{self, AstInfo},
+    concrete_tree::{self, AstInfo, Tree},
     error::Error,
     expect::{self, Expected},
 };
@@ -22,7 +20,7 @@ use crate::{
 /// Represents the state machine of the parser. The parser will use this state
 /// machine to scan the token tree and produce a syntax tree.
 #[derive(Debug, CopyGetters)]
-pub struct State<'a, 'cache> {
+pub struct State<'a, 'cache, I> {
     /// The token tree that will be used to scan the source code.
     #[get_copy = "pub"]
     tree: &'a pernixc_lexical::tree::Tree,
@@ -56,6 +54,9 @@ pub struct State<'a, 'cache> {
 
     /// The memoize table
     cache: &'cache mut Cache,
+
+    /// The interner used by the parser.
+    interner: &'a I,
 }
 
 /// Represents a snapshot of the parser state at a certain point in time. This
@@ -105,8 +106,8 @@ pub struct Checkpoint {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Cursor {
@@ -123,13 +124,14 @@ impl Default for Cursor {
     }
 }
 
-impl<'a, 'cache> State<'a, 'cache> {
+impl<'a, 'cache, I: Interner> State<'a, 'cache, I> {
     /// Creates a new parser state machine that starts at the root of the
     /// token tree and the first node.
     #[must_use]
     pub(crate) fn new(
         tree: &'a pernixc_lexical::tree::Tree,
         cache: &'cache mut Cache,
+        interner: &'a I,
     ) -> Self {
         Self {
             events: Vec::with_capacity(
@@ -152,6 +154,7 @@ impl<'a, 'cache> State<'a, 'cache> {
                 source_id: tree.source_id(),
             },
             cache,
+            interner,
         }
     }
 
@@ -407,7 +410,7 @@ impl<'a, 'cache> State<'a, 'cache> {
     /// step into the fragment as well.
     pub fn start_node<A: AbstractTree, T>(
         &mut self,
-        op: impl for<'x> FnOnce(&mut State<'a, 'x>) -> T,
+        op: impl for<'x> FnOnce(&mut State<'a, 'x, I>) -> T,
     ) -> (Option<T>, bool) {
         // step into the fragment
         if let Some(some_step_info) = A::step_into_fragment() {
@@ -457,7 +460,7 @@ impl<'a, 'cache> State<'a, 'cache> {
                 ast_type_id: A::STABLE_TYPE_ID,
 
                 #[cfg(debug_assertions)]
-                ast_name: SharedStr::from(std::any::type_name::<A>()),
+                ast_name: std::any::type_name::<A>().to_string(),
 
                 step_into_fragment: Some((branch_id, self.tree.source_id())),
             }));
@@ -471,6 +474,7 @@ impl<'a, 'cache> State<'a, 'cache> {
                 new_line_significant: false,
                 current_error: std::mem::take(&mut self.current_error),
                 cache: self.cache,
+                interner: self.interner,
             };
 
             // operate on the inner fragment state
@@ -491,7 +495,7 @@ impl<'a, 'cache> State<'a, 'cache> {
                 ast_type_id: A::STABLE_TYPE_ID,
 
                 #[cfg(debug_assertions)]
-                ast_name: SharedStr::from(std::any::type_name::<A>()),
+                ast_name: std::any::type_name::<A>().to_string(),
 
                 step_into_fragment: None,
             }));
@@ -555,10 +559,9 @@ impl<'a, 'cache> State<'a, 'cache> {
             .drain(before.emitted_error_count..after.emitted_error_count);
 
         if before.event_index.0 == after.event_index.0
-            && before.event_index.1.is_some()
+            && let Some(event_index) = before.event_index.1
         {
-            let middle_count =
-                after.event_index.1.unwrap() - before.event_index.1.unwrap();
+            let middle_count = after.event_index.1.unwrap() - event_index;
 
             match &mut self.events[after.event_index.0 - 1] {
                 Event::Take(count) | Event::Error(count) => {
@@ -681,12 +684,19 @@ impl<'a, 'cache> State<'a, 'cache> {
 
         assert_eq!(first.ast_type_id, A::STABLE_TYPE_ID);
 
-        let tree =
-            Self::finalize_ast_node(self.tree, first, &mut events, &mut cursor);
+        let tree = Self::finalize_ast_node(
+            self.interner,
+            self.tree,
+            first,
+            &mut events,
+            &mut cursor,
+        );
 
         let tree = tree.map(|tree| {
-            A::from_node(&concrete_tree::Node::Branch(Arc::new(tree)))
-                .expect("should be able to convert the tree to the AST")
+            A::from_node(&concrete_tree::Node::Branch(
+                self.interner.intern(tree),
+            ))
+            .expect("should be able to convert the tree to the AST")
         });
 
         (tree, self.emitted_erorrs)
@@ -694,6 +704,7 @@ impl<'a, 'cache> State<'a, 'cache> {
 
     #[allow(clippy::too_many_lines)]
     pub(crate) fn finalize_ast_node(
+        interner: &I,
         tree: &pernixc_lexical::tree::Tree,
         ast_info: AstInfo,
         events: &mut impl Iterator<Item = Event>,
@@ -735,25 +746,26 @@ impl<'a, 'cache> State<'a, 'cache> {
 
             if !is_error && !error_nodes.is_empty() {
                 // if there are error nodes, create an error node
-                let error_node = concrete_tree::Node::Branch(Arc::new(
-                    concrete_tree::Tree {
-                        ast_info: None,
-                        nodes: std::mem::take(&mut error_nodes),
-                    },
-                ));
+                let error_node =
+                    concrete_tree::Node::Branch(interner.intern(Tree::new(
+                        None,
+                        std::mem::take(&mut error_nodes),
+                    )));
 
                 nodes.push(error_node);
             }
 
             match event {
                 Event::NewNode(ast_info) => {
-                    let Some(tree) =
-                        Self::finalize_ast_node(tree, ast_info, events, cursor)
-                    else {
+                    let Some(tree) = Self::finalize_ast_node(
+                        interner, tree, ast_info, events, cursor,
+                    ) else {
                         continue;
                     };
 
-                    nodes.push(concrete_tree::Node::Branch(Arc::new(tree)));
+                    nodes.push(concrete_tree::Node::Branch(
+                        interner.intern(tree),
+                    ));
                 }
 
                 Event::Take(take) => {
@@ -822,10 +834,7 @@ impl<'a, 'cache> State<'a, 'cache> {
                                 .collect();
 
                             let error_node = concrete_tree::Node::Branch(
-                                Arc::new(concrete_tree::Tree {
-                                    ast_info: None,
-                                    nodes: errors,
-                                }),
+                                interner.intern(Tree::new(None, errors)),
                             );
 
                             nodes.push(error_node);
@@ -839,10 +848,10 @@ impl<'a, 'cache> State<'a, 'cache> {
                     // done with the current node, pop the stack
                     // if node has no tokens, return None
                     return (finish_cursor.is_some() || !nodes.is_empty())
-                        .then_some(concrete_tree::Tree {
-                            ast_info: Some(ast_info),
+                        .then_some(concrete_tree::Tree::new(
+                            Some(ast_info),
                             nodes,
-                        });
+                        ));
                 }
 
                 Event::Inline(_) => {

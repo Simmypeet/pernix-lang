@@ -1,7 +1,7 @@
 //! Handles the implementation of hover functionality for the LSP server.
 
 use pernixc_extend::extend;
-use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
+use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::{kind::get_kind, name::get_qualified_name};
 use pernixc_target::TargetID;
 
@@ -33,32 +33,29 @@ pub async fn handle_hover(
     self: &TrackedEngine,
     target_id: TargetID,
     params: tower_lsp::lsp_types::HoverParams,
-) -> Result<Option<String>, CyclicError> {
-    let Some(symbol) = self
+) -> Option<String> {
+    let symbol = self
         .symbol_at(
             &params.text_document_position_params.position,
             &params.text_document_position_params.text_document.uri,
             target_id,
         )
-        .await?
-    else {
-        return Ok(None);
-    };
+        .await?;
 
     let kind = self.get_kind(symbol).await;
-    Ok(Some(match kind {
+    Some(match kind {
         pernixc_symbol::kind::Kind::Enum => {
-            self.format_enum_signature(symbol).await?
+            self.format_enum_signature(symbol).await
         }
 
         pernixc_symbol::kind::Kind::Struct => {
-            self.format_struct_signature(symbol).await?
+            self.format_struct_signature(symbol).await
         }
 
         pernixc_symbol::kind::Kind::Type
         | pernixc_symbol::kind::Kind::ImplementationType
         | pernixc_symbol::kind::Kind::TraitType => {
-            self.format_type_signature(symbol).await?
+            self.format_type_signature(symbol).await
         }
 
         pernixc_symbol::kind::Kind::Function
@@ -69,26 +66,26 @@ pub async fn handle_hover(
                 symbol,
                 symbol.target_id == target_id,
             )
-            .await?
+            .await
         }
 
         pernixc_symbol::kind::Kind::Variant => {
-            self.format_variant_signature(symbol).await?
+            self.format_variant_signature(symbol).await
         }
 
         pernixc_symbol::kind::Kind::Trait => {
             self.format_simple_signature_with_where_clause(symbol, "trait")
-                .await?
+                .await
         }
 
         pernixc_symbol::kind::Kind::Marker => {
             self.format_simple_signature_with_where_clause(symbol, "marker")
-                .await?
+                .await
         }
 
         pernixc_symbol::kind::Kind::Effect => {
             self.format_simple_signature_with_where_clause(symbol, "effect")
-                .await?
+                .await
         }
 
         pernixc_symbol::kind::Kind::Module => {
@@ -107,5 +104,5 @@ pub async fn handle_hover(
                 self.get_qualified_name(symbol).await
             )
         }
-    }))
+    })
 }

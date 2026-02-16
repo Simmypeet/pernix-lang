@@ -422,7 +422,7 @@ async fn normalize_trait_member(
         let generic_parameter = environment
             .tracked_engine()
             .get_generic_parameters(implementation_member_id)
-            .await?;
+            .await;
 
         final_instantiation
             .append_from_generic_arguments(
@@ -436,7 +436,7 @@ async fn normalize_trait_member(
     let mut new_term = (*environment
         .tracked_engine()
         .get_type_alias(implementation_member_id)
-        .await?)
+        .await)
         .clone();
 
     final_instantiation.instantiate(&mut new_term);

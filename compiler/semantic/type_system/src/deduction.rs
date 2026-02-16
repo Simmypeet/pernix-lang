@@ -5,7 +5,6 @@ use std::{
     hash::Hash,
 };
 
-use pernixc_query::runtime::executor;
 use pernixc_semantic_element::variance::Variance;
 use pernixc_term::{
     constant::Constant, generic_arguments::GenericArguments,
@@ -250,9 +249,6 @@ pub enum Error {
 
     #[error(transparent)]
     UnificationFailure(#[from] UnificationFailureError),
-
-    #[error(transparent)]
-    CyclicDependency(#[from] executor::CyclicError),
 }
 
 impl From<crate::Error> for Error {
@@ -260,9 +256,6 @@ impl From<crate::Error> for Error {
         match value {
             crate::Error::Overflow(overflow_error) => {
                 Self::Overflow(overflow_error)
-            }
-            crate::Error::CyclicDependency(abort) => {
-                Self::CyclicDependency(abort)
             }
         }
     }

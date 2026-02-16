@@ -9,9 +9,9 @@ use std::{
 
 use derive_more::{Deref, DerefMut, From};
 use enum_as_inner::EnumAsInner;
-use flexstr::SharedStr;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use qbice::{
+    Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
+};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 use thiserror::Error;
@@ -34,9 +34,10 @@ pub mod arbitrary;
     Ord,
     Hash,
     EnumIter,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
+    Identifiable,
 )]
 pub enum Keyword {
     /// `match` keyword.
@@ -199,8 +200,8 @@ static STRING_KEYWORD_MAP: LazyLock<HashMap<&'static str, Keyword>> =
     Hash,
     Default,
     Error,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 #[error("invalid string representation of keyword.")]
@@ -307,8 +308,8 @@ impl Display for Keyword {
     Ord,
     Hash,
     Default,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct NewLine;
@@ -324,8 +325,8 @@ pub struct NewLine;
     Ord,
     Hash,
     Default,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     Deref,
     DerefMut,
     StableHash,
@@ -341,14 +342,13 @@ pub struct Character(pub char);
     PartialOrd,
     Ord,
     Hash,
-    Default,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     Deref,
     DerefMut,
     StableHash,
 )]
-pub struct String(pub SharedStr);
+pub struct String(pub Interned<str>);
 
 /// Represents a sequence of characters that can be used to name things in the
 /// source code: `struct IDENTIFIER`.
@@ -360,14 +360,13 @@ pub struct String(pub SharedStr);
     PartialOrd,
     Ord,
     Hash,
-    Default,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     Deref,
     DerefMut,
     StableHash,
 )]
-pub struct Identifier(pub SharedStr);
+pub struct Identifier(pub Interned<str>);
 
 impl Identifier {
     /// Checks if the given character can be used as the first character in an
@@ -432,8 +431,8 @@ impl Display for Identifier {
     Ord,
     Hash,
     Default,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     Deref,
     DerefMut,
     StableHash,
@@ -456,14 +455,13 @@ impl Display for Punctuation {
     PartialOrd,
     Ord,
     Hash,
-    Default,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     Deref,
     DerefMut,
     StableHash,
 )]
-pub struct Numeric(pub SharedStr);
+pub struct Numeric(pub Interned<str>);
 
 /// An enumeration of all possible kinds of tokens in the Pernix programming
 /// language.
@@ -475,8 +473,8 @@ pub struct Numeric(pub SharedStr);
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     From,
     EnumAsInner,
     StableHash,

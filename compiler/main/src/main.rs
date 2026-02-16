@@ -6,21 +6,37 @@ use std::{
 
 use backtrace::Backtrace;
 use clap::Parser;
-use codespan_reporting::{
-    diagnostic::Diagnostic,
-    term::{
-        self, StylesWriter,
-        termcolor::{self, StandardStream},
-    },
-};
+use pernixc_driver::term::ReportTerm;
 use pernixc_target::Arguments;
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
 use tracing_chrome::{ChromeLayerBuilder, FlushGuard};
 use tracing_subscriber::{
     EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt,
 };
 
+#[cfg(not(target_env = "msvc"))]
 #[global_allocator]
-static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+static GLOBAL: Jemalloc = Jemalloc;
+
+#[cfg(not(target_env = "msvc"))]
+fn configure_jemalloc() {
+    // this configuration is equivalent to
+    // "background_thread:true,dirty_decay_ms:1000,muzzy_decay_ms:1000"
+
+    unsafe {
+        let _ =
+            tikv_jemalloc_ctl::raw::write::<bool>(b"background_thread\0", true);
+        let _ = tikv_jemalloc_ctl::raw::write::<isize>(
+            b"arenas.dirty_decay_ms\0",
+            1000,
+        );
+        let _ = tikv_jemalloc_ctl::raw::write::<isize>(
+            b"arenas.muzzy_decay_ms\0",
+            1000,
+        );
+    }
+}
 
 async fn main_async() -> ExitCode {
     // if the program is compiled in release mode, set the panic hook to
@@ -31,19 +47,16 @@ async fn main_async() -> ExitCode {
 
     let _guard = init_tracing(argument.command.input().chrome_tracing);
 
-    let mut stderr =
-        codespan_reporting::term::termcolor::StandardStream::stderr(
-            termcolor::ColorChoice::Always,
-        );
-    let mut stdout =
-        codespan_reporting::term::termcolor::StandardStream::stdout(
-            termcolor::ColorChoice::Always,
-        );
+    let mut stderr = std::io::stderr();
+    let mut stdout = std::io::stdout();
 
     pernixc_driver::run(argument, &mut stderr, &mut stdout).await
 }
 
 fn main() -> ExitCode {
+    #[cfg(not(target_env = "msvc"))]
+    configure_jemalloc();
+
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_stack_size(
@@ -175,35 +188,20 @@ impl IceReport {
 #[allow(dead_code, clippy::too_many_lines)]
 fn setup_panic() {
     std::panic::set_hook(Box::new(|info| {
-        let global_source_map = pernixc_source_file::SourceMap::new();
-        let styles = pernixc_driver::term::get_styles();
-        let config = pernixc_driver::term::get_coonfig();
-        let mut style_writer = StylesWriter::new(
-            StandardStream::stderr(termcolor::ColorChoice::Always),
-            &styles,
+        let stderr = std::io::stderr();
+        let mut stderr = stderr.lock();
+
+        let mut report_term = ReportTerm::new(&mut stderr, true);
+
+        report_term.report_simple_error(
+            "internal compiler error (ICE) occurred; the error is caused by a \
+             bug in the compiler not the error in your code",
         );
 
-        term::emit_to_write_style(
-            &mut style_writer,
-            &config,
-            &global_source_map,
-            &Diagnostic::error().with_message(
-                "internal compiler error (ICE) occurred; the error is caused \
-                 by a bug in the compiler not the error in your code",
-            ),
-        )
-        .unwrap();
-
-        term::emit_to_write_style(
-            &mut style_writer,
-            &config,
-            &global_source_map,
-            &Diagnostic::note().with_message(
-                "we're sorry for the inconvenience, please report this issue \
-                 to the developers",
-            ),
-        )
-        .unwrap();
+        report_term.report_simple_note(
+            "we're sorry for the inconvenience, please report this issue to \
+             the developers",
+        );
 
         let payload_string = info
             .payload()
@@ -244,26 +242,15 @@ fn setup_panic() {
         let file = ice_report.write_to_temp();
 
         if let Ok((_, path)) = file {
-            term::emit_to_write_style(
-                &mut style_writer,
-                &config,
-                &global_source_map,
-                &Diagnostic::note().with_message(format!(
-                    "the ICE report has been written to: {}",
-                    path.display()
-                )),
-            )
-            .unwrap();
+            report_term.report_simple_note(format!(
+                "the ICE report has been written to: {}",
+                path.display()
+            ));
         } else {
-            term::emit_to_write_style(
-                &mut style_writer,
-                &config,
-                &global_source_map,
-                &Diagnostic::note().with_message(
-                    "dumping the ICE report to stderr:".to_string(),
-                ),
-            )
-            .unwrap();
+            report_term.report_simple_note(
+                "failed to write the ICE report to a temporary file"
+                    .to_string(),
+            );
 
             eprintln!(
                 "```\n{}```",
@@ -271,38 +258,20 @@ fn setup_panic() {
             );
         }
 
-        term::emit_to_write_style(
-            &mut style_writer,
-            &config,
-            &global_source_map,
-            &Diagnostic::note().with_message(
-                "please report the issue to the developers with the written \
-                 ICE report",
-            ),
-        )
-        .unwrap();
+        report_term.report_simple_note(
+            "please report the issue to the developers with the written ICE \
+             report",
+        );
 
-        term::emit_to_write_style(
-            &mut style_writer,
-            &config,
-            &global_source_map,
-            &Diagnostic::note().with_message(
-                "the report was not automatically sent to the developers \
-                 because of privacy concerns",
-            ),
-        )
-        .unwrap();
+        report_term.report_simple_note(
+            "the report was not automatically sent to the developers because \
+             of privacy concerns",
+        );
 
-        term::emit_to_write_style(
-            &mut style_writer,
-            &config,
-            &global_source_map,
-            &Diagnostic::note().with_message(
-                "we appreciate your effort to report the issue and help us \
-                 improve the compiler <3",
-            ),
-        )
-        .unwrap();
+        report_term.report_simple_note(
+            "we appreciate your effort to report the issue and help us \
+             improve the compiler <3",
+        );
 
         std::process::exit(1);
     }));

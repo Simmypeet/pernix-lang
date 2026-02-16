@@ -5,11 +5,9 @@ use std::ops::{Not, RangeBounds};
 use getset::{CopyGetters, Getters};
 use pernixc_arena::{Arena, ID};
 use pernixc_hash::{HashMap, HashSet};
-use pernixc_query::runtime::executor::CyclicError;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
 use pernixc_transitive_closure::TransitiveClosure;
+use qbice::{Decode, Encode, StableHash};
 
 use super::instruction::{Instruction, Jump, Terminator};
 use crate::transform::{self, Transformer};
@@ -65,8 +63,8 @@ impl Reachability {
     Clone,
     PartialEq,
     Eq,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     Getters,
     StableHash,
     CopyGetters,
@@ -145,17 +143,15 @@ impl transform::Element for Block {
     >(
         &mut self,
         transformer: &mut T,
-        engine: &pernixc_query::TrackedEngine,
-    ) -> Result<(), CyclicError> {
+        engine: &pernixc_qbice::TrackedEngine,
+    ) {
         for inst in &mut self.instructions {
-            inst.transform(transformer, engine).await?;
+            inst.transform(transformer, engine).await;
         }
 
         if let Some(terminator) = &mut self.terminator {
-            terminator.transform(transformer, engine).await?;
+            terminator.transform(transformer, engine).await;
         }
-
-        Ok(())
     }
 }
 
@@ -170,8 +166,8 @@ impl transform::Element for Block {
     Eq,
     Getters,
     CopyGetters,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
     derive_more::Index,
     derive_more::IndexMut,
@@ -733,13 +729,11 @@ impl transform::Element for ControlFlowGraph {
     >(
         &mut self,
         transformer: &mut T,
-        engine: &pernixc_query::TrackedEngine,
-    ) -> Result<(), CyclicError> {
+        engine: &pernixc_qbice::TrackedEngine,
+    ) {
         for block in self.blocks.iter_mut().map(|(_, x)| x) {
-            block.transform(transformer, engine).await?;
+            block.transform(transformer, engine).await;
         }
-
-        Ok(())
     }
 }
 

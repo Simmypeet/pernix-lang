@@ -1,7 +1,6 @@
 use std::fmt::Write;
 
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode, StableHash};
 
 /// A predicate representing compatible equality between two values.
 #[derive(
@@ -13,8 +12,8 @@ use pernixc_stable_hash::StableHash;
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     derive_new::new,
 )]
 #[allow(missing_docs)]
@@ -28,7 +27,7 @@ impl<T: crate::display::Display, U: crate::display::Display>
 {
     async fn fmt(
         &self,
-        engine: &pernixc_query::TrackedEngine,
+        engine: &pernixc_qbice::TrackedEngine,
         formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
         self.lhs.fmt(engine, formatter).await?;

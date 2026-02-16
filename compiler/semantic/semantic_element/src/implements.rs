@@ -1,9 +1,8 @@
 //! Defines a query for retrieving the symbol ID being implemented by the
 //! `implements`.
 
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
+use qbice::{Decode, Encode, Query, StableHash};
 
 /// A query for retrieving what symbol is this `implements` is implemented for.
 /// It can be a `struct`, `enum`, `trait`, or `marker`.
@@ -17,10 +16,13 @@ use pernixc_target::Global;
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
-    pernixc_query::Key,
+    Encode,
+    Decode,
+    Query,
 )]
 #[value(Option<Global<pernixc_symbol::ID>>)]
-#[extend(method(get_implements))]
-pub struct Key(pub Global<pernixc_symbol::ID>);
+#[extend(name = get_implements, by_val)]
+pub struct Key {
+    /// The global ID of the implements symbol.
+    pub symbol_id: Global<pernixc_symbol::ID>,
+}

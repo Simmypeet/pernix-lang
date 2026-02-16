@@ -2,12 +2,10 @@
 //! [`std::fmt::Display`].
 
 use bon::Builder;
-use flexstr::SharedStr;
 use getset::{CopyGetters, Getters};
 use pernixc_hash::HashMap;
-use pernixc_query::TrackedEngine;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use pernixc_qbice::TrackedEngine;
+use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
 use crate::{
     constant::Constant,
@@ -27,8 +25,8 @@ use crate::{
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub enum InferenceRendering<T> {
     /// Attempt to recursively write the inference variable using the given
@@ -36,7 +34,7 @@ pub enum InferenceRendering<T> {
     Recurse(T),
 
     /// Write the inference variable as the given string.
-    Rendered(SharedStr),
+    Rendered(Interned<str>),
 }
 
 /// Maps inference variables to their rendering strategy.
@@ -57,7 +55,7 @@ pub struct Configuration<'y> {
     constant_inferences: Option<&'y InferenceRenderingMap<Constant>>,
     /// Mapping for elided lifetime IDs to their names.
     #[get_copy = "pub"]
-    edlided_lifetimes: Option<&'y HashMap<ElidedLifetimeID, SharedStr>>,
+    edlided_lifetimes: Option<&'y HashMap<ElidedLifetimeID, Interned<str>>>,
 
     /// Whether to only display the last segment of qualified identifiers.
     #[get_copy = "pub"]

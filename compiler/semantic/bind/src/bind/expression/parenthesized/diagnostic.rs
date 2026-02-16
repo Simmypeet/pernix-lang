@@ -1,15 +1,14 @@
 use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor};
-use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_qbice::TrackedEngine;
 use pernixc_source_file::ByteIndex;
-use pernixc_stable_hash::StableHash;
 use pernixc_symbol::source_map::to_absolute_span;
 use pernixc_term::{
     constant::Constant,
     display::{Display, InferenceRenderingMap},
     r#type::Type,
 };
+use qbice::{Decode, Encode, StableHash};
 
 use crate::diagnostic_enum;
 
@@ -20,8 +19,8 @@ diagnostic_enum! {
         PartialEq,
         Eq,
         StableHash,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
     )]
     pub enum Diagnostic {
         MoreThanOneUnpackedInTupleExpression(
@@ -31,7 +30,7 @@ diagnostic_enum! {
 }
 
 /// The unpack operator can only be used once in a tuple expression.
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct MoreThanOneUnpackedInTupleExpression {
     /// The span of the tuple expression.
     pub span: RelativeSpan,
@@ -50,8 +49,7 @@ impl Report for MoreThanOneUnpackedInTupleExpression {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let span = engine.to_absolute_span(&self.span).await;
 
         // Format the tuple type with inference rendering maps
@@ -67,7 +65,7 @@ impl Report for MoreThanOneUnpackedInTupleExpression {
             )
             .await;
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .severity(Severity::Error)
             .message(
                 "the unpack operator can only be used once in a tuple \
@@ -86,6 +84,6 @@ impl Report for MoreThanOneUnpackedInTupleExpression {
                 "only one unpack operator (`...`) is allowed per tuple \
                  expression",
             )
-            .build())
+            .build()
     }
 }

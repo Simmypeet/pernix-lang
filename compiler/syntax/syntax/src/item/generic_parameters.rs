@@ -3,10 +3,9 @@ use pernixc_lexical::tree::DelimiterKind;
 use pernixc_parser::{
     abstract_tree::{self, AbstractTree},
     expect,
-    parser::{Parser as _, ast},
+    parser::{ParserExt, ast},
 };
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Identifier, Keyword, LifetimeParameter, Punctuation,
@@ -72,8 +71,8 @@ abstract_tree::abstract_tree! {
         PartialOrd,
         Ord,
         Hash,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
         StableHash,
     )]
     #{fragment = expect::Fragment::Delimited(DelimiterKind::Bracket)}

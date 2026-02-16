@@ -1,9 +1,6 @@
-use std::sync::Arc;
-
-use flexstr::SharedStr;
 use pernixc_handler::{Handler, Storage};
 use pernixc_hash::HashMap;
-use pernixc_query::TrackedEngine;
+use pernixc_qbice::TrackedEngine;
 use pernixc_resolution::{
     diagnostic::{
         Diagnostic as ResolutionDiagnostic, ExpectModule,
@@ -23,12 +20,14 @@ use pernixc_symbol::{
 };
 use pernixc_syntax::{SimplePathRoot, item::module::ImportItemsKind};
 use pernixc_target::{Global, get_linked_targets, get_target_map};
+use qbice::storage::intern::Interned;
 
 use crate::{
     build::Build,
     import::diagnostic::{
         ConflictingUsing, TargetRootInImportIsNotAllowedwithFrom,
     },
+    occurrences::Occurrences,
 };
 
 pub mod diagnostic;
@@ -37,14 +36,15 @@ impl Build for import::Key {
     type Diagnostic = diagnostic::Diagnostic;
 
     async fn execute(
-        engine: &pernixc_query::TrackedEngine,
+        engine: &TrackedEngine,
         key: &Self,
-    ) -> Result<
-        crate::build::Output<Self>,
-        pernixc_query::runtime::executor::CyclicError,
-    > {
-        let imports =
-            engine.query(&pernixc_symbol::syntax::ImportKey(key.0)).await?;
+    ) -> crate::build::Output<Self> {
+        let imports = engine
+            .query(&pernixc_symbol::syntax::ImportKey {
+                symbol_id: key.symbol_id,
+            })
+            .await;
+
         let storage = Storage::<diagnostic::Diagnostic>::new();
 
         let mut import_map = HashMap::default();
@@ -56,7 +56,7 @@ impl Build for import::Key {
                 let Some(from_id) = engine
                     .resolve_simple_path(
                         &from_simple_path,
-                        key.0,
+                        key.symbol_id,
                         true,
                         &storage,
                     )
@@ -97,7 +97,7 @@ impl Build for import::Key {
 
             process_import_items(
                 engine,
-                key.0,
+                key.symbol_id,
                 import,
                 &import_items,
                 start_from,
@@ -107,11 +107,11 @@ impl Build for import::Key {
             .await;
         }
 
-        Ok(crate::build::Output {
-            item: Arc::new(import_map),
-            diagnostics: storage.into_vec().into(),
-            occurrences: Arc::default(),
-        })
+        crate::build::Output {
+            item: engine.intern(import_map),
+            diagnostics: engine.intern_unsized(storage.into_vec()),
+            occurrences: engine.intern(Occurrences::default()),
+        }
     }
 }
 
@@ -124,7 +124,7 @@ async fn process_import_items(
     import: &pernixc_syntax::item::module::Import,
     import_item: &[pernixc_syntax::item::module::ImportItem],
     start_from: Option<Global<pernixc_symbol::ID>>,
-    import_component: &mut HashMap<SharedStr, Import>,
+    import_component: &mut HashMap<Interned<str>, Import>,
     handler: &dyn Handler<diagnostic::Diagnostic>,
 ) {
     'item: for import_item in import_item {
@@ -157,7 +157,7 @@ async fn process_import_items(
                     .get_members(current)
                     .await
                     .member_ids_by_name
-                    .get(identifier_root.kind.0.as_str())
+                    .get(identifier_root.kind.0.as_ref())
                     .copied()
                 else {
                     handler.receive(
@@ -205,7 +205,7 @@ async fn process_import_items(
                         .await;
 
                     let Some(id) = target_map
-                        .get(identifier.kind.0.as_str())
+                        .get(identifier.kind.0.as_ref())
                         .copied()
                         .filter(|x| {
                             x == &defined_in_module_id.target_id
@@ -235,7 +235,7 @@ async fn process_import_items(
                 .get_members(start)
                 .await
                 .member_ids_by_name
-                .get(rest.kind.0.as_str())
+                .get(rest.kind.0.as_ref())
                 .copied()
             else {
                 handler.receive(
@@ -288,7 +288,7 @@ async fn process_import_items(
                     .get_span(Global::new(defined_in_module_id.target_id, *x))
                     .await,
             ),
-            None => import_component.get(name.as_str()).map(|x| Some(x.span)),
+            None => import_component.get(name.as_ref()).map(|x| Some(x.span)),
         };
 
         if let Some(existing) = existing {

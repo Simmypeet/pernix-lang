@@ -259,7 +259,7 @@ impl Binder<'_> {
                 let instantiation = self
                     .engine()
                     .get_instantiation(enum_id, generic_arguments)
-                    .await?
+                    .await
                     .expect("failed to get instantiation");
 
                 let mut variant_ty = self
@@ -267,7 +267,7 @@ impl Binder<'_> {
                     .get_variant_associated_type(
                         refutable_pattern.as_enum().unwrap().variant_id,
                     )
-                    .await?
+                    .await
                     .expect("failed to get associated type")
                     .deref()
                     .clone();
@@ -346,11 +346,11 @@ impl Binder<'_> {
                     .get(&path.field_id)
                     .unwrap();
 
-                let fields = self.engine().get_fields(struct_id).await?;
+                let fields = self.engine().get_fields(struct_id).await;
                 let instantitation = self
                     .engine()
                     .get_instantiation(struct_id, generic_arguments)
-                    .await?
+                    .await
                     .expect("failed to get instantiation");
 
                 let mut field_ty = fields.fields[path.field_id].r#type.clone();

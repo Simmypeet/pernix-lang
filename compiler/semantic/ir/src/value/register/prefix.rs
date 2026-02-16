@@ -1,11 +1,9 @@
 //! Contains the definition of the [`Prefix`] register.
 
 use pernixc_arena::ID;
-use pernixc_query::runtime::executor::CyclicError;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_term::r#type::Type;
 use pernixc_type_system::{Error, Succeeded, normalizer::Normalizer};
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Values,
@@ -23,8 +21,8 @@ use crate::{
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub enum PrefixOperator {
@@ -47,8 +45,8 @@ pub enum PrefixOperator {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Prefix {
@@ -77,12 +75,10 @@ pub(super) async fn transform_prefix<T: Transformer<Type>>(
     prefix: &mut Prefix,
     transformer: &mut T,
     _span: pernixc_lexical::tree::RelativeSpan,
-) -> Result<(), CyclicError> {
+) {
     if let Some(operand) = prefix.operand.as_literal_mut() {
-        operand.transform(transformer).await?;
+        operand.transform(transformer).await;
     }
-
-    Ok(())
 }
 
 impl TypeOf<&Prefix> for Values {

@@ -2,60 +2,73 @@
 
 use core::str;
 use std::{
-    cmp::Ordering,
     fmt::Debug,
-    fs::File,
-    hash::{Hash, Hasher},
+    hash::Hash,
     io::Read,
-    ops::Range,
-    path::{Path, PathBuf},
-    sync::Arc,
+    ops::{Range, RangeBounds},
+    path::Path,
+    str::CharIndices,
 };
 
-use dashmap::{
-    DashMap,
-    mapref::one::{MappedRef, Ref, RefMut},
-};
-use flexstr::SharedStr;
-use fnv::FnvHasher;
 use getset::{CopyGetters, Getters};
-use pernixc_arena::ID;
-use pernixc_extend::extend;
-use pernixc_query::{
-    TrackedEngine,
-    runtime::{self, executor::CyclicError},
+use pernixc_qbice::TrackedEngine;
+use pernixc_target::{Global, TargetID};
+use qbice::{
+    Decode, Encode, Identifiable, Query, StableHash,
+    stable_hash::{StableHasher, Value},
+    storage::intern::Interned,
 };
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::{StableHash, Value};
-use pernixc_stable_type_id::Identifiable;
-use pernixc_target::{
-    Global, TargetID, get_invocation_arguments, get_target_seed,
-};
-use rayon::{iter::ParallelIterator, slice::ParallelSlice};
-use siphasher::sip::SipHasher24;
+use rayon::iter::{ParallelBridge, ParallelIterator};
+use ropey::{Rope, RopeSlice, iter::Chunks};
+
+pub mod simple_source_map;
 
 /// Represents an source file input for the compiler.
-#[derive(Clone, PartialEq, Eq, Hash, Getters, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Getters)]
 pub struct SourceFile {
-    content: String,
-
     /// Gets the full path to the source file.
     #[get = "pub"]
-    path: PathBuf,
+    path: Interned<Path>,
 
-    /// The byte ranges for each line in the source file (including the
-    /// newline)
-    lines: Vec<Range<usize>>,
+    rope: ropey::Rope,
+}
+
+impl Encode for SourceFile {
+    fn encode<E: qbice::serialize::Encoder + ?Sized>(
+        &self,
+        encoder: &mut E,
+        plugin: &qbice::serialize::Plugin,
+        session: &mut qbice::serialize::session::Session,
+    ) -> std::io::Result<()> {
+        self.path.encode(encoder, plugin, session)?;
+
+        let str = self.rope.slice(..).to_string();
+        str.encode(encoder, plugin, session)?;
+
+        Ok(())
+    }
+}
+
+impl Decode for SourceFile {
+    fn decode<D: qbice::serialize::Decoder + ?Sized>(
+        decoder: &mut D,
+        plugin: &qbice::serialize::Plugin,
+        session: &mut qbice::serialize::session::Session,
+    ) -> std::io::Result<Self> {
+        let path = Interned::decode(decoder, plugin, session)?;
+        let content = String::decode(decoder, plugin, session)?;
+
+        Ok(Self { path, rope: ropey::Rope::from_str(&content) })
+    }
 }
 
 /// Parallel hash function for the content of the source file.
-fn file_content_hash<H: pernixc_stable_hash::StableHasher + ?Sized>(
-    content: &str,
+fn file_content_hash<H: StableHasher + ?Sized>(
+    rope: &ropey::Rope,
     hasher: &mut H,
 ) -> H::Hash {
-    content
-        .as_bytes()
-        .par_chunks(1024)
+    rope.chunks()
+        .par_bridge()
         .map(|chunk| {
             hasher.sub_hash(&mut |x| {
                 chunk.stable_hash(x);
@@ -65,367 +78,235 @@ fn file_content_hash<H: pernixc_stable_hash::StableHasher + ?Sized>(
 }
 
 impl StableHash for SourceFile {
-    fn stable_hash<H: pernixc_stable_hash::StableHasher + ?Sized>(
-        &self,
-        state: &mut H,
-    ) {
-        let hash = file_content_hash(self.content(), state);
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        let hash = file_content_hash(&self.rope, state);
         hash.stable_hash(state);
 
         self.path.stable_hash(state);
     }
 }
 
-impl AsRef<str> for SourceFile {
-    fn as_ref(&self) -> &str { &self.content }
-}
-
-impl PartialOrd for SourceFile {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for SourceFile {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.path.cmp(&other.path).then(self.content.cmp(&other.content))
-    }
-}
-
-#[allow(clippy::missing_fields_in_debug)]
-impl Debug for SourceFile {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SourceFile")
-            .field("full_path", &self.path)
-            .field("lines", &self.lines)
-            .finish()
-    }
-}
-
 impl SourceFile {
     /// Creates a new inline source file
     #[must_use]
-    pub fn new(content: String, full_path: PathBuf) -> Self {
-        let lines = get_line_byte_positions(&content);
-        Self { content, path: full_path, lines }
+    pub fn from_str(content: &str, full_path: Interned<Path>) -> Self {
+        Self { path: full_path, rope: ropey::Rope::from_str(content) }
     }
 
-    /// Gets the content of the source file.
-    #[must_use]
-    #[allow(clippy::missing_const_for_fn)]
-    pub fn content(&self) -> &str { &self.content }
+    /// Creates a new source file from the given reader.
+    pub fn from_reader<R: Read>(
+        reader: R,
+        full_path: Interned<Path>,
+    ) -> std::io::Result<Self> {
+        Ok(Self { path: full_path, rope: ropey::Rope::from_reader(reader)? })
+    }
 
-    /// Returns ranges of byte indices for each line in the source file.
-    #[must_use]
-    pub fn lines(&self) -> &[Range<usize>] { &self.lines }
+    /// Creates a new source file with replacing the content in the given byte
+    /// range with the new text.
+    pub fn replace_range(&mut self, range: Range<ByteIndex>, new_text: &str) {
+        self.rope.remove(range.clone());
+        self.rope.insert(range.start, new_text);
+    }
 
     /// Gets the content of the source file as a string.
-    #[must_use]
-    pub const fn content_string(&self) -> &String { &self.content }
-
-    /// Translates a location to a byte index.
-    #[must_use]
-    pub fn into_byte_index(
-        &self,
-        location: EditorLocation,
-    ) -> Option<ByteIndex> {
-        let start = self.lines.get(location.line)?.start;
-        let line = self.get_line(location.line)?;
-
-        line.char_indices()
-            .take(location.column + 1)
-            .last()
-            .map(|x| x.0 + start)
-    }
-
-    /// Translates a location to a byte index. This includes the ending byte.
-    #[must_use]
-    pub fn into_byte_index_include_ending(
-        &self,
-        location: EditorLocation,
-    ) -> Option<ByteIndex> {
-        let range = self.lines.get(location.line)?;
-        let line = self.get_line(location.line)?;
-
-        let mut index = 0;
-
-        for (byte_idx, _) in line.char_indices() {
-            if location.column == index {
-                return Some(byte_idx + range.start);
-            }
-
-            index += 1;
-        }
-
-        if index == location.column { Some(range.end) } else { None }
-    }
-
-    /// Replaces the content of the source file in the given range with the
-    /// given string.
-    #[allow(
-        clippy::cast_possible_wrap,
-        clippy::cast_sign_loss,
-        clippy::range_plus_one,
-        clippy::missing_panics_doc
-    )]
-    pub fn replace_range(&mut self, range: Range<ByteIndex>, string: &str) {
-        assert!(
-            range.start <= self.content.len(),
-            "out of bound start index {}, content length {}",
-            range.start,
-            self.content.len()
-        );
-        assert!(
-            range.end <= self.content.len(),
-            "out of bound end index {}, content length {}",
-            range.end,
-            self.content.len()
-        );
-        assert!(
-            range.start <= range.end,
-            "start index {} is greater than end index {}",
-            range.start,
-            range.end
-        );
-
-        // just append the string
-        if range.start == range.end && range.start == self.content.len() {
-            let prior_len = self.content.len();
-            self.content.push_str(string);
-
-            if !string.contains('\n') && !string.contains('\r') {
-                self.lines.last_mut().unwrap().end += string.len();
-            } else {
-                let mut new_line_changes = get_line_byte_positions(string);
-
-                for new_range in &mut new_line_changes {
-                    new_range.start += prior_len;
-                    new_range.end += prior_len;
-                }
-
-                let last_line = self.lines.last_mut().unwrap();
-
-                last_line.end = new_line_changes[0].end;
-
-                self.lines.extend(new_line_changes.into_iter().skip(1));
-            }
-
-            return;
-        }
-
-        assert!(
-            self.content.is_char_boundary(range.start),
-            "start index {} is not a char boundary",
-            range.start
-        );
-
-        assert!(
-            self.content.is_char_boundary(range.end),
-            "end index {} is not a char boundary",
-            range.end
-        );
-
-        self.content.replace_range(range.clone(), string);
-
-        // update the line ranges
-        let start_line = self.get_line_of_byte_index(range.start).unwrap();
-        let end_line = self
-            .get_line_of_byte_index(range.end)
-            .unwrap_or_else(|| self.lines.len() - 1);
-
-        let character_difference =
-            string.len() as isize - (range.end - range.start) as isize;
-
-        // no new lines, we can skip the line calculations for new string
-        if !string.contains('\n') && !string.contains('\r') {
-            let removing_lines = start_line + 1..=end_line;
-
-            self.lines[start_line].end = (self.lines[end_line].end as isize
-                + character_difference)
-                as usize;
-
-            self.lines.drain(removing_lines);
-
-            for i in start_line + 1..self.lines.len() {
-                self.lines[i].start = (self.lines[i].start as isize
-                    + character_difference)
-                    as usize;
-                self.lines[i].end = (self.lines[i].end as isize
-                    + character_difference)
-                    as usize;
-            }
-        } else {
-            let mut new_line_ranges = get_line_byte_positions(string);
-            for new_range in &mut new_line_ranges {
-                new_range.start += range.start;
-                new_range.end += range.start;
-            }
-            let end_after_count = self.lines[end_line].end - range.end;
-            self.lines[start_line].end = new_line_ranges[0].end;
-
-            let removing_lines = start_line + 1..=end_line;
-            self.lines.drain(removing_lines);
-
-            self.lines.splice(
-                (start_line + 1)..=start_line,
-                (1..(new_line_ranges.len() - 1))
-                    .map(|x| new_line_ranges[x].clone()),
-            );
-
-            self.lines.insert(
-                start_line + new_line_ranges.len() - 1,
-                new_line_ranges.last().unwrap().start
-                    ..new_line_ranges.last().unwrap().end + end_after_count,
-            );
-
-            for i in (start_line + new_line_ranges.len())..self.lines.len() {
-                self.lines[i].start = (self.lines[i].start as isize
-                    + character_difference)
-                    as usize;
-                self.lines[i].end = (self.lines[i].end as isize
-                    + character_difference)
-                    as usize;
-            }
-        }
-    }
-
-    /// Determines in which line number the given byte index is located (0
-    /// indexed).
-    #[must_use]
-    pub fn get_line_of_byte_index(
-        &self,
-        byte_index: ByteIndex,
-    ) -> Option<usize> {
-        // gets the line number by binary searching the line ranges
-        self.lines
-            .binary_search_by(|range| {
-                if range.contains(&byte_index) {
-                    Ordering::Equal
-                } else if byte_index < range.start {
-                    Ordering::Greater
-                } else {
-                    Ordering::Less
-                }
-            })
-            .ok()
-    }
-
-    /// Gets the starting byte index of the given line number (0 indexed).
-    #[must_use]
-    pub fn get_starting_byte_index_of_line(
-        &self,
-        line: usize,
-    ) -> Option<ByteIndex> {
-        self.lines.get(line).map(|range| range.start)
-    }
-
-    /// Gets the line of the source file at the given line number.
     ///
-    /// The line number starts at 0.
+    /// This is an expensive operation and should be used with caution.
     #[must_use]
-    pub fn get_line(&self, line: usize) -> Option<&str> {
-        self.lines.get(line).map(|range| &self.content[range.clone()])
-    }
+    pub fn content(&self) -> String { self.rope.slice(..).to_string() }
 
-    /// Replaces the content of the source file with the given content.
-    pub fn replace(&mut self, content: String) {
-        self.lines = get_line_byte_positions(&content);
-        self.content = content;
-    }
-
-    /// Gets the number of lines in the source file.
-    #[must_use]
-    pub const fn line_coount(&self) -> usize { self.lines.len() }
-
-    /// Loads the source file from the given file path.
+    /// Returns the number of lines in the source file.
     ///
-    /// # Errors
-    /// - [`Error::Io`]: Error occurred when mapping the file to memory.
-    /// - [`Error::Utf8`]: Error occurred when converting the mapped bytes to a
-    ///   string.
-    pub fn load(mut file: File, path: PathBuf) -> Result<Self, std::io::Error> {
-        let mut string = String::new();
-        file.read_to_string(&mut string)?;
+    /// This is an O(1) operation according to the ropey documentation.
+    #[must_use]
+    pub fn line_coount(&self) -> usize { self.rope.len_lines() }
 
-        Ok(Self::new(string, path))
+    /// Gets the line at the given index, if it exists.
+    ///
+    /// This materializes the line as a string, so it can be expensive if the
+    /// line is long.
+    #[must_use]
+    pub fn get_line(&self, line_index: usize) -> Option<String> {
+        self.rope.get_line(line_index).map(|x| x.to_string())
     }
 
-    /// Gets the byte index from the given editor location.
+    /// Gets the slice of the source file content in the given byte range.
+    pub fn slice(&self, range: impl RangeBounds<ByteIndex>) -> String {
+        self.rope.byte_slice(range).to_string()
+    }
+
+    /// Returns an iterator over the characters of the source file that yields
+    /// the global byte index of each character in the source file.
+    #[must_use]
+    pub fn char_indices(&self) -> SourceFileCharIndices<'_> {
+        SourceFileCharIndices::new(&self.rope)
+    }
+
+    /// Gets the length of the source file in bytes.
+    #[must_use]
+    pub fn len_bytes(&self) -> usize { self.rope.len_bytes() }
+
+    /// Gets the byte offset at the start of the given line (0-indexed).
+    ///
+    /// This is an O(log n) operation using ropey's internal indexing.
+    #[must_use]
+    pub fn line_to_byte(&self, line_index: usize) -> ByteIndex {
+        self.rope.line_to_byte(line_index)
+    }
+
+    /// Gets the line number (0-indexed) containing the given byte offset.
+    ///
+    /// This is an O(log n) operation using ropey's internal indexing.
+    #[must_use]
+    pub fn byte_to_line(&self, byte_index: ByteIndex) -> usize {
+        self.rope.byte_to_line(byte_index)
+    }
+
+    /// Gets the characters of the source file in the given byte range.
+    pub fn chars_range(
+        &self,
+        range: impl RangeBounds<ByteIndex>,
+    ) -> CharsRange<'_> {
+        CharsRange { chars: self.rope.byte_slice(range).chars() }
+    }
+
+    /// Gets a hashable view of the source file content in the given byte range.
+    #[must_use]
+    pub fn hashable_view(
+        &self,
+        range: impl RangeBounds<ByteIndex>,
+    ) -> HashableView<'_> {
+        HashableView { slice: self.rope.byte_slice(range) }
+    }
+
+    /// Converts the given editor location (line and column) to a byte index in
+    /// the source file, if the location is valid.
+    ///
+    /// This can be a one-past-end location at the end of the file.
     #[must_use]
     pub fn get_byte_index_from_editor_location(
         &self,
-        editor_location: &EditorLocation,
-    ) -> ByteIndex {
-        let line_starting_byte =
-            self.get_starting_byte_index_of_line(editor_location.line).unwrap();
-
-        let line_str = self.get_line(editor_location.line).unwrap();
-
-        let mut byte_index = line_starting_byte;
-        for (i, ch) in line_str.char_indices() {
-            if i >= editor_location.column {
-                break;
-            }
-            byte_index += ch.len_utf8();
-        }
-
-        byte_index
-    }
-
-    /// Gets the [`Location`] of the given byte index.
-    #[must_use]
-    #[allow(clippy::missing_panics_doc)]
-    pub fn get_location(
-        &self,
-        byte_index: ByteIndex,
-    ) -> Option<EditorLocation> {
-        // pointing at the end of the file
-        if byte_index == self.content.len() {
-            return Some(EditorLocation {
-                line: if self.lines.is_empty() {
-                    0
-                } else {
-                    self.lines.len() - 1
-                },
-                column: if self.lines.is_empty() {
-                    0
-                } else {
-                    let last_line_range = &self.lines[self.lines.len() - 1];
-                    let last_line_str = &self.content[last_line_range.clone()];
-
-                    last_line_str.chars().count()
-                },
-            });
-        }
-
-        if !self.content.is_char_boundary(byte_index) {
+        location: &EditorLocation,
+    ) -> Option<ByteIndex> {
+        if location.line >= self.line_coount() {
             return None;
         }
 
-        // gets the line number by binary searching the line ranges
-        let line = self
-            .lines
-            .binary_search_by(|range| {
-                if range.contains(&byte_index) {
-                    Ordering::Equal
-                } else if byte_index < range.start {
-                    Ordering::Greater
-                } else {
-                    Ordering::Less
-                }
-            })
-            .ok()?;
+        let line_start = self.rope.line_to_byte(location.line);
+        let line = self.rope.get_line(location.line)?;
 
-        let line_starting_byte_index = self.lines[line].start;
-        let line_str = self.get_line(line).unwrap();
+        line.try_char_to_byte(location.column)
+            .ok()
+            .map(|byte_offset| line_start + byte_offset)
+    }
 
-        // gets the column number by iterating through the utf-8 characters
-        let column = line_str
-            .char_indices()
-            .take_while(|(i, _)| *i + line_starting_byte_index < byte_index)
-            .count();
+    /// Converts the given byte index to an editor location (line and column),
+    /// if the index is valid.
+    #[must_use]
+    pub fn get_editor_location_from_byte_index(
+        &self,
+        byte_index: ByteIndex,
+    ) -> Option<EditorLocation> {
+        if byte_index > self.len_bytes() {
+            return None;
+        }
+
+        let line = self.rope.byte_to_line(byte_index);
+        let line_start = self.rope.line_to_byte(line);
+        let column = self.rope.line(line).byte_to_char(byte_index - line_start);
 
         Some(EditorLocation { line, column })
+    }
+}
+
+/// An iterator over the characters of a source file at a particular byte range.
+#[derive(Debug, Clone)]
+pub struct CharsRange<'a> {
+    chars: ropey::iter::Chars<'a>,
+}
+
+impl Iterator for CharsRange<'_> {
+    type Item = char;
+
+    fn next(&mut self) -> Option<Self::Item> { self.chars.next() }
+}
+
+/// An iterator over the characters of a source file that yields the global byte
+/// index of each character in the source file.
+#[derive(Debug, Clone)]
+pub struct SourceFileCharIndices<'a> {
+    // The iterator over the rope's chunks
+    chunk_iter: Chunks<'a>,
+    // The standard iterator for the specific chunk we are currently processing
+    cur_chunk_indices: CharIndices<'a>,
+    // The global byte offset where the current chunk started
+    chunk_start_byte: usize,
+    // The length of the current chunk (needed to update the offset when
+    // switching chunks)
+    cur_chunk_len: usize,
+}
+
+impl<'a> SourceFileCharIndices<'a> {
+    fn new(rope: &'a Rope) -> Self {
+        let mut chunk_iter = rope.chunks();
+
+        // Initialize with the first chunk.
+        // If the rope is empty, we use an empty string to ensure safety.
+        let first_chunk = chunk_iter.next().unwrap_or("");
+
+        Self {
+            chunk_iter,
+            cur_chunk_indices: first_chunk.char_indices(),
+            chunk_start_byte: 0,
+            cur_chunk_len: first_chunk.len(),
+        }
+    }
+}
+
+impl Iterator for SourceFileCharIndices<'_> {
+    type Item = (usize, char);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            // 1. Try to get the next character from the current chunk
+            if let Some((local_byte_idx, ch)) = self.cur_chunk_indices.next() {
+                // Return global offset + local offset
+                return Some((self.chunk_start_byte + local_byte_idx, ch));
+            }
+
+            // 2. If the current chunk is exhausted, move to the next chunk
+
+            // Update the global offset by adding the length of the chunk we
+            // just finished
+            self.chunk_start_byte += self.cur_chunk_len;
+
+            // Pull the next chunk from the rope
+            match self.chunk_iter.next() {
+                Some(next_chunk) => {
+                    // Set up state for the new chunk and loop back to step 1
+                    self.cur_chunk_len = next_chunk.len();
+                    self.cur_chunk_indices = next_chunk.char_indices();
+                }
+                None => {
+                    // No more chunks left, we are done
+                    return None;
+                }
+            }
+        }
+    }
+}
+
+/// A wrapper around a rope slice that implements `Hash` by hashing the content
+/// of the slice.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HashableView<'a> {
+    slice: RopeSlice<'a>,
+}
+
+impl std::hash::Hash for HashableView<'_> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        for chunk in self.slice.chunks() {
+            state.write(chunk.as_bytes());
+        }
     }
 }
 
@@ -444,9 +325,10 @@ pub type ByteIndex = usize;
     Hash,
     Getters,
     CopyGetters,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
+    Identifiable,
 )]
 pub struct Span<L> {
     /// Gets the start byte index of the span.
@@ -594,6 +476,7 @@ impl<L> Span<L> {
     }
 
     /// Gets the byte range of the span, with an option to make the end
+    #[allow(clippy::range_plus_one)]
     pub fn range_maybe_inclusive(&self, inclusive: bool) -> Range<L>
     where
         L: Clone + std::ops::Add<usize, Output = L>,
@@ -621,231 +504,44 @@ impl<T: SourceElement> SourceElement for Box<T> {
     fn span(&self) -> Span<Self::Location> { self.as_ref().span() }
 }
 
-fn get_line_byte_positions(text: &str) -> Vec<Range<usize>> {
-    let mut current_position = 0;
-    let mut results = Vec::new();
-
-    let mut skip = false;
-
-    for (byte, char) in text.char_indices() {
-        if skip {
-            skip = false;
-            continue;
-        }
-
-        // ordinary lf
-        if char == '\n' {
-            #[allow(clippy::range_plus_one)]
-            // skipcq: RS-W1003
-            results.push(current_position..byte + 1);
-
-            current_position = byte + 1;
-        }
-
-        // crlf
-        if char == '\r' {
-            if text.as_bytes().get(byte + 1) == Some(&b'\n') {
-                #[allow(clippy::range_plus_one)]
-                results.push(current_position..byte + 2);
-
-                current_position = byte + 2;
-
-                skip = true;
-            } else {
-                #[allow(clippy::range_plus_one)]
-                // skipcq: RS-W1003
-                results.push(current_position..byte + 1);
-
-                current_position = byte + 1;
-            }
-        }
-    }
-
-    results.push(current_position..text.len());
-
-    results
+/// A type that uniquely identifies a source file within a single target.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+pub struct LocalSourceID {
+    lo: u64,
+    hi: u64,
 }
 
-/// A map of source files, accessing through the [`GlobalSourceID`].
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct SourceMap {
-    source_files_by_id: DashMap<GlobalSourceID, SourceFile>,
-}
-
-impl SourceMap {
-    /// Creates a new empty [`SourceMap`].
+impl LocalSourceID {
+    /// Creates a new [`LocalSourceID`] from the given low and high parts.
     #[must_use]
-    pub fn new() -> Self { Self { source_files_by_id: DashMap::new() } }
+    pub const fn new(lo: u64, hi: u64) -> Self { Self { lo, hi } }
 
-    /// Registers a source file in the map. If the source file is already
-    /// registered, it returns the `Err(ID)` of the existing source file.
-    /// If the source file is not registered, it returns the `Ok(ID)` of the
-    /// newly registered source file.
+    /// Returns the low 64 bits of the ID.
     #[must_use]
-    pub fn register(
-        &self,
-        target_id: TargetID,
-        source: SourceFile,
-    ) -> LocalSourceID {
-        let patb = &source.path;
-        let mut hasher = FnvHasher::default();
-        patb.hash(&mut hasher);
+    pub const fn lo(&self) -> u64 { self.lo }
 
-        let finalize_hash = |hasher: FnvHasher| {
-            let mut attempt = 0;
-            loop {
-                // for some reason, FnvHasher doesn't implement `Clone` trait.
-                // this is the work around to clone
-                let mut final_hasher = FnvHasher::with_key(hasher.finish());
-                attempt.hash(&mut final_hasher);
-
-                let candidate_branch_id = ID::new(final_hasher.finish());
-
-                // avoid hash collision
-                if !self
-                    .source_files_by_id
-                    .contains_key(&target_id.make_global(candidate_branch_id))
-                {
-                    return candidate_branch_id;
-                }
-
-                attempt += 1;
-            }
-        };
-
-        let hash = finalize_hash(hasher);
-
-        // insert the source file into the map
-        assert!(
-            self.source_files_by_id
-                .insert(target_id.make_global(hash), source)
-                .is_none()
-        );
-
-        hash
-    }
-
-    /// Gets the source file by its ID.
+    /// Returns the high 64 bits of the ID.
     #[must_use]
-    pub fn get(
-        &self,
-        id: GlobalSourceID,
-    ) -> Option<Ref<'_, GlobalSourceID, SourceFile>> {
-        self.source_files_by_id.get(&id)
-    }
-
-    /// Gets the source file by its ID.
-    #[must_use]
-    pub fn get_mut(
-        &self,
-        id: GlobalSourceID,
-    ) -> Option<RefMut<'_, GlobalSourceID, SourceFile>> {
-        self.source_files_by_id.get_mut(&id)
-    }
+    pub const fn hi(&self) -> u64 { self.hi }
 }
-
-/// A wrapper around [`MappedRef`] that implements [`std::fmt::Display`]
-/// allowing it to be used as a [`codespan_reporting::files::Name`].
-#[derive(Debug)]
-pub struct DisplayPathBuf<'a>(
-    pub MappedRef<'a, GlobalSourceID, SourceFile, PathBuf>,
-);
-
-impl std::fmt::Display for DisplayPathBuf<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Display::fmt(&self.0.display(), f)
-    }
-}
-
-impl<'a> codespan_reporting::files::Files<'a> for SourceMap {
-    type FileId = GlobalSourceID;
-    type Name = DisplayPathBuf<'a>;
-    type Source = MappedRef<'a, GlobalSourceID, SourceFile, String>;
-
-    fn name(
-        &'a self,
-        id: Self::FileId,
-    ) -> Result<Self::Name, codespan_reporting::files::Error> {
-        let source = self
-            .source_files_by_id
-            .get(&id)
-            .ok_or(codespan_reporting::files::Error::FileMissing)?;
-
-        Ok(DisplayPathBuf(source.map(|x| x.path())))
-    }
-
-    fn source(
-        &'a self,
-        id: Self::FileId,
-    ) -> Result<Self::Source, codespan_reporting::files::Error> {
-        let source = self
-            .source_files_by_id
-            .get(&id)
-            .ok_or(codespan_reporting::files::Error::FileMissing)?;
-
-        Ok(source.map(|x| x.content_string()))
-    }
-
-    fn line_index(
-        &'a self,
-        id: Self::FileId,
-        byte_index: usize,
-    ) -> Result<usize, codespan_reporting::files::Error> {
-        let source = self
-            .source_files_by_id
-            .get(&id)
-            .ok_or(codespan_reporting::files::Error::FileMissing)?;
-
-        if byte_index == source.content().len() {
-            return Ok(if source.lines.is_empty() {
-                0
-            } else {
-                source.lines.len() - 1
-            });
-        }
-
-        let line = source.get_line_of_byte_index(byte_index).ok_or(
-            codespan_reporting::files::Error::IndexTooLarge {
-                given: byte_index,
-                max: source.content().len(),
-            },
-        )?;
-
-        Ok(line)
-    }
-
-    fn line_range(
-        &'a self,
-        id: Self::FileId,
-        line_index: usize,
-    ) -> Result<Range<usize>, codespan_reporting::files::Error> {
-        let source = self
-            .source_files_by_id
-            .get(&id)
-            .ok_or(codespan_reporting::files::Error::FileMissing)?;
-
-        if line_index == source.lines.len() {
-            return Ok(source.lines.last().map_or(0..0, |x| x.start..x.end));
-        }
-
-        let line_range = source.lines.get(line_index).ok_or({
-            codespan_reporting::files::Error::IndexTooLarge {
-                given: line_index,
-                max: source.lines.len(),
-            }
-        })?;
-
-        Ok(line_range.clone())
-    }
-}
-
-/// A type alias for the [`ID`] type with a [`SourceFile`] as the inner type,
-/// used for identifying source files in the local target.
-pub type LocalSourceID = ID<SourceFile>;
 
 /// A type alias for the [`Global`] type with a [`LocalSourceID`] as the inner
 /// type, used for identifying source files across different targets.
-pub type GlobalSourceID = Global<ID<SourceFile>>;
+pub type GlobalSourceID = Global<LocalSourceID>;
 
 /// Query for loading source files content from the file system.
 ///
@@ -860,20 +556,19 @@ pub type GlobalSourceID = Global<ID<SourceFile>>;
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
-    Identifiable,
+    Encode,
+    Decode,
     StableHash,
+    qbice::Query,
 )]
+#[value(Result<SourceFile, Error>)]
 pub struct Key {
     /// The path to load the source file.
-    pub path: Arc<Path>,
+    pub path: Interned<Path>,
 
     /// The target that requested the source file loading
     pub target_id: TargetID,
 }
-
-pernixc_register::register!(Key, Executor, skip_cache, always_recompute);
 
 /// The string formatted error from the [`std::io::Error`] when loading
 /// the source file.
@@ -885,40 +580,13 @@ pernixc_register::register!(Key, Executor, skip_cache, always_recompute);
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
     thiserror::Error,
 )]
-#[error("{0}")]
-pub struct Error(pub SharedStr);
-
-impl pernixc_query::Key for Key {
-    /// The [`Ok`] value represents the source file content, while the [`Err`]
-    /// is the string to report the error.
-    type Value = Result<Arc<SourceFile>, Error>;
-}
-
-/// An executor for the [`Key`] query that loads the source file from the file
-/// system.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct Executor;
-
-impl runtime::executor::Executor<Key> for Executor {
-    const ALWAYS_RECOMPUTE: bool = true;
-
-    async fn execute(
-        &self,
-        _: &TrackedEngine,
-        key: &Key,
-    ) -> Result<Result<Arc<SourceFile>, Error>, CyclicError> {
-        Ok(std::fs::File::open(key.path.as_ref())
-            .and_then(|file| {
-                Ok(Arc::new(SourceFile::load(file, key.path.to_path_buf())?))
-            })
-            .map_err(|x| Error(x.to_string().into())))
-    }
-}
+#[error("{}", self.0.as_ref())]
+pub struct Error(pub Interned<str>);
 
 /// An error that occurs when calculating the source file path ID.
 #[derive(Debug, thiserror::Error)]
@@ -932,62 +600,45 @@ pub enum CalculatePathError {
     NotInTargetDirectory,
 }
 
-/// Calculates the ID of the source file based on their path.
+/// A query for calculating the stable source file ID from the given path.
 ///
-/// The path will be canonicalized before calculating the ID. Therefore,
-/// two different path strings that point to the same file will ultimately
-/// yield the same source file ID.
+/// This query takes a path (which can be relative or absolute) and produces a
+/// stable 128-bit ID that uniquely identifies the file. The ID is computed by:
 ///
-/// Internally this uses a hash function to derive a stable ID for the source
-/// file.
-#[extend]
-pub async fn calculate_path_id(
-    self: &TrackedEngine,
-    path: &Path,
-    target_id: TargetID,
-) -> Result<ID<SourceFile>, std::io::Error> {
-    let hasher = SipHasher24::default();
-    let this_canonical_path = std::fs::canonicalize(path)?;
+/// 1. Canonicalizing the path to resolve:
+///    - Relative path components (`.` and `..`)
+///    - Symbolic links
+///    - Converting to absolute path
+/// 2. Hashing the canonicalized path using `SipHash-2-4` with a fixed seed to
+///    produce a 128-bit hash
+///
+/// This ensures that the same file, whether accessed via relative or absolute
+/// path, will always produce the same stable ID. The file content does NOT
+/// contribute to the ID—only the path.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    Query,
+)]
+#[value(Result<LocalSourceID, Interned<str>>)]
+#[extend(name = get_stable_path_id, by_val)]
+pub struct StablePathIDKey {
+    /// The path to calculate the stable ID for.
+    ///
+    /// This can be either a relative or absolute path. The path will be
+    /// canonicalized before computing the stable ID.
+    pub path: Interned<Path>,
 
-    let target_args = self.get_invocation_arguments(target_id).await;
-
-    let target_root_file =
-        std::fs::canonicalize(&target_args.command.input().file)?;
-    let target_directory =
-        target_root_file.parent().unwrap_or_else(|| std::path::Path::new(""));
-
-    // skip the prefix components to avoid absolute path issues (e.g. \\?\ on
-    // Windows)
-    let this_components =
-        this_canonical_path.components().skip(1).collect::<Vec<_>>();
-    let target_components =
-        target_directory.components().skip(1).collect::<Vec<_>>();
-
-    if target_components.len() > this_components.len() {
-        return Err(std::io::Error::other(
-            "the given path is not in the target directory",
-        ));
-    }
-
-    for (a, b) in target_components.iter().zip(this_components.iter()) {
-        if a != b {
-            return Err(std::io::Error::other(
-                "the given path is not in the target directory",
-            ));
-        }
-    }
-
-    let mut hasher = SipHasher24::default();
-
-    // hash only the relative path from the target directory
-    for component in this_components.iter().skip(target_components.len()) {
-        component.as_os_str().hash(&mut hasher);
-    }
-
-    let target_seed = self.get_target_seed(target_id).await;
-    target_seed.hash(&mut hasher);
-
-    Ok(ID::new(hasher.finish()))
+    /// The target id that is requesting the stable path ID calculation.
+    pub target_id: TargetID,
 }
 
 /// A query for retrieving the a path of the given sourcce file ID.
@@ -1000,26 +651,29 @@ pub async fn calculate_path_id(
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
-    pernixc_query::Key,
+    qbice::Query,
 )]
-#[value(Arc<Path>)]
-#[extend(method(get_source_file_path), no_cyclic)]
-// we be implemented in the downstream crates
-pub struct FilePathKey(pub Global<pernixc_arena::ID<SourceFile>>);
+#[value(Interned<Path>)]
+#[extend(name = get_source_file_path, by_val)]
+pub struct FilePathKey {
+    /// The ID of the source file.
+    pub id: GlobalSourceID,
+}
 
-/// Obtains the [`Arc<SourceFile>`] by its associated ID.
+/// Obtains the [`SourceFile`] by its associated ID.
 #[pernixc_extend::extend]
 pub async fn get_source_file_by_id(
     self: &TrackedEngine,
-    id: Global<pernixc_arena::ID<SourceFile>>,
-) -> Arc<SourceFile> {
+    id: GlobalSourceID,
+) -> SourceFile {
     let source_path = self.get_source_file_path(id).await;
     let target_id = id.target_id;
 
-    self.query(&Key { path: source_path, target_id }).await.unwrap().unwrap()
+    self.query(&Key { path: source_path, target_id }).await.unwrap()
 }
+
 #[cfg(test)]
 mod test;

@@ -1,5 +1,0 @@
----
-source: compiler/base/serialize/src/ron/ser.rs
-expression: to_ron_string_compact(&single).unwrap()
----
-(42)

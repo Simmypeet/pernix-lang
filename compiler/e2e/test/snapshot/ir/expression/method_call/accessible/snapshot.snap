@@ -3,19 +3,25 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: the symbol is not accessible
-   ╭─ compiler/e2e/test/snapshot/ir/expression/method_call/accessible/main.pnx:34:7
-   │
-34 │     t.innerMethod() # is not fine
-   │       ^^^^^^^^^^^ the symbol `main::inner::[implements Test]::innerMethod` is not accessible from `main::outerMain`
+  [error]: the symbol is not accessible
+    ╭─[compiler/e2e/test/snapshot/ir/expression/method_call/accessible/main.pnx:34:7]
+ 33 │     let t = Test{}
+ 34 │     t.innerMethod() # is not fine
+    ·       ─────┬─────
+    ·            ╰── the symbol `main::inner::[implements Test]::innerMethod` is not accessible from `main::outerMain`
+ 35 │     t.outerMethod() # is fine
+    ╰────
 
-error: the symbol is not accessible
-   ╭─ compiler/e2e/test/snapshot/ir/expression/method_call/accessible/main.pnx:44:9
-   │
-44 │     obj.privateMethod() # is not fine
-   │         ^^^^^^^^^^^^^ the symbol `main::inner::MyTrait::privateMethod` is not accessible from `main::testTraitMethod`
+  [error]: the symbol is not accessible
+    ╭─[compiler/e2e/test/snapshot/ir/expression/method_call/accessible/main.pnx:44:9]
+ 43 │     obj.publicMethod() # is fine
+ 44 │     obj.privateMethod() # is not fine
+    ·         ──────┬──────
+    ·               ╰── the symbol `main::inner::MyTrait::privateMethod` is not accessible from `main::testTraitMethod`
+ 45 │     
+    ╰────
 
-error: Compilation aborted due to 2 error(s)
+  [error]: Compilation aborted due to 2 error(s)
 
 
 

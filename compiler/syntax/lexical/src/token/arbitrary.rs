@@ -3,7 +3,7 @@
 use std::fmt::{Debug, Display};
 
 use enum_as_inner::EnumAsInner;
-use pernixc_source_file::{Location, SourceMap, Span};
+use pernixc_source_file::{Location, Span, simple_source_map::SimpleSourceMap};
 use pernixc_test_input::Input;
 use proptest::{
     prelude::{Arbitrary, BoxedStrategy, Strategy},
@@ -44,12 +44,12 @@ impl Display for PriorInsignificant {
 }
 
 impl<L: Location<C> + std::fmt::Debug, C: Clone>
-    Input<&Span<L>, (&SourceMap, C)> for &PriorInsignificant
+    Input<&Span<L>, (&SimpleSourceMap, C)> for &PriorInsignificant
 {
     fn assert(
         self,
         output: &Span<L>,
-        (source_map, location_context): (&SourceMap, C),
+        (source_map, location_context): (&SimpleSourceMap, C),
     ) -> proptest::test_runner::TestCaseResult {
         let source_file = source_map.get(output.source_id).unwrap();
 
@@ -105,14 +105,14 @@ impl<T: Display> Display for Token<T> {
 }
 
 impl<'t, 'u, T: Debug + Display, U: Debug, L: Debug + Location<C>, C: Clone>
-    Input<&'u super::Token<U, L>, (&SourceMap, C)> for &'t Token<T>
+    Input<&'u super::Token<U, L>, (&SimpleSourceMap, C)> for &'t Token<T>
 where
     &'t T: Input<&'u U, ()>,
 {
     fn assert(
         self,
         output: &'u super::Token<U, L>,
-        (source_map, location_context): (&SourceMap, C),
+        (source_map, location_context): (&SimpleSourceMap, C),
     ) -> proptest::test_runner::TestCaseResult {
         self.kind.assert(&output.kind, ())?;
 

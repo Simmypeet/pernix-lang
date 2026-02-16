@@ -2,10 +2,9 @@ use enum_as_inner::EnumAsInner;
 use pernixc_parser::{
     abstract_tree,
     expect::Ext as _,
-    parser::{Parser as _, ast},
+    parser::{ParserExt, ast},
 };
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode, StableHash};
 
 use super::block::Block;
 use crate::{expect::Keyword, expression::prefix::Prefixable};
@@ -23,8 +22,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
     )]
     pub struct Binary {
         pub first: Node = ast::<Node>(),

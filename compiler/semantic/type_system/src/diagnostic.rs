@@ -4,15 +4,14 @@ use bon::Builder;
 use pernixc_diagnostic::{Highlight, Report};
 use pernixc_handler::Handler;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor};
-use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_qbice::TrackedEngine;
 use pernixc_source_file::ByteIndex;
-use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{source_map::to_absolute_span, span::get_span};
 use pernixc_target::Global;
 use pernixc_term::{
     display::Display, generic_arguments::GenericArguments, predicate::Predicate,
 };
+use qbice::{Decode, Encode, StableHash};
 
 use crate::OverflowError;
 
@@ -26,8 +25,8 @@ use crate::OverflowError;
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     derive_more::From,
 )]
 #[allow(missing_docs)]
@@ -43,8 +42,7 @@ impl Report for Diagnostic {
     async fn report(
         &self,
         parameter: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         match self {
             Self::TypeCalculatingOverflow(diagnostic) => {
                 diagnostic.report(parameter).await
@@ -77,8 +75,8 @@ impl Report for Diagnostic {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     derive_new::new,
     Builder,
 )]
@@ -94,9 +92,8 @@ impl Report for TypeCalculatingOverflow {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
-        Ok(pernixc_diagnostic::Rendered::builder()
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        pernixc_diagnostic::Rendered::builder()
             .primary_highlight(
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.overflow_span).await)
@@ -110,7 +107,7 @@ impl Report for TypeCalculatingOverflow {
                 "this is due to the limitation of the compiler/language, try \
                  reduce the complexity of the expression/symbol",
             )
-            .build())
+            .build()
     }
 }
 
@@ -125,8 +122,8 @@ impl Report for TypeCalculatingOverflow {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     derive_new::new,
     Builder,
 )]
@@ -142,9 +139,8 @@ impl Report for TypeCheckOverflow {
     async fn report(
         &self,
         tracked_engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
-        Ok(pernixc_diagnostic::Rendered::builder()
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        pernixc_diagnostic::Rendered::builder()
             .primary_highlight(
                 Highlight::builder()
                     .span(
@@ -160,7 +156,7 @@ impl Report for TypeCheckOverflow {
                 "try reduce the complexity of the code; this error is the \
                  limitation of the type-system/compiler",
             )
-            .build())
+            .build()
     }
 }
 
@@ -175,8 +171,8 @@ impl Report for TypeCheckOverflow {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     derive_new::new,
     Builder,
 )]
@@ -198,9 +194,8 @@ impl Report for PredicateSatisfiabilityOverflow {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
-        Ok(pernixc_diagnostic::Rendered::builder()
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        pernixc_diagnostic::Rendered::builder()
             .primary_highlight(
                 Highlight::builder()
                     .span(
@@ -237,7 +232,7 @@ impl Report for PredicateSatisfiabilityOverflow {
                 }
                 None => Vec::new(),
             })
-            .build())
+            .build()
     }
 }
 
@@ -251,8 +246,8 @@ impl Report for PredicateSatisfiabilityOverflow {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     Builder,
 )]
 pub struct UnsatisfiedPredicate {
@@ -270,9 +265,8 @@ impl Report for UnsatisfiedPredicate {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
-        Ok(pernixc_diagnostic::Rendered::builder()
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        pernixc_diagnostic::Rendered::builder()
             .primary_highlight(
                 Highlight::builder()
                     .span(
@@ -304,7 +298,7 @@ impl Report for UnsatisfiedPredicate {
                 }
                 None => Vec::new(),
             })
-            .build())
+            .build()
     }
 }
 
@@ -319,8 +313,8 @@ impl Report for UnsatisfiedPredicate {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     Builder,
 )]
 pub struct ImplementationIsNotGeneralEnough {
@@ -341,8 +335,7 @@ impl Report for ImplementationIsNotGeneralEnough {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let implementation_span = if let Some(span) =
             engine.get_span(self.resolvable_implementation_id).await
         {
@@ -351,7 +344,7 @@ impl Report for ImplementationIsNotGeneralEnough {
             None
         };
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .primary_highlight(
                 Highlight::builder()
                     .span(
@@ -400,7 +393,7 @@ impl Report for ImplementationIsNotGeneralEnough {
 
                 related
             })
-            .build())
+            .build()
     }
 }
 

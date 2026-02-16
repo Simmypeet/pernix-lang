@@ -1,23 +1,56 @@
-use std::sync::Arc;
-
-use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
+use linkme::distributed_slice;
+use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_symbol::member::{Key, Member};
+use pernixc_target::Global;
+use qbice::{
+    Decode, Encode, Query, StableHash, executor, program::Registration,
+    storage::intern::Interned,
+};
 
 use crate::table::get_table_of_symbol;
 
-#[pernixc_query::executor(key(Key), name(Executor))]
-#[allow(clippy::unnecessary_wraps)]
-pub async fn executor(
-    &Key(id): &Key,
-    engine: &TrackedEngine,
-) -> Result<Arc<Member>, CyclicError> {
-    let table = engine.get_table_of_symbol(id).await;
-
-    Ok(table
-        .members
-        .get(&id.id)
-        .cloned()
-        .unwrap_or_else(|| panic!("invalid symbol ID: {:?}", id.id)))
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    Query,
+)]
+#[value(Option<Interned<Member>>)]
+pub struct ProjectionKey {
+    pub symbol_id: Global<pernixc_symbol::ID>,
 }
 
-pernixc_register::register!(Key, Executor);
+#[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
+async fn projection_executor(
+    key: &ProjectionKey,
+    engine: &TrackedEngine,
+) -> Option<Interned<Member>> {
+    let id = key.symbol_id;
+    let table = engine.get_table_of_symbol(id).await?;
+
+    table.members.get(&id.id).cloned()
+}
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static PROJECTION_EXECUTOR: Registration<Config> =
+    Registration::new::<ProjectionKey, ProjectionExecutor>();
+
+#[executor(config = Config)]
+async fn member_executor(
+    key: &Key,
+    engine: &TrackedEngine,
+) -> Interned<Member> {
+    engine.query(&ProjectionKey { symbol_id: key.symbol_id }).await.unwrap()
+}
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static MEMBER_EXECUTOR: Registration<Config> =
+    Registration::new::<Key, MemberExecutor>();

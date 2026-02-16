@@ -1,10 +1,9 @@
 use enum_as_inner::EnumAsInner;
 use pernixc_parser::{
     abstract_tree, expect,
-    parser::{Parser as _, ast},
+    parser::{ParserExt, ast},
 };
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Keyword, Passable, Punctuation, expression::Expression,
@@ -24,8 +23,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
     )]
     pub struct VariableDeclaration {
         pub let_keyword: Keyword = expect::Keyword::Let,
@@ -53,8 +52,8 @@ abstract_tree::abstract_tree! {
         PartialOrd,
         Ord,
         Hash,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
         StableHash,
         EnumAsInner
     )]

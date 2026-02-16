@@ -8,17 +8,16 @@ rust-version.workspace = true
 
 [dependencies]
 pernixc_source_file = { path = "../../base/source_file" }
-pernixc_stable_hash = { path = "../../base/stable_hash" }
-pernixc_stable_type_id = { path = "../../base/stable_type_id" }
-pernixc_serialize = { path = "../../base/serialize" }
 pernixc_arena = { path = "../../base/arena" }
 pernixc_hash = { path = "../../base/hash" }
-pernixc_query = { path = "../../base/query" }
 pernixc_target = { path = "../../base/target" }
 pernixc_lexical = { path = "../../syntax/lexical" }
 pernixc_term = { path = "../term" }
 pernixc_symbol = { path = "../symbol" }
-flexstr = { workspace = true }
+pernixc_qbice = { path = "../../base/qbice" }
+pernixc_extend = { path = "../../base/extend" }
+qbice = { workspace = true }
+linkme = { workspace = true }
 
 [lints]
 workspace = true

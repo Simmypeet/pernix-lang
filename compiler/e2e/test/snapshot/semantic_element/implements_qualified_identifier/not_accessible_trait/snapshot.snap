@@ -3,24 +3,35 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: the symbol is not accessible
-  ╭─ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/not_accessible_trait/main.pnx:9:19
-  │
-9 │ implements inner::InAccessible[int32]:
-  │                   ^^^^^^^^^^^^ the symbol `main::inner::InAccessible` is not accessible from `main::[implements inner::InAccessible[int32]]`
+  [error]: the symbol is not accessible
+    ╭─[compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/not_accessible_trait/main.pnx:9:19]
+  8 │ 
+  9 │ implements inner::InAccessible[int32]:
+    ·                   ──────┬─────
+    ·                         ╰── the symbol `main::inner::InAccessible` is not accessible from `main::[implements inner::InAccessible[int32]]`
+ 10 │     pass
+    ╰────
 
-error: trait member is not accessible
-   ╭─ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/not_accessible_trait/main.pnx:13:14
-   │
- 6 │         private function inaccessible()
-   │                          ------------ trait function `main::inner::MemberInAccessible::inaccessible` declared here
-   ·
-13 │     function inaccessible():
-   │              ^^^^^^^^^^^^ cannot implement inaccessible trait function `main::inner::MemberInAccessible::inaccessible`
-   │
-   = make the trait member publicly accessible or move the implementation to a scope where it is accessible
+  [error]: trait member is not accessible
+    ╭─[compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/not_accessible_trait/main.pnx:6:26]
+  5 │     public trait MemberInAccessible[T]:
+  6 │         private function inaccessible()
+    ·                          ──────┬─────
+    ·                                ╰── trait function `main::inner::MemberInAccessible::inaccessible` declared here
+  7 │ 
+  8 │ 
+  9 │ implements inner::InAccessible[int32]:
+ 10 │     pass
+ 11 │ 
+ 12 │ implements inner::MemberInAccessible[int32]:
+ 13 │     function inaccessible():
+    ·              ──────┬─────
+    ·                    ╰── cannot implement inaccessible trait function `main::inner::MemberInAccessible::inaccessible`
+ 14 │         pass
+    ╰────
+  help: make the trait member publicly accessible or move the implementation to a scope where it is accessible
 
-error: Compilation aborted due to 2 error(s)
+  [error]: Compilation aborted due to 2 error(s)
 
 
 

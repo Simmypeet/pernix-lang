@@ -3,12 +3,12 @@
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::Arc,
 };
 
 use pernix_server::conversion::to_lsp_position;
-use pernixc_query::runtime::executor::Executor;
+use pernixc_qbice::TrackedEngine;
 use pernixc_source_file::{EditorLocation, SourceFile};
+use qbice::{Executor, storage::intern::Interned};
 use tower_lsp::lsp_types::{
     TextDocumentIdentifier, TextDocumentPositionParams, Url,
 };
@@ -21,7 +21,7 @@ use tower_lsp::lsp_types::{
 /// "find references".
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct FixtureWithCursor {
-    contents: HashMap<PathBuf, Arc<SourceFile>>,
+    contents: HashMap<PathBuf, SourceFile>,
     cursor_file: PathBuf,
     cursor_offset: usize,
     cursor_location: EditorLocation,
@@ -63,10 +63,14 @@ impl FixtureWithCursor {
 
                 file_contents = file_contents.replace("<cursor>", "");
 
-                let source_file =
-                    Arc::new(SourceFile::new(file_contents, file_path));
+                let source_file = SourceFile::from_str(
+                    &file_contents,
+                    Interned::new_duplicating_unsized(file_path),
+                );
 
-                let editor_location = source_file.get_location(offset).unwrap();
+                let editor_location = source_file
+                    .get_editor_location_from_byte_index(offset)
+                    .unwrap();
 
                 cursor =
                     Some((full_file_path.clone(), offset, editor_location));
@@ -74,7 +78,10 @@ impl FixtureWithCursor {
             } else {
                 contents.insert(
                     full_file_path,
-                    Arc::new(SourceFile::new(file_contents, file_path)),
+                    SourceFile::from_str(
+                        &file_contents,
+                        Interned::new_duplicating_unsized(file_path),
+                    ),
                 );
             }
         }
@@ -87,38 +94,37 @@ impl FixtureWithCursor {
 
     /// Retrieves the source file for the given path from the fixture.
     #[must_use]
-    pub fn retrieve_source_file(&self, path: &Path) -> Option<Arc<SourceFile>> {
+    pub fn retrieve_source_file(&self, path: &Path) -> Option<SourceFile> {
         let canonicalized_path = std::fs::canonicalize(path).ok()?;
         self.contents.get(&canonicalized_path).cloned()
     }
 }
 
 // Overrides the source file executor to provide fixture contents.
-impl Executor<pernixc_source_file::Key> for FixtureWithCursor {
+impl Executor<pernixc_source_file::Key, pernixc_qbice::Config>
+    for FixtureWithCursor
+{
     async fn execute(
         &self,
-        _: &pernixc_query::TrackedEngine,
         key: &pernixc_source_file::Key,
-    ) -> Result<
-        <pernixc_source_file::Key as pernixc_query::Key>::Value,
-        pernixc_query::runtime::executor::CyclicError,
-    > {
+        engine: &TrackedEngine,
+    ) -> Result<SourceFile, pernixc_source_file::Error> {
         let canonicalized_path = match std::fs::canonicalize(&key.path) {
             Ok(path) => path,
             Err(err) => {
-                return Ok(Err(pernixc_source_file::Error(
-                    err.to_string().into(),
-                )));
+                return Err(pernixc_source_file::Error(
+                    engine.intern_unsized(err.to_string()),
+                ));
             }
         };
 
         self.contents.get(&canonicalized_path).map_or_else(
             || {
-                Ok(Err(pernixc_source_file::Error(
-                    "File not found in fixture".into(),
-                )))
+                Err(pernixc_source_file::Error(
+                    engine.intern_unsized("File not found in fixture"),
+                ))
             },
-            |contents| Ok(Ok(Arc::new(contents.as_ref().clone()))),
+            |contents| Ok(contents.clone()),
         )
     }
 }

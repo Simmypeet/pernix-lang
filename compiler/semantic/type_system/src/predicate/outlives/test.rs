@@ -1,6 +1,7 @@
 use std::{borrow::Cow, fmt::Debug, future::Future, pin::Pin, sync::Arc};
 
-use pernixc_query::{Engine, database::SetInputResult};
+use pernixc_hash::HashSet;
+use pernixc_qbice::Engine;
 use pernixc_semantic_element::variance::{Variance, Variances};
 use pernixc_symbol::kind::Kind;
 use pernixc_target::Global;
@@ -24,7 +25,7 @@ use crate::{
     environment::{Environment, Premise},
     equality, normalizer,
     term::Term,
-    test::purge_trait_associated_type,
+    test::{create_test_engine, purge_trait_associated_type},
 };
 
 #[derive(
@@ -46,7 +47,7 @@ pub trait Property<T>: 'static + Debug {
     /// Applies this property to the environment.
     fn generate<'x>(
         &'x self,
-        engine: &'x mut Arc<Engine>,
+        engine: &'x Arc<Engine>,
         premise: &'x mut Premise,
     ) -> BoxedFuture<'x, T>;
 
@@ -63,53 +64,46 @@ pub struct ByEquality {
 impl Property<Type> for ByEquality {
     fn generate<'x>(
         &'x self,
-        engine: &'x mut Arc<Engine>,
+        engine: &'x Arc<Engine>,
         premise: &'x mut Premise,
     ) -> BoxedFuture<'x, Type> {
         Box::pin(async move {
-            let added = Arc::get_mut(engine)
-                .unwrap()
-                .input_session(async |x| {
-                    let add_parent = x
-                        .set_input(
-                            pernixc_symbol::parent::Key(self.equality.id),
-                            Some(self.trait_id),
-                        )
-                        .await
-                        == SetInputResult::Fresh;
+            {
+                let mut input_session = engine.input_session().await;
+                input_session
+                    .set_input(
+                        pernixc_symbol::parent::Key {
+                            symbol_id: self.equality.id,
+                        },
+                        Some(self.trait_id),
+                    )
+                    .await;
 
-                    let add_kind = x
-                        .set_input(
-                            pernixc_symbol::kind::Key(
-                                self.equality
-                                    .id
-                                    .target_id
-                                    .make_global(self.trait_id),
-                            ),
-                            Kind::Trait,
-                        )
-                        .await
-                        == SetInputResult::Fresh;
+                input_session
+                    .set_input(
+                        pernixc_symbol::kind::Key {
+                            symbol_id: self
+                                .equality
+                                .id
+                                .target_id
+                                .make_global(self.trait_id),
+                        },
+                        Kind::Trait,
+                    )
+                    .await;
 
-                    let add_implemented = x
-                        .set_input(
-                            pernixc_semantic_element::implemented::Key(
-                                self.equality
-                                    .id
-                                    .target_id
-                                    .make_global(self.trait_id),
-                            ),
-                            Arc::default(),
-                        )
-                        .await
-                        == SetInputResult::Fresh;
-
-                    add_parent && add_kind && add_implemented
-                })
-                .await;
-
-            if !added {
-                return Err(AbortError::IDCollision);
+                input_session
+                    .set_input(
+                        pernixc_semantic_element::implemented::Key {
+                            symbol_id: self
+                                .equality
+                                .id
+                                .target_id
+                                .make_global(self.trait_id),
+                        },
+                        engine.intern(HashSet::default()),
+                    )
+                    .await;
             }
 
             let (inner_operand, inner_bound) =
@@ -122,7 +116,7 @@ impl Property<Type> for ByEquality {
 
             let environment = Environment::new(
                 Cow::Borrowed(premise),
-                Cow::Owned(engine.tracked()),
+                Cow::Owned(engine.clone().tracked().await),
                 normalizer::NO_OP,
             );
 
@@ -218,7 +212,7 @@ pub struct LifetimeMatching {
 impl Property<Type> for LifetimeMatching {
     fn generate<'x>(
         &'x self,
-        engine: &'x mut Arc<Engine>,
+        engine: &'x Arc<Engine>,
         premise: &'x mut Premise,
     ) -> BoxedFuture<'x, Type> {
         Box::pin(async move {
@@ -240,7 +234,7 @@ impl Property<Type> for LifetimeMatching {
                 for i in 0..self.lifetime_properties.len() {
                     let lifetime_param = generic_parameter
                         .add_lifetime_parameter(LifetimeParameter {
-                            name: format!("_{i}").into(),
+                            name: engine.intern_unsized(format!("_{i}")),
                             span: None,
                         })
                         .unwrap();
@@ -251,43 +245,32 @@ impl Property<Type> for LifetimeMatching {
                 }
             }
 
-            let added = Arc::get_mut(engine)
-                .unwrap()
-                .input_session(async |table| {
-                    let added_kind = table
-                        .set_input(
-                            pernixc_symbol::kind::Key(self.struct_id),
-                            Kind::Struct,
-                        )
-                        .await
-                        == SetInputResult::Fresh;
+            {
+                let mut input_session = engine.input_session().await;
+                input_session
+                    .set_input(
+                        pernixc_symbol::kind::Key { symbol_id: self.struct_id },
+                        Kind::Struct,
+                    )
+                    .await;
 
-                    let added_variance = table
-                        .set_input(
-                            pernixc_semantic_element::variance::Key(
-                                self.struct_id,
-                            ),
-                            Arc::new(variance_map),
-                        )
-                        .await
-                        == SetInputResult::Fresh;
+                input_session
+                    .set_input(
+                        pernixc_semantic_element::variance::Key {
+                            symbol_id: self.struct_id,
+                        },
+                        engine.intern(variance_map),
+                    )
+                    .await;
 
-                    let added_generic_parameters = table
-                        .set_input(
-                            pernixc_term::generic_parameters::Key(
-                                self.struct_id,
-                            ),
-                            Arc::new(generic_parameter),
-                        )
-                        .await
-                        == SetInputResult::Fresh;
-
-                    added_kind && added_variance && added_generic_parameters
-                })
-                .await;
-
-            if !added {
-                return Err(AbortError::IDCollision);
+                input_session
+                    .set_input(
+                        pernixc_term::generic_parameters::Key {
+                            symbol_id: self.struct_id,
+                        },
+                        engine.intern(generic_parameter),
+                    )
+                    .await;
             }
 
             let ty_operand = Type::Symbol(Symbol {
@@ -301,7 +284,7 @@ impl Property<Type> for LifetimeMatching {
 
             let environment = Environment::new(
                 Cow::Borrowed(premise),
-                Cow::Owned(engine.tracked()),
+                Cow::Owned(engine.clone().tracked().await),
                 normalizer::NO_OP,
             );
 
@@ -366,7 +349,7 @@ pub struct Reflexive {
 impl Property<Lifetime> for Reflexive {
     fn generate<'x>(
         &'x self,
-        engine: &'x mut Arc<Engine>,
+        engine: &'x Arc<Engine>,
         premise: &'x mut Premise,
     ) -> BoxedFuture<'x, Lifetime> {
         Box::pin(async move {
@@ -428,13 +411,13 @@ where
 {
     fn generate<'x>(
         &'x self,
-        engine: &'x mut Arc<Engine>,
+        engine: &'x Arc<Engine>,
         premise: &'x mut Premise,
     ) -> BoxedFuture<'x, T> {
         Box::pin(async move {
             let environment = Environment::new(
                 Cow::Borrowed(premise),
-                Cow::Owned(engine.tracked()),
+                Cow::Owned(engine.clone().tracked().await),
                 normalizer::NO_OP,
             );
 
@@ -468,7 +451,7 @@ pub struct Transitive<T> {
 impl<T: Term> Property<T> for Transitive<T> {
     fn generate<'x>(
         &'x self,
-        engine: &'x mut Arc<Engine>,
+        engine: &'x Arc<Engine>,
         premise: &'x mut Premise,
     ) -> BoxedFuture<'x, T> {
         Box::pin(async move {
@@ -477,7 +460,7 @@ impl<T: Term> Property<T> for Transitive<T> {
 
             let environment = Environment::new(
                 Cow::Borrowed(premise),
-                Cow::Owned(engine.tracked()),
+                Cow::Owned(engine.clone().tracked().await),
                 normalizer::NO_OP,
             );
 
@@ -567,12 +550,12 @@ async fn property_based_testing<T: Term + 'static>(
     property: &dyn Property<T>,
 ) -> TestCaseResult {
     let mut premise = Premise::default();
-    let mut engine = Arc::new(Engine::default());
+    let (engine, _dir) = create_test_engine().await;
 
     println!("node count: {}", property.node_count());
 
     let (term1, term2) =
-        property.generate(&mut engine, &mut premise).await.map_err(|x| {
+        property.generate(&engine, &mut premise).await.map_err(|x| {
             println!("premise count: {}", premise.predicates.len());
             TestCaseError::reject(format!("{x}"))
         })?;
@@ -581,7 +564,7 @@ async fn property_based_testing<T: Term + 'static>(
 
     let environment = Environment::new(
         Cow::Borrowed(&premise),
-        Cow::Owned(engine.tracked()),
+        Cow::Owned(engine.tracked().await),
         normalizer::NO_OP,
     );
     let result = environment
@@ -618,7 +601,7 @@ proptest! {
     fn property_based_testing_type(
         property in Box::<dyn Property<Type>>::arbitrary()
     ) {
-        let result = tokio::runtime::Runtime::new()
+        let result = tokio::runtime::Builder::new_multi_thread().build()
             .unwrap()
             .block_on(property_based_testing(&*property));
 
@@ -633,12 +616,12 @@ proptest! {
         lifetime in Lifetime::arbitrary()
     ) {
         let test = async move {
-            let engine = Arc::new(Engine::default());
+            let (engine, _dir) = create_test_engine().await;
             let premise = Premise::default();
 
             let environment = Environment::new(
                 Cow::Borrowed(&premise),
-                Cow::Owned(engine.tracked()),
+                Cow::Owned(engine.tracked().await),
                 normalizer::NO_OP
             );
 

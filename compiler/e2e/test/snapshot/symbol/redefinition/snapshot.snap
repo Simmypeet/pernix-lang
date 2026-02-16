@@ -3,113 +3,169 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: symbol `duplicateInner` is already defined in the scope `main::inner`
-  ╭─ compiler/e2e/test/snapshot/symbol/redefinition/inner.pnx:4:15
-  │
-1 │ public module duplicateInner:
-  │               -------------- symbol `duplicateInner` is already defined here
-  ·
-4 │ public module duplicateInner:
-  │               ^^^^^^^^^^^^^^ redefinition here
+  [error]: symbol `duplicateInner` is already defined in the scope `main::inner`
+   ╭─[compiler/e2e/test/snapshot/symbol/redefinition/inner.pnx:1:15]
+ 1 │ public module duplicateInner:
+   ·               ───────┬──────
+   ·                      ╰── symbol `duplicateInner` is already defined here
+ 2 │     pass
+ 3 │ 
+ 4 │ public module duplicateInner:
+   ·               ───────┬──────
+   ·                      ╰── redefinition here
+ 5 │     pass
+   ╰────
 
-error: symbol `first` is already defined in the scope `main`
-  ╭─ compiler/e2e/test/snapshot/symbol/redefinition/main.pnx:6:15
-  │
-3 │ public module first:
-  │               ----- symbol `first` is already defined here
-  ·
-6 │ public module first:
-  │               ^^^^^ redefinition here
+  [error]: symbol `first` is already defined in the scope `main`
+   ╭─[compiler/e2e/test/snapshot/symbol/redefinition/main.pnx:3:15]
+ 2 │ 
+ 3 │ public module first:
+   ·               ──┬──
+   ·                 ╰── symbol `first` is already defined here
+ 4 │     pass
+ 5 │ 
+ 6 │ public module first:
+   ·               ──┬──
+   ·                 ╰── redefinition here
+ 7 │     pass
+   ╰────
 
-error: symbol `Second` is already defined in the scope `main`
-   ╭─ compiler/e2e/test/snapshot/symbol/redefinition/main.pnx:12:14
-   │
- 9 │ public trait Second:
-   │              ------ symbol `Second` is already defined here
-   ·
-12 │ public trait Second:
-   │              ^^^^^^ redefinition here
+  [error]: symbol `Second` is already defined in the scope `main`
+    ╭─[compiler/e2e/test/snapshot/symbol/redefinition/main.pnx:9:14]
+  8 │ 
+  9 │ public trait Second:
+    ·              ───┬──
+    ·                 ╰── symbol `Second` is already defined here
+ 10 │     pass
+ 11 │ 
+ 12 │ public trait Second:
+    ·              ───┬──
+    ·                 ╰── redefinition here
+ 13 │     pass
+    ╰────
 
-error: symbol `First` is already defined in the scope `main::Inner`
-   ╭─ compiler/e2e/test/snapshot/symbol/redefinition/main.pnx:19:17
-   │
-17 │     public type First
-   │                 ----- symbol `First` is already defined here
-18 │ 
-19 │     public type First
-   │                 ^^^^^ redefinition here
+  [error]: symbol `First` is already defined in the scope `main::Inner`
+    ╭─[compiler/e2e/test/snapshot/symbol/redefinition/main.pnx:17:17]
+ 16 │ 
+ 17 │     public type First
+    ·                 ──┬──
+    ·                   ╰── symbol `First` is already defined here
+ 18 │ 
+ 19 │     public type First
+    ·                 ──┬──
+    ·                   ╰── redefinition here
+ 20 │     
+    ╰────
 
-error: symbol `Second` is already defined in the scope `main::Inner`
-   ╭─ compiler/e2e/test/snapshot/symbol/redefinition/main.pnx:23:21
-   │
-21 │     public const Second: usize
-   │                  ------ symbol `Second` is already defined here
-22 │     
-23 │     public function Second() 
-   │                     ^^^^^^ redefinition here
+  [error]: symbol `Second` is already defined in the scope `main::Inner`
+    ╭─[compiler/e2e/test/snapshot/symbol/redefinition/main.pnx:21:18]
+ 20 │     
+ 21 │     public const Second: usize
+    ·                  ───┬──
+    ·                     ╰── symbol `Second` is already defined here
+ 22 │     
+ 23 │     public function Second() 
+    ·                     ───┬──
+    ·                        ╰── redefinition here
+ 24 │ 
+    ╰────
 
-error: symbol `Third` is already defined in the scope `main`
-   ╭─ compiler/e2e/test/snapshot/symbol/redefinition/main.pnx:28:15
-   │
-25 │ public struct Third:
-   │               ----- symbol `Third` is already defined here
-   ·
-28 │ public struct Third:
-   │               ^^^^^ redefinition here
+  [error]: symbol `Third` is already defined in the scope `main`
+    ╭─[compiler/e2e/test/snapshot/symbol/redefinition/main.pnx:25:15]
+ 24 │ 
+ 25 │ public struct Third:
+    ·               ──┬──
+    ·                 ╰── symbol `Third` is already defined here
+ 26 │     pass
+ 27 │ 
+ 28 │ public struct Third:
+    ·               ──┬──
+    ·                 ╰── redefinition here
+ 29 │     public field1: int32
+    ╰────
 
-error: symbol `SecondVariant` is already defined in the scope `main::Fourth`
-   ╭─ compiler/e2e/test/snapshot/symbol/redefinition/main.pnx:35:5
-   │
-34 │     SecondVariant
-   │     ------------- symbol `SecondVariant` is already defined here
-35 │     SecondVariant
-   │     ^^^^^^^^^^^^^ redefinition here
+  [error]: symbol `SecondVariant` is already defined in the scope `main::Fourth`
+    ╭─[compiler/e2e/test/snapshot/symbol/redefinition/main.pnx:34:5]
+ 33 │     FirstVariant
+ 34 │     SecondVariant
+    ·     ──────┬──────
+    ·           ╰── symbol `SecondVariant` is already defined here
+ 35 │     SecondVariant
+    ·     ──────┬──────
+    ·           ╰── redefinition here
+ 36 │ 
+    ╰────
 
-error: symbol `Fourth` is already defined in the scope `main`
-   ╭─ compiler/e2e/test/snapshot/symbol/redefinition/main.pnx:37:13
-   │
-32 │ public enum Fourth:
-   │             ------ symbol `Fourth` is already defined here
-   ·
-37 │ public enum Fourth:
-   │             ^^^^^^ redefinition here
+  [error]: symbol `Fourth` is already defined in the scope `main`
+    ╭─[compiler/e2e/test/snapshot/symbol/redefinition/main.pnx:32:13]
+ 31 │ 
+ 32 │ public enum Fourth:
+    ·             ───┬──
+    ·                ╰── symbol `Fourth` is already defined here
+ 33 │     FirstVariant
+ 34 │     SecondVariant
+ 35 │     SecondVariant
+ 36 │ 
+ 37 │ public enum Fourth:
+    ·             ───┬──
+    ·                ╰── redefinition here
+ 38 │     ThirdVariant
+    ╰────
 
-error: symbol `FourthVariant` is already defined in the scope `main::Fourth`
-   ╭─ compiler/e2e/test/snapshot/symbol/redefinition/main.pnx:40:5
-   │
-39 │     FourthVariant
-   │     ------------- symbol `FourthVariant` is already defined here
-40 │     FourthVariant
-   │     ^^^^^^^^^^^^^ redefinition here
+  [error]: symbol `FourthVariant` is already defined in the scope `main::Fourth`
+    ╭─[compiler/e2e/test/snapshot/symbol/redefinition/main.pnx:39:5]
+ 38 │     ThirdVariant
+ 39 │     FourthVariant
+    ·     ──────┬──────
+    ·           ╰── symbol `FourthVariant` is already defined here
+ 40 │     FourthVariant
+    ·     ──────┬──────
+    ·           ╰── redefinition here
+ 41 │ 
+    ╰────
 
-error: symbol `Fifth` is already defined in the scope `main`
-   ╭─ compiler/e2e/test/snapshot/symbol/redefinition/main.pnx:44:15
-   │
-42 │ public marker Fifth
-   │               ----- symbol `Fifth` is already defined here
-43 │ 
-44 │ public marker Fifth
-   │               ^^^^^ redefinition here
+  [error]: symbol `Fifth` is already defined in the scope `main`
+    ╭─[compiler/e2e/test/snapshot/symbol/redefinition/main.pnx:42:15]
+ 41 │ 
+ 42 │ public marker Fifth
+    ·               ──┬──
+    ·                 ╰── symbol `Fifth` is already defined here
+ 43 │ 
+ 44 │ public marker Fifth
+    ·               ──┬──
+    ·                 ╰── redefinition here
+ 45 │ 
+    ╰────
 
-error: symbol `Sixth` is already defined in the scope `main`
-   ╭─ compiler/e2e/test/snapshot/symbol/redefinition/main.pnx:49:14
-   │
-46 │ public trait Sixth:
-   │              ----- symbol `Sixth` is already defined here
-   ·
-49 │ public trait Sixth:
-   │              ^^^^^ redefinition here
+  [error]: symbol `Sixth` is already defined in the scope `main`
+    ╭─[compiler/e2e/test/snapshot/symbol/redefinition/main.pnx:46:14]
+ 45 │ 
+ 46 │ public trait Sixth:
+    ·              ──┬──
+    ·                ╰── symbol `Sixth` is already defined here
+ 47 │     public function inner()
+ 48 │ 
+ 49 │ public trait Sixth:
+    ·              ──┬──
+    ·                ╰── redefinition here
+ 50 │     public function inner()
+    ╰────
 
-error: symbol `test` is already defined in the scope `main::[implements Test[int32]]`
-   ╭─ compiler/e2e/test/snapshot/symbol/redefinition/main.pnx:59:14
-   │
-56 │     function test():
-   │              ---- symbol `test` is already defined here
-   ·
-59 │     function test():
-   │              ^^^^ redefinition here
+  [error]: symbol `test` is already defined in the scope `main::[implements Test[int32]]`
+    ╭─[compiler/e2e/test/snapshot/symbol/redefinition/main.pnx:56:14]
+ 55 │ implements Test[int32]:
+ 56 │     function test():
+    ·              ──┬─
+    ·                ╰── symbol `test` is already defined here
+ 57 │         pass
+ 58 │ 
+ 59 │     function test():
+    ·              ──┬─
+    ·                ╰── redefinition here
+ 60 │         pass
+    ╰────
 
-error: Compilation aborted due to 12 error(s)
+  [error]: Compilation aborted due to 12 error(s)
 
 
 

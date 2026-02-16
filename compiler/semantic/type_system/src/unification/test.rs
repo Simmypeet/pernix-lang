@@ -3,7 +3,8 @@ use std::{
     sync::Arc,
 };
 
-use pernixc_query::{Engine, database::SetInputResult};
+use pernixc_hash::HashSet;
+use pernixc_qbice::Engine;
 use pernixc_symbol::kind::Kind;
 use pernixc_target::Global;
 use pernixc_term::{
@@ -34,7 +35,7 @@ use crate::{
     normalizer,
     term::Term,
     test::{
-        purge_trait_associated_type,
+        create_test_engine, purge_trait_associated_type,
         purge_trait_associated_type_in_generic_arguments,
     },
 };
@@ -94,7 +95,7 @@ pub type BoxedFuture<'x> =
 pub trait Property<T>: 'static + Debug {
     fn apply<'x>(
         &'x self,
-        engine: &'x mut Arc<Engine>,
+        engine: &'x Arc<Engine>,
         premise: &'x mut Premise,
     ) -> BoxedFuture<'x>;
 
@@ -114,7 +115,7 @@ impl<
     T: Debug + Clone + Term + From<Param> + 'static,
 > Property<T> for Basic<Param, T>
 {
-    fn apply(&self, _: &mut Arc<Engine>, _: &mut Premise) -> BoxedFuture<'_> {
+    fn apply(&self, _: &Arc<Engine>, _: &mut Premise) -> BoxedFuture<'_> {
         Box::pin(async move { Ok(()) })
     }
 
@@ -216,7 +217,7 @@ where
 {
     fn apply<'x>(
         &'x self,
-        engine: &'x mut Arc<Engine>,
+        engine: &'x Arc<Engine>,
         premise: &'x mut Premise,
     ) -> BoxedFuture<'x> {
         Box::pin(async move {
@@ -280,7 +281,7 @@ where
 {
     fn apply<'x>(
         &'x self,
-        engine: &'x mut Arc<Engine>,
+        engine: &'x Arc<Engine>,
         premise: &'x mut Premise,
     ) -> BoxedFuture<'x> {
         Box::pin(async move {
@@ -397,54 +398,48 @@ pub struct Mapping {
 impl Property<Type> for Mapping {
     fn apply<'x>(
         &'x self,
-        engine: &'x mut Arc<Engine>,
+        engine: &'x Arc<Engine>,
         premise: &'x mut Premise,
     ) -> BoxedFuture<'x> {
         Box::pin(async move {
-            let added = Arc::get_mut(engine)
-                .unwrap()
-                .input_session(async |x| {
-                    let add_parent = x
-                        .set_input(
-                            pernixc_symbol::parent::Key(self.trait_member.id),
-                            Some(self.trait_id),
-                        )
-                        .await
-                        == SetInputResult::Fresh;
+            {
+                let mut input_session = engine.input_session().await;
+                input_session
+                    .set_input(
+                        pernixc_symbol::parent::Key {
+                            symbol_id: self.trait_member.id,
+                        },
+                        Some(self.trait_id),
+                    )
+                    .await;
 
-                    let add_kind = x
-                        .set_input(
-                            pernixc_symbol::kind::Key(
-                                self.trait_member
-                                    .id
-                                    .target_id
-                                    .make_global(self.trait_id),
-                            ),
-                            Kind::Trait,
-                        )
-                        .await
-                        == SetInputResult::Fresh;
+                input_session
+                    .set_input(
+                        pernixc_symbol::kind::Key {
+                            symbol_id: self
+                                .trait_member
+                                .id
+                                .target_id
+                                .make_global(self.trait_id),
+                        },
+                        Kind::Trait,
+                    )
+                    .await;
 
-                    let add_implemented = x
-                        .set_input(
-                            pernixc_semantic_element::implemented::Key(
-                                self.trait_member
-                                    .id
-                                    .target_id
-                                    .make_global(self.trait_id),
-                            ),
-                            Arc::default(),
-                        )
-                        .await
-                        == SetInputResult::Fresh;
-
-                    add_parent && add_kind && add_implemented
-                })
-                .await;
-
-            if !added {
-                return Err(AbortError::IDCollision);
+                input_session
+                    .set_input(
+                        pernixc_semantic_element::implemented::Key {
+                            symbol_id: self
+                                .trait_member
+                                .id
+                                .target_id
+                                .make_global(self.trait_id),
+                        },
+                        engine.intern(HashSet::default()),
+                    )
+                    .await;
             }
+
             let (from, to) = self.generate();
 
             if GenericParameterUnifyConfig
@@ -560,17 +555,17 @@ fn rewrite_term<T: Term + 'static>(
 async fn property_based_testing<T: Term + 'static>(
     property: &dyn Property<T>,
 ) -> TestCaseResult {
-    let mut engine = Arc::new(Engine::default());
+    let (engine, _dir) = create_test_engine().await;
     let mut premise = Premise::default();
     let config = GenericParameterUnifyConfig;
 
     let (mut lhs, rhs) = property.generate();
 
-    property.apply(&mut engine, &mut premise).await?;
+    property.apply(&engine, &mut premise).await?;
 
     let environment = Environment::new(
         Cow::Borrowed(&premise),
-        Cow::Owned(engine.tracked()),
+        Cow::Owned(engine.tracked().await),
         normalizer::NO_OP,
     );
 

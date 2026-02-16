@@ -1,23 +1,22 @@
 use std::{path::Path, sync::Arc};
 
-use flexstr::SharedStr;
+use linkme::distributed_slice;
 use pernixc_extend::extend;
 use pernixc_handler::{Handler, Storage};
-use pernixc_hash::{DashMap, HashSet, ReadOnlyView};
+use pernixc_hash::{DashMap, HashMap, HashSet};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{
-    TrackedEngine,
-    runtime::executor::{self, CyclicError, Future},
-};
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_source_file::{SourceFile, calculate_path_id};
-use pernixc_stable_hash::StableHash;
+use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
+use pernixc_source_file::{LocalSourceID, get_stable_path_id};
 use pernixc_symbol::{
     AllSymbolIDKey, ID, accessibility::Accessibility, kind::Kind, linkage,
     member::Member,
 };
 use pernixc_syntax::QualifiedIdentifier;
 use pernixc_target::{Global, TargetID, get_invocation_arguments};
+use qbice::{
+    Decode, Encode, ExecutionStyle, Identifiable, Query, StableHash, executor,
+    program::Registration, storage::intern::Interned,
+};
 
 use crate::{
     diagnostic::{Diagnostic, SourceFileLoadFail},
@@ -42,8 +41,8 @@ mod r#trait;
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub enum Key {
@@ -53,7 +52,7 @@ pub enum Key {
     /// Build the symbol table for a submodule defined in another file.
     Submodule {
         /// Describes where the file is located and how it is defined.
-        external_submodule: Arc<ExternalSubmodule>,
+        external_submodule: Interned<ExternalSubmodule>,
 
         /// The target ID for which the submodule is defined.
         target_id: TargetID,
@@ -70,19 +69,20 @@ pub enum Key {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
+    Identifiable,
 )]
 pub struct ExternalSubmodule {
     /// The ID assigned to the submodule.
     pub submodule_id: ID,
 
     /// The qualified name of the submodule.
-    pub submodule_qualified_name: Arc<[SharedStr]>,
+    pub submodule_qualified_name: Arc<[Interned<str>]>,
 
     /// The path to the source file containing the submodule.
-    pub path: Arc<Path>,
+    pub path: Interned<Path>,
 
     /// The accessibility in the `public module subModule` declaration.
     pub accessibility: Accessibility<ID>,
@@ -101,15 +101,13 @@ pub struct ExternalSubmodule {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
-    pernixc_query::Key,
+    Query,
 )]
-#[value(Arc<Table>)]
+#[value(Interned<Table>)]
 pub struct TableKey(pub Key);
-
-pernixc_register::register!(TableKey, TableExecutor);
 
 /// A query for retrieving only the diagnostics from a [`Table`] node.
 #[derive(
@@ -120,18 +118,16 @@ pernixc_register::register!(TableKey, TableExecutor);
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
-    pernixc_query::Key,
+    Query,
 )]
-#[value(Arc<HashSet<Diagnostic>>)]
+#[value(Interned<[Diagnostic]>)]
 pub struct DiagnosticKey(pub Key);
 
-pernixc_register::register!(DiagnosticKey, DiagnosticExecutor);
-
 /// A type-alias for a read-only map from symbol ID to value.
-pub type ReadOnlyMap<V> = Arc<ReadOnlyView<ID, V>>;
+pub type ReadOnlyMap<V> = Interned<HashMap<ID, V>>;
 
 /// A symbol table from parsing a single file.
 ///
@@ -139,7 +135,7 @@ pub type ReadOnlyMap<V> = Arc<ReadOnlyView<ID, V>>;
 /// such as their kinds, names, spans, members, accessibilities, and various
 /// syntax extractions. This table stores only symbols defined in a single
 /// source file.
-#[derive(Debug, Clone, Serialize, Deserialize, StableHash)]
+#[derive(Debug, Clone, Encode, Decode, StableHash, Identifiable)]
 #[allow(clippy::type_complexity)]
 pub struct Table {
     /// Maps the ID of the symbol to its kind.
@@ -151,7 +147,7 @@ pub struct Table {
     /// Maps the ID of the symbol to its name.
     ///
     /// This is not a qualified name, but rather a simple name of the symbol.
-    pub names: ReadOnlyMap<SharedStr>,
+    pub names: ReadOnlyMap<Interned<str>>,
 
     /// Maps the ID of the symbol to its span in the source code.
     ///
@@ -161,7 +157,7 @@ pub struct Table {
 
     /// Maps the ID of the symbol to its list of members if that particular
     /// kind of symbol can have members.
-    pub members: ReadOnlyMap<Arc<Member>>,
+    pub members: ReadOnlyMap<Interned<Member>>,
 
     /// Maps the ID of the symbol to its accessibility.
     pub accessibilities: ReadOnlyMap<Accessibility<ID>>,
@@ -233,7 +229,7 @@ pub struct Table {
     /// Maps the module symbol ID to the list of import syntaxes that
     /// are defined in the module.
     pub import_syntaxes:
-        ReadOnlyMap<Arc<[pernixc_syntax::item::module::Import]>>,
+        ReadOnlyMap<Interned<[pernixc_syntax::item::module::Import]>>,
 
     /// Maps the implements ID to its qualified identifier syntax.
     pub implements_qualified_identifier_syntaxes:
@@ -269,13 +265,13 @@ pub struct Table {
     ///
     /// The content of the submodule is not defined in the current [`Table`],
     /// this is simply a reference to where the submodule is defined in
-    pub external_submodules: ReadOnlyMap<Arc<ExternalSubmodule>>,
+    pub external_submodules: ReadOnlyMap<Interned<ExternalSubmodule>>,
 
     /// The ID of the module that this table represents.
     pub module_id: pernixc_symbol::ID,
 
     /// The diagnostics that were collected while building the table.
-    pub diagnostics: Arc<HashSet<Diagnostic>>,
+    pub diagnostics: Interned<[Diagnostic]>,
 }
 
 /// A query for retrieving only the kinds map from a [`Table`].
@@ -287,24 +283,29 @@ pub struct Table {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
-    pernixc_query::Key,
+    Query,
 )]
 #[value(ReadOnlyMap<Kind>)]
 pub struct KindMapKey(pub Key);
 
-pernixc_register::register!(KindMapKey, KindMapExecutor);
-
-#[pernixc_query::executor(key(KindMapKey), name(KindMapExecutor))]
-pub async fn kind_map_executor(
-    KindMapKey(key): &KindMapKey,
+#[executor(config = Config, style = ExecutionStyle::Projection)]
+async fn kind_map_executor(
+    key: &KindMapKey,
     engine: &TrackedEngine,
-) -> Result<ReadOnlyMap<Kind>, CyclicError> {
-    let table = engine.query(&TableKey(key.clone())).await?;
-    Ok(table.kinds.clone())
+) -> ReadOnlyMap<Kind> {
+    let KindMapKey(inner_key) = key;
+
+    let table = engine.query(&TableKey(inner_key.clone())).await;
+
+    table.kinds.clone()
 }
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static KIND_MAP_EXECUTOR: Registration<Config> =
+    Registration::new::<KindMapKey, KindMapExecutor>();
 
 /// A query for retrieving only the external submodules map from a [`Table`].
 #[derive(
@@ -315,48 +316,48 @@ pub async fn kind_map_executor(
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
-    pernixc_query::Key,
+    Query,
 )]
-#[value(ReadOnlyMap<Arc<ExternalSubmodule>>)]
+#[value(ReadOnlyMap<Interned<ExternalSubmodule>>)]
 pub struct ExternalSubmoduleMapKey(pub Key);
 
-pernixc_register::register!(
-    ExternalSubmoduleMapKey,
-    ExternalSubmoduleMapExecutor
-);
-
-#[pernixc_query::executor(
-    key(ExternalSubmoduleMapKey),
-    name(ExternalSubmoduleMapExecutor)
-)]
-pub async fn external_submodule_map_executor(
-    ExternalSubmoduleMapKey(key): &ExternalSubmoduleMapKey,
+#[executor(config = Config, style = ExecutionStyle::Projection)]
+async fn external_submodule_map_executor(
+    key: &ExternalSubmoduleMapKey,
     engine: &TrackedEngine,
-) -> Result<ReadOnlyMap<Arc<ExternalSubmodule>>, CyclicError> {
-    let table = engine.query(&TableKey(key.clone())).await?;
-    Ok(table.external_submodules.clone())
+) -> ReadOnlyMap<Interned<ExternalSubmodule>> {
+    let ExternalSubmoduleMapKey(inner_key) = key;
+    let table = engine.query(&TableKey(inner_key.clone())).await;
+
+    table.external_submodules.clone()
 }
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static EXTERNAL_SUBMODULE_MAP_EXECUTOR: Registration<Config> =
+    Registration::new::<ExternalSubmoduleMapKey, ExternalSubmoduleMapExecutor>(
+    );
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum ModuleKind {
     Root,
     Submodule {
         submodule_id: ID,
-        submodule_qualified_name: Arc<[SharedStr]>,
+        submodule_qualified_name: Arc<[Interned<str>]>,
         accessibility: Accessibility<ID>,
         span: RelativeSpan,
     },
 }
 
-#[pernixc_query::executor(key(TableKey), name(TableExecutor))]
+#[executor(config = Config, style = ExecutionStyle::Firewall)]
 #[allow(clippy::too_many_lines)]
-pub async fn table_executor(
-    TableKey(key): &TableKey,
+async fn table_executor(
+    key: &TableKey,
     engine: &TrackedEngine,
-) -> Result<Arc<Table>, pernixc_query::runtime::executor::CyclicError> {
+) -> Interned<Table> {
+    let TableKey(inner_key) = key;
     let (
         syntax_tree_result,
         token_tree_result,
@@ -364,7 +365,7 @@ pub async fn table_executor(
         target_id,
         module_kind,
         is_root,
-    ) = match key {
+    ) = match inner_key {
         Key::Root(target_id) => {
             let invocation_arguments =
                 engine.get_invocation_arguments(*target_id).await;
@@ -372,37 +373,28 @@ pub async fn table_executor(
             (
                 engine
                     .query(&pernixc_syntax::Key {
-                        path: invocation_arguments
-                            .command
-                            .input()
-                            .file
-                            .clone()
-                            .into(),
+                        path: engine.intern_unsized(
+                            invocation_arguments.command.input().file.clone(),
+                        ),
                         target_id: *target_id,
                     })
-                    .await?,
+                    .await,
                 engine
                     .query(&pernixc_lexical::Key {
-                        path: invocation_arguments
-                            .command
-                            .input()
-                            .file
-                            .clone()
-                            .into(),
+                        path: engine.intern_unsized(
+                            invocation_arguments.command.input().file.clone(),
+                        ),
                         target_id: *target_id,
                     })
-                    .await?,
+                    .await,
                 engine
                     .query(&pernixc_source_file::Key {
-                        path: invocation_arguments
-                            .command
-                            .input()
-                            .file
-                            .clone()
-                            .into(),
+                        path: engine.intern_unsized(
+                            invocation_arguments.command.input().file.clone(),
+                        ),
                         target_id: *target_id,
                     })
-                    .await?,
+                    .await,
                 *target_id,
                 ModuleKind::Root,
                 true,
@@ -415,19 +407,19 @@ pub async fn table_executor(
                     path: external_submodule.path.clone(),
                     target_id: *target_id,
                 })
-                .await?,
+                .await,
             engine
                 .query(&pernixc_lexical::Key {
                     path: external_submodule.path.clone(),
                     target_id: *target_id,
                 })
-                .await?,
+                .await,
             engine
                 .query(&pernixc_source_file::Key {
                     path: external_submodule.path.clone(),
                     target_id: *target_id,
                 })
-                .await?,
+                .await,
             *target_id,
             ModuleKind::Submodule {
                 submodule_id: external_submodule.submodule_id,
@@ -448,12 +440,12 @@ pub async fn table_executor(
         Ok(tree) => Some(tree),
         Err(e) => {
             // Create a diagnostic for the load failure
-            let (path, submodule_span) = match key {
+            let (path, submodule_span) = match &key.0 {
                 Key::Root(target_id) => {
                     let invocation_arguments =
                         engine.get_invocation_arguments(*target_id).await;
                     (
-                        Arc::from(
+                        engine.intern_unsized(
                             invocation_arguments.command.input().file.clone(),
                         ),
                         None,
@@ -500,29 +492,31 @@ pub async fn table_executor(
         panic!("some threads are not joined")
     };
 
-    Ok(builder.into_table(module_id))
+    builder.into_table(module_id)
 }
 
-#[pernixc_query::executor(key(DiagnosticKey), name(DiagnosticExecutor))]
-pub async fn diagnostic_executor(
-    DiagnosticKey(key): &DiagnosticKey,
+#[distributed_slice(PERNIX_PROGRAM)]
+static TABLE_EXECUTOR: Registration<Config> =
+    Registration::new::<TableKey, TableExecutor>();
+
+#[executor(config = Config)]
+async fn diagnostic_executor(
+    key: &DiagnosticKey,
     engine: &TrackedEngine,
-) -> Result<
-    Arc<HashSet<Diagnostic>>,
-    pernixc_query::runtime::executor::CyclicError,
-> {
+) -> Interned<[Diagnostic]> {
     // Query the table and return only its diagnostics field
-    let table = engine.query(&TableKey(key.clone())).await?;
+    let DiagnosticKey(inner_key) = key;
+    let table = engine.query(&TableKey(inner_key.clone())).await;
 
-    Ok(table.diagnostics.clone())
+    table.diagnostics.clone()
 }
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static DIAGNOSTIC_EXECUTOR: Registration<Config> =
+    Registration::new::<DiagnosticKey, DiagnosticExecutor>();
 
 /// Used to identify in which table node the symbol is defined.
-#[derive(
-    Debug, Clone, Serialize, Deserialize, StableHash, pernixc_query::Value,
-)]
-#[id(TargetID)]
-#[key(MapKey)]
+#[derive(Debug, Clone, Encode, Decode, StableHash)]
 pub struct Map {
     /// Maps the symbol ID to the key where the symbol's information is stored.
     ///
@@ -531,57 +525,73 @@ pub struct Map {
     /// whereas the `Some` value indicates that the symbol is defined in an
     /// external submodule.
     pub keys_by_symbol_id:
-        Arc<ReadOnlyView<ID, Option<Arc<ExternalSubmodule>>>>,
+        Interned<HashMap<ID, Option<Interned<ExternalSubmodule>>>>,
 
     /// Maps the source file ID to its path and the external submodule (if it
     /// is).
     #[allow(clippy::type_complexity)]
-    pub paths_by_source_id: Arc<
-        ReadOnlyView<
-            pernixc_arena::ID<SourceFile>,
-            (Arc<Path>, Option<Arc<ExternalSubmodule>>),
+    pub paths_by_source_id: Interned<
+        HashMap<
+            LocalSourceID,
+            (Interned<Path>, Option<Interned<ExternalSubmodule>>),
         >,
     >,
 
     /// Paths that failed to resolve to a source file.
     #[allow(clippy::type_complexity)]
-    pub failed_paths:
-        Arc<ReadOnlyView<(Arc<Path>, Option<Arc<ExternalSubmodule>>), ()>>,
+    pub failed_paths: Interned<
+        HashSet<(Interned<Path>, Option<Interned<ExternalSubmodule>>)>,
+    >,
 }
 
-pernixc_register::register!(MapKey, MapExecutor);
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    Query,
+)]
+#[value(Map)]
+pub struct MapKey(pub TargetID);
 
-#[pernixc_query::executor(key(MapKey), name(MapExecutor))]
+#[executor(config = Config, style = ExecutionStyle::Firewall)]
 #[allow(clippy::too_many_lines)]
-pub async fn map_executor(
-    &MapKey(target_id): &MapKey,
-    engine: &TrackedEngine,
-) -> Result<Map, pernixc_query::runtime::executor::CyclicError> {
-    #[allow(clippy::needless_pass_by_value, clippy::type_complexity)]
+async fn map_executor(key: &MapKey, engine: &TrackedEngine) -> Map {
+    #[allow(
+        clippy::needless_pass_by_value,
+        clippy::type_complexity,
+        clippy::manual_async_fn
+    )]
     fn traverse_table<'x>(
         engine: &'x TrackedEngine,
         table_key: &'x Key,
-        keys_by_symbol_id: Arc<DashMap<ID, Option<Arc<ExternalSubmodule>>>>,
+        keys_by_symbol_id: Arc<
+            DashMap<ID, Option<Interned<ExternalSubmodule>>>,
+        >,
         paths_by_source_id: Arc<
             DashMap<
-                pernixc_arena::ID<SourceFile>,
-                (Arc<Path>, Option<Arc<ExternalSubmodule>>),
+                LocalSourceID,
+                (Interned<Path>, Option<Interned<ExternalSubmodule>>),
             >,
         >,
         failed_paths: Arc<
-            DashMap<(Arc<Path>, Option<Arc<ExternalSubmodule>>), ()>,
+            DashMap<(Interned<Path>, Option<Interned<ExternalSubmodule>>), ()>,
         >,
-        current_external_submodule: Option<Arc<ExternalSubmodule>>,
-    ) -> impl Future<'x, ()> {
+        current_external_submodule: Option<Interned<ExternalSubmodule>>,
+    ) -> impl std::future::Future<Output = ()> + Send + 'x {
         async move {
             // Query the table for this key
-            let kinds = engine.query(&KindMapKey(table_key.clone())).await?;
+            let kinds = engine.query(&KindMapKey(table_key.clone())).await;
 
-            let external_submodules: Arc<
-                ReadOnlyView<ID, Arc<ExternalSubmodule>>,
-            > = engine
-                .query(&ExternalSubmoduleMapKey(table_key.clone()))
-                .await?;
+            let external_submodules =
+                engine.query(&ExternalSubmoduleMapKey(table_key.clone())).await;
 
             // Get the path and target_id for this table
             let (path, current_target_id) = match &table_key {
@@ -589,7 +599,7 @@ pub async fn map_executor(
                     let invocation_arguments =
                         engine.get_invocation_arguments(*target_id).await;
                     (
-                        Arc::from(
+                        engine.intern_unsized::<Path, _>(
                             invocation_arguments.command.input().file.clone(),
                         ),
                         *target_id,
@@ -602,7 +612,7 @@ pub async fn map_executor(
 
             // Calculate the source file ID for this path
             if let Ok(source_file_id) =
-                engine.calculate_path_id(&path, current_target_id).await
+                engine.get_stable_path_id(path.clone(), current_target_id).await
             {
                 // Add the path to source file mapping
                 paths_by_source_id.insert(
@@ -646,25 +656,18 @@ pub async fn map_executor(
                         failed_paths,
                         Some(external_submodule),
                     )
-                    .await
+                    .await;
                 }));
             }
 
             // Wait for all traversals to complete
-            let mut error = None;
             for handle in handles {
-                if let Err(e) = handle.await.unwrap() {
-                    error = Some(e);
-                }
+                handle.await.unwrap();
             }
-
-            if let Some(e) = error {
-                return Err(e);
-            }
-
-            Ok::<(), CyclicError>(())
         }
     }
+
+    let MapKey(target_id) = key;
 
     let keys_by_symbol_id = Arc::new(DashMap::default());
     let paths_by_source_id = Arc::new(DashMap::default());
@@ -673,65 +676,108 @@ pub async fn map_executor(
     // Start traversal from the root
     traverse_table(
         engine,
-        &Key::Root(target_id),
+        &Key::Root(*target_id),
         keys_by_symbol_id.clone(),
         paths_by_source_id.clone(),
         failed_paths.clone(),
         None,
     )
-    .await?;
+    .await;
 
-    Ok(Map {
-        keys_by_symbol_id: Arc::new(
+    Map {
+        keys_by_symbol_id: engine.intern(
             Arc::try_unwrap(keys_by_symbol_id)
                 .expect("Failed to convert DashMap to ReadOnlyView")
-                .into_read_only(),
+                .into_iter()
+                .collect(),
         ),
-        paths_by_source_id: Arc::new(
+        paths_by_source_id: engine.intern(
             Arc::try_unwrap(paths_by_source_id)
                 .expect("Failed to convert DashMap to ReadOnlyView")
-                .into_read_only(),
+                .into_iter()
+                .collect(),
         ),
-        failed_paths: Arc::new(
+        failed_paths: engine.intern(
             Arc::try_unwrap(failed_paths)
                 .expect("Failed to convert DashMap to ReadOnlyView")
-                .into_read_only(),
+                .into_iter()
+                .map(|x| x.0)
+                .collect(),
         ),
+    }
+}
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static MAP_EXECUTOR: Registration<Config> =
+    Registration::new::<MapKey, MapExecutor>();
+
+/// Retrieves all symbol IDs for the given target ID.
+#[executor(config = Config)]
+async fn all_symbol_ids_executor(
+    key: &AllSymbolIDKey,
+    engine: &TrackedEngine,
+) -> Interned<[ID]> {
+    let map = engine.query(&MapKey(key.target_id)).await;
+
+    engine.intern_unsized(
+        map.keys_by_symbol_id.keys().copied().collect::<Vec<_>>(),
+    )
+}
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static ALL_SYMBOL_ID_EXECUTOR: Registration<Config> =
+    Registration::new::<AllSymbolIDKey, AllSymbolIdsExecutor>();
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    Query,
+)]
+#[value(Option<Key>)]
+pub struct GetTableKeyFromSymbolID {
+    pub symbol_id: Global<ID>,
+}
+
+#[executor(config = Config, style = ExecutionStyle::Projection)]
+pub async fn get_table_key_from_symbol_id_executor(
+    key: &GetTableKeyFromSymbolID,
+    engine: &TrackedEngine,
+) -> Option<Key> {
+    let map = engine.query(&MapKey(key.symbol_id.target_id)).await;
+
+    map.keys_by_symbol_id.get(&key.symbol_id.id).map(|entry| {
+        entry.as_ref().map_or_else(
+            || Key::Root(key.symbol_id.target_id),
+            |x| Key::Submodule {
+                external_submodule: x.clone(),
+                target_id: key.symbol_id.target_id,
+            },
+        )
     })
 }
 
-/// Retrieves all symbol IDs for the given target ID.
-#[pernixc_query::executor(key(AllSymbolIDKey), name(AllSymbolIDExecutor))]
-pub async fn all_symbol_ids_executor(
-    &AllSymbolIDKey(id): &AllSymbolIDKey,
-    engine: &TrackedEngine,
-) -> Result<Arc<[ID]>, executor::CyclicError> {
-    let map = engine.query(&MapKey(id)).await?;
-    Ok(map.keys_by_symbol_id.keys().copied().collect())
-}
-
-pernixc_register::register!(AllSymbolIDKey, AllSymbolIDExecutor);
+#[distributed_slice(PERNIX_PROGRAM)]
+static GET_TABLE_KEY_FROM_SYMBOL_ID_EXECUTOR: Registration<Config> =
+    Registration::new::<GetTableKeyFromSymbolID, GetTableKeyFromSymbolIdExecutor>(
+    );
 
 /// Gets the table node where the information of the given symbol ID is stored.
 #[extend]
 pub async fn get_table_of_symbol(
     self: &TrackedEngine,
     id: Global<ID>,
-) -> Arc<Table> {
-    let map = self.query(&MapKey(id.target_id)).await.unwrap();
+) -> Option<Interned<Table>> {
+    let node_key =
+        self.query(&GetTableKeyFromSymbolID { symbol_id: id }).await?;
 
-    let node_key = map
-        .keys_by_symbol_id
-        .get(&id.id)
-        .unwrap_or_else(|| panic!("invalid symbol ID: {:?}", id.id))
-        .as_ref()
-        .map_or_else(
-            || Key::Root(id.target_id),
-            |x| Key::Submodule {
-                external_submodule: x.clone(),
-                target_id: id.target_id,
-            },
-        );
-
-    self.query(&TableKey(node_key)).await.unwrap()
+    Some(self.query(&TableKey(node_key)).await)
 }

@@ -1,7 +1,7 @@
-use std::{borrow::Cow, sync::Arc};
+use std::borrow::Cow;
 
 use pernixc_handler::Storage;
-use pernixc_query::runtime::executor;
+use pernixc_qbice::TrackedEngine;
 use pernixc_resolution::{
     Config, generic_parameter_namespace::get_generic_parameter_namespace,
     term::resolve_type,
@@ -26,22 +26,23 @@ impl build::Build for pernixc_semantic_element::type_alias::Key {
     type Diagnostic = diagnostic::Diagnostic;
 
     async fn execute(
-        engine: &pernixc_query::TrackedEngine,
+        engine: &TrackedEngine,
         key: &Self,
-    ) -> Result<build::Output<Self>, executor::CyclicError> {
-        let Some(syntax_tree) = engine.get_type_alias_syntax(key.0).await
+    ) -> build::Output<Self> {
+        let Some(syntax_tree) =
+            engine.get_type_alias_syntax(key.symbol_id).await
         else {
-            return Ok(Output {
-                item: Arc::new(Type::Error(pernixc_term::error::Error)),
-                diagnostics: Arc::default(),
-                occurrences: Arc::default(),
-            });
+            return Output {
+                item: engine.intern(Type::Error(pernixc_term::error::Error)),
+                diagnostics: engine.intern_unsized([]),
+                occurrences: engine.intern(Occurrences::default()),
+            };
         };
 
         let storage = Storage::<Diagnostic>::default();
         let mut occurrences = Occurrences::default();
         let extra_namespace =
-            engine.get_generic_parameter_namespace(key.0).await?;
+            engine.get_generic_parameter_namespace(key.symbol_id).await;
 
         let mut ty = engine
             .resolve_type(
@@ -49,13 +50,13 @@ impl build::Build for pernixc_semantic_element::type_alias::Key {
                 Config::builder()
                     .observer(&mut occurrences)
                     .extra_namespace(&extra_namespace)
-                    .referring_site(key.0)
+                    .referring_site(key.symbol_id)
                     .build(),
                 &storage,
             )
-            .await?;
+            .await;
 
-        let premise = engine.get_active_premise(key.0).await?;
+        let premise = engine.get_active_premise(key.symbol_id).await;
         let env = Environment::new(
             Cow::Borrowed(&premise),
             Cow::Borrowed(engine),
@@ -68,13 +69,13 @@ impl build::Build for pernixc_semantic_element::type_alias::Key {
                 &syntax_tree.span(),
                 &storage,
             )
-            .await?;
+            .await;
 
-        Ok(Output {
-            item: Arc::new(ty),
-            diagnostics: storage.into_vec().into(),
-            occurrences: Arc::new(occurrences),
-        })
+        Output {
+            item: engine.intern(ty),
+            diagnostics: engine.intern_unsized(storage.into_vec()),
+            occurrences: engine.intern(occurrences),
+        }
     }
 }
 

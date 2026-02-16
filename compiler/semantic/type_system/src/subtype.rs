@@ -419,7 +419,7 @@ async fn subtypable_with_unification(
                     SubLifetimeLocation::FromType(source_location),
                 )),
             )
-            .await?;
+            .await;
 
         let Some(new_result) = environment
             .query(&Subtype::new(target_lt, source_lt, inner_variance))
@@ -447,7 +447,7 @@ async fn subtypable_with_unification(
                     source_location,
                 ))),
             )
-            .await?;
+            .await;
 
         let Some(new_result) = environment
             .query(&Subtype::new(target_ty, source_ty, inner_variance))

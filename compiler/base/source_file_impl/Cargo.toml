@@ -1,0 +1,18 @@
+[package]
+name = "pernixc_source_file_impl"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+pernixc_source_file.path = "../source_file"
+pernixc_qbice.path = "../qbice"
+pernixc_target.path = "../target"
+qbice.workspace = true
+linkme.workspace = true
+siphasher.workspace = true
+
+[lints]
+workspace = true

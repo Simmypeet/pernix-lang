@@ -3,39 +3,46 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: mismatched types: expected `{floating}`, found `bool`
-  ╭─ compiler/e2e/test/snapshot/ir/expression/express/type_check/main.pnx:6:17
-  │
-6 │         express true # error
-  │                 ^^^^ expected `{floating}`, found `bool`
-  │
-  = ensure the expression type matches the expected type
+  [error]: mismatched types: expected `{floating}`, found `bool`
+   ╭─[compiler/e2e/test/snapshot/ir/expression/express/type_check/main.pnx:6:17]
+ 5 │         express 1.0
+ 6 │         express true # error
+   ·                 ──┬─
+   ·                   ╰── expected `{floating}`, found `bool`
+ 7 │         express # error unit
+   ╰────
+  help: ensure the expression type matches the expected type
 
-error: this `express` expression is expected to have a value
-  ╭─ compiler/e2e/test/snapshot/ir/expression/express/type_check/main.pnx:7:9
-  │
-7 │         express # error unit
-  │         ^^^^^^^
-  │
-  = earlier `express` expressions in the same scope have a value with a type other than unit (`()`). Consider adding a value to this `express` expression.
+  [error]: this `express` expression is expected to have a value
+   ╭─[compiler/e2e/test/snapshot/ir/expression/express/type_check/main.pnx:7:9]
+ 6 │         express true # error
+ 7 │         express # error unit
+   ·         ───┬───
+   ·            ╰── 
+ 8 │ 
+   ╰────
+  help: earlier `express` expressions in the same scope have a value with a type other than unit (`()`). Consider adding a value to this `express` expression.
 
-error: mismatched types: expected `()`, found `bool`
-   ╭─ compiler/e2e/test/snapshot/ir/expression/express/type_check/main.pnx:14:17
-   │
-14 │         express true # errorr, () != bool
-   │                 ^^^^ expected `()`, found `bool`
-   │
-   = ensure the expression type matches the expected type
+  [error]: mismatched types: expected `()`, found `bool`
+    ╭─[compiler/e2e/test/snapshot/ir/expression/express/type_check/main.pnx:14:17]
+ 13 │         express      # fine, the same as unit
+ 14 │         express true # errorr, () != bool
+    ·                 ──┬─
+    ·                   ╰── expected `()`, found `bool`
+ 15 │ 
+    ╰────
+  help: ensure the expression type matches the expected type
 
-error: mismatched types: expected `()`, found `bool`
-   ╭─ compiler/e2e/test/snapshot/ir/expression/express/type_check/main.pnx:20:17
-   │
-20 │         express true # error, unit != bool
-   │                 ^^^^ expected `()`, found `bool`
-   │
-   = ensure the expression type matches the expected type
+  [error]: mismatched types: expected `()`, found `bool`
+    ╭─[compiler/e2e/test/snapshot/ir/expression/express/type_check/main.pnx:20:17]
+ 19 │         express
+ 20 │         express true # error, unit != bool
+    ·                 ──┬─
+    ·                   ╰── expected `()`, found `bool`
+    ╰────
+  help: ensure the expression type matches the expected type
 
-error: Compilation aborted due to 4 error(s)
+  [error]: Compilation aborted due to 4 error(s)
 
 
 

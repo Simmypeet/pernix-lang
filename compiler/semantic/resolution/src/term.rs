@@ -6,7 +6,7 @@ use std::{fmt::Debug, ops::Deref};
 use pernixc_extend::extend;
 use pernixc_handler::Handler;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor};
+use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::type_alias::get_type_alias;
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::kind::{Kind, get_kind};
@@ -43,7 +43,7 @@ pub async fn resolve_generic_arguments_for(
     generic_identifier: &GenericIdentifier,
     mut config: Config<'_, '_, '_, '_, '_>,
     handler: &dyn Handler<Diagnostic>,
-) -> Result<GenericArguments, executor::CyclicError> {
+) -> GenericArguments {
     self.resolve_generic_arguments_for_internal(
         symbol_id,
         None,
@@ -62,7 +62,7 @@ pub(crate) async fn resolve_generic_arguments_for_internal(
     generic_identifier: &GenericIdentifier,
     mut config: Config<'_, '_, '_, '_, '_>,
     handler: &dyn Handler<Diagnostic>,
-) -> Result<GenericArguments, executor::CyclicError> {
+) -> GenericArguments {
     let mut generic_arguments = if let Some(generic_arguments) =
         generic_identifier.generic_arguments()
     {
@@ -71,7 +71,7 @@ pub(crate) async fn resolve_generic_arguments_for_internal(
             config.reborrow(),
             handler,
         )
-        .await?
+        .await
     } else {
         GenericArguments::default()
     };
@@ -88,13 +88,13 @@ pub(crate) async fn resolve_generic_arguments_for_internal(
             generic_identifier.span(),
             config,
         )
-        .await?;
+        .await;
 
     for diagnostic in diagnostics {
         handler.receive(diagnostic);
     }
 
-    Ok(generic_arguments)
+    generic_arguments
 }
 
 /// Resolves the [`pernixc_syntax::GenericArguments`] as a [`GenericArguments`]
@@ -105,7 +105,7 @@ pub async fn resolve_generic_arguments(
     generic_arguments: &pernixc_syntax::GenericArguments,
     mut config: Config<'_, '_, '_, '_, '_>,
     handler: &dyn Handler<Diagnostic>,
-) -> Result<GenericArguments, executor::CyclicError> {
+) -> GenericArguments {
     let mut lifetime_argument_syns = Vec::new();
     let mut type_argument_syns = Vec::new();
     let mut constant_argument_syns = Vec::new();
@@ -162,14 +162,14 @@ pub async fn resolve_generic_arguments(
     }
 
     for ty in type_argument_syns {
-        types.push(self.resolve_type(&ty, config.reborrow(), handler).await?);
+        types.push(self.resolve_type(&ty, config.reborrow(), handler).await);
     }
 
     for _con in constant_argument_syns {
         todo!("implements const eval")
     }
 
-    Ok(GenericArguments { lifetimes, types, constants })
+    GenericArguments { lifetimes, types, constants }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -281,8 +281,8 @@ pub async fn verify_generic_arguments_for(
     generic_id: Global<pernixc_symbol::ID>,
     generic_identifier_span: RelativeSpan,
     mut config: Config<'_, '_, '_, '_, '_>,
-) -> Result<(GenericArguments, Vec<Diagnostic>), executor::CyclicError> {
-    let generic_parameters = self.get_generic_parameters(generic_id).await?;
+) -> (GenericArguments, Vec<Diagnostic>) {
+    let generic_parameters = self.get_generic_parameters(generic_id).await;
 
     let (
         lifetime_parameter_orders,
@@ -355,7 +355,7 @@ pub async fn verify_generic_arguments_for(
         ),
     };
 
-    Ok((generic_args, diagnostics))
+    (generic_args, diagnostics)
 }
 
 /// Resolves a [`pernixc_syntax::Lifetime`] as a [`Lifetime`] term.
@@ -411,7 +411,7 @@ pub fn resolve_lifetime_parameter(
     // reach to the extra namespace first
     if let Some(extra_lifeime) = config
         .extra_namespace
-        .and_then(|x| x.lifetimes.get(identifier.kind.0.as_str()).cloned())
+        .and_then(|x| x.lifetimes.get(&*identifier.kind.0).cloned())
     {
         return extra_lifeime;
     }
@@ -430,7 +430,6 @@ pub fn resolve_lifetime_parameter(
 #[derive(Debug, derive_more::From)]
 #[allow(missing_docs)]
 pub enum ResolutionToTypeError {
-    Cyclic(executor::CyclicError),
     Failed(Resolution),
 }
 
@@ -452,7 +451,7 @@ pub async fn resolution_to_type(
 
                 Kind::ImplementationType | Kind::Type => {
                     let generic_parameters =
-                        self.get_generic_parameters(symbol.id).await?;
+                        self.get_generic_parameters(symbol.id).await;
 
                     let instantiation = Instantiation::from_generic_arguments(
                         symbol.generic_arguments,
@@ -462,7 +461,7 @@ pub async fn resolution_to_type(
                     .unwrap();
 
                     let mut result_ty =
-                        self.get_type_alias(symbol.id).await?.deref().clone();
+                        self.get_type_alias(symbol.id).await.deref().clone();
 
                     instantiation.instantiate(&mut result_ty);
 
@@ -506,7 +505,7 @@ pub async fn resolve_qualified_identifier_type(
     syntax_tree: &pernixc_syntax::QualifiedIdentifier,
     config: Config<'_, '_, '_, '_, '_>,
     handler: &dyn Handler<Diagnostic>,
-) -> Result<Type, executor::CyclicError> {
+) -> Type {
     let rest_count = syntax_tree.subsequences().count();
     let is_simple_identifier = rest_count == 0
         && syntax_tree
@@ -521,7 +520,7 @@ pub async fn resolve_qualified_identifier_type(
         && let Some(extra_type) = config.extra_namespace.and_then(|x| {
             x.types
                 .get(
-                    syntax_tree
+                    &*syntax_tree
                         .root()
                         .unwrap()
                         .as_generic_identifier()
@@ -529,12 +528,12 @@ pub async fn resolve_qualified_identifier_type(
                         .identifier()
                         .unwrap()
                         .kind
-                        .as_str(),
+                        .0,
                 )
                 .cloned()
         })
     {
-        return Ok(extra_type);
+        return extra_type;
     }
 
     let resolution = match self
@@ -544,24 +543,20 @@ pub async fn resolve_qualified_identifier_type(
         Ok(resolution) => resolution,
 
         Err(Error::Abort) => {
-            return Ok(Type::Error(pernixc_term::error::Error));
+            return Type::Error(pernixc_term::error::Error);
         }
-
-        Err(Error::Cyclic(cyclic)) => return Err(cyclic),
     };
 
     match self.resolution_to_type(resolution).await {
-        Ok(ty) => Ok(ty),
+        Ok(ty) => ty,
         Err(ResolutionToTypeError::Failed(resolution)) => {
             handler.receive(Diagnostic::ExpectType(ExpectType {
                 non_type_symbol_span: syntax_tree.span(),
                 resolved_global_id: resolution.global_id(),
             }));
 
-            Ok(Type::Error(pernixc_term::error::Error))
+            Type::Error(pernixc_term::error::Error)
         }
-
-        Err(ResolutionToTypeError::Cyclic(error)) => Err(error),
     }
 }
 
@@ -573,7 +568,7 @@ pub async fn resolve_type(
     syntax_tree: &pernixc_syntax::r#type::Type,
     mut config: Config<'_, '_, '_, '_, '_>,
     handler: &dyn Handler<Diagnostic>,
-) -> Result<Type, executor::CyclicError> {
+) -> Type {
     let ty = match syntax_tree {
         pernixc_syntax::r#type::Type::Primitive(primitive) => {
             Type::Primitive(match primitive {
@@ -610,7 +605,7 @@ pub async fn resolve_type(
                 config.reborrow(),
                 handler,
             ))
-            .await?
+            .await
         }
         pernixc_syntax::r#type::Type::Reference(reference) => {
             let lifetime = if let Some(lifetime) = reference.lifetime().as_ref()
@@ -653,7 +648,7 @@ pub async fn resolve_type(
                     config.reborrow(),
                     handler,
                 ))
-                .await?
+                .await
             } else {
                 Type::Error(pernixc_term::error::Error)
             });
@@ -668,7 +663,7 @@ pub async fn resolve_type(
                         config.reborrow(),
                         handler,
                     ))
-                    .await?
+                    .await
                 } else {
                     Type::Error(pernixc_term::error::Error)
                 });
@@ -684,7 +679,7 @@ pub async fn resolve_type(
             for element in syntax_tree.types() {
                 let ty = if let Some(ty) = element.r#type() {
                     Box::pin(self.resolve_type(&ty, config.reborrow(), handler))
-                        .await?
+                        .await
                 } else {
                     Type::Error(pernixc_term::error::Error)
                 };
@@ -731,7 +726,7 @@ pub async fn resolve_type(
         pernixc_syntax::r#type::Type::Array(array) => Type::Array(Array {
             length: todo!("implements a constant eval"),
             r#type: Box::new(if let Some(ty) = array.r#type() {
-                self.resolve_type(&ty, config.reborrow(), handler).await?
+                self.resolve_type(&ty, config.reborrow(), handler).await
             } else {
                 Type::Error(pernixc_term::error::Error)
             }),
@@ -740,7 +735,7 @@ pub async fn resolve_type(
         pernixc_syntax::r#type::Type::Phantom(phantom) => {
             let ty = if let Some(ty) = phantom.r#type() {
                 Box::pin(self.resolve_type(&ty, config.reborrow(), handler))
-                    .await?
+                    .await
             } else {
                 Type::Error(pernixc_term::error::Error)
             };
@@ -773,5 +768,5 @@ pub async fn resolve_type(
         );
     }
 
-    Ok(ty)
+    ty
 }

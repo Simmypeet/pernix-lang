@@ -2,11 +2,9 @@ use enum_as_inner::EnumAsInner;
 use pernixc_lexical::tree::DelimiterKind;
 use pernixc_parser::{
     abstract_tree, expect,
-    parser::{Parser as _, ast},
+    parser::{ParserExt, ast},
 };
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::{StableHash, Value};
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use qbice::{Decode, Encode, StableHash};
 
 use super::{
     constant::Constant, r#enum::Enum, r#extern::Extern, function::Function,
@@ -30,8 +28,8 @@ abstract_tree::abstract_tree! {
         PartialOrd,
         Ord,
         Hash,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
         StableHash
     )]
     pub struct Signature {
@@ -100,8 +98,8 @@ abstract_tree::abstract_tree! {
         PartialOrd,
         Ord,
         Hash,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
         StableHash
     )]
     pub struct Import {
@@ -120,7 +118,18 @@ abstract_tree::abstract_tree! {
 }
 
 abstract_tree::abstract_tree! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Serialize, Deserialize)]
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        Encode,
+        Decode,
+        StableHash
+    )]
     pub struct Module {
         pub access_modifier: AccessModifier = ast::<AccessModifier>(),
         pub signature: Signature = ast::<Signature>(),
@@ -137,42 +146,13 @@ abstract_tree::abstract_tree! {
         PartialOrd,
         Ord,
         Hash,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
+        StableHash,
     )]
     pub struct Content {
         pub members: #[multi] Passable<Member>
             = ast::<Passable<Member>>().line().repeat_all(),
-    }
-}
-
-impl StableHash for Content {
-    fn stable_hash<H: pernixc_stable_hash::StableHasher + ?Sized>(
-        &self,
-        state: &mut H,
-    ) {
-        let inner_tree = &self.0;
-        inner_tree.ast_info.stable_hash(state);
-
-        let (tree_hash, tree_count) = inner_tree
-            .nodes
-            .par_iter()
-            .map(|x| {
-                let sub_hash = state.sub_hash(&mut |h| {
-                    x.stable_hash(h);
-                });
-
-                (sub_hash, 1)
-            })
-            .reduce(
-                || (H::Hash::default(), 0),
-                |(l_hash, l_count), (r_hash, r_count)| {
-                    (l_hash.wrapping_add(r_hash), r_count + l_count)
-                },
-            );
-
-        tree_hash.stable_hash(state);
-        tree_count.stable_hash(state);
     }
 }
 

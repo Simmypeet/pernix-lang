@@ -1,8 +1,7 @@
 //! Defines the linkage of functions and static variables.
 
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
+use qbice::{Decode, Encode, Identifiable, Query, StableHash};
 
 use crate::ID;
 
@@ -17,8 +16,9 @@ use crate::ID;
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
+    Identifiable,
 )]
 #[allow(missing_docs)]
 pub enum Linkage {
@@ -37,8 +37,8 @@ pub enum Linkage {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct C {
     /// Whether the function is variadic.
@@ -57,10 +57,13 @@ pub struct C {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
-    pernixc_query::Key,
+    Encode,
+    Decode,
+    Query,
 )]
 #[value(Linkage)]
-#[extend(method(get_linkage), no_cyclic)]
-pub struct Key(pub Global<ID>);
+#[extend(name = get_linkage, by_val)]
+pub struct Key {
+    /// The global ID of the symbol to get the linkage for.
+    pub symbol_id: Global<ID>,
+}

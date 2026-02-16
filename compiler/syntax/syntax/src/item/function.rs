@@ -3,10 +3,9 @@ use pernixc_lexical::tree::DelimiterKind;
 use pernixc_parser::{
     abstract_tree,
     expect::{self, Ext as _},
-    parser::{Parser as _, ast},
+    parser::{ParserExt, ast},
 };
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     AccessModifier, Identifier, Keyword, Punctuation, QualifiedIdentifier,
@@ -53,8 +52,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
     )]
     #{fragment = expect::Fragment::Delimited(DelimiterKind::Parenthesis)}
     pub struct Parameters {
@@ -73,8 +72,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
     )]
     pub struct Arrow {
         pub dash = '-',
@@ -92,8 +91,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
     )]
     pub struct ReturnType {
         pub r#type: Type = ast::<Type>(),
@@ -110,8 +109,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
     )]
     pub struct Signature {
         pub unsafe_keyword: Keyword = expect::Keyword::Unsafe.optional(),
@@ -135,8 +134,8 @@ abstract_tree::abstract_tree! {
         PartialOrd,
         Ord,
         Hash,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
         StableHash
     )]
     pub struct EffectAnnotation {
@@ -154,8 +153,8 @@ abstract_tree::abstract_tree! {
         PartialOrd,
         Ord,
         Hash,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
         StableHash
     )]
     pub struct EffectUnit {
@@ -175,8 +174,8 @@ abstract_tree::abstract_tree! {
         PartialOrd,
         Ord,
         Hash,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
         StableHash
     )]
     pub struct EffectUnitList {
@@ -194,8 +193,8 @@ abstract_tree::abstract_tree! {
         PartialOrd,
         Ord,
         Hash,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
         StableHash
     )]
     #{fragment = expect::Fragment::Delimited(DelimiterKind::Parenthesis)}
@@ -215,8 +214,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize
+        Encode,
+        Decode,
     )]
     pub enum EffectUnitListKind {
         EffectUnitList(EffectUnitList = ast::<EffectUnitList>()),

@@ -1,17 +1,14 @@
 //! Contains the definition of [`Field`] and [`Fields`].
 
-use std::sync::Arc;
-
-use flexstr::SharedStr;
 use pernixc_arena::{Arena, ID};
 use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::Value;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_symbol::accessibility::Accessibility;
 use pernixc_target::Global;
 use pernixc_term::r#type::Type;
+use qbice::{
+    Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned,
+};
 
 /// Represents a field declaration in the struct, denoted by `NAME: TYPE`
 /// syntax.
@@ -24,15 +21,16 @@ use pernixc_term::r#type::Type;
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
+    Identifiable,
 )]
 pub struct Field {
     /// The accessibility of the field.
     pub accessibility: Accessibility<pernixc_symbol::ID>,
 
     /// The name of the field.
-    pub name: SharedStr,
+    pub name: Interned<str>,
 
     /// The type of the field.
     pub r#type: Type,
@@ -47,24 +45,43 @@ pub struct Field {
     Clone,
     PartialEq,
     Eq,
-    Serialize,
-    Deserialize,
     StableHash,
-    Value,
+    Encode,
+    Decode,
+    Identifiable,
     Default,
 )]
-#[id(Global<pernixc_symbol::ID>)]
-#[extend(method(get_fields))]
-#[value(Arc<Fields>)]
 pub struct Fields {
     /// The arena storing all the fields in the struct.
     pub fields: Arena<Field>,
 
     /// Maps the field name to its ID.
-    pub field_ids_by_name: HashMap<SharedStr, pernixc_arena::ID<Field>>,
+    pub field_ids_by_name: HashMap<Interned<str>, pernixc_arena::ID<Field>>,
 
     /// The order in which the fields are declared.
     pub field_declaration_order: Vec<pernixc_arena::ID<Field>>,
+}
+
+/// Query key for retrieving the fields of a struct.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Query,
+)]
+#[value(Interned<Fields>)]
+#[extend(name = get_fields, by_val)]
+pub struct Key {
+    /// The global ID of the struct symbol.
+    pub symbol_id: Global<pernixc_symbol::ID>,
 }
 
 impl Fields {

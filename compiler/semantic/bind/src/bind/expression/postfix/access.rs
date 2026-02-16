@@ -171,10 +171,10 @@ async fn access_struct(
         }
     };
 
-    let fields = binder.engine().get_fields(struct_id).await?;
+    let fields = binder.engine().get_fields(struct_id).await;
 
     let Some(field_id) =
-        fields.field_ids_by_name.get(ident.kind.as_str()).copied()
+        fields.field_ids_by_name.get(ident.kind.as_ref()).copied()
     else {
         handler.receive(
             Diagnostic::FieldNotFound(FieldNotFound {

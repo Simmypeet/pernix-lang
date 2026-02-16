@@ -1,10 +1,9 @@
 use pernixc_parser::{
     abstract_tree::{self, AbstractTree},
     expect,
-    parser::{Parser as _, ast},
+    parser::{ParserExt, ast},
 };
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode, StableHash};
 use where_clause::WhereClause;
 
 use crate::Passable;
@@ -44,8 +43,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize
+        Encode,
+        Decode,
     )]
     pub struct Members<T: 'static + AbstractTree> {
         pub members: #[multi] Passable<T>
@@ -63,8 +62,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize
+        Encode,
+        Decode,
     )]
     #{fragment = expect::Fragment::Indentation}
     pub struct Body<T: 'static + AbstractTree> {

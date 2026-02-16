@@ -3,18 +3,18 @@
 use std::{
     hash::Hash,
     iter::{Iterator, Peekable},
-    str::{CharIndices, FromStr},
+    str::FromStr,
     sync::LazyLock,
 };
 
 use bimap::BiHashMap;
-use flexstr::ToFlex;
 use pernixc_handler::Handler;
-use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_qbice::Interner;
 use pernixc_source_file::{
-    AbsoluteSpan, ByteIndex, GlobalSourceID, SourceElement, Span,
+    AbsoluteSpan, ByteIndex, GlobalSourceID, SourceElement, SourceFile,
+    SourceFileCharIndices, Span,
 };
-use pernixc_stable_hash::StableHash;
+use qbice::{Decode, Encode, Identifiable, StableHash};
 
 use crate::{
     error::{self, InvalidEscapeSequence},
@@ -60,9 +60,10 @@ pub type Kind<L> = Token<kind::Kind, L>;
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
+    Identifiable,
 )]
 pub struct Token<T, L> {
     /// Specifies the kind of the token.
@@ -129,14 +130,15 @@ fn walk_iter(
 /// [`Iterator`] trait, which allows it to be used as an iterator that iterates
 /// over token sequences in the source code.
 #[derive(Clone)]
-pub struct Tokenizer<'a, 'h> {
-    source: &'a str,
-    iter: Peekable<CharIndices<'a>>,
-    handler: &'h dyn Handler<error::Error>,
+pub struct Tokenizer<'a, I> {
+    source: &'a SourceFile,
+    iter: Peekable<SourceFileCharIndices<'a>>,
+    handler: &'a dyn Handler<error::Error>,
+    interner: &'a I,
     source_id: GlobalSourceID,
 }
 
-impl std::fmt::Debug for Tokenizer<'_, '_> {
+impl<I> std::fmt::Debug for Tokenizer<'_, I> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Tokenizer")
             .field("source", &self.source)
@@ -146,26 +148,37 @@ impl std::fmt::Debug for Tokenizer<'_, '_> {
     }
 }
 
-impl<'a, 'h> Tokenizer<'a, 'h> {
+impl<'a, I> Tokenizer<'a, I> {
     /// Creates a new [`Tokenizer`] instance.
     ///
     /// # Parameters
     ///
     /// - `source`: The source code to tokenize.
     /// - `source_id`: The ID of the source code used for creating spans.
+    /// - `interner`: The interner engine to use for interning strings.
     /// - `handler`: The handler to use for reporting errors.
     pub fn new(
-        source: &'a str,
+        source: &'a SourceFile,
         source_id: GlobalSourceID,
-        handler: &'h dyn Handler<error::Error>,
+        interner: &'a I,
+        handler: &'a dyn Handler<error::Error>,
     ) -> Self {
         Self {
             source,
             iter: source.char_indices().peekable(),
             handler,
+            interner,
             source_id,
         }
     }
+
+    /// Returns the source file being tokenized.
+    #[must_use]
+    pub const fn source_file(&self) -> &'a SourceFile { self.source }
+
+    /// Returns the handler used for reporting errors.
+    #[must_use]
+    pub fn handler(&self) -> &'a dyn Handler<error::Error> { self.handler }
 }
 /// A bidirectional map that maps a escape sequence (on the left) to its
 /// representation (on the right).
@@ -188,14 +201,18 @@ pub static ESCAPE_SEQUENCE_BY_REPRESENTATION: LazyLock<BiHashMap<char, char>> =
         map
     });
 
-impl Tokenizer<'_, '_> {
+impl<I: Interner> Tokenizer<'_, I> {
     /// Creates a span from the given start location to the current location of
     /// the iterator.
     fn create_span(&mut self, start: ByteIndex) -> AbsoluteSpan {
         if let Some((index, _)) = self.iter.peek().copied() {
             Span { start, end: index, source_id: self.source_id }
         } else {
-            Span { start, end: self.source.len(), source_id: self.source_id }
+            Span {
+                start,
+                end: self.source.len_bytes(),
+                source_id: self.source_id,
+            }
         }
     }
 
@@ -219,7 +236,7 @@ impl Tokenizer<'_, '_> {
 
             Some(Span::new(start, index, self.source_id))
         } else {
-            Some(Span::new(start, self.source.len(), self.source_id))
+            Some(Span::new(start, self.source.len_bytes(), self.source_id))
         }
     }
 
@@ -247,12 +264,17 @@ impl Tokenizer<'_, '_> {
         walk_iter(&mut self.iter, kind::Identifier::is_identifier_character);
 
         let span = self.create_span(start);
-        let word = &self.source[start..span.end];
+        let word = self.source.slice(start..span.end);
 
         // Checks if the word is a keyword
-        kind::Keyword::from_str(word).map_or_else(
+        kind::Keyword::from_str(&word).map_or_else(
             |_| {
-                (kind::Kind::Identifier(kind::Identifier(word.to_flex())), span)
+                (
+                    kind::Kind::Identifier(kind::Identifier(
+                        self.interner.intern_unsized(word),
+                    )),
+                    span,
+                )
             },
             |kind| (kind::Kind::Keyword(kind), span),
         )
@@ -370,7 +392,7 @@ impl Tokenizer<'_, '_> {
 
                 return (
                     string,
-                    Span::new(start, self.source.len(), self.source_id),
+                    Span::new(start, self.source.len_bytes(), self.source_id),
                 );
             };
 
@@ -418,7 +440,7 @@ impl Tokenizer<'_, '_> {
     }
 }
 
-impl Iterator for Tokenizer<'_, '_> {
+impl<I: Interner> Iterator for Tokenizer<'_, I> {
     type Item = Kind<ByteIndex>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -444,7 +466,8 @@ impl Iterator for Tokenizer<'_, '_> {
             let span = self.handle_numeric_literal(start);
             (
                 kind::Kind::Numeric(kind::Numeric(
-                    self.source[span.range()].into(),
+                    self.interner
+                        .intern_unsized(self.source.slice(span.range())),
                 )),
                 span,
             )
@@ -457,7 +480,12 @@ impl Iterator for Tokenizer<'_, '_> {
         else if character == '"' {
             let (string, span) = self.handle_string_literal(start);
 
-            (kind::Kind::String(kind::String(string.into())), span)
+            (
+                kind::Kind::String(kind::String(
+                    self.interner.intern_unsized(string),
+                )),
+                span,
+            )
         }
         // Found a punctuation
         else if character.is_ascii_punctuation() {

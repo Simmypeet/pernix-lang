@@ -3,15 +3,17 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: mismatched types: expected `&main::Option[int32]`, found `&main::Option[phantom int32]`
-   ╭─ compiler/e2e/test/snapshot/ir/expression/method_call/infer/main.pnx:28:23
-   │
-28 │     expectOptionInt32(&a)
-   │                       ^^ expected `&main::Option[int32]`, found `&main::Option[phantom int32]`
-   │
-   = ensure the expression type matches the expected type
+  [error]: mismatched types: expected `&main::Option[int32]`, found `&main::Option[phantom int32]`
+    ╭─[compiler/e2e/test/snapshot/ir/expression/method_call/infer/main.pnx:28:23]
+ 27 │     # now the type should mismatch if we try to use `a` as an `Option[int32]`
+ 28 │     expectOptionInt32(&a)
+    ·                       ─┬
+    ·                        ╰── expected `&main::Option[int32]`, found `&main::Option[phantom int32]`
+ 29 │     
+    ╰────
+  help: ensure the expression type matches the expected type
 
-error: Compilation aborted due to 1 error(s)
+  [error]: Compilation aborted due to 1 error(s)
 
 
 

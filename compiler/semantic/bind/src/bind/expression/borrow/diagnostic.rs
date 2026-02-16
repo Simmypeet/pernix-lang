@@ -1,10 +1,9 @@
 use pernixc_diagnostic::{ByteIndex, Highlight, Report};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor};
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::source_map::to_absolute_span;
 use pernixc_term::r#type::Qualifier;
+use qbice::{Decode, Encode, StableHash};
 
 use crate::diagnostic_enum;
 
@@ -19,8 +18,8 @@ diagnostic_enum! {
         Ord,
         Hash,
         StableHash,
-        Serialize,
-        Deserialize,
+        Encode,
+        Decode,
     )]
     pub enum Diagnostic {
         MismatchedQualifierForReferenceOf(MismatchedQualifierForReferenceOf)
@@ -38,8 +37,8 @@ diagnostic_enum! {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct MismatchedQualifierForReferenceOf {
     /// The span of the reference of expression
@@ -59,8 +58,7 @@ impl Report for MismatchedQualifierForReferenceOf {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let message = if self.is_behind_reference {
             format!(
                 "the l-value is behind a reference with qualifier `{}` but \
@@ -75,7 +73,7 @@ impl Report for MismatchedQualifierForReferenceOf {
             )
         };
 
-        Ok(pernixc_diagnostic::Rendered::builder()
+        pernixc_diagnostic::Rendered::builder()
             .message(message)
             .primary_highlight(
                 Highlight::builder()
@@ -85,6 +83,6 @@ impl Report for MismatchedQualifierForReferenceOf {
                     .build(),
             )
             .severity(pernixc_diagnostic::Severity::Error)
-            .build())
+            .build()
     }
 }

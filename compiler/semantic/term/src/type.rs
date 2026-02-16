@@ -3,9 +3,7 @@
 use std::{fmt::Write, ops::Deref};
 
 use enum_as_inner::EnumAsInner;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
-use pernixc_stable_type_id::Identifiable;
+use qbice::{Decode, Encode, Identifiable, StableHash};
 
 use crate::{
     constant::Constant,
@@ -36,8 +34,8 @@ pub mod arbitrary;
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     derive_more::Display,
 )]
 #[allow(missing_docs)]
@@ -58,8 +56,8 @@ pub enum Qualifier {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct Pointer {
     /// Determines whether the pointer is mutable.
@@ -79,8 +77,8 @@ pub struct Pointer {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct Reference {
     /// The qualifier applied to the reference.
@@ -103,8 +101,8 @@ pub struct Reference {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct Array {
     /// Constant representing the length of the array.
@@ -126,8 +124,8 @@ pub struct Array {
     Hash,
     EnumAsInner,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     derive_more::Display,
 )]
 #[allow(missing_docs)]
@@ -173,8 +171,8 @@ pub type Tuple = crate::tuple::Tuple<Type>;
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct Phantom(pub Box<Type>);
 
@@ -189,8 +187,8 @@ pub struct Phantom(pub Box<Type>);
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct FunctionSignature {
     /// The list of function parameters
@@ -231,8 +229,8 @@ pub enum SubFunctionSignatureLocation {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     Identifiable,
     derive_more::From,
     EnumAsInner,
@@ -1043,7 +1041,7 @@ impl Match for Type {
 impl crate::display::Display for Type {
     async fn fmt(
         &self,
-        engine: &pernixc_query::TrackedEngine,
+        engine: &pernixc_qbice::TrackedEngine,
         formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
         match self {
@@ -1061,7 +1059,7 @@ impl crate::display::Display for Type {
                         Box::pin(ty.fmt(engine, formatter)).await
                     }
                     crate::display::InferenceRendering::Rendered(flex_str) => {
-                        write!(formatter, "{flex_str}")
+                        write!(formatter, "{}", flex_str.as_ref())
                     }
                 }
             }
@@ -1069,15 +1067,13 @@ impl crate::display::Display for Type {
             Self::Primitive(primitive) => write!(formatter, "{primitive}"),
 
             Self::Parameter(member_id) => {
-                let generic_parameters = engine
-                    .get_generic_parameters(member_id.parent_id)
-                    .await
-                    .unwrap();
+                let generic_parameters =
+                    engine.get_generic_parameters(member_id.parent_id).await;
 
                 write!(
                     formatter,
                     "{}",
-                    generic_parameters.types()[member_id.id].name
+                    &*generic_parameters.types()[member_id.id].name
                 )
             }
 

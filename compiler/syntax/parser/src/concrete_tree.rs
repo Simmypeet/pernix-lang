@@ -1,21 +1,18 @@
 //! Contains the definition of the [`Tree`] and [`Node`] representing the
 //! concrete tree which contains the full source code fidelity.
 
-use std::sync::Arc;
-
 use enum_as_inner::EnumAsInner;
-#[cfg(debug_assertions)]
-use flexstr::SharedStr;
 use pernixc_arena::ID;
 use pernixc_lexical::{
     token,
     tree::{OffsetMode, RelativeLocation, RelativeSpan},
 };
-use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::{GlobalSourceID, SourceElement, Span};
-use pernixc_stable_hash::StableHash;
-use pernixc_stable_type_id::StableTypeID;
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use qbice::{
+    Decode, Encode, Identifiable, StableHash, stable_hash::Sip128Hasher,
+    stable_type_id::StableTypeID, storage::intern::Interned,
+};
+use siphasher::sip128::Hasher128;
 
 use crate::abstract_tree::AbstractTree;
 
@@ -29,8 +26,8 @@ use crate::abstract_tree::AbstractTree;
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     EnumAsInner,
     StableHash,
 )]
@@ -41,7 +38,7 @@ pub enum Node {
                                           * smaller size */
 
     /// Another tree node that is a child of this node.
-    Branch(Arc<Tree>),
+    Branch(Interned<Tree>),
 
     /// A fragment of the tree that isn't stepped into.
     SkipFragment(ID<pernixc_lexical::tree::Branch>, GlobalSourceID),
@@ -211,24 +208,30 @@ impl Node {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 #[allow(missing_copy_implementations)]
 pub struct AstInfo {
-    /// The [`TypeId`] that implements the AST trait for this node. This type
-    /// ID is primarily used to cast the concrete [`Tree`] to the
+    /// The [`StableTypeID`] that implements the AST trait for this node. This
+    /// type ID is primarily used to cast the concrete [`Tree`] to the
     /// [`crate::abstract_tree::AbstractTree`].
-    pub ast_type_id: StableTypeID,
+    pub(crate) ast_type_id: StableTypeID,
 
     /// The name of the AST that created this tree node.
     #[cfg(debug_assertions)]
-    pub ast_name: SharedStr,
+    pub(crate) ast_name: String,
 
     /// The id of the branch that this node steps into before start parsing.
-    pub step_into_fragment:
+    pub(crate) step_into_fragment:
         Option<(ID<pernixc_lexical::tree::Branch>, GlobalSourceID)>,
+}
+
+impl AstInfo {
+    /// Retrieves the AST type ID that created this tree node.
+    #[must_use]
+    pub const fn ast_type_id(&self) -> StableTypeID { self.ast_type_id }
 }
 
 /// A typeless concrete syntax tree built by the parser.
@@ -240,32 +243,61 @@ pub struct AstInfo {
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
-    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
 )]
 pub struct Tree {
     /// The info of where which AST created this tree.
     ///
     /// If [`None`] this tree node is an error node where the tokens are
     /// skipped.
-    pub ast_info: Option<AstInfo>,
+    pub(crate) ast_info: Option<AstInfo>,
 
     /// List of nodes this tree contains.
     ///
     /// # Invariants
     ///
     /// The [`Self::nodes`] must not be empty
-    pub nodes: Vec<Node>,
+    pub(crate) nodes: Vec<Node>,
+
+    /// The digest of the tree used for quick comparisons.
+    ///
+    /// This is computed using [`Self::ast_info`] and the digests of each
+    /// node in [`Self::nodes`].
+    pub(crate) digest: (u64, u64),
 }
 
-impl Drop for Tree {
-    fn drop(&mut self) {
-        std::mem::take(&mut self.nodes).into_par_iter().for_each(drop);
+impl Tree {
+    /// Retrieves the AST info of this tree, if any.
+    #[must_use]
+    pub const fn ast_info(&self) -> Option<&AstInfo> { self.ast_info.as_ref() }
+
+    /// Retrieves the nodes contained in this tree.
+    #[must_use]
+    pub fn nodes(&self) -> &[Node] { &self.nodes }
+
+    pub(crate) fn new(ast_info: Option<AstInfo>, nodes: Vec<Node>) -> Self {
+        let mut siphasher = Sip128Hasher::new();
+
+        ast_info.stable_hash(&mut siphasher);
+        nodes.stable_hash(&mut siphasher);
+
+        let digest = siphasher.finish128();
+        let digest = (digest.h1, digest.h2);
+
+        Self { ast_info, nodes, digest }
     }
 }
 
-impl Tree {}
+impl StableHash for Tree {
+    fn stable_hash<H: qbice::stable_hash::StableHasher + ?Sized>(
+        &self,
+        state: &mut H,
+    ) {
+        self.digest.stable_hash(state);
+    }
+}
 
 impl SourceElement for Tree {
     type Location = RelativeLocation;

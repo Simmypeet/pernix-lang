@@ -3,39 +3,46 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: mismatched types: expected `&T`, found `T`
-   ╭─ compiler/e2e/test/snapshot/ir/expression/method_call/receiver_precedence_2/main.pnx:22:16
-   │
-22 │     expect[&T](value.realClone()) # will error
-   │                ^^^^^^^^^^^^^^^^^ expected `&T`, found `T`
-   │
-   = ensure the expression type matches the expected type
+  [error]: mismatched types: expected `&T`, found `T`
+    ╭─[compiler/e2e/test/snapshot/ir/expression/method_call/receiver_precedence_2/main.pnx:22:16]
+ 21 │     expect[T](value.realClone())  # should resolve to RealClone[T]::Clone
+ 22 │     expect[&T](value.realClone()) # will error
+    ·                ────────┬────────
+    ·                        ╰── expected `&T`, found `T`
+ 23 │ 
+    ╰────
+  help: ensure the expression type matches the expected type
 
-error: mismatched types: expected `&mut T`, found `T`
-   ╭─ compiler/e2e/test/snapshot/ir/expression/method_call/receiver_precedence_2/main.pnx:30:20
-   │
-30 │     expect[&mut T](value.realClone()) # will error
-   │                    ^^^^^^^^^^^^^^^^^ expected `&mut T`, found `T`
-   │
-   = ensure the expression type matches the expected type
+  [error]: mismatched types: expected `&mut T`, found `T`
+    ╭─[compiler/e2e/test/snapshot/ir/expression/method_call/receiver_precedence_2/main.pnx:30:20]
+ 29 │     expect[T](value.realClone())  # should resolve to RealClone[T]::Clone
+ 30 │     expect[&mut T](value.realClone()) # will error
+    ·                    ────────┬────────
+    ·                            ╰── expected `&mut T`, found `T`
+ 31 │ 
+    ╰────
+  help: ensure the expression type matches the expected type
 
-error: mismatched types: expected `T`, found `&T`
-   ╭─ compiler/e2e/test/snapshot/ir/expression/method_call/receiver_precedence_2/main.pnx:47:15
-   │
-47 │     expect[T](value.fakeClone())   # will error
-   │               ^^^^^^^^^^^^^^^^^ expected `T`, found `&T`
-   │
-   = ensure the expression type matches the expected type
+  [error]: mismatched types: expected `T`, found `&T`
+    ╭─[compiler/e2e/test/snapshot/ir/expression/method_call/receiver_precedence_2/main.pnx:47:15]
+ 46 │     expect[&T](value.fakeClone())  # should resolve to FakeClone[&T]::Clone
+ 47 │     expect[T](value.fakeClone())   # will error
+    ·               ────────┬────────
+    ·                       ╰── expected `T`, found `&T`
+ 48 │ 
+    ╰────
+  help: ensure the expression type matches the expected type
 
-error: mismatched types: expected `T`, found `&mut T`
-   ╭─ compiler/e2e/test/snapshot/ir/expression/method_call/receiver_precedence_2/main.pnx:54:15
-   │
-54 │     expect[T](value.fakeClone())  # should resolve to FakeClone[&mut T]::Clone
-   │               ^^^^^^^^^^^^^^^^^ expected `T`, found `&mut T`
-   │
-   = ensure the expression type matches the expected type
+  [error]: mismatched types: expected `T`, found `&mut T`
+    ╭─[compiler/e2e/test/snapshot/ir/expression/method_call/receiver_precedence_2/main.pnx:54:15]
+ 53 │     
+ 54 │     expect[T](value.fakeClone())  # should resolve to FakeClone[&mut T]::Clone
+    ·               ────────┬────────
+    ·                       ╰── expected `T`, found `&mut T`
+    ╰────
+  help: ensure the expression type matches the expected type
 
-error: Compilation aborted due to 4 error(s)
+  [error]: Compilation aborted due to 4 error(s)
 
 
 

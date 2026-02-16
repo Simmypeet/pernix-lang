@@ -1,18 +1,18 @@
 //! Contains the logic for building the symbol table from the syntax tree.
 
-use std::{
-    hash::{Hash, Hasher},
-    sync::Arc,
-};
+use std::{hash::Hash, sync::Arc};
 
 use pernixc_extend::extend;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::TrackedEngine;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use pernixc_qbice::TrackedEngine;
 use pernixc_target::{
-    Global, TargetID, get_invocation_arguments, get_target_seed,
+    CORE_TARGET_SEED, Global, TargetID, get_invocation_arguments,
+    get_target_seed,
 };
+use qbice::{
+    Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned,
+};
+use siphasher::sip128::Hasher128;
 
 pub mod accessibility;
 pub mod final_implements;
@@ -47,11 +47,28 @@ pub mod arbitrary;
     Ord,
     Hash,
     Default,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
+    Identifiable,
 )]
-pub struct ID(pub u64);
+pub struct ID {
+    lo: u64,
+    hi: u64,
+}
+
+impl ID {
+    /// Creates a new ID from the given u128 value.
+    #[allow(clippy::cast_possible_truncation)]
+    #[must_use]
+    pub const fn from_u128(value: u128) -> Self {
+        Self { lo: value as u64, hi: (value >> 64) as u64 }
+    }
+
+    /// Creates a new ID from the given low and high u64 values.
+    #[must_use]
+    pub const fn from_lo_hi(lo: u64, hi: u64) -> Self { Self { lo, hi } }
+}
 
 /// A kind of ID used to unique identify a symbol inside a particular global
 /// symbol.
@@ -69,8 +86,8 @@ pub struct ID(pub u64);
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
     derive_new::new,
 )]
@@ -101,9 +118,36 @@ pub async fn calculate_qualified_name_id<'a>(
     parent_id: Option<ID>,
     declaration_order: usize,
 ) -> ID {
-    let mut hasher = siphasher::sip::SipHasher24::default();
     let target_seed = self.get_target_seed(target_id).await;
 
+    calculate_qualified_name_id_with_given_seed(
+        qualified_name_sequence,
+        parent_id,
+        declaration_order,
+        target_seed,
+    )
+}
+
+/// Calculates the ID of the core root module symbol.
+#[must_use]
+pub fn calculate_core_root_target_module_id() -> ID {
+    calculate_qualified_name_id_with_given_seed(
+        std::iter::once("core"),
+        None,
+        0,
+        CORE_TARGET_SEED,
+    )
+}
+
+/// Calculates the ID of the symbol with the given sequence of qualified names
+/// and the target ID, using the given target seed.
+pub fn calculate_qualified_name_id_with_given_seed<'a>(
+    qualified_name_sequence: impl IntoIterator<Item = &'a str>,
+    parent_id: Option<ID>,
+    declaration_order: usize,
+    target_seed: u64,
+) -> ID {
+    let mut hasher = siphasher::sip128::SipHasher24::default();
     target_seed.hash(&mut hasher);
 
     // signify that we're generating ID for the qualified name
@@ -117,7 +161,7 @@ pub async fn calculate_qualified_name_id<'a>(
 
     declaration_order.hash(&mut hasher);
 
-    ID(hasher.finish())
+    ID::from_u128(hasher.finish128().into())
 }
 
 /// Calculates a symbol [`ID`] for the implements at the given qualified
@@ -128,7 +172,7 @@ pub async fn calculate_implements_id(
     qualified_identifier_span: &RelativeSpan,
     target_id: TargetID,
 ) -> ID {
-    let mut hasher = siphasher::sip::SipHasher24::default();
+    let mut hasher = siphasher::sip128::SipHasher24::default();
     let target_seed = self.get_target_seed(target_id).await;
 
     target_seed.hash(&mut hasher);
@@ -140,7 +184,7 @@ pub async fn calculate_implements_id(
     // is unique for each implements
     qualified_identifier_span.hash(&mut hasher);
 
-    ID(hasher.finish())
+    ID::from_u128(hasher.finish128().into())
 }
 
 /// Calculates a symbol [`ID`] for the implements with the given unique name.
@@ -150,8 +194,22 @@ pub async fn calculate_implements_id_by_unique_name(
     unique_name: &str,
     target_id: TargetID,
 ) -> ID {
-    let mut hasher = siphasher::sip::SipHasher24::default();
     let target_seed = self.get_target_seed(target_id).await;
+
+    calculate_implements_id_by_unique_name_with_given_seed(
+        unique_name,
+        target_seed,
+    )
+}
+
+/// Calculates a symbol [`ID`] for the implements with the given unique name,
+/// using the given target seed.
+#[must_use]
+pub fn calculate_implements_id_by_unique_name_with_given_seed(
+    unique_name: &str,
+    target_seed: u64,
+) -> ID {
+    let mut hasher = siphasher::sip128::SipHasher24::default();
 
     target_seed.hash(&mut hasher);
 
@@ -159,7 +217,7 @@ pub async fn calculate_implements_id_by_unique_name(
     false.hash(&mut hasher);
     unique_name.hash(&mut hasher);
 
-    ID(hasher.finish())
+    ID::from_u128(hasher.finish128().into())
 }
 
 /// Returns the root module ID for the given target ID.
@@ -201,14 +259,17 @@ pub async fn get_target_root_module_id(
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
-    pernixc_query::Key,
+    Query,
 )]
-#[value(Arc<[ID]>)]
-#[extend(method(get_all_symbol_ids), no_cyclic)]
-pub struct AllSymbolIDKey(pub TargetID);
+#[value(Interned<[ID]>)]
+#[extend(name = get_all_symbol_ids, by_val)]
+pub struct AllSymbolIDKey {
+    /// The target ID to get all symbol IDs for.
+    pub target_id: TargetID,
+}
 
 /// Retrieves all ADT symbol IDs in the given target.
 #[derive(
@@ -220,14 +281,17 @@ pub struct AllSymbolIDKey(pub TargetID);
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
-    pernixc_query::Key,
+    Query,
 )]
 #[value(Arc<[ID]>)]
-#[extend(method(get_all_adt_ids), no_cyclic)]
-pub struct AllAdtIDKey(pub TargetID);
+#[extend(name = get_all_adt_ids, by_val)]
+pub struct AllAdtIDKey {
+    /// The target ID to get all ADT symbol IDs for.
+    pub target_id: TargetID,
+}
 
 /// Retrieves all implements symbol IDs in the given target (including positive
 /// and negative)
@@ -240,14 +304,17 @@ pub struct AllAdtIDKey(pub TargetID);
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
-    pernixc_query::Key,
+    Query,
 )]
 #[value(Arc<[ID]>)]
-#[extend(method(get_all_implements_ids), no_cyclic)]
-pub struct AllImplementsIDKey(pub TargetID);
+#[extend(name = get_all_implements_ids, by_val)]
+pub struct AllImplementsIDKey {
+    /// The target ID to get all implements symbol IDs for.
+    pub target_id: TargetID,
+}
 
 /// Retrieves all function having body symbol IDs in the given target.
 #[derive(
@@ -259,11 +326,14 @@ pub struct AllImplementsIDKey(pub TargetID);
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
-    pernixc_query::Key,
+    Query,
 )]
 #[value(Arc<[ID]>)]
-#[extend(method(get_all_function_with_body_ids), no_cyclic)]
-pub struct AllFunctionWithBodyIDKey(pub TargetID);
+#[extend(name = get_all_function_with_body_ids, by_val)]
+pub struct AllFunctionWithBodyIDKey {
+    /// The target ID to get all function having body symbol IDs for.
+    pub target_id: TargetID,
+}

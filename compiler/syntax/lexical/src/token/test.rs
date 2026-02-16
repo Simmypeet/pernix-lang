@@ -1,11 +1,17 @@
+use std::path::PathBuf;
+
 use pernixc_handler::Storage;
-use pernixc_source_file::{ByteIndex, SourceFile, SourceMap};
+use pernixc_qbice::DuplicatingInterner;
+use pernixc_source_file::{
+    ByteIndex, SourceFile, simple_source_map::SimpleSourceMap,
+};
 use pernixc_target::TargetID;
 use pernixc_test_input::Input;
 use proptest::{
     prelude::Arbitrary, prop_assert, prop_assert_eq, proptest,
     test_runner::TestCaseError,
 };
+use qbice::storage::intern::Interned;
 
 use super::error::Error;
 use crate::{
@@ -14,13 +20,16 @@ use crate::{
 };
 
 fn tokenize(
-    source: std::string::String,
+    source: &str,
 ) -> Result<
-    (super::Token<Kind, ByteIndex>, SourceMap),
+    (super::Token<Kind, ByteIndex>, SimpleSourceMap),
     proptest::test_runner::TestCaseError,
 > {
-    let source_map = SourceMap::new();
-    let source_file = SourceFile::new(source, "test".into());
+    let source_map = SimpleSourceMap::new();
+    let source_file = SourceFile::from_str(
+        source,
+        Interned::new_duplicating_unsized(PathBuf::from("test")),
+    );
 
     let id = source_map.register(TargetID::TEST, source_file);
     let id = TargetID::TEST.make_global(id);
@@ -28,8 +37,10 @@ fn tokenize(
     let error_storage: Storage<Error> = Storage::new();
 
     let source_file = source_map.get_mut(id).unwrap();
+    let interner = DuplicatingInterner;
+
     let mut tokenizer =
-        Tokenizer::new(source_file.content(), id, &error_storage);
+        Tokenizer::new(&source_file, id, &interner, &error_storage);
 
     let token = tokenizer
         .next()
@@ -57,7 +68,7 @@ proptest! {
         input in super::arbitrary::Token::<kind::arbitrary::Kind>::arbitrary()
     ) {
         let source = input.to_string();
-        let (token, source_map) = tokenize(source)?;
+        let (token, source_map) = tokenize(&source)?;
 
         input.assert(&token, (&source_map, ()))?;
     }

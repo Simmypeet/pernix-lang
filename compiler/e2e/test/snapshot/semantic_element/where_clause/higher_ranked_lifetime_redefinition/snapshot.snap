@@ -3,13 +3,15 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: forall lifetime redefinition
-  ╭─ compiler/e2e/test/snapshot/semantic_element/where_clause/higher_ranked_lifetime_redefinition/main.pnx:6:23
-  │
-6 │         trait for['x, 'x] SomeTrait['x, T]
-  │                       ^^ forall lifetime with the same name already exists in this scope
+  [error]: forall lifetime redefinition
+   ╭─[compiler/e2e/test/snapshot/semantic_element/where_clause/higher_ranked_lifetime_redefinition/main.pnx:6:23]
+ 5 │     where:
+ 6 │         trait for['x, 'x] SomeTrait['x, T]
+   ·                       ─┬
+   ·                        ╰── forall lifetime with the same name already exists in this scope
+   ╰────
 
-error: Compilation aborted due to 1 error(s)
+  [error]: Compilation aborted due to 1 error(s)
 
 
 

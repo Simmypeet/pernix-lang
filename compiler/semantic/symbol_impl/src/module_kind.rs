@@ -1,44 +1,88 @@
-use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
-use pernixc_source_file::calculate_path_id;
+use linkme::distributed_slice;
+use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
+use pernixc_source_file::get_stable_path_id;
 use pernixc_symbol::{
     module_kind::{Key, ModuleKind},
     parent::get_parent_global,
 };
-use pernixc_target::get_invocation_arguments;
+use pernixc_target::{Global, get_invocation_arguments};
+use qbice::{
+    Decode, Encode, Query, StableHash, executor, program::Registration,
+};
 
 use crate::table::get_table_of_symbol;
 
-#[pernixc_query::executor(key(Key), name(ModuleKindExecutor))]
-pub async fn module_kind_executor(
-    &Key(key): &Key,
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    Query,
+)]
+#[value(Option<ModuleKind>)]
+pub struct ProjectionKey {
+    pub module_id: Global<pernixc_symbol::ID>,
+}
+
+#[executor(config = Config)]
+async fn projection_executor(
+    &ProjectionKey { module_id }: &ProjectionKey,
     engine: &TrackedEngine,
-) -> Result<ModuleKind, CyclicError> {
+) -> Option<ModuleKind> {
     // if no parent module, the module is at the root.
-    let Some(parent_module_id) = engine.get_parent_global(key).await else {
-        let target_args = engine.get_invocation_arguments(key.target_id).await;
+    let Some(parent_module_id) = engine.get_parent_global(module_id).await
+    else {
+        let target_args =
+            engine.get_invocation_arguments(module_id.target_id).await;
+
         let root_src_id = engine
-            .calculate_path_id(&target_args.command.input().file, key.target_id)
+            .get_stable_path_id(
+                engine.intern_unsized(target_args.command.input().file.clone()),
+                module_id.target_id,
+            )
             .await
             .ok();
 
-        return Ok(ModuleKind::ExteranlFile(root_src_id));
+        return Some(ModuleKind::ExteranlFile(root_src_id));
     };
 
     // gets the map of the parent, which should have an external_submodules
     // containing the current module id, if it's an external module
-    let map = engine.get_table_of_symbol(parent_module_id).await;
+    let map = engine.get_table_of_symbol(parent_module_id).await?;
 
     // if the module presents in the map.external_submodules, it is an external
     // module.
-    if let Some(exteranl_submodule) = map.external_submodules.get(&key.id) {
+    if let Some(exteranl_submodule) = map.external_submodules.get(&module_id.id)
+    {
         let path = exteranl_submodule.path.clone();
 
-        Ok(ModuleKind::ExteranlFile(
-            engine.calculate_path_id(&path, key.target_id).await.ok(),
+        Some(ModuleKind::ExteranlFile(
+            engine.get_stable_path_id(path, module_id.target_id).await.ok(),
         ))
     } else {
-        Ok(ModuleKind::Inline)
+        Some(ModuleKind::Inline)
     }
 }
 
-pernixc_register::register!(Key, ModuleKindExecutor);
+#[distributed_slice(PERNIX_PROGRAM)]
+static PROJECTION_EXECUTOR: Registration<Config> =
+    Registration::new::<ProjectionKey, ProjectionExecutor>();
+
+#[executor(config = Config)]
+async fn module_kind_executor(
+    &Key { module_id }: &Key,
+    engine: &TrackedEngine,
+) -> ModuleKind {
+    engine.query(&ProjectionKey { module_id }).await.unwrap()
+}
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static MODULE_KIND_EXECUTOR: Registration<Config> =
+    Registration::new::<Key, ModuleKindExecutor>();

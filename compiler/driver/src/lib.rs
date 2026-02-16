@@ -1,115 +1,25 @@
 //! Contains the main `run()` function for the compiler.
 
-use std::{path::PathBuf, process::ExitCode, sync::Arc};
+use std::{io::Write, path::PathBuf, process::ExitCode, sync::Arc};
 
-use codespan_reporting::{
-    diagnostic::{Diagnostic, Label, LabelStyle},
-    term::{StylesWriter, termcolor::WriteColor},
+use pernixc_qbice::{
+    Engine, InMemoryFactory, IncrementalStorageEngine, TrackedEngine,
 };
-use pernixc_query::{Engine, TrackedEngine, runtime::persistence::Persistence};
-use pernixc_source_file::GlobalSourceID;
-use pernixc_symbol_impl::source_map::{SourceMap, create_source_map};
+use pernixc_symbol_impl::source_map::create_source_map;
 use pernixc_target::{Arguments, Build, Command, Run, TargetID, TargetKind};
+use qbice::{serialize::Plugin, stable_hash::SeededStableHasherBuilder};
 use tracing::instrument;
 
-use crate::{
-    diagnostic::pernix_diagnostic_to_codespan_diagnostic, llvm::MachineCodeKind,
-};
+use crate::{llvm::MachineCodeKind, term::ReportTerm};
 
 pub mod term;
 
-mod diagnostic;
 mod llvm;
-
-struct ReportTerm<'a, 's> {
-    config: codespan_reporting::term::Config,
-    writer: StylesWriter<'a, &'s mut dyn WriteColor>,
-    source_map: &'s SourceMap,
-}
-
-impl ReportTerm<'_, '_> {
-    #[allow(clippy::trivially_copy_pass_by_ref)]
-    fn report(&mut self, diagnostic: &Diagnostic<GlobalSourceID>) {
-        let _ = codespan_reporting::term::emit_to_write_style(
-            &mut self.writer,
-            &self.config,
-            self.source_map,
-            diagnostic,
-        );
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct SortableDiagnostic(Diagnostic<GlobalSourceID>);
-
-#[allow(clippy::trivially_copy_pass_by_ref)]
-const fn cmp_label_style(a: &LabelStyle, b: &LabelStyle) -> std::cmp::Ordering {
-    match (a, b) {
-        (LabelStyle::Primary, LabelStyle::Primary) => std::cmp::Ordering::Equal,
-        (LabelStyle::Primary, LabelStyle::Secondary) => {
-            std::cmp::Ordering::Less
-        }
-        (LabelStyle::Secondary, LabelStyle::Primary) => {
-            std::cmp::Ordering::Greater
-        }
-        (LabelStyle::Secondary, LabelStyle::Secondary) => {
-            std::cmp::Ordering::Equal
-        }
-    }
-}
-
-fn cmp_label(
-    a: &Label<GlobalSourceID>,
-    b: &Label<GlobalSourceID>,
-) -> std::cmp::Ordering {
-    cmp_label_style(&a.style, &b.style)
-        .then_with(|| a.file_id.cmp(&b.file_id))
-        .then_with(|| a.range.start.cmp(&b.range.start))
-        .then_with(|| a.range.end.cmp(&b.range.end))
-        .then_with(|| a.message.cmp(&b.message))
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ComparableLabel<'a>(pub &'a Label<GlobalSourceID>);
-
-impl PartialOrd for ComparableLabel<'_> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for ComparableLabel<'_> {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        cmp_label(self.0, other.0)
-    }
-}
-
-impl PartialOrd for SortableDiagnostic {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for SortableDiagnostic {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0
-            .severity
-            .cmp(&other.0.severity)
-            .then_with(|| {
-                self.0
-                    .labels
-                    .iter()
-                    .map(ComparableLabel)
-                    .cmp(other.0.labels.iter().map(ComparableLabel))
-            })
-            .then_with(|| self.0.message.cmp(&other.0.message))
-    }
-}
 
 fn get_output_path(
     argument_output: Option<PathBuf>,
     target_kind: TargetKind,
-    report_term: &mut ReportTerm<'_, '_>,
+    report_term: &mut ReportTerm<'_>,
     target_name: &str,
 ) -> Option<PathBuf> {
     if let Some(output) = argument_output {
@@ -118,9 +28,9 @@ fn get_output_path(
         let mut output = match std::env::current_dir() {
             Ok(dir) => dir,
             Err(error) => {
-                report_term.report(&Diagnostic::error().with_message(format!(
+                report_term.report_simple_error(format!(
                     "failed to get current directory: {error}"
-                )));
+                ));
                 return None;
             }
         };
@@ -135,126 +45,111 @@ fn get_output_path(
     }
 }
 
+async fn create_engine(
+    argument: &Arguments,
+    report_term: &mut ReportTerm<'_>,
+) -> Option<Engine> {
+    if let Some(inc_path) = &argument.command.input().incremental_path {
+        match Engine::new_with(
+            Plugin::new(),
+            IncrementalStorageEngine(inc_path),
+            SeededStableHasherBuilder::new(0),
+        )
+        .await
+        {
+            Ok(engine) => Some(engine),
+            Err(err) => {
+                report_term.report_simple_error(format!(
+                    "failed to create incremental engine at '{}': {err}",
+                    inc_path.display()
+                ));
+
+                None
+            }
+        }
+    } else {
+        Some(
+            Engine::new_with(
+                Plugin::new(),
+                InMemoryFactory,
+                SeededStableHasherBuilder::new(0),
+            )
+            .await
+            .expect("in-memory is infailable"),
+        )
+    }
+}
+
 /// Runs the program with the given arguments.
 #[must_use]
 #[allow(clippy::too_many_lines, clippy::needless_pass_by_value)]
 #[instrument(skip(err_writer, _out_writer))]
 pub async fn run(
     argument: Arguments,
-    err_writer: &mut dyn WriteColor,
-    _out_writer: &mut dyn WriteColor,
+    err_writer: &mut dyn Write,
+    _out_writer: &mut dyn Write,
 ) -> ExitCode {
-    let mut serde_registry = pernixc_register::SerdeRegistry::default();
+    let mut report_term =
+        ReportTerm::new(err_writer, argument.command.input().fancy);
 
-    let report_styles = term::get_styles();
-    let report_config = term::get_coonfig();
-    let simple_file = codespan_reporting::files::SimpleFile::new("", "");
+    let Some(mut engine) = create_engine(&argument, &mut report_term).await
+    else {
+        return ExitCode::FAILURE;
+    };
 
-    // all the serialization/deserialization runtime information must be
-    // registered before creating a persistence layer
-    pernixc_register::Registration::register_serde_registry(
-        &mut serde_registry,
-    );
+    // Due to how rust compiler work, if a crate is linked without having any
+    // symbols in it used, the crate will be completely ignored and the
+    // static distributed registration will be optimized out, causing the engine
+    // to not have the executors
+    pernixc_source_file_impl::black_box();
+    pernixc_lexical_impl::black_box();
+    pernixc_syntax_impl::black_box();
 
-    let mut engine = Engine::default();
-
-    // setup the persistence layer if the incremental setting is set
-    if let Some(incremental_path) = &argument.command.input().incremental_path {
-        let persistence = match Persistence::new(
-            incremental_path.clone(),
-            Arc::new(serde_registry),
-        ) {
-            Ok(persistence) => persistence,
-            Err(error) => {
-                let diag = Diagnostic::error().with_message(format!(
-                    "Failed to setup persistence: {error}"
-                ));
-
-                codespan_reporting::term::emit_to_write_style(
-                    &mut StylesWriter::new(err_writer, &report_styles),
-                    &report_config,
-                    &simple_file,
-                    &diag,
-                )
-                .unwrap();
-
-                return ExitCode::FAILURE;
-            }
-        };
-
-        // load the database from the persistence layer
-        engine.database = match persistence.load_database() {
-            Ok(database) => database,
-            Err(error) => {
-                let diag = Diagnostic::error().with_message(format!(
-                    "Failed to load incremental database: {error}"
-                ));
-
-                codespan_reporting::term::emit_to_write_style(
-                    &mut StylesWriter::new(err_writer, &report_styles),
-                    &report_config,
-                    &simple_file,
-                    &diag,
-                )
-                .unwrap();
-
-                return ExitCode::FAILURE;
-            }
-        };
-
-        engine.runtime.persistence = Some(persistence);
-    }
-
-    // if persistence is set, setup the value that will be skipped from saving
-    // into the persistence layer.
-    if let Some(persistence) = engine.runtime.persistence.as_mut() {
-        pernixc_register::Registration::register_skip_persistence(persistence);
-    }
-
-    // final step, setup the query executors for the engine
-    pernixc_register::Registration::register_executor(
-        &mut engine.runtime.executor,
-    );
-    pernixc_register::Registration::register_always_recompute(
-        &mut engine.runtime.executor,
-    );
+    engine.register_program(pernixc_qbice::PERNIX_PROGRAM);
 
     // set the initial input, the invocation arguments
     let local_target_id =
         TargetID::from_target_name(&argument.command.input().target_name());
     let target_name = argument.command.input().target_name();
 
-    let mut engine = Arc::new(engine);
-    pernixc_corelib::initialize_corelib(&mut engine).await;
+    let engine = Arc::new(engine);
 
-    Arc::get_mut(&mut engine)
-        .unwrap()
-        .input_session(async |x| {
-            x.always_reverify();
+    {
+        let mut input_session = engine.input_session().await;
 
-            x.set_input(
-                pernixc_target::LinkKey(local_target_id),
-                Arc::new(std::iter::once(TargetID::CORE).collect()),
+        pernixc_corelib::initialize_corelib(&mut input_session).await;
+
+        input_session
+            .set_input(
+                pernixc_target::LinkKey { target_id: local_target_id },
+                input_session.intern(std::iter::once(TargetID::CORE).collect()),
             )
             .await;
 
-            x.set_input(
+        input_session
+            .set_input(
                 pernixc_target::AllTargetIDsKey,
-                Arc::new(
+                input_session.intern(
                     [local_target_id, TargetID::CORE].into_iter().collect(),
                 ),
             )
             .await;
 
-            x.set_input(
+        input_session
+            .set_input(
                 pernixc_target::MapKey,
-                Arc::new(
+                input_session.intern(
                     [
                         (
-                            argument.command.input().target_name(),
+                            input_session.intern_unsized(
+                                argument.command.input().target_name(),
+                            ),
                             local_target_id,
                         ),
-                        ("core".into(), TargetID::CORE),
+                        (
+                            input_session.intern_unsized("core".to_owned()),
+                            TargetID::CORE,
+                        ),
                     ]
                     .into_iter()
                     .collect(),
@@ -262,71 +157,57 @@ pub async fn run(
             )
             .await;
 
-            if let Some(explicit_seed) = argument.command.input().target_seed {
-                x.set_input(
-                    pernixc_target::SeedKey(local_target_id),
+        if let Some(explicit_seed) = argument.command.input().target_seed {
+            input_session
+                .set_input(
+                    pernixc_target::SeedKey { target_id: local_target_id },
                     explicit_seed,
                 )
                 .await;
-            }
+        }
 
-            x.set_input(
-                pernixc_target::Key(local_target_id),
-                Arc::new(argument.clone()),
+        input_session
+            .set_input(
+                pernixc_target::Key { target_id: local_target_id },
+                input_session.intern(argument.clone()),
             )
             .await;
-        })
+
+        pernixc_source_file_impl::refresh_source_file_executors(
+            &mut input_session,
+        )
         .await;
 
-    tracing::info!(
-        "Starting compilation with database version: {}",
-        engine.version()
-    );
+        input_session.commit().await;
+    }
 
     // now the query can start ...
 
-    let tracked_engine = engine.tracked();
+    let tracked_engine = engine.clone().tracked().await;
 
     let source_map = tracked_engine.create_source_map(local_target_id).await;
 
-    let styles = term::get_styles();
-
-    let mut report_term = ReportTerm {
-        config: report_config.clone(),
-        source_map: &source_map,
-        writer: StylesWriter::new(err_writer, &styles),
-    };
+    report_term.set_source_map(&source_map);
 
     let diagnostic_count = {
-        let mut diagnostics = Vec::new();
-
         let check = tracked_engine
-            .query(&pernixc_check::Key(local_target_id))
-            .await
-            .unwrap();
+            .query(&pernixc_check::Key { target_id: local_target_id })
+            .await;
 
-        for diag in check.all_diagnostics() {
-            diagnostics.push(SortableDiagnostic(
-                pernix_diagnostic_to_codespan_diagnostic(diag),
-            ));
-        }
-
+        let mut diagnostics: Vec<_> = check.all_diagnostics().collect();
         diagnostics.sort();
 
-        for diagnostic in &diagnostics {
-            report_term.report(&diagnostic.0);
+        for diag in &diagnostics {
+            report_term.report_rendered(diag);
         }
 
         diagnostics.len()
     };
 
-    let result = if diagnostic_count != 0 {
-        let diag = codespan_reporting::diagnostic::Diagnostic::error()
-            .with_message(format!(
-                "Compilation aborted due to {diagnostic_count} error(s)"
-            ));
-
-        report_term.report(&diag);
+    if diagnostic_count != 0 {
+        report_term.report_simple_error(format!(
+            "Compilation aborted due to {diagnostic_count} error(s)"
+        ));
 
         ExitCode::FAILURE
     } else {
@@ -338,27 +219,7 @@ pub async fn run(
             &mut report_term,
         )
         .await
-    };
-
-    drop(tracked_engine);
-    let mut engine =
-        Arc::try_unwrap(engine).expect("Engine should be unique at this point");
-
-    if let Err(error) = engine.save_database() {
-        let diag = codespan_reporting::diagnostic::Diagnostic::error()
-            .with_message(format!("Failed to save database: {error}"));
-
-        codespan_reporting::term::emit_to_write_style(
-            &mut report_term.writer,
-            &report_config,
-            &simple_file,
-            &diag,
-        )
-        .unwrap();
-        return ExitCode::FAILURE;
     }
-
-    result
 }
 
 #[allow(clippy::too_many_lines)]
@@ -367,7 +228,7 @@ async fn build(
     target_name: &str,
     current_target_id: TargetID,
     tracked_engine: &TrackedEngine,
-    report_term: &mut ReportTerm<'_, '_>,
+    report_term: &mut ReportTerm<'_>,
 ) -> ExitCode {
     // retrieve the output path
     let output_path = match &argument.command {
@@ -445,8 +306,8 @@ async fn build(
             let mut child = match command.spawn() {
                 Ok(child) => child,
                 Err(error) => {
-                    report_term.report(&Diagnostic::error().with_message(
-                        format!("failed to spawn executable: {error}"),
+                    report_term.report_simple_error(format!(
+                        "failed to spawn executable: {error}"
                     ));
 
                     return ExitCode::FAILURE;
@@ -456,8 +317,8 @@ async fn build(
             let status = match child.wait() {
                 Ok(status) => status,
                 Err(error) => {
-                    report_term.report(&Diagnostic::error().with_message(
-                        format!("failed to wait for executable: {error}"),
+                    report_term.report_simple_error(format!(
+                        "failed to wait for executable: {error}"
                     ));
 
                     return ExitCode::FAILURE;
@@ -466,16 +327,16 @@ async fn build(
 
             if let Some(code) = status.code() {
                 if code != 0 {
-                    report_term.report(&Diagnostic::error().with_message(
-                        format!("executable terminated with exit code {code}"),
+                    report_term.report_simple_error(format!(
+                        "executable terminated with exit code {code}"
                     ));
 
                     return ExitCode::FAILURE;
                 }
             } else {
-                report_term.report(&Diagnostic::error().with_message(
+                report_term.report_simple_error(
                     "executable terminated by signal".to_string(),
-                ));
+                );
 
                 return ExitCode::FAILURE;
             }

@@ -2,10 +2,9 @@
 
 use enum_as_inner::EnumAsInner;
 use pernixc_extend::extend;
-use pernixc_query::TrackedEngine;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use pernixc_qbice::TrackedEngine;
 use pernixc_target::{Global, TargetID};
+use qbice::{Decode, Encode, Identifiable, Query, StableHash};
 
 use crate::{
     ID,
@@ -27,14 +26,17 @@ use crate::{
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
-    pernixc_query::Key,
+    Encode,
+    Decode,
+    Query,
     StableHash,
 )]
 #[value(Accessibility<ID>)]
-#[extend(method(get_accessibility), no_cyclic)]
-pub struct Key(pub Global<ID>);
+#[extend(name = get_accessibility, by_val)]
+pub struct Key {
+    /// The global ID of the symbol to get the accessibility for.
+    pub symbol_id: Global<ID>,
+}
 
 /// The accessibility defined to a symbol
 #[derive(
@@ -47,10 +49,11 @@ pub struct Key(pub Global<ID>);
     Ord,
     Hash,
     Default,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     EnumAsInner,
     StableHash,
+    Identifiable,
 )]
 pub enum Accessibility<ID> {
     /// The symbol is accessible from anywhere.

@@ -14,10 +14,9 @@ path = "snapshot/mod.rs"
 
 [dev-dependencies]
 pernix_server = { path = "../server" }
-pernixc_query = { path = "../../compiler/base/query" }
-pernixc_register = { path = "../../compiler/base/register" }
 pernixc_source_file = { path = "../../compiler/base/source_file" }
 pernixc_target = { path = "../../compiler/base/target" }
+pernixc_qbice.path = "../../compiler/base/qbice"
 tower-lsp = { workspace = true }
 walkdir = { workspace = true }
 serde_json = { workspace = true }
@@ -26,6 +25,7 @@ stacker = { workspace = true }
 tokio = { workspace = true }
 tracing-subscriber = { workspace = true }
 test-generator = { workspace = true }
+qbice.workspace = true
 
 [lints]
 workspace = true

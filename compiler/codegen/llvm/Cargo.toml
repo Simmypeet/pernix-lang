@@ -9,7 +9,6 @@ rust-version.workspace = true
 [dependencies]
 pernixc_handler = { path = "../../base/handler" }
 pernixc_target = { path = "../../base/target" }
-pernixc_query = { path = "../../base/query" }
 pernixc_extend = { path = "../../base/extend" }
 pernixc_type_system = { path = "../../semantic/type_system" }
 pernixc_term = { path = "../../semantic/term" }
@@ -18,6 +17,9 @@ pernixc_symbol = { path = "../../semantic/symbol" }
 pernixc_ir = { path = "../../semantic/ir" }
 pernixc_arena = { path = "../../base/arena" }
 pernixc_diagnostic = { path = "../../base/diagnostic" }
+pernixc_qbice.path = "../../base/qbice"
+qbice.workspace = true
+linkme.workspace = true
 inkwell = { workspace = true }
 derive-new = { workspace = true }
 getset = { workspace = true }

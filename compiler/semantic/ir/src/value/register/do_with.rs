@@ -5,11 +5,10 @@ use std::ops::Deref;
 use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
 use pernixc_hash::HashMap;
-use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use pernixc_qbice::TrackedEngine;
 use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
 use pernixc_type_system::{Error, Succeeded, normalizer::Normalizer};
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     IRWithContext, Values,
@@ -22,15 +21,7 @@ use crate::{
 /// Representing the capture initialization. This contains all the values
 /// used to initialize the captures.
 #[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    Default,
-    StableHash,
-    Serialize,
-    Deserialize,
-    Getters,
+    Debug, Clone, PartialEq, Eq, Default, StableHash, Encode, Decode, Getters,
 )]
 pub struct CaptureArguments {
     arguments: HashMap<pernixc_arena::ID<Capture>, Value>,
@@ -76,14 +67,12 @@ impl transform::Element for CaptureArguments {
         &mut self,
         transformer: &mut T,
         _engine: &TrackedEngine,
-    ) -> Result<(), CyclicError> {
+    ) {
         for value in
             self.arguments.values_mut().filter_map(|x| x.as_literal_mut())
         {
-            value.transform(transformer).await?;
+            value.transform(transformer).await;
         }
-
-        Ok(())
     }
 }
 
@@ -91,7 +80,7 @@ impl transform::Element for CaptureArguments {
 ///
 /// This is where the main computation takes place, potentially involving
 /// effectful operations.
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct Do {
     /// The capture strcture for the closure.
     capture_arguments: CaptureArguments,
@@ -118,10 +107,8 @@ impl transform::Element for Do {
         &mut self,
         transformer: &mut T,
         engine: &TrackedEngine,
-    ) -> Result<(), CyclicError> {
-        self.capture_arguments.transform(transformer, engine).await?;
-
-        Ok(())
+    ) {
+        self.capture_arguments.transform(transformer, engine).await;
     }
 }
 
@@ -134,8 +121,8 @@ impl transform::Element for Do {
     Eq,
     Default,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     CopyGetters,
 )]
 pub struct HandlerClause {
@@ -161,9 +148,7 @@ impl HandlerClause {
 
 /// The closure for handling a specific effect operation within an
 /// [`HandlerClause`].
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, StableHash, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct OperationHandler {
     /// The IR containing the code body of the effect operation handler.
     ir_id: ID<IRWithContext>,
@@ -176,7 +161,7 @@ impl OperationHandler {
 }
 
 /// Represents a group of `with` handlers following a `do` expression.
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct HandlerChain {
     /// The capture structure used for all of the handler clauses in this
     /// chain.
@@ -215,17 +200,13 @@ impl transform::Element for HandlerChain {
         &mut self,
         transformer: &mut T,
         engine: &TrackedEngine,
-    ) -> Result<(), CyclicError> {
-        self.capture_arguments.transform(transformer, engine).await?;
-
-        Ok(())
+    ) {
+        self.capture_arguments.transform(transformer, engine).await;
     }
 }
 
 /// Represents a `do-with` expression in the IR.
-#[derive(
-    Debug, Clone, PartialEq, Eq, StableHash, Getters, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Getters, Encode, Decode)]
 pub struct DoWith {
     /// The unique ID of this `do-with` expression within the function-level
     /// IR.
@@ -279,11 +260,9 @@ pub(super) async fn transform_do_with<
     do_with: &mut DoWith,
     transformer: &mut T,
     engine: &TrackedEngine,
-) -> Result<(), CyclicError> {
-    do_with.do_block.transform(transformer, engine).await?;
-    do_with.handleer_chain.transform(transformer, engine).await?;
-
-    Ok(())
+) {
+    do_with.do_block.transform(transformer, engine).await;
+    do_with.handleer_chain.transform(transformer, engine).await;
 }
 
 impl TypeOf<&DoWith> for Values {

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use pernixc_query::Engine;
+use pernixc_qbice::{Engine, InMemoryFactory};
 use pernixc_term::{
     constant::Constant,
     generic_arguments::GenericArguments,
@@ -9,6 +9,8 @@ use pernixc_term::{
     r#type::Type,
     visitor::{self, MutableRecursive},
 };
+use qbice::{serialize::Plugin, stable_hash::SeededStableHasherBuilder};
+use tempfile::tempdir;
 
 use crate::{order, term::Term};
 
@@ -77,8 +79,17 @@ pub(super) fn purge_trait_associated_type_in_generic_arguments(
     }
 }
 
-pub fn create_engine() -> Arc<Engine> {
-    let mut engine = Engine::default();
-    engine.runtime.executor.register(Arc::new(order::ImplementsOrderExecutor));
-    Arc::new(engine)
+pub async fn create_test_engine() -> (Arc<Engine>, tempfile::TempDir) {
+    let tempdir = tempdir().unwrap();
+    let mut engine = Engine::new_with(
+        Plugin::default(),
+        InMemoryFactory,
+        SeededStableHasherBuilder::new(0),
+    )
+    .await
+    .unwrap();
+
+    engine.register_executor(Arc::new(order::ImplementsOrderExecutor));
+
+    (Arc::new(engine), tempdir)
 }

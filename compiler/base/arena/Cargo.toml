@@ -10,8 +10,7 @@ rust-version.workspace = true
 arbitrary = ["dep:proptest"]
 
 [dependencies]
-pernixc_stable_hash = { path = "../stable_hash" }
-pernixc_serialize = { path = "../serialize" }
+qbice.workspace = true
 pernixc_hash = { path = "../hash" }
 proptest = { workspace = true, optional = true }
 

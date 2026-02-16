@@ -4,13 +4,12 @@
 use derive_more::Index;
 use pernixc_arena::Arena;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use pernixc_qbice::TrackedEngine;
 use pernixc_term::{
     lifetime::Lifetime,
     r#type::{Qualifier, Reference, Type},
 };
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     address::Address,
@@ -23,15 +22,7 @@ pub mod pruning;
 /// Represents capturing structure used for implementing closures, do blocks,
 /// and effect handlers.
 #[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    StableHash,
-    Serialize,
-    Deserialize,
-    Default,
-    Index,
+    Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Default, Index,
 )]
 pub struct Captures {
     /// All the captures used in the closure.
@@ -49,7 +40,7 @@ impl transform::Element for Captures {
         &mut self,
         transformer: &mut T,
         _: &TrackedEngine,
-    ) -> Result<(), CyclicError> {
+    ) {
         for (_, capture) in self.captures.iter_mut() {
             transformer
                 .transform(
@@ -57,7 +48,7 @@ impl transform::Element for Captures {
                     TypeTermSource::Capture,
                     capture.span,
                 )
-                .await?;
+                .await;
 
             if let CaptureMode::ByReference(reference_mode) =
                 &mut capture.capture_mode
@@ -68,11 +59,9 @@ impl transform::Element for Captures {
                         transform::LifetimeTermSource::Capture,
                         capture.span,
                     )
-                    .await?;
+                    .await;
             }
         }
-
-        Ok(())
     }
 }
 
@@ -118,8 +107,8 @@ impl Captures {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub enum CaptureMode {
     /// Moves the captured memory address into the closure.
@@ -139,8 +128,8 @@ pub enum CaptureMode {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct ReferenceCaptureMode {
     /// The lifetime of the captured memory address.
@@ -160,8 +149,8 @@ pub struct ReferenceCaptureMode {
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct Capture {
     /// The captured memory address from the parent IR.
@@ -209,8 +198,8 @@ impl Capture {
     Eq,
     Default,
     StableHash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     derive_more::Index,
     derive_more::IndexMut,
 )]
@@ -244,11 +233,9 @@ impl transform::Element for CapturesMap {
         &mut self,
         transformer: &mut T,
         engine: &TrackedEngine,
-    ) -> Result<(), CyclicError> {
+    ) {
         for (_, captures) in &mut self.arena {
-            captures.transform(transformer, engine).await?;
+            captures.transform(transformer, engine).await;
         }
-
-        Ok(())
     }
 }

@@ -3,25 +3,34 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: mismatched pattern binding type: expected struct but found `int32`
-   ╭─ compiler/e2e/test/snapshot/ir/expression/do/irrefutable_pattern_in_handler/main.pnx:21:14
-   │
-21 │         test({x: aX, y: aY}, ({x: bX, y: bY}, {x: cX, y: cY})):
-   │              ^^^^^^^^^^^^^^ this pattern expects struct type but found `int32`
+  [error]: mismatched pattern binding type: expected struct but found `int32`
+    ╭─[compiler/e2e/test/snapshot/ir/expression/do/irrefutable_pattern_in_handler/main.pnx:21:14]
+ 20 │         # should error, int32 can't be destructured
+ 21 │         test({x: aX, y: aY}, ({x: bX, y: bY}, {x: cX, y: cY})):
+    ·              ───────┬──────
+    ·                     ╰── this pattern expects struct type but found `int32`
+ 22 │             pass
+    ╰────
 
-error: mismatched pattern binding type: expected struct but found `int32`
-   ╭─ compiler/e2e/test/snapshot/ir/expression/do/irrefutable_pattern_in_handler/main.pnx:21:31
-   │
-21 │         test({x: aX, y: aY}, ({x: bX, y: bY}, {x: cX, y: cY})):
-   │                               ^^^^^^^^^^^^^^ this pattern expects struct type but found `int32`
+  [error]: mismatched pattern binding type: expected struct but found `int32`
+    ╭─[compiler/e2e/test/snapshot/ir/expression/do/irrefutable_pattern_in_handler/main.pnx:21:31]
+ 20 │         # should error, int32 can't be destructured
+ 21 │         test({x: aX, y: aY}, ({x: bX, y: bY}, {x: cX, y: cY})):
+    ·                               ───────┬──────
+    ·                                      ╰── this pattern expects struct type but found `int32`
+ 22 │             pass
+    ╰────
 
-error: mismatched pattern binding type: expected struct but found `int32`
-   ╭─ compiler/e2e/test/snapshot/ir/expression/do/irrefutable_pattern_in_handler/main.pnx:21:46
-   │
-21 │         test({x: aX, y: aY}, ({x: bX, y: bY}, {x: cX, y: cY})):
-   │                                              ^^^^^^^^^^^^^^^ this pattern expects struct type but found `int32`
+  [error]: mismatched pattern binding type: expected struct but found `int32`
+    ╭─[compiler/e2e/test/snapshot/ir/expression/do/irrefutable_pattern_in_handler/main.pnx:21:46]
+ 20 │         # should error, int32 can't be destructured
+ 21 │         test({x: aX, y: aY}, ({x: bX, y: bY}, {x: cX, y: cY})):
+    ·                                              ───────┬───────
+    ·                                                     ╰── this pattern expects struct type but found `int32`
+ 22 │             pass
+    ╰────
 
-error: Compilation aborted due to 3 error(s)
+  [error]: Compilation aborted due to 3 error(s)
 
 
 

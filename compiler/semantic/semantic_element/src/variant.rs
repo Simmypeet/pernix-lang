@@ -1,11 +1,8 @@
 //!  Contains the definition of [`Key`]
 
-use std::sync::Arc;
-
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 use pernixc_term::r#type::Type;
+use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 
 /// A query key for retrieving the optional associated type of a variant. Every
 /// variant symbol shall have this key whether or not they have associated type.
@@ -18,11 +15,14 @@ use pernixc_term::r#type::Type;
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
-    pernixc_query::Key,
+    Query,
 )]
-#[value(Option<Arc<Type>>)]
-#[extend(method(get_variant_associated_type))]
-pub struct Key(pub Global<pernixc_symbol::ID>);
+#[value(Option<Interned<Type>>)]
+#[extend(name = get_variant_associated_type, by_val)]
+pub struct Key {
+    /// The global ID of the variant symbol.
+    pub symbol_id: Global<pernixc_symbol::ID>,
+}

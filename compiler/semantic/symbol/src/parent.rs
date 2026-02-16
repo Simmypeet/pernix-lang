@@ -2,10 +2,9 @@
 
 use derive_more::{Deref, DerefMut};
 use pernixc_extend::extend;
-use pernixc_query::TrackedEngine;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use pernixc_qbice::TrackedEngine;
 use pernixc_target::{Global, TargetID};
+use qbice::{Decode, Encode, Query, StableHash};
 
 use crate::{
     ID,
@@ -42,14 +41,17 @@ pub enum HierarchyRelationship {
     Deref,
     DerefMut,
     Default,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
-    pernixc_query::Key,
+    Query,
 )]
 #[value(Option<ID>)]
-#[extend(method(get_parent), no_cyclic)]
-pub struct Key(pub Global<ID>);
+#[extend(name = get_parent, by_val)]
+pub struct Key {
+    /// The global ID of the symbol to get the parent for.
+    pub symbol_id: Global<ID>,
+}
 
 /// A helper function returning the parent symbol ID wrapped in a [`Global`].
 #[extend]

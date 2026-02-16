@@ -2,7 +2,7 @@
 
 use pernixc_target::Global;
 use proptest::{
-    num::u64,
+    num::u128,
     prelude::{Arbitrary, BoxedStrategy, Strategy},
 };
 
@@ -11,7 +11,7 @@ impl Arbitrary for crate::ID {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        u64::ANY.prop_map(crate::ID).boxed()
+        u128::ANY.prop_map(Self::from_u128).boxed()
     }
 }
 

@@ -3,18 +3,22 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: the variable doesn't live long enough
-   ╭─ compiler/e2e/test/snapshot/borrow_checker/invariant_lifetime/main.pnx:20:13
-   │
-20 │         let inner = 0
-   │             ^^^^^ the variable declared here doesn't live long enough
-21 │         assign(&mut ref, &inner)
-   │                          ------ the borrow starts here
-22 │ 
-23 │     consume(*ref)
-   │             ---- the borrow is used here
+  [error]: the variable doesn't live long enough
+    ╭─[compiler/e2e/test/snapshot/borrow_checker/invariant_lifetime/main.pnx:20:13]
+ 19 │     scope:
+ 20 │         let inner = 0
+    ·             ──┬──
+    ·               ╰── the variable declared here doesn't live long enough
+ 21 │         assign(&mut ref, &inner)
+    ·                          ───┬──
+    ·                             ╰── the borrow starts here
+ 22 │ 
+ 23 │     consume(*ref)
+    ·             ──┬─
+    ·               ╰── the borrow is used here
+    ╰────
 
-error: Compilation aborted due to 1 error(s)
+  [error]: Compilation aborted due to 1 error(s)
 
 
 

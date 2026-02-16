@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use pernixc_handler::Handler;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{TrackedEngine, runtime::executor::CyclicError};
+use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::{
     implied_predicate::get_implied_predicates, variance::Variance,
     where_clause::get_where_clause,
@@ -168,10 +168,6 @@ impl<N: Normalizer> Environment<'_, N> {
 
                             return Err(UnrecoverableError::Reported);
                         }
-
-                        Err(crate::Error::CyclicDependency(error)) => {
-                            return Err(error.into());
-                        }
                     }
                 }
 
@@ -211,12 +207,6 @@ impl<N: Normalizer> Environment<'_, N> {
                             );
 
                             return Err(UnrecoverableError::Reported);
-                        }
-
-                        Err(crate::Error::CyclicDependency(error)) => {
-                            return Err(UnrecoverableError::CyclicDependency(
-                                error,
-                            ));
                         }
                     }
                 }
@@ -416,10 +406,6 @@ impl<N: Normalizer> Environment<'_, N> {
 
                 Ok(BTreeSet::new())
             }
-
-            Err(crate::Error::CyclicDependency(error)) => {
-                Err(UnrecoverableError::CyclicDependency(error))
-            }
         }
     }
 
@@ -450,12 +436,6 @@ impl<N: Normalizer> Environment<'_, N> {
                                     instantiation_span,
                                     predicate_declaration_span,
                                 },
-                            ));
-                        }
-
-                        Err(crate::Error::CyclicDependency(error)) => {
-                            return Err(UnrecoverableError::CyclicDependency(
-                                error,
                             ));
                         }
 
@@ -547,12 +527,12 @@ impl<N: Normalizer> Environment<'_, N> {
         table: &TrackedEngine,
         global_id: Global<pernixc_symbol::ID>,
         instantiation: Option<&Instantiation>,
-    ) -> Result<Vec<(Predicate, Option<RelativeSpan>)>, CyclicError> {
+    ) -> Vec<(Predicate, Option<RelativeSpan>)> {
         let symbol_kind = table.get_kind(global_id).await;
         let mut predicates = Vec::new();
 
         if symbol_kind.has_where_clause() {
-            let where_cluase = table.get_where_clause(global_id).await?;
+            let where_cluase = table.get_where_clause(global_id).await;
 
             for predicate in where_cluase.iter() {
                 predicates.push((predicate.predicate.clone(), predicate.span));
@@ -561,7 +541,7 @@ impl<N: Normalizer> Environment<'_, N> {
 
         if symbol_kind.has_implied_predicates() {
             let implied_predicates =
-                table.get_implied_predicates(global_id).await?;
+                table.get_implied_predicates(global_id).await;
 
             for predicate in implied_predicates.iter() {
                 predicates.push((predicate.clone().into(), None));
@@ -575,7 +555,7 @@ impl<N: Normalizer> Environment<'_, N> {
             }
         }
 
-        Ok(predicates)
+        predicates
     }
 
     /// Checks the where clause predicate requirements declared in the given
@@ -601,7 +581,7 @@ impl<N: Normalizer> Environment<'_, N> {
             generic_id,
             Some(instantiation),
         )
-        .await?;
+        .await;
 
         let mut lifetime_constraints = BTreeSet::new();
         let mut diagnostics = Vec::new();
@@ -647,7 +627,7 @@ impl<N: Normalizer> Environment<'_, N> {
             id,
             Some(instantiation),
         )
-        .await?
+        .await
         {
             match &predicate {
                 Predicate::LifetimeOutlives(outlives) => {

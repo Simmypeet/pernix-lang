@@ -3,11 +3,9 @@
 use std::ops::Deref;
 
 use pernixc_arena::ID;
-use pernixc_query::runtime::executor::CyclicError;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
 use pernixc_term::r#type::Type;
 use pernixc_type_system::{Error, Succeeded, normalizer::Normalizer};
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Values,
@@ -24,8 +22,8 @@ use crate::{
     PartialOrd,
     Ord,
     Hash,
-    Serialize,
-    Deserialize,
+    Encode,
+    Decode,
     StableHash,
 )]
 pub struct Cast {
@@ -54,12 +52,12 @@ pub(super) async fn transform_cast<T: Transformer<Type>>(
     cast: &mut Cast,
     transformer: &mut T,
     span: pernixc_lexical::tree::RelativeSpan,
-) -> Result<(), CyclicError> {
+) {
     if let Some(literal) = cast.value.as_literal_mut() {
-        literal.transform(transformer).await?;
+        literal.transform(transformer).await;
     }
 
-    transformer.transform(&mut cast.r#type, TypeTermSource::Cast, span).await
+    transformer.transform(&mut cast.r#type, TypeTermSource::Cast, span).await;
 }
 
 impl TypeOf<&Cast> for Values {

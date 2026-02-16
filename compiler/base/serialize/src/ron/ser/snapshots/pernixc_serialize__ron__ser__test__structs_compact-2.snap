@@ -1,5 +1,0 @@
----
-source: compiler/base/serialize/src/ron/ser/test.rs
-expression: to_ron_string_compact(&complex).unwrap()
----
-ComplexData{id:12345,description:"Test data",values:[1,2,3],metadata:{"version":"1.0","type":"test"}}

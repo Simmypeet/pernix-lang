@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use pernixc_query::{TrackedEngine, runtime::executor};
+use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::variance::Variance;
 use pernixc_symbol::kind::{Kind, get_kind};
 use pernixc_term::{
@@ -93,20 +93,20 @@ impl<N: Normalizer> visitor::AsyncVisitor<Constant> for Visitor<'_, N> {
 async fn try_get_adt_fields(
     ty: &Type,
     engine: &TrackedEngine,
-) -> Result<Option<Vec<Type>>, executor::CyclicError> {
+) -> Option<Vec<Type>> {
     let Type::Symbol(symbol) = ty else {
-        return Ok(None);
+        return None;
     };
 
     if !matches!(engine.get_kind(symbol.id).await, Kind::Enum | Kind::Struct) {
-        return Ok(None);
+        return None;
     }
 
-    Ok(Some(
+    Some(
         engine
             .get_instantiated_adt_fields(symbol.id, &symbol.generic_arguments)
-            .await?,
-    ))
+            .await,
+    )
 }
 
 /// Describes the source of the query for constant type predicate.
@@ -193,7 +193,7 @@ impl Query for ConstantType {
                         &self.0,
                         environment.tracked_engine(),
                     )
-                    .await?
+                    .await
                     {
                         for field in fields {
                             let Some(new_result) = environment

@@ -101,7 +101,7 @@ impl IndentDisplay for Operation {
         formatter: &mut std::fmt::Formatter<'_>,
         indent: usize,
     ) -> std::fmt::Result {
-        write!(formatter, "{}", self.identifier.0)?;
+        write!(formatter, "{}", self.identifier.0.as_ref())?;
 
         if let Some(generic_parameters) = &self.generic_parameters {
             generic_parameters.indent_fmt(formatter, indent)?;

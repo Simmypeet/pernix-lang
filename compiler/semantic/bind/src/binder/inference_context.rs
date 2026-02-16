@@ -11,7 +11,7 @@ use getset::Getters;
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::TrackedEngine;
+use pernixc_qbice::TrackedEngine;
 use pernixc_resolution::{
     Config, ElidedTermProvider,
     qualified_identifier::{Resolution, resolve_qualified_identifier},
@@ -740,11 +740,7 @@ impl Binder<'_> {
 
         let resolution = match resolution {
             Ok(result) => result,
-            Err(pernixc_resolution::Error::Cyclic(error)) => {
-                return Err(binder::Error::Unrecoverable(
-                    UnrecoverableError::CyclicDependency(error),
-                ));
-            }
+
             Err(pernixc_resolution::Error::Abort) => {
                 return Err(binder::Error::Binding(BindingError(
                     syntax_tree.span(),
@@ -812,13 +808,6 @@ impl Binder<'_> {
             )
             .await;
 
-        let resolution = match ty {
-            Ok(result) => result,
-            Err(err) => {
-                return Err(UnrecoverableError::CyclicDependency(err));
-            }
-        };
-
         let created_type_inferences = type_inferences.created_inferences;
         let created_constant_inferences =
             constant_inferences.created_inferences;
@@ -837,7 +826,7 @@ impl Binder<'_> {
             );
         }
 
-        Ok(resolution)
+        Ok(ty)
     }
 
     /// Resolves the given `generic_arguments` to a `GenericArguments` term
@@ -881,13 +870,6 @@ impl Binder<'_> {
             )
             .await;
 
-        let resolution = match ty {
-            Ok(result) => result,
-            Err(err) => {
-                return Err(UnrecoverableError::CyclicDependency(err));
-            }
-        };
-
         let created_type_inferences = type_inferences.created_inferences;
         let created_constant_inferences =
             constant_inferences.created_inferences;
@@ -906,7 +888,7 @@ impl Binder<'_> {
             );
         }
 
-        Ok(resolution)
+        Ok(ty)
     }
 
     /// Verifies that the given `generic_arguments` are valid for the
@@ -951,7 +933,7 @@ impl Binder<'_> {
                     .referring_site(current_site)
                     .build(),
             )
-            .await?;
+            .await;
 
         for diag in diags {
             (&handler).receive(diag);

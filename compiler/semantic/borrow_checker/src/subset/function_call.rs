@@ -37,12 +37,12 @@ impl<N: Normalizer> Context<'_, N> {
         lifetime_constraints: &mut BTreeSet<LifetimeConstraint>,
     ) -> Result<(), UnrecoverableError> {
         let called_capabilities =
-            self.tracked_engine().get_effect_annotation(callled_id).await?;
+            self.tracked_engine().get_effect_annotation(callled_id).await;
 
         let current_capabilities = self
             .tracked_engine()
             .get_effect_annotation(self.current_site())
-            .await?;
+            .await;
 
         for (required_id, argument) in capability_arguments {
             let mut required_capability =
@@ -108,7 +108,7 @@ impl<N: Normalizer> Context<'_, N> {
         let function_signature = self
             .tracked_engine()
             .get_parameters(function_call.callable_id)
-            .await?;
+            .await;
 
         let mut lifetime_constraints = BTreeSet::new();
 
@@ -170,7 +170,7 @@ impl<N: Normalizer> Context<'_, N> {
                 let trait_generic_params = self
                     .tracked_engine()
                     .get_generic_parameters(parent_trait_id)
-                    .await?;
+                    .await;
 
                 let trait_arguments =
                     function_call.instantiation.create_generic_arguments(

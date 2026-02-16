@@ -1,11 +1,9 @@
-use std::sync::Arc;
-
-use flexstr::SharedStr;
+use linkme::distributed_slice;
 use pernixc_arena::ID;
 use pernixc_handler::{Handler, Storage};
 use pernixc_hash::{HashMap, HashSet};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::runtime::executor::{self, CyclicError};
+use pernixc_qbice::{PERNIX_PROGRAM, TrackedEngine};
 use pernixc_resolution::{
     Config,
     generic_parameter_namespace::get_generic_parameter_namespace,
@@ -14,12 +12,10 @@ use pernixc_resolution::{
     },
     term::{ResolutionToTypeError, resolution_to_type},
 };
-use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::SourceElement;
-use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{
     accessibility::symbol_accessible,
-    final_implements::is_implements_final,
+    final_implements::get_is_implements_final,
     kind::{Kind, get_kind},
     member::get_members,
     name::get_name,
@@ -39,6 +35,10 @@ use pernixc_term::{
     lifetime::Lifetime,
     r#type::Type,
     visitor::{self, Element},
+};
+use qbice::{
+    Decode, Encode, Executor, Query, StableHash, program::Registration,
+    storage::intern::Interned,
 };
 
 use crate::{
@@ -62,29 +62,28 @@ pub mod diagnostic;
     Ord,
     Hash,
     StableHash,
-    Serialize,
-    Deserialize,
-    pernixc_query::Key,
+    Encode,
+    Decode,
+    Query,
 )]
-#[value(Option<Arc<Resolution>>)]
-pub struct Key(pub Global<pernixc_symbol::ID>);
+#[value(Option<Interned<Resolution>>)]
+pub struct Key {
+    pub symbol_id: Global<pernixc_symbol::ID>,
+}
 
 build::register_build!(Key);
 
 impl crate::build::Build for Key {
     type Diagnostic = diagnostic::Diagnostic;
 
-    async fn execute(
-        engine: &pernixc_query::TrackedEngine,
-        key: &Self,
-    ) -> Result<Output<Self>, CyclicError> {
+    async fn execute(engine: &TrackedEngine, key: &Self) -> Output<Self> {
         let qualified_identifier =
-            engine.get_implements_qualified_identifier(key.0).await;
+            engine.get_implements_qualified_identifier(key.symbol_id).await;
 
         let mut occurrences = occurrences::Occurrences::default();
         let storage = Storage::<diagnostic::Diagnostic>::new();
         let generic_parameter_namespace =
-            engine.get_generic_parameter_namespace(key.0).await?;
+            engine.get_generic_parameter_namespace(key.symbol_id).await;
 
         let resolution = match engine
             .resolve_qualified_identifier(
@@ -92,7 +91,7 @@ impl crate::build::Build for Key {
                 Config::builder()
                     .consider_adt_implements(false)
                     .observer(&mut occurrences)
-                    .referring_site(key.0)
+                    .referring_site(key.symbol_id)
                     .extra_namespace(&generic_parameter_namespace)
                     .build(),
                 &storage,
@@ -103,15 +102,11 @@ impl crate::build::Build for Key {
 
             // couldn't resolve, but we still want to return diagnostics
             Err(pernixc_resolution::Error::Abort) => {
-                return Ok(Output {
+                return Output {
                     item: None,
-                    diagnostics: storage.into_vec().into(),
-                    occurrences: Arc::new(occurrences),
-                });
-            }
-
-            Err(pernixc_resolution::Error::Cyclic(cyclic)) => {
-                return Err(cyclic);
+                    diagnostics: engine.intern_unsized(storage.into_vec()),
+                    occurrences: engine.intern(occurrences),
+                };
             }
         };
 
@@ -121,7 +116,7 @@ impl crate::build::Build for Key {
             qualified_identifier.span(),
             &storage,
         )
-        .await?;
+        .await;
 
         // performs extra necessary check
         if let Resolution::Generic(generic) = &resolution {
@@ -132,19 +127,20 @@ impl crate::build::Build for Key {
                 Kind::Marker => {
                     check_marker(
                         engine,
-                        key.0,
+                        key.symbol_id,
                         qualified_identifier.span(),
                         &storage,
                     )
-                    .await?;
+                    .await;
                 }
 
                 Kind::Trait => {
-                    check_trait(engine, key.0, generic.id, &storage).await?;
+                    check_trait(engine, key.symbol_id, generic.id, &storage)
+                        .await;
                 }
 
                 Kind::Struct | Kind::Enum => {
-                    check_adt(engine, key.0, &storage).await?;
+                    check_adt(engine, key.symbol_id, &storage).await;
                 }
 
                 _ => {}
@@ -153,27 +149,27 @@ impl crate::build::Build for Key {
             // Check for unused generic parameters
             check_unused_generic_parameters(
                 engine,
-                key.0,
+                key.symbol_id,
                 &generic.generic_arguments,
                 &storage,
             )
-            .await?;
+            .await;
         }
 
-        Ok(Output {
-            item: Some(Arc::new(resolution)),
-            diagnostics: storage.into_vec().into(),
-            occurrences: Arc::new(occurrences),
-        })
+        Output {
+            item: Some(engine.intern(resolution)),
+            diagnostics: engine.intern_unsized(storage.into_vec()),
+            occurrences: engine.intern(occurrences),
+        }
     }
 }
 
 async fn check_valid_resolution(
-    tracked_engine: &pernixc_query::TrackedEngine,
+    tracked_engine: &TrackedEngine,
     resolution: Resolution,
     qualified_identifier: RelativeSpan,
     storage: &Storage<diagnostic::Diagnostic>,
-) -> Result<(), executor::CyclicError> {
+) {
     match resolution {
         Resolution::Module(global) => {
             storage.receive(
@@ -184,8 +180,6 @@ async fn check_valid_resolution(
                     },
                 ),
             );
-
-            Ok(())
         }
 
         Resolution::Variant(variant) => {
@@ -197,8 +191,6 @@ async fn check_valid_resolution(
                     },
                 ),
             );
-
-            Ok(())
         }
 
         Resolution::Generic(generic) => {
@@ -217,9 +209,6 @@ async fn check_valid_resolution(
                     {
                         Ok(ty) => ty,
                         Err(ResolutionToTypeError::Failed(_)) => unreachable!(),
-                        Err(ResolutionToTypeError::Cyclic(cyclic)) => {
-                            return Err(cyclic);
-                        }
                     };
 
                     if !matches!(
@@ -250,8 +239,6 @@ async fn check_valid_resolution(
                     );
                 }
             }
-
-            Ok(())
         }
 
         Resolution::MemberGeneric(MemberGeneric { id: global_id, .. }) => {
@@ -263,27 +250,22 @@ async fn check_valid_resolution(
                     },
                 ),
             );
-
-            Ok(())
         }
     }
 }
 
-async fn is_adt_type(
-    engine: &pernixc_query::TrackedEngine,
-    sym_ty: &Symbol,
-) -> bool {
+async fn is_adt_type(engine: &TrackedEngine, sym_ty: &Symbol) -> bool {
     let kind = engine.get_kind(sym_ty.id).await;
     matches!(kind, Kind::Struct | Kind::Enum)
 }
 
 async fn check_marker(
-    engine: &pernixc_query::TrackedEngine,
+    engine: &TrackedEngine,
     implements: Global<pernixc_symbol::ID>,
     qualified_identifier: RelativeSpan,
     storage: &Storage<diagnostic::Diagnostic>,
-) -> Result<(), executor::CyclicError> {
-    let is_final = engine.is_implements_final(implements).await;
+) {
+    let is_final = engine.get_is_implements_final(implements).await;
 
     if !is_final {
         storage.receive(diagnostic::Diagnostic::MarkerImplementsNotFinal(
@@ -295,7 +277,7 @@ async fn check_marker(
 
     // we'll check if he marker implementation has any members (it shouldn't).
     if engine.get_kind(implements).await != Kind::PositiveImplementation {
-        return Ok(());
+        return;
     }
 
     let members = engine.get_members(implements).await;
@@ -316,30 +298,25 @@ async fn check_marker(
             ),
         );
     }
-
-    Ok(())
 }
 
 #[allow(clippy::too_many_lines)]
 async fn check_trait(
-    engine: &pernixc_query::TrackedEngine,
+    engine: &TrackedEngine,
     implements: Global<pernixc_symbol::ID>,
     trait_id: Global<pernixc_symbol::ID>,
     storage: &Storage<diagnostic::Diagnostic>,
-) -> Result<(), executor::CyclicError> {
+) {
     // no need to check the member
     if engine.get_kind(implements).await != Kind::PositiveImplementation {
-        return Ok(());
+        return;
     }
 
     let implements_members = engine.get_members(implements).await;
     let trait_members = engine.get_members(trait_id).await;
 
     // Maps member name to (implementation_member_id, trait_member_id)
-    let mut implemented_member_by_name: HashMap<
-        SharedStr,
-        (Global<pernixc_symbol::ID>, Option<Global<pernixc_symbol::ID>>),
-    > = HashMap::default();
+    let mut implemented_member_by_name = HashMap::default();
 
     // Check each implementation member
     for implements_member_id in implements_members
@@ -455,15 +432,13 @@ async fn check_trait(
             },
         ));
     }
-
-    Ok(())
 }
 
 async fn check_adt(
-    engine: &pernixc_query::TrackedEngine,
+    engine: &TrackedEngine,
     implements: Global<pernixc_symbol::ID>,
     storage: &Storage<diagnostic::Diagnostic>,
-) -> Result<(), executor::CyclicError> {
+) {
     let kind = engine.get_kind(implements).await;
 
     // Check if it's a negative implementation
@@ -478,7 +453,7 @@ async fn check_adt(
     }
 
     // Check if it's a final implementation
-    let is_final = engine.is_implements_final(implements).await;
+    let is_final = engine.get_is_implements_final(implements).await;
     if is_final {
         storage.receive(
             diagnostic::Diagnostic::AdtImplementationCannotBeFinal(
@@ -517,8 +492,6 @@ async fn check_adt(
             }
         }
     }
-
-    Ok(())
 }
 
 /// A visitor that collects all used generic parameter IDs from generic
@@ -610,14 +583,13 @@ impl visitor::Visitor<'_, Constant> for UsedParameterCollector {
 
 /// Check for unused generic parameters in the implements declaration.
 async fn check_unused_generic_parameters(
-    engine: &pernixc_query::TrackedEngine,
+    engine: &TrackedEngine,
     implements_id: Global<pernixc_symbol::ID>,
     generic_arguments: &GenericArguments,
     storage: &Storage<diagnostic::Diagnostic>,
-) -> Result<(), executor::CyclicError> {
+) {
     // Get the generic parameters defined on this implements
-    let generic_parameters =
-        engine.get_generic_parameters(implements_id).await?;
+    let generic_parameters = engine.get_generic_parameters(implements_id).await;
 
     // Collect used parameters from generic arguments
     let mut collector = UsedParameterCollector {
@@ -684,51 +656,59 @@ async fn check_unused_generic_parameters(
             ));
         }
     }
-
-    Ok(())
 }
 
 #[derive(Debug, Default)]
 pub struct ExtractImplementsID;
 
-impl executor::Executor<pernixc_semantic_element::implements::Key>
+impl Executor<pernixc_semantic_element::implements::Key, pernixc_qbice::Config>
     for ExtractImplementsID
 {
     async fn execute(
         &self,
-        engine: &pernixc_query::TrackedEngine,
         key: &pernixc_semantic_element::implements::Key,
-    ) -> Result<Option<Global<pernixc_symbol::ID>>, executor::CyclicError> {
-        let resolution = engine.query(&Key(key.0)).await?;
-        Ok(resolution.as_ref().map(|x| x.global_id()))
+        engine: &TrackedEngine,
+    ) -> Option<Global<pernixc_symbol::ID>> {
+        let resolution =
+            engine.query(&Key { symbol_id: key.symbol_id }).await?;
+
+        Some(resolution.global_id())
     }
 }
 
-pernixc_register::register!(
-    pernixc_semantic_element::implements::Key,
-    ExtractImplementsID
-);
+#[distributed_slice(PERNIX_PROGRAM)]
+static IMPLEMENTS_ID_EXECUTOR: Registration<pernixc_qbice::Config> =
+    Registration::new::<
+        pernixc_semantic_element::implements::Key,
+        ExtractImplementsID,
+    >();
 
 #[derive(Debug, Default)]
 pub struct ExtractGenericArguments;
 
-impl executor::Executor<pernixc_semantic_element::implements_arguments::Key>
-    for ExtractGenericArguments
+impl
+    Executor<
+        pernixc_semantic_element::implements_arguments::Key,
+        pernixc_qbice::Config,
+    > for ExtractGenericArguments
 {
     async fn execute(
         &self,
-        engine: &pernixc_query::TrackedEngine,
         key: &pernixc_semantic_element::implements_arguments::Key,
-    ) -> Result<Option<Arc<GenericArguments>>, executor::CyclicError> {
-        let resolution = engine.query(&Key(key.0)).await?;
-        Ok(resolution
-            .as_ref()
-            .and_then(|x| x.as_generic())
-            .map(|x| Arc::new(x.generic_arguments.clone())))
+        engine: &TrackedEngine,
+    ) -> Option<Interned<GenericArguments>> {
+        let resolution =
+            engine.query(&Key { symbol_id: key.symbol_id }).await?;
+
+        resolution
+            .as_generic()
+            .map(|x| engine.intern(x.generic_arguments.clone()))
     }
 }
 
-pernixc_register::register!(
-    pernixc_semantic_element::implements_arguments::Key,
-    ExtractGenericArguments
-);
+#[distributed_slice(PERNIX_PROGRAM)]
+static IMPLEMENTS_ARGUMENTS_EXECUTOR: Registration<pernixc_qbice::Config> =
+    Registration::new::<
+        pernixc_semantic_element::implements_arguments::Key,
+        ExtractGenericArguments,
+    >();

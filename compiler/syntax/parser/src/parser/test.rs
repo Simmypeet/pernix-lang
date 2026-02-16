@@ -1,15 +1,18 @@
 use std::{
     collections::HashSet,
     fmt::{Debug, Display},
+    path::PathBuf,
 };
 
 use enum_as_inner::EnumAsInner;
-use flexstr::SharedStr;
 use pernixc_lexical::{
     token,
     tree::{DelimiterKind, RelativeLocation},
 };
-use pernixc_source_file::{GlobalSourceID, SourceFile, SourceMap};
+use pernixc_qbice::DuplicatingInterner;
+use pernixc_source_file::{
+    GlobalSourceID, SourceFile, simple_source_map::SimpleSourceMap,
+};
 use pernixc_target::TargetID;
 use pernixc_test_input::Input;
 use proptest::{
@@ -18,11 +21,12 @@ use proptest::{
     strategy::Strategy,
     test_runner::TestCaseResult,
 };
+use qbice::storage::intern::Interned;
 
 use crate::{
     abstract_tree::{AbstractTree, First, Second, Tag, abstract_tree},
     expect::{self, Expected},
-    parser::{Parser as _, ast},
+    parser::{ParserExt, ast},
 };
 
 abstract_tree! {
@@ -42,28 +46,31 @@ abstract_tree! {
 }
 
 fn parse_token_tree(
-    source_map: &mut SourceMap,
+    source_map: &mut SimpleSourceMap,
     source_code: &str,
 ) -> (pernixc_lexical::tree::Tree, GlobalSourceID) {
     let source_id = source_map.register(
         TargetID::TEST,
-        SourceFile::new(source_code.to_string(), "test".into()),
+        SourceFile::from_str(
+            source_code,
+            Interned::new_duplicating_unsized(PathBuf::from("test")),
+        ),
     );
+
     let source = source_map.get(TargetID::TEST.make_global(source_id)).unwrap();
+    let interner = DuplicatingInterner;
 
     let tree = pernixc_lexical::tree::Tree::from_source(
-        source.content(),
+        &source,
         TargetID::TEST.make_global(source_id),
+        &interner,
         &pernixc_handler::Panic,
     );
 
     (tree, TargetID::TEST.make_global(source_id))
 }
 
-fn check_basic_sequence(
-    basic_sequence: &BasicSequence,
-    expected_name: SharedStr,
-) {
+fn check_basic_sequence(basic_sequence: &BasicSequence, expected_name: &str) {
     assert_eq!(
         basic_sequence.public_keyword().map(|x| x.kind),
         Some(expect::Keyword::Public)
@@ -75,7 +82,7 @@ fn check_basic_sequence(
     );
 
     assert_eq!(
-        basic_sequence.identifier().map(|x| x.kind.0),
+        basic_sequence.identifier().as_ref().map(|x| x.kind.0.as_ref()),
         Some(expected_name)
     );
 
@@ -84,23 +91,27 @@ fn check_basic_sequence(
 
 #[test]
 fn basic_sequence() {
-    let mut source_map = SourceMap::new();
+    let mut source_map = SimpleSourceMap::new();
     let (tree, _) = parse_token_tree(&mut source_map, "public struct Foo;");
 
-    let (tree, errors) = BasicSequence::parse(&tree);
+    let interner = DuplicatingInterner;
+    let (tree, errors) = BasicSequence::parse(&tree, &interner);
+
     let tree = tree.unwrap();
 
-    check_basic_sequence(&tree, "Foo".into());
+    check_basic_sequence(&tree, "Foo");
 
     assert!(errors.is_empty());
 }
 
 #[test]
 fn basic_sequence_missing_semicolon() {
-    let mut source_map = SourceMap::new();
+    let mut source_map = SimpleSourceMap::new();
     let (tree, _) = parse_token_tree(&mut source_map, "public struct Foo");
 
-    let (tree, errors) = BasicSequence::parse(&tree);
+    let interner = DuplicatingInterner;
+    let (tree, errors) = BasicSequence::parse(&tree, &interner);
+
     let tree = tree.unwrap();
 
     assert_eq!(errors.len(), 1);
@@ -115,7 +126,10 @@ fn basic_sequence_missing_semicolon() {
         Some(expect::Keyword::Struct)
     );
 
-    assert_eq!(tree.identifier().map(|x| x.kind.0), Some("Foo".into()));
+    assert_eq!(
+        tree.identifier().as_ref().map(|x| x.kind.0.as_ref()),
+        Some("Foo")
+    );
 
     assert_eq!(tree.semicolon(), None);
 }
@@ -129,19 +143,21 @@ abstract_tree! {
 
 #[test]
 fn two_basic_sequences() {
-    let mut source_map = SourceMap::new();
+    let mut source_map = SimpleSourceMap::new();
     let (tree, _) = parse_token_tree(
         &mut source_map,
         "public struct Foo; public struct Bar;",
     );
 
-    let (tree, errors) = TwoBasicSequences::parse(&tree);
+    let interner = DuplicatingInterner;
+    let (tree, errors) = TwoBasicSequences::parse(&tree, &interner);
+
     let tree = tree.unwrap();
 
     assert!(errors.is_empty());
 
-    check_basic_sequence(&tree.first().unwrap(), "Foo".into());
-    check_basic_sequence(&tree.second().unwrap(), "Bar".into());
+    check_basic_sequence(&tree.first().unwrap(), "Foo");
+    check_basic_sequence(&tree.second().unwrap(), "Bar");
 }
 
 abstract_tree! {
@@ -177,10 +193,12 @@ public struct Foo:
 
 #[test]
 fn sequence_with_fragment() {
-    let mut source_map = SourceMap::new();
+    let mut source_map = SimpleSourceMap::new();
     let (tree, _) = parse_token_tree(&mut source_map, SEQUENCE_WITH_FRAGMENT);
 
-    let (tree, errors) = SequenceWithFragment::parse(&tree);
+    let interner = DuplicatingInterner;
+    let (tree, errors) = SequenceWithFragment::parse(&tree, &interner);
+
     let tree = tree.unwrap();
 
     assert!(errors.is_empty());
@@ -195,7 +213,10 @@ fn sequence_with_fragment() {
         Some(expect::Keyword::Struct)
     );
 
-    assert_eq!(tree.identifier().map(|x| x.kind.0), Some("Foo".into()));
+    assert_eq!(
+        tree.identifier().as_ref().map(|x| x.kind.0.as_ref()),
+        Some("Foo")
+    );
 
     let body = tree.body().unwrap();
 
@@ -204,7 +225,10 @@ fn sequence_with_fragment() {
         Some(expect::Keyword::Private)
     );
 
-    assert_eq!(body.identifier().map(|x| x.kind.0), Some("bar".into()));
+    assert_eq!(
+        body.identifier().as_ref().map(|x| x.kind.0.as_ref()),
+        Some("bar")
+    );
 
     assert_eq!(body.colon().map(|x| x.kind.0), Some(':'));
 
@@ -229,10 +253,12 @@ abstract_tree! {
 
 #[test]
 fn mutable_int32_reference() {
-    let mut source_map = SourceMap::new();
+    let mut source_map = SimpleSourceMap::new();
     let (tree, _) = parse_token_tree(&mut source_map, "&mut int32");
 
-    let (tree, errors) = Int32Reference::parse(&tree);
+    let interner = DuplicatingInterner;
+    let (tree, errors) = Int32Reference::parse(&tree, &interner);
+
     let tree = tree.unwrap();
 
     assert!(errors.is_empty());
@@ -246,10 +272,12 @@ fn mutable_int32_reference() {
 
 #[test]
 fn int32_reference() {
-    let mut source_map = SourceMap::new();
+    let mut source_map = SimpleSourceMap::new();
     let (tree, _) = parse_token_tree(&mut source_map, "&int32");
 
-    let (tree, errors) = Int32Reference::parse(&tree);
+    let interner = DuplicatingInterner;
+    let (tree, errors) = Int32Reference::parse(&tree, &interner);
+
     let tree = tree.unwrap();
 
     assert!(errors.is_empty());
@@ -263,10 +291,12 @@ fn int32_reference() {
 
 #[test]
 fn int32_reference_error() {
-    let mut source_map = SourceMap::new();
+    let mut source_map = SimpleSourceMap::new();
     let (token_tree, _) = parse_token_tree(&mut source_map, "&bool");
 
-    let (tree, errors) = Int32Reference::parse(&token_tree);
+    let interner = DuplicatingInterner;
+    let (tree, errors) = Int32Reference::parse(&token_tree, &interner);
+
     let tree = tree.unwrap();
 
     assert_eq!(errors.len(), 1);
@@ -299,10 +329,13 @@ fn int32_reference_error() {
 
 #[test]
 fn int32_reference_missing_int32() {
-    let mut source_map = SourceMap::new();
+    let mut source_map = SimpleSourceMap::new();
+
     let (token_tree, _) = parse_token_tree(&mut source_map, "&mut");
 
-    let (tree, errors) = Int32Reference::parse(&token_tree);
+    let interner = DuplicatingInterner;
+    let (tree, errors) = Int32Reference::parse(&token_tree, &interner);
+
     let tree = tree.unwrap();
 
     assert_eq!(errors.len(), 1);
@@ -622,12 +655,14 @@ fn verify_type_ref<TR: Display, TAst: AbstractTree + Debug>(
 where
     for<'x, 'y> &'x TR: Input<&'y TAst, ()>,
 {
-    let mut source_map = SourceMap::new();
+    let mut source_map = SimpleSourceMap::new();
 
     let source = ast_ref.to_string();
     let (token_tree, _) = parse_token_tree(&mut source_map, &source);
 
-    let (tree, errors) = TAst::parse(&token_tree);
+    let interner = DuplicatingInterner;
+    let (tree, errors) = TAst::parse(&token_tree, &interner);
+
     let tree = tree.unwrap();
 
     prop_assert!(errors.is_empty(), "{errors:?}");
@@ -655,10 +690,12 @@ abstract_tree! {
 
 #[test]
 fn trailing_optional() {
-    let mut source_map = SourceMap::new();
+    let mut source_map = SimpleSourceMap::new();
     let (token_tree, _) = parse_token_tree(&mut source_map, "&");
 
-    let (tree, errors) = TrailingOptional::parse(&token_tree);
+    let interner = DuplicatingInterner;
+    let (tree, errors) = TrailingOptional::parse(&token_tree, &interner);
+
     let tree = tree.unwrap();
 
     assert!(errors.is_empty());
@@ -759,10 +796,12 @@ abstract_tree! {
 
 #[test]
 fn error_choice_choose_most_progress() {
-    let mut source_map = SourceMap::new();
+    let mut source_map = SimpleSourceMap::new();
     let (token_tree, _) = parse_token_tree(&mut source_map, "+ - * / ?");
 
-    let (tree, errors) = AbcOrAbcd::parse(&token_tree);
+    let interner = DuplicatingInterner;
+    let (tree, errors) = AbcOrAbcd::parse(&token_tree, &interner);
+
     let tree = tree.unwrap().into_abcd().unwrap();
 
     assert_eq!(errors.len(), 1);
@@ -800,11 +839,13 @@ abstract_tree! {
 
 #[test]
 fn repeat_all_error_recovery() {
-    let mut source_map = SourceMap::new();
+    let mut source_map = SimpleSourceMap::new();
     let (token_tree, _) =
         parse_token_tree(&mut source_map, "[int32 &x float32]");
 
-    let (tree, errors) = TypesAll::parse(&token_tree);
+    let interner = DuplicatingInterner;
+    let (tree, errors) = TypesAll::parse(&token_tree, &interner);
+
     let tree = tree.unwrap();
 
     assert_eq!(errors.len(), 1);
@@ -830,10 +871,12 @@ fn repeat_all_error_recovery() {
 
 #[test]
 fn reference_missing_type() {
-    let mut source_map = SourceMap::new();
+    let mut source_map = SimpleSourceMap::new();
     let (token_tree, _) = parse_token_tree(&mut source_map, "&x");
 
-    let (tree, errors) = Type::parse(&token_tree);
+    let interner = DuplicatingInterner;
+    let (tree, errors) = Type::parse(&token_tree, &interner);
+
     let tree = tree.unwrap();
 
     assert_eq!(errors.len(), 1);
@@ -846,7 +889,7 @@ fn reference_missing_type() {
         .as_leaf();
 
     assert!(token_node.is_some_and(|x| {
-        x.kind.as_identifier().is_some_and(|x| x.as_str() == "x")
+        x.kind.as_identifier().is_some_and(|x| x.as_ref() == "x")
     }));
 
     assert!(

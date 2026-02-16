@@ -3,59 +3,92 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: trait member not implemented
-  ╭─ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/trait_implements_member/main.pnx:6:12
-  │
-2 │     public function first()
-  │                     ----- `trait function main::Fizz::first` declared here
-  ·
-6 │ implements Fizz[int32]:
-  │            ^^^^^^^^^^^ missing implementation for trait function: `main::Fizz::first`
-
-error: trait member kind mismatch
-  ╭─ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/trait_implements_member/main.pnx:7:14
-  │
-3 │     public type Second
-  │                 ------ `trait type main::Fizz::Second` declared here
-  ·
-7 │     function Second():
-  │              ^^^^^^ expected trait type, found implementation function
-
-error: extraneous implementation member
-   ╭─ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/trait_implements_member/main.pnx:10:10
-   │
-10 │     type Test = int32
-   │          ^^^^ implementation type `main::[implements Fizz[int32]]::Test` is not a member of the trait
-   │
-   = remove this member or add it to the trait definition
-
-error: trait member not implemented
-   ╭─ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/trait_implements_member/main.pnx:13:12
-   │
+  [error]: trait member not implemented
+   ╭─[compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/trait_implements_member/main.pnx:2:21]
+ 1 │ public trait Fizz[T]:
+ 2 │     public function first()
+   ·                     ──┬──
+   ·                       ╰── `trait function main::Fizz::first` declared here
  3 │     public type Second
-   │                 ------ `trait type main::Fizz::Second` declared here
-   ·
-13 │ implements Fizz[float32]:
-   │            ^^^^^^^^^^^^^ missing implementation for trait type: `main::Fizz::Second`
+ 4 │ 
+ 5 │ 
+ 6 │ implements Fizz[int32]:
+   ·            ─────┬─────
+   ·                 ╰── missing implementation for trait function: `main::Fizz::first`
+ 7 │     function Second():
+   ╰────
 
-error: symbol `first` is already defined in the scope `main::[implements Fizz[float32]]`
-   ╭─ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/trait_implements_member/main.pnx:17:14
-   │
-14 │     function first():
-   │              ----- symbol `first` is already defined here
-   ·
-17 │     function first():
-   │              ^^^^^ redefinition here
+  [error]: trait member kind mismatch
+   ╭─[compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/trait_implements_member/main.pnx:3:17]
+ 2 │     public function first()
+ 3 │     public type Second
+   ·                 ───┬──
+   ·                    ╰── `trait type main::Fizz::Second` declared here
+ 4 │ 
+ 5 │ 
+ 6 │ implements Fizz[int32]:
+ 7 │     function Second():
+   ·              ───┬──
+   ·                 ╰── expected trait type, found implementation function
+ 8 │         pass
+   ╰────
 
-error: extraneous implementation member
-   ╭─ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/trait_implements_member/main.pnx:20:10
-   │
-20 │     type What = float32
-   │          ^^^^ implementation type `main::[implements Fizz[float32]]::What` is not a member of the trait
-   │
-   = remove this member or add it to the trait definition
+  [error]: extraneous implementation member
+    ╭─[compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/trait_implements_member/main.pnx:10:10]
+  9 │ 
+ 10 │     type Test = int32
+    ·          ──┬─
+    ·            ╰── implementation type `main::[implements Fizz[int32]]::Test` is not a member of the trait
+ 11 │     
+    ╰────
+  help: remove this member or add it to the trait definition
 
-error: Compilation aborted due to 6 error(s)
+  [error]: trait member not implemented
+    ╭─[compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/trait_implements_member/main.pnx:3:17]
+  2 │     public function first()
+  3 │     public type Second
+    ·                 ───┬──
+    ·                    ╰── `trait type main::Fizz::Second` declared here
+  4 │ 
+  5 │ 
+  6 │ implements Fizz[int32]:
+  7 │     function Second():
+  8 │         pass
+  9 │ 
+ 10 │     type Test = int32
+ 11 │     
+ 12 │ 
+ 13 │ implements Fizz[float32]:
+    ·            ──────┬──────
+    ·                  ╰── missing implementation for trait type: `main::Fizz::Second`
+ 14 │     function first():
+    ╰────
+
+  [error]: symbol `first` is already defined in the scope `main::[implements Fizz[float32]]`
+    ╭─[compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/trait_implements_member/main.pnx:14:14]
+ 13 │ implements Fizz[float32]:
+ 14 │     function first():
+    ·              ──┬──
+    ·                ╰── symbol `first` is already defined here
+ 15 │         pass
+ 16 │ 
+ 17 │     function first():
+    ·              ──┬──
+    ·                ╰── redefinition here
+ 18 │         pass
+    ╰────
+
+  [error]: extraneous implementation member
+    ╭─[compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/trait_implements_member/main.pnx:20:10]
+ 19 │ 
+ 20 │     type What = float32
+    ·          ──┬─
+    ·            ╰── implementation type `main::[implements Fizz[float32]]::What` is not a member of the trait
+ 21 │ 
+    ╰────
+  help: remove this member or add it to the trait definition
+
+  [error]: Compilation aborted due to 6 error(s)
 
 
 

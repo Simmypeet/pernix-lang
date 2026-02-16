@@ -53,12 +53,12 @@ impl Bind<&pernixc_syntax::expression::unit::ResumeCall> for Binder<'_> {
                 handler_clause.effect_id(),
                 handler_clause.generic_arguments().clone(),
             )
-            .await?
+            .await
             .expect("should've been a valid instantiation");
 
         // erase the lifetime of the operation generic parameters
         let operation_generic_parameters =
-            self.engine().get_generic_parameters(operation_symbol_id).await?;
+            self.engine().get_generic_parameters(operation_symbol_id).await;
 
         handler_instantiation.lifetimes.extend(
             operation_generic_parameters.lifetimes().ids().map(|x| {
@@ -76,7 +76,7 @@ impl Bind<&pernixc_syntax::expression::unit::ResumeCall> for Binder<'_> {
         let mut return_type = self
             .engine()
             .get_return_type(operation_symbol_id)
-            .await?
+            .await
             .deref()
             .clone();
 

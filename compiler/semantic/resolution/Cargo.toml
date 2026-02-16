@@ -9,10 +9,7 @@ rust-version.workspace = true
 [dependencies]
 pernixc_diagnostic = { path = "../../base/diagnostic" }
 pernixc_lexical = { path = "../../syntax/lexical" }
-pernixc_query = { path = "../../base/query" }
 pernixc_hash = { path = "../../base/hash" }
-pernixc_stable_hash = { path = "../../base/stable_hash" }
-pernixc_serialize = { path = "../../base/serialize" }
 pernixc_target = { path = "../../base/target" }
 pernixc_handler = { path = "../../base/handler" }
 pernixc_extend = { path = "../../base/extend" }
@@ -21,8 +18,9 @@ pernixc_syntax = { path = "../../syntax/syntax" }
 pernixc_symbol = { path = "../symbol" }
 pernixc_term = { path = "../term" }
 pernixc_semantic_element = { path = "../semantic_element" }
-pernixc_register = { path = "../../base/register" }
-flexstr = { workspace = true }
+pernixc_qbice = { path = "../../base/qbice" }
+qbice = { workspace = true }
+linkme = { workspace = true }
 bon = { workspace = true }
 enum-as-inner = { workspace = true }
 derive_more = { workspace = true }
