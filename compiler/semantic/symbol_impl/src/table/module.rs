@@ -7,8 +7,7 @@ use pernixc_symbol::{
 };
 use pernixc_syntax::item::module::Member as ModuleMemberSyn;
 use pernixc_target::get_invocation_arguments;
-use pernixc_tokio::scoped;
-use tokio::task::JoinHandle;
+use pernixc_tokio::join_set::JoinSet;
 
 use crate::{
     diagnostic::{Diagnostic, RecursiveFileRequest},
@@ -24,11 +23,15 @@ impl Builder {
         self: &'x Arc<Self>,
         module_syntax: &'x pernixc_syntax::item::module::Module,
         member_builder: &'x mut MemberBuilder,
-    ) -> impl std::future::Future<Output = Option<JoinHandle<()>>> + Send + 'x
-    {
+        join_set: &'x mut JoinSet<()>,
+    ) -> impl std::future::Future<Output = ()> + Send + 'x {
         async move {
-            self.handle_module_members_internal(module_syntax, member_builder)
-                .await
+            self.handle_module_members_internal(
+                module_syntax,
+                member_builder,
+                join_set,
+            )
+            .await;
         }
     }
 
@@ -37,9 +40,14 @@ impl Builder {
         self: &Arc<Self>,
         module_syntax: &pernixc_syntax::item::module::Module,
         member_builder: &mut MemberBuilder,
-    ) -> Option<JoinHandle<()>> {
-        let signature = module_syntax.signature()?;
-        let identifier = signature.identifier()?;
+        join_set: &mut JoinSet<()>,
+    ) {
+        let Some(signature) = module_syntax.signature() else {
+            return;
+        };
+        let Some(identifier) = signature.identifier() else {
+            return;
+        };
 
         let access_modifier = module_syntax.access_modifier();
         let next_submodule_qualified_name = member_builder
@@ -57,20 +65,18 @@ impl Builder {
             let next_submodule_id =
                 member_builder.add_member(identifier, self.engine()).await;
 
-            Some(
-                self.create_module(
-                    member.content(),
-                    Some(module_syntax.span()),
-                    ModuleKind::Submodule {
-                        submodule_id: next_submodule_id,
-                        submodule_qualified_name: next_submodule_qualified_name,
-                        accessibility,
-                        span,
-                    },
-                )
-                .await
-                .0,
+            self.create_module(
+                member.content(),
+                Some(module_syntax.span()),
+                ModuleKind::Submodule {
+                    submodule_id: next_submodule_id,
+                    submodule_qualified_name: next_submodule_qualified_name,
+                    accessibility,
+                    span,
+                },
+                join_set,
             )
+            .await;
         } else {
             let invocation_arguments =
                 self.engine().get_invocation_arguments(self.target_id()).await;
@@ -107,7 +113,7 @@ impl Builder {
                         path: load_path,
                     },
                 ));
-                return None;
+                return;
             }
 
             if let Some(id) = member_builder
@@ -125,8 +131,6 @@ impl Builder {
                     }),
                 );
             }
-
-            None
         }
     }
 
@@ -137,21 +141,20 @@ impl Builder {
         module_member_builder: &mut MemberBuilder,
         imports: &mut Vec<pernixc_syntax::item::module::Import>,
     ) {
-        // will be joined later
-        scoped!(|tasks| async move {
-            for item in
-                module_content.members().filter_map(|x| x.into_line().ok())
-            {
-                let Some(handle) = self
-                    .handle_module_member(item, module_member_builder, imports)
-                    .await
-                else {
-                    continue;
-                };
+        let mut tasks = JoinSet::new();
 
-                tasks.push(handle);
-            }
-        });
+        for item in module_content.members().filter_map(|x| x.into_line().ok())
+        {
+            self.handle_module_member(
+                item,
+                module_member_builder,
+                imports,
+                &mut tasks,
+            )
+            .await;
+        }
+
+        tasks.ensure_join_all().await;
     }
 
     #[allow(clippy::too_many_lines)]
@@ -160,20 +163,33 @@ impl Builder {
         member: pernixc_syntax::item::module::Member,
         module_member_builder: &mut MemberBuilder,
         imports: &mut Vec<pernixc_syntax::item::module::Import>,
-    ) -> Option<JoinHandle<()>> {
+        join_set: &mut JoinSet<()>,
+    ) {
         match member {
             ModuleMemberSyn::Module(module) => {
-                self.handle_module_members(&module, module_member_builder).await
+                self.handle_module_members(
+                    &module,
+                    module_member_builder,
+                    join_set,
+                )
+                .await;
             }
 
             ModuleMemberSyn::Trait(trait_syntax) => {
-                self.handle_trait_member(&trait_syntax, module_member_builder)
-                    .await
+                self.handle_trait_member(
+                    &trait_syntax,
+                    module_member_builder,
+                    join_set,
+                )
+                .await;
             }
 
             ModuleMemberSyn::Function(function_syntax) => {
-                let identifier =
-                    function_syntax.signature().and_then(|x| x.identifier())?;
+                let Some(identifier) =
+                    function_syntax.signature().and_then(|x| x.identifier())
+                else {
+                    return;
+                };
 
                 let id = module_member_builder
                     .add_member(identifier.clone(), self.engine())
@@ -222,13 +238,14 @@ impl Builder {
                         .signature()
                         .and_then(|x| x.unsafe_keyword()),
                 );
-
-                None
             }
 
             ModuleMemberSyn::Type(type_syntax) => {
-                let identifier =
-                    type_syntax.signature().and_then(|x| x.identifier())?;
+                let Some(identifier) =
+                    type_syntax.signature().and_then(|x| x.identifier())
+                else {
+                    return;
+                };
 
                 let id = module_member_builder
                     .add_member(identifier.clone(), self.engine())
@@ -261,13 +278,14 @@ impl Builder {
                     id,
                     type_syntax.body().and_then(|x| x.r#type()),
                 );
-
-                None
             }
 
             ModuleMemberSyn::Constant(constant_syntax) => {
-                let identifier =
-                    constant_syntax.signature().and_then(|x| x.identifier())?;
+                let Some(identifier) =
+                    constant_syntax.signature().and_then(|x| x.identifier())
+                else {
+                    return;
+                };
 
                 let id = module_member_builder
                     .add_member(identifier.clone(), self.engine())
@@ -304,13 +322,14 @@ impl Builder {
                     id,
                     constant_syntax.body().and_then(|x| x.expression()),
                 );
-
-                None
             }
 
             ModuleMemberSyn::Struct(struct_syntax) => {
-                let identifier =
-                    struct_syntax.signature().and_then(|x| x.identifier())?;
+                let Some(identifier) =
+                    struct_syntax.signature().and_then(|x| x.identifier())
+                else {
+                    return;
+                };
 
                 let id = module_member_builder
                     .add_member(identifier.clone(), self.engine())
@@ -339,18 +358,23 @@ impl Builder {
                         .and_then(|x| x.predicates()),
                 );
                 self.insert_struct_field_syntax(id, struct_syntax.body());
-
-                None
             }
 
             ModuleMemberSyn::Enum(enum_syntax) => {
-                self.handle_enum_member(&enum_syntax, module_member_builder)
-                    .await
+                self.handle_enum_member(
+                    &enum_syntax,
+                    module_member_builder,
+                    join_set,
+                )
+                .await;
             }
 
             ModuleMemberSyn::Marker(marker_syntax) => {
-                let identifier =
-                    marker_syntax.signature().and_then(|x| x.identifier())?;
+                let Some(identifier) =
+                    marker_syntax.signature().and_then(|x| x.identifier())
+                else {
+                    return;
+                };
 
                 let id = module_member_builder
                     .add_member(identifier.clone(), self.engine())
@@ -378,31 +402,31 @@ impl Builder {
                         .and_then(|x| x.where_clause())
                         .and_then(|x| x.predicates()),
                 );
-
-                None
             }
 
             ModuleMemberSyn::Import(import) => {
                 // collect the import syntax for later processing
                 imports.push(import);
-
-                None
             }
 
             ModuleMemberSyn::Implements(impls) => {
                 // custom handling for the implements member
-                self.handle_implements(impls, module_member_builder).await
+                self.handle_implements(impls, module_member_builder, join_set)
+                    .await;
             }
 
             ModuleMemberSyn::Extern(ext) => {
                 // custom handling for the extern member
                 self.handle_extern(&ext, module_member_builder).await;
-
-                None
             }
 
             ModuleMemberSyn::Effect(eff) => {
-                self.handle_effect_member(&eff, module_member_builder).await
+                self.handle_effect_member(
+                    &eff,
+                    module_member_builder,
+                    join_set,
+                )
+                .await;
             }
         }
     }
@@ -414,7 +438,8 @@ impl Builder {
         module_content: Option<pernixc_syntax::item::module::Content>,
         scope_span: Option<RelativeSpan>,
         module_kind: ModuleKind,
-    ) -> (JoinHandle<()>, pernixc_symbol::ID) {
+        join_set: &mut JoinSet<()>,
+    ) -> pernixc_symbol::ID {
         // extract the information about the module
         let (accessibility, current_module_id, module_qualified_name, span) =
             match module_kind {
@@ -457,43 +482,40 @@ impl Builder {
 
         let builder = self.clone();
 
-        (
-            tokio::spawn(async move {
-                let mut member_builder = MemberBuilder::new(
-                    current_module_id,
-                    module_qualified_name,
-                    builder.target_id(),
-                );
-                let mut imports = Vec::new();
+        join_set.spawn(async move {
+            let mut member_builder = MemberBuilder::new(
+                current_module_id,
+                module_qualified_name,
+                builder.target_id(),
+            );
+            let mut imports = Vec::new();
 
-                if let Some(module_content) = module_content {
-                    builder
-                        .handle_module_content(
-                            module_content,
-                            &mut member_builder,
-                            &mut imports,
-                        )
-                        .await;
-                }
+            if let Some(module_content) = module_content {
+                builder
+                    .handle_module_content(
+                        module_content,
+                        &mut member_builder,
+                        &mut imports,
+                    )
+                    .await;
+            }
 
-                builder.insert_imports(
-                    current_module_id,
-                    builder.engine().intern_unsized(imports),
-                );
-                builder.insert_span(current_module_id, span);
-                builder.insert_maybe_scope_span(current_module_id, scope_span);
-                builder.insert_accessibility(current_module_id, accessibility);
-                builder.insert_name(
-                    current_module_id,
-                    member_builder.last_name().clone(),
-                );
-                builder.insert_kind(current_module_id, Kind::Module);
-                builder.insert_member_from_builder(
-                    current_module_id,
-                    member_builder,
-                );
-            }),
-            current_module_id,
-        )
+            builder.insert_imports(
+                current_module_id,
+                builder.engine().intern_unsized(imports),
+            );
+            builder.insert_span(current_module_id, span);
+            builder.insert_maybe_scope_span(current_module_id, scope_span);
+            builder.insert_accessibility(current_module_id, accessibility);
+            builder.insert_name(
+                current_module_id,
+                member_builder.last_name().clone(),
+            );
+            builder.insert_kind(current_module_id, Kind::Module);
+            builder
+                .insert_member_from_builder(current_module_id, member_builder);
+        });
+
+        current_module_id
     }
 }

@@ -8,7 +8,7 @@ use pernixc_symbol::{
     kind::{Key, Kind},
 };
 use pernixc_target::{Global, TargetID};
-use pernixc_tokio::{chunk::chunk_for_tasks, scoped};
+use pernixc_tokio::{chunk::chunk_for_tasks, join_set::JoinSet};
 use qbice::{
     Decode, Encode, Executor, Identifiable, Query, StableHash, executor,
     program::Registration,
@@ -135,63 +135,59 @@ impl<
     ) -> Arc<[ID]> {
         let map = engine.query(&MapKey(query.target_id)).await;
 
-        scoped!(|handles| async move {
-            let ids = map.keys_by_symbol_id.keys().copied().collect::<Vec<_>>();
+        let ids = map.keys_by_symbol_id.keys().copied().collect::<Vec<_>>();
+        let mut handles = JoinSet::new();
 
-            for id_chunk in
-                ids.chunk_for_tasks().map(<[pernixc_symbol::ID]>::to_vec)
-            {
-                let map = map.clone();
-                let engine = engine.clone();
-                let target_id = query.target_id;
-                let filter = query.filter.clone();
+        for id_chunk in
+            ids.chunk_for_tasks().map(<[pernixc_symbol::ID]>::to_vec)
+        {
+            let map = map.clone();
+            let engine = engine.clone();
+            let target_id = query.target_id;
+            let filter = query.filter.clone();
 
-                handles.spawn(async move {
-                    let mut results = Vec::new();
+            handles.spawn(async move {
+                let mut results = Vec::new();
 
-                    for id in id_chunk {
-                        let node_key = map
-                            .keys_by_symbol_id
-                            .get(&id)
-                            .unwrap_or_else(|| {
-                                panic!("invalid symbol ID: {id:?}")
-                            })
-                            .as_ref()
-                            .map_or_else(
-                                || table::Key::Root(target_id),
-                                |x| table::Key::Submodule {
-                                    external_submodule: x.clone(),
-                                    target_id,
-                                },
-                            );
+                for id in id_chunk {
+                    let node_key = map
+                        .keys_by_symbol_id
+                        .get(&id)
+                        .unwrap_or_else(|| panic!("invalid symbol ID: {id:?}"))
+                        .as_ref()
+                        .map_or_else(
+                            || table::Key::Root(target_id),
+                            |x| table::Key::Submodule {
+                                external_submodule: x.clone(),
+                                target_id,
+                            },
+                        );
 
-                        let node =
-                            engine.query(&table::KindMapKey(node_key)).await;
+                    let node = engine.query(&table::KindMapKey(node_key)).await;
 
-                        if filter
-                            .filter(*node.get(&id).unwrap_or_else(|| {
-                                panic!(
-                                    "invalid symbol ID: {id:?}\n node: \
-                                     {node:#?}\n table: {map:#?}\n"
-                                )
-                            }))
-                            .await
-                        {
-                            results.push(id);
-                        }
+                    if filter
+                        .filter(*node.get(&id).unwrap_or_else(|| {
+                            panic!(
+                                "invalid symbol ID: {id:?}\n node: \
+                                 {node:#?}\n table: {map:#?}\n"
+                            )
+                        }))
+                        .await
+                    {
+                        results.push(id);
                     }
+                }
 
-                    results
-                });
-            }
+                results
+            });
+        }
 
-            let mut results = Vec::new();
-            while let Some(symbol) = handles.next().await {
-                results.extend(symbol);
-            }
+        let mut results = Vec::new();
+        while let Some(symbol) = handles.next().await {
+            results.extend(symbol);
+        }
 
-            Arc::from(results)
-        })
+        Arc::from(results)
     }
 
     fn execution_style() -> qbice::ExecutionStyle {

@@ -13,10 +13,12 @@ use pernixc_symbol::{
 };
 use pernixc_syntax::QualifiedIdentifier;
 use pernixc_target::{Global, TargetID, get_invocation_arguments};
+use pernixc_tokio::join_set::JoinSet;
 use qbice::{
     Decode, Encode, ExecutionStyle, Identifiable, Query, StableHash, executor,
     program::Registration, storage::intern::Interned,
 };
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::{
     diagnostic::{Diagnostic, SourceFileLoadFail},
@@ -483,10 +485,13 @@ async fn table_executor(
     let scope_span =
         module_content.as_ref().map(pernixc_source_file::SourceElement::span);
 
-    let (join_handler, module_id) =
-        builder.create_module(module_content, scope_span, module_kind).await;
+    let mut tasks = JoinSet::new();
 
-    join_handler.await.expect("failed to join handler");
+    let module_id = builder
+        .create_module(module_content, scope_span, module_kind, &mut tasks)
+        .await;
+
+    tasks.ensure_join_all().await;
 
     let Ok(builder) = Arc::try_unwrap(builder) else {
         panic!("some threads are not joined")
@@ -625,10 +630,10 @@ async fn map_executor(key: &MapKey, engine: &TrackedEngine) -> Map {
             }
 
             // Add all symbols from this table to the symbol map
-            for (symbol_id, _kind) in kinds.iter() {
+            kinds.par_iter().for_each(|(symbol_id, _kind)| {
                 keys_by_symbol_id
                     .insert(*symbol_id, current_external_submodule.clone());
-            }
+            });
 
             // Recursively traverse external submodules
 

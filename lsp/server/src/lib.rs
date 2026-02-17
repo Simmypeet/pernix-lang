@@ -1,6 +1,5 @@
 //! Contains the server implementation.
 
-use log::{error, info};
 use tokio::sync::RwLock;
 use tower_lsp::{
     Client, LanguageServer, jsonrpc,
@@ -16,6 +15,7 @@ use tower_lsp::{
         WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities,
     },
 };
+use tracing::{error, info};
 
 use crate::{
     analyzer::Analyzer, completion::handle_completion,
@@ -195,7 +195,6 @@ impl LanguageServer for Server {
 
         for change in params.changes {
             if change.uri != expected_file_uri {
-                info!("ignoring file change: {:?}", change.uri);
                 continue;
             }
 
@@ -250,8 +249,16 @@ impl LanguageServer for Server {
         let engine = analyzer.engine();
         let engine = engine.clone().tracked().await;
 
-        let hover_contents =
-            engine.handle_hover(analyzer.current_target_id(), params).await;
+        let cancellation_token = analyzer.cancellation_token().await;
+        let Some(hover_contents) = cancellation_token
+            .run_until_cancelled(
+                engine.handle_hover(analyzer.current_target_id(), params),
+            )
+            .await
+        else {
+            info!("hover request cancelled");
+            return Err(jsonrpc::Error::request_cancelled());
+        };
 
         Ok(hover_contents.map(|hover_contents| Hover {
             contents: HoverContents::Markup(MarkupContent {
@@ -273,10 +280,21 @@ impl LanguageServer for Server {
 
         let engine = analyzer.engine();
         let engine = engine.clone().tracked().await;
+        let cancellation_token = analyzer.cancellation_token().await;
 
-        Ok(engine
-            .handle_goto_definition(analyzer.current_target_id(), params)
-            .await)
+        let Some(definition) =
+            cancellation_token
+                .run_until_cancelled(engine.handle_goto_definition(
+                    analyzer.current_target_id(),
+                    params,
+                ))
+                .await
+        else {
+            info!("goto definition request cancelled");
+            return Err(jsonrpc::Error::request_cancelled());
+        };
+
+        Ok(definition)
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
@@ -314,7 +332,18 @@ impl LanguageServer for Server {
         let engine = analyzer.engine();
         let engine = engine.clone().tracked().await;
 
-        Ok(engine.handle_completion(analyzer.current_target_id(), params).await)
+        let cancellation_token = analyzer.cancellation_token().await;
+        let Some(completions) = cancellation_token
+            .run_until_cancelled(
+                engine.handle_completion(analyzer.current_target_id(), params),
+            )
+            .await
+        else {
+            info!("completion request cancelled");
+            return Err(jsonrpc::Error::request_cancelled());
+        };
+
+        Ok(completions)
     }
 
     async fn completion_resolve(

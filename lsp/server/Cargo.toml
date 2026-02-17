@@ -7,8 +7,6 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-env_logger = { workspace = true }
-log = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 tower-lsp = { workspace = true }
@@ -18,6 +16,11 @@ serde = { workspace = true }
 bon = { workspace = true }
 fuzzy-matcher = { workspace = true }
 backtrace = { workspace = true }
+tokio-util.workspace = true
+tracing-subscriber = { workspace = true }
+tracing.workspace = true
+qbice.workspace = true
+linkme.workspace = true
 
 pernixc_source_file = { path = "../../compiler/base/source_file" }
 pernixc_diagnostic = { path = "../../compiler/base/diagnostic" }
@@ -38,8 +41,6 @@ pernixc_qbice.path = "../../compiler/base/qbice"
 pernixc_source_file_impl.path = "../../compiler/base/source_file_impl"
 pernixc_lexical_impl.path = "../../compiler/syntax/lexical_impl"
 pernixc_syntax_impl.path = "../../compiler/syntax/syntax_impl"
-qbice.workspace = true
-linkme.workspace = true
 
 
 [lints]

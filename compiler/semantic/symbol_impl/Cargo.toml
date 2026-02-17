@@ -23,6 +23,7 @@ pernixc_qbice = { path = "../../base/qbice" }
 qbice = { workspace = true }
 linkme = { workspace = true }
 tokio = { workspace = true }
+rayon = { workspace = true }
 
 
 [lints]

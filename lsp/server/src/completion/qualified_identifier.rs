@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 use linkme::distributed_slice;
-use log::info;
 use pernixc_diagnostic::ByteIndex;
 use pernixc_extend::extend;
 use pernixc_hash::HashSet;
@@ -26,7 +25,7 @@ use pernixc_symbol::{
 };
 use pernixc_syntax::QualifiedIdentifier;
 use pernixc_target::{Global, TargetID};
-use pernixc_tokio::{chunk::chunk_for_tasks, scoped};
+use pernixc_tokio::{chunk::chunk_for_tasks, join_set::JoinSet};
 use qbice::{
     Decode, Encode, Query, StableHash, executor, program::Registration,
     storage::intern::Interned,
@@ -184,7 +183,6 @@ pub async fn qualified_identifier_completion(
         )
         .await
     else {
-        info!(" No qualified identifier found at byte index {byte_index} ");
         return Vec::new();
     };
 
@@ -196,17 +194,8 @@ pub async fn qualified_identifier_completion(
         )
         .await
     else {
-        info!(
-            " Qualified identifier at byte index {byte_index} could not be \
-             resolved "
-        );
         return Vec::new();
     };
-
-    info!(
-        " Qualified identifier at byte index {byte_index} resolved to \
-         {resolved_path:?} "
-    );
 
     // determine the nearest module id for import suggestions
     let nearest_module_id =
@@ -645,49 +634,47 @@ async fn create_global_import_candidate(
     let global_import_ids =
         engine.get_global_import_suggestion_ids(target_id).await;
 
-    scoped!(|handles| async {
-        for chunk_id in global_import_ids
-            .chunk_for_tasks()
-            .map(<[pernixc_symbol::ID]>::to_vec)
-        {
-            let engine = engine.clone();
-            let str = str.clone();
-            let candidates = candidates.clone();
-            let inserted = inserted.clone();
+    let mut handles = JoinSet::new();
+    for chunk_id in
+        global_import_ids.chunk_for_tasks().map(<[pernixc_symbol::ID]>::to_vec)
+    {
+        let engine = engine.clone();
+        let str = str.clone();
+        let candidates = candidates.clone();
+        let inserted = inserted.clone();
 
-            handles.spawn(async move {
-                let fuzzy_matcher = SkimMatcherV2::default();
+        handles.spawn(async move {
+            let fuzzy_matcher = SkimMatcherV2::default();
 
-                for id in chunk_id {
-                    if inserted.contains(&target_id.make_global(id)) {
-                        continue;
-                    }
-
-                    if !engine
-                        .symbol_accessible(
-                            current_module_id,
-                            target_id.make_global(id),
-                        )
-                        .await
-                    {
-                        continue;
-                    }
-
-                    let name = engine.get_name(target_id.make_global(id)).await;
-
-                    if fuzzy_matcher.fuzzy_match(&name, &str).is_none() {
-                        continue;
-                    }
-
-                    candidates.write().await.push(Completion::Global(
-                        GlobalCompletion {
-                            completion: target_id.make_global(id),
-                        },
-                    ));
+            for id in chunk_id {
+                if inserted.contains(&target_id.make_global(id)) {
+                    continue;
                 }
-            });
-        }
-    });
+
+                if !engine
+                    .symbol_accessible(
+                        current_module_id,
+                        target_id.make_global(id),
+                    )
+                    .await
+                {
+                    continue;
+                }
+
+                let name = engine.get_name(target_id.make_global(id)).await;
+
+                if fuzzy_matcher.fuzzy_match(&name, &str).is_none() {
+                    continue;
+                }
+
+                candidates.write().await.push(Completion::Global(
+                    GlobalCompletion { completion: target_id.make_global(id) },
+                ));
+            }
+        });
+    }
+
+    handles.ensure_join_all().await;
 
     Arc::into_inner(candidates).unwrap().into_inner()
 }
@@ -759,32 +746,30 @@ async fn module_import_suggestion_executor(
 ) -> Interned<[pernixc_symbol::ID]> {
     let members = engine.get_members(module_id).await;
     let mut results = vec![module_id.id];
+    let mut handles = JoinSet::new();
 
-    scoped!(|handles| async {
-        for id in members.member_ids_by_name.values().copied() {
-            // recursively collect from child modules
-            let kind =
-                engine.get_kind(module_id.target_id.make_global(id)).await;
+    for id in members.member_ids_by_name.values().copied() {
+        // recursively collect from child modules
+        let kind = engine.get_kind(module_id.target_id.make_global(id)).await;
 
-            if kind == pernixc_symbol::kind::Kind::Module {
-                let engine = engine.clone();
+        if kind == pernixc_symbol::kind::Kind::Module {
+            let engine = engine.clone();
 
-                handles.spawn(async move {
-                    engine
-                        .query(&ModuleImportSuggestionKey {
-                            module_id: module_id.target_id.make_global(id),
-                        })
-                        .await
-                });
-            } else {
-                results.push(id);
-            }
+            handles.spawn(async move {
+                engine
+                    .query(&ModuleImportSuggestionKey {
+                        module_id: module_id.target_id.make_global(id),
+                    })
+                    .await
+            });
+        } else {
+            results.push(id);
         }
+    }
 
-        while let Some(child_ids) = handles.next().await {
-            results.extend(child_ids.iter().copied());
-        }
-    });
+    while let Some(child_ids) = handles.next().await {
+        results.extend(child_ids.iter().copied());
+    }
 
     engine.intern_unsized(results)
 }

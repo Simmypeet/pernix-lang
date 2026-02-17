@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::kind::Kind;
-use tokio::task::JoinHandle;
+use pernixc_tokio::join_set::JoinSet;
 
 use crate::table::builder::{Builder, MemberBuilder};
 
@@ -12,9 +12,14 @@ impl Builder {
         self: &Arc<Self>,
         effect_syntax: &pernixc_syntax::item::effect::Effect,
         module_member_builder: &mut MemberBuilder,
-    ) -> Option<JoinHandle<()>> {
-        let signature = effect_syntax.signature()?;
-        let identifier = signature.identifier()?;
+        join_set: &mut JoinSet<()>,
+    ) {
+        let Some(signature) = effect_syntax.signature() else {
+            return;
+        };
+        let Some(identifier) = signature.identifier() else {
+            return;
+        };
 
         let next_submodule_qualified_name = module_member_builder
             .extend_qualified_name_sequence(identifier.kind.0.clone());
@@ -38,7 +43,7 @@ impl Builder {
 
         let builder = self.clone();
 
-        Some(tokio::spawn(async move {
+        join_set.spawn(async move {
             let mut effect_member_builder = MemberBuilder::new(
                 effect_id,
                 next_submodule_qualified_name,
@@ -98,6 +103,6 @@ impl Builder {
                     access_modifier.as_ref(),
                 )
                 .await;
-        }))
+        });
     }
 }

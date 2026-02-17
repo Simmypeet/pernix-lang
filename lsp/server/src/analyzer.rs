@@ -13,13 +13,16 @@ use pernixc_source_file::{
 };
 use pernixc_target::{Arguments, Check, Input, TargetID};
 use qbice::{
+    engine::{EngineOptions, YieldFrequency},
     executor,
     serialize::Plugin,
     stable_hash::SeededStableHasherBuilder,
     storage::{intern::Interned, storage_engine::StorageEngineFactory},
 };
 use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
 use tower_lsp::lsp_types::{DidChangeTextDocumentParams, Url};
+use tracing::info;
 
 use crate::{
     test_config::TestConfig,
@@ -33,6 +36,7 @@ pub struct Analyzer {
     workspace: Workspace,
     current_target_id: TargetID,
     published_diagnostics: RwLock<Vec<Url>>,
+    cancellation_token: RwLock<CancellationToken>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -59,6 +63,10 @@ impl executor::Executor<pernixc_source_file::Key, pernixc_qbice::Config>
         })?;
 
         Ok(source_file)
+    }
+
+    fn execution_style() -> qbice::ExecutionStyle {
+        qbice::ExecutionStyle::ExternalInput
     }
 }
 
@@ -108,12 +116,17 @@ impl Analyzer {
         });
 
         // initialize the engine with corelib
-        let mut engine = Engine::new_with(
-            Plugin::default(),
-            storage_engine_factory,
-            SeededStableHasherBuilder::new(0),
-        )
-        .await?;
+        let mut engine = Engine::new_with_options()
+            .options(
+                EngineOptions::builder()
+                    .yield_frequency(YieldFrequency::EveryNQuery(0))
+                    .build(),
+            )
+            .serialization_plugin(Plugin::default())
+            .storage_engine_factory(storage_engine_factory)
+            .stable_hasher(SeededStableHasherBuilder::new(0))
+            .build()
+            .await?;
 
         // Due to how rust compiler work, if a crate is linked without having
         // any symbols in it used, the crate will be completely ignored
@@ -193,6 +206,11 @@ impl Analyzer {
                     .await;
             }
 
+            pernixc_source_file_impl::refresh_source_file_executors(
+                &mut input_session,
+            )
+            .await;
+
             input_session.commit().await;
         }
 
@@ -223,6 +241,7 @@ impl Analyzer {
             workspace,
             current_target_id: local_target_id,
             published_diagnostics: RwLock::new(Vec::new()),
+            cancellation_token: RwLock::new(CancellationToken::new()),
         })
     }
 
@@ -233,7 +252,13 @@ impl Analyzer {
             .engine
             .intern_unsized(params.text_document.uri.to_file_path().unwrap());
 
+        // cancel any ongoing analysis to the engine
+        self.cancellation_token.write().await.cancel();
+
         let mut input_lock = self.engine.input_session().await;
+
+        // create new cancellation token for the new analysis session
+        *self.cancellation_token.write().await = CancellationToken::new();
 
         let key = pernixc_source_file::Key {
             path: path.clone(),
@@ -315,37 +340,49 @@ impl Analyzer {
         source_file.replace_range(start..end, text);
     }
 
+    /// Obtains the cancellation token for the current analysis session.
+    pub async fn cancellation_token(&self) -> CancellationToken {
+        self.cancellation_token.read().await.clone()
+    }
+
     /// Performs a compile check and sends diagnostics to the client.
     pub async fn check(
         &self,
         client: &tower_lsp::Client,
         version: Option<i32>,
     ) {
-        // the engine lock is intentionally held here
-        let mut published_diagnostics =
-            self.published_diagnostics.write().await;
-
+        let cancellation_token = self.cancellation_token().await;
         let engine = self.engine.clone().tracked().await;
 
-        let check = engine
-            .query(&pernixc_check::Key { target_id: self.current_target_id })
+        let check = cancellation_token
+            .run_until_cancelled(engine.query(&pernixc_check::Key {
+                target_id: self.current_target_id,
+            }))
             .await;
 
         // collect diagnostics and group them by source file URL
         let mut diagnostics = HashMap::new();
 
-        for diag in check.all_diagnostics() {
-            let url = if let Some(primary) = &diag.primary_highlight {
-                engine.get_url_by_source_id(primary.span.source_id).await
-            } else {
-                Url::from_file_path(self.workspace.root_source_file()).unwrap()
-            };
+        if let Some(check) = check {
+            for diag in check.all_diagnostics() {
+                let url = if let Some(primary) = &diag.primary_highlight {
+                    engine.get_url_by_source_id(primary.span.source_id).await
+                } else {
+                    Url::from_file_path(self.workspace.root_source_file())
+                        .unwrap()
+                };
 
-            diagnostics
-                .entry(url)
-                .or_insert_with(Vec::new)
-                .push(engine.to_lsp_diagnostic(diag).await);
+                diagnostics
+                    .entry(url)
+                    .or_insert_with(Vec::new)
+                    .push(engine.to_lsp_diagnostic(diag).await);
+            }
+        } else {
+            info!("check was cancelled, not sending diagnostics");
         }
+
+        let mut published_diagnostics =
+            self.published_diagnostics.write().await;
 
         // clear diagnostics for files that no longer have diagnostics
         for url in published_diagnostics.iter() {
@@ -363,6 +400,8 @@ impl Analyzer {
                 .await;
             published_diagnostics.push(url);
         }
+
+        info!("check completed, sent diagnostics to client");
     }
 }
 

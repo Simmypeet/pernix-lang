@@ -16,7 +16,7 @@ use pernixc_symbol::{
     span::get_span,
 };
 use pernixc_target::{Global, TargetID};
-use pernixc_tokio::{join_list::JoinList, scoped};
+use pernixc_tokio::join_set::JoinSet;
 use qbice::{
     Decode, Encode, Identifiable, Query, StableHash, executor,
     program::Registration, storage::intern::Interned,
@@ -265,7 +265,7 @@ struct FileError {
 fn populate_file_errors(
     engine: &TrackedEngine,
     target_id: TargetID,
-    file_errors_list: &mut JoinList<FileError>,
+    file_errors_list: &mut JoinSet<FileError>,
     map: &Map,
 ) {
     for path in map.paths_by_source_id.values().chain(map.failed_paths.iter()) {
@@ -312,7 +312,7 @@ fn populate_file_errors(
 async fn populate_member_is_more_accessible_diagnostics(
     engine: &TrackedEngine,
     target_id: TargetID,
-    module_import_diagnostics: &mut JoinList<
+    module_import_diagnostics: &mut JoinSet<
         Option<Interned<[crate::accessibility::diagnostic::Diagnostic]>>,
     >,
 ) {
@@ -339,71 +339,72 @@ async fn rendered_executor(
     engine: &TrackedEngine,
 ) -> Interned<[pernixc_diagnostic::Rendered<ByteIndex>]> {
     let RenderedKey(target_id) = key;
-    scoped!(|file_diagnostics,
-             member_is_moere_accessible_diagnostics,
-             diagnostic_handles| async move {
-        // Get the map for this target to discover all table keys
-        let map = engine.query(&MapKey(*target_id)).await;
 
-        populate_file_errors(engine, *target_id, file_diagnostics, &map);
+    let mut file_diagnostics = JoinSet::default();
+    let mut member_is_moere_accessible_diagnostics = JoinSet::default();
+    let mut diagnostic_handles = JoinSet::default();
 
-        populate_member_is_more_accessible_diagnostics(
-            engine,
-            *target_id,
-            member_is_moere_accessible_diagnostics,
-        )
-        .await;
+    // Get the map for this target to discover all table keys
+    let map = engine.query(&MapKey(*target_id)).await;
 
-        while let Some(file_diagnostic) = file_diagnostics.next().await {
-            let FileError { lexicals, syntaxes, symbols } = file_diagnostic;
+    populate_file_errors(engine, *target_id, &mut file_diagnostics, &map);
 
-            for diagnostic in symbols.iter() {
-                let engine = engine.clone();
-                let diagnostic = diagnostic.clone();
+    populate_member_is_more_accessible_diagnostics(
+        engine,
+        *target_id,
+        &mut member_is_moere_accessible_diagnostics,
+    )
+    .await;
 
-                diagnostic_handles
-                    .spawn(async move { diagnostic.report(&engine).await });
-            }
+    while let Some(file_diagnostic) = file_diagnostics.next().await {
+        let FileError { lexicals, syntaxes, symbols } = file_diagnostic;
 
-            for diagnostic in syntaxes.iter().flat_map(|x| x.iter()) {
-                let engine = engine.clone();
-                let diagnostic = diagnostic.clone();
+        for diagnostic in symbols.iter() {
+            let engine = engine.clone();
+            let diagnostic = diagnostic.clone();
 
-                diagnostic_handles
-                    .spawn(async move { diagnostic.report(&engine).await });
-            }
+            diagnostic_handles
+                .spawn(async move { diagnostic.report(&engine).await });
+        }
 
-            for diagnostic in lexicals.iter().flat_map(|x| x.iter()) {
-                let diagnostic = diagnostic.clone();
+        for diagnostic in syntaxes.iter().flat_map(|x| x.iter()) {
+            let engine = engine.clone();
+            let diagnostic = diagnostic.clone();
+
+            diagnostic_handles
+                .spawn(async move { diagnostic.report(&engine).await });
+        }
+
+        for diagnostic in lexicals.iter().flat_map(|x| x.iter()) {
+            let diagnostic = diagnostic.clone();
+            let engine = engine.clone();
+
+            diagnostic_handles
+                .spawn(async move { diagnostic.report(&engine).await });
+        }
+    }
+
+    while let Some(member_is_more_accessible_diagnostic) =
+        member_is_moere_accessible_diagnostics.next().await
+    {
+        if let Some(diagnostic) = member_is_more_accessible_diagnostic {
+            for &diagnostic in diagnostic.iter() {
                 let engine = engine.clone();
 
                 diagnostic_handles
                     .spawn(async move { diagnostic.report(&engine).await });
             }
         }
+    }
 
-        while let Some(member_is_more_accessible_diagnostic) =
-            member_is_moere_accessible_diagnostics.next().await
-        {
-            if let Some(diagnostic) = member_is_more_accessible_diagnostic {
-                for &diagnostic in diagnostic.iter() {
-                    let engine = engine.clone();
+    let mut diagnostics = Vec::new();
 
-                    diagnostic_handles
-                        .spawn(async move { diagnostic.report(&engine).await });
-                }
-            }
-        }
+    while let Some(handle) = diagnostic_handles.next().await {
+        let rendered_diagnostic = handle;
+        diagnostics.push(rendered_diagnostic);
+    }
 
-        let mut diagnostics = Vec::new();
-
-        while let Some(handle) = diagnostic_handles.next().await {
-            let rendered_diagnostic = handle;
-            diagnostics.push(rendered_diagnostic);
-        }
-
-        engine.intern_unsized(diagnostics)
-    })
+    engine.intern_unsized(diagnostics)
 }
 
 #[distributed_slice(PERNIX_PROGRAM)]

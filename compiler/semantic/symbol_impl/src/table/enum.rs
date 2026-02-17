@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::kind::Kind;
-use tokio::task::JoinHandle;
+use pernixc_tokio::join_set::JoinSet;
 
 use crate::table::builder::{Builder, MemberBuilder};
 
@@ -12,9 +12,14 @@ impl Builder {
         self: &Arc<Self>,
         enum_syntax: &pernixc_syntax::item::r#enum::Enum,
         module_member_builder: &mut MemberBuilder,
-    ) -> Option<JoinHandle<()>> {
-        let signature = enum_syntax.signature()?;
-        let identifier = signature.identifier()?;
+        join_set: &mut JoinSet<()>,
+    ) {
+        let Some(signature) = enum_syntax.signature() else {
+            return;
+        };
+        let Some(identifier) = signature.identifier() else {
+            return;
+        };
 
         let next_submodule_qualified_name = module_member_builder
             .extend_qualified_name_sequence(identifier.kind.0.clone());
@@ -38,7 +43,7 @@ impl Builder {
 
         let builder = self.clone();
 
-        Some(tokio::spawn(async move {
+        join_set.spawn(async move {
             let mut enum_member_builder = MemberBuilder::new(
                 enum_id,
                 next_submodule_qualified_name,
@@ -85,6 +90,6 @@ impl Builder {
                 .insert_generic_parameters_syntax(enum_id, generic_parameters);
             builder.insert_where_clause_syntax(enum_id, where_clause);
             builder.insert_member_from_builder(enum_id, enum_member_builder);
-        }))
+        });
     }
 }
