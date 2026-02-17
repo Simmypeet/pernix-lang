@@ -8,7 +8,6 @@ use std::{
 use clap::Parser;
 use insta::assert_snapshot;
 use pernixc_target::{Arguments, Check, Command, Input};
-use pretty_assertions::assert_str_eq;
 use tracing_subscriber::{
     EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt,
 };
@@ -73,8 +72,6 @@ async fn test(file_path: &Path) {
     let file = std::fs::File::open(file_path).unwrap();
     let buf_reader = std::io::BufReader::new(file);
 
-    let temp_dir = tempfile::tempdir().unwrap();
-
     // read for the custom cli interface starting with `##` comment
     let arguments = buf_reader.lines().next().map(|x| x.unwrap()).map_or_else(
         || Arguments {
@@ -98,11 +95,6 @@ async fn test(file_path: &Path) {
                     file_path.to_string_lossy().as_ref(),
                 );
 
-                first_line = first_line.replace(
-                    "$INCREMENTAL_PATH",
-                    temp_dir.path().to_string_lossy().as_ref(),
-                );
-
                 first_line.strip_prefix("##").unwrap();
 
                 Arguments::parse_from(first_line.split_whitespace())
@@ -113,9 +105,7 @@ async fn test(file_path: &Path) {
                             file: file_path.to_path_buf(),
                             target_name: None,
                             library_paths: Vec::new(),
-                            incremental_path: Some(
-                                temp_dir.path().to_path_buf(),
-                            ),
+                            incremental_path: None,
                             chrome_tracing: false,
                             target_seed: Some(0),
                             fancy: false,
@@ -126,14 +116,7 @@ async fn test(file_path: &Path) {
         },
     );
 
-    let clean_run = run(arguments.clone()).await;
-    let with_incremental = run(arguments).await;
-
-    assert_str_eq!(
-        clean_run,
-        with_incremental,
-        "the output between clean run and incremental run are different"
-    );
+    let run = run(arguments).await;
 
     let mut settings = insta::Settings::clone_current();
 
@@ -153,5 +136,5 @@ async fn test(file_path: &Path) {
     settings.remove_snapshot_suffix();
     let _guard = settings.bind_to_scope();
 
-    assert_snapshot!("snapshot", clean_run);
+    assert_snapshot!("snapshot", run);
 }

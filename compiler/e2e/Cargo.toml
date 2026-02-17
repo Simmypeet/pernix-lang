@@ -6,7 +6,6 @@ authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish = false
-build = "test/snapshot/build.rs"
 
 
 [dev-dependencies]

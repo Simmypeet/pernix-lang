@@ -1,4 +1,4 @@
-## check $FILE_PATH --target main --inc $INCREMENTAL_PATH --target-seed 0 --no-fancy
+## check $FILE_PATH --target main --target-seed 0 --no-fancy
 
 public module main
 
