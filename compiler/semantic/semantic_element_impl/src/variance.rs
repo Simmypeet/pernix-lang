@@ -20,7 +20,7 @@ use pernixc_term::{
     lifetime::Lifetime,
     r#type::{Qualifier, Type},
 };
-use pernixc_tokio::scoped;
+use pernixc_tokio::{chunk::chunk_for_tasks, join_set::JoinSet};
 use qbice::{
     Decode, Encode, Identifiable, Query, StableHash, executor,
     program::Registration, storage::intern::Interned,
@@ -489,31 +489,41 @@ async fn collect_constraints(
     // any of the constraint queries are being invoked.
     let adt_ids = engine.get_all_adt_ids(target_id).await;
 
-    let constraints_list = scoped!(|scoped| async move {
-        let mut constraints_list = Vec::new();
+    let mut scoped = JoinSet::new();
+    let mut constraints_list = Vec::new();
 
-        // PARALLEL: Gets a list of constraints for each ADT id
-        unsafe {
-            engine.start_unordered_callee_group();
-        }
+    // PARALLEL: Gets a list of constraints for each ADT id
+    unsafe {
+        engine.start_unordered_callee_group();
+    }
 
-        for constraint_id in adt_ids.iter().map(|x| target_id.make_global(*x)) {
-            let engine = engine.clone();
-            scoped.spawn(async move {
-                engine.query(&ConstraintsKey { adt_id: constraint_id }).await
-            });
-        }
+    for chunk in adt_ids.chunk_for_tasks().map(|x| {
+        x.iter().copied().map(|x| target_id.make_global(x)).collect::<Vec<_>>()
+    }) {
+        let engine = engine.clone();
 
-        while let Some(res) = scoped.next().await {
-            constraints_list.push(res);
-        }
+        scoped.spawn(async move {
+            let mut result = Vec::new();
 
-        unsafe {
-            engine.end_unordered_callee_group();
-        }
+            for constraint_id in chunk {
+                result.push(
+                    engine
+                        .query(&ConstraintsKey { adt_id: constraint_id })
+                        .await,
+                );
+            }
 
-        constraints_list
-    });
+            result
+        });
+    }
+
+    while let Some(mut res) = scoped.next().await {
+        constraints_list.append(&mut res);
+    }
+
+    unsafe {
+        engine.end_unordered_callee_group();
+    }
 
     constraints_list
 }

@@ -16,7 +16,7 @@ use pernixc_symbol::{
 };
 use pernixc_target::{Global, TargetID};
 use pernixc_term::generic_parameters::Key as GenericParametersKey;
-use pernixc_tokio::{chunk::chunk_for_tasks, scoped};
+use pernixc_tokio::{chunk::chunk_for_tasks, join_set::JoinSet};
 use qbice::{
     Decode, Encode, Query, StableHash, executor, program::Registration,
     storage::intern::Interned,
@@ -167,44 +167,43 @@ async fn all_rendered_executor(
     &AllRenderedKey { target_id }: &AllRenderedKey,
     engine: &TrackedEngine,
 ) -> Interned<[Interned<[pernixc_diagnostic::Rendered<ByteIndex>]>]> {
-    scoped!(|handles| async move {
-        let mut diagnostics = Vec::new();
-        let all_ids = engine.get_all_symbol_ids(target_id).await;
+    let mut handles = JoinSet::new();
+    let mut diagnostics = Vec::new();
+    let all_ids = engine.get_all_symbol_ids(target_id).await;
 
-        // PARALLEL: the spawned tasks are independent and do not access shared
-        // state therefore they can be safely parallelly re-verified.
-        unsafe {
-            engine.start_unordered_callee_group();
-        }
+    // PARALLEL: the spawned tasks are independent and do not access shared
+    // state therefore they can be safely parallelly re-verified.
+    unsafe {
+        engine.start_unordered_callee_group();
+    }
 
-        for chunk in all_ids.chunk_for_tasks().map(|x| {
-            x.iter().map(|x| Global::new(target_id, *x)).collect::<Vec<_>>()
-        }) {
-            let engine = engine.clone();
-            handles.spawn(async move {
-                let mut chunk_diagnostics = Vec::new();
-                for symbol_id in chunk {
-                    chunk_diagnostics.push(
-                        engine.query(&SingleRenderedKey { symbol_id }).await,
-                    );
-                }
+    for chunk in all_ids.chunk_for_tasks().map(|x| {
+        x.iter().copied().map(|x| target_id.make_global(x)).collect::<Vec<_>>()
+    }) {
+        let engine = engine.clone();
 
+        handles.spawn(async move {
+            let mut chunk_diagnostics = Vec::new();
+            for symbol_id in chunk {
                 chunk_diagnostics
-            });
-        }
-
-        while let Some(handle) = handles.next().await {
-            for diag in handle {
-                diagnostics.push(diag);
+                    .push(engine.query(&SingleRenderedKey { symbol_id }).await);
             }
-        }
 
-        unsafe {
-            engine.end_unordered_callee_group();
-        }
+            chunk_diagnostics
+        });
+    }
 
-        engine.intern_unsized(diagnostics)
-    })
+    while let Some(handle) = handles.next().await {
+        for diag in handle {
+            diagnostics.push(diag);
+        }
+    }
+
+    unsafe {
+        engine.end_unordered_callee_group();
+    }
+
+    engine.intern_unsized(diagnostics)
 }
 
 #[distributed_slice(PERNIX_PROGRAM)]

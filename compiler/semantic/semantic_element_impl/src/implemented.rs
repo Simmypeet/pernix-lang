@@ -1,12 +1,10 @@
 use linkme::distributed_slice;
 use pernixc_hash::HashSet;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
-use pernixc_semantic_element::{
-    implemented::InTargetKey, implements::get_implements,
-};
+use pernixc_semantic_element::implemented::InTargetKey;
 use pernixc_symbol::get_all_implements_ids;
 use pernixc_target::{Global, TargetID, get_all_target_ids};
-use pernixc_tokio::{chunk::chunk_for_tasks, scoped};
+use pernixc_tokio::{chunk::chunk_for_tasks, join_set::JoinSet};
 use qbice::{executor, program::Registration, storage::intern::Interned};
 
 #[executor(config = Config)]
@@ -29,57 +27,56 @@ pub async fn in_target_executor(
 
     let implementations = engine.get_all_implements_ids(key.target_id).await;
 
-    let result = scoped!(|scoped| async move {
-        let mut results = HashSet::default();
-
-        // PARALLEL: invokes implements calculation in parallel
-        unsafe {
-            engine.start_unordered_callee_group();
-        }
-
-        for implementation in implementations.chunk_for_tasks().map(|x| {
-            x.iter().map(|x| key.target_id.make_global(*x)).collect::<Vec<_>>()
-        }) {
-            let engine = engine.clone();
-
-            scoped.spawn(async move {
-                let mut results = Vec::new();
-
-                for implementation in implementation {
-                    let Some(implemented_id) = engine
-                        .get_implements(implementation)
-                        .await
-                        .map(|x| (implementation, x))
-                    else {
-                        continue;
-                    };
-
-                    results.push(implemented_id);
-                }
-
-                results
-            });
-        }
-
-        while let Some(result) = scoped.next().await {
-            for (implementation_id, implemented_id) in result {
-                if implemented_id == key.implementable_id {
-                    results.insert(implementation_id);
-                }
-            }
-        }
-
-        // End of parallel section
-        unsafe {
-            engine.end_unordered_callee_group();
-        }
-
-        engine.intern_unsized(results)
-    });
+    let mut scoped = JoinSet::new();
+    let mut results = HashSet::default();
 
     // PARALLEL: invokes implements calculation in parallel
+    unsafe {
+        engine.start_unordered_callee_group();
+    }
 
-    result
+    for implementation in implementations.chunk_for_tasks().map(|x| {
+        x.iter()
+            .copied()
+            .map(|x| key.target_id.make_global(x))
+            .collect::<Vec<_>>()
+    }) {
+        let engine = engine.clone();
+
+        scoped.spawn(async move {
+            use pernixc_semantic_element::implements::get_implements;
+            let mut results = Vec::new();
+
+            for implementation in implementation {
+                let Some(implemented_id) = engine
+                    .get_implements(implementation)
+                    .await
+                    .map(|x| (implementation, x))
+                else {
+                    continue;
+                };
+
+                results.push(implemented_id);
+            }
+
+            results
+        });
+    }
+
+    while let Some(result) = scoped.next().await {
+        for (implementation_id, implemented_id) in result {
+            if implemented_id == key.implementable_id {
+                results.insert(implementation_id);
+            }
+        }
+    }
+
+    // End of parallel section
+    unsafe {
+        engine.end_unordered_callee_group();
+    }
+
+    engine.intern_unsized(results)
 }
 
 #[distributed_slice(PERNIX_PROGRAM)]
@@ -99,34 +96,31 @@ pub async fn implemented_executor(
 ) -> Interned<HashSet<Global<pernixc_symbol::ID>>> {
     let target_ids = engine.get_all_target_ids().await;
 
-    let result = scoped!(|scoped| async move {
-        let mut results = HashSet::default();
+    let mut scoped = JoinSet::new();
+    let mut results = HashSet::default();
 
-        // PARALLEL: invokes implements calculation in parallel
-        unsafe {
-            engine.start_unordered_callee_group();
-        }
+    // PARALLEL: invokes implements calculation in parallel
+    unsafe {
+        engine.start_unordered_callee_group();
+    }
 
-        for target_id in target_ids.iter() {
-            let engine = engine.clone();
-            let key = InTargetKey {
-                implementable_id: key.symbol_id,
-                target_id: *target_id,
-            };
+    for target_id in target_ids.iter() {
+        let engine = engine.clone();
+        let key = InTargetKey {
+            implementable_id: key.symbol_id,
+            target_id: *target_id,
+        };
 
-            scoped.spawn(async move { engine.query(&key).await });
-        }
+        scoped.spawn(async move { engine.query(&key).await });
+    }
 
-        while let Some(result) = scoped.next().await {
-            results.extend(result.iter().copied());
-        }
+    while let Some(result) = scoped.next().await {
+        results.extend(result.iter().copied());
+    }
 
-        unsafe {
-            engine.end_unordered_callee_group();
-        }
+    unsafe {
+        engine.end_unordered_callee_group();
+    }
 
-        engine.intern(results)
-    });
-
-    result
+    engine.intern(results)
 }
