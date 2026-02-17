@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 use linkme::distributed_slice;
-use log::info;
 use pernixc_diagnostic::ByteIndex;
 use pernixc_extend::extend;
 use pernixc_hash::HashSet;
@@ -184,7 +183,6 @@ pub async fn qualified_identifier_completion(
         )
         .await
     else {
-        info!(" No qualified identifier found at byte index {byte_index} ");
         return Vec::new();
     };
 
@@ -196,17 +194,8 @@ pub async fn qualified_identifier_completion(
         )
         .await
     else {
-        info!(
-            " Qualified identifier at byte index {byte_index} could not be \
-             resolved "
-        );
         return Vec::new();
     };
-
-    info!(
-        " Qualified identifier at byte index {byte_index} resolved to \
-         {resolved_path:?} "
-    );
 
     // determine the nearest module id for import suggestions
     let nearest_module_id =
