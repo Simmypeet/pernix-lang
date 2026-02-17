@@ -1,0 +1,17 @@
+public trait Foo[T]:
+    pass
+
+
+implements[T] Foo[T]:
+    where:
+        trait Foo[T]
+
+    pass
+
+
+public type IsFoo[T] = T:
+    where:
+        trait Foo[T]
+
+
+public type Inst = IsFoo[int32] # is int32: Foo? the answer should be no!
