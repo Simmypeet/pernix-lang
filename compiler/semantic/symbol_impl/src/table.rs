@@ -17,6 +17,7 @@ use qbice::{
     Decode, Encode, ExecutionStyle, Identifiable, Query, StableHash, executor,
     program::Registration, storage::intern::Interned,
 };
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::{
     diagnostic::{Diagnostic, SourceFileLoadFail},
@@ -625,10 +626,10 @@ async fn map_executor(key: &MapKey, engine: &TrackedEngine) -> Map {
             }
 
             // Add all symbols from this table to the symbol map
-            for (symbol_id, _kind) in kinds.iter() {
+            kinds.par_iter().for_each(|(symbol_id, _kind)| {
                 keys_by_symbol_id
                     .insert(*symbol_id, current_external_submodule.clone());
-            }
+            });
 
             // Recursively traverse external submodules
 

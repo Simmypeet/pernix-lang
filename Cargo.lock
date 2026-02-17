@@ -144,6 +144,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "atomic-waker"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
+
+[[package]]
 name = "auto_impl"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -622,29 +628,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "env_filter"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a1c3cc8e57274ec99de65301228b537f1e4eedc1b8e0f9411c6caac8ae7308f"
-dependencies = [
- "log",
- "regex",
-]
-
-[[package]]
-name = "env_logger"
-version = "0.11.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2daee4ea451f429a58296525ddf28b45a3b64f1acf6587e2067437bb11e218d"
-dependencies = [
- "anstream",
- "anstyle",
- "env_filter",
- "jiff",
- "log",
-]
-
-[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1116,30 +1099,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92ecc6618181def0457392ccd0ee51198e065e016d1d527a7ac1b6dc7c1f09d2"
 
 [[package]]
-name = "jiff"
-version = "0.2.20"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c867c356cc096b33f4981825ab281ecba3db0acefe60329f044c1789d94c6543"
-dependencies = [
- "jiff-static",
- "log",
- "portable-atomic",
- "portable-atomic-util",
- "serde_core",
-]
-
-[[package]]
-name = "jiff-static"
-version = "0.2.20"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f7946b4325269738f270bb55b3c19ab5c5040525f83fd625259422a9d25d9be5"
-dependencies = [
- "proc-macro2 1.0.106",
- "quote 1.0.44",
- "syn 2.0.114",
-]
-
-[[package]]
 name = "jobserver"
 version = "0.1.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1516,11 +1475,9 @@ version = "0.1.0-beta.2"
 dependencies = [
  "backtrace",
  "bon",
- "env_logger",
  "fuzzy-matcher",
  "getset",
  "linkme",
- "log",
  "pernixc_check",
  "pernixc_corelib",
  "pernixc_diagnostic",
@@ -1545,7 +1502,10 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
+ "tokio-util",
  "tower-lsp",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -2058,6 +2018,7 @@ dependencies = [
  "pernixc_target",
  "pernixc_tokio",
  "qbice",
+ "rayon",
  "tokio",
 ]
 
@@ -2232,15 +2193,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c33a9471896f1c69cecef8d20cbe2f7accd12527ce60845ff44c153bb2a21b49"
 
 [[package]]
-name = "portable-atomic-util"
-version = "0.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a9db96d7fa8782dd8c15ce32ffe8680bbd1e978a43bf51a34d39483540495f5"
-dependencies = [
- "portable-atomic",
-]
-
-[[package]]
 name = "potential_utf"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2398,10 +2350,11 @@ dependencies = [
 
 [[package]]
 name = "qbice"
-version = "0.6.1"
+version = "0.6.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2fca70b8444dddd2f14847cb1cd9a8428c23e6728ee8eb0486406a1f8f6344c2"
+checksum = "c2b8b8623f405dd28d51b801159c25e9185d3f0fd3e7a72ea31e02ca5e8c1ecc"
 dependencies = [
+ "bon",
  "crossbeam",
  "dashmap 6.1.0",
  "enum-as-inner",
@@ -2414,12 +2367,12 @@ dependencies = [
  "qbice_stable_hash",
  "qbice_stable_type_id",
  "qbice_storage",
- "rayon",
  "scc",
  "thiserror 2.0.18",
  "thread_local",
  "tokio",
  "tracing",
+ "waitgroup",
 ]
 
 [[package]]
@@ -2514,9 +2467,9 @@ dependencies = [
 
 [[package]]
 name = "qbice_storage"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24ccbc8dc91e4a06fd282f2c09052a8ad6662ba6aeaeb6932a4eff540cb12b5b"
+checksum = "5861df699c1186e7807686b1aea455dbead7f4063183f3c02c93698a89ea769b"
 dependencies = [
  "bon",
  "crossbeam",
@@ -3256,7 +3209,6 @@ dependencies = [
  "signal-hook-registry",
  "socket2",
  "tokio-macros",
- "tracing",
  "windows-sys 0.61.2",
 ]
 
@@ -3582,6 +3534,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09ac3b126d3914f9849036f826e054cbabdc8519970b8998ddaf3b5bd3c65f11"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "waitgroup"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d1f50000a783467e6c0200f9d10642f4bc424e39efc1b770203e88b488f79292"
+dependencies = [
+ "atomic-waker",
 ]
 
 [[package]]
