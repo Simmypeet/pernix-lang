@@ -3,7 +3,7 @@ use std::sync::Arc;
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::kind::Kind;
 use pernixc_syntax::item::r#trait::Member as TraitMemberSyn;
-use tokio::task::JoinHandle;
+use pernixc_tokio::join_set::JoinSet;
 
 use crate::table::builder::{Builder, MemberBuilder};
 
@@ -13,9 +13,15 @@ impl Builder {
         self: &Arc<Self>,
         trait_syntax: &pernixc_syntax::item::r#trait::Trait,
         module_member_builder: &mut MemberBuilder,
-    ) -> Option<JoinHandle<()>> {
-        let signature = trait_syntax.signature()?;
-        let identifier = signature.identifier()?;
+        join_set: &mut JoinSet<()>,
+    ) {
+        let Some(signature) = trait_syntax.signature() else {
+            return;
+        };
+
+        let Some(identifier) = signature.identifier() else {
+            return;
+        };
 
         let next_submodule_qualified_name = module_member_builder
             .extend_qualified_name_sequence(identifier.kind.0.clone());
@@ -39,7 +45,7 @@ impl Builder {
 
         let builder = self.clone();
 
-        Some(tokio::spawn(async move {
+        join_set.spawn(async move {
             let mut trait_member_builder = MemberBuilder::new(
                 trait_id,
                 next_submodule_qualified_name,
@@ -197,6 +203,6 @@ impl Builder {
                 )
                 .await;
             builder.insert_member_from_builder(trait_id, trait_member_builder);
-        }))
+        });
     }
 }

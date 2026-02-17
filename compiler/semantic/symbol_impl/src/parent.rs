@@ -5,7 +5,7 @@ use pernixc_hash::HashMap;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_symbol::{ID, get_target_root_module_id, parent::Key};
 use pernixc_target::{Global, TargetID};
-use pernixc_tokio::{chunk::chunk_for_tasks, scoped};
+use pernixc_tokio::{chunk::chunk_for_tasks, join_set::JoinSet};
 use qbice::{
     Decode, Encode, Query, StableHash, executor, program::Registration,
 };
@@ -89,64 +89,61 @@ async fn intermediate_executor(
     let map = engine.query(&MapKey(target_id)).await;
 
     let symbols = map.keys_by_symbol_id.keys().copied().collect::<Vec<_>>();
+    let mut handles = JoinSet::default();
 
-    scoped!(|handles| async {
-        for chunk in
-            symbols.chunk_for_tasks().map(<[pernixc_symbol::ID]>::to_vec)
-        {
-            let target_id = key.0;
-            let map = map.clone();
-            let engine = engine.clone();
+    for chunk in symbols.chunk_for_tasks().map(<[pernixc_symbol::ID]>::to_vec) {
+        let target_id = key.0;
+        let map = map.clone();
+        let engine = engine.clone();
 
-            handles.spawn(async move {
-                let mut key_and_members = Vec::new();
-                for symbol in chunk {
-                    let table_key = map
-                        .keys_by_symbol_id
-                        .get(&symbol)
-                        .unwrap()
-                        .as_ref()
-                        .map_or_else(
-                            || table::Key::Root(target_id),
-                            |x| table::Key::Submodule {
-                                external_submodule: x.clone(),
-                                target_id,
-                            },
-                        );
-
-                    let table = engine.query(&TableKey(table_key)).await;
-
-                    key_and_members.push(table.members.get(&symbol).map(
-                        |members| {
-                            (
-                                symbol,
-                                members
-                                    .member_ids_by_name
-                                    .values()
-                                    .copied()
-                                    .chain(members.unnameds.iter().copied())
-                                    .collect::<Vec<_>>(),
-                            )
+        handles.spawn(async move {
+            let mut key_and_members = Vec::new();
+            for symbol in chunk {
+                let table_key = map
+                    .keys_by_symbol_id
+                    .get(&symbol)
+                    .unwrap()
+                    .as_ref()
+                    .map_or_else(
+                        || table::Key::Root(target_id),
+                        |x| table::Key::Submodule {
+                            external_submodule: x.clone(),
+                            target_id,
                         },
-                    ));
-                }
+                    );
 
-                key_and_members
-            });
-        }
+                let table = engine.query(&TableKey(table_key)).await;
 
-        let mut parent_map = HashMap::default();
+                key_and_members.push(table.members.get(&symbol).map(
+                    |members| {
+                        (
+                            symbol,
+                            members
+                                .member_ids_by_name
+                                .values()
+                                .copied()
+                                .chain(members.unnameds.iter().copied())
+                                .collect::<Vec<_>>(),
+                        )
+                    },
+                ));
+            }
 
-        while let Some(key_and_members) = handles.next().await {
-            for (symbol, members) in key_and_members.into_iter().flatten() {
-                for member in members {
-                    assert!(parent_map.insert(member, symbol).is_none());
-                }
+            key_and_members
+        });
+    }
+
+    let mut parent_map = HashMap::default();
+
+    while let Some(key_and_members) = handles.next().await {
+        for (symbol, members) in key_and_members.into_iter().flatten() {
+            for member in members {
+                assert!(parent_map.insert(member, symbol).is_none());
             }
         }
+    }
 
-        Arc::new(parent_map)
-    })
+    Arc::new(parent_map)
 }
 
 #[distributed_slice(PERNIX_PROGRAM)]

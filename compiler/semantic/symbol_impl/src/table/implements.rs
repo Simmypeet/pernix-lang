@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{calculate_implements_id, kind::Kind, member::Member};
+use pernixc_tokio::join_set::JoinSet;
 use qbice::storage::intern::Interned;
-use tokio::task::JoinHandle;
 
 use crate::table::builder::{Builder, MemberBuilder};
 
@@ -13,9 +13,15 @@ impl Builder {
         self: &Arc<Self>,
         implements_syntax: pernixc_syntax::item::implements::Implements,
         module_member_builder: &mut MemberBuilder,
-    ) -> Option<JoinHandle<()>> {
-        let signature = implements_syntax.signature()?;
-        let qualified_identifier = signature.qualified_identifier()?;
+        join_set: &mut JoinSet<()>,
+    ) {
+        let Some(signature) = implements_syntax.signature() else {
+            return;
+        };
+        let Some(qualified_identifier) = signature.qualified_identifier()
+        else {
+            return;
+        };
 
         let body = implements_syntax.body();
         let qualified_identifier_span = qualified_identifier.span();
@@ -72,8 +78,6 @@ impl Builder {
         match body {
             Some(pernixc_syntax::item::implements::Body::Negative(_)) => {
                 self.insert_kind(implements_id, Kind::NegativeImplementation);
-
-                None
             }
 
             None => {
@@ -82,8 +86,6 @@ impl Builder {
                     implements_id,
                     self.engine().intern(Member::default()),
                 );
-
-                None
             }
 
             Some(pernixc_syntax::item::implements::Body::Positive(body)) => {
@@ -93,7 +95,7 @@ impl Builder {
                 let implements_name_sequence = module_member_builder
                     .extend_qualified_name_sequence(implements_qualified_name);
 
-                Some(tokio::spawn(async move {
+                join_set.spawn(async move {
                     let member_builder = builder
                         .handle_positive_implementation(
                             implements_id,
@@ -106,7 +108,7 @@ impl Builder {
                         implements_id,
                         member_builder,
                     );
-                }))
+                });
             }
         }
     }
