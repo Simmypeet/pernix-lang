@@ -13,6 +13,7 @@ pernixc_source_file = { path = "../base/source_file" }
 pernixc_diagnostic = { path = "../base/diagnostic" }
 pernixc_handler = { path = "../base/handler" }
 pernixc_target = { path = "../base/target" }
+pernixc_hash = { path = "../base/hash" }
 pernixc_corelib = { path = "../semantic/corelib" }
 pernixc_symbol = { path = "../semantic/symbol" }
 pernixc_symbol_impl = { path = "../semantic/symbol_impl" }
@@ -26,7 +27,7 @@ qbice.workspace = true
 linkme.workspace = true
 inkwell = { workspace = true }
 tracing = { workspace = true }
-miette.workspace = true
+annotate-snippets.workspace = true
 ansi_term.workspace = true
 
 [lints]
