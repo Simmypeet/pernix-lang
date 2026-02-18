@@ -1,18 +1,17 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: mismatched types: expected `{number}`, found `bool`
-    ╭─[compiler/e2e/test/snapshot/ir/expression/do/mismatched_closure_return_type/main.pnx:13:20]
- 12 │             # return boolean is an error
- 13 │             return true
-    ·                    ──┬─
-    ·                      ╰── expected `{number}`, found `bool`
-    ╰────
-  help: ensure the expression type matches the expected type
+[error]: mismatched types: expected `{number}`, found `bool`
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/do/mismatched_closure_return_type/main.pnx:13:20
+   │
+13 │             return true
+   │                    ━━━━ expected `{number}`, found `bool`
+   │
+   ╰ help: ensure the expression type matches the expected type
 
-  [error]: Compilation aborted due to 1 error(s)
+[error]: Compilation aborted due to 1 error(s)
 
 
 

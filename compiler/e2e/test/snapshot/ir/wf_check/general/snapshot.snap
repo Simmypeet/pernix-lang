@@ -1,68 +1,39 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: unsatisfied predicate
-    ╭─[compiler/e2e/test/snapshot/ir/wf_check/general/main.pnx:7:15]
-  6 │     where:
-  7 │         trait ImpossibleTrait[T]
-    ·               ─────────┬────────
-    ·                        ╰── the required predicate was declared here
-  8 │ 
-  9 │     public field: T
- 10 │ 
- 11 │ 
- 12 │ public enum MyEnum[T]:
- 13 │     where:
- 14 │         trait ImpossibleTrait[T]
- 15 │ 
- 16 │     Variant(T)
- 17 │ 
- 18 │ 
- 19 │ public function main[T](a: T):
- 20 │     let x = MyStruct { field: 5 }
-    ·             ──────────┬──────────
-    ·                       ╰── the predicate `trait main::ImpossibleTrait[int32]` is not satisfied
- 21 │     let y = MyEnum::Variant(10)
-    ╰────
+[error]: unsatisfied predicate
+   ╭▸ compiler/e2e/test/snapshot/ir/wf_check/general/main.pnx:20:13
+   │
+ 7 │         trait ImpossibleTrait[T]
+   │               ────────────────── the required predicate was declared here
+   ‡
+20 │     let x = MyStruct { field: 5 }
+   ╰╴            ━━━━━━━━━━━━━━━━━━━━━ the predicate `trait main::ImpossibleTrait[int32]` is not satisfied
 
-  [error]: unsatisfied predicate
-    ╭─[compiler/e2e/test/snapshot/ir/wf_check/general/main.pnx:14:15]
- 13 │     where:
- 14 │         trait ImpossibleTrait[T]
-    ·               ─────────┬────────
-    ·                        ╰── the required predicate was declared here
- 15 │ 
- 16 │     Variant(T)
- 17 │ 
- 18 │ 
- 19 │ public function main[T](a: T):
- 20 │     let x = MyStruct { field: 5 }
- 21 │     let y = MyEnum::Variant(10)
-    ·             ─────────┬─────────
-    ·                      ╰── the predicate `trait main::ImpossibleTrait[int32]` is not satisfied
- 22 │     let b = (true, ...a, false)
-    ╰────
+[error]: unsatisfied predicate
+   ╭▸ compiler/e2e/test/snapshot/ir/wf_check/general/main.pnx:21:13
+   │
+14 │         trait ImpossibleTrait[T]
+   │               ────────────────── the required predicate was declared here
+   ‡
+21 │     let y = MyEnum::Variant(10)
+   ╰╴            ━━━━━━━━━━━━━━━━━━━ the predicate `trait main::ImpossibleTrait[int32]` is not satisfied
 
-  [error]: unsatisfied predicate
-    ╭─[compiler/e2e/test/snapshot/ir/wf_check/general/main.pnx:22:23]
- 21 │     let y = MyEnum::Variant(10)
- 22 │     let b = (true, ...a, false)
-    ·                       ┬
-    ·                       ╰── the predicate `T: tuple` is not satisfied
- 23 │ 
-    ╰────
+[error]: unsatisfied predicate
+   ╭▸ compiler/e2e/test/snapshot/ir/wf_check/general/main.pnx:22:23
+   │
+22 │     let b = (true, ...a, false)
+   ╰╴                      ━ the predicate `T: tuple` is not satisfied
 
-  [error]: unsatisfied predicate
-    ╭─[compiler/e2e/test/snapshot/ir/wf_check/general/main.pnx:38:13]
- 37 │     let a = *x # fine
- 38 │     let b = *y # not fine, mutable ref cannot be copied
-    ·             ─┬
-    ·              ╰── the predicate `marker core::Copy[main::StructMutableRef]` is not satisfied
-    ╰────
+[error]: unsatisfied predicate
+   ╭▸ compiler/e2e/test/snapshot/ir/wf_check/general/main.pnx:38:13
+   │
+38 │     let b = *y # not fine, mutable ref cannot be copied
+   ╰╴            ━━ the predicate `marker core::Copy[main::StructMutableRef]` is not satisfied
 
-  [error]: Compilation aborted due to 4 error(s)
+[error]: Compilation aborted due to 4 error(s)
 
 
 

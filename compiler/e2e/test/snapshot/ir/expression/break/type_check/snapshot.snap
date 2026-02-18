@@ -1,29 +1,25 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: mismatched types: expected `bool`, found `{number}`
-    ╭─[compiler/e2e/test/snapshot/ir/expression/break/type_check/main.pnx:10:19]
-  9 │ 
- 10 │             break 64 # error, must be bool
-    ·                   ─┬
-    ·                    ╰── expected `bool`, found `{number}`
- 11 │             break 'outer true # error, must be int
-    ╰────
-  help: ensure the expression type matches the expected type
+[error]: mismatched types: expected `bool`, found `{number}`
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/break/type_check/main.pnx:10:19
+   │
+10 │             break 64 # error, must be bool
+   │                   ━━ expected `bool`, found `{number}`
+   │
+   ╰ help: ensure the expression type matches the expected type
 
-  [error]: mismatched types: expected `{number}`, found `bool`
-    ╭─[compiler/e2e/test/snapshot/ir/expression/break/type_check/main.pnx:11:26]
- 10 │             break 64 # error, must be bool
- 11 │             break 'outer true # error, must be int
-    ·                          ──┬─
-    ·                            ╰── expected `{number}`, found `bool`
- 12 │         
-    ╰────
-  help: ensure the expression type matches the expected type
+[error]: mismatched types: expected `{number}`, found `bool`
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/break/type_check/main.pnx:11:26
+   │
+11 │             break 'outer true # error, must be int
+   │                          ━━━━ expected `{number}`, found `bool`
+   │
+   ╰ help: ensure the expression type matches the expected type
 
-  [error]: Compilation aborted due to 2 error(s)
+[error]: Compilation aborted due to 2 error(s)
 
 
 

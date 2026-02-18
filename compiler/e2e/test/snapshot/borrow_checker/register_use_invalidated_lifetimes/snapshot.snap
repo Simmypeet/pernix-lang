@@ -1,19 +1,19 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: access is done while it is mutably borrowed
-   ╭─[compiler/e2e/test/snapshot/borrow_checker/register_use_invalidated_lifetimes/main.pnx:4:12]
- 3 │ ): 
- 4 │     let a =  (&mut *ref, &mut *ref)
-   ·            ────────────┬───────────┬┬
-   ·                        │           │╰── access occurs here while it is mutably borrowed
-   ·                        │           ╰── the mutable borrow starts here
-   ·                        ╰── the borrow is used here
-   ╰────
+[error]: access is done while it is mutably borrowed
+  ╭▸ compiler/e2e/test/snapshot/borrow_checker/register_use_invalidated_lifetimes/main.pnx:4:26
+  │
+4 │     let a =  (&mut *ref, &mut *ref)
+  │            ┬──┬──────────┯━━━━━━━━─
+  │            │  │          │
+  │            │  │          access occurs here while it is mutably borrowed
+  │            │  the mutable borrow starts here
+  ╰╴           the borrow is used here
 
-  [error]: Compilation aborted due to 1 error(s)
+[error]: Compilation aborted due to 1 error(s)
 
 
 

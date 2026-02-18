@@ -1,26 +1,20 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: mutable access is done while it is borrowed
-    ╭─[compiler/e2e/test/snapshot/borrow_checker/phi_inference_use_invalidated_reference/main.pnx:7:29]
-  6 │         if cond:
-  7 │             express 'result &first
-    ·                             ───┬──
-    ·                                ╰── the borrow starts here
-  8 │         else: 
-  9 │             express 'result &second
- 10 │ 
- 11 │     first = 2        # <- Error: first is borrowed by ref
-    ·     ────┬────
-    ·         ╰── mutable access occurs here
- 12 │     let copy = *ref  # <- Error: ref is invalidated
-    ·                ──┬─
-    ·                  ╰── the borrow is used here
-    ╰────
+[error]: mutable access is done while it is borrowed
+   ╭▸ compiler/e2e/test/snapshot/borrow_checker/phi_inference_use_invalidated_reference/main.pnx:11:5
+   │
+ 7 │             express 'result &first
+   │                             ────── the borrow starts here
+   ‡
+11 │     first = 2        # <- Error: first is borrowed by ref
+   │     ━━━━━━━━━ mutable access occurs here
+12 │     let copy = *ref  # <- Error: ref is invalidated
+   ╰╴               ──── the borrow is used here
 
-  [error]: Compilation aborted due to 1 error(s)
+[error]: Compilation aborted due to 1 error(s)
 
 
 

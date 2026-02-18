@@ -1,19 +1,17 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: the following effects are not handled by the caller: main::Test[bool]
-    ╭─[compiler/e2e/test/snapshot/ir/expression/do/local_effect_handler/main.pnx:9:9]
-  8 │         Test[float32]::op() # the effect is handled by `do` annotation of function
-  9 │         Test[bool]::op()    # error, no effect handler found
-    ·         ────────┬───────
-    ·                 ╰── call to the `effect operation main::Test::op`
- 10 │ 
-    ╰────
-  help: consider adding a `do` effect annotation to the current function to handle these effects
+[error]: the following effects are not handled by the caller: main::Test[bool]
+  ╭▸ compiler/e2e/test/snapshot/ir/expression/do/local_effect_handler/main.pnx:9:9
+  │
+9 │         Test[bool]::op()    # error, no effect handler found
+  │         ━━━━━━━━━━━━━━━━ call to the `effect operation main::Test::op`
+  │
+  ╰ help: consider adding a `do` effect annotation to the current function to handle these effects
 
-  [error]: Compilation aborted due to 1 error(s)
+[error]: Compilation aborted due to 1 error(s)
 
 
 

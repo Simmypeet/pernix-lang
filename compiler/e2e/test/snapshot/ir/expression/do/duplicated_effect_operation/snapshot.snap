@@ -1,24 +1,20 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: the operation `test` of effect `main::Test` is handled more than once
-    ╭─[compiler/e2e/test/snapshot/ir/expression/do/duplicated_effect_operation/main.pnx:10:9]
-  9 │     with Test:
- 10 │         test():
-    ·         ──┬─
-    ·           ╰── the first handler for operation `test` of effect `main::Test` is defined here
- 11 │             pass
- 12 │         
- 13 │         test(): # duplicated effect operation
-    ·         ──┬─
-    ·           ╰── the duplicated operation handler is defined here
- 14 │             pass
-    ╰────
-  help: the operation `test` of effect `main::Test` is already handled by the first handler; consider removing the second handler
+[error]: the operation `test` of effect `main::Test` is handled more than once
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/do/duplicated_effect_operation/main.pnx:13:9
+   │
+10 │         test():
+   │         ──── the first handler for operation `test` of effect `main::Test` is defined here
+   ‡
+13 │         test(): # duplicated effect operation
+   │         ━━━━ the duplicated operation handler is defined here
+   │
+   ╰ help: the operation `test` of effect `main::Test` is already handled by the first handler; consider removing the second handler
 
-  [error]: Compilation aborted due to 1 error(s)
+[error]: Compilation aborted due to 1 error(s)
 
 
 

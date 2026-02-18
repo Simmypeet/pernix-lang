@@ -1,22 +1,18 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: the value is used after it has been moved
-    ╭─[compiler/e2e/test/snapshot/memory_checker/use_after_partial_move_in_brach/main.pnx:7:17]
-  6 │     if cond:
-  7 │         consume(x.0)
-    ·                 ─┬─
-    ·                  ╰── the value was moved here
-  8 │ 
-  9 │     
- 10 │     consume(x)
-    ·             ┬
-    ·             ╰── 
-    ╰────
+[error]: the value is used after it has been moved
+   ╭▸ compiler/e2e/test/snapshot/memory_checker/use_after_partial_move_in_brach/main.pnx:10:13
+   │
+ 7 │         consume(x.0)
+   │                 ─── the value was moved here
+   ‡
+10 │     consume(x)
+   ╰╴            ━
 
-  [error]: Compilation aborted due to 1 error(s)
+[error]: Compilation aborted due to 1 error(s)
 
 
 

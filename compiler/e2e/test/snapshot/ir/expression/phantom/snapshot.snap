@@ -1,19 +1,17 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: mismatched types: expected `int32`, found `phantom {any}`
-    ╭─[compiler/e2e/test/snapshot/ir/expression/phantom/main.pnx:11:21]
- 10 │         phantomBool: phantom,  # fine
- 11 │         notPhantom: phantom,   # not fine
-    ·                     ───┬───
-    ·                        ╰── expected `int32`, found `phantom {any}`
- 12 │     }
-    ╰────
-  help: ensure the expression type matches the expected type
+[error]: mismatched types: expected `int32`, found `phantom {any}`
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/phantom/main.pnx:11:21
+   │
+11 │         notPhantom: phantom,   # not fine
+   │                     ━━━━━━━ expected `int32`, found `phantom {any}`
+   │
+   ╰ help: ensure the expression type matches the expected type
 
-  [error]: Compilation aborted due to 1 error(s)
+[error]: Compilation aborted due to 1 error(s)
 
 
 

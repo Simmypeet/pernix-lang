@@ -1,26 +1,21 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: lifetime inference is not allowed here
-    ╭─[compiler/e2e/test/snapshot/semantic_element/elided_lifetimes/main.pnx:10:39]
-  9 │ public effect FizzBuzz:
- 10 │     fizzBuzz(d: &int32, e: &int32) -> &int32
-    ·                                       ┬
-    ·                                       ╰── expected an explicit lifetime to be inserted here
- 11 │ 
-    ╰────
+[error]: lifetime inference is not allowed here
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/elided_lifetimes/main.pnx:10:39
+   │
+10 │     fizzBuzz(d: &int32, e: &int32) -> &int32
+   ╰╴                                      ━ expected an explicit lifetime to be inserted here
 
-  [error]: mismatched generic argument count
-    ╭─[compiler/e2e/test/snapshot/semantic_element/elided_lifetimes/main.pnx:22:55]
- 21 │ public effect FizzBuzzRefError:
- 22 │     fizzBuzzRefError(f: Ref[int32], g: Ref[int32]) -> Ref[int32]
-    ·                                                       ─────┬────
-    ·                                                            ╰── expected 1 lifetime arguments, but 0 were supplied
-    ╰────
+[error]: mismatched generic argument count
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/elided_lifetimes/main.pnx:22:55
+   │
+22 │     fizzBuzzRefError(f: Ref[int32], g: Ref[int32]) -> Ref[int32]
+   ╰╴                                                      ━━━━━━━━━━ expected 1 lifetime arguments, but 0 were supplied
 
-  [error]: Compilation aborted due to 2 error(s)
+[error]: Compilation aborted due to 2 error(s)
 
 
 

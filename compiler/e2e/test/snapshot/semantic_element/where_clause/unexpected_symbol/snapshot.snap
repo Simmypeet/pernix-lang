@@ -1,35 +1,27 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: unexpected symbol in the trait predicate
-   ╭─[compiler/e2e/test/snapshot/semantic_element/where_clause/unexpected_symbol/main.pnx:6:15]
- 5 │     where:
- 6 │         trait Struct[(T,)]
-   ·               ──────┬─────
-   ·                     ╰── expected trait symbol but found `struct main::Struct`
- 7 │         marker Struct[(T, T)]
-   ╰────
+[error]: unexpected symbol in the trait predicate
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/where_clause/unexpected_symbol/main.pnx:6:15
+  │
+6 │         trait Struct[(T,)]
+  ╰╴              ━━━━━━━━━━━━ expected trait symbol but found `struct main::Struct`
 
-  [error]: unexpected symbol in the marker predicate
-   ╭─[compiler/e2e/test/snapshot/semantic_element/where_clause/unexpected_symbol/main.pnx:7:16]
- 6 │         trait Struct[(T,)]
- 7 │         marker Struct[(T, T)]
-   ·                ───────┬──────
-   ·                       ╰── expected marker symbol but found `struct main::Struct`
- 8 │         Struct[(T, T, T)] = usize
-   ╰────
+[error]: unexpected symbol in the marker predicate
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/where_clause/unexpected_symbol/main.pnx:7:16
+  │
+7 │         marker Struct[(T, T)]
+  ╰╴               ━━━━━━━━━━━━━━ expected marker symbol but found `struct main::Struct`
 
-  [error]: the left-hand side of the type equality predicate must be a trait associated type
-   ╭─[compiler/e2e/test/snapshot/semantic_element/where_clause/unexpected_symbol/main.pnx:8:9]
- 7 │         marker Struct[(T, T)]
- 8 │         Struct[(T, T, T)] = usize
-   ·         ────────┬────────
-   ·                 ╰── 
-   ╰────
+[error]: the left-hand side of the type equality predicate must be a trait associated type
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/where_clause/unexpected_symbol/main.pnx:8:9
+  │
+8 │         Struct[(T, T, T)] = usize
+  ╰╴        ━━━━━━━━━━━━━━━━━
 
-  [error]: Compilation aborted due to 3 error(s)
+[error]: Compilation aborted due to 3 error(s)
 
 
 

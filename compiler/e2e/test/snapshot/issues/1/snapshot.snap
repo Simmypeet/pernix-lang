@@ -1,21 +1,21 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: the symbol could not be found
-   ╭─[compiler/e2e/test/snapshot/issues/1/main.pnx:1:14]
- 1 │ from target::o
-   ·              ┬
-   ·              ╰── the symbol named `o` does not exist in `main`
-   ╰────
+[error]: the symbol could not be found
+  ╭▸ compiler/e2e/test/snapshot/issues/1/main.pnx:1:14
+  │
+1 │ from target::o
+  ╰╴             ━ the symbol named `o` does not exist in `main`
 
-  [error]: unexpected End of file, expected `:` punctuation, `import` keyword
-   ╭─[compiler/e2e/test/snapshot/issues/1/main.pnx:1:15]
- 1 │ from target::o
-   ╰────
+[error]: unexpected End of file, expected `:` punctuation, `import` keyword
+  ╭▸ compiler/e2e/test/snapshot/issues/1/main.pnx:1:15
+  │
+1 │ from target::o
+  ╰╴              ━
 
-  [error]: Compilation aborted due to 2 error(s)
+[error]: Compilation aborted due to 2 error(s)
 
 
 

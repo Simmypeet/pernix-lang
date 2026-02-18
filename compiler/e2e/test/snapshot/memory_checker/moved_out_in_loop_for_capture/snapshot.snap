@@ -1,18 +1,15 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [warning]: the value has been moved inside the loop for closure capture, which could be used in the subsequent iteration
-    ╭─[compiler/e2e/test/snapshot/memory_checker/moved_out_in_loop_for_capture/main.pnx:23:9]
- 22 │     loop:
- 23 │         do: # the `nonCopyable` is moved here
-    ·         ─┬
-    ·          ╰── 
- 24 │             drop(nonCopyable)
-    ╰────
+[warning]: the value has been moved inside the loop for closure capture, which could be used in the subsequent iteration
+   ╭▸ compiler/e2e/test/snapshot/memory_checker/moved_out_in_loop_for_capture/main.pnx:23:9
+   │
+23 │         do: # the `nonCopyable` is moved here
+   ╰╴        ━━
 
-  [error]: Compilation aborted due to 1 error(s)
+[error]: Compilation aborted due to 1 error(s)
 
 
 

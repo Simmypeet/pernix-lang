@@ -1,48 +1,41 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: the symbol `struct main::MyStruct` cannot be called
-    ╭─[compiler/e2e/test/snapshot/ir/expression/function_call/symbol_is_not_callable/main.pnx:21:5]
- 20 │ public function main():
- 21 │     MyStruct()
-    ·     ─────┬────
-    ·          ╰── not callable
- 22 │     MyEnum()
-    ╰────
-  help: only functions, effect operation or enum with associated value can be called
+[error]: the symbol `struct main::MyStruct` cannot be called
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/function_call/symbol_is_not_callable/main.pnx:21:5
+   │
+21 │     MyStruct()
+   │     ━━━━━━━━━━ not callable
+   │
+   ╰ help: only functions, effect operation or enum with associated value can be called
 
-  [error]: the symbol `enum main::MyEnum` cannot be called
-    ╭─[compiler/e2e/test/snapshot/ir/expression/function_call/symbol_is_not_callable/main.pnx:22:5]
- 21 │     MyStruct()
- 22 │     MyEnum()
-    ·     ────┬───
-    ·         ╰── not callable
- 23 │     myModule()
-    ╰────
-  help: only functions, effect operation or enum with associated value can be called
+[error]: the symbol `enum main::MyEnum` cannot be called
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/function_call/symbol_is_not_callable/main.pnx:22:5
+   │
+22 │     MyEnum()
+   │     ━━━━━━━━ not callable
+   │
+   ╰ help: only functions, effect operation or enum with associated value can be called
 
-  [error]: the symbol `module main::myModule` cannot be called
-    ╭─[compiler/e2e/test/snapshot/ir/expression/function_call/symbol_is_not_callable/main.pnx:23:5]
- 22 │     MyEnum()
- 23 │     myModule()
-    ·     ─────┬────
-    ·          ╰── not callable
- 24 │     MyTrait[int32]()
-    ╰────
-  help: only functions, effect operation or enum with associated value can be called
+[error]: the symbol `module main::myModule` cannot be called
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/function_call/symbol_is_not_callable/main.pnx:23:5
+   │
+23 │     myModule()
+   │     ━━━━━━━━━━ not callable
+   │
+   ╰ help: only functions, effect operation or enum with associated value can be called
 
-  [error]: the symbol `trait main::MyTrait` cannot be called
-    ╭─[compiler/e2e/test/snapshot/ir/expression/function_call/symbol_is_not_callable/main.pnx:24:5]
- 23 │     myModule()
- 24 │     MyTrait[int32]()
-    ·     ────────┬───────
-    ·             ╰── not callable
-    ╰────
-  help: only functions, effect operation or enum with associated value can be called
+[error]: the symbol `trait main::MyTrait` cannot be called
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/function_call/symbol_is_not_callable/main.pnx:24:5
+   │
+24 │     MyTrait[int32]()
+   │     ━━━━━━━━━━━━━━━━ not callable
+   │
+   ╰ help: only functions, effect operation or enum with associated value can be called
 
-  [error]: Compilation aborted due to 4 error(s)
+[error]: Compilation aborted due to 4 error(s)
 
 
 

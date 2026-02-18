@@ -1,20 +1,17 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: the value is used after it has been moved
-   ╭─[compiler/e2e/test/snapshot/memory_checker/use_after_partial_move/main.pnx:6:13]
- 5 │ public function partialMove[T](x: (T, T)):
- 6 │     consume(x.0)
-   ·             ─┬─
-   ·              ╰── the value was moved here
- 7 │     consume(x)
-   ·             ┬
-   ·             ╰── 
-   ╰────
+[error]: the value is used after it has been moved
+  ╭▸ compiler/e2e/test/snapshot/memory_checker/use_after_partial_move/main.pnx:7:13
+  │
+6 │     consume(x.0)
+  │             ─── the value was moved here
+7 │     consume(x)
+  ╰╴            ━
 
-  [error]: Compilation aborted due to 1 error(s)
+[error]: Compilation aborted due to 1 error(s)
 
 
 

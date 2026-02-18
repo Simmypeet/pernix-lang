@@ -1,29 +1,25 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: mismatched types: expected `int32`, found `({number})`
-    ╭─[compiler/e2e/test/snapshot/ir/expression/parenthesized/single_element/main.pnx:13:20]
- 12 │     Test {
- 13 │         justNumber: (32,),
-    ·                    ───┬──
-    ·                       ╰── expected `int32`, found `({number})`
- 14 │         singleTupleElement: (32),
-    ╰────
-  help: ensure the expression type matches the expected type
+[error]: mismatched types: expected `int32`, found `({number})`
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/parenthesized/single_element/main.pnx:13:20
+   │
+13 │         justNumber: (32,),
+   │                    ━━━━━━ expected `int32`, found `({number})`
+   │
+   ╰ help: ensure the expression type matches the expected type
 
-  [error]: mismatched types: expected `(int32)`, found `{number}`
-    ╭─[compiler/e2e/test/snapshot/ir/expression/parenthesized/single_element/main.pnx:14:30]
- 13 │         justNumber: (32,),
- 14 │         singleTupleElement: (32),
-    ·                              ─┬
-    ·                               ╰── expected `(int32)`, found `{number}`
- 15 │     }
-    ╰────
-  help: ensure the expression type matches the expected type
+[error]: mismatched types: expected `(int32)`, found `{number}`
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/parenthesized/single_element/main.pnx:14:30
+   │
+14 │         singleTupleElement: (32),
+   │                              ━━ expected `(int32)`, found `{number}`
+   │
+   ╰ help: ensure the expression type matches the expected type
 
-  [error]: Compilation aborted due to 2 error(s)
+[error]: Compilation aborted due to 2 error(s)
 
 
 

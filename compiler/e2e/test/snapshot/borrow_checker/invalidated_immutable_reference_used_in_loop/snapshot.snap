@@ -1,29 +1,21 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: mutable access is done while it is borrowed
-    ╭─[compiler/e2e/test/snapshot/borrow_checker/invalidated_immutable_reference_used_in_loop/main.pnx:11:13]
- 10 │     let mut test = 32
- 11 │     let r = &test
-    ·             ──┬──
-    ·               ╰── the borrow starts here
- 12 │ 
- 13 │     while cond():
- 14 │         # in first iteration, r is fine, no error
- 15 │         # in second iteration, r is invalidated error should be raised
- 16 │         consume(*r)
-    ·                 ─┬
-    ·                  ╰── the borrow is used here
- 17 │ 
- 18 │         # r is invalidated here
- 19 │         test = 64
-    ·         ────┬────
-    ·             ╰── mutable access occurs here
-    ╰────
+[error]: mutable access is done while it is borrowed
+   ╭▸ compiler/e2e/test/snapshot/borrow_checker/invalidated_immutable_reference_used_in_loop/main.pnx:19:9
+   │
+11 │     let r = &test
+   │             ───── the borrow starts here
+   ‡
+16 │         consume(*r)
+   │                 ── the borrow is used here
+   ‡
+19 │         test = 64
+   ╰╴        ━━━━━━━━━ mutable access occurs here
 
-  [error]: Compilation aborted due to 1 error(s)
+[error]: Compilation aborted due to 1 error(s)
 
 
 

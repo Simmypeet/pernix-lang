@@ -1,29 +1,28 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: mismatched types: expected `()`, found `{number}`
-    ╭─[compiler/e2e/test/snapshot/ir/expression/do/unit_return_type_closure/main.pnx:13:20]
- 12 │             # `op` closure block returns `int32`, should be an error
- 13 │             return 32
-    ·                    ─┬
-    ·                     ╰── expected `()`, found `{number}`
- 14 │ 
-    ╰────
-  help: ensure the expression type matches the expected type
+[error]: mismatched types: expected `()`, found `{number}`
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/do/unit_return_type_closure/main.pnx:13:20
+   │
+13 │             return 32
+   │                    ━━ expected `()`, found `{number}`
+   │
+   ╰ help: ensure the expression type matches the expected type
 
-  [error]: the closure is expected to return a value of type `{number}`, but has no return expression (returns unit `()`)
-    ╭─[compiler/e2e/test/snapshot/ir/expression/do/unit_return_type_closure/main.pnx:22:13]
- 21 │         with Test:
- 22 │ ╭─▶         op():
- 23 │ │               # `op` closure block returns `unit`, should be an error
- 24 │ ├─▶             pass
-    · ╰──── 
-    ╰────
-  help: consider changing the closure body to return the expected type
+[error]: the closure is expected to return a value of type `{number}`, but has no return expression (returns unit `()`)
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/do/unit_return_type_closure/main.pnx:22:13
+   │
+22 │           op():
+   │ ┏━━━━━━━━━━━━━┛
+23 │ ┃             # `op` closure block returns `unit`, should be an error
+24 │ ┃             pass
+   │ ┗━━━━━━━━━━━━━━━━┛
+   │
+   ╰ help: consider changing the closure body to return the expected type
 
-  [error]: Compilation aborted due to 2 error(s)
+[error]: Compilation aborted due to 2 error(s)
 
 
 

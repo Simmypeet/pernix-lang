@@ -1,39 +1,21 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: implementation is not general enough
-    ╭─[compiler/e2e/test/snapshot/semantic_element/wf_check/implementation_is_not_general_enought_by_constraints/main.pnx:9:33]
-  8 │ 
-  9 │ final implements['a, 'b, T: 'b] Fizz['a, &'b mut T]:
-    ·                                 ─────────┬─────────
-    ·                                          ╰── this implementation was used but its lifetimes are not general enough
- 10 │     where:
- 11 │         'a: 'b # this constraint makes lifetime 'a be specific to 'b
- 12 │ 
- 13 │ 
- 14 │ public type WithRequirement[T] = T:
- 15 │     where:
- 16 │         trait for['x] Fizz['x, T]
-    ·               ─────────┬─────────
-    ·                        ╰── the predicate is declared here
- 17 │ 
- 18 │ 
- 19 │ # this instantiation is valid
- 20 │ public type First['a, T] = WithRequirement[&'a T]:
- 21 │     where:
- 22 │         T: 'a
- 23 │ 
- 24 │ 
- 25 │ # this instantiation is invalid (not general enough)
- 26 │ public type Second['a, T] = WithRequirement[&'a mut T]:
-    ·                             ─────────────┬────────────
-    ·                                          ╰── the implementation is not general enought to satisfy the required forall lifetimes in the generic arguments: ['∀0, &'a mut T]
- 27 │     where:
-    ╰────
+[error]: implementation is not general enough
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/implementation_is_not_general_enought_by_constraints/main.pnx:26:29
+   │
+ 9 │ final implements['a, 'b, T: 'b] Fizz['a, &'b mut T]:
+   │                                 ─────────────────── this implementation was used but its lifetimes are not general enough
+   ‡
+16 │         trait for['x] Fizz['x, T]
+   │               ─────────────────── the predicate is declared here
+   ‡
+26 │ public type Second['a, T] = WithRequirement[&'a mut T]:
+   ╰╴                            ━━━━━━━━━━━━━━━━━━━━━━━━━━ the implementation is not general enought to satisfy the required forall lifetimes in the generic arguments: ['∀0, &'a mut T]
 
-  [error]: Compilation aborted due to 1 error(s)
+[error]: Compilation aborted due to 1 error(s)
 
 
 

@@ -1,28 +1,25 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: cannot assign to non-mutable l-value
-   ╭─[compiler/e2e/test/snapshot/issues/37/main.pnx:6:1]
- 5 │ public function test(self: &Test):
- 6 │     (*self).a = 10
-   · ─────────┬────────
-   ·          ╰── 
- 7 │     self.a += 15
-   ╰────
-  help: only mutable l-values can be assigned to; consider declaring the variable as `mut`
+[error]: cannot assign to non-mutable l-value
+  ╭▸ compiler/e2e/test/snapshot/issues/37/main.pnx:6:1
+  │
+6 │     (*self).a = 10
+  │ ━━━━━━━━━━━━━━━━━━
+  │
+  ╰ help: only mutable l-values can be assigned to; consider declaring the variable as `mut`
 
-  [error]: cannot assign to non-mutable l-value
-   ╭─[compiler/e2e/test/snapshot/issues/37/main.pnx:7:5]
- 6 │     (*self).a = 10
- 7 │     self.a += 15
-   ·     ──────┬─────
-   ·           ╰── 
-   ╰────
-  help: only mutable l-values can be assigned to; consider declaring the variable as `mut`
+[error]: cannot assign to non-mutable l-value
+  ╭▸ compiler/e2e/test/snapshot/issues/37/main.pnx:7:5
+  │
+7 │     self.a += 15
+  │     ━━━━━━━━━━━━
+  │
+  ╰ help: only mutable l-values can be assigned to; consider declaring the variable as `mut`
 
-  [error]: Compilation aborted due to 2 error(s)
+[error]: Compilation aborted due to 2 error(s)
 
 
 

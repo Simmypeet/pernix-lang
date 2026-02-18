@@ -1,19 +1,17 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: mismatched types: expected `main::FromSecond`, found `main::FromFirst`
-    ╭─[compiler/e2e/test/snapshot/ir/expression/method_call/receiver_precedence/main.pnx:57:18]
- 56 │ public function testAnother[T](value: T):
- 57 │     expectSecond(value.coolMethod())      
-    ·                  ─────────┬────────
-    ·                           ╰── expected `main::FromSecond`, found `main::FromFirst`
- 58 │     
-    ╰────
-  help: ensure the expression type matches the expected type
+[error]: mismatched types: expected `main::FromSecond`, found `main::FromFirst`
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/method_call/receiver_precedence/main.pnx:57:18
+   │
+57 │     expectSecond(value.coolMethod())      
+   │                  ━━━━━━━━━━━━━━━━━━ expected `main::FromSecond`, found `main::FromFirst`
+   │
+   ╰ help: ensure the expression type matches the expected type
 
-  [error]: Compilation aborted due to 1 error(s)
+[error]: Compilation aborted due to 1 error(s)
 
 
 

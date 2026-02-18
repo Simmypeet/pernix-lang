@@ -1,20 +1,20 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: the following effect operations are not handled: `unhandledTwo`, `unhandledOne`
-    ╭─[compiler/e2e/test/snapshot/ir/expression/do/unhandled_effect_oepration/main.pnx:10:13]
-  9 │         do:
- 10 │ ╭─▶         pass
- 11 │ │       
- 12 │ ├─▶     with Test: # unhandled effect operation
-    · ╰──── `with main::Test` clause
- 13 │             handled():
-    ╰────
-  help: consider adding handlers for all the effect operations of `main::Test`
+[error]: the following effect operations are not handled: `unhandledTwo`, `unhandledOne`
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/do/unhandled_effect_oepration/main.pnx:10:13
+   │
+10 │           pass
+   │ ┏━━━━━━━━━━━━━┛
+11 │ ┃     
+12 │ ┃     with Test: # unhandled effect operation
+   │ ┗━━━━━━━━━━━━━┛ `with main::Test` clause
+   │
+   ╰ help: consider adding handlers for all the effect operations of `main::Test`
 
-  [error]: Compilation aborted due to 1 error(s)
+[error]: Compilation aborted due to 1 error(s)
 
 
 

@@ -1,29 +1,21 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: mutable access is done while it is borrowed
-    ╭─[compiler/e2e/test/snapshot/borrow_checker/vec_push_ref_one/main.pnx:23:13]
- 22 │     let mut v = Vector::new()
- 23 │     let p = &x
-    ·             ─┬
-    ·              ╰── the borrow starts here
- 24 │ 
- 25 │     if cond:
- 26 │         v.push(p)
- 27 │         x = 2
-    ·         ──┬──
-    ·           ╰── mutable access occurs here
- 28 │     else:
- 29 │         x = 3
- 30 │     
- 31 │     consume(v)
-    ·             ┬
-    ·             ╰── the borrow is used here
-    ╰────
+[error]: mutable access is done while it is borrowed
+   ╭▸ compiler/e2e/test/snapshot/borrow_checker/vec_push_ref_one/main.pnx:27:9
+   │
+23 │     let p = &x
+   │             ── the borrow starts here
+   ‡
+27 │         x = 2
+   │         ━━━━━ mutable access occurs here
+   ‡
+31 │     consume(v)
+   ╰╴            ─ the borrow is used here
 
-  [error]: Compilation aborted due to 1 error(s)
+[error]: Compilation aborted due to 1 error(s)
 
 
 

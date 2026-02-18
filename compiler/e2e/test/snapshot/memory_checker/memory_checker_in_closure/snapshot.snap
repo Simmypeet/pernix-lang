@@ -1,32 +1,25 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: the value is used after it has been moved
-    ╭─[compiler/e2e/test/snapshot/memory_checker/memory_checker_in_closure/main.pnx:22:14]
- 21 │         let nc = NonCopyable{}
- 22 │         drop(nc)
-    ·              ─┬
-    ·               ╰── the value was moved here
- 23 │         drop(nc) # this is not fine
-    ·              ─┬
-    ·               ╰── 
- 24 │ 
-    ╰────
+[error]: the value is used after it has been moved
+   ╭▸ compiler/e2e/test/snapshot/memory_checker/memory_checker_in_closure/main.pnx:23:14
+   │
+22 │         drop(nc)
+   │              ── the value was moved here
+23 │         drop(nc) # this is not fine
+   ╰╴             ━━
 
-  [error]: the value is used after it has been moved
-    ╭─[compiler/e2e/test/snapshot/memory_checker/memory_checker_in_closure/main.pnx:28:18]
- 27 │             let nc = NonCopyable{}
- 28 │             drop(nc)
-    ·                  ─┬
-    ·                   ╰── the value was moved here
- 29 │             drop(nc) # this is not fine
-    ·                  ─┬
-    ·                   ╰── 
-    ╰────
+[error]: the value is used after it has been moved
+   ╭▸ compiler/e2e/test/snapshot/memory_checker/memory_checker_in_closure/main.pnx:29:18
+   │
+28 │             drop(nc)
+   │                  ── the value was moved here
+29 │             drop(nc) # this is not fine
+   ╰╴                 ━━
 
-  [error]: Compilation aborted due to 2 error(s)
+[error]: Compilation aborted due to 2 error(s)
 
 
 
