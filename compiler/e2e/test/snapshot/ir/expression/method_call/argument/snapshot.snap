@@ -1,66 +1,51 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: mismatched types: expected `int32`, found `{floating}`
-    ╭─[compiler/e2e/test/snapshot/ir/expression/method_call/argument/main.pnx:15:11]
- 14 │     p.add(1, 2)          # expect error
- 15 │     p.add(1.0, 2.0)      # expect error
-    ·           ─┬─
-    ·            ╰── expected `int32`, found `{floating}`
- 16 │     p.add(true, false)   # expect error
-    ╰────
-  help: ensure the expression type matches the expected type
+[error]: mismatched types: expected `int32`, found `{floating}`
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/method_call/argument/main.pnx:15:11
+   │
+15 │     p.add(1.0, 2.0)      # expect error
+   │           ━━━ expected `int32`, found `{floating}`
+   │
+   ╰ help: ensure the expression type matches the expected type
 
-  [error]: mismatched types: expected `int32`, found `bool`
-    ╭─[compiler/e2e/test/snapshot/ir/expression/method_call/argument/main.pnx:16:11]
- 15 │     p.add(1.0, 2.0)      # expect error
- 16 │     p.add(true, false)   # expect error
-    ·           ──┬─
-    ·             ╰── expected `int32`, found `bool`
- 17 │     
-    ╰────
-  help: ensure the expression type matches the expected type
+[error]: mismatched types: expected `int32`, found `bool`
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/method_call/argument/main.pnx:16:11
+   │
+16 │     p.add(true, false)   # expect error
+   │           ━━━━ expected `int32`, found `bool`
+   │
+   ╰ help: ensure the expression type matches the expected type
 
-  [error]: mismatched types: expected `float32`, found `bool`
-    ╭─[compiler/e2e/test/snapshot/ir/expression/method_call/argument/main.pnx:16:17]
- 15 │     p.add(1.0, 2.0)      # expect error
- 16 │     p.add(true, false)   # expect error
-    ·                 ──┬──
-    ·                   ╰── expected `float32`, found `bool`
- 17 │     
-    ╰────
-  help: ensure the expression type matches the expected type
+[error]: mismatched types: expected `float32`, found `bool`
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/method_call/argument/main.pnx:16:17
+   │
+16 │     p.add(true, false)   # expect error
+   │                 ━━━━━ expected `float32`, found `bool`
+   │
+   ╰ help: ensure the expression type matches the expected type
 
-  [error]: the function `main::[implements Pair[int32, float32]]::add` was called with the wrong number of arguments (expected 2, found 0)
-    ╭─[compiler/e2e/test/snapshot/ir/expression/method_call/argument/main.pnx:18:10]
- 17 │     
- 18 │     p.add() # count error
-    ·          ─┬
-    ·           ╰── expected 2 arguments, found 0
- 19 │     p.add(1) # count error
-    ╰────
+[error]: the function `main::[implements Pair[int32, float32]]::add` was called with the wrong number of arguments (expected 2, found 0)
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/method_call/argument/main.pnx:18:10
+   │
+18 │     p.add() # count error
+   ╰╴         ━━ expected 2 arguments, found 0
 
-  [error]: the function `main::[implements Pair[int32, float32]]::add` was called with the wrong number of arguments (expected 2, found 1)
-    ╭─[compiler/e2e/test/snapshot/ir/expression/method_call/argument/main.pnx:19:10]
- 18 │     p.add() # count error
- 19 │     p.add(1) # count error
-    ·          ─┬─
-    ·           ╰── expected 2 arguments, found 1
- 20 │     p.add(1, 2.0, 3) # count error
-    ╰────
+[error]: the function `main::[implements Pair[int32, float32]]::add` was called with the wrong number of arguments (expected 2, found 1)
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/method_call/argument/main.pnx:19:10
+   │
+19 │     p.add(1) # count error
+   ╰╴         ━━━ expected 2 arguments, found 1
 
-  [error]: the function `main::[implements Pair[int32, float32]]::add` was called with the wrong number of arguments (expected 2, found 3)
-    ╭─[compiler/e2e/test/snapshot/ir/expression/method_call/argument/main.pnx:20:10]
- 19 │     p.add(1) # count error
- 20 │     p.add(1, 2.0, 3) # count error
-    ·          ─────┬─────
-    ·               ╰── expected 2 arguments, found 3
- 21 │         
-    ╰────
+[error]: the function `main::[implements Pair[int32, float32]]::add` was called with the wrong number of arguments (expected 2, found 3)
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/method_call/argument/main.pnx:20:10
+   │
+20 │     p.add(1, 2.0, 3) # count error
+   ╰╴         ━━━━━━━━━━━ expected 2 arguments, found 3
 
-  [error]: Compilation aborted due to 6 error(s)
+[error]: Compilation aborted due to 6 error(s)
 
 
 

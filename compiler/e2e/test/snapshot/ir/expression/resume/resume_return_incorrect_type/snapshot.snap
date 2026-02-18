@@ -1,19 +1,17 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: mismatched types: expected `int32`, found `bool`
-    ╭─[compiler/e2e/test/snapshot/ir/expression/resume/resume_return_incorrect_type/main.pnx:16:25]
- 15 │             # `resume(...)` expression returns int32, error!
- 16 │             expectInt32(resume(54))
-    ·                         ─────┬────
-    ·                              ╰── expected `int32`, found `bool`
- 17 │             return true
-    ╰────
-  help: ensure the expression type matches the expected type
+[error]: mismatched types: expected `int32`, found `bool`
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/resume/resume_return_incorrect_type/main.pnx:16:25
+   │
+16 │             expectInt32(resume(54))
+   │                         ━━━━━━━━━━ expected `int32`, found `bool`
+   │
+   ╰ help: ensure the expression type matches the expected type
 
-  [error]: Compilation aborted due to 1 error(s)
+[error]: Compilation aborted due to 1 error(s)
 
 
 

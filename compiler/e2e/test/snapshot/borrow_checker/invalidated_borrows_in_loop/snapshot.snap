@@ -1,18 +1,17 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: access is done while it is mutably borrowed
-    ╭─[compiler/e2e/test/snapshot/borrow_checker/invalidated_borrows_in_loop/main.pnx:27:9]
- 26 │     while cond:
- 27 │         vector.push(&mut number)
-    ·         ───┬──      ─────┬─────
-    ·            │             ╰── the access occurs here in the next iteration while it is mutably borrowed
-    ·            ╰── the borrow is used here
-    ╰────
+[error]: access is done while it is mutably borrowed
+   ╭▸ compiler/e2e/test/snapshot/borrow_checker/invalidated_borrows_in_loop/main.pnx:27:21
+   │
+27 │         vector.push(&mut number)
+   │         ┬─────      ━━━━━━━━━━━ the access occurs here in the next iteration while it is mutably borrowed
+   │         │
+   ╰╴        the borrow is used here
 
-  [error]: Compilation aborted due to 1 error(s)
+[error]: Compilation aborted due to 1 error(s)
 
 
 

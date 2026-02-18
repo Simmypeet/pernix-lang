@@ -1,22 +1,20 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: mutable access is done while it is borrowed
-    ╭─[compiler/e2e/test/snapshot/borrow_checker/borrow_usage_in_drop/main.pnx:24:36]
- 23 │     let mut number = 32
- 24 │     let wrapper = DropWrapper::new(&number)
-    ·                                    ───┬───
-    ·                                       ╰── the borrow starts here
- 25 │ 
- 26 │     number += 23
-    ·     ──────┬─────
-    ·           ╰── mutable access occurs here
-    ╰────
-  help: the borrow is used in the drop implementation
+[error]: mutable access is done while it is borrowed
+   ╭▸ compiler/e2e/test/snapshot/borrow_checker/borrow_usage_in_drop/main.pnx:26:5
+   │
+24 │     let wrapper = DropWrapper::new(&number)
+   │                                    ─────── the borrow starts here
+25 │
+26 │     number += 23
+   │     ━━━━━━━━━━━━ mutable access occurs here
+   │
+   ╰ help: the borrow is used in the drop implementation
 
-  [error]: Compilation aborted due to 1 error(s)
+[error]: Compilation aborted due to 1 error(s)
 
 
 

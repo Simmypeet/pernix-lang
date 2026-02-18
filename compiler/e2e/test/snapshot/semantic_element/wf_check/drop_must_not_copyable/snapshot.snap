@@ -1,18 +1,15 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: unsatisfied predicate
-   ╭─[compiler/e2e/test/snapshot/semantic_element/wf_check/drop_must_not_copyable/main.pnx:8:18]
- 7 │ 
- 8 │ final implements Drop[TotallyCopyable]:
-   ·                  ──────────┬──────────
-   ·                            ╰── the predicate `marker not core::Copy[main::TotallyCopyable]` is not satisfied
- 9 │     function drop(self: &mut TotallyCopyable):
-   ╰────
+[error]: unsatisfied predicate
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/drop_must_not_copyable/main.pnx:8:18
+  │
+8 │ final implements Drop[TotallyCopyable]:
+  ╰╴                 ━━━━━━━━━━━━━━━━━━━━━ the predicate `marker not core::Copy[main::TotallyCopyable]` is not satisfied
 
-  [error]: Compilation aborted due to 1 error(s)
+[error]: Compilation aborted due to 1 error(s)
 
 
 

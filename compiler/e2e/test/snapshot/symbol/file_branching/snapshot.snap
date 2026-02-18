@@ -1,57 +1,45 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: the token is in an invalid indentation level
-   ╭─[compiler/e2e/test/snapshot/symbol/file_branching/sub1/inner.pnx:2:44]
- 1 │ # make an error to make sure that this file is loaded and the error is recognized
- 2 │ public function weirdIndentationSub1Inner():
-   ·                                            ┬
-   ·                                            ╰── previous indentation level is 4 space(s)
- 3 │     pass
- 4 │         pass
-   ·         ──┬─
-   ·           ╰── found 8 space(s)
-   ╰────
+[error]: the token is in an invalid indentation level
+  ╭▸ compiler/e2e/test/snapshot/symbol/file_branching/sub1/inner.pnx:4:9
+  │
+2 │ public function weirdIndentationSub1Inner():
+  │                                            ─ previous indentation level is 4 space(s)
+3 │     pass
+4 │         pass
+  ╰╴        ━━━━ found 8 space(s)
 
-  [error]: the token is in an invalid indentation level
-   ╭─[compiler/e2e/test/snapshot/symbol/file_branching/sub2/inner.pnx:2:44]
- 1 │ # make an error to make sure that this file is loaded and the error is recognized
- 2 │ public function weirdIndentationSub2Inner():
-   ·                                            ┬
-   ·                                            ╰── previous indentation level is 4 space(s)
- 3 │     pass
- 4 │         pass
-   ·         ──┬─
-   ·           ╰── found 8 space(s)
-   ╰────
+[error]: the token is in an invalid indentation level
+  ╭▸ compiler/e2e/test/snapshot/symbol/file_branching/sub2/inner.pnx:4:9
+  │
+2 │ public function weirdIndentationSub2Inner():
+  │                                            ─ previous indentation level is 4 space(s)
+3 │     pass
+4 │         pass
+  ╰╴        ━━━━ found 8 space(s)
 
-  [error]: the token is in an invalid indentation level
-   ╭─[compiler/e2e/test/snapshot/symbol/file_branching/sub2.pnx:4:39]
- 3 │ # make an error to make sure that this file is loaded and the error is recognized
- 4 │ public function weirdIndentationSub2():
-   ·                                       ┬
-   ·                                       ╰── previous indentation level is 4 space(s)
- 5 │     pass
- 6 │         pass
-   ·         ──┬─
-   ·           ╰── found 8 space(s)
-   ╰────
+[error]: the token is in an invalid indentation level
+  ╭▸ compiler/e2e/test/snapshot/symbol/file_branching/sub2.pnx:6:9
+  │
+4 │ public function weirdIndentationSub2():
+  │                                       ─ previous indentation level is 4 space(s)
+5 │     pass
+6 │         pass
+  ╰╴        ━━━━ found 8 space(s)
 
-  [error]: the token is in an invalid indentation level
-   ╭─[compiler/e2e/test/snapshot/symbol/file_branching/sub1.pnx:4:39]
- 3 │ # make an error to make sure that this file is loaded and the error is recognized
- 4 │ public function weirdIndentationSub1():
-   ·                                       ┬
-   ·                                       ╰── previous indentation level is 4 space(s)
- 5 │     pass
- 6 │         pass
-   ·         ──┬─
-   ·           ╰── found 8 space(s)
-   ╰────
+[error]: the token is in an invalid indentation level
+  ╭▸ compiler/e2e/test/snapshot/symbol/file_branching/sub1.pnx:6:9
+  │
+4 │ public function weirdIndentationSub1():
+  │                                       ─ previous indentation level is 4 space(s)
+5 │     pass
+6 │         pass
+  ╰╴        ━━━━ found 8 space(s)
 
-  [error]: Compilation aborted due to 4 error(s)
+[error]: Compilation aborted due to 4 error(s)
 
 
 

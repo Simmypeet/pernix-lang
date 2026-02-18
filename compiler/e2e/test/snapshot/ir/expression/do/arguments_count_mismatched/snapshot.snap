@@ -1,19 +1,17 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: the effect operation `mismatched` expects 1 argument , but the handler has 2 arguments
-    ╭─[compiler/e2e/test/snapshot/ir/expression/do/arguments_count_mismatched/main.pnx:14:9]
- 13 │         
- 14 │         mismatched(one, two): # arguments count mismatched
-    ·         ─────┬────
-    ·              ╰── handler for operation `mismatched` of effect
- 15 │             pass
-    ╰────
-  help: consider changing the number of arguments in the handler to be 1
+[error]: the effect operation `mismatched` expects 1 argument , but the handler has 2 arguments
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/do/arguments_count_mismatched/main.pnx:14:9
+   │
+14 │         mismatched(one, two): # arguments count mismatched
+   │         ━━━━━━━━━━ handler for operation `mismatched` of effect
+   │
+   ╰ help: consider changing the number of arguments in the handler to be 1
 
-  [error]: Compilation aborted due to 1 error(s)
+[error]: Compilation aborted due to 1 error(s)
 
 
 

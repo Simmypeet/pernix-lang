@@ -1,21 +1,19 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: access is done while it is mutably borrowed
-    ╭─[compiler/e2e/test/snapshot/borrow_checker/universal_regions_through_trait_predicates/main.pnx:14:26]
- 13 │ 
- 14 │     Fizz::doSomething(t, u)
-    ·                          ┬
-    ·                          ╰── the mutable borrow starts here
- 15 │     Fizz::doSomething(t, u)
-    ·                          ┬
-    ·                          ╰── access occurs here while it is mutably borrowed
-    ╰────
-  help: lifetime(s) 'a can access the borrow later
+[error]: access is done while it is mutably borrowed
+   ╭▸ compiler/e2e/test/snapshot/borrow_checker/universal_regions_through_trait_predicates/main.pnx:15:26
+   │
+14 │     Fizz::doSomething(t, u)
+   │                          ─ the mutable borrow starts here
+15 │     Fizz::doSomething(t, u)
+   │                          ━ access occurs here while it is mutably borrowed
+   │
+   ╰ help: lifetime(s) 'a can access the borrow later
 
-  [error]: Compilation aborted due to 1 error(s)
+[error]: Compilation aborted due to 1 error(s)
 
 
 

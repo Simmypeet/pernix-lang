@@ -1,69 +1,59 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: mismatched types: expected `{signed}`, found `uint32`
-   ╭─[compiler/e2e/test/snapshot/ir/expression/if_else/type_check/main.pnx:4:46]
- 3 │     
- 4 │     let typeMismatched = if cond: -420 else: 64u32 # error {signed} != int32
-   ·                                              ──┬──
-   ·                                                ╰── expected `{signed}`, found `uint32`
- 5 │     let missingElse = if cond: 10 # error missing else branch
-   ╰────
-  help: ensure the expression type matches the expected type
+[error]: mismatched types: expected `{signed}`, found `uint32`
+  ╭▸ compiler/e2e/test/snapshot/ir/expression/if_else/type_check/main.pnx:4:46
+  │
+4 │     let typeMismatched = if cond: -420 else: 64u32 # error {signed} != int32
+  │                                              ━━━━━ expected `{signed}`, found `uint32`
+  │
+  ╰ help: ensure the expression type matches the expected type
 
-  [error]: this `if` expression is expected to have an `else` branch
-   ╭─[compiler/e2e/test/snapshot/ir/expression/if_else/type_check/main.pnx:5:23]
- 4 │     let typeMismatched = if cond: -420 else: 64u32 # error {signed} != int32
- 5 │     let missingElse = if cond: 10 # error missing else branch
-   ·                       ─────┬─────
-   ·                            ╰── 
- 6 │     
-   ╰────
-  help: the `if` expression `express` a value having type other than unit, so an `else` branch expressing a value of the same type is required
+[error]: this `if` expression is expected to have an `else` branch
+  ╭▸ compiler/e2e/test/snapshot/ir/expression/if_else/type_check/main.pnx:5:23
+  │
+5 │     let missingElse = if cond: 10 # error missing else branch
+  │                       ━━━━━━━━━━━
+  │
+  ╰ help: the `if` expression `express` a value having type other than unit, so an `else` branch expressing a value of the same type is required
 
-  [error]: mismatched types: expected `()`, found `{number}`
-    ╭─[compiler/e2e/test/snapshot/ir/expression/if_else/type_check/main.pnx:10:17]
-  9 │     if cond:
- 10 │         express 53   # must be unit
-    ·                 ─┬
-    ·                  ╰── expected `()`, found `{number}`
- 11 │     else:
-    ╰────
-  help: ensure the expression type matches the expected type
+[error]: mismatched types: expected `()`, found `{number}`
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/if_else/type_check/main.pnx:10:17
+   │
+10 │         express 53   # must be unit
+   │                 ━━ expected `()`, found `{number}`
+   │
+   ╰ help: ensure the expression type matches the expected type
 
-  [error]: mismatched types: expected `()`, found `bool`
-    ╭─[compiler/e2e/test/snapshot/ir/expression/if_else/type_check/main.pnx:12:17]
- 11 │     else:
- 12 │         express true # must be unit
-    ·                 ──┬─
-    ·                   ╰── expected `()`, found `bool`
- 13 │ 
-    ╰────
-  help: ensure the expression type matches the expected type
+[error]: mismatched types: expected `()`, found `bool`
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/if_else/type_check/main.pnx:12:17
+   │
+12 │         express true # must be unit
+   │                 ━━━━ expected `()`, found `bool`
+   │
+   ╰ help: ensure the expression type matches the expected type
 
-  [error]: mismatched types: expected `()`, found `{number}`
-    ╭─[compiler/e2e/test/snapshot/ir/expression/if_else/type_check/main.pnx:17:14]
- 16 │     if cond: variable # should be fine, variable is lvalue
- 17 │     if cond: 32       # not fine, 32 is rvalue and is not unit
-    ·              ─┬
-    ·               ╰── expected `()`, found `{number}`
- 18 │ 
-    ╰────
-  help: ensure the expression type matches the expected type
+[error]: mismatched types: expected `()`, found `{number}`
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/if_else/type_check/main.pnx:17:14
+   │
+17 │     if cond: 32       # not fine, 32 is rvalue and is not unit
+   │              ━━ expected `()`, found `{number}`
+   │
+   ╰ help: ensure the expression type matches the expected type
 
-  [error]: this `if` expression is expected to have an `else` branch
-    ╭─[compiler/e2e/test/snapshot/ir/expression/if_else/type_check/main.pnx:21:10]
- 20 │             express true
- 21 │ ╭─▶     else if cond:
- 22 │ ├─▶         express false
-    · ╰──── 
- 23 │         # missing last else branch, error
-    ╰────
-  help: the `if` expression `express` a value having type other than unit, so an `else` branch expressing a value of the same type is required
+[error]: this `if` expression is expected to have an `else` branch
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/if_else/type_check/main.pnx:21:10
+   │
+21 │       else if cond:
+   │ ┏━━━━━━━━━━┛
+22 │ ┃         express false
+   │ ┗━━━━━━━━━━━━━━━━━━━━━┛
+   │
+   ╰ help: the `if` expression `express` a value having type other than unit, so an `else` branch expressing a value of the same type is required
 
-  [error]: Compilation aborted due to 6 error(s)
+[error]: Compilation aborted due to 6 error(s)
 
 
 

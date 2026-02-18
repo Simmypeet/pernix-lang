@@ -1,18 +1,15 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: lifetime inference is not allowed here
-   ╭─[compiler/e2e/test/snapshot/semantic_element/function_signature/elided_lifetime/main.pnx:5:50]
- 4 │ 
- 5 │ public function max(lhs: &int32, rhs: &int32) -> &int32:
-   ·                                                  ┬
-   ·                                                  ╰── expected an explicit lifetime to be inserted here
- 6 │     if *lhs > *rhs:
-   ╰────
+[error]: lifetime inference is not allowed here
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/function_signature/elided_lifetime/main.pnx:5:50
+  │
+5 │ public function max(lhs: &int32, rhs: &int32) -> &int32:
+  ╰╴                                                 ━ expected an explicit lifetime to be inserted here
 
-  [error]: Compilation aborted due to 1 error(s)
+[error]: Compilation aborted due to 1 error(s)
 
 
 

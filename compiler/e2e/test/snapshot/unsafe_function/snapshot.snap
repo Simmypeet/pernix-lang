@@ -1,129 +1,54 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: unsafe function call outside unsafe scope
-    ╭─[compiler/e2e/test/snapshot/unsafe_function/main.pnx:6:28]
-  5 │ implements MyType:
-  6 │     public unsafe function dangerous(): 
-    ·                            ────┬────
-    ·                                ╰── the function is declared as unsafe here
-  7 │         pass
-  8 │ 
-  9 │     
- 10 │     public unsafe function dangerousMethod(self: &this):
- 11 │         pass
- 12 │ 
- 13 │ 
- 14 │ public unsafe function anotherDangerous():
- 15 │     pass
- 16 │ 
- 17 │ 
- 18 │ public trait MyTrait[T]:
- 19 │     public unsafe function traitDangerous()
- 20 │ 
- 21 │     public unsafe function traitDangerousMethod(self: &T)
- 22 │ 
- 23 │ 
- 24 │ public function main[T: MyTrait](t: T):
- 25 │     MyType::dangerous()
-    ·     ─────────┬─────────
-    ·              ╰── call to unsafe function `main::[implements MyType]::dangerous` requires unsafe scope
- 26 │     anotherDangerous()
-    ╰────
+[error]: unsafe function call outside unsafe scope
+   ╭▸ compiler/e2e/test/snapshot/unsafe_function/main.pnx:25:5
+   │
+ 6 │     public unsafe function dangerous(): 
+   │                            ───────── the function is declared as unsafe here
+   ‡
+25 │     MyType::dangerous()
+   ╰╴    ━━━━━━━━━━━━━━━━━━━ call to unsafe function `main::[implements MyType]::dangerous` requires unsafe scope
 
-  [error]: unsafe function call outside unsafe scope
-    ╭─[compiler/e2e/test/snapshot/unsafe_function/main.pnx:14:24]
- 13 │ 
- 14 │ public unsafe function anotherDangerous():
-    ·                        ────────┬───────
-    ·                                ╰── the function is declared as unsafe here
- 15 │     pass
- 16 │ 
- 17 │ 
- 18 │ public trait MyTrait[T]:
- 19 │     public unsafe function traitDangerous()
- 20 │ 
- 21 │     public unsafe function traitDangerousMethod(self: &T)
- 22 │ 
- 23 │ 
- 24 │ public function main[T: MyTrait](t: T):
- 25 │     MyType::dangerous()
- 26 │     anotherDangerous()
-    ·     ─────────┬────────
-    ·              ╰── call to unsafe function `main::anotherDangerous` requires unsafe scope
- 27 │     MyType{}.dangerousMethod()
-    ╰────
+[error]: unsafe function call outside unsafe scope
+   ╭▸ compiler/e2e/test/snapshot/unsafe_function/main.pnx:26:5
+   │
+14 │ public unsafe function anotherDangerous():
+   │                        ──────────────── the function is declared as unsafe here
+   ‡
+26 │     anotherDangerous()
+   ╰╴    ━━━━━━━━━━━━━━━━━━ call to unsafe function `main::anotherDangerous` requires unsafe scope
 
-  [error]: unsafe function call outside unsafe scope
-    ╭─[compiler/e2e/test/snapshot/unsafe_function/main.pnx:10:28]
-  9 │     
- 10 │     public unsafe function dangerousMethod(self: &this):
-    ·                            ───────┬───────
-    ·                                   ╰── the function is declared as unsafe here
- 11 │         pass
- 12 │ 
- 13 │ 
- 14 │ public unsafe function anotherDangerous():
- 15 │     pass
- 16 │ 
- 17 │ 
- 18 │ public trait MyTrait[T]:
- 19 │     public unsafe function traitDangerous()
- 20 │ 
- 21 │     public unsafe function traitDangerousMethod(self: &T)
- 22 │ 
- 23 │ 
- 24 │ public function main[T: MyTrait](t: T):
- 25 │     MyType::dangerous()
- 26 │     anotherDangerous()
- 27 │     MyType{}.dangerousMethod()
-    ·             ─────────┬────────
-    ·                      ╰── call to unsafe function `main::[implements MyType]::dangerousMethod` requires unsafe scope
- 28 │     MyTrait[T]::traitDangerous()
-    ╰────
+[error]: unsafe function call outside unsafe scope
+   ╭▸ compiler/e2e/test/snapshot/unsafe_function/main.pnx:27:13
+   │
+10 │     public unsafe function dangerousMethod(self: &this):
+   │                            ─────────────── the function is declared as unsafe here
+   ‡
+27 │     MyType{}.dangerousMethod()
+   ╰╴            ━━━━━━━━━━━━━━━━━━ call to unsafe function `main::[implements MyType]::dangerousMethod` requires unsafe scope
 
-  [error]: unsafe function call outside unsafe scope
-    ╭─[compiler/e2e/test/snapshot/unsafe_function/main.pnx:19:28]
- 18 │ public trait MyTrait[T]:
- 19 │     public unsafe function traitDangerous()
-    ·                            ───────┬──────
-    ·                                   ╰── the function is declared as unsafe here
- 20 │ 
- 21 │     public unsafe function traitDangerousMethod(self: &T)
- 22 │ 
- 23 │ 
- 24 │ public function main[T: MyTrait](t: T):
- 25 │     MyType::dangerous()
- 26 │     anotherDangerous()
- 27 │     MyType{}.dangerousMethod()
- 28 │     MyTrait[T]::traitDangerous()
-    ·     ──────────────┬─────────────
-    ·                   ╰── call to unsafe function `main::MyTrait::traitDangerous` requires unsafe scope
- 29 │     t.traitDangerousMethod()
-    ╰────
+[error]: unsafe function call outside unsafe scope
+   ╭▸ compiler/e2e/test/snapshot/unsafe_function/main.pnx:28:5
+   │
+19 │     public unsafe function traitDangerous()
+   │                            ────────────── the function is declared as unsafe here
+   ‡
+28 │     MyTrait[T]::traitDangerous()
+   ╰╴    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━ call to unsafe function `main::MyTrait::traitDangerous` requires unsafe scope
 
-  [error]: unsafe function call outside unsafe scope
-    ╭─[compiler/e2e/test/snapshot/unsafe_function/main.pnx:21:28]
- 20 │ 
- 21 │     public unsafe function traitDangerousMethod(self: &T)
-    ·                            ──────────┬─────────
-    ·                                      ╰── the function is declared as unsafe here
- 22 │ 
- 23 │ 
- 24 │ public function main[T: MyTrait](t: T):
- 25 │     MyType::dangerous()
- 26 │     anotherDangerous()
- 27 │     MyType{}.dangerousMethod()
- 28 │     MyTrait[T]::traitDangerous()
- 29 │     t.traitDangerousMethod()
-    ·     ────────────┬───────────
-    ·                 ╰── call to unsafe function `main::MyTrait::traitDangerousMethod` requires unsafe scope
- 30 │ 
-    ╰────
+[error]: unsafe function call outside unsafe scope
+   ╭▸ compiler/e2e/test/snapshot/unsafe_function/main.pnx:29:5
+   │
+21 │     public unsafe function traitDangerousMethod(self: &T)
+   │                            ──────────────────── the function is declared as unsafe here
+   ‡
+29 │     t.traitDangerousMethod()
+   ╰╴    ━━━━━━━━━━━━━━━━━━━━━━━━ call to unsafe function `main::MyTrait::traitDangerousMethod` requires unsafe scope
 
-  [error]: Compilation aborted due to 5 error(s)
+[error]: Compilation aborted due to 5 error(s)
 
 
 

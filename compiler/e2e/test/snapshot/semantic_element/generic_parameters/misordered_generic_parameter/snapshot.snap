@@ -1,43 +1,33 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: the generic parameter was declared in the wrong order
-   ╭─[compiler/e2e/test/snapshot/semantic_element/generic_parameters/misordered_generic_parameter/main.pnx:1:26]
- 1 │ public type First['x, T, 'a] = &'x T:
-   ·                          ─┬
-   ·                           ╰── can't be declared after type or constant parameters
- 2 │     where:
-   ╰────
+[error]: the generic parameter was declared in the wrong order
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/generic_parameters/misordered_generic_parameter/main.pnx:1:26
+  │
+1 │ public type First['x, T, 'a] = &'x T:
+  ╰╴                         ━━ can't be declared after type or constant parameters
 
-  [error]: the generic parameter was declared in the wrong order
-   ╭─[compiler/e2e/test/snapshot/semantic_element/generic_parameters/misordered_generic_parameter/main.pnx:5:36]
- 4 │ 
- 5 │ public type Second[const N: usize, 'a] = int32
-   ·                                    ─┬
-   ·                                     ╰── can't be declared after type or constant parameters
- 6 │ 
-   ╰────
+[error]: the generic parameter was declared in the wrong order
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/generic_parameters/misordered_generic_parameter/main.pnx:5:36
+  │
+5 │ public type Second[const N: usize, 'a] = int32
+  ╰╴                                   ━━ can't be declared after type or constant parameters
 
-  [error]: the generic parameter was declared in the wrong order
-   ╭─[compiler/e2e/test/snapshot/semantic_element/generic_parameters/misordered_generic_parameter/main.pnx:7:38]
- 6 │ 
- 7 │ public type Third[T, const N: usize, 'a] = float32
-   ·                                      ─┬
-   ·                                       ╰── can't be declared after type or constant parameters
- 8 │ 
-   ╰────
+[error]: the generic parameter was declared in the wrong order
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/generic_parameters/misordered_generic_parameter/main.pnx:7:38
+  │
+7 │ public type Third[T, const N: usize, 'a] = float32
+  ╰╴                                     ━━ can't be declared after type or constant parameters
 
-  [error]: the generic parameter was declared in the wrong order
-   ╭─[compiler/e2e/test/snapshot/semantic_element/generic_parameters/misordered_generic_parameter/main.pnx:9:36]
- 8 │ 
- 9 │ public type Fourth[const N: usize, T] = bool
-   ·                                    ┬
-   ·                                    ╰── can't be declared after constant parameters
-   ╰────
+[error]: the generic parameter was declared in the wrong order
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/generic_parameters/misordered_generic_parameter/main.pnx:9:36
+  │
+9 │ public type Fourth[const N: usize, T] = bool
+  ╰╴                                   ━ can't be declared after constant parameters
 
-  [error]: Compilation aborted due to 4 error(s)
+[error]: Compilation aborted due to 4 error(s)
 
 
 

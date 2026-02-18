@@ -1,17 +1,15 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: the symbol could not be found
-   ╭─[compiler/e2e/test/snapshot/semantic_element/type_alias/not_found/main.pnx:1:45]
- 1 │ public type Fizz['a, 'b, T, U] = (&'a T, U, What):
-   ·                                             ──┬─
-   ·                                               ╰── the symbol named `What` does not exist in `main`
- 2 │     where:
-   ╰────
+[error]: the symbol could not be found
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/type_alias/not_found/main.pnx:1:45
+  │
+1 │ public type Fizz['a, 'b, T, U] = (&'a T, U, What):
+  ╰╴                                            ━━━━ the symbol named `What` does not exist in `main`
 
-  [error]: Compilation aborted due to 1 error(s)
+[error]: Compilation aborted due to 1 error(s)
 
 
 

@@ -1,20 +1,17 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: the value is used after it has been moved
-   ╭─[compiler/e2e/test/snapshot/memory_checker/borrow_after_move/main.pnx:6:13]
- 5 │ public function test[T](x: T):
- 6 │     consume(x)
-   ·             ┬
-   ·             ╰── the value was moved here
- 7 │     let ref = &x
-   ·               ─┬
-   ·                ╰── 
-   ╰────
+[error]: the value is used after it has been moved
+  ╭▸ compiler/e2e/test/snapshot/memory_checker/borrow_after_move/main.pnx:7:15
+  │
+6 │     consume(x)
+  │             ─ the value was moved here
+7 │     let ref = &x
+  ╰╴              ━━
 
-  [error]: Compilation aborted due to 1 error(s)
+[error]: Compilation aborted due to 1 error(s)
 
 
 

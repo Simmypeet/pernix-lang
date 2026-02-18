@@ -1,19 +1,17 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: mismatched types: expected `float32`, found `{integer}`
-    ╭─[compiler/e2e/test/snapshot/ir/expression/character/main.pnx:11:20]
- 10 │         asInt32: 'a',
- 11 │         asFloat32: 'a', # can't be float
-    ·                    ─┬─
-    ·                     ╰── expected `float32`, found `{integer}`
- 12 │     }
-    ╰────
-  help: ensure the expression type matches the expected type
+[error]: mismatched types: expected `float32`, found `{integer}`
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/character/main.pnx:11:20
+   │
+11 │         asFloat32: 'a', # can't be float
+   │                    ━━━ expected `float32`, found `{integer}`
+   │
+   ╰ help: ensure the expression type matches the expected type
 
-  [error]: Compilation aborted due to 1 error(s)
+[error]: Compilation aborted due to 1 error(s)
 
 
 

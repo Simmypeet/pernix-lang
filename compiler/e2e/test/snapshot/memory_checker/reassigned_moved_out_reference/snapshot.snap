@@ -1,20 +1,17 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: the value behind the mutable reference has been moved out and needs to be restored
-   ╭─[compiler/e2e/test/snapshot/memory_checker/reassigned_moved_out_reference/main.pnx:8:17]
- 7 │         let mut z = &mut x
- 8 │         consume(*z)
-   ·                 ─┬
-   ·                  ╰── 
- 9 │         z = &mut y
-   ·         ─────┬────
-   ·              ╰── this assignment makes the value behind mutable reference inaccessible from now on...
-   ╰────
+[error]: the value behind the mutable reference has been moved out and needs to be restored
+  ╭▸ compiler/e2e/test/snapshot/memory_checker/reassigned_moved_out_reference/main.pnx:8:17
+  │
+8 │         consume(*z)
+  │                 ━━
+9 │         z = &mut y
+  ╰╴        ────────── this assignment makes the value behind mutable reference inaccessible from now on...
 
-  [error]: Compilation aborted due to 1 error(s)
+[error]: Compilation aborted due to 1 error(s)
 
 
 

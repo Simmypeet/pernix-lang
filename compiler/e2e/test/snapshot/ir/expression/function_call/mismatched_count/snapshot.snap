@@ -1,36 +1,27 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: the function `main::takeTwo` was called with the wrong number of arguments (expected 2, found 0)
-   ╭─[compiler/e2e/test/snapshot/ir/expression/function_call/mismatched_count/main.pnx:6:26]
- 5 │ public function main():
- 6 │     takeTwo[int32, int32]()
-   ·                          ─┬
-   ·                           ╰── expected 2 arguments, found 0
- 7 │     takeTwo[.., int32](32)
-   ╰────
+[error]: the function `main::takeTwo` was called with the wrong number of arguments (expected 2, found 0)
+  ╭▸ compiler/e2e/test/snapshot/ir/expression/function_call/mismatched_count/main.pnx:6:26
+  │
+6 │     takeTwo[int32, int32]()
+  ╰╴                         ━━ expected 2 arguments, found 0
 
-  [error]: the function `main::takeTwo` was called with the wrong number of arguments (expected 2, found 1)
-   ╭─[compiler/e2e/test/snapshot/ir/expression/function_call/mismatched_count/main.pnx:7:23]
- 6 │     takeTwo[int32, int32]()
- 7 │     takeTwo[.., int32](32)
-   ·                       ──┬─
-   ·                         ╰── expected 2 arguments, found 1
- 8 │     takeTwo(32, 64, 128)
-   ╰────
+[error]: the function `main::takeTwo` was called with the wrong number of arguments (expected 2, found 1)
+  ╭▸ compiler/e2e/test/snapshot/ir/expression/function_call/mismatched_count/main.pnx:7:23
+  │
+7 │     takeTwo[.., int32](32)
+  ╰╴                      ━━━━ expected 2 arguments, found 1
 
-  [error]: the function `main::takeTwo` was called with the wrong number of arguments (expected 2, found 3)
-   ╭─[compiler/e2e/test/snapshot/ir/expression/function_call/mismatched_count/main.pnx:8:12]
- 7 │     takeTwo[.., int32](32)
- 8 │     takeTwo(32, 64, 128)
-   ·            ──────┬──────
-   ·                  ╰── expected 2 arguments, found 3
- 9 │ 
-   ╰────
+[error]: the function `main::takeTwo` was called with the wrong number of arguments (expected 2, found 3)
+  ╭▸ compiler/e2e/test/snapshot/ir/expression/function_call/mismatched_count/main.pnx:8:12
+  │
+8 │     takeTwo(32, 64, 128)
+  ╰╴           ━━━━━━━━━━━━━ expected 2 arguments, found 3
 
-  [error]: Compilation aborted due to 3 error(s)
+[error]: Compilation aborted due to 3 error(s)
 
 
 

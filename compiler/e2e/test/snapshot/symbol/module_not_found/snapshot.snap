@@ -1,17 +1,17 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
-  [error]: general IO error (os error 2)
-   ╭─[compiler/e2e/test/snapshot/symbol/module_not_found/main.pnx:1:15]
- 1 │ public module notFound
-   ·               ────┬───
-   ·                   ╰── submodule declaration here
-   ╰────
-  help: check if the file exists and is accessible
+[error]: general IO error (os error 2)
+  ╭▸ compiler/e2e/test/snapshot/symbol/module_not_found/main.pnx:1:15
+  │
+1 │ public module notFound
+  │               ━━━━━━━━ submodule declaration here
+  │
+  ╰ help: check if the file exists and is accessible
 
-  [error]: Compilation aborted due to 1 error(s)
+[error]: Compilation aborted due to 1 error(s)
 
 
 
