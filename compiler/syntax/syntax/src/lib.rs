@@ -26,6 +26,7 @@ pub mod pattern;
 pub mod predicate;
 pub mod statement;
 pub mod r#type;
+pub mod using;
 
 #[cfg(any(test, feature = "arbitrary"))]
 pub mod arbitrary;
