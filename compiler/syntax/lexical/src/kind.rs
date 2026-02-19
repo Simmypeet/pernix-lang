@@ -172,6 +172,8 @@ pub enum Keyword {
     Scope,
     /// `resume` keyword.
     Resume,
+    /// `given` keyword.
+    Given,
 }
 
 /// A static map that maps a string representation of a keyword to its
@@ -287,6 +289,7 @@ impl Keyword {
             Self::Not => "not",
             Self::Scope => "scope",
             Self::Resume => "resume",
+            Self::Given => "given",
         }
     }
 }
