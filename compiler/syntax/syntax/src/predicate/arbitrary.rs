@@ -472,8 +472,7 @@ reference! {
     #[derive(Debug, Clone)]
     pub enum Predicate for super::Predicate {
         LifetimeOutlives(LifetimeOutlives),
-        Trait(Trait),
-        Marker(Marker),
+        Type(Type),
         TraitTypeEquality(TraitTypeEquality),
     }
 }
@@ -488,8 +487,9 @@ impl IndentDisplay for Predicate {
             Self::LifetimeOutlives(lifetime_outlives) => {
                 write!(f, "{lifetime_outlives}")
             }
-            Self::Trait(trait_) => trait_.indent_fmt(f, indent),
-            Self::Marker(marker) => marker.indent_fmt(f, indent),
+
+            Self::Type(ty) => ty.indent_fmt(f, indent),
+
             Self::TraitTypeEquality(trait_type_equality) => {
                 trait_type_equality.indent_fmt(f, indent)
             }
@@ -504,8 +504,7 @@ impl Arbitrary for Predicate {
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
         prop_oneof![
             LifetimeOutlives::arbitrary().prop_map(Self::LifetimeOutlives),
-            Trait::arbitrary().prop_map(Self::Trait),
-            Marker::arbitrary().prop_map(Self::Marker),
+            Type::arbitrary().prop_map(Self::Type),
             TraitTypeEquality::arbitrary().prop_map(Self::TraitTypeEquality),
         ]
         .boxed()

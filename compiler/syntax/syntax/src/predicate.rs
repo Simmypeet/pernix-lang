@@ -138,12 +138,6 @@ abstract_tree::abstract_tree! {
         Type(
             Type = ast::<Type>()
         ),
-        Trait(
-            Trait = ast::<Trait>()
-        ),
-        Marker(
-            Marker = ast::<Marker>()
-        ),
         LifetimeOutlives(
             LifetimeOutlives = ast::<LifetimeOutlives>()
         ),
