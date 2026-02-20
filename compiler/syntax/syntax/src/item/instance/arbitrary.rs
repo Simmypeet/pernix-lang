@@ -7,10 +7,10 @@ use proptest::{
 };
 
 use crate::{
-    arbitrary::{AccessModifier, IndentDisplay},
+    arbitrary::{AccessModifier, IndentDisplay, QualifiedIdentifier},
     item::{
         self,
-        arbitrary::{Body, TraitRef},
+        arbitrary::{Body, TrailingWhereClause, TraitRef},
         constant, function,
         generic_parameters::arbitrary::GenericParameters,
         r#type,
@@ -131,12 +131,89 @@ pub type FunctionMember = MemberTemplate<
 pub type TypeMember =
     MemberTemplate<r#type::arbitrary::Signature, r#type::arbitrary::Body>;
 
+pub type InstanceMember = MemberTemplate<Signature, AssociatedInstanceBody>;
+
+reference! {
+    #[derive(Debug, Clone)]
+    pub struct AssociatedInstanceValue for super::AssociatedInstanceValue {
+        pub qualified_identifier (QualifiedIdentifier),
+    }
+}
+
+impl Arbitrary for AssociatedInstanceValue {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        QualifiedIdentifier::arbitrary()
+            .prop_map(|qualified_identifier| Self { qualified_identifier })
+            .boxed()
+    }
+}
+
+impl IndentDisplay for AssociatedInstanceValue {
+    fn indent_fmt(
+        &self,
+        formatter: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        formatter.write_str(" = ")?;
+        self.qualified_identifier.indent_fmt(formatter, indent)
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone)]
+    pub struct AssociatedInstanceBody for super::AssociatedInstanceBody {
+        pub value (Option<AssociatedInstanceValue>),
+        pub trailing_where_clause (Option<TrailingWhereClause>),
+    }
+}
+
+impl Arbitrary for AssociatedInstanceBody {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        // Must have at least value - parser requires at least one token to be
+        // consumed for the body to be recognized.
+        (
+            AssociatedInstanceValue::arbitrary(),
+            proptest::option::of(TrailingWhereClause::arbitrary()),
+        )
+            .prop_map(|(value, trailing_where_clause)| Self {
+                value: Some(value),
+                trailing_where_clause,
+            })
+            .boxed()
+    }
+}
+
+impl IndentDisplay for AssociatedInstanceBody {
+    fn indent_fmt(
+        &self,
+        formatter: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        if let Some(value) = &self.value {
+            value.indent_fmt(formatter, indent)?;
+        }
+
+        if let Some(trailing_where_clause) = &self.trailing_where_clause {
+            trailing_where_clause.indent_fmt(formatter, indent)?;
+        }
+
+        Ok(())
+    }
+}
+
 reference! {
     #[derive(Debug, Clone)]
     pub enum Member for super::Member {
         Constant(ConstantMember),
         Function(FunctionMember),
         Type(TypeMember),
+        Instance(InstanceMember),
     }
 }
 
@@ -149,6 +226,7 @@ impl Arbitrary for Member {
             ConstantMember::arbitrary().prop_map(Self::Constant),
             FunctionMember::arbitrary().prop_map(Self::Function),
             TypeMember::arbitrary().prop_map(Self::Type),
+            InstanceMember::arbitrary().prop_map(Self::Instance),
         ]
         .boxed()
     }
@@ -164,6 +242,7 @@ impl IndentDisplay for Member {
             Self::Constant(member) => member.indent_fmt(formatter, indent),
             Self::Function(member) => member.indent_fmt(formatter, indent),
             Self::Type(member) => member.indent_fmt(formatter, indent),
+            Self::Instance(member) => member.indent_fmt(formatter, indent),
         }
     }
 }

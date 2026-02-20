@@ -5,9 +5,9 @@ use pernixc_parser::{
 };
 
 use crate::{
-    AccessModifier, Identifier, Keyword, Punctuation,
+    AccessModifier, Identifier, Keyword, Punctuation, QualifiedIdentifier,
     item::{
-        Body, TraitRef, constant, function,
+        Body, TrailingWhereClause, TraitRef, constant, function,
         generic_parameters::GenericParameters, r#type,
     },
 };
@@ -19,7 +19,6 @@ pub mod arbitrary;
 mod test;
 
 abstract_tree::abstract_tree! {
-
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Signature {
         pub instance_keyword: Keyword = expect::Keyword::Instance,
@@ -44,6 +43,25 @@ abstract_tree::abstract_tree! {
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct AssociatedInstanceValue {
+        pub equals: Punctuation = '=',
+        pub qualified_identifier: QualifiedIdentifier
+            = ast::<QualifiedIdentifier>(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct AssociatedInstanceBody {
+        pub value: AssociatedInstanceValue
+            = ast::<AssociatedInstanceValue>().optional(),
+        pub trailing_where_clause: TrailingWhereClause
+            = ast::<TrailingWhereClause>().optional(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum Member {
         Constant(
             MemberTemplate<constant::Signature, constant::Body>
@@ -57,6 +75,10 @@ abstract_tree::abstract_tree! {
             MemberTemplate<r#type::Signature, r#type::Body>
                 = ast::<MemberTemplate<r#type::Signature, r#type::Body>>()
         ),
+        Instance(
+            MemberTemplate<Signature, AssociatedInstanceBody>
+                = ast::<MemberTemplate<Signature, AssociatedInstanceBody>>()
+        )
     }
 }
 
