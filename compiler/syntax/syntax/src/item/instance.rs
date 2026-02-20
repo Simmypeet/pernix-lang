@@ -5,7 +5,7 @@ use pernixc_parser::{
 };
 
 use crate::{
-    Identifier, Keyword, Punctuation,
+    AccessModifier, Identifier, Keyword, Punctuation,
     item::{
         Body, TraitRef, constant, function,
         generic_parameters::GenericParameters, r#type,
@@ -63,6 +63,7 @@ abstract_tree::abstract_tree! {
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Instance {
+        pub access_modifier: AccessModifier = ast::<AccessModifier>(),
         pub signature: Signature = ast::<Signature>(),
         pub body: Body<Member> = ast::<Body<Member>>(),
     }

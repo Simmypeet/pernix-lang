@@ -13,7 +13,7 @@ use super::{
 };
 use crate::{
     AccessModifier, Identifier, Keyword, Passable, SimplePath,
-    item::effect::Effect,
+    item::{effect::Effect, instance::Instance},
 };
 
 #[cfg(any(test, feature = "arbitrary"))]
@@ -171,6 +171,7 @@ abstract_tree::abstract_tree! {
         Extern(Extern = ast::<Extern>()),
         Marker(Marker = ast::<Marker>()),
         Effect(Effect = ast::<Effect>()),
+        Instance(Instance = ast::<Instance>())
     }
 }
 

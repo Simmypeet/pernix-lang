@@ -7,7 +7,7 @@ use proptest::{
 };
 
 use crate::{
-    arbitrary::IndentDisplay,
+    arbitrary::{AccessModifier, IndentDisplay},
     item::{
         self,
         arbitrary::{Body, TraitRef},
@@ -171,6 +171,7 @@ impl IndentDisplay for Member {
 reference! {
     #[derive(Debug, Clone)]
     pub struct Instance for super::Instance {
+        pub access_modifier (AccessModifier),
         pub signature (Signature),
         pub body (Body<Member>),
     }
@@ -181,8 +182,12 @@ impl Arbitrary for Instance {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (Signature::arbitrary(), Body::arbitrary())
-            .prop_map(|(signature, body)| Self { signature, body })
+        (AccessModifier::arbitrary(), Signature::arbitrary(), Body::arbitrary())
+            .prop_map(|(access_modifier, signature, body)| Self {
+                access_modifier,
+                signature,
+                body,
+            })
             .boxed()
     }
 }
@@ -193,6 +198,7 @@ impl IndentDisplay for Instance {
         formatter: &mut std::fmt::Formatter<'_>,
         indent: usize,
     ) -> std::fmt::Result {
+        write!(formatter, "{} ", self.access_modifier)?;
         self.signature.indent_fmt(formatter, indent)?;
         self.body.indent_fmt(formatter, indent)
     }
