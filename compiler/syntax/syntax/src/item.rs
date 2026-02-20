@@ -19,13 +19,13 @@ pub mod r#extern;
 pub mod function;
 pub mod generic_parameters;
 pub mod implements;
+pub mod instance;
 pub mod marker;
 pub mod module;
 pub mod r#struct;
 pub mod r#trait;
 pub mod r#type;
 pub mod where_clause;
-pub mod instance;
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

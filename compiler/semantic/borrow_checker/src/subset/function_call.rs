@@ -157,7 +157,7 @@ impl<N: Normalizer> Context<'_, N> {
         match kind {
             Kind::Function | Kind::ExternFunction => {}
 
-            Kind::TraitFunction => {
+            Kind::TraitAssociatedFunction => {
                 // parent trait requirement
                 let parent_trait_id = Global::new(
                     function_call.callable_id.target_id,
@@ -196,7 +196,7 @@ impl<N: Normalizer> Context<'_, N> {
                 );
             }
 
-            Kind::ImplementationFunction => {
+            Kind::ImplementationAssociatedFunction => {
                 let parent_implementation_id = Global::new(
                     function_call.callable_id.target_id,
                     self.tracked_engine()

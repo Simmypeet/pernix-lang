@@ -94,7 +94,7 @@ async fn check_register_assignment<N: Normalizer>(
                 .await;
 
             match symbol_kind {
-                Kind::TraitFunction => {
+                Kind::TraitAssociatedFunction => {
                     // parent trait requirement
                     let parent_trait_id = Global::new(
                         function_call.callable_id.target_id,
@@ -145,7 +145,7 @@ async fn check_register_assignment<N: Normalizer>(
                     Ok(())
                 }
 
-                Kind::ImplementationFunction => {
+                Kind::ImplementationAssociatedFunction => {
                     let parent_implementation_id = Global::new(
                         function_call.callable_id.target_id,
                         value_environment

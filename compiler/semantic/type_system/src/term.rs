@@ -409,7 +409,7 @@ async fn normalize_trait_member(
 
     // check if is the type
     if environment.tracked_engine().get_kind(implementation_member_id).await
-        != Kind::ImplementationType
+        != Kind::ImplementationAssociatedType
     {
         return Ok(None);
     }

@@ -193,13 +193,13 @@ fn to_resolution(
                 .unwrap()
                 .generic_arguments,
         }),
-        Kind::TraitType
-        | Kind::TraitFunction
-        | Kind::TraitConstant
-        | Kind::ImplementationConstant
-        | Kind::ImplementationFunction
+        Kind::TraitAssociatedType
+        | Kind::TraitAssociatedFunction
+        | Kind::TraitAssociatedConstant
+        | Kind::ImplementationAssociatedConstant
+        | Kind::ImplementationAssociatedFunction
         | Kind::EffectOperation
-        | Kind::ImplementationType => {
+        | Kind::ImplementationAssociatedType => {
             Resolution::MemberGeneric(MemberGeneric {
                 id: resolved_id,
                 parent_generic_arguments: latest_resolution

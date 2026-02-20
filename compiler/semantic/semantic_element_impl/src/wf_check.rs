@@ -279,9 +279,9 @@ impl Checker<'_> {
                     .await;
 
                 let adt_implementation_check = match symbol_kind {
-                    Kind::ImplementationConstant
-                    | Kind::ImplementationFunction
-                    | Kind::ImplementationType => {
+                    Kind::ImplementationAssociatedConstant
+                    | Kind::ImplementationAssociatedFunction
+                    | Kind::ImplementationAssociatedType => {
                         let parent = member_generic.id.target_id.make_global(
                             self.environment
                                 .tracked_engine()
@@ -299,9 +299,9 @@ impl Checker<'_> {
                         if parent_kind.is_adt() { Some(parent) } else { None }
                     }
 
-                    Kind::TraitConstant
-                    | Kind::TraitFunction
-                    | Kind::TraitType => {
+                    Kind::TraitAssociatedConstant
+                    | Kind::TraitAssociatedFunction
+                    | Kind::TraitAssociatedType => {
                         let trait_id = Global::new(
                             member_generic.id.target_id,
                             self.environment

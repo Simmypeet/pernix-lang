@@ -317,7 +317,9 @@ async fn trait_method_candidates(
         };
 
         // must be a method
-        if binder.engine().get_kind(method_id).await != Kind::TraitFunction {
+        if binder.engine().get_kind(method_id).await
+            != Kind::TraitAssociatedFunction
+        {
             continue;
         }
 
@@ -894,7 +896,7 @@ async fn find_method_in_implemented(
         let member_kind = binder.engine().get_kind(member).await;
 
         // found the method with applicable name and kind
-        if member_kind != Kind::ImplementationFunction {
+        if member_kind != Kind::ImplementationAssociatedFunction {
             return Ok(None);
         }
 

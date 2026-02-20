@@ -138,7 +138,7 @@ async fn get_function_instantiation(
             let kind = binder.engine().get_kind(member_generic.id).await;
 
             // no need to perform argument deduction for the implements
-            if kind != Kind::ImplementationFunction {
+            if kind != Kind::ImplementationAssociatedFunction {
                 break 'result (
                     member_generic.id,
                     binder
@@ -511,7 +511,9 @@ impl Binder<'_> {
 
         if matches!(
             callable_kind,
-            Kind::Function | Kind::ImplementationFunction | Kind::TraitFunction
+            Kind::Function
+                | Kind::ImplementationAssociatedFunction
+                | Kind::TraitAssociatedFunction
         ) {
             let is_unsafe = self.engine().is_function_unsafe(callable_id).await;
 

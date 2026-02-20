@@ -353,9 +353,16 @@ async fn check_trait(
 
             let kinds_match = matches!(
                 (trait_kind, impl_kind),
-                (Kind::TraitFunction, Kind::ImplementationFunction)
-                    | (Kind::TraitType, Kind::ImplementationType)
-                    | (Kind::TraitConstant, Kind::ImplementationConstant)
+                (
+                    Kind::TraitAssociatedFunction,
+                    Kind::ImplementationAssociatedFunction
+                ) | (
+                    Kind::TraitAssociatedType,
+                    Kind::ImplementationAssociatedType
+                ) | (
+                    Kind::TraitAssociatedConstant,
+                    Kind::ImplementationAssociatedConstant
+                )
             );
 
             if !kinds_match {

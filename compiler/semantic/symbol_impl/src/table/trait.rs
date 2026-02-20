@@ -71,7 +71,7 @@ impl Builder {
                             .add_member(identifier.clone(), builder.engine())
                             .await;
 
-                        builder.insert_kind(id, Kind::TraitType);
+                        builder.insert_kind(id, Kind::TraitAssociatedType);
                         builder.insert_scope_span(id, member.span());
                         builder.insert_name_identifier(id, &identifier);
                         builder
@@ -107,7 +107,7 @@ impl Builder {
                             .add_member(identifier.clone(), builder.engine())
                             .await;
 
-                        builder.insert_kind(id, Kind::TraitFunction);
+                        builder.insert_kind(id, Kind::TraitAssociatedFunction);
                         builder.insert_scope_span(id, member.span());
                         builder.insert_name_identifier(id, &identifier);
                         builder
@@ -158,7 +158,7 @@ impl Builder {
                             .add_member(identifier.clone(), builder.engine())
                             .await;
 
-                        builder.insert_kind(id, Kind::TraitConstant);
+                        builder.insert_kind(id, Kind::TraitAssociatedConstant);
                         builder.insert_scope_span(id, member.span());
                         builder.insert_name_identifier(id, &identifier);
                         builder

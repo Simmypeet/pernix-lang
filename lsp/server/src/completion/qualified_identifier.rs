@@ -419,15 +419,15 @@ fn allow_completion(self: pernixc_symbol::kind::Kind) -> bool {
         | pernixc_symbol::kind::Kind::Function
         | pernixc_symbol::kind::Kind::ExternFunction
         | pernixc_symbol::kind::Kind::Variant
-        | pernixc_symbol::kind::Kind::TraitType
-        | pernixc_symbol::kind::Kind::TraitFunction
-        | pernixc_symbol::kind::Kind::TraitConstant
+        | pernixc_symbol::kind::Kind::TraitAssociatedType
+        | pernixc_symbol::kind::Kind::TraitAssociatedFunction
+        | pernixc_symbol::kind::Kind::TraitAssociatedConstant
         | pernixc_symbol::kind::Kind::Effect
         | pernixc_symbol::kind::Kind::EffectOperation
         | pernixc_symbol::kind::Kind::Marker
-        | pernixc_symbol::kind::Kind::ImplementationType
-        | pernixc_symbol::kind::Kind::ImplementationFunction
-        | pernixc_symbol::kind::Kind::ImplementationConstant => true,
+        | pernixc_symbol::kind::Kind::ImplementationAssociatedType
+        | pernixc_symbol::kind::Kind::ImplementationAssociatedFunction
+        | pernixc_symbol::kind::Kind::ImplementationAssociatedConstant => true,
 
         pernixc_symbol::kind::Kind::PositiveImplementation
         | pernixc_symbol::kind::Kind::NegativeImplementation => false,
@@ -458,19 +458,19 @@ fn kind_to_completion_item_kind(
 
         pernixc_symbol::kind::Kind::Variant => CompletionItemKind::ENUM_MEMBER,
 
-        pernixc_symbol::kind::Kind::TraitType
-        | pernixc_symbol::kind::Kind::ImplementationType => {
+        pernixc_symbol::kind::Kind::TraitAssociatedType
+        | pernixc_symbol::kind::Kind::ImplementationAssociatedType => {
             CompletionItemKind::TYPE_PARAMETER
         }
 
-        pernixc_symbol::kind::Kind::TraitConstant
-        | pernixc_symbol::kind::Kind::ImplementationConstant => {
+        pernixc_symbol::kind::Kind::TraitAssociatedConstant
+        | pernixc_symbol::kind::Kind::ImplementationAssociatedConstant => {
             CompletionItemKind::CONSTANT
         }
 
-        pernixc_symbol::kind::Kind::TraitFunction
+        pernixc_symbol::kind::Kind::TraitAssociatedFunction
         | pernixc_symbol::kind::Kind::EffectOperation
-        | pernixc_symbol::kind::Kind::ImplementationFunction => {
+        | pernixc_symbol::kind::Kind::ImplementationAssociatedFunction => {
             CompletionItemKind::METHOD
         }
 

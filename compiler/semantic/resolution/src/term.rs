@@ -449,7 +449,7 @@ pub async fn resolution_to_type(
                     generic_arguments: symbol.generic_arguments,
                 })),
 
-                Kind::ImplementationType | Kind::Type => {
+                Kind::ImplementationAssociatedType | Kind::Type => {
                     let generic_parameters =
                         self.get_generic_parameters(symbol.id).await;
 
@@ -478,7 +478,7 @@ pub async fn resolution_to_type(
             let symbol_kind = self.get_kind(symbol.id).await;
 
             match symbol_kind {
-                Kind::TraitType => {
+                Kind::TraitAssociatedType => {
                     Ok(Type::TraitMember(TraitMember(MemberSymbol {
                         id: symbol.id,
                         member_generic_arguments: symbol

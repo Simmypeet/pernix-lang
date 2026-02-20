@@ -27,8 +27,8 @@ async fn write_type_signature(
     type_id: Global<pernixc_symbol::ID>,
 ) {
     let has_definition = match engine.get_kind(type_id).await {
-        Kind::Type | Kind::ImplementationType => true,
-        Kind::TraitType => false,
+        Kind::Type | Kind::ImplementationAssociatedType => true,
+        Kind::TraitAssociatedType => false,
         _ => unreachable!(),
     };
 

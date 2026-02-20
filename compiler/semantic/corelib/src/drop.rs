@@ -159,7 +159,7 @@ impl CoreLibInitializer<'_> {
             self.input_session
                 .set_input(
                     kind::Key { symbol_id: drop_function_id },
-                    kind::Kind::TraitFunction,
+                    kind::Kind::TraitAssociatedFunction,
                 )
                 .await;
             self.input_session

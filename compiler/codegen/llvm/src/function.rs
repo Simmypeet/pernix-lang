@@ -206,7 +206,7 @@ impl<'ctx> Context<'_, 'ctx> {
                 qualified_name
             }
 
-            Kind::ImplementationFunction => {
+            Kind::ImplementationAssociatedFunction => {
                 let parent_implementation_id = Global::new(
                     callable_id.target_id,
                     self.engine().get_parent(callable_id).await.unwrap(),

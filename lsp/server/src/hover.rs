@@ -53,15 +53,15 @@ pub async fn handle_hover(
         }
 
         pernixc_symbol::kind::Kind::Type
-        | pernixc_symbol::kind::Kind::ImplementationType
-        | pernixc_symbol::kind::Kind::TraitType => {
+        | pernixc_symbol::kind::Kind::ImplementationAssociatedType
+        | pernixc_symbol::kind::Kind::TraitAssociatedType => {
             self.format_type_signature(symbol).await
         }
 
         pernixc_symbol::kind::Kind::Function
         | pernixc_symbol::kind::Kind::ExternFunction
-        | pernixc_symbol::kind::Kind::TraitFunction
-        | pernixc_symbol::kind::Kind::ImplementationFunction => {
+        | pernixc_symbol::kind::Kind::TraitAssociatedFunction
+        | pernixc_symbol::kind::Kind::ImplementationAssociatedFunction => {
             self.format_function_signature(
                 symbol,
                 symbol.target_id == target_id,
@@ -94,10 +94,10 @@ pub async fn handle_hover(
 
         pernixc_symbol::kind::Kind::EffectOperation
         | pernixc_symbol::kind::Kind::Constant
-        | pernixc_symbol::kind::Kind::TraitConstant
+        | pernixc_symbol::kind::Kind::TraitAssociatedConstant
         | pernixc_symbol::kind::Kind::PositiveImplementation
         | pernixc_symbol::kind::Kind::NegativeImplementation
-        | pernixc_symbol::kind::Kind::ImplementationConstant => {
+        | pernixc_symbol::kind::Kind::ImplementationAssociatedConstant => {
             format!(
                 "```pnx\n{} {}\n```",
                 kind.kind_str(),

@@ -134,7 +134,7 @@ impl Bind<&pernixc_syntax::QualifiedIdentifier> for Binder<'_> {
                 let symbol_kind =
                     self.engine().get_kind(member_generic.id).await;
 
-                if symbol_kind == Kind::ImplementationConstant {
+                if symbol_kind == Kind::ImplementationAssociatedConstant {
                     todo!("handle constant evaluation");
                 }
 

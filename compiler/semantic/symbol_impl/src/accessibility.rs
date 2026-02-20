@@ -69,9 +69,9 @@ async fn accessibility_executor(
         | Kind::Enum
         | Kind::Type
         | Kind::Constant
-        | Kind::TraitType
-        | Kind::TraitFunction
-        | Kind::TraitConstant
+        | Kind::TraitAssociatedType
+        | Kind::TraitAssociatedFunction
+        | Kind::TraitAssociatedConstant
         | Kind::Marker
         | Kind::ExternFunction
         | Kind::Effect
@@ -93,9 +93,9 @@ async fn accessibility_executor(
             // implementation we'll return default public
             Accessibility::Public
         }
-        Kind::ImplementationType
-        | Kind::ImplementationFunction
-        | Kind::ImplementationConstant => {
+        Kind::ImplementationAssociatedType
+        | Kind::ImplementationAssociatedFunction
+        | Kind::ImplementationAssociatedConstant => {
             let access_modifier =
                 engine.get_implements_member_access_modifier(id).await;
 

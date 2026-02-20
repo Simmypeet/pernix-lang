@@ -302,7 +302,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     reg_id,
                 )
             }
-            Kind::Function | Kind::ImplementationFunction => {
+            Kind::Function | Kind::ImplementationAssociatedFunction => {
                 let mut calling_inst = function_call.instantiation.clone();
 
                 calling_inst.lifetimes.values_mut().for_each(|term| {
@@ -331,7 +331,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                 )
             }
 
-            Kind::TraitFunction => {
+            Kind::TraitAssociatedFunction => {
                 let mut calling_inst = function_call.instantiation.clone();
 
                 calling_inst.lifetimes.values_mut().for_each(|term| {

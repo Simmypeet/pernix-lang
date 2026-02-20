@@ -77,7 +77,7 @@ async fn create_trait_member_predicates(
             id,
             member_generic_arguments,
             parent_generic_arguments,
-        })) if engine.get_kind(id).await == Kind::TraitType => {
+        })) if engine.get_kind(id).await == Kind::TraitAssociatedType => {
             let resolve_ty = engine.resolve_type(&rhs, config, handler).await;
 
             where_clause.push(where_clause::Predicate {
