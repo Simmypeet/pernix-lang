@@ -10,9 +10,11 @@ use crate::{
     arbitrary::{
         AccessModifier, IndentDisplay, IntoSeparated, QualifiedIdentifier,
     },
-    item::{arbitrary::Body, generic_parameters::arbitrary::GenericParameters},
+    item::{
+        arbitrary::{Body, HigherRankedLifetimes},
+        generic_parameters::arbitrary::GenericParameters,
+    },
     pattern::arbitrary::Irrefutable,
-    predicate::arbitrary::HigherRankedLifetimes,
     reference,
     statement::arbitrary::Statement,
     r#type::arbitrary::Type,

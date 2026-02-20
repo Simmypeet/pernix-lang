@@ -9,7 +9,7 @@ use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Identifier, Keyword, LifetimeParameter, Punctuation,
-    expression::Expression, predicate::TypeBound, r#type::Type,
+    expression::Expression, item::TraitRef, predicate::TypeBound, r#type::Type,
 };
 
 #[cfg(any(test, feature = "arbitrary"))]
@@ -58,7 +58,8 @@ abstract_tree::abstract_tree! {
     pub enum GenericParameter {
         Lifetime(LifetimeParameter = ast::<LifetimeParameter>()),
         Type(TypeParameter = ast::<TypeParameter>()),
-        Constant(ConstantParameter = ast::<ConstantParameter>())
+        Constant(ConstantParameter = ast::<ConstantParameter>()),
+        Instance(InstanceParameter = ast::<InstanceParameter>()),
     }
 }
 
@@ -79,6 +80,27 @@ abstract_tree::abstract_tree! {
     pub struct GenericParameters {
         pub parameters: #[multi] GenericParameter
             = ast::<GenericParameter>().repeat_all_with_separator(','),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        Encode,
+        Decode,
+        StableHash,
+    )]
+    pub struct InstanceParameter {
+        pub instance_keyword: Keyword = expect::Keyword::Instance,
+        pub identifier: Identifier = expect::Identifier,
+        pub colon: Punctuation = ':',
+        pub trait_ref: TraitRef = ast::<TraitRef>(),
     }
 }
 

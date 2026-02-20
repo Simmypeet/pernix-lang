@@ -1,3 +1,4 @@
+use pernixc_lexical::tree::DelimiterKind;
 use pernixc_parser::{
     abstract_tree::{self, AbstractTree},
     expect,
@@ -6,7 +7,7 @@ use pernixc_parser::{
 use qbice::{Decode, Encode, StableHash};
 use where_clause::WhereClause;
 
-use crate::Passable;
+use crate::{Keyword, LifetimeParameter, Passable, QualifiedIdentifier};
 
 #[cfg(any(test, feature = "arbitrary"))]
 pub mod arbitrary;
@@ -69,5 +70,43 @@ abstract_tree::abstract_tree! {
     pub struct Body<T: 'static + AbstractTree> {
         pub where_clause: WhereClause = ast::<WhereClause>().optional(),
         pub members: Members<T> = ast::<Members<T>>(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        Encode,
+        Decode,
+        StableHash,
+    )]
+    pub struct TraitRef {
+        pub higher_ranked_lifetimes: HigherRankedLifetimes
+            = ast::<HigherRankedLifetimes>().optional(),
+        pub qualified_identifier: QualifiedIdentifier
+            = ast::<QualifiedIdentifier>(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct HigherRankedLifetimes {
+        pub for_keyword: Keyword = expect::Keyword::For,
+        pub lifetimes: LifetimeParameters = ast::<LifetimeParameters>(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #{fragment = expect::Fragment::Delimited(DelimiterKind::Bracket)}
+    pub struct LifetimeParameters {
+        pub lifetimes: #[multi] LifetimeParameter
+            = ast::<LifetimeParameter>().repeat_all_with_separator(','),
     }
 }

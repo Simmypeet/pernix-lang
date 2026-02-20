@@ -9,7 +9,8 @@ use proptest::{
 use super::where_clause::arbitrary::WhereClause;
 use crate::{
     arbitrary::{
-        IndentDisplay, Passable, write_indent_line_for_indent_display,
+        IndentDisplay, LifetimeParameter, Passable,
+        write_indent_line_for_indent_display,
     },
     reference,
 };
@@ -139,5 +140,50 @@ impl<T: IndentDisplay> IndentDisplay for Body<T> {
         self.members.indent_fmt(f, indent + 1)?;
 
         Ok(())
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone, derive_more::Display)]
+    #[display("for{lifetimes}")]
+    pub struct HigherRankedLifetimes for super::HigherRankedLifetimes {
+        pub lifetimes (LifetimeParameters)
+    }
+}
+
+impl Arbitrary for HigherRankedLifetimes {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+        LifetimeParameters::arbitrary()
+            .prop_map(|lifetimes| Self { lifetimes })
+            .boxed()
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone, derive_more::Display)]
+    #[display(
+        "[{}]",
+        self.lifetimes
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ")
+    )]
+    pub struct LifetimeParameters for super::LifetimeParameters {
+        pub lifetimes (Vec<LifetimeParameter>)
+    }
+}
+
+impl Arbitrary for LifetimeParameters {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+        proptest::collection::vec(LifetimeParameter::arbitrary(), 1..10)
+            .prop_map(|lifetimes| Self { lifetimes })
+            .boxed()
     }
 }
