@@ -25,6 +25,7 @@ pub mod r#struct;
 pub mod r#trait;
 pub mod r#type;
 pub mod where_clause;
+pub mod instance;
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
