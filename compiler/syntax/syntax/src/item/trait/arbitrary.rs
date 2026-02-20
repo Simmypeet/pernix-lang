@@ -13,6 +13,7 @@ use crate::{
         constant::{self, arbitrary::Signature as ConstantSignature},
         function::{self, arbitrary::Signature as FunctionSignature},
         generic_parameters::arbitrary::GenericParameters,
+        instance,
         r#type::{self, arbitrary::Signature as TypeSignature},
     },
     reference,
@@ -129,6 +130,7 @@ reference! {
         Type(MemberTemplate<r#type::arbitrary::Signature>),
         Function(MemberTemplate<function::arbitrary::Signature>),
         Constant(MemberTemplate<constant::arbitrary::Signature>),
+        Instance(MemberTemplate<instance::arbitrary::Signature>),
     }
 }
 
@@ -143,6 +145,8 @@ impl Arbitrary for Member {
                 .prop_map(Self::Function),
             MemberTemplate::<ConstantSignature>::arbitrary()
                 .prop_map(Self::Constant),
+            MemberTemplate::<instance::arbitrary::Signature>::arbitrary()
+                .prop_map(Self::Instance),
         ]
         .boxed()
     }
@@ -158,6 +162,7 @@ impl IndentDisplay for Member {
             Self::Type(member) => member.indent_fmt(formatter, indent),
             Self::Function(member) => member.indent_fmt(formatter, indent),
             Self::Constant(member) => member.indent_fmt(formatter, indent),
+            Self::Instance(member) => member.indent_fmt(formatter, indent),
         }
     }
 }
