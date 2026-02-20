@@ -5,12 +5,18 @@ use pernixc_parser::{
 };
 
 use crate::{
-    Identifier, Keyword,
+    Identifier, Keyword, Punctuation,
     item::{
         Body, TraitRef, constant, function,
         generic_parameters::GenericParameters, r#type,
     },
 };
+
+#[cfg(any(test, feature = "arbitrary"))]
+pub mod arbitrary;
+
+#[cfg(test)]
+mod test;
 
 abstract_tree::abstract_tree! {
 
@@ -20,6 +26,7 @@ abstract_tree::abstract_tree! {
         pub identifier: Identifier = expect::Identifier,
         pub generic_parameters: GenericParameters
             = ast::<GenericParameters>().optional(),
+        pub colon: Punctuation = ':',
         pub trait_ref: TraitRef = ast::<TraitRef>(),
     }
 }
