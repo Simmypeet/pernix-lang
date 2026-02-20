@@ -9,11 +9,50 @@ use proptest::{
 use super::where_clause::arbitrary::WhereClause;
 use crate::{
     arbitrary::{
-        IndentDisplay, LifetimeParameter, Passable,
+        IndentDisplay, LifetimeParameter, Passable, QualifiedIdentifier,
         write_indent_line_for_indent_display,
     },
     reference,
 };
+
+reference! {
+    #[derive(Debug, Clone)]
+    pub struct TraitRef for super::TraitRef {
+        pub higher_ranked_lifetimes (Option<HigherRankedLifetimes>),
+        pub qualified_identifier (QualifiedIdentifier),
+    }
+}
+
+impl Arbitrary for TraitRef {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        (
+            proptest::option::of(HigherRankedLifetimes::arbitrary()),
+            QualifiedIdentifier::arbitrary(),
+        )
+            .prop_map(|(higher_ranked_lifetimes, qualified_identifier)| Self {
+                higher_ranked_lifetimes,
+                qualified_identifier,
+            })
+            .boxed()
+    }
+}
+
+impl IndentDisplay for TraitRef {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        if let Some(higher_ranked_lifetimes) = &self.higher_ranked_lifetimes {
+            write!(f, "{higher_ranked_lifetimes} ")?;
+        }
+
+        self.qualified_identifier.indent_fmt(f, indent)
+    }
+}
 
 reference! {
     #[derive(Debug, Clone)]
