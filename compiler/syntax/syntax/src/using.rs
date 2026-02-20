@@ -10,12 +10,6 @@ use crate::{
     predicate::HigherRankedLifetimes,
 };
 
-#[cfg(any(test, feature = "arbitrary"))]
-pub mod arbitrary;
-
-#[cfg(test)]
-mod test;
-
 abstract_tree::abstract_tree! {
     #[derive(
         Debug,
@@ -69,65 +63,10 @@ abstract_tree::abstract_tree! {
         Decode,
         StableHash,
     )]
-    pub struct ContextParameterWithName {
-        pub name: Identifier = expect::Identifier,
-        pub colon: Punctuation = ':',
+    pub struct ContextParameter {
+        pub name: ContextParameterName = ast::<ContextParameterName>()
+            .optional(),
         pub r#trait: Trait = ast::<Trait>(),
-    }
-}
-
-abstract_tree::abstract_tree! {
-    #[derive(
-        Debug,
-        Clone,
-        PartialEq,
-        Eq,
-        PartialOrd,
-        Ord,
-        Hash,
-        Encode,
-        Decode,
-        StableHash,
-    )]
-    pub struct ContextParameterWithoutName {
-        pub r#trait: Trait = ast::<Trait>(),
-    }
-}
-
-abstract_tree::abstract_tree! {
-    #[derive(
-        Debug,
-        Clone,
-        PartialEq,
-        Eq,
-        PartialOrd,
-        Ord,
-        Hash,
-        Encode,
-        Decode,
-        StableHash,
-    )]
-    pub enum ContextParameter {
-        WithName(ContextParameterWithName = ast::<ContextParameterWithName>()),
-        WithoutName(ContextParameterWithoutName = ast::<ContextParameterWithoutName>()),
-    }
-}
-
-impl ContextParameter {
-    #[must_use]
-    pub fn name(&self) -> Option<Identifier> {
-        match self {
-            Self::WithName(param) => param.name(),
-            Self::WithoutName(_) => None,
-        }
-    }
-
-    #[must_use]
-    pub fn r#trait(&self) -> Option<Trait> {
-        match self {
-            Self::WithName(param) => param.r#trait(),
-            Self::WithoutName(param) => param.r#trait(),
-        }
     }
 }
 
@@ -186,8 +125,7 @@ abstract_tree::abstract_tree! {
     pub enum ContextParametersKind {
         Regular(ContextParameters = ast::<ContextParameters>()),
         Parenthesized(
-            ParenthesizedContextParameters
-                = ast::<ParenthesizedContextParameters>()
+            ParenthesizedContextParameters = ast::<ParenthesizedContextParameters>()
         ),
     }
 }
@@ -211,3 +149,4 @@ abstract_tree::abstract_tree! {
             = ast::<ContextParametersKind>(),
     }
 }
+
