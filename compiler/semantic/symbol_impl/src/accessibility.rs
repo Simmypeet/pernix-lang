@@ -72,14 +72,21 @@ async fn accessibility_executor(
         | Kind::TraitAssociatedType
         | Kind::TraitAssociatedFunction
         | Kind::TraitAssociatedConstant
+        | Kind::TraitAssociatedInstance
         | Kind::Marker
         | Kind::ExternFunction
         | Kind::Effect
+        | Kind::Instance
         | Kind::Function => {
             engine.query(&ProjectionKey { symbol_id: id }).await.unwrap()
         }
 
-        Kind::EffectOperation | Kind::Variant => {
+        Kind::InstanceAssociatedType
+        | Kind::InstanceAssociatedFunction
+        | Kind::InstanceAssociatedConstant
+        | Kind::InstanceAssociatedInstance
+        | Kind::EffectOperation
+        | Kind::Variant => {
             engine
                 .get_accessibility(Global::new(
                     id.target_id,
@@ -93,6 +100,7 @@ async fn accessibility_executor(
             // implementation we'll return default public
             Accessibility::Public
         }
+
         Kind::ImplementationAssociatedType
         | Kind::ImplementationAssociatedFunction
         | Kind::ImplementationAssociatedConstant => {

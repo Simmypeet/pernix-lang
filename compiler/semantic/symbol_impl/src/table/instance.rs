@@ -2,20 +2,20 @@ use std::sync::Arc;
 
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::kind::Kind;
-use pernixc_syntax::item::r#trait::Member as TraitMemberSyn;
+use pernixc_syntax::item::instance::Member as InstanceMemberSyn;
 use pernixc_tokio::join_set::JoinSet;
 
 use crate::table::builder::{Builder, MemberBuilder};
 
 impl Builder {
     #[allow(clippy::too_many_lines)]
-    pub(super) async fn handle_trait_member(
+    pub(super) async fn handle_instance_member(
         self: &Arc<Self>,
-        trait_syntax: &pernixc_syntax::item::r#trait::Trait,
+        instance_syntax: &pernixc_syntax::item::instance::Instance,
         module_member_builder: &mut MemberBuilder,
         join_set: &mut JoinSet<()>,
     ) {
-        let Some(signature) = trait_syntax.signature() else {
+        let Some(signature) = instance_syntax.signature() else {
             return;
         };
 
@@ -26,33 +26,34 @@ impl Builder {
         let next_submodule_qualified_name = module_member_builder
             .extend_qualified_name_sequence(identifier.kind.0.clone());
 
-        let trait_id = module_member_builder
+        let instance_id = module_member_builder
             .add_member(identifier.clone(), self.engine())
             .await;
 
-        let trait_body = trait_syntax.body();
-        let members =
-            trait_body.as_ref().and_then(pernixc_syntax::item::Body::members);
+        let instance_body = instance_syntax.body();
+        let members = instance_body
+            .as_ref()
+            .and_then(pernixc_syntax::item::Body::members);
 
-        let access_modifier = trait_syntax.access_modifier();
+        let access_modifier = instance_syntax.access_modifier();
         let generic_parameters = signature.generic_parameters();
-        let where_clause = trait_body
+        let where_clause = instance_body
             .and_then(|x| x.where_clause())
             .and_then(|x| x.predicates());
 
         let parent_module_id = module_member_builder.current_symbol_id();
-        let trait_scope_span = trait_syntax.span();
+        let instance_scope_span = instance_syntax.span();
 
         let builder = self.clone();
 
         join_set.spawn(async move {
-            let mut trait_member_builder = MemberBuilder::new(
-                trait_id,
+            let mut instance_member_builder = MemberBuilder::new(
+                instance_id,
                 next_submodule_qualified_name,
                 builder.target_id(),
             );
 
-            // add each of the member to the trait member
+            // add each of the member to the instance member
             for member in members
                 .as_ref()
                 .iter()
@@ -60,27 +61,20 @@ impl Builder {
                 .filter_map(|x| x.into_line().ok())
             {
                 match member {
-                    TraitMemberSyn::Type(member) => {
+                    InstanceMemberSyn::Type(member) => {
                         let Some(identifier) =
                             member.signature().and_then(|x| x.identifier())
                         else {
                             continue;
                         };
 
-                        let id = trait_member_builder
+                        let id = instance_member_builder
                             .add_member(identifier.clone(), builder.engine())
                             .await;
 
-                        builder.insert_kind(id, Kind::TraitAssociatedType);
+                        builder.insert_kind(id, Kind::InstanceAssociatedType);
                         builder.insert_scope_span(id, member.span());
                         builder.insert_name_identifier(id, &identifier);
-                        builder
-                            .insert_accessibility_by_access_modifier(
-                                id,
-                                parent_module_id,
-                                member.access_modifier().as_ref(),
-                            )
-                            .await;
                         builder.insert_generic_parameters_syntax(
                             id,
                             member
@@ -90,33 +84,32 @@ impl Builder {
                         builder.insert_where_clause_syntax(
                             id,
                             member
-                                .trailing_where_clause()
+                                .body()
+                                .and_then(|x| x.trailing_where_clause())
                                 .and_then(|x| x.where_clause())
                                 .and_then(|x| x.predicates()),
                         );
+                        builder.insert_type_alias_syntax(
+                            id,
+                            member.body().and_then(|x| x.r#type()),
+                        );
                     }
 
-                    TraitMemberSyn::Function(member) => {
+                    InstanceMemberSyn::Function(member) => {
                         let Some(identifier) =
                             member.signature().and_then(|x| x.identifier())
                         else {
                             continue;
                         };
 
-                        let id = trait_member_builder
+                        let id = instance_member_builder
                             .add_member(identifier.clone(), builder.engine())
                             .await;
 
-                        builder.insert_kind(id, Kind::TraitAssociatedFunction);
+                        builder
+                            .insert_kind(id, Kind::InstanceAssociatedFunction);
                         builder.insert_scope_span(id, member.span());
                         builder.insert_name_identifier(id, &identifier);
-                        builder
-                            .insert_accessibility_by_access_modifier(
-                                id,
-                                parent_module_id,
-                                member.access_modifier().as_ref(),
-                            )
-                            .await;
                         builder.insert_generic_parameters_syntax(
                             id,
                             member
@@ -126,7 +119,7 @@ impl Builder {
                         builder.insert_where_clause_syntax(
                             id,
                             member
-                                .trailing_where_clause()
+                                .body()
                                 .and_then(|x| x.where_clause())
                                 .and_then(|x| x.predicates()),
                         );
@@ -145,29 +138,27 @@ impl Builder {
                             id,
                             member.signature().and_then(|x| x.unsafe_keyword()),
                         );
+                        builder.insert_function_body_syntax(
+                            id,
+                            member.body().and_then(|x| x.members()),
+                        );
                     }
 
-                    TraitMemberSyn::Constant(member) => {
+                    InstanceMemberSyn::Constant(member) => {
                         let Some(identifier) =
                             member.signature().and_then(|x| x.identifier())
                         else {
                             continue;
                         };
 
-                        let id = trait_member_builder
+                        let id = instance_member_builder
                             .add_member(identifier.clone(), builder.engine())
                             .await;
 
-                        builder.insert_kind(id, Kind::TraitAssociatedConstant);
+                        builder
+                            .insert_kind(id, Kind::InstanceAssociatedConstant);
                         builder.insert_scope_span(id, member.span());
                         builder.insert_name_identifier(id, &identifier);
-                        builder
-                            .insert_accessibility_by_access_modifier(
-                                id,
-                                parent_module_id,
-                                member.access_modifier().as_ref(),
-                            )
-                            .await;
                         builder.insert_generic_parameters_syntax(
                             id,
                             member
@@ -177,7 +168,8 @@ impl Builder {
                         builder.insert_where_clause_syntax(
                             id,
                             member
-                                .trailing_where_clause()
+                                .body()
+                                .and_then(|x| x.trailing_where_clause())
                                 .and_then(|x| x.where_clause())
                                 .and_then(|x| x.predicates()),
                         );
@@ -185,29 +177,27 @@ impl Builder {
                             id,
                             member.signature().and_then(|x| x.r#type()),
                         );
+                        builder.insert_constant_expression_syntax(
+                            id,
+                            member.body().and_then(|x| x.expression()),
+                        );
                     }
 
-                    TraitMemberSyn::Instance(inst) => {
+                    InstanceMemberSyn::Instance(inst) => {
                         let Some(identifier) =
                             inst.signature().and_then(|x| x.identifier())
                         else {
                             continue;
                         };
 
-                        let id = trait_member_builder
+                        let id = instance_member_builder
                             .add_member(identifier.clone(), builder.engine())
                             .await;
 
-                        builder.insert_kind(id, Kind::TraitAssociatedInstance);
+                        builder
+                            .insert_kind(id, Kind::InstanceAssociatedInstance);
                         builder.insert_scope_span(id, inst.span());
                         builder.insert_name_identifier(id, &identifier);
-                        builder
-                            .insert_accessibility_by_access_modifier(
-                                id,
-                                parent_module_id,
-                                inst.access_modifier().as_ref(),
-                            )
-                            .await;
                         builder.insert_generic_parameters_syntax(
                             id,
                             inst.signature()
@@ -215,28 +205,40 @@ impl Builder {
                         );
                         builder.insert_where_clause_syntax(
                             id,
-                            inst.trailing_where_clause()
+                            inst.body()
+                                .and_then(|x| x.trailing_where_clause())
                                 .and_then(|x| x.where_clause())
                                 .and_then(|x| x.predicates()),
+                        );
+                        builder.insert_instance_associated_value(
+                            id,
+                            inst.body()
+                                .and_then(|x| x.value())
+                                .and_then(|x| x.qualified_identifier()),
                         );
                     }
                 }
             }
 
-            builder.insert_kind(trait_id, Kind::Trait);
-            builder.insert_scope_span(trait_id, trait_scope_span);
-            builder.insert_name_identifier(trait_id, &identifier);
-            builder
-                .insert_generic_parameters_syntax(trait_id, generic_parameters);
-            builder.insert_where_clause_syntax(trait_id, where_clause);
+            builder.insert_kind(instance_id, Kind::Instance);
+            builder.insert_scope_span(instance_id, instance_scope_span);
+            builder.insert_name_identifier(instance_id, &identifier);
+            builder.insert_generic_parameters_syntax(
+                instance_id,
+                generic_parameters,
+            );
+            builder.insert_where_clause_syntax(instance_id, where_clause);
             builder
                 .insert_accessibility_by_access_modifier(
-                    trait_id,
+                    instance_id,
                     parent_module_id,
                     access_modifier.as_ref(),
                 )
                 .await;
-            builder.insert_member_from_builder(trait_id, trait_member_builder);
+            builder.insert_member_from_builder(
+                instance_id,
+                instance_member_builder,
+            );
         });
     }
 }

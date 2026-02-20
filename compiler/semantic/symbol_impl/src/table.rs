@@ -31,6 +31,7 @@ mod effect;
 mod r#enum;
 mod r#extern;
 mod implements;
+mod instance;
 mod module;
 mod r#trait;
 
@@ -251,6 +252,12 @@ pub struct Table {
     /// Maps the function ID to its `do` effect syntax if it has one.
     pub function_effect_annotation_syntaxes:
         ReadOnlyMap<Option<pernixc_syntax::item::function::EffectAnnotation>>,
+
+    /// Maps the instance associated instance ID to its associated value
+    /// syntax, which represents the `= QualifiedIdentifier` part of an
+    /// associated instance declaration.
+    pub instance_associated_value_syntaxes:
+        ReadOnlyMap<Option<pernixc_syntax::QualifiedIdentifier>>,
 
     /// Maps the function ID to its `unsafe` keyword if it has one.
     pub function_unsafe_keywords: ReadOnlyMap<Option<pernixc_syntax::Keyword>>,

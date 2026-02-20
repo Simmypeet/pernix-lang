@@ -4,8 +4,9 @@ use pernixc_symbol::syntax::{
     FieldsKey, FunctionBodyKey, FunctionEffectAnnotationKey,
     FunctionSignatureKey, FunctionUnsafeKeywordKey, GenericParametersKey,
     ImplementsFinalKeywordKey, ImplementsMemberAccessModifierKey,
-    ImplementsQualifiedIdentifierKey, ImportKey, TypeAliasKey,
-    VariantAssociatedTypeKey, WhereClauseKey,
+    ImplementsQualifiedIdentifierKey, ImportKey,
+    InstanceAssociatedValueSyntaxKey, TypeAliasKey, VariantAssociatedTypeKey,
+    WhereClauseKey,
 };
 use pernixc_syntax::QualifiedIdentifier;
 use pernixc_target::Global;
@@ -713,4 +714,62 @@ static FUNCTION_EFFECT_ANNOTATION_EXECUTOR: Registration<Config> =
     Registration::new::<
         FunctionEffectAnnotationKey,
         GetFunctionEffectAnnotationSyntax,
+    >();
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    Query,
+)]
+#[value(Option<Option<pernixc_syntax::QualifiedIdentifier>>)]
+pub struct InstanceAssociatedValueSyntaxProjectionKey {
+    pub symbol_id: Global<pernixc_symbol::ID>,
+}
+
+#[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
+async fn instance_associated_value_syntax_projection_executor(
+    key: &InstanceAssociatedValueSyntaxProjectionKey,
+    engine: &TrackedEngine,
+) -> Option<Option<pernixc_syntax::QualifiedIdentifier>> {
+    let table = engine.get_table_of_symbol(key.symbol_id).await?;
+
+    table.instance_associated_value_syntaxes.get(&key.symbol_id.id).cloned()
+}
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static INSTANCE_ASSOCIATED_VALUE_SYNTAX_PROJECTION_EXECUTOR: Registration<
+    Config,
+> = Registration::new::<
+    InstanceAssociatedValueSyntaxProjectionKey,
+    InstanceAssociatedValueSyntaxProjectionExecutor,
+>();
+
+/// Implementation of the `get_instance_associated_value_syntax` method
+#[executor(config = Config)]
+async fn get_instance_associated_value_syntax(
+    key: &InstanceAssociatedValueSyntaxKey,
+    engine: &TrackedEngine,
+) -> Option<pernixc_syntax::QualifiedIdentifier> {
+    engine
+        .query(&InstanceAssociatedValueSyntaxProjectionKey {
+            symbol_id: key.symbol_id,
+        })
+        .await
+        .unwrap()
+}
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static INSTANCE_ASSOCIATED_VALUE_SYNTAX_EXECUTOR: Registration<Config> =
+    Registration::new::<
+        InstanceAssociatedValueSyntaxKey,
+        GetInstanceAssociatedValueSyntax,
     >();

@@ -79,6 +79,9 @@ pub struct Builder {
     function_effect_annotation_syntaxes:
         DashMap<ID, Option<pernixc_syntax::item::function::EffectAnnotation>>,
 
+    instance_associated_value_syntaxes:
+        DashMap<ID, Option<pernixc_syntax::QualifiedIdentifier>>,
+
     function_unsafe_keywords: DashMap<ID, Option<pernixc_syntax::Keyword>>,
 
     scope_spans: DashMap<ID, Option<RelativeSpan>>,
@@ -125,6 +128,7 @@ impl Builder {
             final_keywords: DashMap::default(),
             function_body_syntaxes: DashMap::default(),
             function_effect_annotation_syntaxes: DashMap::default(),
+            instance_associated_value_syntaxes: DashMap::default(),
             scope_spans: DashMap::default(),
             function_unsafe_keywords: DashMap::default(),
             token_tree,
@@ -203,6 +207,9 @@ impl Builder {
                 .intern(self.function_linkages.into_iter().collect()),
             function_effect_annotation_syntaxes: self.engine.intern(
                 self.function_effect_annotation_syntaxes.into_iter().collect(),
+            ),
+            instance_associated_value_syntaxes: self.engine.intern(
+                self.instance_associated_value_syntaxes.into_iter().collect(),
             ),
             function_unsafe_keywords: self
                 .engine
@@ -342,6 +349,18 @@ impl Builder {
         accessibility: Accessibility<pernixc_symbol::ID>,
     ) {
         assert!(self.accessibilities.insert(id, accessibility).is_none());
+    }
+
+    pub fn insert_instance_associated_value(
+        &self,
+        id: pernixc_symbol::ID,
+        qualified_identifier: Option<pernixc_syntax::QualifiedIdentifier>,
+    ) {
+        assert!(
+            self.instance_associated_value_syntaxes
+                .insert(id, qualified_identifier)
+                .is_none()
+        );
     }
 
     /// Inserts an accessibility into the builder from an access modifier.

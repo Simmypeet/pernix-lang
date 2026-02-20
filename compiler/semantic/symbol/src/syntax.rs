@@ -298,3 +298,26 @@ pub struct FunctionUnsafeKeywordKey {
     /// The global identifier of the function symbol.
     pub symbol_id: Global<ID>,
 }
+
+/// Retrieves the associated instance value syntax defined to the instance
+/// associated instance.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    Query,
+)]
+#[value(Option<pernixc_syntax::QualifiedIdentifier>)]
+#[extend(name = get_instance_associated_value_syntax, by_val)]
+pub struct InstanceAssociatedValueSyntaxKey {
+    /// The global identifier of the instance associated value symbol.
+    pub symbol_id: Global<ID>,
+}
