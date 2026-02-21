@@ -241,7 +241,7 @@ impl Match for Lifetime {
             Self::SubConstantLocation,
         >,
     ) -> &Vec<Matching<Self, Self::ThisSubTermLocation>> {
-        &substructural.lifetimes
+        substructural.lifetimes()
     }
 
     fn get_substructural_mut(
@@ -251,7 +251,7 @@ impl Match for Lifetime {
             Self::SubConstantLocation,
         >,
     ) -> &mut Vec<Matching<Self, Self::ThisSubTermLocation>> {
-        &mut substructural.lifetimes
+        substructural.lifetimes_mut()
     }
 }
 

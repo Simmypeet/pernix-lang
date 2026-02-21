@@ -473,12 +473,12 @@ impl GenericArguments {
             .enumerate()
         {
             let location = to_location(idx);
-            existing.lifetimes.push(Matching {
+            existing.lifetimes_mut().push(Matching::new(
                 lhs,
                 rhs,
-                lhs_location: location.into(),
-                rhs_location: location.into(),
-            });
+                location.into(),
+                location.into(),
+            ));
         }
 
         for (idx, (lhs, rhs)) in self
@@ -489,12 +489,12 @@ impl GenericArguments {
             .enumerate()
         {
             let location = to_location(idx);
-            existing.types.push(Matching {
+            existing.types_mut().push(Matching::new(
                 lhs,
                 rhs,
-                lhs_location: location.into(),
-                rhs_location: location.into(),
-            });
+                location.into(),
+                location.into(),
+            ));
         }
 
         for (idx, (lhs, rhs)) in self
@@ -505,12 +505,12 @@ impl GenericArguments {
             .enumerate()
         {
             let location = to_location(idx);
-            existing.constants.push(Matching {
+            existing.constants_mut().push(Matching::new(
                 lhs,
                 rhs,
-                lhs_location: location.into(),
-                rhs_location: location.into(),
-            });
+                location.into(),
+                location.into(),
+            ));
         }
 
         Some(existing)

@@ -785,53 +785,53 @@ impl Match for Type {
             (Self::Pointer(lhs), Self::Pointer(rhs))
                 if lhs.mutable == rhs.mutable =>
             {
-                Some(Substructural {
-                    lifetimes: Vec::new(),
-                    types: vec![Matching {
-                        lhs: (*lhs.pointee).clone(),
-                        rhs: (*rhs.pointee).clone(),
-                        lhs_location: SubTypeLocation::Pointer,
-                        rhs_location: SubTypeLocation::Pointer,
-                    }],
-                    constants: Vec::new(),
-                })
+                Some(Substructural::new(
+                    Vec::new(),
+                    vec![Matching::new(
+                        (*lhs.pointee).clone(),
+                        (*rhs.pointee).clone(),
+                        SubTypeLocation::Pointer,
+                        SubTypeLocation::Pointer,
+                    )],
+                    Vec::new(),
+                ))
             }
 
             (Self::Reference(lhs), Self::Reference(rhs))
                 if lhs.qualifier == rhs.qualifier =>
             {
-                Some(Substructural {
-                    lifetimes: vec![Matching {
-                        lhs: lhs.lifetime.clone(),
-                        rhs: rhs.lifetime.clone(),
-                        lhs_location: SubLifetimeLocation::Reference,
-                        rhs_location: SubLifetimeLocation::Reference,
-                    }],
-                    types: vec![Matching {
-                        lhs: (*lhs.pointee).clone(),
-                        rhs: (*rhs.pointee).clone(),
-                        lhs_location: SubTypeLocation::Reference,
-                        rhs_location: SubTypeLocation::Reference,
-                    }],
-                    constants: Vec::new(),
-                })
+                Some(Substructural::new(
+                    vec![Matching::new(
+                        lhs.lifetime.clone(),
+                        rhs.lifetime.clone(),
+                        SubLifetimeLocation::Reference,
+                        SubLifetimeLocation::Reference,
+                    )],
+                    vec![Matching::new(
+                        (*lhs.pointee).clone(),
+                        (*rhs.pointee).clone(),
+                        SubTypeLocation::Reference,
+                        SubTypeLocation::Reference,
+                    )],
+                    Vec::new(),
+                ))
             }
 
-            (Self::Array(lhs), Self::Array(rhs)) => Some(Substructural {
-                lifetimes: Vec::new(),
-                types: vec![Matching {
-                    lhs: (*lhs.r#type).clone(),
-                    rhs: (*rhs.r#type).clone(),
-                    lhs_location: SubTypeLocation::Array,
-                    rhs_location: SubTypeLocation::Array,
-                }],
-                constants: vec![Matching {
-                    lhs: lhs.length.clone(),
-                    rhs: rhs.length.clone(),
-                    lhs_location: SubConstantLocation::Array,
-                    rhs_location: SubConstantLocation::Array,
-                }],
-            }),
+            (Self::Array(lhs), Self::Array(rhs)) => Some(Substructural::new(
+                Vec::new(),
+                vec![Matching::new(
+                    (*lhs.r#type).clone(),
+                    (*rhs.r#type).clone(),
+                    SubTypeLocation::Array,
+                    SubTypeLocation::Array,
+                )],
+                vec![Matching::new(
+                    lhs.length.clone(),
+                    rhs.length.clone(),
+                    SubConstantLocation::Array,
+                    SubConstantLocation::Array,
+                )],
+            )),
 
             (Self::Tuple(lhs), Self::Tuple(rhs)) => {
                 lhs.substructural_match(rhs)
@@ -855,16 +855,18 @@ impl Match for Type {
                     })
             }
 
-            (Self::Phantom(lhs), Self::Phantom(rhs)) => Some(Substructural {
-                lifetimes: Vec::new(),
-                types: vec![Matching {
-                    lhs: (*lhs.0).clone(),
-                    rhs: (*rhs.0).clone(),
-                    lhs_location: SubTypeLocation::Phantom,
-                    rhs_location: SubTypeLocation::Phantom,
-                }],
-                constants: Vec::new(),
-            }),
+            (Self::Phantom(lhs), Self::Phantom(rhs)) => {
+                Some(Substructural::new(
+                    Vec::new(),
+                    vec![Matching::new(
+                        (*lhs.0).clone(),
+                        (*rhs.0).clone(),
+                        SubTypeLocation::Phantom,
+                        SubTypeLocation::Phantom,
+                    )],
+                    Vec::new(),
+                ))
+            }
 
             (Self::FunctionSignature(lhs), Self::FunctionSignature(rhs)) => {
                 if lhs.parameters.len() != rhs.parameters.len() {
@@ -876,28 +878,28 @@ impl Match for Type {
                 for (i, (lhs, rhs)) in
                     lhs.parameters.iter().zip(rhs.parameters.iter()).enumerate()
                 {
-                    substructural.types.push(Matching {
-                        lhs: lhs.clone(),
-                        rhs: rhs.clone(),
-                        lhs_location: SubTypeLocation::FunctionSignature(
+                    substructural.types_mut().push(Matching::new(
+                        lhs.clone(),
+                        rhs.clone(),
+                        SubTypeLocation::FunctionSignature(
                             SubFunctionSignatureLocation::Parameter(i),
                         ),
-                        rhs_location: SubTypeLocation::FunctionSignature(
+                        SubTypeLocation::FunctionSignature(
                             SubFunctionSignatureLocation::Parameter(i),
                         ),
-                    });
+                    ));
                 }
 
-                substructural.types.push(Matching {
-                    lhs: (*lhs.return_type).clone(),
-                    rhs: (*rhs.return_type).clone(),
-                    lhs_location: SubTypeLocation::FunctionSignature(
+                substructural.types_mut().push(Matching::new(
+                    (*lhs.return_type).clone(),
+                    (*rhs.return_type).clone(),
+                    SubTypeLocation::FunctionSignature(
                         SubFunctionSignatureLocation::ReturnType,
                     ),
-                    rhs_location: SubTypeLocation::FunctionSignature(
+                    SubTypeLocation::FunctionSignature(
                         SubFunctionSignatureLocation::ReturnType,
                     ),
-                });
+                ));
 
                 Some(substructural)
             }
@@ -913,7 +915,7 @@ impl Match for Type {
             Self::SubConstantLocation,
         >,
     ) -> &Vec<Matching<Self, Self::ThisSubTermLocation>> {
-        &substructural.types
+        substructural.types()
     }
 
     fn get_substructural_mut(
@@ -923,7 +925,7 @@ impl Match for Type {
             Self::SubConstantLocation,
         >,
     ) -> &mut Vec<Matching<Self, Self::ThisSubTermLocation>> {
-        &mut substructural.types
+        substructural.types_mut()
     }
 }
 

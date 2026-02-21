@@ -374,38 +374,39 @@ impl Match for Constant {
             (Self::Struct(lhs), Self::Struct(rhs))
                 if lhs.id == rhs.id && lhs.fields.len() == rhs.fields.len() =>
             {
-                Some(Substructural {
-                    lifetimes: Vec::new(),
-                    types: Vec::new(),
-                    constants: lhs
-                        .fields
+                Some(Substructural::new(
+                    Vec::new(),
+                    Vec::new(),
+                    lhs.fields
                         .iter()
                         .zip(rhs.fields.iter())
                         .enumerate()
-                        .map(|(idx, (lhs, rhs))| Matching {
-                            lhs: lhs.clone(),
-                            rhs: rhs.clone(),
-                            lhs_location: SubConstantLocation::Struct(idx),
-                            rhs_location: SubConstantLocation::Struct(idx),
+                        .map(|(idx, (lhs, rhs))| {
+                            Matching::new(
+                                lhs.clone(),
+                                rhs.clone(),
+                                SubConstantLocation::Struct(idx),
+                                SubConstantLocation::Struct(idx),
+                            )
                         })
                         .collect(),
-                })
+                ))
             }
 
             (Self::Enum(lhs), Self::Enum(rhs))
                 if lhs.variant_id == rhs.variant_id =>
             {
                 match (&lhs.associated_value, &rhs.associated_value) {
-                    (Some(lhs), Some(rhs)) => Some(Substructural {
-                        lifetimes: Vec::new(),
-                        types: Vec::new(),
-                        constants: vec![Matching {
-                            lhs: lhs.deref().clone(),
-                            rhs: rhs.deref().clone(),
-                            lhs_location: SubConstantLocation::Enum,
-                            rhs_location: SubConstantLocation::Enum,
-                        }],
-                    }),
+                    (Some(lhs), Some(rhs)) => Some(Substructural::new(
+                        Vec::new(),
+                        Vec::new(),
+                        vec![Matching::new(
+                            lhs.deref().clone(),
+                            rhs.deref().clone(),
+                            SubConstantLocation::Enum,
+                            SubConstantLocation::Enum,
+                        )],
+                    )),
                     (None, None) => Some(Substructural::default()),
                     _ => None,
                 }
@@ -414,23 +415,23 @@ impl Match for Constant {
             (Self::Array(lhs), Self::Array(rhs))
                 if lhs.elements.len() == rhs.elements.len() =>
             {
-                Some(Substructural {
-                    lifetimes: Vec::new(),
-                    types: Vec::new(),
-                    constants: lhs
+                Some(Substructural::new(
+                    Vec::new(),
+                    Vec::new(),
+                    lhs
                         .elements
                         .iter()
                         .cloned()
                         .zip(rhs.elements.iter().cloned())
                         .enumerate()
-                        .map(|(idx, (lhs, rhs))| Matching {
+                        .map(|(idx, (lhs, rhs))| Matching::new(
                             lhs,
                             rhs,
-                            lhs_location: SubConstantLocation::Array(idx),
-                            rhs_location: SubConstantLocation::Array(idx),
-                        })
+                            SubConstantLocation::Array(idx),
+                            SubConstantLocation::Array(idx),
+                        ))
                         .collect(),
-                })
+                ))
             }
 
             (Self::Tuple(lhs), Self::Tuple(rhs)) => {
@@ -448,7 +449,7 @@ impl Match for Constant {
             Self::SubConstantLocation,
         >,
     ) -> &Vec<Matching<Self, Self::ThisSubTermLocation>> {
-        &substructural.constants
+        substructural.constants()
     }
 
     fn get_substructural_mut(
@@ -458,7 +459,7 @@ impl Match for Constant {
             Self::SubConstantLocation,
         >,
     ) -> &mut Vec<Matching<Self, Self::ThisSubTermLocation>> {
-        &mut substructural.constants
+        substructural.constants_mut()
     }
 }
 

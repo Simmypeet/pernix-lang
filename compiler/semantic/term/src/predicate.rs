@@ -12,7 +12,6 @@ use enum_as_inner::EnumAsInner;
 pub use marker::{Negative as NegativeMarker, Positive as PositiveMarker};
 pub use outlives::Outlives;
 use qbice::{Decode, Encode, StableHash};
-pub use r#trait::{Negative as NegativeTrait, Positive as PositiveTrait};
 pub use tuple::Tuple;
 
 use crate::{

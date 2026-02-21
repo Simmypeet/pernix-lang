@@ -1,5 +1,7 @@
 //! Contains logic related to matching the term structurally.
 
+use derive_new::new;
+
 use super::sub_term::SubTerm;
 use crate::{constant::Constant, lifetime::Lifetime, r#type::Type};
 
@@ -50,36 +52,88 @@ pub trait Match: Sized + SubTerm {
 }
 
 /// Represents a match between two terms.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default, new)]
 pub struct Matching<T, Location> {
     /// The left-hand side of the match.
-    pub lhs: T,
+    lhs: T,
 
     /// The right-hand side of the match.
-    pub rhs: T,
+    rhs: T,
 
     /// The location in lhs where the match occurred
-    pub lhs_location: Location,
+    lhs_location: Location,
 
     /// The location in rhs where the match occurred
-    pub rhs_location: Location,
+    rhs_location: Location,
+}
+
+impl<T, Location> Matching<T, Location> {
+    /// Returns a reference to the left-hand side of the match.
+    #[must_use]
+    pub const fn lhs(&self) -> &T { &self.lhs }
+
+    /// Returns a reference to the right-hand side of the match.
+    #[must_use]
+    pub const fn rhs(&self) -> &T { &self.rhs }
+
+    /// Returns a reference to the location in lhs where the match occurred.
+    #[must_use]
+    pub const fn lhs_location(&self) -> &Location { &self.lhs_location }
+
+    /// Returns a reference to the location in rhs where the match occurred.
+    #[must_use]
+    pub const fn rhs_location(&self) -> &Location { &self.rhs_location }
 }
 
 /// Represents a substructural matching between two terms.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
 #[allow(missing_docs)]
 pub struct Substructural<
     SubLifetimeLocation,
     SubTypeLocation,
     SubConstantLocation,
 > {
-    pub lifetimes: Vec<Matching<Lifetime, SubLifetimeLocation>>,
-    pub types: Vec<Matching<Type, SubTypeLocation>>,
-    pub constants: Vec<Matching<Constant, SubConstantLocation>>,
+    lifetimes: Vec<Matching<Lifetime, SubLifetimeLocation>>,
+    types: Vec<Matching<Type, SubTypeLocation>>,
+    constants: Vec<Matching<Constant, SubConstantLocation>>,
+}
+
+impl<L, T, C> Substructural<L, T, C> {
+    /// Returns a reference to the lifetime matchings.
+    #[must_use]
+    pub const fn lifetimes(&self) -> &Vec<Matching<Lifetime, L>> {
+        &self.lifetimes
+    }
+
+    /// Returns a mutable reference to the lifetime matchings.
+    #[must_use]
+    pub const fn lifetimes_mut(&mut self) -> &mut Vec<Matching<Lifetime, L>> {
+        &mut self.lifetimes
+    }
+
+    /// Returns a reference to the type matchings.
+    #[must_use]
+    pub const fn types(&self) -> &Vec<Matching<Type, T>> { &self.types }
+
+    /// Returns a mutable reference to the type matchings.
+    #[must_use]
+    pub const fn types_mut(&mut self) -> &mut Vec<Matching<Type, T>> {
+        &mut self.types
+    }
+
+    /// Returns a reference to the constant matchings.
+    #[must_use]
+    pub const fn constants(&self) -> &Vec<Matching<Constant, C>> {
+        &self.constants
+    }
+
+    /// Returns a mutable reference to the constant matchings.
+    #[must_use]
+    pub const fn constants_mut(&mut self) -> &mut Vec<Matching<Constant, C>> {
+        &mut self.constants
+    }
 }
 
 impl<L, T, C> Default for Substructural<L, T, C> {
-    fn default() -> Self {
-        Self { lifetimes: Vec::new(), types: Vec::new(), constants: Vec::new() }
-    }
+    fn default() -> Self { Self::new(Vec::new(), Vec::new(), Vec::new()) }
 }

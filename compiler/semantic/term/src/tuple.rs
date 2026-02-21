@@ -285,19 +285,19 @@ where
             T::ThisSubTermLocation: From<SubTupleLocation>,
         {
             if swap {
-                T::get_substructural_mut(existing).push(Matching {
-                    lhs: rhs,
-                    rhs: lhs,
-                    lhs_location: rhs_location.into(),
-                    rhs_location: lhs_location.into(),
-                });
+                T::get_substructural_mut(existing).push(Matching::new(
+                    rhs,
+                    lhs,
+                    rhs_location.into(),
+                    lhs_location.into(),
+                ));
             } else {
-                T::get_substructural_mut(existing).push(Matching {
+                T::get_substructural_mut(existing).push(Matching::new(
                     lhs,
                     rhs,
-                    lhs_location: lhs_location.into(),
-                    rhs_location: rhs_location.into(),
-                });
+                    lhs_location.into(),
+                    rhs_location.into(),
+                ));
             }
         }
 
