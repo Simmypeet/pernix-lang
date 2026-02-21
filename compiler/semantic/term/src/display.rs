@@ -92,11 +92,11 @@ impl Configuration<'_> {
         generic_arguments: &GenericArguments,
     ) -> bool {
         generic_arguments
-            .lifetimes
+            .lifetimes()
             .iter()
             .any(|x| self.lifetime_will_be_displayed(x))
-            || !generic_arguments.types.is_empty()
-            || !generic_arguments.constants.is_empty()
+            || !generic_arguments.types().is_empty()
+            || !generic_arguments.constants().is_empty()
     }
 }
 

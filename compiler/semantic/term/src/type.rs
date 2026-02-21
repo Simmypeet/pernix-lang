@@ -9,8 +9,7 @@ use crate::{
     constant::Constant,
     error::Error,
     generic_arguments::{
-        MemberSymbol, SubMemberSymbolLocation, SubSymbolLocation,
-        SubTraitMemberLocation, Symbol, TraitMember,
+        AssociatedSymbol, SubMemberSymbolLocation, SubSymbolLocation, Symbol,
     },
     generic_parameters::{TypeParameterID, get_generic_parameters},
     inference,
@@ -256,9 +255,7 @@ pub enum Type {
     #[from]
     Phantom(Phantom),
     #[from]
-    MemberSymbol(MemberSymbol),
-    #[from]
-    TraitMember(TraitMember),
+    MemberSymbol(AssociatedSymbol),
     #[from]
     FunctionSignature(FunctionSignature),
     #[from]
@@ -266,13 +263,13 @@ pub enum Type {
 }
 
 impl Default for Type {
-    fn default() -> Self { Self::Tuple(Tuple { elements: Vec::new() }) }
+    fn default() -> Self { Self::Tuple(Tuple::unit()) }
 }
 
 impl Type {
     /// Creates a unit type, which is represented as an empty tuple.
     #[must_use]
-    pub const fn unit() -> Self { Self::Tuple(Tuple { elements: Vec::new() }) }
+    pub const fn unit() -> Self { Self::Tuple(Tuple::unit()) }
 
     /// Creates a boolean type.
     #[must_use]
@@ -335,10 +332,6 @@ pub enum SubLifetimeLocation {
     /// A lifetime argument in a [`Type::MemberSymbol`] variant.
     #[from]
     MemberSymbol(SubMemberSymbolLocation),
-
-    /// A lifetime argument in a [`Type::TraitMember`] variant.
-    #[from]
-    TraitMember(SubTraitMemberLocation),
 }
 
 impl From<SubLifetimeLocation> for TermLocation {
@@ -363,10 +356,6 @@ impl Location<Type, Lifetime> for SubLifetimeLocation {
                 Self::MemberSymbol(location),
             ) => member_symbol.get_term_mut(location).unwrap(),
 
-            (Type::TraitMember(trait_member), Self::TraitMember(location)) => {
-                trait_member.0.get_term_mut(location.0).unwrap()
-            }
-
             term => panic!(
                 "invalid sub-lifetime location: {self:?} for term: {term:?}"
             ),
@@ -390,10 +379,6 @@ impl Location<Type, Lifetime> for SubLifetimeLocation {
                 Self::MemberSymbol(location),
             ) => member_symbol.get_term(location).cloned(),
 
-            (Type::TraitMember(trait_member), Self::TraitMember(location)) => {
-                trait_member.0.get_term(location.0).cloned()
-            }
-
             _ => None,
         }
     }
@@ -413,10 +398,6 @@ impl Location<Type, Lifetime> for SubLifetimeLocation {
                 Self::MemberSymbol(location),
             ) => member_symbol.get_term(location),
 
-            (Type::TraitMember(trait_member), Self::TraitMember(location)) => {
-                trait_member.0.get_term(location.0)
-            }
-
             _ => None,
         }
     }
@@ -435,10 +416,6 @@ impl Location<Type, Lifetime> for SubLifetimeLocation {
                 Type::MemberSymbol(member_symbol),
                 Self::MemberSymbol(location),
             ) => member_symbol.get_term_mut(location),
-
-            (Type::TraitMember(trait_member), Self::TraitMember(location)) => {
-                trait_member.0.get_term_mut(location.0)
-            }
 
             _ => None,
         }
@@ -483,10 +460,6 @@ pub enum SubTypeLocation {
     #[from]
     MemberSymbol(SubMemberSymbolLocation),
 
-    /// The type argument in a [`Type::TraitMember`] type.
-    #[from]
-    TraitMember(SubTraitMemberLocation),
-
     /// The return type or a parameter of a function signature.
     #[from]
     FunctionSignature(SubFunctionSignatureLocation),
@@ -523,10 +496,6 @@ impl Location<Type, Type> for SubTypeLocation {
                 Self::MemberSymbol(location),
                 Type::MemberSymbol(member_symbol),
             ) => member_symbol.get_term_mut(location).unwrap(),
-
-            (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
-                trait_member.0.get_term_mut(location.0).unwrap()
-            }
 
             (
                 Self::FunctionSignature(location),
@@ -565,15 +534,9 @@ impl Location<Type, Type> for SubTypeLocation {
 
             (Self::Array, Type::Array(array)) => Some((*array.r#type).clone()),
 
-            (Self::Tuple(location), Type::Tuple(tuple)) => match location {
-                SubTupleLocation::Single(single) => {
-                    tuple.elements.get(single).map(|x| x.term.clone())
-                }
-                SubTupleLocation::Range(range) => tuple
-                    .elements
-                    .get(range.to_std_range())
-                    .map(|x| Type::Tuple(Tuple { elements: x.to_vec() })),
-            },
+            (Self::Tuple(location), Type::Tuple(tuple)) => {
+                tuple.get_term(&location)
+            }
 
             (
                 Self::MemberSymbol(location),
@@ -582,10 +545,6 @@ impl Location<Type, Type> for SubTypeLocation {
 
             (Self::Phantom, Type::Phantom(phantom)) => {
                 Some((*phantom.0).clone())
-            }
-
-            (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
-                trait_member.0.get_term(location.0).cloned()
             }
 
             (
@@ -618,12 +577,9 @@ impl Location<Type, Type> for SubTypeLocation {
 
             (Self::Array, Type::Array(array)) => Some(&*array.r#type),
 
-            (Self::Tuple(location), Type::Tuple(tuple)) => match location {
-                SubTupleLocation::Single(single) => {
-                    tuple.elements.get(single).map(|x| &x.term)
-                }
-                SubTupleLocation::Range { .. } => None,
-            },
+            (Self::Tuple(location), Type::Tuple(tuple)) => {
+                tuple.get_term_ref(&location)
+            }
 
             (
                 Self::MemberSymbol(location),
@@ -631,10 +587,6 @@ impl Location<Type, Type> for SubTypeLocation {
             ) => member_symbol.get_term(location),
 
             (Self::Phantom, Type::Phantom(phantom)) => Some(&*phantom.0),
-
-            (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
-                trait_member.0.get_term(location.0)
-            }
 
             (
                 Self::FunctionSignature(location),
@@ -668,21 +620,14 @@ impl Location<Type, Type> for SubTypeLocation {
 
             (Self::Array, Type::Array(array)) => Some(&mut *array.r#type),
 
-            (Self::Tuple(location), Type::Tuple(tuple)) => match location {
-                SubTupleLocation::Single(single) => {
-                    tuple.elements.get_mut(single).map(|x| &mut x.term)
-                }
-                SubTupleLocation::Range { .. } => None,
-            },
+            (Self::Tuple(location), Type::Tuple(tuple)) => {
+                tuple.get_term_mut(&location)
+            }
 
             (
                 Self::MemberSymbol(location),
                 Type::MemberSymbol(member_symbol),
             ) => member_symbol.get_term_mut(location),
-
-            (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
-                trait_member.0.get_term_mut(location.0)
-            }
 
             (Self::Phantom, Type::Phantom(phantom)) => Some(&mut *phantom.0),
 
@@ -727,10 +672,6 @@ pub enum SubConstantLocation {
 
     /// The [`Array::length`] of an array.
     Array,
-
-    /// The constant argument in a [`Type::TraitMember`] type.
-    #[from]
-    TraitMember(SubTraitMemberLocation),
 }
 
 impl From<SubConstantLocation> for TermLocation {
@@ -753,10 +694,6 @@ impl Location<Type, Constant> for SubConstantLocation {
                 Type::MemberSymbol(member_symbol),
             ) => member_symbol.get_term_mut(location).unwrap(),
 
-            (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
-                trait_member.0.get_term_mut(location.0).unwrap()
-            }
-
             term => panic!(
                 "invalid sub-constant location: {self:?} for term: {term:?}"
             ),
@@ -778,10 +715,6 @@ impl Location<Type, Constant> for SubConstantLocation {
                 Type::MemberSymbol(member_symbol),
             ) => member_symbol.get_term(location).cloned(),
 
-            (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
-                trait_member.0.get_term(location.0).cloned()
-            }
-
             _ => None,
         }
     }
@@ -799,10 +732,6 @@ impl Location<Type, Constant> for SubConstantLocation {
                 Type::MemberSymbol(member_symbol),
             ) => member_symbol.get_term(location),
 
-            (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
-                trait_member.0.get_term(location.0)
-            }
-
             _ => None,
         }
     }
@@ -819,10 +748,6 @@ impl Location<Type, Constant> for SubConstantLocation {
                 Self::MemberSymbol(location),
                 Type::MemberSymbol(member_symbol),
             ) => member_symbol.get_term_mut(location),
-
-            (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
-                trait_member.0.get_term_mut(location.0)
-            }
 
             _ => None,
         }
@@ -849,11 +774,11 @@ impl Match for Type {
         >,
     > {
         match (self, other) {
-            (Self::Symbol(lhs), Self::Symbol(rhs)) if lhs.id == rhs.id => {
-                lhs.generic_arguments.substructural_match(
-                    &rhs.generic_arguments,
+            (Self::Symbol(lhs), Self::Symbol(rhs)) if lhs.id() == rhs.id() => {
+                lhs.generic_arguments().substructural_match(
+                    rhs.generic_arguments(),
                     Substructural::default(),
-                    SubSymbolLocation,
+                    SubSymbolLocation::new,
                 )
             }
 
@@ -912,56 +837,20 @@ impl Match for Type {
                 lhs.substructural_match(rhs)
             }
 
-            (Self::TraitMember(lhs), Self::TraitMember(rhs))
-                if lhs.0.id == rhs.0.id =>
-            {
-                lhs.parent_generic_arguments
-                    .substructural_match(
-                        &rhs.parent_generic_arguments,
-                        Substructural::default(),
-                        |x| {
-                            SubTraitMemberLocation(SubMemberSymbolLocation {
-                                index: x,
-                                from_parent: true,
-                            })
-                        },
-                    )
-                    .and_then(|x| {
-                        lhs.member_generic_arguments.substructural_match(
-                            &rhs.member_generic_arguments,
-                            x,
-                            |x| {
-                                SubTraitMemberLocation(
-                                    SubMemberSymbolLocation {
-                                        index: x,
-                                        from_parent: false,
-                                    },
-                                )
-                            },
-                        )
-                    })
-            }
-
             (Self::MemberSymbol(lhs), Self::MemberSymbol(rhs))
-                if lhs.id == rhs.id =>
+                if lhs.id() == rhs.id() =>
             {
-                lhs.parent_generic_arguments
+                lhs.parent_generic_arguments()
                     .substructural_match(
-                        &rhs.parent_generic_arguments,
+                        rhs.parent_generic_arguments(),
                         Substructural::default(),
-                        |x| SubMemberSymbolLocation {
-                            index: x,
-                            from_parent: true,
-                        },
+                        |x| SubMemberSymbolLocation::new(x, true),
                     )
                     .and_then(|x| {
-                        lhs.member_generic_arguments.substructural_match(
-                            &rhs.member_generic_arguments,
+                        lhs.member_generic_arguments().substructural_match(
+                            rhs.member_generic_arguments(),
                             x,
-                            |x| SubMemberSymbolLocation {
-                                index: x,
-                                from_parent: false,
-                            },
+                            |x| SubMemberSymbolLocation::new(x, false),
                         )
                     })
             }
@@ -1126,10 +1015,6 @@ impl crate::display::Display for Type {
 
             Self::MemberSymbol(member_symbol) => {
                 Box::pin(member_symbol.fmt(engine, formatter)).await
-            }
-
-            Self::TraitMember(trait_member) => {
-                Box::pin(trait_member.fmt(engine, formatter)).await
             }
 
             Self::FunctionSignature(function_signature) => {

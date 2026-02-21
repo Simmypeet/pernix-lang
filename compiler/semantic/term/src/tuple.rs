@@ -2,12 +2,17 @@
 
 use std::fmt::Write;
 
+use derive_new::new;
 use enum_as_inner::EnumAsInner;
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
+    constant::Constant,
+    lifetime::Lifetime,
     matching::{Match, Matching, Substructural},
     sub_term::SubTerm,
+    r#type::Type,
+    visitor::{self, AsyncMutable, AsyncVisitor, Mutable, Visitor},
 };
 
 #[cfg(any(test, feature = "arbitrary"))]
@@ -29,10 +34,10 @@ pub mod arbitrary;
 )]
 pub struct Element<Term> {
     /// The term stored in this element.
-    pub term: Term,
+    term: Term,
 
     /// Whether the term is unpacked.
-    pub is_unpacked: bool,
+    is_unpacked: bool,
 }
 
 impl<Term> Element<Term> {
@@ -55,10 +60,17 @@ impl<Term> Element<Term> {
     StableHash,
     Encode,
     Decode,
+    new,
 )]
 pub struct Tuple<Term> {
     /// The elements of the tuple.
-    pub elements: Vec<Element<Term>>,
+    elements: Vec<Element<Term>>,
+}
+
+impl<Term> Tuple<Term> {
+    /// Creates a unit tuple.
+    #[must_use]
+    pub const fn unit() -> Self { Self { elements: Vec::new() } }
 }
 
 impl<Term> Default for Tuple<Term> {
@@ -104,10 +116,10 @@ impl<T: crate::display::Display> crate::display::Display for Tuple<T> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TupleRange {
     /// The begin index of the range.
-    pub begin: usize,
+    begin: usize,
 
     /// The end index of the range.
-    pub end: usize,
+    end: usize,
 }
 
 impl TupleRange {
@@ -149,6 +161,8 @@ pub enum SubTupleLocation {
     Range(TupleRange),
 }
 
+impl SubTupleLocation {}
+
 impl<T> Tuple<T>
 where
     Self: TryFrom<T, Error = T> + Into<T>,
@@ -187,6 +201,52 @@ where
                     *lhs = rhs;
                 }
             }
+        }
+    }
+}
+
+impl<T> Tuple<T> {
+    /// Retrieves the sub-term from the given tuple at this location.
+    #[must_use]
+    pub fn get_term(&self, location: &SubTupleLocation) -> Option<T>
+    where
+        T: Clone,
+        Self: Into<T>,
+    {
+        match location {
+            SubTupleLocation::Single(idx) => {
+                self.elements.get(*idx).map(|x| x.term.clone())
+            }
+            SubTupleLocation::Range(range) => self
+                .elements
+                .get(range.to_std_range())
+                .map(|x| Self::new(x.to_vec()).into()),
+        }
+    }
+
+    /// Retrieves a reference to the sub-term from the given tuple at this
+    /// location.
+    #[must_use]
+    pub fn get_term_ref(&self, location: &SubTupleLocation) -> Option<&T> {
+        match location {
+            SubTupleLocation::Single(idx) => {
+                self.elements.get(*idx).map(|x| &x.term)
+            }
+            SubTupleLocation::Range(_) => None,
+        }
+    }
+
+    /// Retrieves a mutable reference to the sub-term from the given tuple at
+    /// this location.
+    pub fn get_term_mut(
+        &mut self,
+        location: &SubTupleLocation,
+    ) -> Option<&mut T> {
+        match location {
+            SubTupleLocation::Single(idx) => {
+                self.elements.get_mut(*idx).map(|x| &mut x.term)
+            }
+            SubTupleLocation::Range(_) => None,
         }
     }
 }
@@ -404,5 +464,69 @@ where
     {
         Self::substructural_match_internal(self, to, false)
             .or_else(|| Self::substructural_match_internal(to, self, true))
+    }
+}
+
+macro_rules! implements_tuple {
+    ($self:ident, $visitor:ident, $accept_single:ident, $iter:ident $(,$await:ident)?) => {{
+        for (idx, element) in $self.elements.$iter().enumerate() {
+            if !element.term.$accept_single(
+                $visitor,
+                T::Location::from(SubTupleLocation::Single(idx).into()),
+            )$(.$await)? {
+                return false;
+            }
+        }
+
+        true
+    }};
+}
+
+impl<T: visitor::Element + Clone> Tuple<T>
+where
+    Self: TryFrom<T, Error = T> + Into<T>,
+    SubTupleLocation: Into<T::ThisSubTermLocation>,
+{
+    pub(crate) fn accept_one_level<
+        'a,
+        V: Visitor<'a, Lifetime> + Visitor<'a, Type> + Visitor<'a, Constant>,
+    >(
+        &'a self,
+        visitor: &mut V,
+    ) -> bool {
+        implements_tuple!(self, visitor, accept_single, iter)
+    }
+
+    pub(crate) async fn accept_one_level_async<
+        V: AsyncVisitor<Lifetime> + AsyncVisitor<Type> + AsyncVisitor<Constant>,
+    >(
+        &self,
+        visitor: &mut V,
+    ) -> bool {
+        implements_tuple!(self, visitor, accept_single_async, iter, await)
+    }
+
+    pub(crate) fn accept_one_level_mut<
+        V: Mutable<Lifetime> + Mutable<Type> + Mutable<Constant>,
+    >(
+        &mut self,
+        visitor: &mut V,
+    ) -> bool {
+        implements_tuple!(self, visitor, accept_single_mut, iter_mut)
+    }
+
+    pub(crate) async fn accept_one_level_async_mut<
+        V: AsyncMutable<Lifetime> + AsyncMutable<Type> + AsyncMutable<Constant>,
+    >(
+        &mut self,
+        visitor: &mut V,
+    ) -> bool {
+        implements_tuple!(
+            self,
+            visitor,
+            accept_single_async_mut,
+            iter_mut,
+            await
+        )
     }
 }

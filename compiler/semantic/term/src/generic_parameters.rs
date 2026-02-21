@@ -432,26 +432,23 @@ impl GenericParameters {
         &self,
         global_id: Global<pernixc_symbol::ID>,
     ) -> GenericArguments {
-        GenericArguments {
-            lifetimes: self
-                .lifetime_order
+        GenericArguments::new(
+            self.lifetime_order
                 .iter()
                 .copied()
                 .map(|id| Lifetime::Parameter(MemberID::new(global_id, id)))
                 .collect(),
-            types: self
-                .type_order
+            self.type_order
                 .iter()
                 .copied()
                 .map(|id| Type::Parameter(MemberID::new(global_id, id)))
                 .collect(),
-            constants: self
-                .constant_order
+            self.constant_order
                 .iter()
                 .copied()
                 .map(|id| Constant::Parameter(MemberID::new(global_id, id)))
                 .collect(),
-        }
+        )
     }
 
     /// Checks whether there are no generic parameters defined.

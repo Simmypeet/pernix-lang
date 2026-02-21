@@ -12,7 +12,7 @@ use super::{
 use crate::{
     constant::Constant,
     error::Error,
-    generic_arguments::{MemberSymbol, Symbol, TraitMember},
+    generic_arguments::{AssociatedSymbol, Symbol},
     generic_parameters::TypeParameterID,
     lifetime::Lifetime,
     tuple::Tuple,
@@ -120,13 +120,7 @@ impl Arbitrary for Type {
             let const_strat = param.1.clone().unwrap_or_else(Constant::arbitrary);
 
             prop_oneof![
-                6 => MemberSymbol::arbitrary_with((
-                    Some(lt_strat.clone()),
-                    Some(inner.clone()),
-                    Some(const_strat.clone())
-                ))
-                .prop_map(|x| Self::TraitMember(TraitMember(x))),
-                6 => MemberSymbol::arbitrary_with((
+                6 => AssociatedSymbol::arbitrary_with((
                     Some(lt_strat.clone()),
                     Some(inner.clone()),
                     Some(const_strat.clone())

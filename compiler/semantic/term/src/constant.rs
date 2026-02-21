@@ -166,7 +166,7 @@ pub enum Constant {
 }
 
 impl Default for Constant {
-    fn default() -> Self { Self::Tuple(Tuple { elements: Vec::new() }) }
+    fn default() -> Self { Self::Tuple(Tuple::unit()) }
 }
 
 impl From<Never> for Constant {
@@ -247,15 +247,9 @@ impl Location<Constant, Constant> for SubConstantLocation {
 
     fn get_sub_term(self, term: &Constant) -> Option<Constant> {
         match (self, term) {
-            (Self::Tuple(location), Constant::Tuple(tuple)) => match location {
-                SubTupleLocation::Single(single) => {
-                    tuple.elements.get(single).map(|x| x.term.clone())
-                }
-                SubTupleLocation::Range(range) => tuple
-                    .elements
-                    .get(range.to_std_range())
-                    .map(|x| Constant::Tuple(Tuple { elements: x.to_vec() })),
-            },
+            (Self::Tuple(location), Constant::Tuple(tuple)) => {
+                tuple.get_term(&location)
+            }
 
             (Self::Struct(location), Constant::Struct(constant)) => {
                 constant.fields.get(location).cloned()
@@ -278,12 +272,9 @@ impl Location<Constant, Constant> for SubConstantLocation {
 
     fn get_sub_term_ref(self, term: &Constant) -> Option<&Constant> {
         match (self, term) {
-            (Self::Tuple(location), Constant::Tuple(tuple)) => match location {
-                SubTupleLocation::Single(single) => {
-                    tuple.elements.get(single).map(|x| &x.term)
-                }
-                SubTupleLocation::Range { .. } => None,
-            },
+            (Self::Tuple(location), Constant::Tuple(tuple)) => {
+                tuple.get_term_ref(&location)
+            }
 
             (Self::Struct(location), Constant::Struct(constant)) => {
                 constant.fields.get(location)
@@ -306,12 +297,9 @@ impl Location<Constant, Constant> for SubConstantLocation {
 
     fn get_sub_term_mut(self, term: &mut Constant) -> Option<&mut Constant> {
         match (self, term) {
-            (Self::Tuple(location), Constant::Tuple(tuple)) => match location {
-                SubTupleLocation::Single(single) => {
-                    tuple.elements.get_mut(single).map(|x| &mut x.term)
-                }
-                SubTupleLocation::Range { .. } => None,
-            },
+            (Self::Tuple(location), Constant::Tuple(tuple)) => {
+                tuple.get_term_mut(&location)
+            }
 
             (Self::Struct(location), Constant::Struct(constant)) => {
                 constant.fields.get_mut(location)

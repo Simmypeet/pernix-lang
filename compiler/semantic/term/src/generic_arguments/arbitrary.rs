@@ -6,7 +6,7 @@ use proptest::prelude::{Arbitrary, BoxedStrategy, Strategy};
 use super::GenericArguments;
 use crate::{
     constant::Constant,
-    generic_arguments::{MemberSymbol, Symbol, TraitMember},
+    generic_arguments::{AssociatedSymbol, Symbol},
     lifetime::Lifetime,
     r#type::Type,
 };
@@ -38,7 +38,7 @@ impl Arbitrary for GenericArguments {
     }
 }
 
-impl Arbitrary for MemberSymbol {
+impl Arbitrary for AssociatedSymbol {
     type Strategy = BoxedStrategy<Self>;
     type Parameters = (
         Option<BoxedStrategy<Lifetime>>,
@@ -73,18 +73,5 @@ impl Arbitrary for Symbol {
         (Global::arbitrary(), GenericArguments::arbitrary_with(args))
             .prop_map(|(x, y)| Self { id: x, generic_arguments: y })
             .boxed()
-    }
-}
-
-impl Arbitrary for TraitMember {
-    type Strategy = BoxedStrategy<Self>;
-    type Parameters = (
-        Option<BoxedStrategy<Lifetime>>,
-        Option<BoxedStrategy<Type>>,
-        Option<BoxedStrategy<Constant>>,
-    );
-
-    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        MemberSymbol::arbitrary_with(args).prop_map(Self).boxed()
     }
 }

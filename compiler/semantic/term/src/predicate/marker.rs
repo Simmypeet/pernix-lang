@@ -41,6 +41,7 @@ impl Positive {
     /// Applies the instantiation to the generic arguments.
     pub fn instantiate(&mut self, instantiation: &Instantiation) {
         self.generic_arguments.instantiate(instantiation);
+        
     }
 }
 

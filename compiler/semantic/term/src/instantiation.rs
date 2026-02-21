@@ -2,6 +2,7 @@
 
 use std::{collections::BTreeMap, hash::Hash};
 
+use derive_new::new;
 use pernixc_arena::ID;
 use pernixc_extend::extend;
 use pernixc_qbice::TrackedEngine;
@@ -37,12 +38,39 @@ use crate::{
     StableHash,
     Encode,
     Decode,
+    new,
 )]
 #[allow(missing_docs)]
 pub struct Instantiation {
-    pub lifetimes: BTreeMap<Lifetime, Lifetime>,
-    pub types: BTreeMap<Type, Type>,
-    pub constants: BTreeMap<Constant, Constant>,
+    lifetimes: BTreeMap<Lifetime, Lifetime>,
+    types: BTreeMap<Type, Type>,
+    constants: BTreeMap<Constant, Constant>,
+}
+
+impl Instantiation {
+    /// Retrieves the mapping for the given lifetime if it exists.
+    #[must_use]
+    pub fn get_lifetime_mapping(
+        &self,
+        lifetime: &Lifetime,
+    ) -> Option<&Lifetime> {
+        self.lifetimes.get(lifetime)
+    }
+
+    /// Retrieves the mapping for the given type if it exists.
+    #[must_use]
+    pub fn get_type_mapping(&self, r#type: &Type) -> Option<&Type> {
+        self.types.get(r#type)
+    }
+
+    /// Retrieves the mapping for the given constant if it exists.
+    #[must_use]
+    pub fn get_constant_mapping(
+        &self,
+        constant: &Constant,
+    ) -> Option<&Constant> {
+        self.constants.get(constant)
+    }
 }
 
 struct Instantiater<'a> {
@@ -109,51 +137,6 @@ impl Instantiation {
         }
     }
 
-    /// Converts the instantiation into a [`GenericArguments`] by extracting
-    /// the generic arguments in the order of the given generic parameters.
-    ///
-    /// Return `None` if any generic parameter does not have a corresponding
-    /// instantiation.
-    #[must_use]
-    pub fn convert_to_generic_arguments(
-        mut self,
-        generic_parameters: &GenericParameters,
-        global_id: Global<pernixc_symbol::ID>,
-    ) -> Option<GenericArguments> {
-        let mut generic_arguments = GenericArguments::default();
-
-        for lifetime_id in generic_parameters.lifetime_order() {
-            let lifetime_parameter = Lifetime::Parameter(
-                LifetimeParameterID::new(global_id, *lifetime_id),
-            );
-
-            let lifetime = self.lifetimes.remove(&lifetime_parameter)?;
-
-            generic_arguments.lifetimes.push(lifetime);
-        }
-
-        for type_id in generic_parameters.type_order() {
-            let type_parameter =
-                Type::Parameter(TypeParameterID::new(global_id, *type_id));
-
-            let r#type = self.types.remove(&type_parameter)?;
-
-            generic_arguments.types.push(r#type);
-        }
-
-        for constant_id in generic_parameters.constant_order() {
-            let constant_parameter = Constant::Parameter(
-                ConstantParameterID::new(global_id, *constant_id),
-            );
-
-            let constant = self.constants.remove(&constant_parameter)?;
-
-            generic_arguments.constants.push(constant);
-        }
-
-        Some(generic_arguments)
-    }
-
     /// Appends the given generic arguments as a substitution.
     ///
     /// If there's any collision, the prior value will be preserved and the new
@@ -174,56 +157,58 @@ impl Instantiation {
         generic_id: Global<pernixc_symbol::ID>,
         generic_parameters: &GenericParameters,
     ) -> Result<(), MismatchedGenericArgumentCountError> {
-        if generic_arguments.types.len()
+        if generic_arguments.types().len()
             != generic_parameters.type_order().len()
         {
             return Err(MismatchedGenericArgumentCountError {
                 generic_id,
                 expected: generic_parameters.type_order().len(),
-                found: generic_arguments.types.len(),
+                found: generic_arguments.types().len(),
                 kind: GenericKind::Type,
                 generic_arguments,
             });
         }
 
-        if generic_arguments.lifetimes.len()
+        if generic_arguments.lifetimes().len()
             != generic_parameters.lifetime_order().len()
         {
             return Err(MismatchedGenericArgumentCountError {
                 generic_id,
                 expected: generic_parameters.lifetime_order().len(),
-                found: generic_arguments.lifetimes.len(),
+                found: generic_arguments.lifetimes().len(),
                 kind: GenericKind::Lifetime,
                 generic_arguments,
             });
         }
 
-        if generic_arguments.constants.len()
+        if generic_arguments.constants().len()
             != generic_parameters.constant_order().len()
         {
             return Err(MismatchedGenericArgumentCountError {
                 generic_id,
                 expected: generic_parameters.constant_order().len(),
-                found: generic_arguments.constants.len(),
+                found: generic_arguments.constants().len(),
                 kind: GenericKind::Constant,
                 generic_arguments,
             });
         }
 
+        let (lifetimes, types, constants) = generic_arguments.into_arguments();
+
         self.append_from_arguments(
-            generic_arguments.lifetimes.into_iter(),
+            lifetimes.into_iter(),
             generic_parameters.lifetime_order().iter().copied(),
             generic_id,
         );
 
         self.append_from_arguments(
-            generic_arguments.types.into_iter(),
+            types.into_iter(),
             generic_parameters.type_order().iter().copied(),
             generic_id,
         );
 
         self.append_from_arguments(
-            generic_arguments.constants.into_iter(),
+            constants.into_iter(),
             generic_parameters.constant_order().iter().copied(),
             generic_id,
         );
@@ -281,8 +266,8 @@ impl Instantiation {
         global_id: Global<pernixc_symbol::ID>,
         parameters: &GenericParameters,
     ) -> GenericArguments {
-        GenericArguments {
-            lifetimes: parameters
+        GenericArguments::new(
+            parameters
                 .lifetime_order()
                 .iter()
                 .copied()
@@ -294,7 +279,7 @@ impl Instantiation {
                     self.lifetimes.get(&lifetime_parameter).cloned().unwrap()
                 })
                 .collect(),
-            types: parameters
+            parameters
                 .type_order()
                 .iter()
                 .copied()
@@ -305,7 +290,7 @@ impl Instantiation {
                     self.types.get(&type_parameter).cloned().unwrap()
                 })
                 .collect(),
-            constants: parameters
+            parameters
                 .constant_order()
                 .iter()
                 .copied()
@@ -317,7 +302,7 @@ impl Instantiation {
                     self.constants.get(&constant_parameter).cloned().unwrap()
                 })
                 .collect(),
-        }
+        )
     }
 
     /// Converts the given generic arguments into a substitution.
@@ -454,19 +439,4 @@ impl Element for Constant {
     }
 }
 
-impl GenericArguments {
-    /// Applies the instantiation to all the generic arguments.
-    pub fn instantiate(&mut self, instantiation: &Instantiation) {
-        for lifetime in &mut self.lifetimes {
-            instantiation.instantiate(lifetime);
-        }
-
-        for r#type in &mut self.types {
-            instantiation.instantiate(r#type);
-        }
-
-        for constant in &mut self.constants {
-            instantiation.instantiate(constant);
-        }
-    }
-}
+impl GenericArguments {}

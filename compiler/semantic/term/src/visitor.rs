@@ -9,12 +9,7 @@ use super::sub_term::{
 use crate::{
     Never, TermRef,
     constant::{self, Constant},
-    generic_arguments::{
-        GenericArguments, SubMemberSymbolLocation, SubSymbolLocation,
-        SubTraitMemberLocation,
-    },
     lifetime::Lifetime,
-    tuple::{SubTupleLocation, Tuple},
     r#type::{self, SubFunctionSignatureLocation, Type},
 };
 
@@ -356,207 +351,6 @@ pub fn accept_recursive_mut<
     element.accept_one_level_mut(&mut adapter).unwrap_or(true)
 }
 
-macro_rules! implements_tuple {
-    ($self:ident, $visitor:ident, $accept_single:ident, $iter:ident $(,$await:ident)?) => {{
-        for (idx, element) in $self.elements.$iter().enumerate() {
-            if !element.term.$accept_single(
-                $visitor,
-                T::Location::from(SubTupleLocation::Single(idx).into()),
-            )$(.$await)? {
-                return false;
-            }
-        }
-
-        true
-    }};
-}
-
-impl<T: Element + Clone> Tuple<T>
-where
-    Self: TryFrom<T, Error = T> + Into<T>,
-    SubTupleLocation: Into<T::ThisSubTermLocation>,
-{
-    fn accept_one_level<
-        'a,
-        V: Visitor<'a, Lifetime> + Visitor<'a, Type> + Visitor<'a, Constant>,
-    >(
-        &'a self,
-        visitor: &mut V,
-    ) -> bool {
-        implements_tuple!(self, visitor, accept_single, iter)
-    }
-
-    async fn accept_one_level_async<
-        V: AsyncVisitor<Lifetime> + AsyncVisitor<Type> + AsyncVisitor<Constant>,
-    >(
-        &self,
-        visitor: &mut V,
-    ) -> bool {
-        implements_tuple!(self, visitor, accept_single_async, iter, await)
-    }
-
-    fn accept_one_level_mut<
-        V: Mutable<Lifetime> + Mutable<Type> + Mutable<Constant>,
-    >(
-        &mut self,
-        visitor: &mut V,
-    ) -> bool {
-        implements_tuple!(self, visitor, accept_single_mut, iter_mut)
-    }
-
-    async fn accept_one_level_async_mut<
-        V: AsyncMutable<Lifetime> + AsyncMutable<Type> + AsyncMutable<Constant>,
-    >(
-        &mut self,
-        visitor: &mut V,
-    ) -> bool {
-        implements_tuple!(
-            self,
-            visitor,
-            accept_single_async_mut,
-            iter_mut,
-            await
-        )
-    }
-}
-
-macro_rules! implements_generic_arguments {
-    (
-        $self:ident,
-        $visitor:ident,
-        $visit_type:ident,
-        $visit_lifetime:ident,
-        $visit_constant:ident,
-        $iter:ident,
-        $map_idx:ident
-        $(, $await:ident)?
-    ) => {{
-        for (id, lifetime) in $self.lifetimes.$iter().enumerate() {
-            if !$visitor.$visit_lifetime(
-                lifetime,
-                Into::<T::SubLifetimeLocation>::into($map_idx(id)).into(),
-            )$(.$await)? {
-                return false;
-            }
-        }
-
-        for (idx, ty) in $self.types.$iter().enumerate() {
-            if !$visitor.$visit_type(
-                ty,
-                Into::<T::SubTypeLocation>::into($map_idx(idx)).into(),
-            )$(.$await)? {
-                return false;
-            }
-        }
-
-        for (idx, constant) in $self.constants.$iter().enumerate() {
-            if !$visitor.$visit_constant(
-                constant,
-                Into::<T::SubConstantLocation>::into($map_idx(idx)).into(),
-            )$(.$await)? {
-                return false;
-            }
-        }
-
-        true
-    }};
-}
-
-impl GenericArguments {
-    #[allow(clippy::trait_duplication_in_bounds)]
-    fn accept_one_level<
-        'a,
-        T: Element,
-        Idx,
-        V: Visitor<'a, Lifetime> + Visitor<'a, Type> + Visitor<'a, Constant>,
-    >(
-        &'a self,
-        visitor: &mut V,
-        map_idx: impl Fn(usize) -> Idx,
-    ) -> bool
-    where
-        Idx: Into<T::SubConstantLocation>
-            + Into<T::SubTypeLocation>
-            + Into<T::SubLifetimeLocation>,
-        T::SubLifetimeLocation: Into<SubLifetimeLocation>,
-        T::SubTypeLocation: Into<SubTypeLocation>,
-        T::SubConstantLocation: Into<SubConstantLocation>,
-    {
-        implements_generic_arguments!(
-            self, visitor, visit, visit, visit, iter, map_idx
-        )
-    }
-
-    #[allow(clippy::trait_duplication_in_bounds)]
-    async fn accept_one_level_async<
-        T: Element,
-        Idx,
-        V: AsyncVisitor<Lifetime> + AsyncVisitor<Type> + AsyncVisitor<Constant>,
-    >(
-        &self,
-        visitor: &mut V,
-        map_idx: impl Fn(usize) -> Idx,
-    ) -> bool
-    where
-        Idx: Into<T::SubConstantLocation>
-            + Into<T::SubTypeLocation>
-            + Into<T::SubLifetimeLocation>,
-        T::SubLifetimeLocation: Into<SubLifetimeLocation>,
-        T::SubTypeLocation: Into<SubTypeLocation>,
-        T::SubConstantLocation: Into<SubConstantLocation>,
-    {
-        implements_generic_arguments!(
-            self, visitor, visit, visit, visit, iter, map_idx, await
-        )
-    }
-
-    #[allow(clippy::trait_duplication_in_bounds)]
-    fn accept_one_level_mut<
-        T: Element,
-        Idx,
-        V: Mutable<Lifetime> + Mutable<Type> + Mutable<Constant>,
-    >(
-        &mut self,
-        visitor: &mut V,
-        map_idx: impl Fn(usize) -> Idx,
-    ) -> bool
-    where
-        Idx: Into<T::SubConstantLocation>
-            + Into<T::SubTypeLocation>
-            + Into<T::SubLifetimeLocation>,
-        T::SubLifetimeLocation: Into<SubLifetimeLocation>,
-        T::SubTypeLocation: Into<SubTypeLocation>,
-        T::SubConstantLocation: Into<SubConstantLocation>,
-    {
-        implements_generic_arguments!(
-            self, visitor, visit, visit, visit, iter_mut, map_idx
-        )
-    }
-
-    #[allow(clippy::trait_duplication_in_bounds)]
-    async fn accept_one_level_async_mut<
-        T: Element,
-        Idx,
-        V: AsyncMutable<Lifetime> + AsyncMutable<Type> + AsyncMutable<Constant>,
-    >(
-        &mut self,
-        visitor: &mut V,
-        map_idx: impl Fn(usize) -> Idx,
-    ) -> bool
-    where
-        Idx: Into<T::SubConstantLocation>
-            + Into<T::SubTypeLocation>
-            + Into<T::SubLifetimeLocation>,
-        T::SubLifetimeLocation: Into<SubLifetimeLocation>,
-        T::SubTypeLocation: Into<SubTypeLocation>,
-        T::SubConstantLocation: Into<SubConstantLocation>,
-    {
-        implements_generic_arguments!(
-            self, visitor, visit, visit, visit, iter_mut, map_idx, await
-        )
-    }
-}
-
 macro_rules! implements_type {
     (
         $self:ident,
@@ -574,16 +368,9 @@ macro_rules! implements_type {
             }
 
             Self::Symbol(term) => {
-                if !term
-                    .generic_arguments
-                    .$accept_one_level::<Self, _, _>(
-                        $visitor,
-                        |id| SubSymbolLocation(id),
-                    )$(.$await)? {
-                    return Ok(false);
-                }
-
-                Ok(true)
+                Ok(term.$accept_one_level::<Self, _>(
+                    $visitor,
+                )$(.$await)?)
             }
             Self::Phantom(term) => Ok(
                 $visitor.$visit_type(
@@ -622,48 +409,10 @@ macro_rules! implements_type {
                 )$(.$await)?),
             Self::Tuple(tuple) => Ok(tuple.$accept_one_level($visitor)$(.$await)?),
             Self::MemberSymbol(member_symbol) => Ok(
-                member_symbol
-                    .parent_generic_arguments
-                    .$accept_one_level::<Self, _, _>(
-                        $visitor,
-                        |id| SubMemberSymbolLocation {
-                            index: id,
-                            from_parent: true,
-                        }
-                    )$(.$await)?
-                    && member_symbol
-                        .member_generic_arguments
-                        .$accept_one_level::<Self, _, _>(
-                            $visitor,
-                            |id| SubMemberSymbolLocation {
-                                index: id,
-                                from_parent: false,
-                            }
-                        )$(.$await)?,
+                member_symbol.$accept_one_level::<Self, _>(
+                    $visitor,
+                )$(.$await)?
             ),
-            Self::TraitMember(term) => Ok(
-                term
-                    .0
-                    .parent_generic_arguments
-                    .$accept_one_level::<Self, _, _>(
-                        $visitor,
-                        |id| SubTraitMemberLocation(SubMemberSymbolLocation {
-                            index: id,
-                            from_parent: true,
-                        })
-                    )$(.$await)?
-                    && term
-                        .0
-                        .member_generic_arguments
-                        .$accept_one_level::<Self, _, _>(
-                            $visitor,
-                            |id| SubTraitMemberLocation(SubMemberSymbolLocation {
-                                index: id,
-                                from_parent: false,
-                            })
-                        )$(.$await)?,
-            ),
-
             Self::FunctionSignature(term) => {
                 for (idx, parameter) in ( $($ref)* term.parameters).into_iter().enumerate() {
                     if !$visitor.$visit_type(
