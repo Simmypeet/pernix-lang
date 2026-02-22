@@ -329,7 +329,7 @@ pub enum SubInstanceAssociatedInstanceLocation {
     Instance,
 
     /// An instance within the `trait_associated_symbol_generic_arguments`.
-    GenericArguments(usize),
+    GenericArguments(SubInstanceAssociatedGenericArgsLocation),
 }
 
 /// The location pointing to a sub-lifetime term in a type.
@@ -914,8 +914,7 @@ impl Location<Type, Instance> for SubInstanceLocation {
                 ),
                 Type::InstanceAssociated(instance_associated),
             ) => {
-                *instance_associated.get_instance_at_mut(idx).unwrap() =
-                    sub_term;
+                *instance_associated.get_instance_mut(idx).unwrap() = sub_term;
             }
 
             term => panic!(
@@ -949,7 +948,7 @@ impl Location<Type, Instance> for SubInstanceLocation {
                     ),
                 ),
                 Type::InstanceAssociated(instance_associated),
-            ) => instance_associated.get_instance_at(idx).cloned(),
+            ) => instance_associated.get_instance(idx).cloned(),
 
             _ => None,
         }
@@ -980,7 +979,7 @@ impl Location<Type, Instance> for SubInstanceLocation {
                     ),
                 ),
                 Type::InstanceAssociated(instance_associated),
-            ) => instance_associated.get_instance_at(idx),
+            ) => instance_associated.get_instance(idx),
 
             _ => None,
         }
@@ -1011,7 +1010,7 @@ impl Location<Type, Instance> for SubInstanceLocation {
                     ),
                 ),
                 Type::InstanceAssociated(instance_associated),
-            ) => instance_associated.get_instance_at_mut(idx),
+            ) => instance_associated.get_instance_mut(idx),
 
             _ => None,
         }
@@ -1178,103 +1177,34 @@ impl Match for Type {
                 if lhs.trait_associated_symbol_id()
                     == rhs.trait_associated_symbol_id() =>
             {
-                // Check that generic arguments have matching lengths
-                if lhs.lifetimes().len() != rhs.lifetimes().len()
-                    || lhs.types().len() != rhs.types().len()
-                    || lhs.constants().len() != rhs.constants().len()
-                    || lhs.instances().len() != rhs.instances().len()
-                {
-                    return None;
-                }
-
-                let mut substructural = Substructural::default();
-
-                // Match lifetimes
-                for (idx, (l, r)) in lhs
-                    .lifetimes()
-                    .iter()
-                    .zip(rhs.lifetimes().iter())
-                    .enumerate()
-                {
-                    substructural.lifetimes_mut().push(Matching::new(
-                        l.clone(),
-                        r.clone(),
+                lhs.substructural_match(
+                    rhs,
+                    |idx| {
                         SubLifetimeLocation::InstanceAssociated(
                             SubInstanceAssociatedGenericArgsLocation::new(idx),
-                        ),
-                        SubLifetimeLocation::InstanceAssociated(
-                            SubInstanceAssociatedGenericArgsLocation::new(idx),
-                        ),
-                    ));
-                }
-
-                // Match types
-                for (idx, (l, r)) in
-                    lhs.types().iter().zip(rhs.types().iter()).enumerate()
-                {
-                    substructural.types_mut().push(Matching::new(
-                        l.clone(),
-                        r.clone(),
+                        )
+                    },
+                    |idx| {
                         SubTypeLocation::InstanceAssociated(
                             SubInstanceAssociatedGenericArgsLocation::new(idx),
-                        ),
-                        SubTypeLocation::InstanceAssociated(
-                            SubInstanceAssociatedGenericArgsLocation::new(idx),
-                        ),
-                    ));
-                }
-
-                // Match constants
-                for (idx, (l, r)) in lhs
-                    .constants()
-                    .iter()
-                    .zip(rhs.constants().iter())
-                    .enumerate()
-                {
-                    substructural.constants_mut().push(Matching::new(
-                        l.clone(),
-                        r.clone(),
+                        )
+                    },
+                    |idx| {
                         SubConstantLocation::InstanceAssociated(
                             SubInstanceAssociatedGenericArgsLocation::new(idx),
-                        ),
-                        SubConstantLocation::InstanceAssociated(
+                        )
+                    },
+                    |idx| {
+                        SubInstanceLocation::InstanceAssociated(
+                        SubInstanceAssociatedInstanceLocation::GenericArguments(
                             SubInstanceAssociatedGenericArgsLocation::new(idx),
                         ),
-                    ));
-                }
-
-                // Match instances in generic arguments
-                for (idx, (l, r)) in lhs
-                    .instances()
-                    .iter()
-                    .zip(rhs.instances().iter())
-                    .enumerate()
-                {
-                    substructural.instances_mut().push(Matching::new(
-                        l.clone(),
-                        r.clone(),
-                        SubInstanceLocation::InstanceAssociated(
-                            SubInstanceAssociatedInstanceLocation::GenericArguments(idx),
-                        ),
-                        SubInstanceLocation::InstanceAssociated(
-                            SubInstanceAssociatedInstanceLocation::GenericArguments(idx),
-                        ),
-                    ));
-                }
-
-                // Match the parent instance
-                substructural.instances_mut().push(Matching::new(
-                    lhs.instance().clone(),
-                    rhs.instance().clone(),
+                    )
+                    },
                     SubInstanceLocation::InstanceAssociated(
                         SubInstanceAssociatedInstanceLocation::Instance,
                     ),
-                    SubInstanceLocation::InstanceAssociated(
-                        SubInstanceAssociatedInstanceLocation::Instance,
-                    ),
-                ));
-
-                Some(substructural)
+                )
             }
 
             _ => None,

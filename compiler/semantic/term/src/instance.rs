@@ -180,20 +180,23 @@ impl InstanceAssociated {
     /// Returns a reference to the instance at the given index in the generic
     /// arguments.
     #[must_use]
-    pub fn get_instance_at(&self, index: usize) -> Option<&Instance> {
-        self.trait_associated_symbol_generic_arguments.instances().get(index)
+    pub fn get_instance(
+        &self,
+        index: SubInstanceAssociatedGenericArgsLocation,
+    ) -> Option<&Instance> {
+        self.trait_associated_symbol_generic_arguments.instances().get(index.0)
     }
 
     /// Returns a mutable reference to the instance at the given index in the
     /// generic arguments.
     #[must_use]
-    pub fn get_instance_at_mut(
+    pub fn get_instance_mut(
         &mut self,
-        index: usize,
+        index: SubInstanceAssociatedGenericArgsLocation,
     ) -> Option<&mut Instance> {
         self.trait_associated_symbol_generic_arguments
             .instances_mut()
-            .get_mut(index)
+            .get_mut(index.0)
     }
 
     /// Returns a slice of the lifetimes in the generic arguments.
@@ -218,6 +221,123 @@ impl InstanceAssociated {
     #[must_use]
     pub fn instances(&self) -> &[Instance] {
         self.trait_associated_symbol_generic_arguments.instances()
+    }
+
+    /// Performs substructural matching between two `InstanceAssociated` terms.
+    ///
+    /// This method creates `Matching` entries for all sub-terms (lifetimes,
+    /// types, constants, instances) in the generic arguments, as well as
+    /// the parent instance.
+    ///
+    /// # Type Parameters
+    ///
+    /// - `L`: The lifetime location type for the substructural result
+    /// - `T`: The type location type for the substructural result
+    /// - `C`: The constant location type for the substructural result
+    /// - `I`: The instance location type for the substructural result
+    ///
+    /// # Arguments
+    ///
+    /// - `other`: The other `InstanceAssociated` to match against
+    /// - `to_lifetime_loc`: Closure to create lifetime locations from index
+    /// - `to_type_loc`: Closure to create type locations from index
+    /// - `to_constant_loc`: Closure to create constant locations from index
+    /// - `to_instance_generic_args_loc`: Closure to create instance locations
+    ///   from index (for instances in generic arguments)
+    /// - `instance_loc`: The location for the parent instance field
+    ///
+    /// # Returns
+    ///
+    /// `Some(Substructural)` if matching succeeded, `None` if the generic
+    /// arguments have different lengths.
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn substructural_match<L, T, C, I>(
+        &self,
+        other: &Self,
+        to_lifetime_loc: impl Fn(usize) -> L,
+        to_type_loc: impl Fn(usize) -> T,
+        to_constant_loc: impl Fn(usize) -> C,
+        to_instance_generic_args_loc: impl Fn(usize) -> I,
+        instance_loc: I,
+    ) -> Option<Substructural<L, T, C, I>>
+    where
+        L: Copy,
+        T: Copy,
+        C: Copy,
+        I: Copy,
+    {
+        // Check that generic arguments have matching lengths
+        if self.lifetimes().len() != other.lifetimes().len()
+            || self.types().len() != other.types().len()
+            || self.constants().len() != other.constants().len()
+            || self.instances().len() != other.instances().len()
+        {
+            return None;
+        }
+
+        let mut substructural = Substructural::default();
+
+        // Match lifetimes
+        for (idx, (l, r)) in
+            self.lifetimes().iter().zip(other.lifetimes().iter()).enumerate()
+        {
+            let loc = to_lifetime_loc(idx);
+            substructural.lifetimes_mut().push(Matching::new(
+                l.clone(),
+                r.clone(),
+                loc,
+                loc,
+            ));
+        }
+
+        // Match types
+        for (idx, (l, r)) in
+            self.types().iter().zip(other.types().iter()).enumerate()
+        {
+            let loc = to_type_loc(idx);
+            substructural.types_mut().push(Matching::new(
+                l.clone(),
+                r.clone(),
+                loc,
+                loc,
+            ));
+        }
+
+        // Match constants
+        for (idx, (l, r)) in
+            self.constants().iter().zip(other.constants().iter()).enumerate()
+        {
+            let loc = to_constant_loc(idx);
+            substructural.constants_mut().push(Matching::new(
+                l.clone(),
+                r.clone(),
+                loc,
+                loc,
+            ));
+        }
+
+        // Match instances in generic arguments
+        for (idx, (l, r)) in
+            self.instances().iter().zip(other.instances().iter()).enumerate()
+        {
+            let loc = to_instance_generic_args_loc(idx);
+            substructural.instances_mut().push(Matching::new(
+                l.clone(),
+                r.clone(),
+                loc,
+                loc,
+            ));
+        }
+
+        // Match the parent instance
+        substructural.instances_mut().push(Matching::new(
+            self.instance().clone(),
+            other.instance().clone(),
+            instance_loc,
+            instance_loc,
+        ));
+
+        Some(substructural)
     }
 }
 
@@ -357,6 +477,10 @@ impl SubInstanceAssociatedGenericArgsLocation {
     /// index.
     #[must_use]
     pub const fn new(index: usize) -> Self { Self(index) }
+
+    /// Returns the inner index.
+    #[must_use]
+    pub const fn index(&self) -> usize { self.0 }
 }
 
 /// Represents a sub-term location where the sub-term is stored within an
@@ -870,29 +994,37 @@ impl Match for Instance {
             }
 
             (Self::InstanceAssociated(lhs), Self::InstanceAssociated(rhs))
-                if lhs.trait_associated_symbol_id
-                    == rhs.trait_associated_symbol_id =>
+                if lhs.trait_associated_symbol_id()
+                    == rhs.trait_associated_symbol_id() =>
             {
-                let mut substructural = lhs
-                    .trait_associated_symbol_generic_arguments
-                    .substructural_match(
-                        &rhs.trait_associated_symbol_generic_arguments,
-                        Substructural::default(),
-                        SubGenericArgumentsLocation::new,
-                    )?;
-
-                substructural.instances_mut().push(Matching::new(
-                    (*lhs.instance).clone(),
-                    (*rhs.instance).clone(),
+                lhs.substructural_match(
+                    rhs,
+                    |idx| {
+                        SubLifetimeLocation::InstanceAssociatedGenericArguments(
+                            SubGenericArgumentsLocation::new(idx),
+                        )
+                    },
+                    |idx| {
+                        SubTypeLocation::InstanceAssociatedGenericArguments(
+                            SubGenericArgumentsLocation::new(idx),
+                        )
+                    },
+                    |idx| {
+                        SubConstantLocation::InstanceAssociatedGenericArguments(
+                            SubGenericArgumentsLocation::new(idx),
+                        )
+                    },
+                    |idx| {
+                        SubInstanceLocation::InstanceAssociated(
+                            SubInstanceAssociatedLocation::GenericArguments(
+                                SubGenericArgumentsLocation::new(idx),
+                            ),
+                        )
+                    },
                     SubInstanceLocation::InstanceAssociated(
                         SubInstanceAssociatedLocation::Instance,
                     ),
-                    SubInstanceLocation::InstanceAssociated(
-                        SubInstanceAssociatedLocation::Instance,
-                    ),
-                ));
-
-                Some(substructural)
+                )
             }
 
             // InstanceAssociated and Parameter don't have structural matching
