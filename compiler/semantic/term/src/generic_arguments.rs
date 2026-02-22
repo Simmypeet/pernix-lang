@@ -65,6 +65,10 @@ impl GenericArguments {
     #[must_use]
     pub fn constants(&self) -> &[Constant] { &self.constants }
 
+    /// Returns the instances supplied to the term.
+    #[must_use]
+    pub fn instances(&self) -> &[Instance] { &self.instancces }
+
     /// Constructs the generic arguments from the given generic parameters and
     /// instantiation.
     ///
@@ -167,7 +171,9 @@ impl crate::display::Display for GenericArguments {
         }
 
         let last_is =
-            if self.constants.is_empty().not() {
+            if self.instancces.is_empty().not() {
+                GenericKind::Instance
+            } else if self.constants.is_empty().not() {
                 GenericKind::Constant
             } else if self.types.is_empty().not() {
                 GenericKind::Type
@@ -214,6 +220,17 @@ impl crate::display::Display for GenericArguments {
             crate::display::Display::fmt(constant, engine, formatter).await?;
 
             if i + 1 != consts_len || last_is != GenericKind::Constant {
+                write!(formatter, ", ")?;
+            }
+        }
+
+        let instances_len = self.instancces.len();
+
+        for (i, instance) in self.instancces.iter().enumerate() {
+            Box::pin(crate::display::Display::fmt(instance, engine, formatter))
+                .await?;
+
+            if i + 1 != instances_len || last_is != GenericKind::Instance {
                 write!(formatter, ", ")?;
             }
         }

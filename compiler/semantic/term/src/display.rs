@@ -97,6 +97,7 @@ impl Configuration<'_> {
             .any(|x| self.lifetime_will_be_displayed(x))
             || !generic_arguments.types().is_empty()
             || !generic_arguments.constants().is_empty()
+            || !generic_arguments.instances().is_empty()
     }
 }
 
