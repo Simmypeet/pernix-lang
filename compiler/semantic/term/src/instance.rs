@@ -221,6 +221,7 @@ pub enum SubLifetimeLocation {
 
     /// A lifetime argument in an [`Instance::InstanceAssociated`]'s generic
     /// arguments.
+    #[from]
     InstanceAssociatedGenericArguments(SubGenericArgumentsLocation),
 }
 
@@ -326,6 +327,7 @@ pub enum SubTypeLocation {
 
     /// A type argument in an [`Instance::InstanceAssociated`]'s generic
     /// arguments.
+    #[from]
     InstanceAssociatedGenericArguments(SubGenericArgumentsLocation),
 }
 
@@ -431,6 +433,7 @@ pub enum SubConstantLocation {
 
     /// A constant argument in an [`Instance::InstanceAssociated`]'s generic
     /// arguments.
+    #[from]
     InstanceAssociatedGenericArguments(SubGenericArgumentsLocation),
 }
 
@@ -535,7 +538,16 @@ pub enum SubInstanceLocation {
     Symbol(SubSymbolLocation),
 
     /// An instance in an [`Instance::InstanceAssociated`] variant.
+    #[from]
     InstanceAssociated(SubInstanceAssociatedLocation),
+}
+
+impl From<SubGenericArgumentsLocation> for SubInstanceLocation {
+    fn from(value: SubGenericArgumentsLocation) -> Self {
+        Self::InstanceAssociated(
+            SubInstanceAssociatedLocation::GenericArguments(value),
+        )
+    }
 }
 
 impl From<SubInstanceLocation> for TermLocation {
@@ -673,6 +685,7 @@ impl Match for Instance {
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
+            Self::SubInstanceLocation,
         >,
     > {
         match (self, other) {
@@ -682,6 +695,32 @@ impl Match for Instance {
                     Substructural::default(),
                     SubSymbolLocation::new,
                 )
+            }
+
+            (Self::InstanceAssociated(lhs), Self::InstanceAssociated(rhs))
+                if lhs.trait_associated_symbol_id
+                    == rhs.trait_associated_symbol_id =>
+            {
+                let mut substructural = lhs
+                    .trait_associated_symbol_generic_arguments
+                    .substructural_match(
+                        &rhs.trait_associated_symbol_generic_arguments,
+                        Substructural::default(),
+                        SubGenericArgumentsLocation::new,
+                    )?;
+
+                substructural.instances_mut().push(Matching::new(
+                    (*lhs.instance).clone(),
+                    (*rhs.instance).clone(),
+                    SubInstanceLocation::InstanceAssociated(
+                        SubInstanceAssociatedLocation::Instance,
+                    ),
+                    SubInstanceLocation::InstanceAssociated(
+                        SubInstanceAssociatedLocation::Instance,
+                    ),
+                ));
+
+                Some(substructural)
             }
 
             // InstanceAssociated and Parameter don't have structural matching
@@ -694,23 +733,20 @@ impl Match for Instance {
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
+            Self::SubInstanceLocation,
         >,
     ) -> &Vec<Matching<Self, Self::ThisSubTermLocation>> {
-        // Instance doesn't have its own slice in Substructural yet.
-        // This would need to be extended if we want proper instance matching.
-        static EMPTY: Vec<Matching<Instance, SubInstanceLocation>> = Vec::new();
-        &EMPTY
+        substructural.instances()
     }
 
     fn get_substructural_mut(
-        _substructural: &mut Substructural<
+        substructural: &mut Substructural<
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
+            Self::SubInstanceLocation,
         >,
     ) -> &mut Vec<Matching<Self, Self::ThisSubTermLocation>> {
-        // Instance doesn't have its own slice in Substructural yet.
-        // This would need to be extended if we want proper instance matching.
-        unimplemented!("Instance substructural matching not yet supported")
+        substructural.instances_mut()
     }
 }

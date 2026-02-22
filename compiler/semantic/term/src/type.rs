@@ -872,6 +872,7 @@ impl Match for Type {
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
+            Self::SubInstanceLocation,
         >,
     > {
         match (self, other) {
@@ -895,6 +896,7 @@ impl Match for Type {
                         SubTypeLocation::Pointer,
                     )],
                     Vec::new(),
+                    Vec::new(),
                 ))
             }
 
@@ -915,6 +917,7 @@ impl Match for Type {
                         SubTypeLocation::Reference,
                     )],
                     Vec::new(),
+                    Vec::new(),
                 ))
             }
 
@@ -932,6 +935,7 @@ impl Match for Type {
                     SubConstantLocation::Array,
                     SubConstantLocation::Array,
                 )],
+                Vec::new(),
             )),
 
             (Self::Tuple(lhs), Self::Tuple(rhs)) => {
@@ -965,6 +969,7 @@ impl Match for Type {
                         SubTypeLocation::Phantom,
                         SubTypeLocation::Phantom,
                     )],
+                    Vec::new(),
                     Vec::new(),
                 ))
             }
@@ -1014,6 +1019,7 @@ impl Match for Type {
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
+            Self::SubInstanceLocation,
         >,
     ) -> &Vec<Matching<Self, Self::ThisSubTermLocation>> {
         substructural.types()
@@ -1024,6 +1030,7 @@ impl Match for Type {
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
+            Self::SubInstanceLocation,
         >,
     ) -> &mut Vec<Matching<Self, Self::ThisSubTermLocation>> {
         substructural.types_mut()

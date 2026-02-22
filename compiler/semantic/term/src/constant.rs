@@ -386,6 +386,7 @@ impl Match for Constant {
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
+            Self::SubInstanceLocation,
         >,
     > {
         match (self, other) {
@@ -408,6 +409,7 @@ impl Match for Constant {
                             )
                         })
                         .collect(),
+                    Vec::new(),
                 ))
             }
 
@@ -415,16 +417,17 @@ impl Match for Constant {
                 if lhs.variant_id == rhs.variant_id =>
             {
                 match (&lhs.associated_value, &rhs.associated_value) {
-                    (Some(lhs), Some(rhs)) => {
-                        Some(Substructural::new(Vec::new(), Vec::new(), vec![
-                            Matching::new(
-                                lhs.deref().clone(),
-                                rhs.deref().clone(),
-                                SubConstantLocation::Enum,
-                                SubConstantLocation::Enum,
-                            ),
-                        ]))
-                    }
+                    (Some(lhs), Some(rhs)) => Some(Substructural::new(
+                        Vec::new(),
+                        Vec::new(),
+                        vec![Matching::new(
+                            lhs.deref().clone(),
+                            rhs.deref().clone(),
+                            SubConstantLocation::Enum,
+                            SubConstantLocation::Enum,
+                        )],
+                        Vec::new(),
+                    )),
                     (None, None) => Some(Substructural::default()),
                     _ => None,
                 }
@@ -450,6 +453,7 @@ impl Match for Constant {
                             )
                         })
                         .collect(),
+                    Vec::new(),
                 ))
             }
 
@@ -466,6 +470,7 @@ impl Match for Constant {
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
+            Self::SubInstanceLocation,
         >,
     ) -> &Vec<Matching<Self, Self::ThisSubTermLocation>> {
         substructural.constants()
@@ -476,6 +481,7 @@ impl Match for Constant {
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
+            Self::SubInstanceLocation,
         >,
     ) -> &mut Vec<Matching<Self, Self::ThisSubTermLocation>> {
         substructural.constants_mut()

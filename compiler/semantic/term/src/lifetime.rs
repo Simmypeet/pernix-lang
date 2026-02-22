@@ -247,6 +247,7 @@ impl Match for Lifetime {
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
+            Self::SubInstanceLocation,
         >,
     > {
         None
@@ -257,6 +258,7 @@ impl Match for Lifetime {
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
+            Self::SubInstanceLocation,
         >,
     ) -> &Vec<Matching<Self, Self::ThisSubTermLocation>> {
         substructural.lifetimes()
@@ -267,6 +269,7 @@ impl Match for Lifetime {
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
+            Self::SubInstanceLocation,
         >,
     ) -> &mut Vec<Matching<Self, Self::ThisSubTermLocation>> {
         substructural.lifetimes_mut()

@@ -265,6 +265,7 @@ where
             T::SubLifetimeLocation,
             T::SubTypeLocation,
             T::SubConstantLocation,
+            T::SubInstanceLocation,
         >,
     >
     where
@@ -279,6 +280,7 @@ where
                 T::SubLifetimeLocation,
                 T::SubTypeLocation,
                 T::SubConstantLocation,
+                T::SubInstanceLocation,
             >,
             swap: bool,
         ) where
@@ -457,6 +459,7 @@ where
             T::SubLifetimeLocation,
             T::SubTypeLocation,
             T::SubConstantLocation,
+            T::SubInstanceLocation,
         >,
     >
     where

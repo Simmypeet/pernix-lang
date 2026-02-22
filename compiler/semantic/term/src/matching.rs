@@ -3,7 +3,9 @@
 use derive_new::new;
 
 use super::sub_term::SubTerm;
-use crate::{constant::Constant, lifetime::Lifetime, r#type::Type};
+use crate::{
+    constant::Constant, instance::Instance, lifetime::Lifetime, r#type::Type,
+};
 
 /// Represents a match between two terms.
 pub trait Match: Sized + SubTerm {
@@ -29,6 +31,7 @@ pub trait Match: Sized + SubTerm {
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
+            Self::SubInstanceLocation,
         >,
     >;
 
@@ -38,6 +41,7 @@ pub trait Match: Sized + SubTerm {
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
+            Self::SubInstanceLocation,
         >,
     ) -> &Vec<Matching<Self, Self::ThisSubTermLocation>>;
 
@@ -47,6 +51,7 @@ pub trait Match: Sized + SubTerm {
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
+            Self::SubInstanceLocation,
         >,
     ) -> &mut Vec<Matching<Self, Self::ThisSubTermLocation>>;
 }
@@ -92,13 +97,15 @@ pub struct Substructural<
     SubLifetimeLocation,
     SubTypeLocation,
     SubConstantLocation,
+    SubInstanceLocation,
 > {
     lifetimes: Vec<Matching<Lifetime, SubLifetimeLocation>>,
     types: Vec<Matching<Type, SubTypeLocation>>,
     constants: Vec<Matching<Constant, SubConstantLocation>>,
+    instances: Vec<Matching<Instance, SubInstanceLocation>>,
 }
 
-impl<L, T, C> Substructural<L, T, C> {
+impl<L, T, C, I> Substructural<L, T, C, I> {
     /// Returns a reference to the lifetime matchings.
     #[must_use]
     pub const fn lifetimes(&self) -> &Vec<Matching<Lifetime, L>> {
@@ -132,8 +139,22 @@ impl<L, T, C> Substructural<L, T, C> {
     pub const fn constants_mut(&mut self) -> &mut Vec<Matching<Constant, C>> {
         &mut self.constants
     }
+
+    /// Returns a reference to the instance matchings.
+    #[must_use]
+    pub const fn instances(&self) -> &Vec<Matching<Instance, I>> {
+        &self.instances
+    }
+
+    /// Returns a mutable reference to the instance matchings.
+    #[must_use]
+    pub const fn instances_mut(&mut self) -> &mut Vec<Matching<Instance, I>> {
+        &mut self.instances
+    }
 }
 
-impl<L, T, C> Default for Substructural<L, T, C> {
-    fn default() -> Self { Self::new(Vec::new(), Vec::new(), Vec::new()) }
+impl<L, T, C, I> Default for Substructural<L, T, C, I> {
+    fn default() -> Self {
+        Self::new(Vec::new(), Vec::new(), Vec::new(), Vec::new())
+    }
 }

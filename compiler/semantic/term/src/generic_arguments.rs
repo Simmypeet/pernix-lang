@@ -530,18 +530,19 @@ impl Symbol {
 
 impl GenericArguments {
     /// Substructurally matches `self` to `to`.
-    pub fn substructural_match<L, T, C, Y>(
+    pub fn substructural_match<L, T, C, I, Y>(
         &self,
         other: &Self,
-        mut existing: Substructural<L, T, C>,
+        mut existing: Substructural<L, T, C, I>,
         to_location: impl Fn(usize) -> Y,
-    ) -> Option<Substructural<L, T, C>>
+    ) -> Option<Substructural<L, T, C, I>>
     where
-        Y: Into<L> + Into<T> + Into<C> + Copy,
+        Y: Into<L> + Into<T> + Into<C> + Into<I> + Copy,
     {
         if self.lifetimes.len() != other.lifetimes.len()
             || self.types.len() != other.types.len()
             || self.constants.len() != other.constants.len()
+            || self.instancces.len() != other.instancces.len()
         {
             return None;
         }
@@ -587,6 +588,22 @@ impl GenericArguments {
         {
             let location = to_location(idx);
             existing.constants_mut().push(Matching::new(
+                lhs,
+                rhs,
+                location.into(),
+                location.into(),
+            ));
+        }
+
+        for (idx, (lhs, rhs)) in self
+            .instancces
+            .iter()
+            .cloned()
+            .zip(other.instancces.iter().cloned())
+            .enumerate()
+        {
+            let location = to_location(idx);
+            existing.instances_mut().push(Matching::new(
                 lhs,
                 rhs,
                 location.into(),
