@@ -16,6 +16,7 @@ use crate::{
         ConstantParameterID, GenericKind, GenericParameters,
         LifetimeParameterID, TypeParameterID,
     },
+    instance::Instance,
     instantiation::Instantiation,
     lifetime::Lifetime,
     matching::{Matching, Substructural},
@@ -45,14 +46,10 @@ pub mod arbitrary;
     new,
 )]
 pub struct GenericArguments {
-    /// The lifetimes supplied to the term.
     lifetimes: Vec<Lifetime>,
-
-    /// The types supplied to the term.
     types: Vec<Type>,
-
-    /// The constants supplied to the term.
     constants: Vec<Constant>,
+    instancces: Vec<Instance>,
 }
 
 impl GenericArguments {

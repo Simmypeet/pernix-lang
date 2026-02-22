@@ -14,8 +14,11 @@ use qbice::{
 };
 
 use crate::{
-    constant::Constant, generic_arguments::GenericArguments,
-    instance::TraitRef, lifetime::Lifetime, r#type::Type,
+    constant::Constant,
+    generic_arguments::GenericArguments,
+    instance::{Instance, TraitRef},
+    lifetime::Lifetime,
+    r#type::Type,
 };
 
 /// Key for querying generic parameters for a given global symbol ID.
@@ -460,6 +463,11 @@ impl GenericParameters {
                 .iter()
                 .copied()
                 .map(|id| Constant::Parameter(MemberID::new(global_id, id)))
+                .collect(),
+            self.instance_order
+                .iter()
+                .copied()
+                .map(|id| Instance::Parameter(MemberID::new(global_id, id)))
                 .collect(),
         )
     }

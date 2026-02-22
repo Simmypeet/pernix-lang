@@ -8,6 +8,9 @@ use crate::{
     generic_parameters::InstanceParameterID,
 };
 
+#[cfg(any(test, feature = "arbitrary"))]
+pub mod arbitrary;
+
 /// The `TraitRef` refers to a trait that an instance implements.
 ///
 /// This is analogous to "expression" has a specific "type". In this case, the
@@ -66,7 +69,7 @@ pub enum Instance {
     Symbol(Symbol),
 
     /// Refers to an instance parameter denoted by `instance I: Trait` syntax.
-    InstanceParameterID(InstanceParameterID),
+    Parameter(InstanceParameterID),
 
     /// Refers to an instance that is associated with another instance.
     ///

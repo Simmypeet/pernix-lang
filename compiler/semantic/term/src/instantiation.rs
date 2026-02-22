@@ -19,8 +19,10 @@ use crate::{
     generic_arguments::GenericArguments,
     generic_parameters::{
         ConstantParameterID, GenericKind, GenericParameters,
-        LifetimeParameterID, TypeParameterID, get_generic_parameters,
+        InstanceParameterID, LifetimeParameterID, TypeParameterID,
+        get_generic_parameters,
     },
+    instance::Instance,
     lifetime::Lifetime,
     r#type::Type,
 };
@@ -45,6 +47,7 @@ pub struct Instantiation {
     lifetimes: BTreeMap<Lifetime, Lifetime>,
     types: BTreeMap<Type, Type>,
     constants: BTreeMap<Constant, Constant>,
+    instances: BTreeMap<Instance, Instance>,
 }
 
 impl Instantiation {
@@ -70,6 +73,15 @@ impl Instantiation {
         constant: &Constant,
     ) -> Option<&Constant> {
         self.constants.get(constant)
+    }
+
+    /// Retrieves the mapping for the given instance if it exists.
+    #[must_use]
+    pub fn get_instance_mapping(
+        &self,
+        instance: &Instance,
+    ) -> Option<&Instance> {
+        self.instances.get(instance)
     }
 }
 
@@ -292,6 +304,16 @@ impl Instantiation {
                     );
 
                     self.constants.get(&constant_parameter).cloned().unwrap()
+                })
+                .collect(),
+            parameters
+                .instance_parameter_order()
+                .map(|x| {
+                    let instance_parameter = Instance::Parameter(
+                        InstanceParameterID::new(global_id, x),
+                    );
+
+                    self.instances.get(&instance_parameter).cloned().unwrap()
                 })
                 .collect(),
         )
