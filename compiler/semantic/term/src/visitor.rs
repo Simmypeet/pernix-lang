@@ -446,7 +446,7 @@ macro_rules! implements_type {
                     )
                 )$(.$await)?),
             Self::Tuple(tuple) => Ok(tuple.$accept_one_level($visitor)$(.$await)?),
-            Self::MemberSymbol(member_symbol) => Ok(
+            Self::AssociatedSymbol(member_symbol) => Ok(
                 member_symbol.$accept_one_level::<Self, _>(
                     $visitor,
                 )$(.$await)?

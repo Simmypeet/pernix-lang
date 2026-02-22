@@ -472,7 +472,7 @@ pub struct SubSymbolLocation(usize);
 /// Represents a sub-term location where the sub-term is stored as a generic
 /// arguments.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
-pub struct SubMemberSymbolLocation {
+pub struct SubAssociatedSymbolLocation {
     /// The index of the sub-term in the generic arguments.
     index: usize,
 
@@ -489,7 +489,7 @@ impl AssociatedSymbol {
     #[must_use]
     pub fn get_term_mut<T: Element>(
         &mut self,
-        location: SubMemberSymbolLocation,
+        location: SubAssociatedSymbolLocation,
     ) -> Option<&mut T> {
         let generic_arguments = if location.from_parent {
             T::get_mut(&mut self.parent_generic_arguments)
@@ -506,7 +506,7 @@ impl AssociatedSymbol {
     #[must_use]
     pub fn get_term<T: Element>(
         &self,
-        location: SubMemberSymbolLocation,
+        location: SubAssociatedSymbolLocation,
     ) -> Option<&T> {
         let generic_arguments = if location.from_parent {
             T::get(&self.parent_generic_arguments)
@@ -985,7 +985,7 @@ macro_rules! implements_associated_symbol {
             .parent_generic_arguments
             .$accept_one_level::<$visit_type, _, _>(
                 $visitor,
-                |id| SubMemberSymbolLocation {
+                |id| SubAssociatedSymbolLocation {
                     index: id,
                     from_parent: true,
                 }
@@ -994,7 +994,7 @@ macro_rules! implements_associated_symbol {
                 .member_generic_arguments
                 .$accept_one_level::<$visit_type, _, _>(
                     $visitor,
-                    |id| SubMemberSymbolLocation {
+                    |id| SubAssociatedSymbolLocation {
                         index: id,
                         from_parent: false,
                     }
@@ -1016,7 +1016,7 @@ impl AssociatedSymbol {
         visitor: &mut V,
     ) -> bool
     where
-        SubMemberSymbolLocation: Into<T::SubConstantLocation>
+        SubAssociatedSymbolLocation: Into<T::SubConstantLocation>
             + Into<T::SubTypeLocation>
             + Into<T::SubLifetimeLocation>
             + Into<T::SubInstanceLocation>,
@@ -1040,7 +1040,7 @@ impl AssociatedSymbol {
         visitor: &mut V,
     ) -> bool
     where
-        SubMemberSymbolLocation: Into<T::SubConstantLocation>
+        SubAssociatedSymbolLocation: Into<T::SubConstantLocation>
             + Into<T::SubTypeLocation>
             + Into<T::SubLifetimeLocation>
             + Into<T::SubInstanceLocation>,
@@ -1070,7 +1070,7 @@ impl AssociatedSymbol {
         visitor: &mut V,
     ) -> bool
     where
-        SubMemberSymbolLocation: Into<T::SubConstantLocation>
+        SubAssociatedSymbolLocation: Into<T::SubConstantLocation>
             + Into<T::SubTypeLocation>
             + Into<T::SubLifetimeLocation>
             + Into<T::SubInstanceLocation>,
@@ -1094,7 +1094,7 @@ impl AssociatedSymbol {
         visitor: &mut V,
     ) -> bool
     where
-        SubMemberSymbolLocation: Into<T::SubConstantLocation>
+        SubAssociatedSymbolLocation: Into<T::SubConstantLocation>
             + Into<T::SubTypeLocation>
             + Into<T::SubLifetimeLocation>
             + Into<T::SubInstanceLocation>,

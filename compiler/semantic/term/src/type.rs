@@ -9,7 +9,8 @@ use crate::{
     constant::Constant,
     error::Error,
     generic_arguments::{
-        AssociatedSymbol, SubMemberSymbolLocation, SubSymbolLocation, Symbol,
+        AssociatedSymbol, SubAssociatedSymbolLocation, SubSymbolLocation,
+        Symbol,
     },
     generic_parameters::{
         GenericParameter, TypeParameterID, get_generic_parameters,
@@ -260,7 +261,7 @@ pub enum Type {
     #[from]
     InstanceAssociated(InstanceAssociated),
     #[from]
-    MemberSymbol(AssociatedSymbol),
+    AssociatedSymbol(AssociatedSymbol),
     #[from]
     FunctionSignature(FunctionSignature),
     #[from]
@@ -334,9 +335,9 @@ pub enum SubLifetimeLocation {
     /// The lifetime of a reference.
     Reference,
 
-    /// A lifetime argument in a [`Type::MemberSymbol`] variant.
+    /// A lifetime argument in a [`Type::AssociatedSymbol`] variant.
     #[from]
-    MemberSymbol(SubMemberSymbolLocation),
+    AssociatedSymbol(SubAssociatedSymbolLocation),
 }
 
 impl From<SubLifetimeLocation> for TermLocation {
@@ -357,8 +358,8 @@ impl Location<Type, Lifetime> for SubLifetimeLocation {
             }
 
             (
-                Type::MemberSymbol(member_symbol),
-                Self::MemberSymbol(location),
+                Type::AssociatedSymbol(member_symbol),
+                Self::AssociatedSymbol(location),
             ) => member_symbol.get_term_mut(location).unwrap(),
 
             term => panic!(
@@ -380,8 +381,8 @@ impl Location<Type, Lifetime> for SubLifetimeLocation {
             }
 
             (
-                Type::MemberSymbol(member_symbol),
-                Self::MemberSymbol(location),
+                Type::AssociatedSymbol(member_symbol),
+                Self::AssociatedSymbol(location),
             ) => member_symbol.get_term(location).cloned(),
 
             _ => None,
@@ -399,8 +400,8 @@ impl Location<Type, Lifetime> for SubLifetimeLocation {
             }
 
             (
-                Type::MemberSymbol(member_symbol),
-                Self::MemberSymbol(location),
+                Type::AssociatedSymbol(member_symbol),
+                Self::AssociatedSymbol(location),
             ) => member_symbol.get_term(location),
 
             _ => None,
@@ -418,8 +419,8 @@ impl Location<Type, Lifetime> for SubLifetimeLocation {
             }
 
             (
-                Type::MemberSymbol(member_symbol),
-                Self::MemberSymbol(location),
+                Type::AssociatedSymbol(member_symbol),
+                Self::AssociatedSymbol(location),
             ) => member_symbol.get_term_mut(location),
 
             _ => None,
@@ -461,9 +462,9 @@ pub enum SubTypeLocation {
     /// The inner type of a [`Type::Phantom`] type.
     Phantom,
 
-    /// The type argument in a [`Type::MemberSymbol`] type.
+    /// The type argument in a [`Type::AssociatedSymbol`] type.
     #[from]
-    MemberSymbol(SubMemberSymbolLocation),
+    AssociatedSymbol(SubAssociatedSymbolLocation),
 
     /// The return type or a parameter of a function signature.
     #[from]
@@ -498,8 +499,8 @@ impl Location<Type, Type> for SubTypeLocation {
             }
 
             (
-                Self::MemberSymbol(location),
-                Type::MemberSymbol(member_symbol),
+                Self::AssociatedSymbol(location),
+                Type::AssociatedSymbol(member_symbol),
             ) => member_symbol.get_term_mut(location).unwrap(),
 
             (
@@ -544,8 +545,8 @@ impl Location<Type, Type> for SubTypeLocation {
             }
 
             (
-                Self::MemberSymbol(location),
-                Type::MemberSymbol(trait_member),
+                Self::AssociatedSymbol(location),
+                Type::AssociatedSymbol(trait_member),
             ) => trait_member.get_term(location).cloned(),
 
             (Self::Phantom, Type::Phantom(phantom)) => {
@@ -587,8 +588,8 @@ impl Location<Type, Type> for SubTypeLocation {
             }
 
             (
-                Self::MemberSymbol(location),
-                Type::MemberSymbol(member_symbol),
+                Self::AssociatedSymbol(location),
+                Type::AssociatedSymbol(member_symbol),
             ) => member_symbol.get_term(location),
 
             (Self::Phantom, Type::Phantom(phantom)) => Some(&*phantom.0),
@@ -630,8 +631,8 @@ impl Location<Type, Type> for SubTypeLocation {
             }
 
             (
-                Self::MemberSymbol(location),
-                Type::MemberSymbol(member_symbol),
+                Self::AssociatedSymbol(location),
+                Type::AssociatedSymbol(member_symbol),
             ) => member_symbol.get_term_mut(location),
 
             (Self::Phantom, Type::Phantom(phantom)) => Some(&mut *phantom.0),
@@ -671,9 +672,9 @@ pub enum SubConstantLocation {
     #[from]
     Symbol(SubSymbolLocation),
 
-    /// The constant argument in a [`Type::MemberSymbol`] type.
+    /// The constant argument in a [`Type::AssociatedSymbol`] type.
     #[from]
-    MemberSymbol(SubMemberSymbolLocation),
+    AssociatedSymbol(SubAssociatedSymbolLocation),
 
     /// The [`Array::length`] of an array.
     Array,
@@ -695,8 +696,8 @@ impl Location<Type, Constant> for SubConstantLocation {
             (Self::Array, Type::Array(array)) => &mut array.length,
 
             (
-                Self::MemberSymbol(location),
-                Type::MemberSymbol(member_symbol),
+                Self::AssociatedSymbol(location),
+                Type::AssociatedSymbol(member_symbol),
             ) => member_symbol.get_term_mut(location).unwrap(),
 
             term => panic!(
@@ -716,8 +717,8 @@ impl Location<Type, Constant> for SubConstantLocation {
             (Self::Array, Type::Array(array)) => Some(array.length.clone()),
 
             (
-                Self::MemberSymbol(location),
-                Type::MemberSymbol(member_symbol),
+                Self::AssociatedSymbol(location),
+                Type::AssociatedSymbol(member_symbol),
             ) => member_symbol.get_term(location).cloned(),
 
             _ => None,
@@ -733,8 +734,8 @@ impl Location<Type, Constant> for SubConstantLocation {
             (Self::Array, Type::Array(array)) => Some(&array.length),
 
             (
-                Self::MemberSymbol(location),
-                Type::MemberSymbol(member_symbol),
+                Self::AssociatedSymbol(location),
+                Type::AssociatedSymbol(member_symbol),
             ) => member_symbol.get_term(location),
 
             _ => None,
@@ -750,8 +751,8 @@ impl Location<Type, Constant> for SubConstantLocation {
             (Self::Array, Type::Array(array)) => Some(&mut array.length),
 
             (
-                Self::MemberSymbol(location),
-                Type::MemberSymbol(member_symbol),
+                Self::AssociatedSymbol(location),
+                Type::AssociatedSymbol(member_symbol),
             ) => member_symbol.get_term_mut(location),
 
             _ => None,
@@ -777,9 +778,9 @@ pub enum SubInstanceLocation {
     #[from]
     Symbol(SubSymbolLocation),
 
-    /// An instance argument in a [`Type::MemberSymbol`] variant.
+    /// An instance argument in a [`Type::AssociatedSymbol`] variant.
     #[from]
-    MemberSymbol(SubMemberSymbolLocation),
+    AssociatedSymbol(SubAssociatedSymbolLocation),
 }
 
 impl From<SubInstanceLocation> for TermLocation {
@@ -796,8 +797,8 @@ impl Location<Type, Instance> for SubInstanceLocation {
             }
 
             (
-                Self::MemberSymbol(location),
-                Type::MemberSymbol(member_symbol),
+                Self::AssociatedSymbol(location),
+                Type::AssociatedSymbol(member_symbol),
             ) => member_symbol.get_term_mut(location).unwrap(),
 
             term => panic!(
@@ -815,8 +816,8 @@ impl Location<Type, Instance> for SubInstanceLocation {
             }
 
             (
-                Self::MemberSymbol(location),
-                Type::MemberSymbol(member_symbol),
+                Self::AssociatedSymbol(location),
+                Type::AssociatedSymbol(member_symbol),
             ) => member_symbol.get_term(location).cloned(),
 
             _ => None,
@@ -830,8 +831,8 @@ impl Location<Type, Instance> for SubInstanceLocation {
             }
 
             (
-                Self::MemberSymbol(location),
-                Type::MemberSymbol(member_symbol),
+                Self::AssociatedSymbol(location),
+                Type::AssociatedSymbol(member_symbol),
             ) => member_symbol.get_term(location),
 
             _ => None,
@@ -845,8 +846,8 @@ impl Location<Type, Instance> for SubInstanceLocation {
             }
 
             (
-                Self::MemberSymbol(location),
-                Type::MemberSymbol(member_symbol),
+                Self::AssociatedSymbol(location),
+                Type::AssociatedSymbol(member_symbol),
             ) => member_symbol.get_term_mut(location),
 
             _ => None,
@@ -942,20 +943,20 @@ impl Match for Type {
                 lhs.substructural_match(rhs)
             }
 
-            (Self::MemberSymbol(lhs), Self::MemberSymbol(rhs))
+            (Self::AssociatedSymbol(lhs), Self::AssociatedSymbol(rhs))
                 if lhs.id() == rhs.id() =>
             {
                 lhs.parent_generic_arguments()
                     .substructural_match(
                         rhs.parent_generic_arguments(),
                         Substructural::default(),
-                        |x| SubMemberSymbolLocation::new(x, true),
+                        |x| SubAssociatedSymbolLocation::new(x, true),
                     )
                     .and_then(|x| {
                         lhs.member_generic_arguments().substructural_match(
                             rhs.member_generic_arguments(),
                             x,
-                            |x| SubMemberSymbolLocation::new(x, false),
+                            |x| SubAssociatedSymbolLocation::new(x, false),
                         )
                     })
             }
@@ -1125,7 +1126,7 @@ impl crate::display::Display for Type {
                 Box::pin(phantom.0.fmt(engine, formatter)).await
             }
 
-            Self::MemberSymbol(member_symbol) => {
+            Self::AssociatedSymbol(member_symbol) => {
                 Box::pin(member_symbol.fmt(engine, formatter)).await
             }
 
