@@ -8,6 +8,7 @@ use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     constant::Constant,
+    instance::Instance,
     lifetime::Lifetime,
     matching::{Match, Matching, Substructural},
     sub_term::SubTerm,
@@ -492,7 +493,10 @@ where
 {
     pub(crate) fn accept_one_level<
         'a,
-        V: Visitor<'a, Lifetime> + Visitor<'a, Type> + Visitor<'a, Constant>,
+        V: Visitor<'a, Lifetime>
+            + Visitor<'a, Type>
+            + Visitor<'a, Constant>
+            + Visitor<'a, Instance>,
     >(
         &'a self,
         visitor: &mut V,
@@ -501,7 +505,10 @@ where
     }
 
     pub(crate) async fn accept_one_level_async<
-        V: AsyncVisitor<Lifetime> + AsyncVisitor<Type> + AsyncVisitor<Constant>,
+        V: AsyncVisitor<Lifetime>
+            + AsyncVisitor<Type>
+            + AsyncVisitor<Constant>
+            + AsyncVisitor<Instance>,
     >(
         &self,
         visitor: &mut V,
@@ -510,7 +517,10 @@ where
     }
 
     pub(crate) fn accept_one_level_mut<
-        V: Mutable<Lifetime> + Mutable<Type> + Mutable<Constant>,
+        V: Mutable<Lifetime>
+            + Mutable<Type>
+            + Mutable<Constant>
+            + Mutable<Instance>,
     >(
         &mut self,
         visitor: &mut V,
@@ -519,7 +529,10 @@ where
     }
 
     pub(crate) async fn accept_one_level_async_mut<
-        V: AsyncMutable<Lifetime> + AsyncMutable<Type> + AsyncMutable<Constant>,
+        V: AsyncMutable<Lifetime>
+            + AsyncMutable<Type>
+            + AsyncMutable<Constant>
+            + AsyncMutable<Instance>,
     >(
         &mut self,
         visitor: &mut V,

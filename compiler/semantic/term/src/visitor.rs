@@ -9,7 +9,8 @@ use super::sub_term::{
 use crate::{
     Never, TermRef,
     constant::{self, Constant},
-    instance::Instance,
+    generic_arguments::SubGenericArgumentsLocation,
+    instance::{self, Instance},
     lifetime::Lifetime,
     sub_term::SubInstanceLocation,
     r#type::{self, SubFunctionSignatureLocation, Type},
@@ -138,7 +139,8 @@ impl<
     V: Recursive<'b, T>
         + Recursive<'b, Lifetime>
         + Recursive<'b, Type>
-        + Recursive<'b, Constant>,
+        + Recursive<'b, Constant>
+        + Recursive<'b, Instance>,
 > Visitor<'b, T> for RecursiveVisitorAdapter<'_, V>
 {
     fn visit(&mut self, term: &'b T, location: T::Location) -> bool {
@@ -157,7 +159,8 @@ impl<
     V: MutableRecursive<T>
         + MutableRecursive<Lifetime>
         + MutableRecursive<Type>
-        + MutableRecursive<Constant>,
+        + MutableRecursive<Constant>
+        + MutableRecursive<Instance>,
 > Mutable<T> for RecursiveVisitorAdapterMut<'_, V>
 {
     fn visit(&mut self, term: &mut T, location: T::Location) -> bool {
@@ -187,7 +190,10 @@ pub trait Element: Sized + SubTerm {
     /// Returns whatever the visitor `visit_*` method returns.
     fn accept_single<
         'a,
-        V: Visitor<'a, Lifetime> + Visitor<'a, Type> + Visitor<'a, Constant>,
+        V: Visitor<'a, Lifetime>
+            + Visitor<'a, Type>
+            + Visitor<'a, Constant>
+            + Visitor<'a, Instance>,
     >(
         &'a self,
         visitor: &mut V,
@@ -201,7 +207,10 @@ pub trait Element: Sized + SubTerm {
     /// Returns whatever the visitor `visit_*` method returns.
     fn accept_single_async<
         'a,
-        V: AsyncVisitor<Lifetime> + AsyncVisitor<Type> + AsyncVisitor<Constant>,
+        V: AsyncVisitor<Lifetime>
+            + AsyncVisitor<Type>
+            + AsyncVisitor<Constant>
+            + AsyncVisitor<Instance>,
     >(
         &'a self,
         visitor: &'a mut V,
@@ -210,7 +219,10 @@ pub trait Element: Sized + SubTerm {
 
     /// Similar to [`Element::accept_single()`], but for mutable references.
     fn accept_single_mut<
-        V: Mutable<Lifetime> + Mutable<Type> + Mutable<Constant>,
+        V: Mutable<Lifetime>
+            + Mutable<Type>
+            + Mutable<Constant>
+            + Mutable<Instance>,
     >(
         &mut self,
         visitor: &mut V,
@@ -225,7 +237,10 @@ pub trait Element: Sized + SubTerm {
     /// Returns whatever the visitor `visit_*` method returns.
     fn accept_single_async_mut<
         'a,
-        V: AsyncMutable<Lifetime> + AsyncMutable<Type> + AsyncMutable<Constant>,
+        V: AsyncMutable<Lifetime>
+            + AsyncMutable<Type>
+            + AsyncMutable<Constant>
+            + AsyncMutable<Instance>,
     >(
         &'a mut self,
         visitor: &'a mut V,
@@ -235,7 +250,10 @@ pub trait Element: Sized + SubTerm {
     /// Invokes the [`Recursive`] visitor on the term itself.
     fn accept_single_recursive<
         'a,
-        V: Recursive<'a, Lifetime> + Recursive<'a, Type> + Recursive<'a, Constant>,
+        V: Recursive<'a, Lifetime>
+            + Recursive<'a, Type>
+            + Recursive<'a, Constant>
+            + Recursive<'a, Instance>,
     >(
         &'a self,
         visitor: &mut V,
@@ -247,7 +265,8 @@ pub trait Element: Sized + SubTerm {
     fn accept_single_recursive_mut<
         V: MutableRecursive<Lifetime>
             + MutableRecursive<Type>
-            + MutableRecursive<Constant>,
+            + MutableRecursive<Constant>
+            + MutableRecursive<Instance>,
     >(
         &mut self,
         visitor: &mut V,
@@ -273,7 +292,10 @@ pub trait Element: Sized + SubTerm {
     /// When visiting a non-application term (i.e. `int32, float32`)
     fn accept_one_level<
         'a,
-        V: Visitor<'a, Lifetime> + Visitor<'a, Type> + Visitor<'a, Constant>,
+        V: Visitor<'a, Lifetime>
+            + Visitor<'a, Type>
+            + Visitor<'a, Constant>
+            + Visitor<'a, Instance>,
     >(
         &'a self,
         visitor: &mut V,
@@ -283,7 +305,10 @@ pub trait Element: Sized + SubTerm {
     /// visitors.
     fn accept_one_level_async<
         'a,
-        V: AsyncVisitor<Lifetime> + AsyncVisitor<Type> + AsyncVisitor<Constant>,
+        V: AsyncVisitor<Lifetime>
+            + AsyncVisitor<Type>
+            + AsyncVisitor<Constant>
+            + AsyncVisitor<Instance>,
     >(
         &'a self,
         visitor: &'a mut V,
@@ -293,7 +318,10 @@ pub trait Element: Sized + SubTerm {
     /// visitors.
     fn accept_one_level_async_mut<
         'a,
-        V: AsyncMutable<Lifetime> + AsyncMutable<Type> + AsyncMutable<Constant>,
+        V: AsyncMutable<Lifetime>
+            + AsyncMutable<Type>
+            + AsyncMutable<Constant>
+            + AsyncMutable<Instance>,
     >(
         &'a mut self,
         visitor: &'a mut V,
@@ -305,7 +333,10 @@ pub trait Element: Sized + SubTerm {
     ///
     /// When visiting a non-application term (i.e. `int32, float32`)
     fn accept_one_level_mut<
-        V: Mutable<Lifetime> + Mutable<Type> + Mutable<Constant>,
+        V: Mutable<Lifetime>
+            + Mutable<Type>
+            + Mutable<Constant>
+            + Mutable<Instance>,
     >(
         &mut self,
         visitor: &mut V,
@@ -315,7 +346,10 @@ pub trait Element: Sized + SubTerm {
 /// Invokes the visitor on the term itself and all of its sub-terms recursively.
 pub fn accept_recursive<
     'a,
-    V: Recursive<'a, Lifetime> + Recursive<'a, Type> + Recursive<'a, Constant>,
+    V: Recursive<'a, Lifetime>
+        + Recursive<'a, Type>
+        + Recursive<'a, Constant>
+        + Recursive<'a, Instance>,
     E: Element,
 >(
     element: &'a E,
@@ -337,7 +371,8 @@ pub fn accept_recursive<
 pub fn accept_recursive_mut<
     V: MutableRecursive<Lifetime>
         + MutableRecursive<Type>
-        + MutableRecursive<Constant>,
+        + MutableRecursive<Constant>
+        + MutableRecursive<Instance>,
     E: Element,
 >(
     element: &mut E,
@@ -450,7 +485,10 @@ impl Element for Type {
 
     fn accept_single<
         'a,
-        V: Visitor<'a, Lifetime> + Visitor<'a, Self> + Visitor<'a, Constant>,
+        V: Visitor<'a, Lifetime>
+            + Visitor<'a, Self>
+            + Visitor<'a, Constant>
+            + Visitor<'a, Instance>,
     >(
         &'a self,
         visitor: &mut V,
@@ -461,7 +499,10 @@ impl Element for Type {
 
     async fn accept_single_async<
         'a,
-        V: AsyncVisitor<Lifetime> + AsyncVisitor<Self> + AsyncVisitor<Constant>,
+        V: AsyncVisitor<Lifetime>
+            + AsyncVisitor<Self>
+            + AsyncVisitor<Constant>
+            + AsyncVisitor<Instance>,
     >(
         &'a self,
         visitor: &'a mut V,
@@ -471,7 +512,10 @@ impl Element for Type {
     }
 
     fn accept_single_mut<
-        V: Mutable<Lifetime> + Mutable<Self> + Mutable<Constant>,
+        V: Mutable<Lifetime>
+            + Mutable<Self>
+            + Mutable<Constant>
+            + Mutable<Instance>,
     >(
         &mut self,
         visitor: &mut V,
@@ -482,7 +526,10 @@ impl Element for Type {
 
     fn accept_single_recursive<
         'a,
-        V: Recursive<'a, Lifetime> + Recursive<'a, Self> + Recursive<'a, Constant>,
+        V: Recursive<'a, Lifetime>
+            + Recursive<'a, Self>
+            + Recursive<'a, Constant>
+            + Recursive<'a, Instance>,
     >(
         &'a self,
         visitor: &mut V,
@@ -494,7 +541,8 @@ impl Element for Type {
     fn accept_single_recursive_mut<
         V: MutableRecursive<Lifetime>
             + MutableRecursive<Self>
-            + MutableRecursive<Constant>,
+            + MutableRecursive<Constant>
+            + MutableRecursive<Instance>,
     >(
         &mut self,
         visitor: &mut V,
@@ -505,7 +553,10 @@ impl Element for Type {
 
     fn accept_one_level<
         'a,
-        V: Visitor<'a, Lifetime> + Visitor<'a, Self> + Visitor<'a, Constant>,
+        V: Visitor<'a, Lifetime>
+            + Visitor<'a, Self>
+            + Visitor<'a, Constant>
+            + Visitor<'a, Instance>,
     >(
         &'a self,
         visitor: &mut V,
@@ -522,7 +573,10 @@ impl Element for Type {
     }
 
     fn accept_one_level_mut<
-        V: Mutable<Lifetime> + Mutable<Self> + Mutable<Constant>,
+        V: Mutable<Lifetime>
+            + Mutable<Self>
+            + Mutable<Constant>
+            + Mutable<Instance>,
     >(
         &mut self,
         visitor: &mut V,
@@ -539,7 +593,10 @@ impl Element for Type {
     }
 
     async fn accept_one_level_async<
-        V: AsyncVisitor<Lifetime> + AsyncVisitor<Self> + AsyncVisitor<Constant>,
+        V: AsyncVisitor<Lifetime>
+            + AsyncVisitor<Self>
+            + AsyncVisitor<Constant>
+            + AsyncVisitor<Instance>,
     >(
         &self,
         visitor: &mut V,
@@ -557,7 +614,10 @@ impl Element for Type {
     }
 
     async fn accept_one_level_async_mut<
-        V: AsyncMutable<Lifetime> + AsyncMutable<Self> + AsyncMutable<Constant>,
+        V: AsyncMutable<Lifetime>
+            + AsyncMutable<Self>
+            + AsyncMutable<Constant>
+            + AsyncMutable<Instance>,
     >(
         &mut self,
         visitor: &mut V,
@@ -575,7 +635,10 @@ impl Element for Type {
     }
 
     async fn accept_single_async_mut<
-        V: AsyncMutable<Lifetime> + AsyncMutable<Self> + AsyncMutable<Constant>,
+        V: AsyncMutable<Lifetime>
+            + AsyncMutable<Self>
+            + AsyncMutable<Constant>
+            + AsyncMutable<Instance>,
     >(
         &mut self,
         visitor: &mut V,
@@ -594,7 +657,10 @@ impl Element for Lifetime {
 
     fn accept_single<
         'a,
-        V: Visitor<'a, Self> + Visitor<'a, Type> + Visitor<'a, Constant>,
+        V: Visitor<'a, Self>
+            + Visitor<'a, Type>
+            + Visitor<'a, Constant>
+            + Visitor<'a, Instance>,
     >(
         &'a self,
         visitor: &mut V,
@@ -604,7 +670,7 @@ impl Element for Lifetime {
     }
 
     fn accept_single_mut<
-        V: Mutable<Self> + Mutable<Type> + Mutable<Constant>,
+        V: Mutable<Self> + Mutable<Type> + Mutable<Constant> + Mutable<Instance>,
     >(
         &mut self,
         visitor: &mut V,
@@ -615,7 +681,10 @@ impl Element for Lifetime {
 
     fn accept_single_recursive<
         'a,
-        V: Recursive<'a, Self> + Recursive<'a, Type> + Recursive<'a, Constant>,
+        V: Recursive<'a, Self>
+            + Recursive<'a, Type>
+            + Recursive<'a, Constant>
+            + Recursive<'a, Instance>,
     >(
         &'a self,
         visitor: &mut V,
@@ -627,7 +696,8 @@ impl Element for Lifetime {
     fn accept_single_recursive_mut<
         V: MutableRecursive<Self>
             + MutableRecursive<Type>
-            + MutableRecursive<Constant>,
+            + MutableRecursive<Constant>
+            + MutableRecursive<Instance>,
     >(
         &mut self,
         visitor: &mut V,
@@ -638,7 +708,10 @@ impl Element for Lifetime {
 
     fn accept_one_level<
         'a,
-        V: Visitor<'a, Self> + Visitor<'a, Type> + Visitor<'a, Constant>,
+        V: Visitor<'a, Self>
+            + Visitor<'a, Type>
+            + Visitor<'a, Constant>
+            + Visitor<'a, Instance>,
     >(
         &'a self,
         _: &mut V,
@@ -647,7 +720,7 @@ impl Element for Lifetime {
     }
 
     fn accept_one_level_mut<
-        V: Mutable<Self> + Mutable<Type> + Mutable<Constant>,
+        V: Mutable<Self> + Mutable<Type> + Mutable<Constant> + Mutable<Instance>,
     >(
         &mut self,
         _: &mut V,
@@ -657,7 +730,10 @@ impl Element for Lifetime {
 
     fn accept_single_async<
         'a,
-        V: AsyncVisitor<Self> + AsyncVisitor<Type> + AsyncVisitor<Constant>,
+        V: AsyncVisitor<Self>
+            + AsyncVisitor<Type>
+            + AsyncVisitor<Constant>
+            + AsyncVisitor<Instance>,
     >(
         &'a self,
         visitor: &'a mut V,
@@ -667,7 +743,10 @@ impl Element for Lifetime {
     }
 
     async fn accept_one_level_async<
-        V: AsyncVisitor<Self> + AsyncVisitor<Type> + AsyncVisitor<Constant>,
+        V: AsyncVisitor<Self>
+            + AsyncVisitor<Type>
+            + AsyncVisitor<Constant>
+            + AsyncVisitor<Instance>,
     >(
         &self,
         _: &mut V,
@@ -676,7 +755,10 @@ impl Element for Lifetime {
     }
 
     async fn accept_single_async_mut<
-        V: AsyncMutable<Self> + AsyncMutable<Type> + AsyncMutable<Constant>,
+        V: AsyncMutable<Self>
+            + AsyncMutable<Type>
+            + AsyncMutable<Constant>
+            + AsyncMutable<Instance>,
     >(
         &mut self,
         visitor: &mut V,
@@ -686,7 +768,10 @@ impl Element for Lifetime {
     }
 
     async fn accept_one_level_async_mut<
-        V: AsyncMutable<Self> + AsyncMutable<Type> + AsyncMutable<Constant>,
+        V: AsyncMutable<Self>
+            + AsyncMutable<Type>
+            + AsyncMutable<Constant>
+            + AsyncMutable<Instance>,
     >(
         &mut self,
         _: &mut V,
@@ -767,7 +852,10 @@ impl Element for Constant {
 
     fn accept_single<
         'a,
-        V: Visitor<'a, Lifetime> + Visitor<'a, Type> + Visitor<'a, Self>,
+        V: Visitor<'a, Lifetime>
+            + Visitor<'a, Type>
+            + Visitor<'a, Self>
+            + Visitor<'a, Instance>,
     >(
         &'a self,
         visitor: &mut V,
@@ -778,7 +866,7 @@ impl Element for Constant {
 
     fn accept_single_mut<
         'a,
-        V: Mutable<Lifetime> + Mutable<Type> + Mutable<Self>,
+        V: Mutable<Lifetime> + Mutable<Type> + Mutable<Self> + Mutable<Instance>,
     >(
         &mut self,
         visitor: &mut V,
@@ -789,7 +877,10 @@ impl Element for Constant {
 
     fn accept_single_recursive<
         'a,
-        V: Recursive<'a, Lifetime> + Recursive<'a, Type> + Recursive<'a, Self>,
+        V: Recursive<'a, Lifetime>
+            + Recursive<'a, Type>
+            + Recursive<'a, Self>
+            + Recursive<'a, Instance>,
     >(
         &'a self,
         visitor: &mut V,
@@ -801,7 +892,8 @@ impl Element for Constant {
     fn accept_single_recursive_mut<
         V: MutableRecursive<Lifetime>
             + MutableRecursive<Type>
-            + MutableRecursive<Self>,
+            + MutableRecursive<Self>
+            + MutableRecursive<Instance>,
     >(
         &mut self,
         visitor: &mut V,
@@ -812,7 +904,10 @@ impl Element for Constant {
 
     fn accept_one_level<
         'a,
-        V: Visitor<'a, Lifetime> + Visitor<'a, Type> + Visitor<'a, Self>,
+        V: Visitor<'a, Lifetime>
+            + Visitor<'a, Type>
+            + Visitor<'a, Self>
+            + Visitor<'a, Instance>,
     >(
         &'a self,
         visitor: &mut V,
@@ -831,7 +926,7 @@ impl Element for Constant {
     }
 
     fn accept_one_level_mut<
-        V: Mutable<Lifetime> + Mutable<Type> + Mutable<Self>,
+        V: Mutable<Lifetime> + Mutable<Type> + Mutable<Self> + Mutable<Instance>,
     >(
         &mut self,
         visitor: &mut V,
@@ -851,7 +946,10 @@ impl Element for Constant {
 
     fn accept_single_async<
         'a,
-        V: AsyncVisitor<Lifetime> + AsyncVisitor<Type> + AsyncVisitor<Self>,
+        V: AsyncVisitor<Lifetime>
+            + AsyncVisitor<Type>
+            + AsyncVisitor<Self>
+            + AsyncVisitor<Instance>,
     >(
         &'a self,
         visitor: &'a mut V,
@@ -861,7 +959,10 @@ impl Element for Constant {
     }
 
     async fn accept_one_level_async<
-        V: AsyncVisitor<Lifetime> + AsyncVisitor<Type> + AsyncVisitor<Self>,
+        V: AsyncVisitor<Lifetime>
+            + AsyncVisitor<Type>
+            + AsyncVisitor<Self>
+            + AsyncVisitor<Instance>,
     >(
         &self,
         visitor: &mut V,
@@ -881,7 +982,10 @@ impl Element for Constant {
     }
 
     async fn accept_single_async_mut<
-        V: AsyncMutable<Lifetime> + AsyncMutable<Type> + AsyncMutable<Self>,
+        V: AsyncMutable<Lifetime>
+            + AsyncMutable<Type>
+            + AsyncMutable<Self>
+            + AsyncMutable<Instance>,
     >(
         &mut self,
         visitor: &mut V,
@@ -891,7 +995,10 @@ impl Element for Constant {
     }
 
     async fn accept_one_level_async_mut<
-        V: AsyncMutable<Lifetime> + AsyncMutable<Type> + AsyncMutable<Self>,
+        V: AsyncMutable<Lifetime>
+            + AsyncMutable<Type>
+            + AsyncMutable<Self>
+            + AsyncMutable<Instance>,
     >(
         &mut self,
         visitor: &mut V,
@@ -911,114 +1018,304 @@ impl Element for Constant {
     }
 }
 
+macro_rules! implements_instance_ref {
+    (
+        $self:ident,
+        $visitor:ident,
+        $visit_type:ident,
+        $visit_lifetime:ident,
+        $visit_constant:ident,
+        $accept_one_level:ident
+        $(, $await:ident)?
+    ) => {
+        match $self {
+            Self::Parameter(_) => {
+                Err(VisitNonApplicationTermError)
+            }
+
+            Self::Symbol(term) => {
+                Ok(term.$accept_one_level::<Self, _>(
+                    $visitor,
+                )$(.$await)?)
+            }
+
+            Self::InstanceAssociated(term) => {
+                // Visit lifetimes in the generic arguments
+                for (idx, lifetime) in term.trait_associated_symbol_generic_arguments().lifetimes().iter().enumerate() {
+                    if !$visitor.$visit_lifetime(
+                        lifetime,
+                        SubLifetimeLocation::FromInstance(
+                            instance::SubLifetimeLocation::InstanceAssociatedGenericArguments(
+                                SubGenericArgumentsLocation::new(idx)
+                            )
+                        )
+                    )$(.$await)? {
+                        return Ok(false);
+                    }
+                }
+
+                // Visit types in the generic arguments
+                for (idx, ty) in term.trait_associated_symbol_generic_arguments().types().iter().enumerate() {
+                    if !$visitor.$visit_type(
+                        ty,
+                        SubTypeLocation::FromInstance(
+                            instance::SubTypeLocation::InstanceAssociatedGenericArguments(
+                                SubGenericArgumentsLocation::new(idx)
+                            )
+                        )
+                    )$(.$await)? {
+                        return Ok(false);
+                    }
+                }
+
+                // Visit constants in the generic arguments
+                for (idx, constant) in term.trait_associated_symbol_generic_arguments().constants().iter().enumerate() {
+                    if !$visitor.$visit_constant(
+                        constant,
+                        SubConstantLocation::FromInstance(
+                            instance::SubConstantLocation::InstanceAssociatedGenericArguments(
+                                SubGenericArgumentsLocation::new(idx)
+                            )
+                        )
+                    )$(.$await)? {
+                        return Ok(false);
+                    }
+                }
+
+                Ok(true)
+            }
+        }
+    };
+}
+
+macro_rules! implements_instance_mut {
+    (
+        $self:ident,
+        $visitor:ident,
+        $visit_type:ident,
+        $visit_lifetime:ident,
+        $visit_constant:ident,
+        $accept_one_level:ident
+        $(, $await:ident)?
+    ) => {
+        match $self {
+            Self::Parameter(_) => {
+                Err(VisitNonApplicationTermError)
+            }
+
+            Self::Symbol(term) => {
+                Ok(term.$accept_one_level::<Self, _>(
+                    $visitor,
+                )$(.$await)?)
+            }
+
+            Self::InstanceAssociated(term) => {
+                let generic_args = term.trait_associated_symbol_generic_arguments_mut();
+
+                // Visit lifetimes in the generic arguments
+                for (idx, lifetime) in generic_args.lifetimes_mut().iter_mut().enumerate() {
+                    if !$visitor.$visit_lifetime(
+                        lifetime,
+                        SubLifetimeLocation::FromInstance(
+                            instance::SubLifetimeLocation::InstanceAssociatedGenericArguments(
+                                SubGenericArgumentsLocation::new(idx)
+                            )
+                        )
+                    )$(.$await)? {
+                        return Ok(false);
+                    }
+                }
+
+                // Visit types in the generic arguments
+                for (idx, ty) in generic_args.types_mut().iter_mut().enumerate() {
+                    if !$visitor.$visit_type(
+                        ty,
+                        SubTypeLocation::FromInstance(
+                            instance::SubTypeLocation::InstanceAssociatedGenericArguments(
+                                SubGenericArgumentsLocation::new(idx)
+                            )
+                        )
+                    )$(.$await)? {
+                        return Ok(false);
+                    }
+                }
+
+                // Visit constants in the generic arguments
+                for (idx, constant) in generic_args.constants_mut().iter_mut().enumerate() {
+                    if !$visitor.$visit_constant(
+                        constant,
+                        SubConstantLocation::FromInstance(
+                            instance::SubConstantLocation::InstanceAssociatedGenericArguments(
+                                SubGenericArgumentsLocation::new(idx)
+                            )
+                        )
+                    )$(.$await)? {
+                        return Ok(false);
+                    }
+                }
+
+                Ok(true)
+            }
+        }
+    };
+}
+
 impl Element for Instance {
     type Location = SubInstanceLocation;
 
     fn accept_single<
         'a,
-        V: Visitor<'a, Lifetime> + Visitor<'a, Type> + Visitor<'a, Constant>,
+        V: Visitor<'a, Lifetime>
+            + Visitor<'a, Type>
+            + Visitor<'a, Constant>
+            + Visitor<'a, Self>,
     >(
         &'a self,
         visitor: &mut V,
         location: Self::Location,
     ) -> bool {
-        todo!()
+        visitor.visit(self, location)
     }
 
     fn accept_single_async<
         'a,
-        V: AsyncVisitor<Lifetime> + AsyncVisitor<Type> + AsyncVisitor<Constant>,
+        V: AsyncVisitor<Lifetime>
+            + AsyncVisitor<Type>
+            + AsyncVisitor<Constant>
+            + AsyncVisitor<Self>,
     >(
         &'a self,
         visitor: &'a mut V,
         location: Self::Location,
     ) -> impl Future<Output = bool> + 'a {
-        async move { todo!() }
+        visitor.visit(self, location)
     }
 
     fn accept_single_mut<
-        V: Mutable<Lifetime> + Mutable<Type> + Mutable<Constant>,
+        V: Mutable<Lifetime> + Mutable<Type> + Mutable<Constant> + Mutable<Self>,
     >(
         &mut self,
         visitor: &mut V,
         location: Self::Location,
     ) -> bool {
-        todo!()
+        visitor.visit(self, location)
     }
 
     fn accept_single_async_mut<
         'a,
-        V: AsyncMutable<Lifetime> + AsyncMutable<Type> + AsyncMutable<Constant>,
+        V: AsyncMutable<Lifetime>
+            + AsyncMutable<Type>
+            + AsyncMutable<Constant>
+            + AsyncMutable<Self>,
     >(
         &'a mut self,
         visitor: &'a mut V,
         location: Self::Location,
     ) -> impl Future<Output = bool> + 'a {
-        async move { todo!() }
+        visitor.visit(self, location)
     }
 
     fn accept_single_recursive<
         'a,
-        V: Recursive<'a, Lifetime> + Recursive<'a, Type> + Recursive<'a, Constant>,
+        V: Recursive<'a, Lifetime>
+            + Recursive<'a, Type>
+            + Recursive<'a, Constant>
+            + Recursive<'a, Self>,
     >(
         &'a self,
         visitor: &mut V,
         locations: impl Iterator<Item = TermLocation>,
     ) -> bool {
-        todo!()
+        visitor.visit(self, locations)
     }
 
     fn accept_single_recursive_mut<
         V: MutableRecursive<Lifetime>
             + MutableRecursive<Type>
-            + MutableRecursive<Constant>,
+            + MutableRecursive<Constant>
+            + MutableRecursive<Self>,
     >(
         &mut self,
         visitor: &mut V,
         locations: impl Iterator<Item = TermLocation>,
     ) -> bool {
-        todo!()
+        visitor.visit(self, locations)
     }
 
     fn accept_one_level<
         'a,
-        V: Visitor<'a, Lifetime> + Visitor<'a, Type> + Visitor<'a, Constant>,
+        V: Visitor<'a, Lifetime>
+            + Visitor<'a, Type>
+            + Visitor<'a, Constant>
+            + Visitor<'a, Self>,
     >(
         &'a self,
         visitor: &mut V,
     ) -> Result<bool, VisitNonApplicationTermError> {
-        todo!()
+        implements_instance_ref!(
+            self,
+            visitor,
+            visit,
+            visit,
+            visit,
+            accept_one_level
+        )
     }
 
-    fn accept_one_level_async<
-        'a,
-        V: AsyncVisitor<Lifetime> + AsyncVisitor<Type> + AsyncVisitor<Constant>,
+    async fn accept_one_level_async<
+        V: AsyncVisitor<Lifetime>
+            + AsyncVisitor<Type>
+            + AsyncVisitor<Constant>
+            + AsyncVisitor<Self>,
     >(
-        &'a self,
-        visitor: &'a mut V,
-    ) -> impl Future<Output = Result<bool, VisitNonApplicationTermError>> + Send + 'a
-    {
-        async move { todo!() }
+        &self,
+        visitor: &mut V,
+    ) -> Result<bool, VisitNonApplicationTermError> {
+        implements_instance_ref!(
+            self,
+            visitor,
+            visit,
+            visit,
+            visit,
+            accept_one_level_async,
+            await
+        )
     }
 
-    fn accept_one_level_async_mut<
-        'a,
-        V: AsyncMutable<Lifetime> + AsyncMutable<Type> + AsyncMutable<Constant>,
-    >(
-        &'a mut self,
-        visitor: &'a mut V,
-    ) -> impl Future<Output = Result<bool, VisitNonApplicationTermError>> + Send + 'a
-    {
-        async move { todo!() }
-    }
-
-    fn accept_one_level_mut<
-        V: Mutable<Lifetime> + Mutable<Type> + Mutable<Constant>,
+    async fn accept_one_level_async_mut<
+        V: AsyncMutable<Lifetime>
+            + AsyncMutable<Type>
+            + AsyncMutable<Constant>
+            + AsyncMutable<Self>,
     >(
         &mut self,
         visitor: &mut V,
     ) -> Result<bool, VisitNonApplicationTermError> {
-        todo!()
+        implements_instance_mut!(
+            self,
+            visitor,
+            visit,
+            visit,
+            visit,
+            accept_one_level_async_mut,
+            await
+        )
+    }
+
+    fn accept_one_level_mut<
+        V: Mutable<Lifetime> + Mutable<Type> + Mutable<Constant> + Mutable<Self>,
+    >(
+        &mut self,
+        visitor: &mut V,
+    ) -> Result<bool, VisitNonApplicationTermError> {
+        implements_instance_mut!(
+            self,
+            visitor,
+            visit,
+            visit,
+            visit,
+            accept_one_level_mut
+        )
     }
 }
 

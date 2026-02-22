@@ -64,6 +64,56 @@ pub struct InstanceAssociated {
     trait_associated_symbol_generic_arguments: GenericArguments,
 }
 
+impl InstanceAssociated {
+    /// Creates a new `InstanceAssociated`.
+    #[must_use]
+    pub const fn new(
+        instance: Box<Instance>,
+        trait_associated_symbol_id: Global<pernixc_symbol::ID>,
+        trait_associated_symbol_generic_arguments: GenericArguments,
+    ) -> Self {
+        Self {
+            instance,
+            trait_associated_symbol_id,
+            trait_associated_symbol_generic_arguments,
+        }
+    }
+
+    /// Returns a reference to the inner instance.
+    #[must_use]
+    pub fn instance(&self) -> &Instance { &self.instance }
+
+    /// Returns a mutable reference to the inner instance.
+    #[must_use]
+    pub fn instance_mut(&mut self) -> &mut Instance { &mut self.instance }
+
+    /// Returns the trait associated symbol ID.
+    #[must_use]
+    pub const fn trait_associated_symbol_id(
+        &self,
+    ) -> Global<pernixc_symbol::ID> {
+        self.trait_associated_symbol_id
+    }
+
+    /// Returns a reference to the generic arguments of the trait associated
+    /// symbol.
+    #[must_use]
+    pub const fn trait_associated_symbol_generic_arguments(
+        &self,
+    ) -> &GenericArguments {
+        &self.trait_associated_symbol_generic_arguments
+    }
+
+    /// Returns a mutable reference to the generic arguments of the trait
+    /// associated symbol.
+    #[must_use]
+    pub const fn trait_associated_symbol_generic_arguments_mut(
+        &mut self,
+    ) -> &mut GenericArguments {
+        &mut self.trait_associated_symbol_generic_arguments
+    }
+}
+
 /// An instance of a trait implementation.
 #[derive(
     Debug,

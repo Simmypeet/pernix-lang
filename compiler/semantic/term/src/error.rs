@@ -4,6 +4,7 @@ use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     constant::Constant,
+    instance::Instance,
     lifetime::Lifetime,
     sub_term::TermLocation,
     r#type::Type,
@@ -74,6 +75,17 @@ impl Recursive<'_, Constant> for ContainsErrorVisitor {
         } else {
             true
         }
+    }
+}
+
+impl Recursive<'_, Instance> for ContainsErrorVisitor {
+    fn visit(
+        &mut self,
+        _term: &Instance,
+        _: impl Iterator<Item = TermLocation>,
+    ) -> bool {
+        // Instance doesn't have an error variant
+        true
     }
 }
 

@@ -20,7 +20,10 @@ use crate::{
     instantiation::Instantiation,
     lifetime::Lifetime,
     matching::{Matching, Substructural},
-    sub_term::{SubConstantLocation, SubLifetimeLocation, SubTypeLocation},
+    sub_term::{
+        SubConstantLocation, SubInstanceLocation, SubLifetimeLocation,
+        SubTypeLocation,
+    },
     r#type::Type,
     visitor::{self, AsyncMutable, AsyncVisitor, Mutable, Visitor},
 };
@@ -57,17 +60,33 @@ impl GenericArguments {
     #[must_use]
     pub fn lifetimes(&self) -> &[Lifetime] { &self.lifetimes }
 
+    /// Returns a mutable reference to the lifetimes supplied to the term.
+    #[must_use]
+    pub fn lifetimes_mut(&mut self) -> &mut [Lifetime] { &mut self.lifetimes }
+
     /// Returns the types supplied to the term.
     #[must_use]
     pub fn types(&self) -> &[Type] { &self.types }
+
+    /// Returns a mutable reference to the types supplied to the term.
+    #[must_use]
+    pub fn types_mut(&mut self) -> &mut [Type] { &mut self.types }
 
     /// Returns the constants supplied to the term.
     #[must_use]
     pub fn constants(&self) -> &[Constant] { &self.constants }
 
+    /// Returns a mutable reference to the constants supplied to the term.
+    #[must_use]
+    pub fn constants_mut(&mut self) -> &mut [Constant] { &mut self.constants }
+
     /// Returns the instances supplied to the term.
     #[must_use]
     pub fn instances(&self) -> &[Instance] { &self.instancces }
+
+    /// Returns a mutable reference to the instances supplied to the term.
+    #[must_use]
+    pub fn instances_mut(&mut self) -> &mut [Instance] { &mut self.instancces }
 
     /// Constructs the generic arguments from the given generic parameters and
     /// instantiation.
@@ -674,6 +693,7 @@ macro_rules! implements_generic_arguments {
         $visit_type:ident,
         $visit_lifetime:ident,
         $visit_constant:ident,
+        $visit_instance:ident,
         $iter:ident,
         $map_idx:ident
         $(, $await:ident)?
@@ -705,6 +725,15 @@ macro_rules! implements_generic_arguments {
             }
         }
 
+        for (idx, instance) in $self.instancces.$iter().enumerate() {
+            if !$visitor.$visit_instance(
+                instance,
+                Into::<T::SubInstanceLocation>::into($map_idx(idx)).into(),
+            )$(.$await)? {
+                return false;
+            }
+        }
+
         true
     }};
 }
@@ -715,7 +744,10 @@ impl GenericArguments {
         'a,
         T: visitor::Element,
         Idx,
-        V: Visitor<'a, Lifetime> + Visitor<'a, Type> + Visitor<'a, Constant>,
+        V: Visitor<'a, Lifetime>
+            + Visitor<'a, Type>
+            + Visitor<'a, Constant>
+            + Visitor<'a, Instance>,
     >(
         &'a self,
         visitor: &mut V,
@@ -724,13 +756,15 @@ impl GenericArguments {
     where
         Idx: Into<T::SubConstantLocation>
             + Into<T::SubTypeLocation>
-            + Into<T::SubLifetimeLocation>,
+            + Into<T::SubLifetimeLocation>
+            + Into<T::SubInstanceLocation>,
         T::SubLifetimeLocation: Into<SubLifetimeLocation>,
         T::SubTypeLocation: Into<SubTypeLocation>,
         T::SubConstantLocation: Into<SubConstantLocation>,
+        T::SubInstanceLocation: Into<SubInstanceLocation>,
     {
         implements_generic_arguments!(
-            self, visitor, visit, visit, visit, iter, map_idx
+            self, visitor, visit, visit, visit, visit, iter, map_idx
         )
     }
 
@@ -738,7 +772,10 @@ impl GenericArguments {
     async fn accept_one_level_async<
         T: visitor::Element,
         Idx,
-        V: AsyncVisitor<Lifetime> + AsyncVisitor<Type> + AsyncVisitor<Constant>,
+        V: AsyncVisitor<Lifetime>
+            + AsyncVisitor<Type>
+            + AsyncVisitor<Constant>
+            + AsyncVisitor<Instance>,
     >(
         &self,
         visitor: &mut V,
@@ -747,13 +784,15 @@ impl GenericArguments {
     where
         Idx: Into<T::SubConstantLocation>
             + Into<T::SubTypeLocation>
-            + Into<T::SubLifetimeLocation>,
+            + Into<T::SubLifetimeLocation>
+            + Into<T::SubInstanceLocation>,
         T::SubLifetimeLocation: Into<SubLifetimeLocation>,
         T::SubTypeLocation: Into<SubTypeLocation>,
         T::SubConstantLocation: Into<SubConstantLocation>,
+        T::SubInstanceLocation: Into<SubInstanceLocation>,
     {
         implements_generic_arguments!(
-            self, visitor, visit, visit, visit, iter, map_idx, await
+            self, visitor, visit, visit, visit, visit, iter, map_idx, await
         )
     }
 
@@ -761,7 +800,10 @@ impl GenericArguments {
     fn accept_one_level_mut<
         T: visitor::Element,
         Idx,
-        V: Mutable<Lifetime> + Mutable<Type> + Mutable<Constant>,
+        V: Mutable<Lifetime>
+            + Mutable<Type>
+            + Mutable<Constant>
+            + Mutable<Instance>,
     >(
         &mut self,
         visitor: &mut V,
@@ -770,13 +812,15 @@ impl GenericArguments {
     where
         Idx: Into<T::SubConstantLocation>
             + Into<T::SubTypeLocation>
-            + Into<T::SubLifetimeLocation>,
+            + Into<T::SubLifetimeLocation>
+            + Into<T::SubInstanceLocation>,
         T::SubLifetimeLocation: Into<SubLifetimeLocation>,
         T::SubTypeLocation: Into<SubTypeLocation>,
         T::SubConstantLocation: Into<SubConstantLocation>,
+        T::SubInstanceLocation: Into<SubInstanceLocation>,
     {
         implements_generic_arguments!(
-            self, visitor, visit, visit, visit, iter_mut, map_idx
+            self, visitor, visit, visit, visit, visit, iter_mut, map_idx
         )
     }
 
@@ -784,7 +828,10 @@ impl GenericArguments {
     async fn accept_one_level_async_mut<
         T: visitor::Element,
         Idx,
-        V: AsyncMutable<Lifetime> + AsyncMutable<Type> + AsyncMutable<Constant>,
+        V: AsyncMutable<Lifetime>
+            + AsyncMutable<Type>
+            + AsyncMutable<Constant>
+            + AsyncMutable<Instance>,
     >(
         &mut self,
         visitor: &mut V,
@@ -793,13 +840,15 @@ impl GenericArguments {
     where
         Idx: Into<T::SubConstantLocation>
             + Into<T::SubTypeLocation>
-            + Into<T::SubLifetimeLocation>,
+            + Into<T::SubLifetimeLocation>
+            + Into<T::SubInstanceLocation>,
         T::SubLifetimeLocation: Into<SubLifetimeLocation>,
         T::SubTypeLocation: Into<SubTypeLocation>,
         T::SubConstantLocation: Into<SubConstantLocation>,
+        T::SubInstanceLocation: Into<SubInstanceLocation>,
     {
         implements_generic_arguments!(
-            self, visitor, visit, visit, visit, iter_mut, map_idx, await
+            self, visitor, visit, visit, visit, visit, iter_mut, map_idx, await
         )
     }
 }
@@ -830,7 +879,10 @@ impl Symbol {
     pub(crate) fn accept_one_level<
         'a,
         T: visitor::Element,
-        V: Visitor<'a, Lifetime> + Visitor<'a, Type> + Visitor<'a, Constant>,
+        V: Visitor<'a, Lifetime>
+            + Visitor<'a, Type>
+            + Visitor<'a, Constant>
+            + Visitor<'a, Instance>,
     >(
         &'a self,
         visitor: &mut V,
@@ -838,10 +890,12 @@ impl Symbol {
     where
         SubSymbolLocation: Into<T::SubConstantLocation>
             + Into<T::SubTypeLocation>
-            + Into<T::SubLifetimeLocation>,
+            + Into<T::SubLifetimeLocation>
+            + Into<T::SubInstanceLocation>,
         T::SubLifetimeLocation: Into<SubLifetimeLocation>,
         T::SubTypeLocation: Into<SubTypeLocation>,
         T::SubConstantLocation: Into<SubConstantLocation>,
+        T::SubInstanceLocation: Into<SubInstanceLocation>,
     {
         implements_symbol!(self, visitor, accept_one_level, T)
     }
@@ -849,7 +903,10 @@ impl Symbol {
     #[allow(clippy::trait_duplication_in_bounds)]
     pub(crate) async fn accept_one_level_async<
         T: visitor::Element,
-        V: AsyncVisitor<Lifetime> + AsyncVisitor<Type> + AsyncVisitor<Constant>,
+        V: AsyncVisitor<Lifetime>
+            + AsyncVisitor<Type>
+            + AsyncVisitor<Constant>
+            + AsyncVisitor<Instance>,
     >(
         &self,
         visitor: &mut V,
@@ -857,10 +914,12 @@ impl Symbol {
     where
         SubSymbolLocation: Into<T::SubConstantLocation>
             + Into<T::SubTypeLocation>
-            + Into<T::SubLifetimeLocation>,
+            + Into<T::SubLifetimeLocation>
+            + Into<T::SubInstanceLocation>,
         T::SubLifetimeLocation: Into<SubLifetimeLocation>,
         T::SubTypeLocation: Into<SubTypeLocation>,
         T::SubConstantLocation: Into<SubConstantLocation>,
+        T::SubInstanceLocation: Into<SubInstanceLocation>,
     {
         implements_symbol!(self, visitor, accept_one_level_async, T, await)
     }
@@ -868,7 +927,10 @@ impl Symbol {
     #[allow(clippy::trait_duplication_in_bounds)]
     pub(crate) fn accept_one_level_mut<
         T: visitor::Element,
-        V: Mutable<Lifetime> + Mutable<Type> + Mutable<Constant>,
+        V: Mutable<Lifetime>
+            + Mutable<Type>
+            + Mutable<Constant>
+            + Mutable<Instance>,
     >(
         &mut self,
         visitor: &mut V,
@@ -876,10 +938,12 @@ impl Symbol {
     where
         SubSymbolLocation: Into<T::SubConstantLocation>
             + Into<T::SubTypeLocation>
-            + Into<T::SubLifetimeLocation>,
+            + Into<T::SubLifetimeLocation>
+            + Into<T::SubInstanceLocation>,
         T::SubLifetimeLocation: Into<SubLifetimeLocation>,
         T::SubTypeLocation: Into<SubTypeLocation>,
         T::SubConstantLocation: Into<SubConstantLocation>,
+        T::SubInstanceLocation: Into<SubInstanceLocation>,
     {
         implements_symbol!(self, visitor, accept_one_level_mut, T)
     }
@@ -887,7 +951,10 @@ impl Symbol {
     #[allow(clippy::trait_duplication_in_bounds)]
     pub(crate) async fn accept_one_level_async_mut<
         T: visitor::Element,
-        V: AsyncMutable<Lifetime> + AsyncMutable<Type> + AsyncMutable<Constant>,
+        V: AsyncMutable<Lifetime>
+            + AsyncMutable<Type>
+            + AsyncMutable<Constant>
+            + AsyncMutable<Instance>,
     >(
         &mut self,
         visitor: &mut V,
@@ -895,10 +962,12 @@ impl Symbol {
     where
         SubSymbolLocation: Into<T::SubConstantLocation>
             + Into<T::SubTypeLocation>
-            + Into<T::SubLifetimeLocation>,
+            + Into<T::SubLifetimeLocation>
+            + Into<T::SubInstanceLocation>,
         T::SubLifetimeLocation: Into<SubLifetimeLocation>,
         T::SubTypeLocation: Into<SubTypeLocation>,
         T::SubConstantLocation: Into<SubConstantLocation>,
+        T::SubInstanceLocation: Into<SubInstanceLocation>,
     {
         implements_symbol!(self, visitor, accept_one_level_async_mut, T, await)
     }
@@ -938,7 +1007,10 @@ impl AssociatedSymbol {
     pub(crate) fn accept_one_level<
         'a,
         T: visitor::Element,
-        V: Visitor<'a, Lifetime> + Visitor<'a, Type> + Visitor<'a, Constant>,
+        V: Visitor<'a, Lifetime>
+            + Visitor<'a, Type>
+            + Visitor<'a, Constant>
+            + Visitor<'a, Instance>,
     >(
         &'a self,
         visitor: &mut V,
@@ -946,10 +1018,12 @@ impl AssociatedSymbol {
     where
         SubMemberSymbolLocation: Into<T::SubConstantLocation>
             + Into<T::SubTypeLocation>
-            + Into<T::SubLifetimeLocation>,
+            + Into<T::SubLifetimeLocation>
+            + Into<T::SubInstanceLocation>,
         T::SubLifetimeLocation: Into<SubLifetimeLocation>,
         T::SubTypeLocation: Into<SubTypeLocation>,
         T::SubConstantLocation: Into<SubConstantLocation>,
+        T::SubInstanceLocation: Into<SubInstanceLocation>,
     {
         implements_associated_symbol!(self, visitor, accept_one_level, T)
     }
@@ -957,7 +1031,10 @@ impl AssociatedSymbol {
     #[allow(clippy::trait_duplication_in_bounds)]
     pub(crate) async fn accept_one_level_async<
         T: visitor::Element,
-        V: AsyncVisitor<Lifetime> + AsyncVisitor<Type> + AsyncVisitor<Constant>,
+        V: AsyncVisitor<Lifetime>
+            + AsyncVisitor<Type>
+            + AsyncVisitor<Constant>
+            + AsyncVisitor<Instance>,
     >(
         &self,
         visitor: &mut V,
@@ -965,10 +1042,12 @@ impl AssociatedSymbol {
     where
         SubMemberSymbolLocation: Into<T::SubConstantLocation>
             + Into<T::SubTypeLocation>
-            + Into<T::SubLifetimeLocation>,
+            + Into<T::SubLifetimeLocation>
+            + Into<T::SubInstanceLocation>,
         T::SubLifetimeLocation: Into<SubLifetimeLocation>,
         T::SubTypeLocation: Into<SubTypeLocation>,
         T::SubConstantLocation: Into<SubConstantLocation>,
+        T::SubInstanceLocation: Into<SubInstanceLocation>,
     {
         implements_associated_symbol!(
             self,
@@ -982,7 +1061,10 @@ impl AssociatedSymbol {
     #[allow(clippy::trait_duplication_in_bounds)]
     pub(crate) fn accept_one_level_mut<
         T: visitor::Element,
-        V: Mutable<Lifetime> + Mutable<Type> + Mutable<Constant>,
+        V: Mutable<Lifetime>
+            + Mutable<Type>
+            + Mutable<Constant>
+            + Mutable<Instance>,
     >(
         &mut self,
         visitor: &mut V,
@@ -990,10 +1072,12 @@ impl AssociatedSymbol {
     where
         SubMemberSymbolLocation: Into<T::SubConstantLocation>
             + Into<T::SubTypeLocation>
-            + Into<T::SubLifetimeLocation>,
+            + Into<T::SubLifetimeLocation>
+            + Into<T::SubInstanceLocation>,
         T::SubLifetimeLocation: Into<SubLifetimeLocation>,
         T::SubTypeLocation: Into<SubTypeLocation>,
         T::SubConstantLocation: Into<SubConstantLocation>,
+        T::SubInstanceLocation: Into<SubInstanceLocation>,
     {
         implements_associated_symbol!(self, visitor, accept_one_level_mut, T)
     }
@@ -1001,7 +1085,10 @@ impl AssociatedSymbol {
     #[allow(clippy::trait_duplication_in_bounds)]
     pub(crate) async fn accept_one_level_async_mut<
         T: visitor::Element,
-        V: AsyncMutable<Lifetime> + AsyncMutable<Type> + AsyncMutable<Constant>,
+        V: AsyncMutable<Lifetime>
+            + AsyncMutable<Type>
+            + AsyncMutable<Constant>
+            + AsyncMutable<Instance>,
     >(
         &mut self,
         visitor: &mut V,
@@ -1009,10 +1096,12 @@ impl AssociatedSymbol {
     where
         SubMemberSymbolLocation: Into<T::SubConstantLocation>
             + Into<T::SubTypeLocation>
-            + Into<T::SubLifetimeLocation>,
+            + Into<T::SubLifetimeLocation>
+            + Into<T::SubInstanceLocation>,
         T::SubLifetimeLocation: Into<SubLifetimeLocation>,
         T::SubTypeLocation: Into<SubTypeLocation>,
         T::SubConstantLocation: Into<SubConstantLocation>,
+        T::SubInstanceLocation: Into<SubInstanceLocation>,
     {
         implements_associated_symbol!(
             self,
