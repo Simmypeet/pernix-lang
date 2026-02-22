@@ -2,6 +2,7 @@
 
 mod compatible;
 mod constant_type;
+mod instance_associated_type_equality;
 mod marker;
 mod outlives;
 mod tuple;
@@ -9,6 +10,7 @@ mod tuple;
 pub use compatible::Compatible;
 pub use constant_type::ConstantType;
 use enum_as_inner::EnumAsInner;
+pub use instance_associated_type_equality::InstanceAssociatedTypeEquality;
 pub use marker::{Negative as NegativeMarker, Positive as PositiveMarker};
 pub use outlives::Outlives;
 use qbice::{Decode, Encode, StableHash};
@@ -42,6 +44,7 @@ pub enum Predicate {
     TupleType(Tuple<Type>),
     PositiveMarker(PositiveMarker),
     NegativeMarker(NegativeMarker),
+    InstanceAssociatedTypeEquality(InstanceAssociatedTypeEquality),
 }
 
 impl Predicate {
@@ -55,6 +58,7 @@ impl Predicate {
             Self::TupleType(tuple) => tuple.contains_error(),
             Self::PositiveMarker(marker) => marker.contains_error(),
             Self::NegativeMarker(marker) => marker.contains_error(),
+            Self::InstanceAssociatedTypeEquality(eq) => eq.contains_error(),
         }
     }
 
@@ -77,6 +81,9 @@ impl Predicate {
             Self::TupleType(tuple) => tuple.instantiate(substitution),
             Self::PositiveMarker(marker) => marker.instantiate(substitution),
             Self::NegativeMarker(marker) => marker.instantiate(substitution),
+            Self::InstanceAssociatedTypeEquality(eq) => {
+                eq.instantiate(substitution);
+            }
         }
     }
 }
@@ -100,6 +107,9 @@ impl crate::display::Display for Predicate {
             Self::TupleType(tuple) => tuple.fmt(engine, formatter).await,
             Self::PositiveMarker(marker) => marker.fmt(engine, formatter).await,
             Self::NegativeMarker(marker) => marker.fmt(engine, formatter).await,
+            Self::InstanceAssociatedTypeEquality(eq) => {
+                eq.fmt(engine, formatter).await
+            }
         }
     }
 }

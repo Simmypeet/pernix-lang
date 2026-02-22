@@ -10,12 +10,13 @@ use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     constant::Constant,
-    error::Error,
+    error::{Error, contains_error},
     generic_arguments::{
         GenericArguments, SubGenericArgumentsLocation, SubSymbolLocation,
         Symbol,
     },
     generic_parameters::{InstanceParameterID, get_generic_parameters},
+    instantiation::Instantiation,
     lifetime::Lifetime,
     matching::{Match, Matching, Substructural},
     sub_term::{self, Location, SubTerm, TermLocation},
@@ -95,24 +96,6 @@ impl InstanceAssociated {
         &self,
     ) -> Global<pernixc_symbol::ID> {
         self.trait_associated_symbol_id
-    }
-
-    /// Returns a reference to the generic arguments of the trait associated
-    /// symbol.
-    #[must_use]
-    pub const fn trait_associated_symbol_generic_arguments(
-        &self,
-    ) -> &GenericArguments {
-        &self.trait_associated_symbol_generic_arguments
-    }
-
-    /// Returns a mutable reference to the generic arguments of the trait
-    /// associated symbol.
-    #[must_use]
-    pub const fn trait_associated_symbol_generic_arguments_mut(
-        &mut self,
-    ) -> &mut GenericArguments {
-        &mut self.trait_associated_symbol_generic_arguments
     }
 
     /// Returns a reference to the lifetime at the given location.
@@ -201,30 +184,6 @@ impl InstanceAssociated {
             .get_mut(index.0)
     }
 
-    /// Returns a slice of the lifetimes in the generic arguments.
-    #[must_use]
-    pub fn lifetimes(&self) -> &[Lifetime] {
-        self.trait_associated_symbol_generic_arguments.lifetimes()
-    }
-
-    /// Returns a slice of the types in the generic arguments.
-    #[must_use]
-    pub fn types(&self) -> &[Type] {
-        self.trait_associated_symbol_generic_arguments.types()
-    }
-
-    /// Returns a slice of the constants in the generic arguments.
-    #[must_use]
-    pub fn constants(&self) -> &[Constant] {
-        self.trait_associated_symbol_generic_arguments.constants()
-    }
-
-    /// Returns a slice of the instances in the generic arguments.
-    #[must_use]
-    pub fn instances(&self) -> &[Instance] {
-        self.trait_associated_symbol_generic_arguments.instances()
-    }
-
     /// Performs substructural matching between two `InstanceAssociated` terms.
     ///
     /// This method creates `Matching` entries for all sub-terms (lifetimes,
@@ -269,10 +228,20 @@ impl InstanceAssociated {
         I: Copy,
     {
         // Check that generic arguments have matching lengths
-        if self.lifetimes().len() != other.lifetimes().len()
-            || self.types().len() != other.types().len()
-            || self.constants().len() != other.constants().len()
-            || self.instances().len() != other.instances().len()
+        if self.trait_associated_symbol_generic_arguments.lifetimes().len()
+            != other.trait_associated_symbol_generic_arguments.lifetimes().len()
+            || self.trait_associated_symbol_generic_arguments.types().len()
+                != other.trait_associated_symbol_generic_arguments.types().len()
+            || self.trait_associated_symbol_generic_arguments.constants().len()
+                != other
+                    .trait_associated_symbol_generic_arguments
+                    .constants()
+                    .len()
+            || self.trait_associated_symbol_generic_arguments.instances().len()
+                != other
+                    .trait_associated_symbol_generic_arguments
+                    .instances()
+                    .len()
         {
             return None;
         }
@@ -280,8 +249,17 @@ impl InstanceAssociated {
         let mut substructural = Substructural::default();
 
         // Match lifetimes
-        for (idx, (l, r)) in
-            self.lifetimes().iter().zip(other.lifetimes().iter()).enumerate()
+        for (idx, (l, r)) in self
+            .trait_associated_symbol_generic_arguments
+            .lifetimes()
+            .iter()
+            .zip(
+                other
+                    .trait_associated_symbol_generic_arguments
+                    .lifetimes()
+                    .iter(),
+            )
+            .enumerate()
         {
             let loc = to_lifetime_loc(idx);
             substructural.lifetimes_mut().push(Matching::new(
@@ -293,8 +271,12 @@ impl InstanceAssociated {
         }
 
         // Match types
-        for (idx, (l, r)) in
-            self.types().iter().zip(other.types().iter()).enumerate()
+        for (idx, (l, r)) in self
+            .trait_associated_symbol_generic_arguments
+            .types()
+            .iter()
+            .zip(other.trait_associated_symbol_generic_arguments.types().iter())
+            .enumerate()
         {
             let loc = to_type_loc(idx);
             substructural.types_mut().push(Matching::new(
@@ -306,8 +288,17 @@ impl InstanceAssociated {
         }
 
         // Match constants
-        for (idx, (l, r)) in
-            self.constants().iter().zip(other.constants().iter()).enumerate()
+        for (idx, (l, r)) in self
+            .trait_associated_symbol_generic_arguments
+            .constants()
+            .iter()
+            .zip(
+                other
+                    .trait_associated_symbol_generic_arguments
+                    .constants()
+                    .iter(),
+            )
+            .enumerate()
         {
             let loc = to_constant_loc(idx);
             substructural.constants_mut().push(Matching::new(
@@ -319,8 +310,17 @@ impl InstanceAssociated {
         }
 
         // Match instances in generic arguments
-        for (idx, (l, r)) in
-            self.instances().iter().zip(other.instances().iter()).enumerate()
+        for (idx, (l, r)) in self
+            .trait_associated_symbol_generic_arguments
+            .instances()
+            .iter()
+            .zip(
+                other
+                    .trait_associated_symbol_generic_arguments
+                    .instances()
+                    .iter(),
+            )
+            .enumerate()
         {
             let loc = to_instance_generic_args_loc(idx);
             substructural.instances_mut().push(Matching::new(
@@ -340,6 +340,21 @@ impl InstanceAssociated {
         ));
 
         Some(substructural)
+    }
+
+    /// Applies the mapping from the given instantiation to this
+    /// `InstanceAssociated`.
+    pub fn instantiate(&mut self, instantiation: &Instantiation) {
+        self.trait_associated_symbol_generic_arguments
+            .instantiate(instantiation);
+        instantiation.instantiate(self.instance_mut());
+    }
+
+    /// Checks if any term in this `InstanceAssociated` contains an error.
+    #[must_use]
+    pub fn contains_error(&self) -> bool {
+        self.trait_associated_symbol_generic_arguments.contains_error()
+            || contains_error(&*self.instance)
     }
 }
 
