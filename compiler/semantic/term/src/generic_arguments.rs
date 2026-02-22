@@ -82,9 +82,9 @@ impl GenericArguments {
     ) -> Self {
         let mut generic_arguments = Self::default();
 
-        for lifetime_id in generic_parameters.lifetime_order() {
+        for lifetime_id in generic_parameters.lifetime_parameter_order() {
             let lifetime_parameter = Lifetime::Parameter(
-                LifetimeParameterID::new(global_id, *lifetime_id),
+                LifetimeParameterID::new(global_id, lifetime_id),
             );
 
             let lifetime = instantiation
@@ -94,9 +94,9 @@ impl GenericArguments {
             generic_arguments.lifetimes.push(lifetime.clone());
         }
 
-        for type_id in generic_parameters.type_order() {
+        for type_id in generic_parameters.type_parameter_order() {
             let type_parameter =
-                Type::Parameter(TypeParameterID::new(global_id, *type_id));
+                Type::Parameter(TypeParameterID::new(global_id, type_id));
 
             let r#type =
                 instantiation.get_type_mapping(&type_parameter).unwrap();
@@ -104,9 +104,9 @@ impl GenericArguments {
             generic_arguments.types.push(r#type.clone());
         }
 
-        for constant_id in generic_parameters.constant_order() {
+        for constant_id in generic_parameters.constant_parameter_order() {
             let constant_parameter = Constant::Parameter(
-                ConstantParameterID::new(global_id, *constant_id),
+                ConstantParameterID::new(global_id, constant_id),
             );
 
             let constant = instantiation

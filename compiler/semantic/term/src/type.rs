@@ -11,7 +11,9 @@ use crate::{
     generic_arguments::{
         AssociatedSymbol, SubMemberSymbolLocation, SubSymbolLocation, Symbol,
     },
-    generic_parameters::{TypeParameterID, get_generic_parameters},
+    generic_parameters::{
+        GenericParameter, TypeParameterID, get_generic_parameters,
+    },
     inference,
     lifetime::Lifetime,
     matching::{Match, Matching, Substructural},
@@ -964,7 +966,9 @@ impl crate::display::Display for Type {
                 write!(
                     formatter,
                     "{}",
-                    &*generic_parameters.types()[member_id.id].name
+                    &**generic_parameters
+                        .get_type_parameter(member_id.id)
+                        .name()
                 )
             }
 

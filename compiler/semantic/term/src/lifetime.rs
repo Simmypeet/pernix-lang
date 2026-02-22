@@ -15,7 +15,9 @@ use crate::{
     Never,
     constant::Constant,
     error::Error,
-    generic_parameters::{LifetimeParameterID, get_generic_parameters},
+    generic_parameters::{
+        GenericParameter, LifetimeParameterID, get_generic_parameters,
+    },
     inference,
     matching::{Match, Matching, Substructural},
     sub_term::{Location, SubTerm},
@@ -264,7 +266,11 @@ impl crate::display::Display for LifetimeParameterID {
         let generic_parameters =
             engine.get_generic_parameters(self.parent_id).await;
 
-        write!(formatter, "'{}", &*generic_parameters.lifetimes()[self.id].name)
+        write!(
+            formatter,
+            "'{}",
+            &**generic_parameters.get_lifetime_parameter(self.id).name()
+        )
     }
 }
 

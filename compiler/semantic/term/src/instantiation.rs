@@ -158,11 +158,11 @@ impl Instantiation {
         generic_parameters: &GenericParameters,
     ) -> Result<(), MismatchedGenericArgumentCountError> {
         if generic_arguments.types().len()
-            != generic_parameters.type_order().len()
+            != generic_parameters.type_parameter_order().len()
         {
             return Err(MismatchedGenericArgumentCountError {
                 generic_id,
-                expected: generic_parameters.type_order().len(),
+                expected: generic_parameters.type_parameter_order().len(),
                 found: generic_arguments.types().len(),
                 kind: GenericKind::Type,
                 generic_arguments,
@@ -170,11 +170,11 @@ impl Instantiation {
         }
 
         if generic_arguments.lifetimes().len()
-            != generic_parameters.lifetime_order().len()
+            != generic_parameters.lifetime_parameter_order().len()
         {
             return Err(MismatchedGenericArgumentCountError {
                 generic_id,
-                expected: generic_parameters.lifetime_order().len(),
+                expected: generic_parameters.lifetime_parameter_order().len(),
                 found: generic_arguments.lifetimes().len(),
                 kind: GenericKind::Lifetime,
                 generic_arguments,
@@ -182,11 +182,11 @@ impl Instantiation {
         }
 
         if generic_arguments.constants().len()
-            != generic_parameters.constant_order().len()
+            != generic_parameters.constant_parameter_order().len()
         {
             return Err(MismatchedGenericArgumentCountError {
                 generic_id,
-                expected: generic_parameters.constant_order().len(),
+                expected: generic_parameters.constant_parameter_order().len(),
                 found: generic_arguments.constants().len(),
                 kind: GenericKind::Constant,
                 generic_arguments,
@@ -197,19 +197,19 @@ impl Instantiation {
 
         self.append_from_arguments(
             lifetimes.into_iter(),
-            generic_parameters.lifetime_order().iter().copied(),
+            generic_parameters.lifetime_parameter_order(),
             generic_id,
         );
 
         self.append_from_arguments(
             types.into_iter(),
-            generic_parameters.type_order().iter().copied(),
+            generic_parameters.type_parameter_order(),
             generic_id,
         );
 
         self.append_from_arguments(
             constants.into_iter(),
-            generic_parameters.constant_order().iter().copied(),
+            generic_parameters.constant_parameter_order(),
             generic_id,
         );
 
@@ -230,28 +230,26 @@ impl Instantiation {
         to_parameters: &GenericParameters,
     ) {
         self.append_from_arguments(
-            from_parameters.lifetime_order().iter().copied().map(|x| {
+            from_parameters.lifetime_parameter_order().map(|x| {
                 Lifetime::Parameter(LifetimeParameterID::new(from_id, x))
             }),
-            to_parameters.lifetime_order().iter().copied(),
+            to_parameters.lifetime_parameter_order(),
             to_id,
         );
 
         self.append_from_arguments(
             from_parameters
-                .type_order()
-                .iter()
-                .copied()
+                .type_parameter_order()
                 .map(|x| Type::Parameter(TypeParameterID::new(from_id, x))),
-            to_parameters.type_order().iter().copied(),
+            to_parameters.type_parameter_order(),
             to_id,
         );
 
         self.append_from_arguments(
-            from_parameters.constant_order().iter().copied().map(|x| {
+            from_parameters.constant_parameter_order().map(|x| {
                 Constant::Parameter(ConstantParameterID::new(from_id, x))
             }),
-            to_parameters.constant_order().iter().copied(),
+            to_parameters.constant_parameter_order(),
             to_id,
         );
     }
@@ -268,9 +266,7 @@ impl Instantiation {
     ) -> GenericArguments {
         GenericArguments::new(
             parameters
-                .lifetime_order()
-                .iter()
-                .copied()
+                .lifetime_parameter_order()
                 .map(|x| {
                     let lifetime_parameter = Lifetime::Parameter(
                         LifetimeParameterID::new(global_id, x),
@@ -280,9 +276,7 @@ impl Instantiation {
                 })
                 .collect(),
             parameters
-                .type_order()
-                .iter()
-                .copied()
+                .type_parameter_order()
                 .map(|x| {
                     let type_parameter =
                         Type::Parameter(TypeParameterID::new(global_id, x));
@@ -291,9 +285,7 @@ impl Instantiation {
                 })
                 .collect(),
             parameters
-                .constant_order()
-                .iter()
-                .copied()
+                .constant_parameter_order()
                 .map(|x| {
                     let constant_parameter = Constant::Parameter(
                         ConstantParameterID::new(global_id, x),

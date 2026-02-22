@@ -11,7 +11,9 @@ use qbice::{Decode, Encode, StableHash};
 use crate::{
     Never,
     error::Error,
-    generic_parameters::{ConstantParameterID, get_generic_parameters},
+    generic_parameters::{
+        ConstantParameterID, GenericParameter, get_generic_parameters,
+    },
     inference,
     lifetime::Lifetime,
     matching::{Match, Matching, Substructural},
@@ -397,16 +399,16 @@ impl Match for Constant {
                 if lhs.variant_id == rhs.variant_id =>
             {
                 match (&lhs.associated_value, &rhs.associated_value) {
-                    (Some(lhs), Some(rhs)) => Some(Substructural::new(
-                        Vec::new(),
-                        Vec::new(),
-                        vec![Matching::new(
-                            lhs.deref().clone(),
-                            rhs.deref().clone(),
-                            SubConstantLocation::Enum,
-                            SubConstantLocation::Enum,
-                        )],
-                    )),
+                    (Some(lhs), Some(rhs)) => {
+                        Some(Substructural::new(Vec::new(), Vec::new(), vec![
+                            Matching::new(
+                                lhs.deref().clone(),
+                                rhs.deref().clone(),
+                                SubConstantLocation::Enum,
+                                SubConstantLocation::Enum,
+                            ),
+                        ]))
+                    }
                     (None, None) => Some(Substructural::default()),
                     _ => None,
                 }
@@ -418,18 +420,19 @@ impl Match for Constant {
                 Some(Substructural::new(
                     Vec::new(),
                     Vec::new(),
-                    lhs
-                        .elements
+                    lhs.elements
                         .iter()
                         .cloned()
                         .zip(rhs.elements.iter().cloned())
                         .enumerate()
-                        .map(|(idx, (lhs, rhs))| Matching::new(
-                            lhs,
-                            rhs,
-                            SubConstantLocation::Array(idx),
-                            SubConstantLocation::Array(idx),
-                        ))
+                        .map(|(idx, (lhs, rhs))| {
+                            Matching::new(
+                                lhs,
+                                rhs,
+                                SubConstantLocation::Array(idx),
+                                SubConstantLocation::Array(idx),
+                            )
+                        })
                         .collect(),
                 ))
             }
@@ -498,7 +501,9 @@ impl crate::display::Display for Constant {
                 write!(
                     formatter,
                     "{}",
-                    &*generic_parameters.constants()[member_id.id].name
+                    &**generic_parameters
+                        .get_constant_parameter(member_id.id)
+                        .name()
                 )
             }
 
