@@ -314,6 +314,37 @@ impl TryFrom<Type> for Tuple {
     }
 }
 
+/// Represents a sub-term location within a [`Type::InstanceAssociated`]
+/// variant's generic arguments.
+///
+/// This is used for accessing lifetimes, types, and constants within the
+/// `trait_associated_symbol_generic_arguments` field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SubInstanceAssociatedGenericArgsLocation(usize);
+
+impl SubInstanceAssociatedGenericArgsLocation {
+    /// Creates a new `SubInstanceAssociatedGenericArgsLocation` with the given
+    /// index.
+    #[must_use]
+    pub const fn new(index: usize) -> Self { Self(index) }
+}
+
+/// Represents a sub-instance location within a [`Type::InstanceAssociated`]
+/// variant.
+///
+/// This is used specifically for [`SubInstanceLocation`] to handle both the
+/// direct `instance` field and instances within the generic arguments.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
+)]
+pub enum SubInstanceAssociatedInstanceLocation {
+    /// The direct `instance` field of the [`InstanceAssociated`].
+    Instance,
+
+    /// An instance within the `trait_associated_symbol_generic_arguments`.
+    GenericArguments(usize),
+}
+
 /// The location pointing to a sub-lifetime term in a type.
 #[derive(
     Debug,
@@ -338,6 +369,10 @@ pub enum SubLifetimeLocation {
     /// A lifetime argument in a [`Type::AssociatedSymbol`] variant.
     #[from]
     AssociatedSymbol(SubAssociatedSymbolLocation),
+
+    /// A lifetime argument in a [`Type::InstanceAssociated`] variant.
+    #[from]
+    InstanceAssociated(SubInstanceAssociatedGenericArgsLocation),
 }
 
 impl From<SubLifetimeLocation> for TermLocation {
@@ -362,6 +397,15 @@ impl Location<Type, Lifetime> for SubLifetimeLocation {
                 Self::AssociatedSymbol(location),
             ) => member_symbol.get_term_mut(location).unwrap(),
 
+            (
+                Type::InstanceAssociated(instance_associated),
+                Self::InstanceAssociated(location),
+            ) => instance_associated
+                .trait_associated_symbol_generic_arguments_mut()
+                .lifetimes_mut()
+                .get_mut(location.0)
+                .unwrap(),
+
             term => panic!(
                 "invalid sub-lifetime location: {self:?} for term: {term:?}"
             ),
@@ -385,6 +429,15 @@ impl Location<Type, Lifetime> for SubLifetimeLocation {
                 Self::AssociatedSymbol(location),
             ) => member_symbol.get_term(location).cloned(),
 
+            (
+                Type::InstanceAssociated(instance_associated),
+                Self::InstanceAssociated(location),
+            ) => instance_associated
+                .trait_associated_symbol_generic_arguments()
+                .lifetimes()
+                .get(location.0)
+                .cloned(),
+
             _ => None,
         }
     }
@@ -404,6 +457,14 @@ impl Location<Type, Lifetime> for SubLifetimeLocation {
                 Self::AssociatedSymbol(location),
             ) => member_symbol.get_term(location),
 
+            (
+                Type::InstanceAssociated(instance_associated),
+                Self::InstanceAssociated(location),
+            ) => instance_associated
+                .trait_associated_symbol_generic_arguments()
+                .lifetimes()
+                .get(location.0),
+
             _ => None,
         }
     }
@@ -422,6 +483,14 @@ impl Location<Type, Lifetime> for SubLifetimeLocation {
                 Type::AssociatedSymbol(member_symbol),
                 Self::AssociatedSymbol(location),
             ) => member_symbol.get_term_mut(location),
+
+            (
+                Type::InstanceAssociated(instance_associated),
+                Self::InstanceAssociated(location),
+            ) => instance_associated
+                .trait_associated_symbol_generic_arguments_mut()
+                .lifetimes_mut()
+                .get_mut(location.0),
 
             _ => None,
         }
@@ -469,6 +538,10 @@ pub enum SubTypeLocation {
     /// The return type or a parameter of a function signature.
     #[from]
     FunctionSignature(SubFunctionSignatureLocation),
+
+    /// A type argument in a [`Type::InstanceAssociated`] type.
+    #[from]
+    InstanceAssociated(SubInstanceAssociatedGenericArgsLocation),
 }
 
 impl From<SubTypeLocation> for TermLocation {
@@ -515,6 +588,15 @@ impl Location<Type, Type> for SubTypeLocation {
                 }
             }
             .unwrap(),
+
+            (
+                Self::InstanceAssociated(location),
+                Type::InstanceAssociated(instance_associated),
+            ) => instance_associated
+                .trait_associated_symbol_generic_arguments_mut()
+                .types_mut()
+                .get_mut(location.0)
+                .unwrap(),
 
             term => {
                 panic!("invalid sub-type location: {self:?} for term: {term:?}")
@@ -565,6 +647,15 @@ impl Location<Type, Type> for SubTypeLocation {
                 }
             },
 
+            (
+                Self::InstanceAssociated(location),
+                Type::InstanceAssociated(instance_associated),
+            ) => instance_associated
+                .trait_associated_symbol_generic_arguments()
+                .types()
+                .get(location.0)
+                .cloned(),
+
             _ => None,
         }
     }
@@ -605,6 +696,14 @@ impl Location<Type, Type> for SubTypeLocation {
                     Some(&*signature.return_type)
                 }
             },
+
+            (
+                Self::InstanceAssociated(location),
+                Type::InstanceAssociated(instance_associated),
+            ) => instance_associated
+                .trait_associated_symbol_generic_arguments()
+                .types()
+                .get(location.0),
 
             _ => None,
         }
@@ -649,6 +748,14 @@ impl Location<Type, Type> for SubTypeLocation {
                 }
             },
 
+            (
+                Self::InstanceAssociated(location),
+                Type::InstanceAssociated(instance_associated),
+            ) => instance_associated
+                .trait_associated_symbol_generic_arguments_mut()
+                .types_mut()
+                .get_mut(location.0),
+
             _ => None,
         }
     }
@@ -678,6 +785,10 @@ pub enum SubConstantLocation {
 
     /// The [`Array::length`] of an array.
     Array,
+
+    /// A constant argument in a [`Type::InstanceAssociated`] type.
+    #[from]
+    InstanceAssociated(SubInstanceAssociatedGenericArgsLocation),
 }
 
 impl From<SubConstantLocation> for TermLocation {
@@ -700,6 +811,15 @@ impl Location<Type, Constant> for SubConstantLocation {
                 Type::AssociatedSymbol(member_symbol),
             ) => member_symbol.get_term_mut(location).unwrap(),
 
+            (
+                Self::InstanceAssociated(location),
+                Type::InstanceAssociated(instance_associated),
+            ) => instance_associated
+                .trait_associated_symbol_generic_arguments_mut()
+                .constants_mut()
+                .get_mut(location.0)
+                .unwrap(),
+
             term => panic!(
                 "invalid sub-constant location: {self:?} for term: {term:?}"
             ),
@@ -721,6 +841,15 @@ impl Location<Type, Constant> for SubConstantLocation {
                 Type::AssociatedSymbol(member_symbol),
             ) => member_symbol.get_term(location).cloned(),
 
+            (
+                Self::InstanceAssociated(location),
+                Type::InstanceAssociated(instance_associated),
+            ) => instance_associated
+                .trait_associated_symbol_generic_arguments()
+                .constants()
+                .get(location.0)
+                .cloned(),
+
             _ => None,
         }
     }
@@ -738,6 +867,14 @@ impl Location<Type, Constant> for SubConstantLocation {
                 Type::AssociatedSymbol(member_symbol),
             ) => member_symbol.get_term(location),
 
+            (
+                Self::InstanceAssociated(location),
+                Type::InstanceAssociated(instance_associated),
+            ) => instance_associated
+                .trait_associated_symbol_generic_arguments()
+                .constants()
+                .get(location.0),
+
             _ => None,
         }
     }
@@ -754,6 +891,14 @@ impl Location<Type, Constant> for SubConstantLocation {
                 Self::AssociatedSymbol(location),
                 Type::AssociatedSymbol(member_symbol),
             ) => member_symbol.get_term_mut(location),
+
+            (
+                Self::InstanceAssociated(location),
+                Type::InstanceAssociated(instance_associated),
+            ) => instance_associated
+                .trait_associated_symbol_generic_arguments_mut()
+                .constants_mut()
+                .get_mut(location.0),
 
             _ => None,
         }
@@ -781,6 +926,10 @@ pub enum SubInstanceLocation {
     /// An instance argument in a [`Type::AssociatedSymbol`] variant.
     #[from]
     AssociatedSymbol(SubAssociatedSymbolLocation),
+
+    /// An instance argument in a [`Type::InstanceAssociated`] variant.
+    #[from]
+    InstanceAssociated(SubInstanceAssociatedInstanceLocation),
 }
 
 impl From<SubInstanceLocation> for TermLocation {
@@ -791,22 +940,46 @@ impl From<SubInstanceLocation> for TermLocation {
 
 impl Location<Type, Instance> for SubInstanceLocation {
     fn assign_sub_term(self, term: &mut Type, sub_term: Instance) {
-        let reference = match (self, term) {
+        match (self, term) {
             (Self::Symbol(location), Type::Symbol(symbol)) => {
-                symbol.get_term_mut(location).unwrap()
+                *symbol.get_term_mut(location).unwrap() = sub_term;
             }
 
             (
                 Self::AssociatedSymbol(location),
                 Type::AssociatedSymbol(member_symbol),
-            ) => member_symbol.get_term_mut(location).unwrap(),
+            ) => {
+                *member_symbol.get_term_mut(location).unwrap() = sub_term;
+            }
+
+            (
+                Self::InstanceAssociated(
+                    SubInstanceAssociatedInstanceLocation::Instance,
+                ),
+                Type::InstanceAssociated(instance_associated),
+            ) => {
+                *instance_associated.instance_mut() = sub_term;
+            }
+
+            (
+                Self::InstanceAssociated(
+                    SubInstanceAssociatedInstanceLocation::GenericArguments(
+                        idx,
+                    ),
+                ),
+                Type::InstanceAssociated(instance_associated),
+            ) => {
+                *instance_associated
+                    .trait_associated_symbol_generic_arguments_mut()
+                    .instances_mut()
+                    .get_mut(idx)
+                    .unwrap() = sub_term;
+            }
 
             term => panic!(
                 "invalid sub-instance location: {self:?} for term: {term:?}"
             ),
-        };
-
-        *reference = sub_term;
+        }
     }
 
     fn get_sub_term(self, term: &Type) -> Option<Instance> {
@@ -819,6 +992,26 @@ impl Location<Type, Instance> for SubInstanceLocation {
                 Self::AssociatedSymbol(location),
                 Type::AssociatedSymbol(member_symbol),
             ) => member_symbol.get_term(location).cloned(),
+
+            (
+                Self::InstanceAssociated(
+                    SubInstanceAssociatedInstanceLocation::Instance,
+                ),
+                Type::InstanceAssociated(instance_associated),
+            ) => Some(instance_associated.instance().clone()),
+
+            (
+                Self::InstanceAssociated(
+                    SubInstanceAssociatedInstanceLocation::GenericArguments(
+                        idx,
+                    ),
+                ),
+                Type::InstanceAssociated(instance_associated),
+            ) => instance_associated
+                .trait_associated_symbol_generic_arguments()
+                .instances()
+                .get(idx)
+                .cloned(),
 
             _ => None,
         }
@@ -835,6 +1028,25 @@ impl Location<Type, Instance> for SubInstanceLocation {
                 Type::AssociatedSymbol(member_symbol),
             ) => member_symbol.get_term(location),
 
+            (
+                Self::InstanceAssociated(
+                    SubInstanceAssociatedInstanceLocation::Instance,
+                ),
+                Type::InstanceAssociated(instance_associated),
+            ) => Some(instance_associated.instance()),
+
+            (
+                Self::InstanceAssociated(
+                    SubInstanceAssociatedInstanceLocation::GenericArguments(
+                        idx,
+                    ),
+                ),
+                Type::InstanceAssociated(instance_associated),
+            ) => instance_associated
+                .trait_associated_symbol_generic_arguments()
+                .instances()
+                .get(idx),
+
             _ => None,
         }
     }
@@ -849,6 +1061,25 @@ impl Location<Type, Instance> for SubInstanceLocation {
                 Self::AssociatedSymbol(location),
                 Type::AssociatedSymbol(member_symbol),
             ) => member_symbol.get_term_mut(location),
+
+            (
+                Self::InstanceAssociated(
+                    SubInstanceAssociatedInstanceLocation::Instance,
+                ),
+                Type::InstanceAssociated(instance_associated),
+            ) => Some(instance_associated.instance_mut()),
+
+            (
+                Self::InstanceAssociated(
+                    SubInstanceAssociatedInstanceLocation::GenericArguments(
+                        idx,
+                    ),
+                ),
+                Type::InstanceAssociated(instance_associated),
+            ) => instance_associated
+                .trait_associated_symbol_generic_arguments_mut()
+                .instances_mut()
+                .get_mut(idx),
 
             _ => None,
         }
@@ -1005,6 +1236,115 @@ impl Match for Type {
                     ),
                     SubTypeLocation::FunctionSignature(
                         SubFunctionSignatureLocation::ReturnType,
+                    ),
+                ));
+
+                Some(substructural)
+            }
+
+            (Self::InstanceAssociated(lhs), Self::InstanceAssociated(rhs))
+                if lhs.trait_associated_symbol_id()
+                    == rhs.trait_associated_symbol_id() =>
+            {
+                let lhs_args = lhs.trait_associated_symbol_generic_arguments();
+                let rhs_args = rhs.trait_associated_symbol_generic_arguments();
+
+                // Check that generic arguments have matching lengths
+                if lhs_args.lifetimes().len() != rhs_args.lifetimes().len()
+                    || lhs_args.types().len() != rhs_args.types().len()
+                    || lhs_args.constants().len() != rhs_args.constants().len()
+                    || lhs_args.instances().len() != rhs_args.instances().len()
+                {
+                    return None;
+                }
+
+                let mut substructural = Substructural::default();
+
+                // Match lifetimes
+                for (idx, (l, r)) in lhs_args
+                    .lifetimes()
+                    .iter()
+                    .zip(rhs_args.lifetimes().iter())
+                    .enumerate()
+                {
+                    substructural.lifetimes_mut().push(Matching::new(
+                        l.clone(),
+                        r.clone(),
+                        SubLifetimeLocation::InstanceAssociated(
+                            SubInstanceAssociatedGenericArgsLocation::new(idx),
+                        ),
+                        SubLifetimeLocation::InstanceAssociated(
+                            SubInstanceAssociatedGenericArgsLocation::new(idx),
+                        ),
+                    ));
+                }
+
+                // Match types
+                for (idx, (l, r)) in lhs_args
+                    .types()
+                    .iter()
+                    .zip(rhs_args.types().iter())
+                    .enumerate()
+                {
+                    substructural.types_mut().push(Matching::new(
+                        l.clone(),
+                        r.clone(),
+                        SubTypeLocation::InstanceAssociated(
+                            SubInstanceAssociatedGenericArgsLocation::new(idx),
+                        ),
+                        SubTypeLocation::InstanceAssociated(
+                            SubInstanceAssociatedGenericArgsLocation::new(idx),
+                        ),
+                    ));
+                }
+
+                // Match constants
+                for (idx, (l, r)) in lhs_args
+                    .constants()
+                    .iter()
+                    .zip(rhs_args.constants().iter())
+                    .enumerate()
+                {
+                    substructural.constants_mut().push(Matching::new(
+                        l.clone(),
+                        r.clone(),
+                        SubConstantLocation::InstanceAssociated(
+                            SubInstanceAssociatedGenericArgsLocation::new(idx),
+                        ),
+                        SubConstantLocation::InstanceAssociated(
+                            SubInstanceAssociatedGenericArgsLocation::new(idx),
+                        ),
+                    ));
+                }
+
+                // Match instances in generic arguments
+                for (idx, (l, r)) in lhs_args
+                    .instances()
+                    .iter()
+                    .zip(rhs_args.instances().iter())
+                    .enumerate()
+                {
+                    substructural.instances_mut().push(Matching::new(
+                        l.clone(),
+                        r.clone(),
+                        SubInstanceLocation::InstanceAssociated(
+                            SubInstanceAssociatedInstanceLocation::GenericArguments(idx),
+                        ),
+                        SubInstanceLocation::InstanceAssociated(
+                            SubInstanceAssociatedInstanceLocation::GenericArguments(idx),
+                        ),
+                    ));
+                }
+
+                // Match the parent instance
+                substructural.instances_mut().push(Matching::new(
+                    lhs.instance().clone(),
+                    rhs.instance().clone(),
+                    SubInstanceLocation::InstanceAssociated(
+                        SubInstanceAssociatedInstanceLocation::Instance,
+                    ),
+                    SubInstanceLocation::InstanceAssociated(
+                        SubInstanceAssociatedInstanceLocation::Instance,
                     ),
                 ));
 

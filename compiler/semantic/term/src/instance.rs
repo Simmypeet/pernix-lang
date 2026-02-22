@@ -19,6 +19,7 @@ use crate::{
     matching::{Match, Matching, Substructural},
     sub_term::{self, Location, SubTerm, TermLocation},
     r#type::Type,
+    visitor::Element,
 };
 
 #[cfg(any(test, feature = "arbitrary"))]
