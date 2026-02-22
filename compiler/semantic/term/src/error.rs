@@ -81,11 +81,15 @@ impl Recursive<'_, Constant> for ContainsErrorVisitor {
 impl Recursive<'_, Instance> for ContainsErrorVisitor {
     fn visit(
         &mut self,
-        _term: &Instance,
+        term: &Instance,
         _: impl Iterator<Item = TermLocation>,
     ) -> bool {
-        // Instance doesn't have an error variant
-        true
+        if term.is_error() {
+            self.contains_error = true;
+            false
+        } else {
+            true
+        }
     }
 }
 

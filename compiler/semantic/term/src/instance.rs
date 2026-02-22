@@ -10,6 +10,7 @@ use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     constant::Constant,
+    error::Error,
     generic_arguments::{
         GenericArguments, SubGenericArgumentsLocation, SubSymbolLocation,
         Symbol,
@@ -353,6 +354,7 @@ impl InstanceAssociated {
     Encode,
     Decode,
     StableHash,
+    EnumAsInner,
 )]
 pub enum Instance {
     /// Directly refers to an `instance` symbol being defined on module level.
@@ -376,6 +378,9 @@ pub enum Instance {
     /// In the above example, `I::Inner` is an instance associated with the
     /// instance parameter `I`.
     InstanceAssociated(InstanceAssociated),
+
+    /// Represents an erroneous instance term, used for error recovery.
+    Error(Error),
 }
 
 impl From<InstanceParameterID> for Instance {
@@ -460,6 +465,7 @@ impl crate::display::Display for Instance {
                 ))
                 .await
             }
+            Self::Error(_) => write!(formatter, "{{error}}"),
         }
     }
 }
