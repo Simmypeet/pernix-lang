@@ -19,6 +19,7 @@ use crate::{
         GenericParameter, LifetimeParameterID, get_generic_parameters,
     },
     inference,
+    instance::Instance,
     matching::{Match, Matching, Substructural},
     sub_term::{Location, SubTerm},
     r#type::Type,
@@ -215,10 +216,25 @@ impl Location<Lifetime, Constant> for Never {
     }
 }
 
+impl Location<Lifetime, Instance> for Never {
+    fn assign_sub_term(self, _: &mut Lifetime, _: Instance) { match self {} }
+
+    fn get_sub_term(self, _: &Lifetime) -> Option<Instance> { match self {} }
+
+    fn get_sub_term_ref(self, _: &Lifetime) -> Option<&Instance> {
+        match self {}
+    }
+
+    fn get_sub_term_mut(self, _: &mut Lifetime) -> Option<&mut Instance> {
+        match self {}
+    }
+}
+
 impl SubTerm for Lifetime {
     type SubTypeLocation = Never;
     type SubConstantLocation = Never;
     type SubLifetimeLocation = Never;
+    type SubInstanceLocation = Never;
     type ThisSubTermLocation = Never;
 }
 

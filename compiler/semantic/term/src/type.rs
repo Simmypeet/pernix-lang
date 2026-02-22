@@ -15,6 +15,7 @@ use crate::{
         GenericParameter, TypeParameterID, get_generic_parameters,
     },
     inference,
+    instance::{Instance, InstanceAssociated},
     lifetime::Lifetime,
     matching::{Match, Matching, Substructural},
     sub_term::{self, Location, SubTerm, TermLocation},
@@ -256,6 +257,8 @@ pub enum Type {
     Tuple(Tuple),
     #[from]
     Phantom(Phantom),
+    #[from]
+    InstanceAssociated(InstanceAssociated),
     #[from]
     MemberSymbol(AssociatedSymbol),
     #[from]
@@ -756,10 +759,106 @@ impl Location<Type, Constant> for SubConstantLocation {
     }
 }
 
+/// The location pointing to a sub-instance term in a type.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::From,
+    EnumAsInner,
+)]
+pub enum SubInstanceLocation {
+    /// The index of instance argument in a [`Type::Symbol`] type.
+    #[from]
+    Symbol(SubSymbolLocation),
+
+    /// An instance argument in a [`Type::MemberSymbol`] variant.
+    #[from]
+    MemberSymbol(SubMemberSymbolLocation),
+}
+
+impl From<SubInstanceLocation> for TermLocation {
+    fn from(value: SubInstanceLocation) -> Self {
+        Self::Instance(sub_term::SubInstanceLocation::FromType(value))
+    }
+}
+
+impl Location<Type, Instance> for SubInstanceLocation {
+    fn assign_sub_term(self, term: &mut Type, sub_term: Instance) {
+        let reference = match (self, term) {
+            (Self::Symbol(location), Type::Symbol(symbol)) => {
+                symbol.get_term_mut(location).unwrap()
+            }
+
+            (
+                Self::MemberSymbol(location),
+                Type::MemberSymbol(member_symbol),
+            ) => member_symbol.get_term_mut(location).unwrap(),
+
+            term => panic!(
+                "invalid sub-instance location: {self:?} for term: {term:?}"
+            ),
+        };
+
+        *reference = sub_term;
+    }
+
+    fn get_sub_term(self, term: &Type) -> Option<Instance> {
+        match (self, term) {
+            (Self::Symbol(location), Type::Symbol(symbol)) => {
+                symbol.get_term(location).cloned()
+            }
+
+            (
+                Self::MemberSymbol(location),
+                Type::MemberSymbol(member_symbol),
+            ) => member_symbol.get_term(location).cloned(),
+
+            _ => None,
+        }
+    }
+
+    fn get_sub_term_ref(self, term: &Type) -> Option<&Instance> {
+        match (self, term) {
+            (Self::Symbol(location), Type::Symbol(symbol)) => {
+                symbol.get_term(location)
+            }
+
+            (
+                Self::MemberSymbol(location),
+                Type::MemberSymbol(member_symbol),
+            ) => member_symbol.get_term(location),
+
+            _ => None,
+        }
+    }
+
+    fn get_sub_term_mut(self, term: &mut Type) -> Option<&mut Instance> {
+        match (self, term) {
+            (Self::Symbol(location), Type::Symbol(symbol)) => {
+                symbol.get_term_mut(location)
+            }
+
+            (
+                Self::MemberSymbol(location),
+                Type::MemberSymbol(member_symbol),
+            ) => member_symbol.get_term_mut(location),
+
+            _ => None,
+        }
+    }
+}
+
 impl SubTerm for Type {
     type SubLifetimeLocation = SubLifetimeLocation;
     type SubTypeLocation = SubTypeLocation;
     type SubConstantLocation = SubConstantLocation;
+    type SubInstanceLocation = SubInstanceLocation;
     type ThisSubTermLocation = SubTypeLocation;
 }
 
@@ -1038,6 +1137,10 @@ impl crate::display::Display for Type {
 
                 Box::pin(function_signature.return_type.fmt(engine, formatter))
                     .await
+            }
+
+            Self::InstanceAssociated(instance_associated) => {
+                Box::pin(instance_associated.fmt(engine, formatter)).await
             }
 
             Self::Error(_) => {

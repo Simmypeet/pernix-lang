@@ -205,7 +205,20 @@ impl Instantiation {
             });
         }
 
-        let (lifetimes, types, constants) = generic_arguments.into_arguments();
+        if generic_arguments.instances().len()
+            != generic_parameters.instance_parameter_order().len()
+        {
+            return Err(MismatchedGenericArgumentCountError {
+                generic_id,
+                expected: generic_parameters.instance_parameter_order().len(),
+                found: generic_arguments.instances().len(),
+                kind: GenericKind::Instance,
+                generic_arguments,
+            });
+        }
+
+        let (lifetimes, types, constants, instances) =
+            generic_arguments.into_arguments();
 
         self.append_from_arguments(
             lifetimes.into_iter(),
@@ -222,6 +235,12 @@ impl Instantiation {
         self.append_from_arguments(
             constants.into_iter(),
             generic_parameters.constant_parameter_order(),
+            generic_id,
+        );
+
+        self.append_from_arguments(
+            instances.into_iter(),
+            generic_parameters.instance_parameter_order(),
             generic_id,
         );
 
@@ -262,6 +281,14 @@ impl Instantiation {
                 Constant::Parameter(ConstantParameterID::new(from_id, x))
             }),
             to_parameters.constant_parameter_order(),
+            to_id,
+        );
+
+        self.append_from_arguments(
+            from_parameters.instance_parameter_order().map(|x| {
+                Instance::Parameter(InstanceParameterID::new(from_id, x))
+            }),
+            to_parameters.instance_parameter_order(),
             to_id,
         );
     }
@@ -453,4 +480,12 @@ impl Element for Constant {
     }
 }
 
-impl GenericArguments {}
+impl Element for Instance {
+    fn get(instantiation: &Instantiation) -> &BTreeMap<Self, Self> {
+        &instantiation.instances
+    }
+
+    fn get_mut(instantiation: &mut Instantiation) -> &mut BTreeMap<Self, Self> {
+        &mut instantiation.instances
+    }
+}

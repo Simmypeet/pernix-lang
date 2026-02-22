@@ -14,7 +14,7 @@ use crate::{
     constant::Constant,
     generic_parameters::{
         ConstantParameterID, GenericKind, GenericParameters,
-        LifetimeParameterID, TypeParameterID,
+        InstanceParameterID, LifetimeParameterID, TypeParameterID,
     },
     instance::Instance,
     instantiation::Instantiation,
@@ -117,6 +117,18 @@ impl GenericArguments {
             generic_arguments.constants.push(constant.clone());
         }
 
+        for instance_id in generic_parameters.instance_parameter_order() {
+            let instance_parameter = Instance::Parameter(
+                InstanceParameterID::new(global_id, instance_id),
+            );
+
+            let instance = instantiation
+                .get_instance_mapping(&instance_parameter)
+                .unwrap();
+
+            generic_arguments.instancces.push(instance.clone());
+        }
+
         generic_arguments
     }
 
@@ -135,11 +147,18 @@ impl GenericArguments {
         for constant in &mut self.constants {
             instantiation.instantiate(constant);
         }
+
+        for instance in &mut self.instancces {
+            instantiation.instantiate(instance);
+        }
     }
+
     /// Destructures the generic arguments into its components.
     #[must_use]
-    pub fn into_arguments(self) -> (Vec<Lifetime>, Vec<Type>, Vec<Constant>) {
-        (self.lifetimes, self.types, self.constants)
+    pub fn into_arguments(
+        self,
+    ) -> (Vec<Lifetime>, Vec<Type>, Vec<Constant>, Vec<Instance>) {
+        (self.lifetimes, self.types, self.constants, self.instancces)
     }
 
     /// Checks if the generic arguments are empty.
@@ -156,6 +175,42 @@ impl GenericArguments {
         self.lifetimes.len() == other.lifetimes.len()
             && self.types.len() == other.types.len()
             && self.constants.len() == other.constants.len()
+    }
+}
+
+/// Represents a sub-term location where the sub-term is stored as a generic
+/// arguments.
+///
+/// The `usize` represents the index of the sub-term in the generic arguments.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
+pub struct SubGenericArgumentsLocation(usize);
+
+impl GenericArguments {
+    /// Returns a mutable reference to a particular sub-term of this generic
+    /// arguments.
+    ///
+    /// Returns `None` if the location is invalid.
+    #[must_use]
+    pub fn get_term_mut<T: Element>(
+        &mut self,
+        location: SubGenericArgumentsLocation,
+    ) -> Option<&mut T> {
+        let generic_arguments = T::get_mut(self);
+
+        generic_arguments.get_mut(location.0)
+    }
+
+    /// Returns a reference to a particular sub-term of this generic arguments.
+    ///
+    /// Returns `None` if the location is invalid.
+    #[must_use]
+    pub fn get_term<T: Element>(
+        &self,
+        location: SubGenericArgumentsLocation,
+    ) -> Option<&T> {
+        let generic_arguments = T::get(self);
+
+        generic_arguments.get(location.0)
     }
 }
 
@@ -292,6 +347,18 @@ impl sealed::Sealed for Constant {
 }
 
 impl Element for Constant {}
+
+impl sealed::Sealed for Instance {
+    fn get(generic_arguments: &GenericArguments) -> &[Self] {
+        &generic_arguments.instancces
+    }
+
+    fn get_mut(generic_arguments: &mut GenericArguments) -> &mut Vec<Self> {
+        &mut generic_arguments.instancces
+    }
+}
+
+impl Element for Instance {}
 
 /// Represents a term where the a symbol is supplied with generic arguments
 /// (e.g., `symbol[ARGS]`).

@@ -9,7 +9,9 @@ use super::sub_term::{
 use crate::{
     Never, TermRef,
     constant::{self, Constant},
+    instance::Instance,
     lifetime::Lifetime,
+    sub_term::SubInstanceLocation,
     r#type::{self, SubFunctionSignatureLocation, Type},
 };
 
@@ -363,7 +365,8 @@ macro_rules! implements_type {
         $(, $await:ident)?
     ) => {
         match $self {
-            Self::Error(_) | Self::Primitive(_) | Self::Parameter(_) | Self::Inference(_) => {
+            Self::Error(_) | Self::Primitive(_) | Self::Parameter(_) | Self::Inference(_)
+            | Self::InstanceAssociated(_) => {
                 Err(VisitNonApplicationTermError)
             }
 
@@ -905,6 +908,117 @@ impl Element for Constant {
             [&mut],
             await
         )
+    }
+}
+
+impl Element for Instance {
+    type Location = SubInstanceLocation;
+
+    fn accept_single<
+        'a,
+        V: Visitor<'a, Lifetime> + Visitor<'a, Type> + Visitor<'a, Constant>,
+    >(
+        &'a self,
+        visitor: &mut V,
+        location: Self::Location,
+    ) -> bool {
+        todo!()
+    }
+
+    fn accept_single_async<
+        'a,
+        V: AsyncVisitor<Lifetime> + AsyncVisitor<Type> + AsyncVisitor<Constant>,
+    >(
+        &'a self,
+        visitor: &'a mut V,
+        location: Self::Location,
+    ) -> impl Future<Output = bool> + 'a {
+        async move { todo!() }
+    }
+
+    fn accept_single_mut<
+        V: Mutable<Lifetime> + Mutable<Type> + Mutable<Constant>,
+    >(
+        &mut self,
+        visitor: &mut V,
+        location: Self::Location,
+    ) -> bool {
+        todo!()
+    }
+
+    fn accept_single_async_mut<
+        'a,
+        V: AsyncMutable<Lifetime> + AsyncMutable<Type> + AsyncMutable<Constant>,
+    >(
+        &'a mut self,
+        visitor: &'a mut V,
+        location: Self::Location,
+    ) -> impl Future<Output = bool> + 'a {
+        async move { todo!() }
+    }
+
+    fn accept_single_recursive<
+        'a,
+        V: Recursive<'a, Lifetime> + Recursive<'a, Type> + Recursive<'a, Constant>,
+    >(
+        &'a self,
+        visitor: &mut V,
+        locations: impl Iterator<Item = TermLocation>,
+    ) -> bool {
+        todo!()
+    }
+
+    fn accept_single_recursive_mut<
+        V: MutableRecursive<Lifetime>
+            + MutableRecursive<Type>
+            + MutableRecursive<Constant>,
+    >(
+        &mut self,
+        visitor: &mut V,
+        locations: impl Iterator<Item = TermLocation>,
+    ) -> bool {
+        todo!()
+    }
+
+    fn accept_one_level<
+        'a,
+        V: Visitor<'a, Lifetime> + Visitor<'a, Type> + Visitor<'a, Constant>,
+    >(
+        &'a self,
+        visitor: &mut V,
+    ) -> Result<bool, VisitNonApplicationTermError> {
+        todo!()
+    }
+
+    fn accept_one_level_async<
+        'a,
+        V: AsyncVisitor<Lifetime> + AsyncVisitor<Type> + AsyncVisitor<Constant>,
+    >(
+        &'a self,
+        visitor: &'a mut V,
+    ) -> impl Future<Output = Result<bool, VisitNonApplicationTermError>> + Send + 'a
+    {
+        async move { todo!() }
+    }
+
+    fn accept_one_level_async_mut<
+        'a,
+        V: AsyncMutable<Lifetime> + AsyncMutable<Type> + AsyncMutable<Constant>,
+    >(
+        &'a mut self,
+        visitor: &'a mut V,
+    ) -> impl Future<Output = Result<bool, VisitNonApplicationTermError>> + Send + 'a
+    {
+        async move { todo!() }
+    }
+
+    fn accept_one_level_mut<
+        V: Mutable<Lifetime> + Mutable<Type> + Mutable<Constant>,
+    >(
+        &mut self,
+        visitor: &mut V,
+    ) -> Result<bool, VisitNonApplicationTermError> {
+        todo!()
     }
 }
 

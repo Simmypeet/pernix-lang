@@ -2,14 +2,23 @@
 
 use std::fmt::Write;
 
+use enum_as_inner::EnumAsInner;
 use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::name::get_name;
 use pernixc_target::Global;
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
-    generic_arguments::{GenericArguments, Symbol},
+    constant::Constant,
+    generic_arguments::{
+        GenericArguments, SubGenericArgumentsLocation, SubSymbolLocation,
+        Symbol,
+    },
     generic_parameters::{InstanceParameterID, get_generic_parameters},
+    lifetime::Lifetime,
+    matching::{Match, Matching, Substructural},
+    sub_term::{self, Location, SubTerm, TermLocation},
+    r#type::Type,
 };
 
 #[cfg(any(test, feature = "arbitrary"))]
@@ -92,6 +101,10 @@ pub enum Instance {
     InstanceAssociated(InstanceAssociated),
 }
 
+impl From<InstanceParameterID> for Instance {
+    fn from(param_id: InstanceParameterID) -> Self { Self::Parameter(param_id) }
+}
+
 impl crate::display::Display for InstanceParameterID {
     async fn fmt(
         &self,
@@ -171,5 +184,533 @@ impl crate::display::Display for Instance {
                 .await
             }
         }
+    }
+}
+
+/// Represents a sub-term location where the sub-term is stored within an
+/// [`InstanceAssociated`] term.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
+)]
+pub enum SubInstanceAssociatedLocation {
+    /// The inner instance of the [`InstanceAssociated`].
+    Instance,
+
+    /// The index of the sub-term in the generic arguments of the trait
+    /// associated symbol.
+    GenericArguments(SubGenericArgumentsLocation),
+}
+
+/// The location pointing to a sub-lifetime term in an instance.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::From,
+    EnumAsInner,
+)]
+pub enum SubLifetimeLocation {
+    /// The index of lifetime argument in an [`Instance::Symbol`] variant.
+    #[from]
+    Symbol(SubSymbolLocation),
+
+    /// A lifetime argument in an [`Instance::InstanceAssociated`]'s generic
+    /// arguments.
+    InstanceAssociatedGenericArguments(SubGenericArgumentsLocation),
+}
+
+impl From<SubLifetimeLocation> for TermLocation {
+    fn from(value: SubLifetimeLocation) -> Self {
+        Self::Lifetime(sub_term::SubLifetimeLocation::FromInstance(value))
+    }
+}
+
+impl Location<Instance, Lifetime> for SubLifetimeLocation {
+    fn assign_sub_term(self, term: &mut Instance, sub_term: Lifetime) {
+        let reference = match (term, self) {
+            (Instance::Symbol(symbol), Self::Symbol(location)) => {
+                symbol.get_term_mut(location).unwrap()
+            }
+
+            (
+                Instance::InstanceAssociated(instance_associated),
+                Self::InstanceAssociatedGenericArguments(location),
+            ) => instance_associated
+                .trait_associated_symbol_generic_arguments
+                .get_term_mut(location)
+                .unwrap(),
+
+            term => panic!(
+                "invalid sub-lifetime location: {self:?} for term: {term:?}"
+            ),
+        };
+
+        *reference = sub_term;
+    }
+
+    fn get_sub_term(self, term: &Instance) -> Option<Lifetime> {
+        match (term, self) {
+            (Instance::Symbol(symbol), Self::Symbol(location)) => {
+                symbol.get_term(location).cloned()
+            }
+
+            (
+                Instance::InstanceAssociated(instance_associated),
+                Self::InstanceAssociatedGenericArguments(location),
+            ) => instance_associated
+                .trait_associated_symbol_generic_arguments
+                .get_term(location)
+                .cloned(),
+
+            _ => None,
+        }
+    }
+
+    fn get_sub_term_ref(self, term: &Instance) -> Option<&Lifetime> {
+        match (term, self) {
+            (Instance::Symbol(symbol), Self::Symbol(location)) => {
+                symbol.get_term(location)
+            }
+
+            (
+                Instance::InstanceAssociated(instance_associated),
+                Self::InstanceAssociatedGenericArguments(location),
+            ) => instance_associated
+                .trait_associated_symbol_generic_arguments
+                .get_term(location),
+
+            _ => None,
+        }
+    }
+
+    fn get_sub_term_mut(self, term: &mut Instance) -> Option<&mut Lifetime> {
+        match (term, self) {
+            (Instance::Symbol(symbol), Self::Symbol(location)) => {
+                symbol.get_term_mut(location)
+            }
+
+            (
+                Instance::InstanceAssociated(instance_associated),
+                Self::InstanceAssociatedGenericArguments(location),
+            ) => instance_associated
+                .trait_associated_symbol_generic_arguments
+                .get_term_mut(location),
+
+            _ => None,
+        }
+    }
+}
+
+/// The location pointing to a sub-type term in an instance.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::From,
+    EnumAsInner,
+)]
+pub enum SubTypeLocation {
+    /// The index of type argument in an [`Instance::Symbol`] variant.
+    #[from]
+    Symbol(SubSymbolLocation),
+
+    /// A type argument in an [`Instance::InstanceAssociated`]'s generic
+    /// arguments.
+    InstanceAssociatedGenericArguments(SubGenericArgumentsLocation),
+}
+
+impl From<SubTypeLocation> for TermLocation {
+    fn from(value: SubTypeLocation) -> Self {
+        Self::Type(sub_term::SubTypeLocation::FromInstance(value))
+    }
+}
+
+impl Location<Instance, Type> for SubTypeLocation {
+    fn assign_sub_term(self, term: &mut Instance, sub_term: Type) {
+        let reference = match (term, self) {
+            (Instance::Symbol(symbol), Self::Symbol(location)) => {
+                symbol.get_term_mut(location).unwrap()
+            }
+
+            (
+                Instance::InstanceAssociated(instance_associated),
+                Self::InstanceAssociatedGenericArguments(location),
+            ) => instance_associated
+                .trait_associated_symbol_generic_arguments
+                .get_term_mut(location)
+                .unwrap(),
+
+            term => {
+                panic!("invalid sub-type location: {self:?} for term: {term:?}")
+            }
+        };
+
+        *reference = sub_term;
+    }
+
+    fn get_sub_term(self, term: &Instance) -> Option<Type> {
+        match (term, self) {
+            (Instance::Symbol(symbol), Self::Symbol(location)) => {
+                symbol.get_term(location).cloned()
+            }
+
+            (
+                Instance::InstanceAssociated(instance_associated),
+                Self::InstanceAssociatedGenericArguments(location),
+            ) => instance_associated
+                .trait_associated_symbol_generic_arguments
+                .get_term(location)
+                .cloned(),
+
+            _ => None,
+        }
+    }
+
+    fn get_sub_term_ref(self, term: &Instance) -> Option<&Type> {
+        match (term, self) {
+            (Instance::Symbol(symbol), Self::Symbol(location)) => {
+                symbol.get_term(location)
+            }
+
+            (
+                Instance::InstanceAssociated(instance_associated),
+                Self::InstanceAssociatedGenericArguments(location),
+            ) => instance_associated
+                .trait_associated_symbol_generic_arguments
+                .get_term(location),
+
+            _ => None,
+        }
+    }
+
+    fn get_sub_term_mut(self, term: &mut Instance) -> Option<&mut Type> {
+        match (term, self) {
+            (Instance::Symbol(symbol), Self::Symbol(location)) => {
+                symbol.get_term_mut(location)
+            }
+
+            (
+                Instance::InstanceAssociated(instance_associated),
+                Self::InstanceAssociatedGenericArguments(location),
+            ) => instance_associated
+                .trait_associated_symbol_generic_arguments
+                .get_term_mut(location),
+
+            _ => None,
+        }
+    }
+}
+
+/// The location pointing to a sub-constant term in an instance.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::From,
+    EnumAsInner,
+)]
+pub enum SubConstantLocation {
+    /// The index of constant argument in an [`Instance::Symbol`] variant.
+    #[from]
+    Symbol(SubSymbolLocation),
+
+    /// A constant argument in an [`Instance::InstanceAssociated`]'s generic
+    /// arguments.
+    InstanceAssociatedGenericArguments(SubGenericArgumentsLocation),
+}
+
+impl From<SubConstantLocation> for TermLocation {
+    fn from(value: SubConstantLocation) -> Self {
+        Self::Constant(sub_term::SubConstantLocation::FromInstance(value))
+    }
+}
+
+impl Location<Instance, Constant> for SubConstantLocation {
+    fn assign_sub_term(self, term: &mut Instance, sub_term: Constant) {
+        let reference = match (term, self) {
+            (Instance::Symbol(symbol), Self::Symbol(location)) => {
+                symbol.get_term_mut(location).unwrap()
+            }
+
+            (
+                Instance::InstanceAssociated(instance_associated),
+                Self::InstanceAssociatedGenericArguments(location),
+            ) => instance_associated
+                .trait_associated_symbol_generic_arguments
+                .get_term_mut(location)
+                .unwrap(),
+
+            term => panic!(
+                "invalid sub-constant location: {self:?} for term: {term:?}"
+            ),
+        };
+
+        *reference = sub_term;
+    }
+
+    fn get_sub_term(self, term: &Instance) -> Option<Constant> {
+        match (term, self) {
+            (Instance::Symbol(symbol), Self::Symbol(location)) => {
+                symbol.get_term(location).cloned()
+            }
+
+            (
+                Instance::InstanceAssociated(instance_associated),
+                Self::InstanceAssociatedGenericArguments(location),
+            ) => instance_associated
+                .trait_associated_symbol_generic_arguments
+                .get_term(location)
+                .cloned(),
+
+            _ => None,
+        }
+    }
+
+    fn get_sub_term_ref(self, term: &Instance) -> Option<&Constant> {
+        match (term, self) {
+            (Instance::Symbol(symbol), Self::Symbol(location)) => {
+                symbol.get_term(location)
+            }
+
+            (
+                Instance::InstanceAssociated(instance_associated),
+                Self::InstanceAssociatedGenericArguments(location),
+            ) => instance_associated
+                .trait_associated_symbol_generic_arguments
+                .get_term(location),
+
+            _ => None,
+        }
+    }
+
+    fn get_sub_term_mut(self, term: &mut Instance) -> Option<&mut Constant> {
+        match (term, self) {
+            (Instance::Symbol(symbol), Self::Symbol(location)) => {
+                symbol.get_term_mut(location)
+            }
+
+            (
+                Instance::InstanceAssociated(instance_associated),
+                Self::InstanceAssociatedGenericArguments(location),
+            ) => instance_associated
+                .trait_associated_symbol_generic_arguments
+                .get_term_mut(location),
+
+            _ => None,
+        }
+    }
+}
+
+/// The location pointing to a sub-instance term in an instance.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::From,
+    EnumAsInner,
+)]
+pub enum SubInstanceLocation {
+    /// The index of instance argument in an [`Instance::Symbol`] variant.
+    #[from]
+    Symbol(SubSymbolLocation),
+
+    /// An instance in an [`Instance::InstanceAssociated`] variant.
+    InstanceAssociated(SubInstanceAssociatedLocation),
+}
+
+impl From<SubInstanceLocation> for TermLocation {
+    fn from(value: SubInstanceLocation) -> Self {
+        Self::Instance(sub_term::SubInstanceLocation::FromInstance(value))
+    }
+}
+
+impl Location<Instance, Instance> for SubInstanceLocation {
+    fn assign_sub_term(self, term: &mut Instance, sub_term: Instance) {
+        let reference = match (term, self) {
+            (Instance::Symbol(symbol), Self::Symbol(location)) => {
+                symbol.get_term_mut(location).unwrap()
+            }
+
+            (
+                Instance::InstanceAssociated(instance_associated),
+                Self::InstanceAssociated(
+                    SubInstanceAssociatedLocation::Instance,
+                ),
+            ) => &mut *instance_associated.instance,
+
+            (
+                Instance::InstanceAssociated(instance_associated),
+                Self::InstanceAssociated(
+                    SubInstanceAssociatedLocation::GenericArguments(idx),
+                ),
+            ) => instance_associated
+                .trait_associated_symbol_generic_arguments
+                .get_term_mut(idx)
+                .unwrap(),
+
+            term => panic!(
+                "invalid sub-instance location: {self:?} for term: {term:?}"
+            ),
+        };
+
+        *reference = sub_term;
+    }
+
+    fn get_sub_term(self, term: &Instance) -> Option<Instance> {
+        match (term, self) {
+            (Instance::Symbol(symbol), Self::Symbol(location)) => {
+                symbol.get_term(location).cloned()
+            }
+
+            (
+                Instance::InstanceAssociated(instance_associated),
+                Self::InstanceAssociated(
+                    SubInstanceAssociatedLocation::Instance,
+                ),
+            ) => Some((*instance_associated.instance).clone()),
+
+            (
+                Instance::InstanceAssociated(instance_associated),
+                Self::InstanceAssociated(
+                    SubInstanceAssociatedLocation::GenericArguments(idx),
+                ),
+            ) => instance_associated
+                .trait_associated_symbol_generic_arguments
+                .get_term(idx)
+                .cloned(),
+
+            _ => None,
+        }
+    }
+
+    fn get_sub_term_ref(self, term: &Instance) -> Option<&Instance> {
+        match (term, self) {
+            (Instance::Symbol(symbol), Self::Symbol(location)) => {
+                symbol.get_term(location)
+            }
+
+            (
+                Instance::InstanceAssociated(instance_associated),
+                Self::InstanceAssociated(
+                    SubInstanceAssociatedLocation::Instance,
+                ),
+            ) => Some(&*instance_associated.instance),
+
+            (
+                Instance::InstanceAssociated(instance_associated),
+                Self::InstanceAssociated(
+                    SubInstanceAssociatedLocation::GenericArguments(idx),
+                ),
+            ) => instance_associated
+                .trait_associated_symbol_generic_arguments
+                .get_term(idx),
+
+            _ => None,
+        }
+    }
+
+    fn get_sub_term_mut(self, term: &mut Instance) -> Option<&mut Instance> {
+        match (term, self) {
+            (Instance::Symbol(symbol), Self::Symbol(location)) => {
+                symbol.get_term_mut(location)
+            }
+
+            (
+                Instance::InstanceAssociated(instance_associated),
+                Self::InstanceAssociated(
+                    SubInstanceAssociatedLocation::Instance,
+                ),
+            ) => Some(&mut *instance_associated.instance),
+
+            (
+                Instance::InstanceAssociated(instance_associated),
+                Self::InstanceAssociated(
+                    SubInstanceAssociatedLocation::GenericArguments(idx),
+                ),
+            ) => instance_associated
+                .trait_associated_symbol_generic_arguments
+                .get_term_mut(idx),
+
+            _ => None,
+        }
+    }
+}
+
+impl SubTerm for Instance {
+    type SubLifetimeLocation = SubLifetimeLocation;
+    type SubTypeLocation = SubTypeLocation;
+    type SubConstantLocation = SubConstantLocation;
+    type SubInstanceLocation = SubInstanceLocation;
+    type ThisSubTermLocation = SubInstanceLocation;
+}
+
+impl Match for Instance {
+    fn substructural_match(
+        &self,
+        other: &Self,
+    ) -> Option<
+        Substructural<
+            Self::SubLifetimeLocation,
+            Self::SubTypeLocation,
+            Self::SubConstantLocation,
+        >,
+    > {
+        match (self, other) {
+            (Self::Symbol(lhs), Self::Symbol(rhs)) if lhs.id() == rhs.id() => {
+                lhs.generic_arguments().substructural_match(
+                    rhs.generic_arguments(),
+                    Substructural::default(),
+                    SubSymbolLocation::new,
+                )
+            }
+
+            // InstanceAssociated and Parameter don't have structural matching
+            _ => None,
+        }
+    }
+
+    fn get_substructural(
+        substructural: &Substructural<
+            Self::SubLifetimeLocation,
+            Self::SubTypeLocation,
+            Self::SubConstantLocation,
+        >,
+    ) -> &Vec<Matching<Self, Self::ThisSubTermLocation>> {
+        // Instance doesn't have its own slice in Substructural yet.
+        // This would need to be extended if we want proper instance matching.
+        static EMPTY: Vec<Matching<Instance, SubInstanceLocation>> = Vec::new();
+        &EMPTY
+    }
+
+    fn get_substructural_mut(
+        _substructural: &mut Substructural<
+            Self::SubLifetimeLocation,
+            Self::SubTypeLocation,
+            Self::SubConstantLocation,
+        >,
+    ) -> &mut Vec<Matching<Self, Self::ThisSubTermLocation>> {
+        // Instance doesn't have its own slice in Substructural yet.
+        // This would need to be extended if we want proper instance matching.
+        unimplemented!("Instance substructural matching not yet supported")
     }
 }
