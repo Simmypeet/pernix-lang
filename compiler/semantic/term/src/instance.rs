@@ -19,7 +19,6 @@ use crate::{
     matching::{Match, Matching, Substructural},
     sub_term::{self, Location, SubTerm, TermLocation},
     r#type::Type,
-    visitor::Element,
 };
 
 #[cfg(any(test, feature = "arbitrary"))]
@@ -112,6 +111,113 @@ impl InstanceAssociated {
         &mut self,
     ) -> &mut GenericArguments {
         &mut self.trait_associated_symbol_generic_arguments
+    }
+
+    /// Returns a reference to the lifetime at the given location.
+    #[must_use]
+    pub fn get_lifetime(
+        &self,
+        location: SubInstanceAssociatedGenericArgsLocation,
+    ) -> Option<&Lifetime> {
+        self.trait_associated_symbol_generic_arguments
+            .lifetimes()
+            .get(location.0)
+    }
+
+    /// Returns a mutable reference to the lifetime at the given location.
+    #[must_use]
+    pub fn get_lifetime_mut(
+        &mut self,
+        location: SubInstanceAssociatedGenericArgsLocation,
+    ) -> Option<&mut Lifetime> {
+        self.trait_associated_symbol_generic_arguments
+            .lifetimes_mut()
+            .get_mut(location.0)
+    }
+
+    /// Returns a reference to the type at the given location.
+    #[must_use]
+    pub fn get_type(
+        &self,
+        location: SubInstanceAssociatedGenericArgsLocation,
+    ) -> Option<&Type> {
+        self.trait_associated_symbol_generic_arguments.types().get(location.0)
+    }
+
+    /// Returns a mutable reference to the type at the given location.
+    #[must_use]
+    pub fn get_type_mut(
+        &mut self,
+        location: SubInstanceAssociatedGenericArgsLocation,
+    ) -> Option<&mut Type> {
+        self.trait_associated_symbol_generic_arguments
+            .types_mut()
+            .get_mut(location.0)
+    }
+
+    /// Returns a reference to the constant at the given location.
+    #[must_use]
+    pub fn get_constant(
+        &self,
+        location: SubInstanceAssociatedGenericArgsLocation,
+    ) -> Option<&Constant> {
+        self.trait_associated_symbol_generic_arguments
+            .constants()
+            .get(location.0)
+    }
+
+    /// Returns a mutable reference to the constant at the given location.
+    #[must_use]
+    pub fn get_constant_mut(
+        &mut self,
+        location: SubInstanceAssociatedGenericArgsLocation,
+    ) -> Option<&mut Constant> {
+        self.trait_associated_symbol_generic_arguments
+            .constants_mut()
+            .get_mut(location.0)
+    }
+
+    /// Returns a reference to the instance at the given index in the generic
+    /// arguments.
+    #[must_use]
+    pub fn get_instance_at(&self, index: usize) -> Option<&Instance> {
+        self.trait_associated_symbol_generic_arguments.instances().get(index)
+    }
+
+    /// Returns a mutable reference to the instance at the given index in the
+    /// generic arguments.
+    #[must_use]
+    pub fn get_instance_at_mut(
+        &mut self,
+        index: usize,
+    ) -> Option<&mut Instance> {
+        self.trait_associated_symbol_generic_arguments
+            .instances_mut()
+            .get_mut(index)
+    }
+
+    /// Returns a slice of the lifetimes in the generic arguments.
+    #[must_use]
+    pub fn lifetimes(&self) -> &[Lifetime] {
+        self.trait_associated_symbol_generic_arguments.lifetimes()
+    }
+
+    /// Returns a slice of the types in the generic arguments.
+    #[must_use]
+    pub fn types(&self) -> &[Type] {
+        self.trait_associated_symbol_generic_arguments.types()
+    }
+
+    /// Returns a slice of the constants in the generic arguments.
+    #[must_use]
+    pub fn constants(&self) -> &[Constant] {
+        self.trait_associated_symbol_generic_arguments.constants()
+    }
+
+    /// Returns a slice of the instances in the generic arguments.
+    #[must_use]
+    pub fn instances(&self) -> &[Instance] {
+        self.trait_associated_symbol_generic_arguments.instances()
     }
 }
 
@@ -236,6 +342,21 @@ impl crate::display::Display for Instance {
             }
         }
     }
+}
+
+/// Represents a sub-term location within an [`InstanceAssociated`] term's
+/// generic arguments.
+///
+/// This is used for accessing lifetimes, types, and constants within the
+/// `trait_associated_symbol_generic_arguments` field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SubInstanceAssociatedGenericArgsLocation(usize);
+
+impl SubInstanceAssociatedGenericArgsLocation {
+    /// Creates a new `SubInstanceAssociatedGenericArgsLocation` with the given
+    /// index.
+    #[must_use]
+    pub const fn new(index: usize) -> Self { Self(index) }
 }
 
 /// Represents a sub-term location where the sub-term is stored within an
