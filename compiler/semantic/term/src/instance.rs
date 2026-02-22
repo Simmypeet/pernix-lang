@@ -20,6 +20,7 @@ use crate::{
     matching::{Match, Matching, Substructural},
     sub_term::{self, Location, SubTerm, TermLocation},
     r#type::Type,
+    visitor::{self, AsyncMutable, AsyncVisitor, Mutable, Visitor},
 };
 
 #[cfg(any(test, feature = "arbitrary"))]
@@ -339,6 +340,191 @@ impl InstanceAssociated {
         ));
 
         Some(substructural)
+    }
+}
+
+macro_rules! implements_instance_associated {
+    (
+        $self:ident,
+        $visitor:ident,
+        $visit_instance:ident,
+        $accept_one_level:ident,
+        $instance_accessor:ident,
+        $map_idx:expr,
+        $direct_instance_loc:expr
+        $(, $await:ident)?
+    ) => {{
+        // Delegate to GenericArguments.accept_one_level for generic args
+        if !$self
+            .trait_associated_symbol_generic_arguments
+            .$accept_one_level::<T, _, _>($visitor, $map_idx)$(.$await)?
+        {
+            return false;
+        }
+
+        // Visit the direct instance
+        let loc: T::SubInstanceLocation = $direct_instance_loc.into();
+        $visitor.$visit_instance($self.$instance_accessor(), loc.into())$(.$await)?
+    }};
+}
+
+impl InstanceAssociated {
+    /// Visits one level of sub-terms in this `InstanceAssociated`.
+    ///
+    /// This visits all terms in the generic arguments as well as the
+    /// direct instance field.
+    #[allow(clippy::trait_duplication_in_bounds)]
+    pub(crate) fn accept_one_level<
+        'a,
+        T: visitor::Element,
+        Idx,
+        IDirectLoc,
+        V: Visitor<'a, Lifetime>
+            + Visitor<'a, Type>
+            + Visitor<'a, Constant>
+            + Visitor<'a, Instance>,
+    >(
+        &'a self,
+        visitor: &mut V,
+        map_idx: impl Fn(usize) -> Idx,
+        direct_instance_loc: IDirectLoc,
+    ) -> bool
+    where
+        Idx: Into<T::SubConstantLocation>
+            + Into<T::SubTypeLocation>
+            + Into<T::SubLifetimeLocation>
+            + Into<T::SubInstanceLocation>,
+        IDirectLoc: Into<T::SubInstanceLocation>,
+        T::SubLifetimeLocation: Into<sub_term::SubLifetimeLocation>,
+        T::SubTypeLocation: Into<sub_term::SubTypeLocation>,
+        T::SubConstantLocation: Into<sub_term::SubConstantLocation>,
+        T::SubInstanceLocation: Into<sub_term::SubInstanceLocation>,
+    {
+        implements_instance_associated!(
+            self,
+            visitor,
+            visit,
+            accept_one_level,
+            instance,
+            map_idx,
+            direct_instance_loc
+        )
+    }
+
+    /// Async version of [`Self::accept_one_level`].
+    #[allow(clippy::trait_duplication_in_bounds)]
+    pub(crate) async fn accept_one_level_async<
+        T: visitor::Element,
+        Idx,
+        IDirectLoc,
+        V: AsyncVisitor<Lifetime>
+            + AsyncVisitor<Type>
+            + AsyncVisitor<Constant>
+            + AsyncVisitor<Instance>,
+    >(
+        &self,
+        visitor: &mut V,
+        map_idx: impl Fn(usize) -> Idx,
+        direct_instance_loc: IDirectLoc,
+    ) -> bool
+    where
+        Idx: Into<T::SubConstantLocation>
+            + Into<T::SubTypeLocation>
+            + Into<T::SubLifetimeLocation>
+            + Into<T::SubInstanceLocation>,
+        IDirectLoc: Into<T::SubInstanceLocation>,
+        T::SubLifetimeLocation: Into<sub_term::SubLifetimeLocation>,
+        T::SubTypeLocation: Into<sub_term::SubTypeLocation>,
+        T::SubConstantLocation: Into<sub_term::SubConstantLocation>,
+        T::SubInstanceLocation: Into<sub_term::SubInstanceLocation>,
+    {
+        implements_instance_associated!(
+            self,
+            visitor,
+            visit,
+            accept_one_level_async,
+            instance,
+            map_idx,
+            direct_instance_loc,
+            await
+        )
+    }
+
+    /// Mutable version of [`Self::accept_one_level`].
+    #[allow(clippy::trait_duplication_in_bounds)]
+    pub(crate) fn accept_one_level_mut<
+        T: visitor::Element,
+        Idx,
+        IDirectLoc,
+        V: Mutable<Lifetime>
+            + Mutable<Type>
+            + Mutable<Constant>
+            + Mutable<Instance>,
+    >(
+        &mut self,
+        visitor: &mut V,
+        map_idx: impl Fn(usize) -> Idx,
+        direct_instance_loc: IDirectLoc,
+    ) -> bool
+    where
+        Idx: Into<T::SubConstantLocation>
+            + Into<T::SubTypeLocation>
+            + Into<T::SubLifetimeLocation>
+            + Into<T::SubInstanceLocation>,
+        IDirectLoc: Into<T::SubInstanceLocation>,
+        T::SubLifetimeLocation: Into<sub_term::SubLifetimeLocation>,
+        T::SubTypeLocation: Into<sub_term::SubTypeLocation>,
+        T::SubConstantLocation: Into<sub_term::SubConstantLocation>,
+        T::SubInstanceLocation: Into<sub_term::SubInstanceLocation>,
+    {
+        implements_instance_associated!(
+            self,
+            visitor,
+            visit,
+            accept_one_level_mut,
+            instance_mut,
+            map_idx,
+            direct_instance_loc
+        )
+    }
+
+    /// Async mutable version of [`Self::accept_one_level`].
+    #[allow(clippy::trait_duplication_in_bounds)]
+    pub(crate) async fn accept_one_level_async_mut<
+        T: visitor::Element,
+        Idx,
+        IDirectLoc,
+        V: AsyncMutable<Lifetime>
+            + AsyncMutable<Type>
+            + AsyncMutable<Constant>
+            + AsyncMutable<Instance>,
+    >(
+        &mut self,
+        visitor: &mut V,
+        map_idx: impl Fn(usize) -> Idx,
+        direct_instance_loc: IDirectLoc,
+    ) -> bool
+    where
+        Idx: Into<T::SubConstantLocation>
+            + Into<T::SubTypeLocation>
+            + Into<T::SubLifetimeLocation>
+            + Into<T::SubInstanceLocation>,
+        IDirectLoc: Into<T::SubInstanceLocation>,
+        T::SubLifetimeLocation: Into<sub_term::SubLifetimeLocation>,
+        T::SubTypeLocation: Into<sub_term::SubTypeLocation>,
+        T::SubConstantLocation: Into<sub_term::SubConstantLocation>,
+        T::SubInstanceLocation: Into<sub_term::SubInstanceLocation>,
+    {
+        implements_instance_associated!(
+            self,
+            visitor,
+            visit,
+            accept_one_level_async_mut,
+            instance_mut,
+            map_idx,
+            direct_instance_loc,
+            await
+        )
     }
 }
 

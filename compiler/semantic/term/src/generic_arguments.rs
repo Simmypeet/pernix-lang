@@ -740,7 +740,7 @@ macro_rules! implements_generic_arguments {
 
 impl GenericArguments {
     #[allow(clippy::trait_duplication_in_bounds)]
-    fn accept_one_level<
+    pub(crate) fn accept_one_level<
         'a,
         T: visitor::Element,
         Idx,
@@ -769,7 +769,7 @@ impl GenericArguments {
     }
 
     #[allow(clippy::trait_duplication_in_bounds)]
-    async fn accept_one_level_async<
+    pub(crate) async fn accept_one_level_async<
         T: visitor::Element,
         Idx,
         V: AsyncVisitor<Lifetime>
@@ -797,7 +797,7 @@ impl GenericArguments {
     }
 
     #[allow(clippy::trait_duplication_in_bounds)]
-    fn accept_one_level_mut<
+    pub(crate) fn accept_one_level_mut<
         T: visitor::Element,
         Idx,
         V: Mutable<Lifetime>
@@ -825,7 +825,7 @@ impl GenericArguments {
     }
 
     #[allow(clippy::trait_duplication_in_bounds)]
-    async fn accept_one_level_async_mut<
+    pub(crate) async fn accept_one_level_async_mut<
         T: visitor::Element,
         Idx,
         V: AsyncMutable<Lifetime>

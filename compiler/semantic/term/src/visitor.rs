@@ -10,10 +10,16 @@ use crate::{
     Never, TermRef,
     constant::{self, Constant},
     generic_arguments::SubGenericArgumentsLocation,
-    instance::{self, Instance},
+    instance::{
+        self, Instance, SubInstanceAssociatedGenericArgsLocation,
+        SubInstanceAssociatedLocation,
+    },
     lifetime::Lifetime,
     sub_term::SubInstanceLocation,
-    r#type::{self, SubFunctionSignatureLocation, Type},
+    r#type::{
+        self, SubFunctionSignatureLocation,
+        SubInstanceAssociatedInstanceLocation, Type,
+    },
 };
 
 /// Represents a visitor that visits a term recursively.
@@ -400,8 +406,7 @@ macro_rules! implements_type {
         $(, $await:ident)?
     ) => {
         match $self {
-            Self::Error(_) | Self::Primitive(_) | Self::Parameter(_) | Self::Inference(_)
-            | Self::InstanceAssociated(_) => {
+            Self::Error(_) | Self::Primitive(_) | Self::Parameter(_) | Self::Inference(_) => {
                 Err(VisitNonApplicationTermError)
             }
 
@@ -475,6 +480,15 @@ macro_rules! implements_type {
                         )
                     )$(.$await)?
                 )
+            },
+            Self::InstanceAssociated(term) => {
+                Ok(term.$accept_one_level::<Self, _, _, _>(
+                    $visitor,
+                    |idx| SubInstanceAssociatedGenericArgsLocation::new(idx),
+                    r#type::SubInstanceLocation::InstanceAssociated(
+                        SubInstanceAssociatedInstanceLocation::Instance
+                    ),
+                )$(.$await)?)
             },
         }
     };
@@ -1022,9 +1036,6 @@ macro_rules! implements_instance_ref {
     (
         $self:ident,
         $visitor:ident,
-        $visit_type:ident,
-        $visit_lifetime:ident,
-        $visit_constant:ident,
         $accept_one_level:ident
         $(, $await:ident)?
     ) => {
@@ -1040,49 +1051,13 @@ macro_rules! implements_instance_ref {
             }
 
             Self::InstanceAssociated(term) => {
-                // Visit lifetimes in the generic arguments
-                for (idx, lifetime) in term.trait_associated_symbol_generic_arguments().lifetimes().iter().enumerate() {
-                    if !$visitor.$visit_lifetime(
-                        lifetime,
-                        SubLifetimeLocation::FromInstance(
-                            instance::SubLifetimeLocation::InstanceAssociatedGenericArguments(
-                                SubGenericArgumentsLocation::new(idx)
-                            )
-                        )
-                    )$(.$await)? {
-                        return Ok(false);
-                    }
-                }
-
-                // Visit types in the generic arguments
-                for (idx, ty) in term.trait_associated_symbol_generic_arguments().types().iter().enumerate() {
-                    if !$visitor.$visit_type(
-                        ty,
-                        SubTypeLocation::FromInstance(
-                            instance::SubTypeLocation::InstanceAssociatedGenericArguments(
-                                SubGenericArgumentsLocation::new(idx)
-                            )
-                        )
-                    )$(.$await)? {
-                        return Ok(false);
-                    }
-                }
-
-                // Visit constants in the generic arguments
-                for (idx, constant) in term.trait_associated_symbol_generic_arguments().constants().iter().enumerate() {
-                    if !$visitor.$visit_constant(
-                        constant,
-                        SubConstantLocation::FromInstance(
-                            instance::SubConstantLocation::InstanceAssociatedGenericArguments(
-                                SubGenericArgumentsLocation::new(idx)
-                            )
-                        )
-                    )$(.$await)? {
-                        return Ok(false);
-                    }
-                }
-
-                Ok(true)
+                Ok(term.$accept_one_level::<Self, _, _, _>(
+                    $visitor,
+                    |idx| SubGenericArgumentsLocation::new(idx),
+                    instance::SubInstanceLocation::InstanceAssociated(
+                        SubInstanceAssociatedLocation::Instance
+                    ),
+                )$(.$await)?)
             }
         }
     };
@@ -1092,9 +1067,6 @@ macro_rules! implements_instance_mut {
     (
         $self:ident,
         $visitor:ident,
-        $visit_type:ident,
-        $visit_lifetime:ident,
-        $visit_constant:ident,
         $accept_one_level:ident
         $(, $await:ident)?
     ) => {
@@ -1110,51 +1082,13 @@ macro_rules! implements_instance_mut {
             }
 
             Self::InstanceAssociated(term) => {
-                let generic_args = term.trait_associated_symbol_generic_arguments_mut();
-
-                // Visit lifetimes in the generic arguments
-                for (idx, lifetime) in generic_args.lifetimes_mut().iter_mut().enumerate() {
-                    if !$visitor.$visit_lifetime(
-                        lifetime,
-                        SubLifetimeLocation::FromInstance(
-                            instance::SubLifetimeLocation::InstanceAssociatedGenericArguments(
-                                SubGenericArgumentsLocation::new(idx)
-                            )
-                        )
-                    )$(.$await)? {
-                        return Ok(false);
-                    }
-                }
-
-                // Visit types in the generic arguments
-                for (idx, ty) in generic_args.types_mut().iter_mut().enumerate() {
-                    if !$visitor.$visit_type(
-                        ty,
-                        SubTypeLocation::FromInstance(
-                            instance::SubTypeLocation::InstanceAssociatedGenericArguments(
-                                SubGenericArgumentsLocation::new(idx)
-                            )
-                        )
-                    )$(.$await)? {
-                        return Ok(false);
-                    }
-                }
-
-                // Visit constants in the generic arguments
-                for (idx, constant) in generic_args.constants_mut().iter_mut().enumerate() {
-                    if !$visitor.$visit_constant(
-                        constant,
-                        SubConstantLocation::FromInstance(
-                            instance::SubConstantLocation::InstanceAssociatedGenericArguments(
-                                SubGenericArgumentsLocation::new(idx)
-                            )
-                        )
-                    )$(.$await)? {
-                        return Ok(false);
-                    }
-                }
-
-                Ok(true)
+                Ok(term.$accept_one_level::<Self, _, _, _>(
+                    $visitor,
+                    |idx| SubGenericArgumentsLocation::new(idx),
+                    instance::SubInstanceLocation::InstanceAssociated(
+                        SubInstanceAssociatedLocation::Instance
+                    ),
+                )$(.$await)?)
             }
         }
     };
@@ -1252,14 +1186,7 @@ impl Element for Instance {
         &'a self,
         visitor: &mut V,
     ) -> Result<bool, VisitNonApplicationTermError> {
-        implements_instance_ref!(
-            self,
-            visitor,
-            visit,
-            visit,
-            visit,
-            accept_one_level
-        )
+        implements_instance_ref!(self, visitor, accept_one_level)
     }
 
     async fn accept_one_level_async<
@@ -1271,15 +1198,7 @@ impl Element for Instance {
         &self,
         visitor: &mut V,
     ) -> Result<bool, VisitNonApplicationTermError> {
-        implements_instance_ref!(
-            self,
-            visitor,
-            visit,
-            visit,
-            visit,
-            accept_one_level_async,
-            await
-        )
+        implements_instance_ref!(self, visitor, accept_one_level_async, await)
     }
 
     async fn accept_one_level_async_mut<
@@ -1294,9 +1213,6 @@ impl Element for Instance {
         implements_instance_mut!(
             self,
             visitor,
-            visit,
-            visit,
-            visit,
             accept_one_level_async_mut,
             await
         )
@@ -1308,14 +1224,7 @@ impl Element for Instance {
         &mut self,
         visitor: &mut V,
     ) -> Result<bool, VisitNonApplicationTermError> {
-        implements_instance_mut!(
-            self,
-            visitor,
-            visit,
-            visit,
-            visit,
-            accept_one_level_mut
-        )
+        implements_instance_mut!(self, visitor, accept_one_level_mut)
     }
 }
 

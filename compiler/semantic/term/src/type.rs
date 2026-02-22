@@ -877,6 +877,14 @@ pub enum SubInstanceLocation {
     InstanceAssociated(SubInstanceAssociatedInstanceLocation),
 }
 
+impl From<SubInstanceAssociatedGenericArgsLocation> for SubInstanceLocation {
+    fn from(val: SubInstanceAssociatedGenericArgsLocation) -> Self {
+        Self::InstanceAssociated(
+            SubInstanceAssociatedInstanceLocation::GenericArguments(val),
+        )
+    }
+}
+
 impl From<SubInstanceLocation> for TermLocation {
     fn from(value: SubInstanceLocation) -> Self {
         Self::Instance(sub_term::SubInstanceLocation::FromType(value))
