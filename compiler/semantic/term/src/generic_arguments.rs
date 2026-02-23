@@ -195,6 +195,16 @@ impl GenericArguments {
             && self.types.len() == other.types.len()
             && self.constants.len() == other.constants.len()
     }
+
+    /// Checks if both generic arguments have the same arity for each generic
+    /// kind.
+    #[must_use]
+    pub const fn arity_matches(&self, generic_arguments: &Self) -> bool {
+        self.lifetimes.len() == generic_arguments.lifetimes.len()
+            && self.types.len() == generic_arguments.types.len()
+            && self.constants.len() == generic_arguments.constants.len()
+            && self.instancces.len() == generic_arguments.instancces.len()
+    }
 }
 
 /// Represents a sub-term location where the sub-term is stored as a generic

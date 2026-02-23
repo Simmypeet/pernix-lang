@@ -47,6 +47,14 @@ impl<Term> Element<Term> {
     pub const fn new_regular(term: Term) -> Self {
         Self { term, is_unpacked: false }
     }
+
+    /// Creates a new unpacked element.
+    #[must_use]
+    pub const fn is_unpacked(&self) -> bool { self.is_unpacked }
+
+    /// Returns a reference to the term stored in this element.
+    #[must_use]
+    pub const fn term(&self) -> &Term { &self.term }
 }
 
 /// Represents a tuple of terms.
@@ -72,6 +80,47 @@ impl<Term> Tuple<Term> {
     /// Creates a unit tuple.
     #[must_use]
     pub const fn unit() -> Self { Self { elements: Vec::new() } }
+
+    /// Returns a reference to the elements of the tuple.
+    #[must_use]
+    pub fn elements(&self) -> &[Element<Term>] { &self.elements }
+
+    /// Unpacks the tuple if it contains unpacked elements and returns the
+    /// result of flattening the tuple.
+    #[must_use]
+    pub fn unpack_one_level(&self) -> Option<Term>
+    where
+        Term: Clone + TryInto<Self, Error = Term> + From<Self>,
+    {
+        let contain_upacked = self.elements.iter().any(|x| x.is_unpacked);
+
+        if !contain_upacked {
+            return None;
+        }
+
+        if self.elements.len() == 1 {
+            return Some(self.elements()[0].term().clone());
+        }
+
+        let mut result = Vec::new();
+
+        for element in self.elements().iter().cloned() {
+            if element.is_unpacked() {
+                match element.term.try_into() {
+                    Ok(inner) => {
+                        result.extend(inner.elements);
+                    }
+                    Err(term) => {
+                        result.push(Element { term, is_unpacked: true });
+                    }
+                }
+            } else {
+                result.push(element);
+            }
+        }
+
+        Some(Self { elements: result }.into())
+    }
 }
 
 impl<Term> Default for Tuple<Term> {

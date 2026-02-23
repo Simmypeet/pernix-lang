@@ -16,6 +16,7 @@ use crate::{
         Symbol,
     },
     generic_parameters::{InstanceParameterID, get_generic_parameters},
+    inference,
     instantiation::Instantiation,
     lifetime::Lifetime,
     matching::{Match, Matching, Substructural},
@@ -556,6 +557,7 @@ impl InstanceAssociated {
     Decode,
     StableHash,
     EnumAsInner,
+    derive_more::From,
 )]
 pub enum Instance {
     /// Directly refers to an `instance` symbol being defined on module level.
@@ -579,6 +581,10 @@ pub enum Instance {
     /// In the above example, `I::Inner` is an instance associated with the
     /// instance parameter `I`.
     InstanceAssociated(InstanceAssociated),
+
+    /// Used as an inference variable in the IR binding.
+    #[from]
+    Inference(inference::Variable<Self>),
 
     /// Represents an erroneous instance term, used for error recovery.
     Error(Error),
@@ -666,6 +672,26 @@ impl crate::display::Display for Instance {
                 ))
                 .await
             }
+
+            Self::Inference(var) => {
+                let Some(rendering) = formatter
+                    .configuration()
+                    .instance_infernces()
+                    .and_then(|x| x.get(var))
+                else {
+                    return write!(formatter, "_");
+                };
+
+                match rendering {
+                    crate::display::InferenceRendering::Recurse(ty) => {
+                        Box::pin(ty.fmt(engine, formatter)).await
+                    }
+                    crate::display::InferenceRendering::Rendered(flex_str) => {
+                        write!(formatter, "{}", flex_str.as_ref())
+                    }
+                }
+            }
+
             Self::Error(_) => write!(formatter, "{{error}}"),
         }
     }

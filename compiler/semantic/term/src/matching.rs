@@ -88,6 +88,11 @@ impl<T, Location> Matching<T, Location> {
     /// Returns a reference to the location in rhs where the match occurred.
     #[must_use]
     pub const fn rhs_location(&self) -> &Location { &self.rhs_location }
+
+    /// Destructures the matching into its components.
+    pub fn destructure(self) -> (T, T, Location, Location) {
+        (self.lhs, self.rhs, self.lhs_location, self.rhs_location)
+    }
 }
 
 /// Represents a substructural matching between two terms.
@@ -150,6 +155,20 @@ impl<L, T, C, I> Substructural<L, T, C, I> {
     #[must_use]
     pub const fn instances_mut(&mut self) -> &mut Vec<Matching<Instance, I>> {
         &mut self.instances
+    }
+
+    /// Destructures the substructural matching into its components.
+    #[must_use]
+    #[allow(clippy::type_complexity)]
+    pub fn destructure(
+        self,
+    ) -> (
+        Vec<Matching<Lifetime, L>>,
+        Vec<Matching<Type, T>>,
+        Vec<Matching<Constant, C>>,
+        Vec<Matching<Instance, I>>,
+    ) {
+        (self.lifetimes, self.types, self.constants, self.instances)
     }
 }
 

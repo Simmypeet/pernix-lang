@@ -11,6 +11,7 @@ use crate::{
     constant::Constant,
     generic_arguments::GenericArguments,
     inference,
+    instance::Instance,
     lifetime::{ElidedLifetimeID, Forall, Lifetime},
     r#type::Type,
 };
@@ -53,6 +54,10 @@ pub struct Configuration<'y> {
     /// Mapping for constant inference variables.
     #[get_copy = "pub"]
     constant_inferences: Option<&'y InferenceRenderingMap<Constant>>,
+    /// Mapping for instance inference variables.
+    #[get_copy = "pub"]
+    instance_infernces: Option<&'y InferenceRenderingMap<Instance>>,
+
     /// Mapping for elided lifetime IDs to their names.
     #[get_copy = "pub"]
     edlided_lifetimes: Option<&'y HashMap<ElidedLifetimeID, Interned<str>>>,
