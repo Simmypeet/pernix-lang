@@ -561,9 +561,11 @@ impl InstanceAssociated {
 )]
 pub enum Instance {
     /// Directly refers to an `instance` symbol being defined on module level.
+    #[from]
     Symbol(Symbol),
 
     /// Refers to an instance parameter denoted by `instance I: Trait` syntax.
+    #[from]
     Parameter(InstanceParameterID),
 
     /// Refers to an instance that is associated with another instance.
@@ -580,6 +582,7 @@ pub enum Instance {
     ///
     /// In the above example, `I::Inner` is an instance associated with the
     /// instance parameter `I`.
+    #[from]
     InstanceAssociated(InstanceAssociated),
 
     /// Used as an inference variable in the IR binding.
@@ -587,11 +590,8 @@ pub enum Instance {
     Inference(inference::Variable<Self>),
 
     /// Represents an erroneous instance term, used for error recovery.
+    #[from]
     Error(Error),
-}
-
-impl From<InstanceParameterID> for Instance {
-    fn from(param_id: InstanceParameterID) -> Self { Self::Parameter(param_id) }
 }
 
 impl crate::display::Display for InstanceParameterID {
