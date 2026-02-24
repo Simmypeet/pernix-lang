@@ -7,6 +7,7 @@ use pernixc_semantic_element::variance::Variance;
 use pernixc_symbol::kind::{Kind, get_kind};
 use pernixc_term::{
     constant::Constant,
+    instance::Instance,
     lifetime::Lifetime,
     predicate::ConstantType,
     r#type::{Primitive, Type},
@@ -14,7 +15,7 @@ use pernixc_term::{
 };
 
 use crate::{
-    Error, Satisfiability, Satisfied, Succeeded,
+    OverflowError, Satisfiability, Satisfied, Succeeded,
     adt_fields::get_instantiated_adt_fields,
     environment::{BoxedFuture, Call, DynArc, Environment, Query},
     normalizer::Normalizer,
@@ -22,7 +23,7 @@ use crate::{
 
 #[derive(Debug)]
 struct Visitor<'t, N: Normalizer> {
-    constant_type: Result<Option<Succeeded<Satisfied>>, Error>,
+    constant_type: Result<Option<Succeeded<Satisfied>>, OverflowError>,
     environment: &'t Environment<'t, N>,
 }
 
@@ -52,7 +53,6 @@ impl<N: Normalizer> visitor::AsyncVisitor<Type> for Visitor<'_, N> {
                     .environment
                     .query_with(
                         &ConstantType(term.clone()),
-                        (),
                         QuerySource::Normal,
                     )
                     .await
@@ -90,6 +90,16 @@ impl<N: Normalizer> visitor::AsyncVisitor<Constant> for Visitor<'_, N> {
     }
 }
 
+impl<N: Normalizer> visitor::AsyncVisitor<Instance> for Visitor<'_, N> {
+    async fn visit(
+        &mut self,
+        _: &Instance,
+        _: <Instance as visitor::Element>::Location,
+    ) -> bool {
+        true
+    }
+}
+
 async fn try_get_adt_fields(
     ty: &Type,
     engine: &TrackedEngine,
@@ -98,13 +108,17 @@ async fn try_get_adt_fields(
         return None;
     };
 
-    if !matches!(engine.get_kind(symbol.id).await, Kind::Enum | Kind::Struct) {
+    if !matches!(engine.get_kind(symbol.id()).await, Kind::Enum | Kind::Struct)
+    {
         return None;
     }
 
     Some(
         engine
-            .get_instantiated_adt_fields(symbol.id, &symbol.generic_arguments)
+            .get_instantiated_adt_fields(
+                symbol.id(),
+                symbol.generic_arguments(),
+            )
             .await,
     )
 }
@@ -122,18 +136,15 @@ pub enum QuerySource {
 }
 
 impl Query for ConstantType {
-    type Parameter = ();
     type InProgress = QuerySource;
-    type Result = Succeeded<Satisfied>;
-    type Error = Error;
+    type Result = Option<Arc<Succeeded<Satisfied>>>;
 
     #[allow(clippy::too_many_lines)]
     fn query<'x, N: Normalizer>(
         &'x self,
         environment: &'x Environment<'x, N>,
-        (): Self::Parameter,
         _: Self::InProgress,
-    ) -> BoxedFuture<'x, Self::Result, Self::Error> {
+    ) -> BoxedFuture<'x, Self::Result> {
         Box::pin(async move {
             let satisfiability = match self.0 {
                 Type::Primitive(primitive_type) => match primitive_type {
@@ -156,13 +167,13 @@ impl Query for ConstantType {
 
                 Type::Error(_)
                 | Type::FunctionSignature(_)
-                | Type::TraitMember(_)
+                | Type::InstanceAssociated(_)
                 | Type::Parameter(_)
                 | Type::Inference(_) => Satisfiability::Unsatisfied,
 
                 Type::Pointer(_)
                 | Type::Symbol(_)
-                | Type::MemberSymbol(_)
+                | Type::AssociatedSymbol(_)
                 | Type::Reference(_)
                 | Type::Array(_)
                 | Type::Tuple(_)
@@ -199,7 +210,6 @@ impl Query for ConstantType {
                             let Some(new_result) = environment
                                 .query_with(
                                     &Self(field.clone()),
-                                    (),
                                     QuerySource::Normal,
                                 )
                                 .await?
@@ -250,11 +260,7 @@ impl Query for ConstantType {
                 environment.get_equivalences(&self.0).await?.iter()
             {
                 if let Some(result) = environment
-                    .query_with(
-                        &Self(eq.clone()),
-                        (),
-                        QuerySource::FromEquivalence,
-                    )
+                    .query_with(&Self(eq.clone()), QuerySource::FromEquivalence)
                     .await?
                 {
                     return Ok(Some(Arc::new(Succeeded::satisfied_with(
@@ -274,11 +280,10 @@ impl Query for ConstantType {
 
     fn on_cyclic(
         &self,
-        (): Self::Parameter,
         _: Self::InProgress,
         _: Self::InProgress,
         call_stacks: &[Call<DynArc, DynArc>],
-    ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
+    ) -> Option<Arc<Succeeded<Satisfied>>> {
         for call in call_stacks.iter().skip(1) {
             let (Some(_), Some(in_progress)) = (
                 call.query.downcast_ref::<Self>(),
@@ -288,10 +293,10 @@ impl Query for ConstantType {
             };
 
             if *in_progress == QuerySource::Normal {
-                return Ok(Some(Arc::new(Succeeded::satisfied())));
+                return Some(Arc::new(Succeeded::satisfied()));
             }
         }
 
-        Ok(None)
+        None
     }
 }
