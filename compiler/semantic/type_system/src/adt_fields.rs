@@ -2,7 +2,9 @@
 
 use std::ops::Deref;
 
+use derive_new::new;
 use linkme::distributed_slice;
+use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_semantic_element::{
     fields::get_fields, variant::get_variant_associated_type,
@@ -10,6 +12,7 @@ use pernixc_semantic_element::{
 use pernixc_symbol::{
     kind::{Kind, get_kind},
     member::get_members,
+    span::get_span,
 };
 use pernixc_target::Global;
 use pernixc_term::{
@@ -17,8 +20,8 @@ use pernixc_term::{
     r#type::Type,
 };
 use qbice::{
-    Decode, Encode, Query, StableHash, executor, program::Registration,
-    storage::intern::Interned,
+    Decode, Encode, Identifiable, Query, StableHash, executor,
+    program::Registration, storage::intern::Interned,
 };
 
 /// Retrieves all the type terms that appear as field in the given ADT (struct
@@ -37,20 +40,49 @@ use qbice::{
     Decode,
     Query,
 )]
-#[value(Interned<[Type]>)]
+#[value(Interned<[FieldType]>)]
 #[extend(name = get_adt_fields, by_val)]
 pub struct Key {
     /// The global ID of the ADT (struct or enum) symbol.
     pub adt_id: Global<pernixc_symbol::ID>,
 }
 
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+    new,
+)]
+pub struct FieldType {
+    r#type: Type,
+    span: Option<RelativeSpan>,
+}
+
+impl FieldType {
+    /// Retrieves the type of the field.
+    #[must_use]
+    pub fn r#type(&self) -> &Type { &self.r#type }
+
+    /// Retrieves the span of the field, if available.
+    #[must_use]
+    pub fn span(&self) -> Option<&RelativeSpan> { self.span.as_ref() }
+}
+
 #[executor(config = Config)]
 async fn adt_fields_executor(
     &Key { adt_id }: &Key,
     engine: &TrackedEngine,
-) -> Interned<[Type]> {
+) -> Interned<[FieldType]> {
     let kind = engine.get_kind(adt_id).await;
-    let mut results: Vec<Type> = Vec::new();
+    let mut results: Vec<FieldType> = Vec::new();
 
     match kind {
         Kind::Enum => {
@@ -62,16 +94,18 @@ async fn adt_fields_executor(
                 .copied()
                 .chain(variants.unnameds.iter().copied())
             {
-                let Some(ty) = engine
-                    .get_variant_associated_type(
-                        adt_id.target_id.make_global(variant_id),
-                    )
-                    .await
+                let variant_id = adt_id.target_id.make_global(variant_id);
+
+                let Some(ty) =
+                    engine.get_variant_associated_type(variant_id).await
                 else {
                     continue;
                 };
 
-                results.push(ty.deref().clone());
+                results.push(FieldType::new(
+                    ty.deref().clone(),
+                    engine.get_span(variant_id).await,
+                ));
             }
         }
 
@@ -82,7 +116,7 @@ async fn adt_fields_executor(
                     .await
                     .fields
                     .iter()
-                    .map(|x| x.1.r#type.clone()),
+                    .map(|x| FieldType::new(x.1.r#type.clone(), x.1.span)),
             );
         }
 
@@ -103,7 +137,7 @@ pub async fn get_instantiated_adt_fields(
     self: &TrackedEngine,
     adt_id: Global<pernixc_symbol::ID>,
     generic_arguments: &pernixc_term::generic_arguments::GenericArguments,
-) -> Vec<Type> {
+) -> Vec<FieldType> {
     let types = self.get_adt_fields(adt_id).await;
     let generic_parameters = self.get_generic_parameters(adt_id).await;
 
@@ -117,7 +151,7 @@ pub async fn get_instantiated_adt_fields(
     let mut results = Vec::with_capacity(types.len());
 
     for mut ty in types.iter().cloned() {
-        instantiation.instantiate(&mut ty);
+        instantiation.instantiate(&mut ty.r#type);
         results.push(ty);
     }
 
