@@ -2,12 +2,19 @@
 
 use std::{borrow::Cow, collections::BTreeSet, pin::Pin, sync::Arc};
 
+use pernixc_hash::HashSet;
 use pernixc_qbice::Engine;
+use pernixc_semantic_element::instance_associated_value;
+use pernixc_symbol::{
+    kind::{self, Kind},
+    member::{self, Member},
+    name,
+};
 use pernixc_target::{Global, TargetID};
 use pernixc_term::{
     constant::Constant,
     generic_arguments::{GenericArguments, Symbol},
-    generic_parameters::InstanceParameterID,
+    generic_parameters::{self, GenericParameters, InstanceParameterID},
     instance::{Instance, InstanceAssociated},
     lifetime::Lifetime,
     predicate::{Compatible, Predicate},
@@ -18,6 +25,7 @@ use proptest::{
     prop_assert, prop_oneof, proptest,
     test_runner::TestCaseResult,
 };
+use qbice::SetInputResult;
 
 use crate::{
     OverflowError,
@@ -413,6 +421,182 @@ impl<T: Clone + std::fmt::Debug + 'static> Property<T> for Identity<T> {
 }
 
 #[derive(Debug)]
+pub struct InstanceAssociatedInstance {
+    pub instance_id: Global<pernixc_symbol::ID>,
+    pub trait_associated_instance_id: Global<pernixc_symbol::ID>,
+    pub instance_associated_instance_id: pernixc_symbol::ID,
+    pub inner_instance: Box<dyn Property<Instance>>,
+}
+
+impl Arbitrary for InstanceAssociatedInstance {
+    type Parameters = Option<BoxedStrategy<Box<dyn Property<Instance>>>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let strategy =
+            args.unwrap_or_else(Box::<dyn Property<Instance>>::arbitrary);
+
+        (
+            Global::arbitrary(),
+            Global::arbitrary(),
+            pernixc_symbol::ID::arbitrary(),
+            strategy,
+        )
+            .prop_map(
+                |(
+                    symbol_id,
+                    trait_associated_instance_id,
+                    instance_associated_instance_id,
+                    inner_instance,
+                )| Self {
+                    instance_id: symbol_id,
+                    trait_associated_instance_id,
+                    instance_associated_instance_id,
+                    inner_instance,
+                },
+            )
+            .boxed()
+    }
+}
+macro_rules! expect_fresh {
+    ($expr:expr) => {
+        if $expr != SetInputResult::Fresh {
+            return Err(AbortError::IDCollision);
+        }
+    };
+}
+
+impl Property<Instance> for InstanceAssociatedInstance {
+    #[allow(clippy::too_many_lines)]
+    fn generate<'s>(
+        &'s self,
+        engine: &'s Arc<Engine>,
+        premise: &'s mut Premise,
+    ) -> BoxedFuture<'s, Instance> {
+        Box::pin(async move {
+            let (lhs, rhs) =
+                self.inner_instance.generate(engine, premise).await?;
+
+            {
+                let mut input_sesion = engine.input_session().await;
+
+                expect_fresh!(
+                    input_sesion
+                        .set_input(
+                            member::Key { symbol_id: self.instance_id },
+                            input_sesion.intern(Member {
+                                member_ids_by_name: std::iter::once((
+                                    input_sesion
+                                        .intern_unsized("test".to_string()),
+                                    self.instance_associated_instance_id,
+                                ))
+                                .collect(),
+                                unnameds: HashSet::default(),
+                            }),
+                        )
+                        .await
+                );
+
+                expect_fresh!(
+                    input_sesion
+                        .set_input(
+                            generic_parameters::Key {
+                                symbol_id: self.instance_id
+                            },
+                            input_sesion.intern(GenericParameters::default()),
+                        )
+                        .await
+                );
+
+                expect_fresh!(
+                    input_sesion
+                        .set_input(
+                            instance_associated_value::Key {
+                                symbol_id: self
+                                    .instance_id
+                                    .target_id
+                                    .make_global(
+                                        self.instance_associated_instance_id,
+                                    ),
+                            },
+                            input_sesion.intern(rhs),
+                        )
+                        .await
+                );
+
+                expect_fresh!(
+                    input_sesion
+                        .set_input(
+                            generic_parameters::Key {
+                                symbol_id: self
+                                    .instance_id
+                                    .target_id
+                                    .make_global(
+                                        self.instance_associated_instance_id,
+                                    ),
+                            },
+                            input_sesion.intern(GenericParameters::default()),
+                        )
+                        .await
+                );
+
+                expect_fresh!(
+                    input_sesion
+                        .set_input(
+                            kind::Key {
+                                symbol_id: self
+                                    .instance_id
+                                    .target_id
+                                    .make_global(
+                                        self.instance_associated_instance_id,
+                                    ),
+                            },
+                            Kind::InstanceAssociatedInstance,
+                        )
+                        .await
+                );
+
+                expect_fresh!(
+                    input_sesion
+                        .set_input(
+                            kind::Key {
+                                symbol_id: self.trait_associated_instance_id,
+                            },
+                            Kind::TraitAssociatedInstance,
+                        )
+                        .await
+                );
+
+                expect_fresh!(
+                    input_sesion
+                        .set_input(
+                            name::Key {
+                                symbol_id: self.trait_associated_instance_id,
+                            },
+                            input_sesion.intern_unsized("test".to_string()),
+                        )
+                        .await
+                );
+            }
+
+            Ok((
+                lhs,
+                Instance::InstanceAssociated(InstanceAssociated::new(
+                    Box::new(Instance::Symbol(Symbol::new(
+                        self.instance_id,
+                        GenericArguments::default(),
+                    ))),
+                    self.trait_associated_instance_id,
+                    GenericArguments::default(),
+                )),
+            ))
+        })
+    }
+
+    fn node_count(&self) -> usize { 1 + self.inner_instance.node_count() }
+}
+
+#[derive(Debug)]
 pub struct Mapping {
     pub property: Box<dyn Property<Type>>,
     pub instance_parameter_id: InstanceParameterID,
@@ -706,9 +890,11 @@ impl Arbitrary for Box<dyn Property<Instance>> {
                     Some(Box::<dyn Property<Lifetime>>::arbitrary()),
                     Some(ty),
                     Some(Box::<dyn Property<Constant>>::arbitrary()),
-                    Some(inner)
+                    Some(inner.clone())
                 ))
-                .prop_map(|x| Box::new(x) as _)
+                .prop_map(|x| Box::new(x) as _),
+                1 => InstanceAssociatedInstance::arbitrary_with(Some(inner))
+                .prop_map(|x| Box::new(x) as _),
             ]
         })
         .boxed()
