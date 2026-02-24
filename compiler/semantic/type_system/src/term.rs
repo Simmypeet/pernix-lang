@@ -43,7 +43,7 @@ pub trait Term:
     + crate::equivalence::Impl
     + crate::unification::Element
     + crate::subtype::Impl
-    // + crate::mapping::Element
+    + crate::mapping::Element
     // + crate::predicate::outlives::Impl
     + Debug
     + Clone
