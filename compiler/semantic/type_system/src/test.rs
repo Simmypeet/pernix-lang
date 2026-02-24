@@ -1,9 +1,11 @@
 use std::sync::Arc;
 
+use pernixc_extend::extend;
 use pernixc_qbice::{Engine, InMemoryFactory};
 use pernixc_term::{
     constant::Constant,
     generic_arguments::GenericArguments,
+    instance::Instance,
     lifetime::Lifetime,
     sub_term::TermLocation,
     r#type::Type,
@@ -32,7 +34,7 @@ impl MutableRecursive<Type> for Purge {
         ty: &mut Type,
         _: impl Iterator<Item = TermLocation>,
     ) -> bool {
-        if ty.is_trait_member() {
+        if ty.is_instance_associated() {
             *ty = Type::Error(pernixc_term::error::Error);
         }
 
@@ -50,33 +52,52 @@ impl MutableRecursive<Constant> for Purge {
     }
 }
 
-pub(super) fn purge_trait_associated_type<T: Term>(mut term: T) -> T {
+impl MutableRecursive<Instance> for Purge {
+    fn visit(
+        &mut self,
+        inst: &mut Instance,
+        _: impl Iterator<Item = TermLocation>,
+    ) -> bool {
+        if inst.is_instance_associated() {
+            *inst = Instance::Error(pernixc_term::error::Error);
+        }
+
+        true
+    }
+}
+
+pub(super) fn purge_instance_associated<T: Term>(mut term: T) -> T {
     let mut purge = Purge;
     visitor::accept_recursive_mut(&mut term, &mut purge);
-
     term
 }
 
-pub(super) fn purge_trait_associated_type_in_generic_arguments(
-    generic_arguments: GenericArguments,
+fn purge_instance_associated_mut<T: Term>(term: &mut T) {
+    let mut purge = Purge;
+    visitor::accept_recursive_mut(term, &mut purge);
+}
+
+#[extend]
+pub(super) fn purge_instance_associated_in_generic_args(
+    mut self: GenericArguments,
 ) -> GenericArguments {
-    GenericArguments {
-        lifetimes: generic_arguments
-            .lifetimes
-            .into_iter()
-            .map(purge_trait_associated_type)
-            .collect(),
-        types: generic_arguments
-            .types
-            .into_iter()
-            .map(purge_trait_associated_type)
-            .collect(),
-        constants: generic_arguments
-            .constants
-            .into_iter()
-            .map(purge_trait_associated_type)
-            .collect(),
+    for arg in self.lifetimes_mut() {
+        purge_instance_associated_mut(arg);
     }
+
+    for arg in self.types_mut() {
+        purge_instance_associated_mut(arg);
+    }
+
+    for arg in self.constants_mut() {
+        purge_instance_associated_mut(arg);
+    }
+
+    for arg in self.instances_mut() {
+        purge_instance_associated_mut(arg);
+    }
+
+    self
 }
 
 pub async fn create_test_engine() -> (Arc<Engine>, tempfile::TempDir) {
