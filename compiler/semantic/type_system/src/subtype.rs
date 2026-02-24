@@ -8,9 +8,10 @@ use std::{
 use pernixc_semantic_element::variance::Variance;
 use pernixc_term::{
     constant::Constant,
-    generic_arguments::{GenericArguments, TraitMember},
+    generic_arguments::GenericArguments,
+    instance::{Instance, InstanceAssociated},
     lifetime::{Forall, Lifetime},
-    matching::{Match, Matching},
+    matching::Match,
     predicate::{self, Outlives},
     sub_term::{SubLifetimeLocation, SubTypeLocation, TermLocation},
     r#type::Type,
@@ -19,7 +20,7 @@ use pernixc_term::{
 
 use crate::{
     Succeeded,
-    environment::{BoxedFuture, Environment, Query},
+    environment::{BoxedFuture, Environment, Query, QueryResult},
     equality::Equality,
     lifetime_constraint::LifetimeConstraint,
     normalizer::Normalizer,
@@ -124,6 +125,18 @@ impl visitor::MutableRecursive<Constant>
     }
 }
 
+impl visitor::MutableRecursive<Instance>
+    for ForallLifetimeInstantiationVisitor<'_>
+{
+    fn visit(
+        &mut self,
+        _: &mut Instance,
+        _: impl Iterator<Item = TermLocation>,
+    ) -> bool {
+        true
+    }
+}
+
 impl ForallLifetimeInstantiation {
     /// Instantiates the forall lifetimes in the term.
     pub fn instantiate<T: Term>(&self, term: &mut T) {
@@ -156,17 +169,14 @@ pub struct Subtypable {
 }
 
 impl<T: Term> Query for Subtype<T> {
-    type Parameter = ();
     type InProgress = ();
-    type Result = Succeeded<Subtypable>;
-    type Error = crate::Error;
+    type Result = Option<Arc<Succeeded<Subtypable>>>;
 
     fn query<'x, N: Normalizer>(
         &'x self,
         environment: &'x Environment<'x, N>,
-        (): Self::Parameter,
         (): Self::InProgress,
-    ) -> BoxedFuture<'x, Self::Result, Self::Error> {
+    ) -> BoxedFuture<'x, Self::Result> {
         Box::pin(Impl::query(self, environment))
     }
 }
@@ -177,7 +187,7 @@ pub trait Impl: Sized {
         subtype: &Subtype<Self>,
         environment: &Environment<impl Normalizer>,
     ) -> impl std::future::Future<
-        Output = Result<Option<Arc<Succeeded<Subtypable>>>, crate::Error>,
+        Output = QueryResult<Option<Arc<Succeeded<Subtypable>>>>,
     > + Send;
 }
 
@@ -185,7 +195,7 @@ impl Impl for Lifetime {
     async fn query(
         subtype: &Subtype<Self>,
         _: &Environment<'_, impl Normalizer>,
-    ) -> Result<Option<Arc<Succeeded<Subtypable>>>, crate::Error> {
+    ) -> QueryResult<Option<Arc<Succeeded<Subtypable>>>> {
         if subtype.source == subtype.target {
             return Ok(Some(Arc::new(Succeeded::new(Subtypable::default()))));
         }
@@ -351,12 +361,12 @@ fn merge_result(
     }
 }
 
-async fn subtypable_with_normalization(
-    target: &Type,
-    source: &Type,
+async fn subtypable_with_normalization<T: Term>(
+    target: &T,
+    source: &T,
     current_variance: Variance,
     environment: &Environment<'_, impl Normalizer>,
-) -> Result<Option<Succeeded<Subtypable>>, crate::Error> {
+) -> QueryResult<Option<Succeeded<Subtypable>>> {
     if let Some(Succeeded { result: eq, mut constraints }) =
         target.normalize(environment).await?
         && let Some(result) = environment
@@ -388,28 +398,26 @@ async fn subtypable_with_normalization(
 
 // Matches each of the inner term one by one and then recursively call subtype
 // query with the variance correctly transformed.
-async fn subtypable_with_unification(
+async fn subtypable_with_substructural_type(
     target: &Type,
     source: &Type,
     current_variance: Variance,
     environment: &Environment<'_, impl Normalizer>,
-) -> Result<Option<Succeeded<Subtypable>>, crate::Error> {
+) -> QueryResult<Option<Succeeded<Subtypable>>> {
     let Some(matching) = target.substructural_match(source) else {
         return Ok(None);
     };
 
     let mut result = Succeeded::new(Subtypable::default());
 
+    let (lifetimes, types, constants, instances) = matching.destructure();
+
     // normally, the `lhs_location` and `rhs_location` are the same except when
     // matching the tuple packing range
 
-    for Matching {
-        lhs: target_lt,
-        rhs: source_lt,
-        lhs_location: source_location,
-        ..
-    } in matching.lifetimes
-    {
+    for matching in lifetimes {
+        let (target_lt, source_lt, source_location, _) = matching.destructure();
+
         let inner_variance = environment
             .tracked_engine()
             .get_variance_of(
@@ -431,13 +439,9 @@ async fn subtypable_with_unification(
         merge_result(&mut result, &new_result);
     }
 
-    for Matching {
-        lhs: target_ty,
-        rhs: source_ty,
-        lhs_location: source_location,
-        ..
-    } in matching.types
-    {
+    for matching in types {
+        let (target_ty, source_ty, source_location, _) = matching.destructure();
+
         let inner_variance = environment
             .tracked_engine()
             .get_variance_of(
@@ -459,10 +463,10 @@ async fn subtypable_with_unification(
         merge_result(&mut result, &new_result);
     }
 
-    for Matching { lhs: target_const, rhs: source_const, .. } in
-        matching.constants
-    {
-        // constant should have variance influenced, as of now, we'll simply
+    for matching in constants {
+        let (target_const, source_const, _, _) = matching.destructure();
+
+        // constant shouldn't have variance influenced, as of now, we'll simply
         // propagate the current variance down
         let Some(new_result) = environment
             .query(&Subtype::new(target_const, source_const, current_variance))
@@ -474,23 +478,41 @@ async fn subtypable_with_unification(
         merge_result(&mut result, &new_result);
     }
 
+    for matching in instances {
+        let (target_inst, source_inst, _, _) = matching.destructure();
+
+        let Some(new_result) = environment
+            // the lifetimes in instances should match exactly
+            .query(&Subtype::new(target_inst, source_inst, Variance::Invariant))
+            .await?
+        else {
+            return Ok(None);
+        };
+
+        merge_result(&mut result, &new_result);
+    }
+
     Ok(Some(result))
 }
 
-async fn subtypable_without_mapping(
+async fn subtypable_without_mapping_type(
     target: &Type,
     source: &Type,
     variance: Variance,
     environment: &Environment<'_, impl Normalizer>,
-) -> Result<Option<Succeeded<Subtypable>>, crate::Error> {
+) -> QueryResult<Option<Succeeded<Subtypable>>> {
     // trivially satisfied
     if target == source {
         return Ok(Some(Succeeded::new(Subtypable::default())));
     }
 
-    if let Some(result) =
-        subtypable_with_unification(target, source, variance, environment)
-            .await?
+    if let Some(result) = subtypable_with_substructural_type(
+        target,
+        source,
+        variance,
+        environment,
+    )
+    .await?
     {
         return Ok(Some(result));
     }
@@ -510,18 +532,19 @@ async fn handle_mapping(
     last: &Type,
     variance: Variance,
     last_is_source: bool,
-    predicate: &predicate::Compatible<TraitMember, Type>,
+    predicate: &predicate::Compatible<InstanceAssociated, Type>,
     environment: &Environment<'_, impl Normalizer>,
-) -> Result<Option<Arc<Succeeded<Subtypable>>>, crate::Error> {
-    if first.as_trait_member().is_none() {
+) -> QueryResult<Option<Arc<Succeeded<Subtypable>>>> {
+    if first.as_instance_associated().is_none() {
         return Ok(None);
     }
 
-    let trait_member_term = Type::TraitMember(predicate.lhs.clone());
+    let instance_associated_term =
+        Type::InstanceAssociated(predicate.lhs.clone());
 
-    let Some(mut result) = subtypable_without_mapping(
+    let Some(mut result) = subtypable_without_mapping_type(
         first,
-        &trait_member_term,
+        &instance_associated_term,
         // lifetimes in the trait members are always invariant
         Variance::Invariant,
         environment,
@@ -569,8 +592,8 @@ impl Impl for Type {
     async fn query(
         subtype: &Subtype<Self>,
         environment: &Environment<'_, impl Normalizer>,
-    ) -> Result<Option<Arc<Succeeded<Subtypable>>>, crate::Error> {
-        if let Some(result) = subtypable_without_mapping(
+    ) -> QueryResult<Option<Arc<Succeeded<Subtypable>>>> {
+        if let Some(result) = subtypable_without_mapping_type(
             &subtype.target,
             &subtype.source,
             subtype.variance,
@@ -582,8 +605,8 @@ impl Impl for Type {
         }
 
         // can no longer be rewritten via trait member equality predicates
-        if !subtype.source.is_trait_member()
-            && !subtype.target.is_trait_member()
+        if !subtype.source.is_instance_associated()
+            && !subtype.target.is_instance_associated()
         {
             return Ok(None);
         }
@@ -593,7 +616,7 @@ impl Impl for Type {
             .premise()
             .predicates
             .iter()
-            .filter_map(|x| x.as_trait_type_compatible())
+            .filter_map(|x| x.as_instance_associated_type_equality())
         {
             if let Some(result) = handle_mapping(
                 &subtype.source,
@@ -630,7 +653,7 @@ impl Impl for Constant {
     async fn query(
         subtype: &Subtype<Self>,
         environment: &Environment<'_, impl Normalizer>,
-    ) -> Result<Option<Arc<Succeeded<Subtypable>>>, crate::Error> {
+    ) -> QueryResult<Option<Arc<Succeeded<Subtypable>>>> {
         // use strict equality in case of constant since the constant terms
         // don't havel lifetime anyway
         environment
@@ -650,7 +673,7 @@ impl<N: Normalizer> Environment<'_, N> {
         target: T,
         source: T,
         variance: Variance,
-    ) -> Result<Option<Arc<Succeeded<Subtypable>>>, crate::Error> {
+    ) -> QueryResult<Option<Arc<Succeeded<Subtypable>>>> {
         self.query(&Subtype::new(target, source, variance)).await
     }
 
@@ -660,11 +683,8 @@ impl<N: Normalizer> Environment<'_, N> {
         &self,
         target: &GenericArguments,
         source: &GenericArguments,
-    ) -> Result<Option<Succeeded<Subtypable>>, crate::Error> {
-        if target.lifetimes.len() != source.lifetimes.len()
-            || target.types.len() != source.types.len()
-            || target.constants.len() != source.constants.len()
-        {
+    ) -> QueryResult<Option<Succeeded<Subtypable>>> {
+        if !target.arity_matches(source) {
             return Ok(None);
         }
 
@@ -674,7 +694,7 @@ impl<N: Normalizer> Environment<'_, N> {
         );
 
         for (target_lt, source_lt) in
-            source.lifetimes.iter().zip(target.lifetimes.iter())
+            source.lifetimes().iter().zip(target.lifetimes().iter())
         {
             let Some(new_result) = self
                 .query(&Subtype::new(
@@ -691,7 +711,7 @@ impl<N: Normalizer> Environment<'_, N> {
         }
 
         for (target_ty, source_ty) in
-            source.types.iter().zip(target.types.iter())
+            source.types().iter().zip(target.types().iter())
         {
             let Some(new_result) = self
                 .query(&Subtype::new(
@@ -708,7 +728,7 @@ impl<N: Normalizer> Environment<'_, N> {
         }
 
         for (target_const, source_const) in
-            source.constants.iter().zip(target.constants.iter())
+            source.constants().iter().zip(target.constants().iter())
         {
             let Some(new_result) = self
                 .query(&Subtype::new(
@@ -724,7 +744,154 @@ impl<N: Normalizer> Environment<'_, N> {
             merge_result(&mut result, &new_result);
         }
 
+        for (target_inst, source_inst) in
+            source.instances().iter().zip(target.instances().iter())
+        {
+            let Some(new_result) = self
+                .query(&Subtype::new(
+                    source_inst.clone(),
+                    target_inst.clone(),
+                    // The lifetime in the instances should match exactly
+                    Variance::Invariant,
+                ))
+                .await?
+            else {
+                return Ok(None);
+            };
+
+            merge_result(&mut result, &new_result);
+        }
+
         Ok(Some(result))
+    }
+}
+
+// Matches each of the inner term one by one and then recursively call subtype
+// query with the variance correctly transformed.
+async fn subtypable_with_substructural_instance(
+    target: &Instance,
+    source: &Instance,
+    current_variance: Variance,
+    environment: &Environment<'_, impl Normalizer>,
+) -> QueryResult<Option<Succeeded<Subtypable>>> {
+    let Some(matching) = target.substructural_match(source) else {
+        return Ok(None);
+    };
+
+    let mut result = Succeeded::new(Subtypable::default());
+
+    let (lifetimes, types, constants, instances) = matching.destructure();
+
+    // normally, the `lhs_location` and `rhs_location` are the same except when
+    // matching the tuple packing range
+
+    for matching in lifetimes {
+        let (target_lt, source_lt, _, _) = matching.destructure();
+
+        let Some(new_result) = environment
+            .query(&Subtype::new(
+                target_lt,
+                source_lt,
+                current_variance.xfrom(Variance::Invariant),
+            ))
+            .await?
+        else {
+            return Ok(None);
+        };
+
+        merge_result(&mut result, &new_result);
+    }
+
+    for matching in types {
+        let (target_ty, source_ty, _, _) = matching.destructure();
+
+        let Some(new_result) = environment
+            .query(&Subtype::new(
+                target_ty,
+                source_ty,
+                current_variance.xfrom(Variance::Invariant),
+            ))
+            .await?
+        else {
+            return Ok(None);
+        };
+
+        merge_result(&mut result, &new_result);
+    }
+
+    for matching in constants {
+        let (target_const, source_const, _, _) = matching.destructure();
+
+        // constant shouldn't have variance influenced, as of now, we'll simply
+        // propagate the current variance down
+        let Some(new_result) = environment
+            .query(&Subtype::new(
+                target_const,
+                source_const,
+                current_variance.xfrom(Variance::Invariant),
+            ))
+            .await?
+        else {
+            return Ok(None);
+        };
+
+        merge_result(&mut result, &new_result);
+    }
+
+    for matching in instances {
+        let (target_inst, source_inst, _, _) = matching.destructure();
+
+        let Some(new_result) = environment
+            // the lifetimes in instances should match exactly
+            .query(&Subtype::new(
+                target_inst,
+                source_inst,
+                current_variance.xfrom(Variance::Invariant),
+            ))
+            .await?
+        else {
+            return Ok(None);
+        };
+
+        merge_result(&mut result, &new_result);
+    }
+
+    Ok(Some(result))
+}
+
+impl Impl for Instance {
+    async fn query(
+        subtype: &Subtype<Self>,
+        environment: &Environment<'_, impl Normalizer>,
+    ) -> QueryResult<Option<Arc<Succeeded<Subtypable>>>> {
+        // trivially satisfied
+        if subtype.target == subtype.source {
+            return Ok(Some(Arc::new(Succeeded::new(Subtypable::default()))));
+        }
+
+        if let Some(result) = subtypable_with_substructural_instance(
+            &subtype.target,
+            &subtype.source,
+            subtype.variance,
+            environment,
+        )
+        .await?
+        {
+            return Ok(Some(Arc::new(result)));
+        }
+
+        if let Some(result) = subtypable_with_normalization(
+            &subtype.target,
+            &subtype.source,
+            subtype.variance,
+            environment,
+        )
+        .await?
+        {
+            return Ok(Some(Arc::new(result)));
+        }
+
+        Ok(None)
     }
 }
 
