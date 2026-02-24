@@ -31,17 +31,19 @@ async fn ambiguous() {
         id: pernixc_arena::ID::new(0),
     });
 
-    let lhs = GenericArguments {
-        lifetimes: Vec::new(),
-        types: vec![Type::Primitive(Primitive::Int32), t_parameter],
-        constants: Vec::new(),
-    };
+    let lhs = GenericArguments::new(
+        Vec::new(),
+        vec![Type::Primitive(Primitive::Int32), t_parameter],
+        Vec::new(),
+        Vec::new(),
+    );
 
-    let rhs = GenericArguments {
-        lifetimes: Vec::new(),
-        types: vec![u_parameter, Type::Primitive(Primitive::Int32)],
-        constants: Vec::new(),
-    };
+    let rhs = GenericArguments::new(
+        Vec::new(),
+        vec![u_parameter, Type::Primitive(Primitive::Int32)],
+        Vec::new(),
+        Vec::new(),
+    );
 
     let (engine, _dir) = create_test_engine().await;
     let premise = Premise::default();
@@ -65,20 +67,22 @@ async fn more_general() {
         id: pernixc_arena::ID::new(0),
     });
 
-    let lhs = GenericArguments {
-        lifetimes: Vec::new(),
-        types: vec![Type::Primitive(Primitive::Int32), t_parameter],
-        constants: Vec::new(),
-    };
+    let lhs = GenericArguments::new(
+        Vec::new(),
+        vec![Type::Primitive(Primitive::Int32), t_parameter],
+        Vec::new(),
+        Vec::new(),
+    );
 
-    let rhs = GenericArguments {
-        lifetimes: Vec::new(),
-        types: vec![
+    let rhs = GenericArguments::new(
+        Vec::new(),
+        vec![
             Type::Primitive(Primitive::Int32),
             Type::Primitive(Primitive::Int32),
         ],
-        constants: Vec::new(),
-    };
+        Vec::new(),
+        Vec::new(),
+    );
 
     let (engine, _dir) = create_test_engine().await;
     let premise = Premise::default();
@@ -105,20 +109,22 @@ async fn incompatible() {
         id: pernixc_arena::ID::new(0),
     });
 
-    let lhs = GenericArguments {
-        lifetimes: Vec::new(),
-        types: vec![Type::Primitive(Primitive::Int32), t_parameter],
-        constants: Vec::new(),
-    };
+    let lhs = GenericArguments::new(
+        Vec::new(),
+        vec![Type::Primitive(Primitive::Int32), t_parameter],
+        Vec::new(),
+        Vec::new(),
+    );
 
-    let rhs = GenericArguments {
-        lifetimes: Vec::new(),
-        types: vec![
+    let rhs = GenericArguments::new(
+        Vec::new(),
+        vec![
             Type::Primitive(Primitive::Bool),
             Type::Primitive(Primitive::Int32),
         ],
-        constants: Vec::new(),
-    };
+        Vec::new(),
+        Vec::new(),
+    );
 
     let (engine, _dir) = create_test_engine().await;
     let premise = Premise::default();
