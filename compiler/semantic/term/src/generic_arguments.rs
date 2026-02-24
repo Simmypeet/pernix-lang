@@ -205,6 +205,24 @@ impl GenericArguments {
             && self.constants.len() == generic_arguments.constants.len()
             && self.instancces.len() == generic_arguments.instancces.len()
     }
+
+    /// Pushes a lifetime to the generic arguments.
+    pub fn push_lifetime(&mut self, lifetime: Lifetime) {
+        self.lifetimes.push(lifetime);
+    }
+
+    /// Pushes a type to the generic arguments.
+    pub fn push_type(&mut self, ty: Type) { self.types.push(ty); }
+
+    /// Pushes a constant to the generic arguments.
+    pub fn push_constant(&mut self, constant: Constant) {
+        self.constants.push(constant);
+    }
+
+    /// Pushes an instance to the generic arguments.
+    pub fn push_instance(&mut self, instance: Instance) {
+        self.instancces.push(instance);
+    }
 }
 
 /// Represents a sub-term location where the sub-term is stored as a generic
