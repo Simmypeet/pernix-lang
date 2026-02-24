@@ -6,23 +6,20 @@ use pernixc_semantic_element::variance::Variance;
 use pernixc_term::{predicate::Tuple, r#type::Type};
 
 use crate::{
-    Error, Satisfied, Succeeded,
+    Satisfied, Succeeded,
     environment::{BoxedFuture, Environment, Query},
     normalizer::Normalizer,
 };
 
 impl Query for Tuple<Type> {
-    type Parameter = ();
     type InProgress = ();
-    type Result = Succeeded<Satisfied>;
-    type Error = Error;
+    type Result = Option<Arc<Succeeded<Satisfied>>>;
 
     fn query<'x, N: Normalizer>(
         &'x self,
         environment: &'x Environment<'x, N>,
-        (): Self::Parameter,
         (): Self::InProgress,
-    ) -> BoxedFuture<'x, Self::Result, Self::Error> {
+    ) -> BoxedFuture<'x, Self::Result> {
         Box::pin(async move {
             // trivially satisfied
             if self.0.as_tuple().is_some() {
