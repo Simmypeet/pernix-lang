@@ -159,14 +159,12 @@ fn extract<K: Ord, V>(
 }
 
 trait CompatiblePredicate<T> {
-    fn predicate(
+    async fn predicate(
         &mut self,
         left: &T,
         right: &T,
         environment: &Environment<'_, impl Normalizer>,
-    ) -> impl std::future::Future<
-        Output = Result<Option<Succeeded<Satisfied>>, OverflowError>,
-    > + Send;
+    ) -> Result<Option<Succeeded<Satisfied>>, OverflowError>;
 }
 
 async fn mapping_equals<T: Term, N: Normalizer, P: CompatiblePredicate<T>>(
@@ -328,10 +326,59 @@ impl CompatiblePredicate<Constant> for UniToSubs<'_> {
         rhs: &Constant,
         environment: &Environment<'_, impl Normalizer>,
     ) -> Result<Option<Succeeded<Satisfied>>, OverflowError> {
-        Ok(environment
+        environment
             .query(&Equality::new(lhs.clone(), rhs.clone()))
             .await
-            .map(|x| x.map(|x| (*x).clone()))?)
+            .map(|x| x.map(|x| (*x).clone()))
+    }
+}
+
+impl CompatiblePredicate<Instance> for UniToSubs<'_> {
+    async fn predicate(
+        &mut self,
+        lhs: &Instance,
+        rhs: &Instance,
+        environment: &Environment<'_, impl Normalizer>,
+    ) -> Result<Option<Succeeded<Satisfied>>, OverflowError> {
+        let Some(unifier) = environment
+            .query(&Unification::new(
+                lhs.clone(),
+                rhs.clone(),
+                LifetimeUnifyingPredicate,
+            ))
+            .await?
+        else {
+            return Ok(None);
+        };
+        let mut constraints = unifier.constraints.clone();
+
+        let mut mapping = Mapping::default();
+        mapping.append_from_unifier(unifier.result.clone());
+
+        assert!(mapping.types.is_empty());
+        assert!(mapping.constants.is_empty());
+
+        // all lifetimes must strictly matched
+        for (lhs, values) in mapping.lifetimes {
+            for rhs in values {
+                if lhs == rhs {
+                    continue;
+                }
+
+                if lhs.is_forall() || rhs.is_forall() {
+                    *self.0 = true;
+                } else {
+                    constraints.insert(LifetimeConstraint::LifetimeOutlives(
+                        Outlives::new(lhs.clone(), rhs.clone()),
+                    ));
+                    constraints.insert(LifetimeConstraint::LifetimeOutlives(
+                        Outlives::new(rhs.clone(), lhs.clone()),
+                    ));
+                }
+            }
+        }
+
+        Ok(Some(Succeeded::satisfied_with(constraints)))
     }
 }
 
@@ -342,6 +389,26 @@ impl CompatiblePredicate<Type> for Equals<'_> {
         &mut self,
         left: &Type,
         right: &Type,
+        environment: &Environment<'_, impl Normalizer>,
+    ) -> Result<Option<Succeeded<Satisfied>>, OverflowError> {
+        environment
+            .subtypes(left.clone(), right.clone(), Variance::Covariant)
+            .await?
+            .map_or(Ok(None), |result| {
+                if !result.result.forall_lifetime_errors.is_empty() {
+                    *self.0 = true;
+                }
+
+                Ok(Some(Succeeded::satisfied_with(result.constraints.clone())))
+            })
+    }
+}
+
+impl CompatiblePredicate<Instance> for Equals<'_> {
+    async fn predicate(
+        &mut self,
+        left: &Instance,
+        right: &Instance,
         environment: &Environment<'_, impl Normalizer>,
     ) -> Result<Option<Succeeded<Satisfied>>, OverflowError> {
         environment
@@ -368,7 +435,7 @@ impl<N: Normalizer> Environment<'_, N> {
         &self,
         this: &GenericArguments,
         target: &GenericArguments,
-    ) -> Result<Option<Deduction>, OverflowError> {
+    ) -> Result<Option<Succeeded<Deduction>>, OverflowError> {
         assert!(
             this.arity_matches(target),
             "the arity of the generic arguments should match"
@@ -487,6 +554,8 @@ impl<N: Normalizer> Environment<'_, N> {
             else {
                 return Ok(None);
             };
+
+            constraints.extend(new_constraints);
 
             let Some(Succeeded {
                 result: instances,
