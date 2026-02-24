@@ -16,6 +16,7 @@ use siphasher::sip128::Hasher128;
 
 pub mod accessibility;
 pub mod final_implements;
+pub mod instance_associated;
 pub mod kind;
 pub mod linkage;
 pub mod member;

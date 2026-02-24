@@ -35,6 +35,16 @@ pub struct Member {
     pub unnameds: HashSet<ID>,
 }
 
+impl Member {
+    /// Retrieves the member ID by its name.
+    ///
+    /// Returns `None` if there is no member with the given name.   
+    #[must_use]
+    pub fn get_by_name(&self, name: &str) -> Option<ID> {
+        self.member_ids_by_name.get(name).copied()
+    }
+}
+
 /// The key type used with [`TrackedEngine`] to access the members of a symbol.
 #[derive(
     Debug,
