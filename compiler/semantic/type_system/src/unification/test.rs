@@ -3,16 +3,16 @@ use std::{
     sync::Arc,
 };
 
-use pernixc_hash::HashSet;
 use pernixc_qbice::Engine;
-use pernixc_symbol::kind::Kind;
 use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
-    generic_arguments::{GenericArguments, MemberSymbol, Symbol, TraitMember},
+    generic_arguments::{GenericArguments, Symbol},
     generic_parameters::{
-        ConstantParameterID, LifetimeParameterID, TypeParameterID,
+        ConstantParameterID, InstanceParameterID, LifetimeParameterID,
+        TypeParameterID,
     },
+    instance::{Instance, InstanceAssociated},
     lifetime::Lifetime,
     predicate::{Compatible, Predicate},
     sub_term::Location,
@@ -27,16 +27,16 @@ use proptest::{
     test_runner::{TestCaseError, TestCaseResult},
 };
 
-use super::{Log, Predicate as _, Unification, Unifier};
+use super::{Predicate as _, Unification, Unifier};
 use crate::{
-    Error, Satisfied, Succeeded,
-    environment::{Environment, Premise},
+    OverflowError, Satisfied, Succeeded,
+    environment::{Environment, Premise, QueryResult},
     equality::Equality,
     normalizer,
     term::Term,
     test::{
-        create_test_engine, purge_trait_associated_type,
-        purge_trait_associated_type_in_generic_arguments,
+        create_test_engine, purge_instance_associated,
+        purge_instance_associated_in_generic_args,
     },
 };
 
@@ -48,9 +48,7 @@ impl super::Predicate<Lifetime> for GenericParameterUnifyConfig {
         &self,
         from: &Lifetime,
         _: &Lifetime,
-        _: &[Log],
-        _: &[Log],
-    ) -> crate::Result<Satisfied> {
+    ) -> QueryResult<Option<Succeeded<Satisfied>>> {
         Ok(from.is_parameter().then_some(Succeeded::satisfied()))
     }
 }
@@ -60,9 +58,7 @@ impl super::Predicate<Type> for GenericParameterUnifyConfig {
         &self,
         from: &Type,
         _: &Type,
-        _: &[Log],
-        _: &[Log],
-    ) -> crate::Result<Satisfied> {
+    ) -> QueryResult<Option<Succeeded<Satisfied>>> {
         Ok(from.is_parameter().then_some(Succeeded::satisfied()))
     }
 }
@@ -72,9 +68,17 @@ impl super::Predicate<Constant> for GenericParameterUnifyConfig {
         &self,
         from: &Constant,
         _: &Constant,
-        _: &[Log],
-        _: &[Log],
-    ) -> crate::Result<Satisfied> {
+    ) -> QueryResult<Option<Succeeded<Satisfied>>> {
+        Ok(from.is_parameter().then_some(Succeeded::satisfied()))
+    }
+}
+
+impl super::Predicate<Instance> for GenericParameterUnifyConfig {
+    fn unifiable(
+        &self,
+        from: &Instance,
+        _: &Instance,
+    ) -> QueryResult<Option<Succeeded<Satisfied>>> {
         Ok(from.is_parameter().then_some(Succeeded::satisfied()))
     }
 }
@@ -84,7 +88,7 @@ impl super::Predicate<Constant> for GenericParameterUnifyConfig {
 )]
 pub enum AbortError {
     #[error(transparent)]
-    Abrupt(#[from] Error),
+    Overflow(#[from] OverflowError),
     #[error("collision to the ID generated on the table")]
     IDCollision,
 }
@@ -139,43 +143,70 @@ impl<
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (
-            Param::arbitrary(),
-            T::arbitrary().prop_map(purge_trait_associated_type),
-        )
+        (Param::arbitrary(), T::arbitrary().prop_map(purge_instance_associated))
             .prop_map(|(parameter, rhs)| Self { parameter, rhs })
             .boxed()
     }
 }
 
 impl Arbitrary for Box<dyn Property<Lifetime>> {
-    type Parameters = (
-        Option<BoxedStrategy<Box<dyn Property<Type>>>>,
-        Option<BoxedStrategy<Box<dyn Property<Constant>>>>,
-    );
+    type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         Basic::<LifetimeParameterID, Lifetime>::arbitrary()
             .prop_map(|x| Box::new(x) as _)
             .boxed()
     }
 }
 
-impl Arbitrary for Box<dyn Property<Type>> {
-    type Parameters = ();
+impl Arbitrary for Box<dyn Property<Instance>> {
+    type Parameters = Option<BoxedStrategy<Box<dyn Property<Type>>>>;
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with(ty: Self::Parameters) -> Self::Strategy {
+        let leaf = Basic::<InstanceParameterID, Instance>::arbitrary()
+            .prop_map(|x| Box::new(x) as _);
+
+        leaf.prop_recursive(6, 36, 6, move |inner| {
+            let ty = ty.clone().unwrap_or_else(|| {
+                Box::<dyn Property<Type>>::arbitrary_with(Some(inner.clone()))
+            });
+
+            prop_oneof![
+                1=> SymbolCongruence::arbitrary_with((
+                    Some(Box::<dyn Property<Lifetime>>::arbitrary()),
+                    Some(ty),
+                    Some(Box::<dyn Property<Constant>>::arbitrary()),
+                    Some(inner.clone())
+                )).prop_map(|x| Box::new(x) as _),
+            ]
+        })
+        .boxed()
+    }
+}
+
+impl Arbitrary for Box<dyn Property<Type>> {
+    type Parameters = Option<BoxedStrategy<Box<dyn Property<Instance>>>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(inst: Self::Parameters) -> Self::Strategy {
         let leaf = Basic::<TypeParameterID, Type>::arbitrary()
             .prop_map(|x| Box::new(x) as _);
 
-        leaf.prop_recursive(20, 120, 6, move |inner| {
+        leaf.prop_recursive(6, 36, 6, move |inner| {
+            let inst = inst.clone().unwrap_or_else(|| {
+                Box::<dyn Property<Instance>>::arbitrary_with(Some(
+                    inner.clone(),
+                ))
+            });
+
             prop_oneof![
                 1=> SymbolCongruence::arbitrary_with((
                     Some(Box::<dyn Property<Lifetime>>::arbitrary()),
                     Some(inner.clone()),
-                    Some(Box::<dyn Property<Constant>>::arbitrary())
+                    Some(Box::<dyn Property<Constant>>::arbitrary()),
+                    Some(inst)
                 ))
                 .prop_map(|x| Box::new(x) as _),
                 3 => Mapping::arbitrary_with(Some(inner.clone()))
@@ -236,11 +267,11 @@ where
         for property in &self.terms {
             let (lhs_term, rhs_term) = property.generate();
 
-            lhs.push(tuple::Element { term: lhs_term, is_unpacked: false });
-            rhs.push(tuple::Element { term: rhs_term, is_unpacked: false });
+            lhs.push(tuple::Element::new_regular(lhs_term));
+            rhs.push(tuple::Element::new_regular(rhs_term));
         }
 
-        (Tuple { elements: lhs }.into(), Tuple { elements: rhs }.into())
+        (Tuple::new(lhs).into(), Tuple::new(rhs).into())
     }
 
     fn node_count(&self) -> usize {
@@ -271,6 +302,7 @@ pub struct SymbolCongruence {
     lifetime_properties: Vec<Box<dyn Property<Lifetime>>>,
     type_properties: Vec<Box<dyn Property<Type>>>,
     constant_properties: Vec<Box<dyn Property<Constant>>>,
+    instance_properties: Vec<Box<dyn Property<Instance>>>,
 
     id: Global<pernixc_symbol::ID>,
 }
@@ -297,50 +329,47 @@ where
                 property.apply(engine, premise).await?;
             }
 
+            for property in &self.instance_properties {
+                property.apply(engine, premise).await?;
+            }
+
             Ok(())
         })
     }
 
     fn generate(&self) -> (T, T) {
-        let mut lhs = Symbol {
-            id: self.id,
-            generic_arguments: GenericArguments {
-                lifetimes: Vec::new(),
-                types: Vec::new(),
-                constants: Vec::new(),
-            },
-        };
-        let mut rhs = Symbol {
-            id: self.id,
-            generic_arguments: GenericArguments {
-                lifetimes: Vec::new(),
-                types: Vec::new(),
-                constants: Vec::new(),
-            },
-        };
+        let mut lhs = GenericArguments::default();
+        let mut rhs = GenericArguments::default();
 
         for property in &self.lifetime_properties {
             let (lhs_lifetime, rhs_lifetime) = property.generate();
 
-            lhs.generic_arguments.lifetimes.push(lhs_lifetime);
-            rhs.generic_arguments.lifetimes.push(rhs_lifetime);
+            lhs.push_lifetime(lhs_lifetime);
+            rhs.push_lifetime(rhs_lifetime);
         }
 
         for property in &self.type_properties {
             let (lhs_type, rhs_type) = property.generate();
 
-            lhs.generic_arguments.types.push(lhs_type);
-            rhs.generic_arguments.types.push(rhs_type);
+            lhs.push_type(lhs_type);
+            rhs.push_type(rhs_type);
         }
 
         for property in &self.constant_properties {
             let (lhs_constant, rhs_constant) = property.generate();
 
-            lhs.generic_arguments.constants.push(lhs_constant);
-            rhs.generic_arguments.constants.push(rhs_constant);
+            lhs.push_constant(lhs_constant);
+            rhs.push_constant(rhs_constant);
         }
 
-        (lhs.into(), rhs.into())
+        for property in &self.instance_properties {
+            let (lhs_instance, rhs_instance) = property.generate();
+
+            lhs.push_instance(lhs_instance);
+            rhs.push_instance(rhs_instance);
+        }
+
+        (Symbol::new(self.id, lhs).into(), Symbol::new(self.id, rhs).into())
     }
 
     fn node_count(&self) -> usize {
@@ -348,6 +377,11 @@ where
             + self.type_properties.iter().map(|x| x.node_count()).sum::<usize>()
             + self
                 .constant_properties
+                .iter()
+                .map(|x| x.node_count())
+                .sum::<usize>()
+            + self
+                .instance_properties
                 .iter()
                 .map(|x| x.node_count())
                 .sum::<usize>()
@@ -359,6 +393,7 @@ impl Arbitrary for SymbolCongruence {
         Option<BoxedStrategy<Box<dyn Property<Lifetime>>>>,
         Option<BoxedStrategy<Box<dyn Property<Type>>>>,
         Option<BoxedStrategy<Box<dyn Property<Constant>>>>,
+        Option<BoxedStrategy<Box<dyn Property<Instance>>>>,
     );
     type Strategy = BoxedStrategy<Self>;
 
@@ -376,12 +411,17 @@ impl Arbitrary for SymbolCongruence {
                 args.2.unwrap_or_else(Box::<dyn Property<Constant>>::arbitrary),
                 1..=6,
             ),
+            proptest::collection::vec(
+                args.3.unwrap_or_else(Box::<dyn Property<Instance>>::arbitrary),
+                1..=6,
+            ),
             Global::arbitrary(),
         )
-            .prop_map(|(tys, lts, constant_properties, id)| Self {
+            .prop_map(|(tys, lts, constant_properties, is, id)| Self {
                 lifetime_properties: lts,
                 type_properties: tys,
                 constant_properties,
+                instance_properties: is,
                 id,
             })
             .boxed()
@@ -391,8 +431,9 @@ impl Arbitrary for SymbolCongruence {
 #[derive(Debug)]
 pub struct Mapping {
     pub property: Box<dyn Property<Type>>,
-    pub trait_member: TraitMember,
-    pub trait_id: pernixc_symbol::ID,
+    pub instance_parameter_id: InstanceParameterID,
+    pub trait_associated_symbol_id: Global<pernixc_symbol::ID>,
+    pub trait_associated_symbol_generic_arguments: GenericArguments,
 }
 
 impl Property<Type> for Mapping {
@@ -402,50 +443,9 @@ impl Property<Type> for Mapping {
         premise: &'x mut Premise,
     ) -> BoxedFuture<'x> {
         Box::pin(async move {
-            {
-                let mut input_session = engine.input_session().await;
-                input_session
-                    .set_input(
-                        pernixc_symbol::parent::Key {
-                            symbol_id: self.trait_member.id,
-                        },
-                        Some(self.trait_id),
-                    )
-                    .await;
-
-                input_session
-                    .set_input(
-                        pernixc_symbol::kind::Key {
-                            symbol_id: self
-                                .trait_member
-                                .id
-                                .target_id
-                                .make_global(self.trait_id),
-                        },
-                        Kind::Trait,
-                    )
-                    .await;
-
-                input_session
-                    .set_input(
-                        pernixc_semantic_element::implemented::Key {
-                            symbol_id: self
-                                .trait_member
-                                .id
-                                .target_id
-                                .make_global(self.trait_id),
-                        },
-                        engine.intern(HashSet::default()),
-                    )
-                    .await;
-            }
-
             let (from, to) = self.generate();
 
-            if GenericParameterUnifyConfig
-                .unifiable(&from, &to, &Vec::new(), &Vec::new())?
-                .is_some()
-            {
+            if GenericParameterUnifyConfig.unifiable(&from, &to)?.is_some() {
                 println!("skip added predicate");
                 return Ok(());
             }
@@ -454,9 +454,18 @@ impl Property<Type> for Mapping {
 
             let mapped = self.property.generate().0;
 
-            premise.predicates.insert(Predicate::TraitTypeCompatible(
-                Compatible::new(self.trait_member.clone(), mapped),
-            ));
+            premise.predicates.insert(
+                Predicate::InstanceAssociatedTypeEquality(Compatible::new(
+                    InstanceAssociated::new(
+                        Box::new(Instance::Parameter(
+                            self.instance_parameter_id,
+                        )),
+                        self.trait_associated_symbol_id,
+                        self.trait_associated_symbol_generic_arguments.clone(),
+                    ),
+                    mapped,
+                )),
+            );
 
             Ok(())
         })
@@ -465,7 +474,14 @@ impl Property<Type> for Mapping {
     fn generate(&self) -> (Type, Type) {
         let term = self.property.generate().1;
 
-        (Type::TraitMember(self.trait_member.clone()), term)
+        (
+            Type::InstanceAssociated(InstanceAssociated::new(
+                Box::new(Instance::Parameter(self.instance_parameter_id)),
+                self.trait_associated_symbol_id,
+                self.trait_associated_symbol_generic_arguments.clone(),
+            )),
+            term,
+        )
     }
 
     fn node_count(&self) -> usize { 1 + self.property.node_count() }
@@ -479,22 +495,27 @@ impl Arbitrary for Mapping {
         let strategy =
             strategy.unwrap_or_else(Box::<dyn Property<Type>>::arbitrary);
 
-        (strategy, TraitMember::arbitrary(), pernixc_symbol::ID::arbitrary())
-            .prop_map(|(property, trait_member, trait_id)| Self {
-                property,
-                trait_id,
-                trait_member: TraitMember(MemberSymbol {
-                    id: trait_member.0.id,
-                    member_generic_arguments:
-                        purge_trait_associated_type_in_generic_arguments(
-                            trait_member.0.member_generic_arguments,
-                        ),
-                    parent_generic_arguments:
-                        purge_trait_associated_type_in_generic_arguments(
-                            trait_member.0.parent_generic_arguments,
-                        ),
-                }),
-            })
+        (
+            strategy,
+            InstanceParameterID::arbitrary(),
+            Global::arbitrary(),
+            GenericArguments::arbitrary(),
+        )
+            .prop_map(
+                |(
+                    property,
+                    instance_parameter_id,
+                    trait_associated_symbol_id,
+                    trait_associated_symbol_generic_arguments,
+                )| Self {
+                    property,
+                    instance_parameter_id,
+                    trait_associated_symbol_id,
+                    trait_associated_symbol_generic_arguments:
+                        trait_associated_symbol_generic_arguments
+                            .purge_instance_associated_in_generic_args(),
+                },
+            )
             .boxed()
     }
 }
@@ -503,8 +524,8 @@ fn rewrite_term<T: Term + 'static>(
     lhs: &mut T,
     unifier: Unifier<T>,
 ) -> TestCaseResult {
-    if let Some(rewritten) = unifier.rewritten_from {
-        *lhs = rewritten;
+    if let Some(rewritten_from) = unifier.rewritten_from {
+        *lhs = rewritten_from;
     }
 
     match unifier.matching {
@@ -544,6 +565,17 @@ fn rewrite_term<T: Term + 'static>(
                 rewrite_term(&mut sub_constant, constant_unifier)?;
 
                 constant_location.assign_sub_term(lhs, sub_constant);
+            }
+
+            for (instance_location, instance_unifier) in substructural.instances
+            {
+                let mut sub_instance = instance_location
+                    .get_sub_term(lhs)
+                    .ok_or_else(|| TestCaseError::fail("invalid location"))?;
+
+                rewrite_term(&mut sub_instance, instance_unifier)?;
+
+                instance_location.assign_sub_term(lhs, sub_instance);
             }
 
             Ok(())
@@ -607,6 +639,11 @@ async fn property_based_testing<T: Term + 'static>(
 }
 
 proptest! {
+    #![proptest_config(proptest::test_runner::Config {
+        max_shrink_iters: 100_000,
+        ..Default::default()
+    })]
+
     #[test]
     fn property_based_testing_lifetime(
         property in Box::<dyn Property<Lifetime>>::arbitrary()
@@ -622,11 +659,13 @@ proptest! {
     fn property_based_testing_type(
         property in Box::<dyn Property<Type>>::arbitrary()
     ) {
-        tokio::runtime::Builder::new_multi_thread()
+        let test = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
             .unwrap()
-            .block_on(property_based_testing(&*property))?;
+            .block_on(property_based_testing(&*property));
+
+        println!("ran property with {} nodes, got {:?}", property.node_count(), test);
     }
 
     #[test]

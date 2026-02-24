@@ -138,6 +138,8 @@ pub struct Substructural<T: SubTerm> {
 
 impl<T: SubTerm> Substructural<T> {
     /// Destructures the substructural unification into its components.
+    #[must_use]
+    #[allow(clippy::type_complexity)]
     pub fn destructure(
         self,
     ) -> (
@@ -190,6 +192,12 @@ pub enum Matching<T: SubTerm> {
 /// Represents a unification between two terms.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Unifier<T: SubTerm> {
+    /// The rewritten left-hand side term after unification.
+    pub rewritten_from: Option<T>,
+
+    /// The rewritten right-hand side term after unification.
+    pub rewritten_to: Option<T>,
+
     /// The unification of the `lhs` and `rhs` terms.
     pub matching: Matching<T>,
 }
@@ -330,7 +338,11 @@ async fn substructural_unify<T: Term>(
     }
 
     Ok(Some(Succeeded::with_constraints(
-        Unifier { matching: Matching::Substructural(result) },
+        Unifier {
+            matching: Matching::Substructural(result),
+            rewritten_from: None,
+            rewritten_to: None,
+        },
         constraints,
     )))
 }
@@ -345,7 +357,11 @@ pub(super) async fn unify<T: Term>(
         environment.query(&Equality::new(from.clone(), to.clone())).await?
     {
         return Ok(Some(Arc::new(Succeeded::with_constraints(
-            Unifier { matching: Matching::Equality },
+            Unifier {
+                matching: Matching::Equality,
+                rewritten_from: None,
+                rewritten_to: None,
+            },
             result.constraints.clone(),
         ))));
     }
@@ -353,7 +369,11 @@ pub(super) async fn unify<T: Term>(
     // check if the predicate can unify the two terms
     if let Some(constraint) = T::unifiable(from, to, predicate)? {
         return Ok(Some(Arc::new(Succeeded::with_constraints(
-            Unifier { matching: Matching::Unifiable(from.clone(), to.clone()) },
+            Unifier {
+                matching: Matching::Unifiable(from.clone(), to.clone()),
+                rewritten_from: None,
+                rewritten_to: None,
+            },
             constraint.constraints,
         ))));
     }
@@ -379,8 +399,12 @@ pub(super) async fn unify<T: Term>(
             )
             .await?
         {
+            let mut unifier = unifier_result.result.clone();
+            unifier.rewritten_from =
+                unifier.rewritten_from.or_else(|| Some(eq_from.clone()));
+
             return Ok(Some(Arc::new(Succeeded::with_constraints(
-                unifier_result.result.clone(),
+                unifier,
                 constraints
                     .iter()
                     .cloned()
@@ -403,8 +427,12 @@ pub(super) async fn unify<T: Term>(
             )
             .await?
         {
+            let mut unifier = unifier_result.result.clone();
+            unifier.rewritten_to =
+                unifier.rewritten_to.or_else(|| Some(eq_to.clone()));
+
             return Ok(Some(Arc::new(Succeeded::with_constraints(
-                unifier_result.result.clone(),
+                unifier,
                 constraints
                     .iter()
                     .cloned()
