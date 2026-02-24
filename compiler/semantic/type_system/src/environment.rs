@@ -263,36 +263,6 @@ impl Ord for dyn DynIdent {
     fn cmp(&self, other: &Self) -> Ordering { self.dyn_ord(other) }
 }
 
-#[macro_export]
-macro_rules! bail_overflow {
-    ($expr:expr) => {
-        match $expr {
-            Ok(value) => Ok(value),
-            Err($crate::environment::Error::Overflow(overflow_error)) => {
-                return Err(overflow_error.into());
-            }
-            Err($crate::environment::Error::Query(query_error)) => {
-                Err(query_error)
-            }
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! bail_unsatisfied_error_as_option {
-    ($expr:expr) => {
-        match $expr {
-            Ok(value) => value,
-            Err($crate::environment::Error::Overflow(overflow_error)) => {
-                return Err(overflow_error.into());
-            }
-            Err($crate::environment::Error::Query(_)) => {
-                return Ok(None);
-            }
-        }
-    };
-}
-
 /// A type alias for the result type returned by query interface. It's a nested
 /// result type where the outer `Result` is for the overflow error and the inner
 /// `Result` is for the query's specific error.
