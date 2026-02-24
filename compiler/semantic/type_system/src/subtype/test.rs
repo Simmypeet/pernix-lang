@@ -140,10 +140,10 @@ fn subtyping_with_adt(#[case] variance: Variance) {
 
         let mut generic_parameter = GenericParameters::default();
         let lifetime_id = generic_parameter
-            .add_lifetime_parameter(LifetimeParameter {
-                name: engine.intern_unsized("a".to_owned()),
-                span: None,
-            })
+            .add_lifetime_parameter(LifetimeParameter::new(
+                engine.intern_unsized("a".to_owned()),
+                None,
+            ))
             .unwrap();
 
         let mut variance_map = Variances::default();
@@ -176,24 +176,26 @@ fn subtyping_with_adt(#[case] variance: Variance) {
         }
 
         // Adt['a]
-        let a_t = Type::Symbol(Symbol {
-            id: adt_id,
-            generic_arguments: GenericArguments {
-                lifetimes: vec![a_lt.clone()],
-                types: Vec::new(),
-                constants: Vec::new(),
-            },
-        });
+        let a_t = Type::Symbol(Symbol::new(
+            adt_id,
+            GenericArguments::new(
+                vec![a_lt.clone()],
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+            ),
+        ));
 
         // Adt['b]
-        let b_t = Type::Symbol(Symbol {
-            id: adt_id,
-            generic_arguments: GenericArguments {
-                lifetimes: vec![b_lt.clone()],
-                types: Vec::new(),
-                constants: Vec::new(),
-            },
-        });
+        let b_t = Type::Symbol(Symbol::new(
+            adt_id,
+            GenericArguments::new(
+                vec![b_lt.clone()],
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+            ),
+        ));
 
         let premise = Premise::default();
         let environment = Environment::new(
@@ -264,16 +266,12 @@ async fn subtyping_with_inner_tuple() {
         id: pernixc_arena::ID::new(1),
     });
 
-    let lhs = Type::Tuple(Tuple {
-        elements: vec![Element::new_regular(
-            Type::bool().to_immutable_reference(a_lt.clone()),
-        )],
-    });
-    let rhs = Type::Tuple(Tuple {
-        elements: vec![Element::new_regular(
-            Type::bool().to_immutable_reference(b_lt.clone()),
-        )],
-    });
+    let lhs = Type::Tuple(Tuple::new(vec![Element::new_regular(
+        Type::bool().to_immutable_reference(a_lt.clone()),
+    )]));
+    let rhs = Type::Tuple(Tuple::new(vec![Element::new_regular(
+        Type::bool().to_immutable_reference(b_lt.clone()),
+    )]));
 
     let (engine, _dir) = create_test_engine().await;
     let premise = Premise::default();

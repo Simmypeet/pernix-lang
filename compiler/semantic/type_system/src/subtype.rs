@@ -896,5 +896,5 @@ impl Impl for Instance {
     }
 }
 
-#[cfg(test)]
-mod test;
+ #[cfg(test)]
+ mod test;
