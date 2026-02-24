@@ -278,7 +278,7 @@ pub trait Query: Clone + Eq + Ord + Hash + DynIdent {
     type InProgress: Clone + DynIdent + Default;
 
     /// The result of the query.
-    type Result: Any + Send + Sync + Clone + Default;
+    type Result: Any + Send + Sync + Clone;
 
     /// The function that computes the query.
     fn query<'x, N: Normalizer>(
@@ -288,15 +288,12 @@ pub trait Query: Clone + Eq + Ord + Hash + DynIdent {
     ) -> BoxedFuture<'x, Self::Result>;
 
     /// The result to return of the query when the query is cyclic.
-    #[allow(clippy::missing_errors_doc)]
     fn on_cyclic(
         &self,
         _: Self::InProgress,
         _: Self::InProgress,
         _: &[Call<DynArc, DynArc>],
-    ) -> Self::Result {
-        Self::Result::default()
-    }
+    ) -> Self::Result;
 }
 
 /// The result of a query.

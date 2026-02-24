@@ -78,14 +78,13 @@ impl<T: Term> Query for Simplify<T> {
             }
 
             // simplify by equality
-            if self.0.as_trait_member().is_some() {
+            if self.0.as_instance_associated().is_some() {
                 let mut equivalent: Option<Succeeded<T>> = None;
 
-                for predicate in environment
-                    .premise()
-                    .predicates
-                    .iter()
-                    .filter_map(T::as_trait_member_compatible_predicate)
+                for predicate in
+                    environment.premise().predicates.iter().filter_map(
+                        T::as_instance_associated_equality_predicate,
+                    )
                 {
                     let lhs: T = predicate.lhs.clone().into();
 

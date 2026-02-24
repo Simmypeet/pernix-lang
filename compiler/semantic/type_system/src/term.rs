@@ -44,7 +44,7 @@ pub trait Term:
     + crate::unification::Element
     + crate::subtype::Impl
     + crate::mapping::Element
-    // + crate::predicate::outlives::Impl
+    + crate::predicate::outlives::Impl
     + Debug
     + Clone
     + Ord

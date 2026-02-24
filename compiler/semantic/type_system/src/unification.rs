@@ -246,6 +246,18 @@ impl<T: Term, P: PredicateA> Query for Unification<T, P> {
             unify(&self.from, &self.to, &self.predicate, environment).await
         })
     }
+
+    fn on_cyclic(
+        &self,
+        _: Self::InProgress,
+        _: Self::InProgress,
+        _: &[crate::environment::Call<
+            crate::environment::DynArc,
+            crate::environment::DynArc,
+        >],
+    ) -> Self::Result {
+        None
+    }
 }
 
 async fn substructural_unify<T: Term>(

@@ -72,4 +72,16 @@ impl Query for Tuple<Type> {
             Ok(None)
         })
     }
+
+    fn on_cyclic(
+        &self,
+        _: Self::InProgress,
+        _: Self::InProgress,
+        _: &[crate::environment::Call<
+            crate::environment::DynArc,
+            crate::environment::DynArc,
+        >],
+    ) -> Self::Result {
+        None
+    }
 }

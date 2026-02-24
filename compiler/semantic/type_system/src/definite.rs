@@ -115,6 +115,18 @@ impl<T: Term> Query for Definite<T> {
             Ok(None)
         })
     }
+
+    fn on_cyclic(
+        &self,
+        _: Self::InProgress,
+        _: Self::InProgress,
+        _: &[crate::environment::Call<
+            crate::environment::DynArc,
+            crate::environment::DynArc,
+        >],
+    ) -> Self::Result {
+        None
+    }
 }
 
 impl<N: Normalizer> Environment<'_, N> {
@@ -186,5 +198,5 @@ impl<N: Normalizer> Environment<'_, N> {
     }
 }
 
- #[cfg(test)]
- mod test;
+#[cfg(test)]
+mod test;

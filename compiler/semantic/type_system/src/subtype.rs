@@ -179,6 +179,18 @@ impl<T: Term> Query for Subtype<T> {
     ) -> BoxedFuture<'x, Self::Result> {
         Box::pin(Impl::query(self, environment))
     }
+
+    fn on_cyclic(
+        &self,
+        _: Self::InProgress,
+        _: Self::InProgress,
+        _: &[crate::environment::Call<
+            crate::environment::DynArc,
+            crate::environment::DynArc,
+        >],
+    ) -> Self::Result {
+        None
+    }
 }
 
 #[doc(hidden)]
@@ -896,5 +908,5 @@ impl Impl for Instance {
     }
 }
 
- #[cfg(test)]
- mod test;
+#[cfg(test)]
+mod test;

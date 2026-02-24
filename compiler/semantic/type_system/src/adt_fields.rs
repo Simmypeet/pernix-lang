@@ -74,6 +74,10 @@ impl FieldType {
     /// Retrieves the span of the field, if available.
     #[must_use]
     pub fn span(&self) -> Option<&RelativeSpan> { self.span.as_ref() }
+
+    /// Converts the [`FieldType`] into its underlying type.
+    #[must_use]
+    pub fn into_type(self) -> Type { self.r#type }
 }
 
 #[executor(config = Config)]

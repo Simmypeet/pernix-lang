@@ -1,13 +1,10 @@
 //! Contains the type-system logic of the complier.
 
-use std::{collections::BTreeSet, sync::Arc};
+use std::collections::BTreeSet;
 
-use enum_as_inner::EnumAsInner;
-use pernixc_handler::Handler;
-use pernixc_lexical::tree::RelativeSpan;
 use qbice::{Decode, Encode, StableHash};
 
-use crate::{diagnostic::Diagnostic, lifetime_constraint::LifetimeConstraint};
+use crate::lifetime_constraint::LifetimeConstraint;
 
 pub mod adt_fields;
 pub mod deduction;
@@ -22,12 +19,12 @@ pub mod normalizer;
 pub mod order;
 pub mod predicate;
 pub mod resolution;
-pub mod simplify;
+// pub mod simplify;
 pub mod subtype;
 pub mod term;
 pub mod unification;
 pub mod variance;
-pub mod wf_check;
+// pub mod wf_check;
 
 /// An error that occurs when the number of queries exceeds the limit.
 #[derive(
@@ -50,7 +47,7 @@ pub mod wf_check;
 )]
 pub struct OverflowError;
 
-/// A common abrupt error that aborts the query and returns the error.
+/// A common error returned by most queries when the predicate is unsatisfiable.
 #[derive(
     Debug,
     Clone,
@@ -60,14 +57,14 @@ pub struct OverflowError;
     PartialOrd,
     Ord,
     Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Default,
     thiserror::Error,
-    EnumAsInner,
 )]
-#[allow(missing_docs)]
-pub enum Error {
-    #[error(transparent)]
-    Overflow(#[from] OverflowError),
-}
+#[error("the predicate is unsatisfiable")]
+pub struct UnsatisfiedError;
 
 /// A tag type signaling that the predicate/query is satisfied.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -146,15 +143,6 @@ impl Succeeded<Satisfied> {
     }
 }
 
-/// An alias for the result where the Ok variant can be `Option::Some(Succeeded
-/// {..})` or `None`.
-pub type Result<T, E = Error> = std::result::Result<Option<Succeeded<T>>, E>;
-
-/// An alias for the result where the Ok variant can be
-/// `Option::Some(Arc<Succeeded {..})` or `None`.
-pub type ResultArc<T, E = Error> =
-    std::result::Result<Option<Arc<Succeeded<T>>>, E>;
-
 /// Describes a satisfiability of a certain predicate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Satisfiability {
@@ -179,66 +167,6 @@ pub enum UnrecoverableError {
          state corrupted, the diagnostic has been reported"
     )]
     Reported,
-}
-
-impl Error {
-    /// In case of the Overflow error from type system, reports it as a type
-    /// calculating overflow
-    pub fn report_as_type_calculating_overflow(
-        self,
-        overflow_span: RelativeSpan,
-        handler: &dyn Handler<Diagnostic>,
-    ) -> UnrecoverableError {
-        match self {
-            Self::Overflow(overflow) => {
-                overflow.report_as_type_calculating_overflow(
-                    overflow_span,
-                    handler,
-                );
-
-                UnrecoverableError::Reported
-            }
-        }
-    }
-
-    /// In case of the Overflow error from type system, reports it as a type
-    /// checking overflow
-    pub fn report_as_type_check_overflow(
-        self,
-        overflow_span: RelativeSpan,
-        handler: &dyn Handler<Diagnostic>,
-    ) -> UnrecoverableError {
-        match self {
-            Self::Overflow(overflow) => {
-                overflow.report_as_type_check_overflow(overflow_span, handler);
-
-                UnrecoverableError::Reported
-            }
-        }
-    }
-
-    /// In case of the Overflow error from type system, reports it as an
-    /// undecidable predicate error.
-    pub fn report_as_undecidable_predicate(
-        self,
-        predicate: pernixc_term::predicate::Predicate,
-        predicate_declaration_span: Option<RelativeSpan>,
-        predicate_span: RelativeSpan,
-        handler: &dyn Handler<Diagnostic>,
-    ) -> UnrecoverableError {
-        match self {
-            Self::Overflow(overflow) => {
-                overflow.report_as_undecidable_predicate(
-                    predicate,
-                    predicate_declaration_span,
-                    predicate_span,
-                    handler,
-                );
-
-                UnrecoverableError::Reported
-            }
-        }
-    }
 }
 
 #[cfg(test)]

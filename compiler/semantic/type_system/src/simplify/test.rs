@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use pernixc_symbol::kind::Kind;
 use pernixc_target::{Global, TargetID};
 use pernixc_term::{
-    generic_arguments::{GenericArguments, MemberSymbol, Symbol, TraitMember},
+    generic_arguments::{GenericArguments, AssociatedSymbol, Symbol, TraitMember},
     generic_parameters::LifetimeParameterID,
     lifetime::Lifetime,
     predicate::{Compatible, Outlives, Predicate},
@@ -20,7 +20,7 @@ use crate::{
 
 #[tokio::test]
 async fn basic() {
-    let trait_member = TraitMember(MemberSymbol {
+    let trait_member = TraitMember(AssociatedSymbol {
         id: Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(1)),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments::default(),
@@ -54,7 +54,7 @@ async fn basic() {
 
 #[tokio::test]
 async fn sub_term() {
-    let trait_member = TraitMember(MemberSymbol {
+    let trait_member = TraitMember(AssociatedSymbol {
         id: Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(1)),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments::default(),
@@ -125,7 +125,7 @@ async fn sub_term() {
 
 #[tokio::test]
 async fn already_simplified() {
-    let trait_member = TraitMember(MemberSymbol {
+    let trait_member = TraitMember(AssociatedSymbol {
         id: Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(1)),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments::default(),
@@ -172,7 +172,7 @@ async fn with_lifetime_matching() {
         id: pernixc_arena::ID::new(1),
     });
 
-    let to_be_simplified = TraitMember(MemberSymbol {
+    let to_be_simplified = TraitMember(AssociatedSymbol {
         id: Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(2)),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments {
@@ -182,7 +182,7 @@ async fn with_lifetime_matching() {
         },
     });
 
-    let trait_member = TraitMember(MemberSymbol {
+    let trait_member = TraitMember(AssociatedSymbol {
         id: Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(2)),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments {
@@ -270,12 +270,12 @@ async fn with_lifetime_matching() {
 
 #[tokio::test]
 async fn multiple_equivalences() {
-    let first_trait_member = TraitMember(MemberSymbol {
+    let first_trait_member = TraitMember(AssociatedSymbol {
         id: Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(1)),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments::default(),
     });
-    let second_trait_member = TraitMember(MemberSymbol {
+    let second_trait_member = TraitMember(AssociatedSymbol {
         id: Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(2)),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments::default(),
@@ -379,7 +379,7 @@ async fn transitive() {
     // lifetime constraint is 'b = 'c
 
     let trait_member = |idx, lifetime| {
-        TraitMember(MemberSymbol {
+        TraitMember(AssociatedSymbol {
             id: Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(idx)),
             member_generic_arguments: GenericArguments::default(),
             parent_generic_arguments: GenericArguments {

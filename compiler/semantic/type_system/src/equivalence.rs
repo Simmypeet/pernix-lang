@@ -146,6 +146,18 @@ impl<T: Term> Query for Equivalences<T> {
             Impl::get_equivalences_internal(&self.0, environment).await
         })
     }
+
+    fn on_cyclic(
+        &self,
+        _: Self::InProgress,
+        _: Self::InProgress,
+        _: &[crate::environment::Call<
+            crate::environment::DynArc,
+            crate::environment::DynArc,
+        >],
+    ) -> Self::Result {
+        Arc::from([])
+    }
 }
 
 impl<N: Normalizer> Environment<'_, N> {

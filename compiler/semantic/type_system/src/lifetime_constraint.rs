@@ -3,13 +3,10 @@
 use enum_as_inner::EnumAsInner;
 use pernixc_handler::Handler;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_term::{lifetime::Lifetime, predicate::Outlives};
+use pernixc_term::{lifetime::Lifetime, predicate::Outlives, r#type::Type};
 
 use crate::{
-    Error,
-    diagnostic::{Diagnostic, UnsatisfiedPredicate},
-    environment::Environment,
-    normalizer::Normalizer,
+    diagnostic::Diagnostic, environment::Environment, normalizer::Normalizer,
 };
 
 /// Contains constraints related to lifetimes.
@@ -17,6 +14,7 @@ use crate::{
 #[allow(missing_docs)]
 pub enum LifetimeConstraint {
     LifetimeOutlives(Outlives<Lifetime>),
+    TypeOutlives(Outlives<Type>),
 }
 
 impl<N: Normalizer> Environment<'_, N> {
@@ -27,6 +25,7 @@ impl<N: Normalizer> Environment<'_, N> {
         span: &RelativeSpan,
         handler: &dyn Handler<Diagnostic>,
     ) {
+        /*
         for constraint in lifetime_constraints {
             match constraint {
                 LifetimeConstraint::LifetimeOutlives(outlives) => {
@@ -54,5 +53,7 @@ impl<N: Normalizer> Environment<'_, N> {
                 }
             }
         }
+        */
+        todo!()
     }
 }

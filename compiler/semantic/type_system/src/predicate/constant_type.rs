@@ -16,7 +16,7 @@ use pernixc_term::{
 
 use crate::{
     OverflowError, Satisfiability, Satisfied, Succeeded,
-    adt_fields::get_instantiated_adt_fields,
+    adt_fields::{FieldType, get_instantiated_adt_fields},
     environment::{BoxedFuture, Call, DynArc, Environment, Query},
     normalizer::Normalizer,
 };
@@ -103,7 +103,7 @@ impl<N: Normalizer> visitor::AsyncVisitor<Instance> for Visitor<'_, N> {
 async fn try_get_adt_fields(
     ty: &Type,
     engine: &TrackedEngine,
-) -> Option<Vec<Type>> {
+) -> Option<Vec<FieldType>> {
     let Type::Symbol(symbol) = ty else {
         return None;
     };
@@ -209,7 +209,7 @@ impl Query for ConstantType {
                         for field in fields {
                             let Some(new_result) = environment
                                 .query_with(
-                                    &Self(field.clone()),
+                                    &Self(field.into_type()),
                                     QuerySource::Normal,
                                 )
                                 .await?

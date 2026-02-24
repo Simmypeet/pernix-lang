@@ -92,6 +92,18 @@ impl<T: Term> Query for Equality<T, T> {
             Ok(None)
         })
     }
+
+    fn on_cyclic(
+        &self,
+        _: Self::InProgress,
+        _: Self::InProgress,
+        _: &[crate::environment::Call<
+            crate::environment::DynArc,
+            crate::environment::DynArc,
+        >],
+    ) -> Self::Result {
+        None
+    }
 }
 
 async fn equals_by_unification<T: Term>(

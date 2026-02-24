@@ -6,6 +6,7 @@ use std::{
 };
 
 use enum_as_inner::EnumAsInner;
+use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::{
     kind::{Kind, get_kind},
@@ -23,8 +24,9 @@ use pernixc_term::{
 };
 
 use crate::{
-    Error, Satisfied, Succeeded,
-    adt_fields::get_instantiated_adt_fields,
+    OverflowError, Satisfied, Succeeded,
+    adt_fields::{FieldType, get_instantiated_adt_fields},
+    deduction,
     environment::{BoxedFuture, Call, DynArc, Environment, Query},
     normalizer::Normalizer,
     resolution::{self, Implementation},
@@ -50,10 +52,42 @@ pub enum PositiveSatisfied {
     Cyclic,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SourceError {
+    SubTerm,
+    SubField(RelativeSpan),
+}
+
+/// An error when trying to structural derive a positive marker.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct StructuralError {
+    /// The field that failed to be satisfied.
+    sub_predicate: PositiveMarker,
+
+    /// The source of the error, whether it was from a sub-term or a sub-field.
+    source: SourceError,
+
+    /// The error that occurred when trying to satisfy the field.
+    error: PositiveError,
+}
+
+/// An error type indiciating that the positive marker failed to be satisfied.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PositiveError {
+    /// Failed to utilize the `implements` matching the marker.
+    ImplementationResolution(resolution::Error),
+
+    /// The solver failed to find and implementation for one of the fields.
+    Structural(Vec<StructuralError>),
+
+    /// Resolved to a negative implementation.
+    NegativeMarkerImplementation(resolution::Implementation),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum VisitorState {
     Failed,
-    AbruptError(Error),
+    AbruptError(OverflowError),
     Succeeded(BTreeMap<PositiveMarker, Arc<Succeeded<PositiveSatisfied>>>),
 }
 
@@ -139,38 +173,59 @@ impl<N: Normalizer> visitor::AsyncVisitor<Constant> for Visitor<'_, '_, N> {
     }
 }
 
+impl<N: Normalizer> visitor::AsyncVisitor<Instance> for Visitor<'_, '_, N> {
+    async fn visit(
+        &mut self,
+        _: &Instance,
+        _: <Instance as Element>::Location,
+    ) -> bool {
+        if matches!(
+            self.state,
+            VisitorState::Failed | VisitorState::AbruptError(_)
+        ) {
+            return false;
+        }
+
+        true
+    }
+}
+
 async fn try_get_adt_fields(
     ty: &Type,
     engine: &TrackedEngine,
-) -> Option<Vec<Type>> {
+) -> Option<Vec<FieldType>> {
     let Type::Symbol(symbol) = ty else {
         return None;
     };
 
-    if !matches!(engine.get_kind(symbol.id).await, Kind::Enum | Kind::Struct) {
+    if !matches!(engine.get_kind(symbol.id()).await, Kind::Enum | Kind::Struct)
+    {
         return None;
     }
 
     Some(
         engine
-            .get_instantiated_adt_fields(symbol.id, &symbol.generic_arguments)
+            .get_instantiated_adt_fields(
+                symbol.id(),
+                symbol.generic_arguments(),
+            )
             .await,
     )
 }
 
+pub type PositiveResult =
+    Result<Arc<Succeeded<PositiveSatisfied>>, PositiveError>;
+
 impl Query for PositiveMarker {
-    type Parameter = ();
     type InProgress = ();
-    type Result = Succeeded<PositiveSatisfied>;
-    type Error = Error;
+    type Result = PositiveResult;
 
     #[allow(clippy::too_many_lines)]
     fn query<'x, N: Normalizer>(
         &'x self,
         environment: &'x Environment<'x, N>,
-        (): Self::Parameter,
         (): Self::InProgress,
-    ) -> BoxedFuture<'x, Self::Result, Self::Error> {
+    ) -> BoxedFuture<'x, Self::Result> {
         Box::pin(async move {
             // if this query was made in marker, then check if the marker is the
             // same as the query one.
@@ -181,7 +236,7 @@ impl Query for PositiveMarker {
             )
             .await?
             {
-                return Ok(Some(Arc::new(Succeeded::with_constraints(
+                return Ok(Ok(Arc::new(Succeeded::with_constraints(
                     PositiveSatisfied::Environment,
                     result.constraints,
                 ))));
@@ -213,42 +268,54 @@ impl Query for PositiveMarker {
                     continue;
                 }
 
-                return Ok(Some(Arc::new(Succeeded::with_constraints(
+                return Ok(Ok(Arc::new(Succeeded::with_constraints(
                     PositiveSatisfied::Premise,
                     compatiblity.constraints,
                 ))));
             }
 
             // manually search for the trait implementation
-            if let Some(result) = environment
+            let resolve = environment
                 .query(&resolution::Resolve::new(
                     self.marker_id,
                     self.generic_arguments.clone(),
                 ))
-                .await?
-            {
-                if environment.tracked_engine().get_kind(result.result.id).await
-                    == Kind::PositiveImplementation
-                {
-                    return Ok(Some(Arc::new(Succeeded::with_constraints(
-                        PositiveSatisfied::Implementation(Implementation {
-                            instantiation: result.result.instantiation.clone(),
-                            id: result.result.id,
-                            is_not_general_enough: result
-                                .result
-                                .is_not_general_enough,
-                        }),
-                        result.constraints.clone(),
-                    ))));
-                }
+                .await?;
 
-                // then it's a negative implementation
-                return Ok(None);
+            match resolve.0 {
+                Ok(result) => {
+                    if environment
+                        .tracked_engine()
+                        .get_kind(result.result.id)
+                        .await
+                        == Kind::PositiveImplementation
+                    {
+                        return Ok(Ok(Arc::new(Succeeded::with_constraints(
+                            PositiveSatisfied::Implementation(Implementation {
+                                instantiation: result
+                                    .result
+                                    .instantiation
+                                    .clone(),
+                                id: result.result.id,
+                            }),
+                            result.constraints.clone(),
+                        ))));
+                    }
+                }
+                Err(error) => {
+                    // if failed by anything other than not found, then we'll
+                    // take the error as the result
+                    if !error.is_not_found() {
+                        return Ok(Err(
+                            PositiveError::ImplementationResolution(error),
+                        ));
+                    }
+                }
             }
 
             // replace the first type argument with sub-terms/fields and check
             // if all the replacements are satisfied
-            if let Some(ty) = self.generic_arguments.types.first() {
+            if let Some(ty) = self.generic_arguments.types().first() {
                 let mut visitor = Visitor {
                     original: self,
                     state: VisitorState::Succeeded(BTreeMap::new()),
@@ -321,14 +388,11 @@ impl Query for PositiveMarker {
 
     fn on_cyclic(
         &self,
-        (): Self::Parameter,
         (): Self::InProgress,
         (): Self::InProgress,
         _: &[Call<DynArc, DynArc>],
-    ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
-        Ok(Some(Arc::new(Succeeded::new(
-            PositiveSatisfied::Cyclic, /* doesn't matter */
-        ))))
+    ) -> Result<Arc<Succeeded<PositiveSatisfied>>, PositiveError> {
+        todo!()
     }
 }
 
@@ -347,17 +411,14 @@ pub enum NegativeSatisfied {
 }
 
 impl Query for NegativeMarker {
-    type Parameter = ();
     type InProgress = ();
-    type Result = Succeeded<NegativeSatisfied>;
-    type Error = Error;
+    type Result = Option<Arc<Succeeded<NegativeSatisfied>>>;
 
     fn query<'x, N: Normalizer>(
         &'x self,
         environment: &'x Environment<'x, N>,
-        (): Self::Parameter,
         (): Self::InProgress,
-    ) -> BoxedFuture<'x, Self::Result, Self::Error> {
+    ) -> BoxedFuture<'x, Self::Result> {
         Box::pin(async move {
             // manually search for the trait implementation
             if let Some(result) = environment
@@ -436,13 +497,22 @@ impl Query for NegativeMarker {
                 }))
         })
     }
+
+    fn on_cyclic(
+        &self,
+        _: Self::InProgress,
+        _: Self::InProgress,
+        _: &[Call<crate::environment::DynArc, crate::environment::DynArc>],
+    ) -> Self::Result {
+        None
+    }
 }
 
 async fn is_in_marker(
     marker_id: Global<pernixc_symbol::ID>,
     generic_arguments: &GenericArguments,
     environment: &Environment<'_, impl Normalizer>,
-) -> Result<Option<Succeeded<Satisfied>>, Error> {
+) -> Result<Option<Succeeded<Satisfied>>, OverflowError> {
     let Some(query_site) = environment.premise().query_site else {
         return Ok(None);
     };
