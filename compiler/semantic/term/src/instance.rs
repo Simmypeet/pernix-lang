@@ -6,7 +6,7 @@ use enum_as_inner::EnumAsInner;
 use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::name::get_name;
 use pernixc_target::Global;
-use qbice::{Decode, Encode, StableHash};
+use qbice::{Decode, Encode, Identifiable, StableHash};
 
 use crate::{
     constant::Constant,
@@ -558,6 +558,7 @@ impl InstanceAssociated {
     StableHash,
     EnumAsInner,
     derive_more::From,
+    Identifiable,
 )]
 pub enum Instance {
     /// Directly refers to an `instance` symbol being defined on module level.

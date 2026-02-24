@@ -479,6 +479,46 @@ impl GenericParameters {
             && self.types.is_empty()
             && self.constants.is_empty()
     }
+
+    /// Gets the lifetime parameter ID at the given index in the order of
+    /// declaration.
+    #[must_use]
+    pub fn get_lifetime_parameter_at_index(
+        &self,
+        index: usize,
+    ) -> pernixc_arena::ID<LifetimeParameter> {
+        *self.lifetime_order.get(index).unwrap()
+    }
+
+    /// Gets the type parameter ID at the given index in the order of
+    /// declaration.
+    #[must_use]
+    pub fn get_type_parameter_at_index(
+        &self,
+        index: usize,
+    ) -> pernixc_arena::ID<TypeParameter> {
+        *self.type_order.get(index).unwrap()
+    }
+
+    /// Gets the constant parameter ID at the given index in the order of
+    /// declaration.
+    #[must_use]
+    pub fn get_constant_parameter_at_index(
+        &self,
+        index: usize,
+    ) -> pernixc_arena::ID<ConstantParameter> {
+        *self.constant_order.get(index).unwrap()
+    }
+
+    /// Gets the instance parameter ID at the given index in the order of
+    /// declaration.
+    #[must_use]
+    pub fn get_instance_parameter_at_index(
+        &self,
+        index: usize,
+    ) -> pernixc_arena::ID<InstanceParameter> {
+        *self.instance_order.get(index).unwrap()
+    }
 }
 
 /// An ID to a type parameter.

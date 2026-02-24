@@ -479,6 +479,12 @@ impl AssociatedSymbol {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
 pub struct SubSymbolLocation(usize);
 
+impl SubSymbolLocation {
+    /// Retrieves the index of the sub-term in the generic arguments.
+    #[must_use]
+    pub const fn index(&self) -> usize { self.0 }
+}
+
 /// Represents a sub-term location where the sub-term is stored as a generic
 /// arguments.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
