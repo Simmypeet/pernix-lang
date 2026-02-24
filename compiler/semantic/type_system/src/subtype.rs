@@ -684,9 +684,10 @@ impl<N: Normalizer> Environment<'_, N> {
         target: &GenericArguments,
         source: &GenericArguments,
     ) -> QueryResult<Option<Succeeded<Subtypable>>> {
-        if !target.arity_matches(source) {
-            return Ok(None);
-        }
+        assert!(
+            target.arity_matches(source),
+            "the arity of the generic arguments should match"
+        );
 
         let mut result = Succeeded::with_constraints(
             Subtypable::default(),
