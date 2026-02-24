@@ -346,6 +346,37 @@ async fn normalize_instance_associated_type(
     instance_associated: &InstanceAssociated,
     environment: &Environment<'_, impl Normalizer>,
 ) -> Option<Type> {
+    if let Some(normalized) = normalize_instance_associated_type_inner(
+        instance_associated,
+        environment,
+    )
+    .await
+    {
+        return Some(normalized);
+    }
+
+    // normalize the inner instance
+    let inner_instance_associated_instance =
+        instance_associated.instance_as_associated_instance()?;
+
+    let normalized_instance_associated_instance =
+        normalize_instance_associated_instance(
+            inner_instance_associated_instance,
+            environment,
+        )
+        .await?;
+
+    Some(Type::InstanceAssociated(InstanceAssociated::new(
+        Box::new(normalized_instance_associated_instance),
+        instance_associated.trait_associated_symbol_id(),
+        instance_associated.associated_instance_generic_arguments().clone(),
+    )))
+}
+
+async fn normalize_instance_associated_type_inner(
+    instance_associated: &InstanceAssociated,
+    environment: &Environment<'_, impl Normalizer>,
+) -> Option<Type> {
     let (instantiation, equiv_instance_associated) =
         try_normalize_instance_associated(
             instance_associated,

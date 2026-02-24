@@ -101,6 +101,20 @@ impl InstanceAssociated {
         }
     }
 
+    /// If the inner instance is an instance associated with another instance,
+    /// returns a reference to the inner `InstanceAssociated`. Otherwise,
+    /// returns `None`.
+    #[must_use]
+    pub fn instance_as_associated_instance(&self) -> Option<&Self> {
+        match self.instance.as_ref() {
+            Instance::InstanceAssociated(instance_associated) => {
+                Some(instance_associated)
+            }
+
+            _ => None,
+        }
+    }
+
     /// Returns the generic arguments supplied to the associated instance
     /// symbol.
     #[must_use]
