@@ -186,5 +186,5 @@ impl<N: Normalizer> Environment<'_, N> {
     }
 }
 
-#[cfg(test)]
-mod test;
+ #[cfg(test)]
+ mod test;

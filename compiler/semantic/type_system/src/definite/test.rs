@@ -16,7 +16,7 @@ use proptest::{
 
 use super::Definite;
 use crate::{
-    Error,
+    OverflowError,
     environment::{Environment, Premise},
     normalizer,
     term::Term,
@@ -28,7 +28,7 @@ use crate::{
 )]
 pub enum ApplyPropertyError {
     #[error("{0}")]
-    Abrupt(#[from] Error),
+    Abrupt(#[from] OverflowError),
 }
 
 pub type BoxedFuture<'s, T> =
@@ -124,17 +124,16 @@ where
 
             for type_strategy in &self.type_strategies {
                 generic_arguments
-                    .types
-                    .push(type_strategy.generate(table, premise).await?);
+                    .push_type(type_strategy.generate(table, premise).await?);
             }
 
             for constant_strategy in &self.constant_strategies {
-                generic_arguments
-                    .constants
-                    .push(constant_strategy.generate(table, premise).await?);
+                generic_arguments.push_constant(
+                    constant_strategy.generate(table, premise).await?,
+                );
             }
 
-            Ok(Symbol { id: self.id, generic_arguments }.into())
+            Ok(Symbol::new(self.id, generic_arguments).into())
         })
     }
 
