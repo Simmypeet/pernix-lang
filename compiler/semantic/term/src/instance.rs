@@ -91,6 +91,25 @@ impl InstanceAssociated {
     #[must_use]
     pub fn instance_mut(&mut self) -> &mut Instance { &mut self.instance }
 
+    /// If the inner instance is a symbol, returns a reference to the symbol.
+    /// Otherwise, returns `None`.
+    #[must_use]
+    pub fn instance_as_symbol(&self) -> Option<&Symbol> {
+        match self.instance.as_ref() {
+            Instance::Symbol(symbol) => Some(symbol),
+            _ => None,
+        }
+    }
+
+    /// Returns the generic arguments supplied to the associated instance
+    /// symbol.
+    #[must_use]
+    pub const fn associated_instance_generic_arguments(
+        &self,
+    ) -> &GenericArguments {
+        &self.trait_associated_symbol_generic_arguments
+    }
+
     /// Returns the trait associated symbol ID.
     #[must_use]
     pub const fn trait_associated_symbol_id(
