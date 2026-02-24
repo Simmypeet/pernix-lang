@@ -114,15 +114,22 @@ impl Mapping {
                 T::get_mut(self).entry(lhs).or_default().insert(rhs);
             }
             unification::Matching::Substructural(substructural) => {
-                for (_, unification) in substructural.lifetimes {
+                let (lifetimes, types, constants, instances) =
+                    substructural.destructure();
+
+                for (_, unification) in lifetimes {
                     self.append_from_unifier(unification);
                 }
 
-                for (_, unification) in substructural.types {
+                for (_, unification) in types {
                     self.append_from_unifier(unification);
                 }
 
-                for (_, unification) in substructural.constants {
+                for (_, unification) in constants {
+                    self.append_from_unifier(unification);
+                }
+
+                for (_, unification) in instances {
                     self.append_from_unifier(unification);
                 }
             }
