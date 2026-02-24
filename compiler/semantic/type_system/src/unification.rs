@@ -127,13 +127,27 @@ impl Element for Instance {
 }
 
 /// Contains all the unification of substructural components.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, new)]
 #[allow(missing_docs)]
 pub struct Substructural<T: SubTerm> {
-    pub lifetimes: BTreeMap<T::SubLifetimeLocation, Unifier<Lifetime>>,
-    pub types: BTreeMap<T::SubTypeLocation, Unifier<Type>>,
-    pub constants: BTreeMap<T::SubConstantLocation, Unifier<Constant>>,
-    pub instances: BTreeMap<T::SubInstanceLocation, Unifier<Instance>>,
+    lifetimes: BTreeMap<T::SubLifetimeLocation, Unifier<Lifetime>>,
+    types: BTreeMap<T::SubTypeLocation, Unifier<Type>>,
+    constants: BTreeMap<T::SubConstantLocation, Unifier<Constant>>,
+    instances: BTreeMap<T::SubInstanceLocation, Unifier<Instance>>,
+}
+
+impl<T: SubTerm> Substructural<T> {
+    /// Destructures the substructural unification into its components.
+    pub fn destructure(
+        self,
+    ) -> (
+        BTreeMap<T::SubLifetimeLocation, Unifier<Lifetime>>,
+        BTreeMap<T::SubTypeLocation, Unifier<Type>>,
+        BTreeMap<T::SubConstantLocation, Unifier<Constant>>,
+        BTreeMap<T::SubInstanceLocation, Unifier<Instance>>,
+    ) {
+        (self.lifetimes, self.types, self.constants, self.instances)
+    }
 }
 
 impl<T: SubTerm> Default for Substructural<T> {
