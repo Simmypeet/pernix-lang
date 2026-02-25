@@ -47,6 +47,8 @@ pub struct Key {
     pub adt_id: Global<pernixc_symbol::ID>,
 }
 
+/// The type of each field in the ADT, along with the span of the field if
+/// available.
 #[derive(
     Debug,
     Clone,
@@ -67,13 +69,19 @@ pub struct FieldType {
 }
 
 impl FieldType {
+    /// Creates a new [`FieldType`] with the given type and span.
+    #[must_use]
+    pub const fn new_no_span(r#type: Type) -> Self {
+        Self { r#type, span: None }
+    }
+
     /// Retrieves the type of the field.
     #[must_use]
-    pub fn r#type(&self) -> &Type { &self.r#type }
+    pub const fn r#type(&self) -> &Type { &self.r#type }
 
     /// Retrieves the span of the field, if available.
     #[must_use]
-    pub fn span(&self) -> Option<&RelativeSpan> { self.span.as_ref() }
+    pub const fn span(&self) -> Option<&RelativeSpan> { self.span.as_ref() }
 
     /// Converts the [`FieldType`] into its underlying type.
     #[must_use]

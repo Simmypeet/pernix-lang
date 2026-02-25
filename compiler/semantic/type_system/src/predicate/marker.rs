@@ -1,12 +1,8 @@
 //! Implements the [`Query`] for the [`PositiveMarker`] and [`NegativeMarker`].
 
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    sync::Arc,
-};
+use std::{collections::BTreeSet, ops::Deref, sync::Arc};
 
 use enum_as_inner::EnumAsInner;
-use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::{
     kind::{Kind, get_kind},
@@ -14,19 +10,15 @@ use pernixc_symbol::{
 };
 use pernixc_target::Global;
 use pernixc_term::{
-    constant::Constant,
     generic_arguments::GenericArguments,
     generic_parameters::get_generic_parameters,
-    lifetime::Lifetime,
     predicate::{NegativeMarker, PositiveMarker, Predicate},
     r#type::Type,
-    visitor::{self, Element},
 };
 
 use crate::{
     OverflowError, Satisfied, Succeeded,
     adt_fields::{FieldType, get_instantiated_adt_fields},
-    deduction,
     environment::{BoxedFuture, Call, DynArc, Environment, Query},
     normalizer::Normalizer,
     resolution::{self, Implementation},
@@ -42,7 +34,7 @@ pub enum PositiveSatisfied {
     Implementation(Implementation),
 
     /// Satisfied by proving that all the fields/sub-terms are satisfied.
-    Congruence(BTreeMap<PositiveMarker, Arc<Succeeded<Self>>>),
+    Substructural,
 
     /// Satisfied by the fact that the query was made in the marker/its
     /// implementation.
@@ -52,20 +44,11 @@ pub enum PositiveSatisfied {
     Cyclic,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum SourceError {
-    SubTerm,
-    SubField(RelativeSpan),
-}
-
 /// An error when trying to structural derive a positive marker.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StructuralError {
     /// The field that failed to be satisfied.
     sub_predicate: PositiveMarker,
-
-    /// The source of the error, whether it was from a sub-term or a sub-field.
-    source: SourceError,
 
     /// The error that occurred when trying to satisfy the field.
     error: PositiveError,
@@ -78,115 +61,28 @@ pub enum PositiveError {
     ImplementationResolution(resolution::Error),
 
     /// The solver failed to find and implementation for one of the fields.
-    Structural(Vec<StructuralError>),
+    Structural(Arc<[StructuralError]>),
 
     /// Resolved to a negative implementation.
-    NegativeMarkerImplementation(resolution::Implementation),
+    NegativeMarkerImplementation(Arc<Succeeded<resolution::Implementation>>),
+
+    /// Failed by bad cyclic proof, which happens by equivalences that lead to a
+    /// cycle without any progress.
+    Cyclic,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-enum VisitorState {
-    Failed,
-    AbruptError(OverflowError),
-    Succeeded(BTreeMap<PositiveMarker, Arc<Succeeded<PositiveSatisfied>>>),
-}
-
-#[derive(Debug)]
-struct Visitor<'t, 'p, N: Normalizer> {
-    original: &'p PositiveMarker,
-    state: VisitorState,
-    environment: &'t Environment<'t, N>,
-}
-
-impl<N: Normalizer> visitor::AsyncVisitor<Lifetime> for Visitor<'_, '_, N> {
-    async fn visit(
-        &mut self,
-        _: &Lifetime,
-        _: <Lifetime as Element>::Location,
-    ) -> bool {
-        if matches!(
-            self.state,
-            VisitorState::Failed | VisitorState::AbruptError(_)
-        ) {
-            return false;
+impl PositiveError {
+    #[must_use]
+    pub(crate) fn heuristic(&self) -> usize {
+        match self {
+            Self::ImplementationResolution(error) => error.heuristic(),
+            Self::Structural(structural_errors) => structural_errors
+                .iter()
+                .map(|e| e.error.heuristic())
+                .sum::<usize>(),
+            Self::NegativeMarkerImplementation(_) => 2,
+            Self::Cyclic => 0,
         }
-
-        true
-    }
-}
-
-impl<N: Normalizer> visitor::AsyncVisitor<Type> for Visitor<'_, '_, N> {
-    async fn visit(
-        &mut self,
-        ty: &Type,
-        _: <Type as Element>::Location,
-    ) -> bool {
-        let VisitorState::Succeeded(states) = &mut self.state else {
-            return false;
-        };
-
-        let new_query = PositiveMarker {
-            marker_id: self.original.marker_id,
-            generic_arguments: GenericArguments {
-                lifetimes: self.original.generic_arguments.lifetimes.clone(),
-                types: {
-                    let mut types =
-                        self.original.generic_arguments.types.clone();
-                    types[0] = ty.clone();
-                    types
-                },
-                constants: self.original.generic_arguments.constants.clone(),
-            },
-        };
-
-        match self.environment.query(&new_query).await {
-            Ok(Some(result)) => {
-                states.insert(new_query, result);
-                true
-            }
-            Ok(None) => {
-                self.state = VisitorState::Failed;
-                false
-            }
-            Err(err) => {
-                self.state = VisitorState::AbruptError(err);
-                false
-            }
-        }
-    }
-}
-
-impl<N: Normalizer> visitor::AsyncVisitor<Constant> for Visitor<'_, '_, N> {
-    async fn visit(
-        &mut self,
-        _: &Constant,
-        _: <Constant as Element>::Location,
-    ) -> bool {
-        if matches!(
-            self.state,
-            VisitorState::Failed | VisitorState::AbruptError(_)
-        ) {
-            return false;
-        }
-
-        true
-    }
-}
-
-impl<N: Normalizer> visitor::AsyncVisitor<Instance> for Visitor<'_, '_, N> {
-    async fn visit(
-        &mut self,
-        _: &Instance,
-        _: <Instance as Element>::Location,
-    ) -> bool {
-        if matches!(
-            self.state,
-            VisitorState::Failed | VisitorState::AbruptError(_)
-        ) {
-            return false;
-        }
-
-        true
     }
 }
 
@@ -194,37 +90,81 @@ async fn try_get_adt_fields(
     ty: &Type,
     engine: &TrackedEngine,
 ) -> Option<Vec<FieldType>> {
-    let Type::Symbol(symbol) = ty else {
-        return None;
-    };
+    match ty {
+        Type::Error(_)
+        | Type::AssociatedSymbol(_)
+        | Type::FunctionSignature(_)
+        | Type::InstanceAssociated(_)
+        | Type::Inference(_)
+        | Type::Primitive(_)
+        | Type::Parameter(_) => None,
 
-    if !matches!(engine.get_kind(symbol.id()).await, Kind::Enum | Kind::Struct)
-    {
-        return None;
-    }
+        Type::Symbol(symbol) => {
+            if !matches!(
+                engine.get_kind(symbol.id()).await,
+                Kind::Enum | Kind::Struct
+            ) {
+                return None;
+            }
 
-    Some(
-        engine
-            .get_instantiated_adt_fields(
-                symbol.id(),
-                symbol.generic_arguments(),
+            Some(
+                engine
+                    .get_instantiated_adt_fields(
+                        symbol.id(),
+                        symbol.generic_arguments(),
+                    )
+                    .await,
             )
-            .await,
-    )
+        }
+
+        Type::Pointer(pointer) => {
+            Some(vec![FieldType::new_no_span(pointer.pointee.deref().clone())])
+        }
+
+        Type::Reference(reference) => Some(vec![FieldType::new_no_span(
+            reference.pointee.deref().clone(),
+        )]),
+
+        Type::Array(array) => {
+            Some(vec![FieldType::new_no_span(array.r#type.deref().clone())])
+        }
+
+        Type::Tuple(tuple) => Some(
+            tuple
+                .elements()
+                .iter()
+                .map(|x| FieldType::new_no_span(x.term().clone()))
+                .collect(),
+        ),
+
+        Type::Phantom(phantom) => {
+            Some(vec![FieldType::new_no_span(phantom.0.deref().clone())])
+        }
+    }
 }
 
-pub type PositiveResult =
-    Result<Arc<Succeeded<PositiveSatisfied>>, PositiveError>;
+type PositiveResult = Result<Arc<Succeeded<PositiveSatisfied>>, PositiveError>;
+
+/// Describes the source of the query for constant type predicate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub enum QuerySource {
+    /// Used to reason the satisfiability by querying it by an another
+    /// equivalent type.
+    FromEquivalence,
+
+    /// Normal
+    #[default]
+    Normal,
+}
 
 impl Query for PositiveMarker {
-    type InProgress = ();
+    type InProgress = QuerySource;
     type Result = PositiveResult;
 
     #[allow(clippy::too_many_lines)]
     fn query<'x, N: Normalizer>(
         &'x self,
         environment: &'x Environment<'x, N>,
-        (): Self::InProgress,
     ) -> BoxedFuture<'x, Self::Result> {
         Box::pin(async move {
             // if this query was made in marker, then check if the marker is the
@@ -282,7 +222,7 @@ impl Query for PositiveMarker {
                 ))
                 .await?;
 
-            match resolve.0 {
+            let mut current_error = match resolve {
                 Ok(result) => {
                     if environment
                         .tracked_engine()
@@ -301,6 +241,8 @@ impl Query for PositiveMarker {
                             result.constraints.clone(),
                         ))));
                     }
+
+                    PositiveError::NegativeMarkerImplementation(result)
                 }
                 Err(error) => {
                     // if failed by anything other than not found, then we'll
@@ -310,89 +252,131 @@ impl Query for PositiveMarker {
                             PositiveError::ImplementationResolution(error),
                         ));
                     }
+
+                    PositiveError::ImplementationResolution(error)
                 }
-            }
+            };
 
             // replace the first type argument with sub-terms/fields and check
             // if all the replacements are satisfied
             if let Some(ty) = self.generic_arguments.types().first() {
-                let mut visitor = Visitor {
-                    original: self,
-                    state: VisitorState::Succeeded(BTreeMap::new()),
-                    environment,
-                };
+                // try to structurally prove the marker for each field of the
+                // type
+                if let Some(result) =
+                    substructural_derive(self, ty, environment).await?
+                {
+                    return Ok(result);
+                }
 
-                let result = ty.accept_one_level_async(&mut visitor).await;
+                // replace the first type argument with equivalent types and
+                // check if any of them are satisfied
+                for term in environment.get_equivalences(ty).await?.as_ref() {
+                    let mut positive_marker_clone = self.clone();
 
-                match (visitor.state, result) {
-                    // can't find the sub-term / failed
-                    (VisitorState::Failed, _)
-                    | (
-                        VisitorState::Succeeded(_),
-                        Err(visitor::VisitNonApplicationTermError),
-                    ) => {}
+                    // replace the first type argument with the equivalent type
+                    positive_marker_clone.generic_arguments.types_mut()[0] =
+                        term.result.clone();
 
-                    // abrupt error
-                    (VisitorState::AbruptError(error), _) => return Err(error),
+                    match environment
+                        .query_with(
+                            &positive_marker_clone,
+                            QuerySource::FromEquivalence,
+                        )
+                        .await?
+                    {
+                        // found the success path
+                        Ok(result) => {
+                            let mut constraints = result.constraints.clone();
 
-                    (VisitorState::Succeeded(mut btree_map), Ok(_)) => {
-                        // including fields as well
-                        for field_ty in
-                            try_get_adt_fields(ty, environment.tracked_engine())
-                                .await
-                                .into_iter()
-                                .flatten()
-                        {
-                            let new_query = Self {
-                                marker_id: self.marker_id,
-                                generic_arguments: GenericArguments {
-                                    lifetimes: self
-                                        .generic_arguments
-                                        .lifetimes
-                                        .clone(),
-                                    types: {
-                                        let mut types = self
-                                            .generic_arguments
-                                            .types
-                                            .clone();
-                                        types[0] = field_ty.clone();
-                                        types
-                                    },
-                                    constants: self
-                                        .generic_arguments
-                                        .constants
-                                        .clone(),
-                                },
-                            };
+                            constraints
+                                .extend(term.constraints.iter().cloned());
 
-                            if let Some(result) =
-                                environment.query(&new_query).await?
-                            {
-                                btree_map.insert(new_query, result);
-                            } else {
-                                return Ok(None);
-                            }
+                            return Ok(Ok(Arc::new(
+                                Succeeded::with_constraints(
+                                    result.result.clone(),
+                                    constraints,
+                                ),
+                            )));
                         }
 
-                        return Ok(Some(Arc::new(Succeeded {
-                            result: PositiveSatisfied::Congruence(btree_map),
-                            constraints: BTreeSet::new(),
-                        })));
+                        // if the new error is better than the current error,
+                        // then replace it
+                        Err(new_error) => {
+                            if new_error.heuristic() > current_error.heuristic()
+                            {
+                                current_error = new_error;
+                            }
+                        }
                     }
                 }
             }
 
-            Ok(None)
+            Ok(Err(current_error))
         })
     }
 
     fn on_cyclic(
         &self,
-        (): Self::InProgress,
-        (): Self::InProgress,
-        _: &[Call<DynArc, DynArc>],
+        _: Self::InProgress,
+        _: Self::InProgress,
+        call_stacks: &[Call<DynArc, DynArc>],
     ) -> Result<Arc<Succeeded<PositiveSatisfied>>, PositiveError> {
-        todo!()
+        for call in call_stacks.iter().skip(1) {
+            let (Some(_), Some(in_progress)) = (
+                call.query.downcast_ref::<Self>(),
+                call.in_progress.downcast_ref::<QuerySource>(),
+            ) else {
+                continue;
+            };
+
+            if *in_progress == QuerySource::Normal {
+                return Ok(Arc::new(Succeeded::new(PositiveSatisfied::Cyclic)));
+            }
+        }
+
+        Err(PositiveError::Cyclic)
+    }
+}
+
+async fn substructural_derive(
+    marker: &PositiveMarker,
+    first_type: &Type,
+    environment: &Environment<'_, impl Normalizer>,
+) -> Result<Option<PositiveResult>, OverflowError> {
+    let Some(field_types) =
+        try_get_adt_fields(first_type, environment.tracked_engine()).await
+    else {
+        return Ok(None);
+    };
+
+    let mut constraints = BTreeSet::new();
+    let mut structural_errors = Vec::new();
+
+    for ty in field_types {
+        let mut positive_marker_clone = marker.clone();
+
+        // replace the first type argument with the field type
+        positive_marker_clone.generic_arguments.types_mut()[0] =
+            ty.r#type().clone();
+
+        match environment.query(&positive_marker_clone).await? {
+            Ok(result) => {
+                constraints.extend(result.constraints.iter().cloned());
+            }
+            Err(error) => structural_errors.push(StructuralError {
+                sub_predicate: positive_marker_clone,
+                error,
+            }),
+        }
+    }
+
+    if structural_errors.is_empty() {
+        Ok(Some(Ok(Arc::new(Succeeded::with_constraints(
+            PositiveSatisfied::Substructural,
+            constraints,
+        )))))
+    } else {
+        Ok(Some(Err(PositiveError::Structural(structural_errors.into()))))
     }
 }
 
@@ -417,11 +401,10 @@ impl Query for NegativeMarker {
     fn query<'x, N: Normalizer>(
         &'x self,
         environment: &'x Environment<'x, N>,
-        (): Self::InProgress,
     ) -> BoxedFuture<'x, Self::Result> {
         Box::pin(async move {
             // manually search for the trait implementation
-            if let Some(result) = environment
+            if let Ok(result) = environment
                 .query(&resolution::Resolve::new(
                     self.marker_id,
                     self.generic_arguments.clone(),
@@ -434,9 +417,6 @@ impl Query for NegativeMarker {
                     NegativeSatisfied::Implementation(Implementation {
                         instantiation: result.result.instantiation.clone(),
                         id: result.result.id,
-                        is_not_general_enough: result
-                            .result
-                            .is_not_general_enough,
                     }),
                     result.constraints.clone(),
                 ))));
@@ -488,7 +468,7 @@ impl Query for NegativeMarker {
                     self.generic_arguments.clone(),
                 ))
                 .await?
-                .is_none()
+                .is_err()
                 .then(|| {
                     Arc::new(Succeeded::with_constraints(
                         NegativeSatisfied::UnsatisfiedPositive,
@@ -500,8 +480,8 @@ impl Query for NegativeMarker {
 
     fn on_cyclic(
         &self,
-        _: Self::InProgress,
-        _: Self::InProgress,
+        (): Self::InProgress,
+        (): Self::InProgress,
         _: &[Call<crate::environment::DynArc, crate::environment::DynArc>],
     ) -> Self::Result {
         None

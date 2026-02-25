@@ -240,7 +240,6 @@ impl<T: Term, P: PredicateA> Query for Unification<T, P> {
     fn query<'x, N: Normalizer>(
         &'x self,
         environment: &'x Environment<'x, N>,
-        (): Self::InProgress,
     ) -> BoxedFuture<'x, Self::Result> {
         Box::pin(async move {
             unify(&self.from, &self.to, &self.predicate, environment).await
@@ -249,8 +248,8 @@ impl<T: Term, P: PredicateA> Query for Unification<T, P> {
 
     fn on_cyclic(
         &self,
-        _: Self::InProgress,
-        _: Self::InProgress,
+        (): Self::InProgress,
+        (): Self::InProgress,
         _: &[crate::environment::Call<
             crate::environment::DynArc,
             crate::environment::DynArc,

@@ -140,7 +140,6 @@ impl<T: Term> Query for Equivalences<T> {
     fn query<'x, N: Normalizer>(
         &'x self,
         environment: &'x Environment<'x, N>,
-        (): Self::InProgress,
     ) -> BoxedFuture<'x, Self::Result> {
         Box::pin(async move {
             Impl::get_equivalences_internal(&self.0, environment).await
@@ -149,8 +148,8 @@ impl<T: Term> Query for Equivalences<T> {
 
     fn on_cyclic(
         &self,
-        _: Self::InProgress,
-        _: Self::InProgress,
+        (): Self::InProgress,
+        (): Self::InProgress,
         _: &[crate::environment::Call<
             crate::environment::DynArc,
             crate::environment::DynArc,

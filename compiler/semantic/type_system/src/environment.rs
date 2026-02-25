@@ -284,7 +284,6 @@ pub trait Query: Clone + Eq + Ord + Hash + DynIdent {
     fn query<'x, N: Normalizer>(
         &'x self,
         environment: &'x Environment<'x, N>,
-        in_progress: Self::InProgress,
     ) -> BoxedFuture<'x, Self::Result>;
 
     /// The result to return of the query when the query is cyclic.
@@ -549,7 +548,7 @@ impl<N: Normalizer> Environment<'_, N> {
             None => { /*no circular dependency, continue...*/ }
         }
 
-        match query.query(self, in_progress).await {
+        match query.query(self).await {
             Ok(result) => {
                 // remember the result
                 assert!(

@@ -18,7 +18,6 @@ impl Query for Tuple<Type> {
     fn query<'x, N: Normalizer>(
         &'x self,
         environment: &'x Environment<'x, N>,
-        (): Self::InProgress,
     ) -> BoxedFuture<'x, Self::Result> {
         Box::pin(async move {
             // trivially satisfied
@@ -75,8 +74,8 @@ impl Query for Tuple<Type> {
 
     fn on_cyclic(
         &self,
-        _: Self::InProgress,
-        _: Self::InProgress,
+        (): Self::InProgress,
+        (): Self::InProgress,
         _: &[crate::environment::Call<
             crate::environment::DynArc,
             crate::environment::DynArc,

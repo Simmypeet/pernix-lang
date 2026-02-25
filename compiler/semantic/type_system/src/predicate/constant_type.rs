@@ -143,7 +143,6 @@ impl Query for ConstantType {
     fn query<'x, N: Normalizer>(
         &'x self,
         environment: &'x Environment<'x, N>,
-        _: Self::InProgress,
     ) -> BoxedFuture<'x, Self::Result> {
         Box::pin(async move {
             let satisfiability = match self.0 {

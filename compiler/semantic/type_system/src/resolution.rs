@@ -32,12 +32,19 @@ use crate::{
     predicate::marker,
 };
 
+/// The cause of an unsatisfied predicate.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum UnsatisfiedCause {
+    /// No additional information to elaborate further.
     NoInformation,
+
+    /// The predicate was a "positive marker" and it was not satisfied. The
+    /// contained error can be used to elaborate further on the cause of the
+    /// unsatisfaction.
     PositiveMarker(marker::PositiveError),
 }
 
+/// Failed to satisfy a predicate define in the `implements` where clause.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UnsatisfiedPredicate {
     predicate: Predicate,
@@ -45,18 +52,64 @@ pub struct UnsatisfiedPredicate {
     cause: UnsatisfiedCause,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct UnsatisfiedPredicates {
-    unsatisfied_predicate: Vec<UnsatisfiedPredicate>,
+impl UnsatisfiedPredicate {
+    #[must_use]
+    pub(crate) fn heuristic(&self) -> usize {
+        match &self.cause {
+            UnsatisfiedCause::NoInformation => 1,
+            UnsatisfiedCause::PositiveMarker(positive_error) => {
+                positive_error.heuristic()
+            }
+        }
+    }
 }
 
+/// Failed to satisfy one or more predicates defined in the `implements` where
+/// clause.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UnsatisfiedPredicates {
+    unsatisfied_predicate: Arc<[UnsatisfiedPredicate]>,
+}
+
+/// An error that can occur during implementation resolution.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum Error {
+    /// Found no implementation for the given symbol and generic arguments.
     NotFound,
+
+    //// Found an implementation, but its signature is not general enough for
+    /// the for-all lifetimes.
     IsNotGeneralEnough(Arc<Implementation>),
+
+    /// An implementation was found, but one or more predicates in the
+    /// `implements` where clause were not satisfied.
     UnsatisfiedPredicates(UnsatisfiedPredicates),
+
+    /// Found ambiguous `implements` candidates.
     Ambiguous,
+
+    /// An error for cyclic query.
     Cyclic,
+}
+
+impl Error {
+    #[must_use]
+    pub(crate) fn heuristic(&self) -> usize {
+        match self {
+            Self::IsNotGeneralEnough(_) => 2,
+
+            Self::UnsatisfiedPredicates(predicates) => {
+                predicates
+                    .unsatisfied_predicate
+                    .iter()
+                    .map(UnsatisfiedPredicate::heuristic)
+                    .sum::<usize>()
+                    + 1
+            }
+
+            Self::NotFound | Self::Ambiguous | Self::Cyclic => 1,
+        }
+    }
 }
 
 /// A result of a implementation resolution query.
@@ -82,7 +135,7 @@ pub struct Resolve {
     pub generic_arguments: GenericArguments,
 }
 
-pub type ResolveResult = Result<Arc<Succeeded<Implementation>>, Error>;
+type ResolveResult = Result<Arc<Succeeded<Implementation>>, Error>;
 
 impl Query for Resolve {
     type InProgress = ();
@@ -92,7 +145,6 @@ impl Query for Resolve {
     fn query<'x, N: Normalizer>(
         &'x self,
         environment: &'x Environment<'x, N>,
-        (): Self::InProgress,
     ) -> BoxedFuture<'x, Self::Result> {
         Box::pin(async move {
             let symbol_kind = environment
@@ -238,16 +290,15 @@ impl Query for Resolve {
                     .await?
                     {
                         Ok(new_constraints) => {
-                            lifetime_constraints
-                                .extend(new_constraints.into_iter());
+                            lifetime_constraints.extend(new_constraints);
 
-                            return Ok(Ok(Arc::new(Succeeded {
+                            Ok(Ok(Arc::new(Succeeded {
                                 result: Implementation {
                                     instantiation: deduction.instantiation,
                                     id: implementation_id,
                                 },
                                 constraints: lifetime_constraints,
-                            })));
+                            })))
                         }
 
                         Err(err) => Ok(Err(Error::UnsatisfiedPredicates(
@@ -258,15 +309,15 @@ impl Query for Resolve {
                     }
                 }
 
-                None => return Ok(Err(Error::NotFound)),
+                None => Ok(Err(Error::NotFound)),
             }
         })
     }
 
     fn on_cyclic(
         &self,
-        _: Self::InProgress,
-        _: Self::InProgress,
+        (): Self::InProgress,
+        (): Self::InProgress,
         _: &[crate::environment::Call<
             crate::environment::DynArc,
             crate::environment::DynArc,
@@ -353,12 +404,13 @@ async fn is_in_active_implementation(
     Ok(None)
 }
 
+#[allow(clippy::too_many_lines)]
 async fn predicate_satisfies(
     predicates: Interned<[where_clause::Predicate]>,
     substitution: &Instantiation,
     environment: &Environment<'_, impl Normalizer>,
 ) -> Result<
-    Result<BTreeSet<LifetimeConstraint>, Vec<UnsatisfiedPredicate>>,
+    Result<BTreeSet<LifetimeConstraint>, Arc<[UnsatisfiedPredicate]>>,
     OverflowError,
 > {
     // check if satisfies all the predicate
@@ -479,6 +531,6 @@ async fn predicate_satisfies(
     Ok(if unsatisfied_predicates.is_empty() {
         Ok(constraints)
     } else {
-        Err(unsatisfied_predicates)
+        Err(unsatisfied_predicates.into())
     })
 }

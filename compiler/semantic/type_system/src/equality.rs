@@ -27,7 +27,6 @@ impl<T: Term> Query for Equality<T, T> {
     fn query<'x, N: Normalizer>(
         &'x self,
         environment: &'x Environment<'x, N>,
-        (): Self::InProgress,
     ) -> BoxedFuture<'x, Self::Result> {
         Box::pin(async move {
             if let Some(result) =
@@ -95,8 +94,8 @@ impl<T: Term> Query for Equality<T, T> {
 
     fn on_cyclic(
         &self,
-        _: Self::InProgress,
-        _: Self::InProgress,
+        (): Self::InProgress,
+        (): Self::InProgress,
         _: &[crate::environment::Call<
             crate::environment::DynArc,
             crate::environment::DynArc,
