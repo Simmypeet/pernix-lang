@@ -34,7 +34,7 @@ use crate::{
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, derive_new::new,
 )]
-struct Subtype<T> {
+pub(crate) struct Subtype<T> {
     /// Represents the term that will "be assigned" by the [`Self::source`] in
     /// the subtyping relation.
     pub target: T,
@@ -192,7 +192,7 @@ impl<T: Term> Query for Subtype<T> {
 }
 
 #[doc(hidden)]
-pub trait Impl: Sized {
+pub(crate) trait Impl: Sized {
     fn query(
         subtype: &Subtype<Self>,
         environment: &Environment<impl Normalizer>,

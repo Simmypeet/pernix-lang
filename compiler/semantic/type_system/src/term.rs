@@ -36,6 +36,7 @@ use crate::{
 /// This trait provides a common interface for all terms to be used in the
 /// type system. Since most of the queries and operations in the type system are
 /// generic over the kind of term.
+#[allow(private_bounds)]
 pub trait Term:
     pernixc_term::visitor::Element
     + pernixc_term::matching::Match
