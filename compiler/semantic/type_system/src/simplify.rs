@@ -8,7 +8,7 @@ use pernixc_semantic_element::variance::Variance;
 use pernixc_term::{r#type::Type, visitor::AsyncMutable};
 
 use crate::{
-    Error, Succeeded,
+    OverflowError, Succeeded,
     diagnostic::Diagnostic,
     environment::{BoxedFuture, Environment, Query},
     lifetime_constraint::LifetimeConstraint,
@@ -19,7 +19,7 @@ use crate::{
 struct Visitor<'e, N: Normalizer> {
     environment: &'e Environment<'e, N>,
     lifetime_constraints: BTreeSet<LifetimeConstraint>,
-    abrupt_error: Option<Error>,
+    abrupt_error: Option<OverflowError>,
 }
 
 impl<U: Term, N: Normalizer> AsyncMutable<U> for Visitor<'_, N> {
@@ -36,7 +36,9 @@ impl<U: Term, N: Normalizer> AsyncMutable<U> for Visitor<'_, N> {
 
                 true
             }
+
             Ok(None) => true,
+
             Err(err) => {
                 self.abrupt_error = Some(err);
                 false
@@ -51,18 +53,14 @@ impl<U: Term, N: Normalizer> AsyncMutable<U> for Visitor<'_, N> {
 pub struct Simplify<T: Term>(pub T);
 
 impl<T: Term> Query for Simplify<T> {
-    type Parameter = ();
     type InProgress = ();
-    type Result = Succeeded<T>;
-    type Error = Error;
+    type Result = Option<Arc<Succeeded<T>>>;
 
     #[allow(clippy::too_many_lines)]
     fn query<'x, N: Normalizer>(
         &'x self,
         environment: &'x Environment<'x, N>,
-        (): Self::Parameter,
-        (): Self::InProgress,
-    ) -> BoxedFuture<'x, Self::Result, Self::Error> {
+    ) -> BoxedFuture<'x, Self::Result> {
         Box::pin(async move {
             // recursively simplify the term
             let mut new_term = self.0.clone();
@@ -168,6 +166,18 @@ impl<T: Term> Query for Simplify<T> {
             ))))
         })
     }
+
+    fn on_cyclic(
+        &self,
+        (): Self::InProgress,
+        (): Self::InProgress,
+        _: &[crate::environment::Call<
+            crate::environment::DynArc,
+            crate::environment::DynArc,
+        >],
+    ) -> Self::Result {
+        None
+    }
 }
 
 impl<N: Normalizer> Environment<'_, N> {
@@ -175,7 +185,7 @@ impl<N: Normalizer> Environment<'_, N> {
     pub async fn simplify<T: Term>(
         &self,
         term: T,
-    ) -> Result<Arc<Succeeded<T>>, Error> {
+    ) -> Result<Arc<Succeeded<T>>, OverflowError> {
         Ok(self.query(&Simplify(term)).await?.unwrap())
     }
 
@@ -200,7 +210,7 @@ impl<N: Normalizer> Environment<'_, N> {
 
             Ok(None) => unreachable!(),
 
-            Err(Error::Overflow(error)) => {
+            Err(error) => {
                 error.report_as_type_calculating_overflow(*type_span, handler);
 
                 pernixc_term::r#type::Type::Error(pernixc_term::error::Error)
