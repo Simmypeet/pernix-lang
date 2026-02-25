@@ -54,7 +54,7 @@ impl<U: Term, N: Normalizer> visitor::AsyncVisitor<U> for Visitor<'_, N> {
 ///
 /// A term is definite if the term doesn't contain any generic parameters.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Definite<T>(pub T);
+struct Definite<T>(pub T);
 
 impl<T> Definite<T> {
     /// Creates a new `Definite` query.

@@ -31,7 +31,6 @@ use super::{Predicate as _, Unification, Unifier};
 use crate::{
     OverflowError, Satisfied, Succeeded,
     environment::{Environment, Premise, QueryResult},
-    equality::Equality,
     normalizer,
     term::Term,
     test::{
@@ -602,7 +601,7 @@ async fn property_based_testing<T: Term + 'static>(
     );
 
     if environment
-        .query(&Equality::new(lhs.clone(), rhs.clone()))
+        .equals(lhs.clone(), rhs.clone())
         .await
         .map_err(|x| TestCaseError::reject(format!("{x}")))?
         .is_some()
@@ -625,7 +624,7 @@ async fn property_based_testing<T: Term + 'static>(
         rewrite_term(&mut lhs, result.result.clone())?;
 
         let Some(satisfied) = environment
-            .query(&Equality::new(lhs, rhs))
+            .equals(lhs, rhs)
             .await
             .map_err(|x| TestCaseError::reject(format!("{x}")))?
         else {

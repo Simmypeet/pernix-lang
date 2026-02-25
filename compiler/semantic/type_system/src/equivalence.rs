@@ -13,7 +13,6 @@ use crate::{
     Succeeded,
     environment::{BoxedFuture, Environment, Query, QueryResult},
     normalizer::Normalizer,
-    subtype::Subtype,
     term::Term,
 };
 
@@ -60,11 +59,7 @@ impl Impl for Type {
                 let rhs = &equivalence.rhs;
 
                 if let Some(result) = environment
-                    .query(&Subtype::new(
-                        self.clone(),
-                        lhs,
-                        Variance::Invariant,
-                    ))
+                    .subtypes(self.clone(), lhs, Variance::Invariant)
                     .await?
                 {
                     if !result.result.forall_lifetime_errors.is_empty() {
@@ -131,7 +126,7 @@ impl Impl for Instance {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, derive_new::new,
 )]
-pub struct Equivalences<T>(pub T);
+struct Equivalences<T>(pub T);
 
 impl<T: Term> Query for Equivalences<T> {
     type InProgress = ();

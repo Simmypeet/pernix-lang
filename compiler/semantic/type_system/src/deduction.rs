@@ -15,7 +15,6 @@ use pernixc_term::{
 use crate::{
     OverflowError, Satisfied, Succeeded,
     environment::Environment,
-    equality::Equality,
     lifetime_constraint::LifetimeConstraint,
     mapping::Mapping,
     normalizer::Normalizer,
@@ -327,7 +326,7 @@ impl CompatiblePredicate<Constant> for UniToSubs<'_> {
         environment: &Environment<'_, impl Normalizer>,
     ) -> Result<Option<Succeeded<Satisfied>>, OverflowError> {
         environment
-            .query(&Equality::new(lhs.clone(), rhs.clone()))
+            .equals(lhs.clone(), rhs.clone())
             .await
             .map(|x| x.map(|x| (*x).clone()))
     }

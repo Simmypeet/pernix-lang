@@ -14,7 +14,7 @@ use crate::{
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, derive_new::new,
 )]
 #[allow(missing_docs)]
-pub struct Equality<T, U = T> {
+struct Equality<T, U = T> {
     pub lhs: T,
     pub rhs: U,
 }

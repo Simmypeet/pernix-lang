@@ -50,7 +50,7 @@ impl<U: Term, N: Normalizer> AsyncMutable<U> for Visitor<'_, N> {
 /// A query for simplifying a term by recursively applying the normalization and
 /// trait member equality.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Simplify<T: Term>(pub T);
+struct Simplify<T: Term>(pub T);
 
 impl<T: Term> Query for Simplify<T> {
     type InProgress = ();

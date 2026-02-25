@@ -21,7 +21,6 @@ use pernixc_term::{
 use crate::{
     Succeeded,
     environment::{BoxedFuture, Environment, Query, QueryResult},
-    equality::Equality,
     lifetime_constraint::LifetimeConstraint,
     normalizer::Normalizer,
     term::Term,
@@ -35,7 +34,7 @@ use crate::{
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, derive_new::new,
 )]
-pub struct Subtype<T> {
+struct Subtype<T> {
     /// Represents the term that will "be assigned" by the [`Self::source`] in
     /// the subtyping relation.
     pub target: T,
@@ -668,10 +667,7 @@ impl Impl for Constant {
         // use strict equality in case of constant since the constant terms
         // don't havel lifetime anyway
         environment
-            .query(&Equality::new(
-                subtype.source.clone(),
-                subtype.target.clone(),
-            ))
+            .equals(subtype.source.clone(), subtype.target.clone())
             .await
             .map(|x| x.map(|_| Arc::new(Succeeded::new(Subtypable::default()))))
     }

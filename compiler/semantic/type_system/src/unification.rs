@@ -19,7 +19,6 @@ use pernixc_term::{
 use crate::{
     Satisfied, Succeeded,
     environment::{BoxedFuture, Environment, Query, QueryResult},
-    equality::Equality,
     normalizer::Normalizer,
     term::Term,
 };
@@ -364,9 +363,7 @@ pub(super) async fn unify<T: Term>(
     predicate: &impl PredicateA,
     environment: &Environment<'_, impl Normalizer>,
 ) -> QueryResult<Option<Arc<Succeeded<Unifier<T>>>>> {
-    if let Some(result) =
-        environment.query(&Equality::new(from.clone(), to.clone())).await?
-    {
+    if let Some(result) = environment.equals(from.clone(), to.clone()).await? {
         return Ok(Some(Arc::new(Succeeded::with_constraints(
             Unifier {
                 matching: Matching::Equality,
