@@ -19,7 +19,7 @@ pub mod normalizer;
 pub mod order;
 pub mod predicate;
 pub mod resolution;
-// pub mod simplify;
+pub mod simplify;
 pub mod subtype;
 pub mod term;
 pub mod unification;
