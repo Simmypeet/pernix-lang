@@ -18,6 +18,7 @@ pub mod instance_associated_value;
 pub mod late_bound_lifetime;
 pub mod parameter;
 pub mod return_type;
+pub mod trait_ref;
 pub mod type_alias;
 pub mod variance;
 pub mod variant;
