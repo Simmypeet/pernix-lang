@@ -18,7 +18,8 @@ use pernixc_symbol::{
 use pernixc_target::Global;
 use pernixc_term::{
     generic_arguments::GenericArguments, instantiation::Instantiation,
-    predicate::Predicate, r#type::Type,
+    lifetime::Lifetime, predicate::Predicate, r#type::Type,
+    visitor::RecursiveIterator,
 };
 use qbice::storage::intern::Interned;
 
@@ -259,58 +260,7 @@ impl Query for Resolve {
                 }
             }
 
-            match candidate {
-                Some((
-                    implementation_id,
-                    deduction,
-                    mut lifetime_constraints,
-                    _,
-                )) => {
-                    // if not general enough, return error
-                    if deduction.is_not_general_enough {
-                        return Ok(Err(Error::IsNotGeneralEnough(Arc::new(
-                            Implementation {
-                                instantiation: deduction.instantiation,
-                                id: implementation_id,
-                            },
-                        ))));
-                    }
-
-                    let where_clause_predicates = environment
-                        .tracked_engine()
-                        .get_where_clause(implementation_id)
-                        .await;
-
-                    // check if satisfies the predicates
-                    match predicate_satisfies(
-                        where_clause_predicates,
-                        &deduction.instantiation,
-                        environment,
-                    )
-                    .await?
-                    {
-                        Ok(new_constraints) => {
-                            lifetime_constraints.extend(new_constraints);
-
-                            Ok(Ok(Arc::new(Succeeded {
-                                result: Implementation {
-                                    instantiation: deduction.instantiation,
-                                    id: implementation_id,
-                                },
-                                constraints: lifetime_constraints,
-                            })))
-                        }
-
-                        Err(err) => Ok(Err(Error::UnsatisfiedPredicates(
-                            UnsatisfiedPredicates {
-                                unsatisfied_predicate: err,
-                            },
-                        ))),
-                    }
-                }
-
-                None => Ok(Err(Error::NotFound)),
-            }
+            finialize_candidate(candidate, environment).await
         })
     }
 
@@ -324,6 +274,72 @@ impl Query for Resolve {
         >],
     ) -> Self::Result {
         Err(Error::Cyclic)
+    }
+}
+
+async fn finialize_candidate(
+    candidate: Option<(
+        Global<pernixc_symbol::ID>,
+        Deduction,
+        BTreeSet<LifetimeConstraint>,
+        GenericArguments,
+    )>,
+    environment: &Environment<'_, impl Normalizer>,
+) -> Result<Result<Arc<Succeeded<Implementation>>, Error>, OverflowError> {
+    match candidate {
+        Some((implementation_id, deduction, mut lifetime_constraints, _)) => {
+            // if not general enough, return error
+            if deduction.is_not_general_enough {
+                return Ok(Err(Error::IsNotGeneralEnough(Arc::new(
+                    Implementation {
+                        instantiation: deduction.instantiation,
+                        id: implementation_id,
+                    },
+                ))));
+            }
+
+            let where_clause_predicates = environment
+                .tracked_engine()
+                .get_where_clause(implementation_id)
+                .await;
+
+            // check if satisfies the predicates
+            match predicate_satisfies(
+                where_clause_predicates,
+                &deduction.instantiation,
+                environment,
+            )
+            .await?
+            {
+                Ok(new_constraints) => {
+                    lifetime_constraints.extend(new_constraints);
+
+                    Ok(Ok(Arc::new(Succeeded {
+                        result: Implementation {
+                            instantiation: deduction.instantiation,
+                            id: implementation_id,
+                        },
+                        constraints: lifetime_constraints,
+                    })))
+                }
+
+                Err(err) => Ok(Err(match err {
+                    PredicateSatisfyError::UnsatisfiedPredicates(
+                        unsatisfied_predicates,
+                    ) => Error::UnsatisfiedPredicates(UnsatisfiedPredicates {
+                        unsatisfied_predicate: unsatisfied_predicates,
+                    }),
+                    PredicateSatisfyError::ImplementationIsNotGeneralEnough => {
+                        Error::IsNotGeneralEnough(Arc::new(Implementation {
+                            instantiation: deduction.instantiation,
+                            id: implementation_id,
+                        }))
+                    }
+                })),
+            }
+        }
+
+        None => Ok(Err(Error::NotFound)),
     }
 }
 
@@ -404,13 +420,18 @@ async fn is_in_active_implementation(
     Ok(None)
 }
 
+enum PredicateSatisfyError {
+    UnsatisfiedPredicates(Arc<[UnsatisfiedPredicate]>),
+    ImplementationIsNotGeneralEnough,
+}
+
 #[allow(clippy::too_many_lines)]
 async fn predicate_satisfies(
     predicates: Interned<[where_clause::Predicate]>,
     substitution: &Instantiation,
     environment: &Environment<'_, impl Normalizer>,
 ) -> Result<
-    Result<BTreeSet<LifetimeConstraint>, Arc<[UnsatisfiedPredicate]>>,
+    Result<BTreeSet<LifetimeConstraint>, PredicateSatisfyError>,
     OverflowError,
 > {
     // check if satisfies all the predicate
@@ -422,8 +443,8 @@ async fn predicate_satisfies(
     {
         predicate.instantiate(substitution);
 
-        match &predicate {
-            Predicate::InstanceAssociatedTypeEquality(equality) => {
+        match predicate {
+            Predicate::InstanceAssociatedTypeEquality(ref equality) => {
                 match environment
                     .subtypes(
                         Type::InstanceAssociated(equality.lhs.clone()),
@@ -452,7 +473,7 @@ async fn predicate_satisfies(
                 }
             }
 
-            Predicate::ConstantType(constant_type) => {
+            Predicate::ConstantType(ref constant_type) => {
                 match environment.query(constant_type).await? {
                     Some(satisfied) => {
                         constraints
@@ -468,7 +489,7 @@ async fn predicate_satisfies(
                 }
             }
 
-            Predicate::TupleType(tuple_type) => {
+            Predicate::TupleType(ref tuple_type) => {
                 match environment.query(tuple_type).await? {
                     Some(satisfied) => {
                         constraints
@@ -484,7 +505,7 @@ async fn predicate_satisfies(
                 }
             }
 
-            Predicate::PositiveMarker(tr) => {
+            Predicate::PositiveMarker(ref tr) => {
                 match environment.query(tr).await? {
                     Ok(result) => {
                         constraints.extend(result.constraints.iter().cloned());
@@ -500,7 +521,7 @@ async fn predicate_satisfies(
                 }
             }
 
-            Predicate::NegativeMarker(tr) => {
+            Predicate::NegativeMarker(ref tr) => {
                 match environment.query(tr).await? {
                     Some(result) => {
                         constraints.extend(result.constraints.iter().cloned());
@@ -516,12 +537,34 @@ async fn predicate_satisfies(
                 }
             }
 
-            Predicate::TypeOutlives(pred) => {
+            Predicate::TypeOutlives(mut pred) => {
+                if pred.bound.is_forall() {
+                    pred.bound = Lifetime::Static;
+                }
+
+                if RecursiveIterator::new(&pred.operand)
+                    .any(|x| x.0.as_lifetime().is_some_and(|x| x.is_forall()))
+                {
+                    return Ok(Err(
+                        PredicateSatisfyError::ImplementationIsNotGeneralEnough,
+                    ));
+                }
+
                 constraints
                     .insert(LifetimeConstraint::TypeOutlives(pred.clone()));
             }
 
-            Predicate::LifetimeOutlives(pred) => {
+            Predicate::LifetimeOutlives(mut pred) => {
+                if pred.bound.is_forall() {
+                    pred.bound = Lifetime::Static;
+                }
+
+                if pred.operand.is_forall() {
+                    return Ok(Err(
+                        PredicateSatisfyError::ImplementationIsNotGeneralEnough,
+                    ));
+                }
+
                 constraints
                     .insert(LifetimeConstraint::LifetimeOutlives(pred.clone()));
             }
@@ -531,6 +574,8 @@ async fn predicate_satisfies(
     Ok(if unsatisfied_predicates.is_empty() {
         Ok(constraints)
     } else {
-        Err(unsatisfied_predicates.into())
+        Err(PredicateSatisfyError::UnsatisfiedPredicates(Arc::from(
+            unsatisfied_predicates,
+        )))
     })
 }
