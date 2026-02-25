@@ -6,7 +6,9 @@ use pernixc_lexical::tree::RelativeSpan;
 use pernixc_term::{lifetime::Lifetime, predicate::Outlives, r#type::Type};
 
 use crate::{
-    diagnostic::Diagnostic, environment::Environment, normalizer::Normalizer,
+    diagnostic::{Diagnostic, UnsatisfiedPredicate},
+    environment::Environment,
+    normalizer::Normalizer,
 };
 
 /// Contains constraints related to lifetimes.
@@ -25,14 +27,13 @@ impl<N: Normalizer> Environment<'_, N> {
         span: &RelativeSpan,
         handler: &dyn Handler<Diagnostic>,
     ) {
-        /*
         for constraint in lifetime_constraints {
             match constraint {
                 LifetimeConstraint::LifetimeOutlives(outlives) => {
                     match self.query(outlives).await {
-                        Ok(Some(_)) => {}
+                        Ok(true) => {}
 
-                        Ok(None) => {
+                        Ok(false) => {
                             handler.receive(Diagnostic::UnsatisfiedPredicate(
                                 UnsatisfiedPredicate::builder()
                                     .predicate(outlives.clone().into())
@@ -41,7 +42,31 @@ impl<N: Normalizer> Environment<'_, N> {
                             ));
                         }
 
-                        Err(Error::Overflow(e)) => {
+                        Err(e) => {
+                            e.report_as_undecidable_predicate(
+                                outlives.clone().into(),
+                                None,
+                                *span,
+                                handler,
+                            );
+                        }
+                    }
+                }
+
+                LifetimeConstraint::TypeOutlives(outlives) => {
+                    match self.query(outlives).await {
+                        Ok(true) => {}
+
+                        Ok(false) => {
+                            handler.receive(Diagnostic::UnsatisfiedPredicate(
+                                UnsatisfiedPredicate::builder()
+                                    .predicate(outlives.clone().into())
+                                    .instantiation_span(*span)
+                                    .build(),
+                            ));
+                        }
+
+                        Err(e) => {
                             e.report_as_undecidable_predicate(
                                 outlives.clone().into(),
                                 None,
@@ -53,7 +78,5 @@ impl<N: Normalizer> Environment<'_, N> {
                 }
             }
         }
-        */
-        todo!()
     }
 }
