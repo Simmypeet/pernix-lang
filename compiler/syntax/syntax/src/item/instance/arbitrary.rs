@@ -251,6 +251,7 @@ reference! {
     #[derive(Debug, Clone)]
     pub struct Instance for super::Instance {
         pub access_modifier (AccessModifier),
+        pub extern_keyword (bool),
         pub signature (Signature),
         pub body (Body<Member>),
     }
@@ -261,11 +262,14 @@ impl Arbitrary for Instance {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (AccessModifier::arbitrary(), Signature::arbitrary(), Body::arbitrary())
-            .prop_map(|(access_modifier, signature, body)| Self {
-                access_modifier,
-                signature,
-                body,
+        (
+            AccessModifier::arbitrary(),
+            proptest::bool::ANY,
+            Signature::arbitrary(),
+            Body::arbitrary(),
+        )
+            .prop_map(|(access_modifier, extern_keyword, signature, body)| {
+                Self { access_modifier, extern_keyword, signature, body }
             })
             .boxed()
     }
@@ -278,6 +282,11 @@ impl IndentDisplay for Instance {
         indent: usize,
     ) -> std::fmt::Result {
         write!(formatter, "{} ", self.access_modifier)?;
+
+        if self.extern_keyword {
+            formatter.write_str("extern ")?;
+        }
+
         self.signature.indent_fmt(formatter, indent)?;
         self.body.indent_fmt(formatter, indent)
     }

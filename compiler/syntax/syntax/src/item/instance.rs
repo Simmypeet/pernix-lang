@@ -86,6 +86,7 @@ abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Instance {
         pub access_modifier: AccessModifier = ast::<AccessModifier>(),
+        pub extern_keyword: Keyword = expect::Keyword::Extern.optional(),
         pub signature: Signature = ast::<Signature>(),
         pub body: Body<Member> = ast::<Body<Member>>(),
     }
