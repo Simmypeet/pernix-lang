@@ -276,6 +276,9 @@ pub struct Table {
     /// this is simply a reference to where the submodule is defined in
     pub external_submodules: ReadOnlyMap<Interned<ExternalSubmodule>>,
 
+    /// Maps the `instance` ID to whether it is an external instance or not.
+    pub external_instances: ReadOnlyMap<bool>,
+
     /// The ID of the module that this table represents.
     pub module_id: pernixc_symbol::ID,
 

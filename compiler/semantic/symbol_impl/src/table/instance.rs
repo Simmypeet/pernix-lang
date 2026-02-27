@@ -46,6 +46,11 @@ impl Builder {
 
         let builder = self.clone();
 
+        self.insert_external_instance(
+            instance_id,
+            instance_syntax.extern_keyword().is_some(),
+        );
+
         join_set.spawn(async move {
             let mut instance_member_builder = MemberBuilder::new(
                 instance_id,

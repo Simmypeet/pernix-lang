@@ -85,6 +85,7 @@ pub struct Builder {
     function_unsafe_keywords: DashMap<ID, Option<pernixc_syntax::Keyword>>,
 
     scope_spans: DashMap<ID, Option<RelativeSpan>>,
+    external_instances: DashMap<ID, bool>,
 
     token_tree: Option<Interned<pernixc_lexical::tree::Tree>>,
     source_file: Option<SourceFile>,
@@ -129,6 +130,7 @@ impl Builder {
             function_body_syntaxes: DashMap::default(),
             function_effect_annotation_syntaxes: DashMap::default(),
             instance_associated_value_syntaxes: DashMap::default(),
+            external_instances: DashMap::default(),
             scope_spans: DashMap::default(),
             function_unsafe_keywords: DashMap::default(),
             token_tree,
@@ -217,6 +219,9 @@ impl Builder {
             scope_spans: self
                 .engine
                 .intern(self.scope_spans.into_iter().collect()),
+            external_instances: self
+                .engine
+                .intern(self.external_instances.into_iter().collect()),
 
             external_submodules: self
                 .engine
@@ -361,6 +366,14 @@ impl Builder {
                 .insert(id, qualified_identifier)
                 .is_none()
         );
+    }
+
+    pub fn insert_external_instance(
+        &self,
+        id: pernixc_symbol::ID,
+        is_external: bool,
+    ) {
+        assert!(self.external_instances.insert(id, is_external).is_none());
     }
 
     /// Inserts an accessibility into the builder from an access modifier.

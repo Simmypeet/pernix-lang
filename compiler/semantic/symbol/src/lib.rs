@@ -15,6 +15,7 @@ use qbice::{
 use siphasher::sip128::Hasher128;
 
 pub mod accessibility;
+pub mod external_instance;
 pub mod final_implements;
 pub mod instance_associated;
 pub mod kind;

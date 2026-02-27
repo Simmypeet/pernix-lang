@@ -2,6 +2,7 @@
 
 pub mod accessibility;
 pub mod diagnostic;
+pub mod external_instance;
 pub mod kind;
 pub mod linkage;
 pub mod member;
