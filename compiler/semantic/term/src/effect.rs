@@ -20,9 +20,6 @@ use crate::generic_arguments::{GenericArguments, Symbol};
     StableHash,
     Encode,
     Decode,
-    derive_more::From,
-    derive_more::Deref,
-    derive_more::DerefMut,
     Identifiable,
 )]
 pub struct Unit(Symbol);
