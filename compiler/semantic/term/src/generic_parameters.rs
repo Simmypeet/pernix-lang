@@ -1,5 +1,5 @@
 //! Contains the definition of [`GenericParameters`] component.
-use std::collections::hash_map::Entry;
+use std::{collections::hash_map::Entry, ops::Index};
 
 use derive_new::new;
 use getset::Getters;
@@ -83,9 +83,23 @@ pub struct GenericParameters {
     default_constant_parameters: Vec<Constant>,
 }
 
+mod sealed {
+    use pernixc_arena::Arena;
+
+    pub trait Sealed {
+        fn get_generic_parameters_arena(
+            generic_parameters: &super::GenericParameters,
+        ) -> &Arena<Self>
+        where
+            Self: Sized;
+    }
+}
+
 /// Implemented by all generic parameters [`LifetimeParameter`],
 /// [`TypeParameter`], [`ConstantParameter`], and [`InstanceParameter`].
-pub trait GenericParameter: Sized + Send + Sync + 'static {
+pub trait GenericParameter:
+    sealed::Sealed + Sized + Send + Sync + 'static
+{
     /// Gets the name of the generic parameter.
     ///
     /// If the generic parameter is anonymous, (i.e. elided lifetime parameter),
@@ -130,6 +144,14 @@ pub struct LifetimeParameter {
     span: Option<RelativeSpan>,
 }
 
+impl sealed::Sealed for LifetimeParameter {
+    fn get_generic_parameters_arena(
+        generic_parameters: &GenericParameters,
+    ) -> &Arena<Self> {
+        &generic_parameters.lifetimes
+    }
+}
+
 impl GenericParameter for LifetimeParameter {
     fn name(&self) -> &Interned<str> { &self.name }
 
@@ -162,6 +184,14 @@ impl GenericParameter for LifetimeParameter {
 pub struct TypeParameter {
     name: Interned<str>,
     span: Option<RelativeSpan>,
+}
+
+impl sealed::Sealed for TypeParameter {
+    fn get_generic_parameters_arena(
+        generic_parameters: &GenericParameters,
+    ) -> &Arena<Self> {
+        &generic_parameters.types
+    }
 }
 
 impl GenericParameter for TypeParameter {
@@ -197,6 +227,14 @@ pub struct ConstantParameter {
     name: Interned<str>,
     r#type: Type,
     span: Option<RelativeSpan>,
+}
+
+impl sealed::Sealed for ConstantParameter {
+    fn get_generic_parameters_arena(
+        generic_parameters: &GenericParameters,
+    ) -> &Arena<Self> {
+        &generic_parameters.constants
+    }
 }
 
 impl GenericParameter for ConstantParameter {
@@ -246,6 +284,14 @@ impl InstanceParameter {
     /// Gets the span where the instance parameter is declared.
     #[must_use]
     pub const fn span(&self) -> Option<&RelativeSpan> { self.span.as_ref() }
+}
+
+impl sealed::Sealed for InstanceParameter {
+    fn get_generic_parameters_arena(
+        generic_parameters: &GenericParameters,
+    ) -> &Arena<Self> {
+        &generic_parameters.instances
+    }
 }
 
 impl GenericParameter for InstanceParameter {
@@ -601,3 +647,11 @@ pub type LifetimeParameterID = MemberID<pernixc_arena::ID<LifetimeParameter>>;
 
 /// An ID to a instance parameter.
 pub type InstanceParameterID = MemberID<pernixc_arena::ID<InstanceParameter>>;
+
+impl<T: GenericParameter> Index<pernixc_arena::ID<T>> for GenericParameters {
+    type Output = T;
+
+    fn index(&self, index: pernixc_arena::ID<T>) -> &Self::Output {
+        T::get_generic_parameters_arena(self).get(index).unwrap()
+    }
+}
