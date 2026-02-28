@@ -27,6 +27,7 @@ use pernixc_target::Global;
 use pernixc_term::{
     generic_arguments::GenericArguments,
     generic_parameters::{LifetimeParameter, get_generic_parameters},
+    instance::Instance,
     lifetime::{ElidedLifetime, ElidedLifetimeID, Lifetime},
     predicate::{Outlives, Predicate},
     tuple,
@@ -142,10 +143,10 @@ impl Build for Key {
 
         let mut return_elided_lifetime_provider = (elided_lifetimes.len() == 1)
             .then(|| ReturnElidedLifetimeProvider {
-                lifetime: Lifetime::Elided(ElidedLifetimeID {
-                    parent_id: key.symbol_id,
-                    id: elided_lifetimes.ids().next().unwrap(),
-                }),
+                lifetime: Lifetime::Elided(ElidedLifetimeID::new(
+                    key.symbol_id,
+                    elided_lifetimes.ids().next().unwrap(),
+                )),
             });
 
         let return_type =
@@ -202,7 +203,7 @@ impl Build for Key {
                 match ty {
                     Type::Symbol(symbol) => {
                         let where_clause =
-                            engine.get_where_clause(symbol.id).await;
+                            engine.get_where_clause(symbol.id()).await;
 
                         implied_predicate_candidates.extend(
                             where_clause.as_ref().iter().filter_map(
@@ -246,6 +247,7 @@ impl Build for Key {
         }
 
         let mut implied_predicates = HashSet::default();
+
         for (implied_predicate, declared_span, inst_span) in
             implied_predicate_candidates
         {
@@ -265,10 +267,11 @@ impl Build for Key {
             };
 
             match result {
-                Ok(None) => {
+                Ok(false) => {
                     implied_predicates.insert(implied_predicate);
                 }
-                Err(pernixc_type_system::Error::Overflow(error)) => {
+
+                Err(error) => {
                     error.report_as_undecidable_predicate(
                         implied_predicate.into(),
                         declared_span,
@@ -277,7 +280,7 @@ impl Build for Key {
                     );
                 }
 
-                Ok(Some(_)) => { /* already satisfied */ }
+                Ok(true) => { /* already satisfied */ }
             }
         }
 
@@ -332,7 +335,7 @@ impl Build for Key {
             let where_clause = engine.get_where_clause(key.symbol_id).await;
 
             let mut all_lifetime_parameters = AllLifetimeParameters {
-                lifetimes: generic_params.lifetimes().ids().collect(),
+                lifetimes: generic_params.lifetime_parameter_order().collect(),
                 current_function_id: key.symbol_id,
             };
 
@@ -373,7 +376,7 @@ impl ElidedTermProvider<Lifetime> for ParametersElidedLifetimeProvider<'_> {
         let id =
             self.elided_lifetimes.insert(ElidedLifetime { order: current });
 
-        Lifetime::Elided(ElidedLifetimeID { parent_id: self.global_id, id })
+        Lifetime::Elided(ElidedLifetimeID::new(self.global_id, id))
     }
 }
 
@@ -395,45 +398,38 @@ impl AllLifetimeParameters {
     // if the lifetime appears in the where clause, it is not late bound
     fn exclude_late_bound(&mut self, predicate: &Predicate) {
         match predicate {
-            Predicate::TraitTypeCompatible(compatible) => {
+            Predicate::InstanceAssociatedTypeEquality(compatible) => {
+                self.exclude_late_bound_in_instance(compatible.lhs.instance());
                 self.exclude_late_bound_in_generic_arguments(
-                    &compatible.lhs.member_generic_arguments,
+                    compatible.lhs.associated_instance_generic_arguments(),
                 );
-                self.exclude_late_bound_in_generic_arguments(
-                    &compatible.lhs.parent_generic_arguments,
-                );
-
                 self.exclude_late_bound_in_type(&compatible.rhs);
             }
+
             Predicate::ConstantType(constant_type) => {
                 self.exclude_late_bound_in_type(&constant_type.0);
             }
+
             Predicate::LifetimeOutlives(outlives) => {
                 self.exclude_late_bound_in_lifetime(&outlives.bound);
                 self.exclude_late_bound_in_lifetime(&outlives.operand);
             }
+
             Predicate::TypeOutlives(outlives) => {
                 self.exclude_late_bound_in_lifetime(&outlives.bound);
                 self.exclude_late_bound_in_type(&outlives.operand);
             }
+
             Predicate::TupleType(tuple) => {
                 self.exclude_late_bound_in_type(&tuple.0);
             }
-            Predicate::PositiveTrait(positive) => {
-                self.exclude_late_bound_in_generic_arguments(
-                    &positive.generic_arguments,
-                );
-            }
-            Predicate::NegativeTrait(negative) => {
-                self.exclude_late_bound_in_generic_arguments(
-                    &negative.generic_arguments,
-                );
-            }
+
             Predicate::PositiveMarker(positive) => {
                 self.exclude_late_bound_in_generic_arguments(
                     &positive.generic_arguments,
                 );
             }
+
             Predicate::NegativeMarker(negative) => {
                 self.exclude_late_bound_in_generic_arguments(
                     &negative.generic_arguments,
@@ -444,9 +440,21 @@ impl AllLifetimeParameters {
 
     fn exclude_late_bound_in_lifetime(&mut self, lifetime: &Lifetime) {
         if let Lifetime::Parameter(lifetime) = lifetime
-            && lifetime.parent_id == self.current_function_id
+            && lifetime.parent_id() == self.current_function_id
         {
-            self.lifetimes.remove(&lifetime.id);
+            self.lifetimes.remove(&lifetime.id());
+        }
+    }
+
+    fn exclude_late_bound_in_instance(&mut self, ty: &Instance) {
+        for lt in RecursiveIterator::new(ty)
+            .filter_map(|x| x.0.into_lifetime().ok())
+            .filter_map(|x| x.as_parameter())
+            .filter_map(|x| {
+                (x.parent_id() == self.current_function_id).then_some(x.id())
+            })
+        {
+            self.lifetimes.remove(&lt);
         }
     }
 
@@ -455,7 +463,7 @@ impl AllLifetimeParameters {
             .filter_map(|x| x.0.into_lifetime().ok())
             .filter_map(|x| x.as_parameter())
             .filter_map(|x| {
-                (x.parent_id == self.current_function_id).then_some(x.id)
+                (x.parent_id() == self.current_function_id).then_some(x.id())
             })
         {
             self.lifetimes.remove(&lt);
@@ -467,18 +475,18 @@ impl AllLifetimeParameters {
         generic_arguments: &GenericArguments,
     ) {
         for lt in generic_arguments
-            .lifetimes
+            .lifetimes()
             .iter()
             .filter_map(|x| x.as_parameter())
             .filter_map(|x| {
-                (x.parent_id == self.current_function_id).then_some(x.id)
+                (x.parent_id() == self.current_function_id).then_some(x.id())
             })
         {
             self.lifetimes.remove(&lt);
         }
 
         for lt in generic_arguments
-            .types
+            .types()
             .iter()
             .flat_map(|x| {
                 RecursiveIterator::new(x)
@@ -486,13 +494,28 @@ impl AllLifetimeParameters {
             })
             .filter_map(|x| x.as_parameter())
             .filter_map(|x| {
-                (x.parent_id == self.current_function_id).then_some(x.id)
+                (x.parent_id() == self.current_function_id).then_some(x.id())
             })
         {
             self.lifetimes.remove(&lt);
         }
 
         // Constant should not have lifetime parameters (at most 'static).
+
+        for lt in generic_arguments
+            .instances()
+            .iter()
+            .flat_map(|x| {
+                RecursiveIterator::new(x)
+                    .filter_map(|x| x.0.into_lifetime().ok())
+            })
+            .filter_map(|x| x.as_parameter())
+            .filter_map(|x| {
+                (x.parent_id() == self.current_function_id).then_some(x.id())
+            })
+        {
+            self.lifetimes.remove(&lt);
+        }
     }
 }
 

@@ -29,9 +29,10 @@ use pernixc_term::{
     constant::Constant,
     generic_arguments::{GenericArguments, Symbol},
     generic_parameters::{
-        ConstantParameter, LifetimeParameter, TypeParameter,
-        get_generic_parameters,
+        ConstantParameter, GenericParameter, InstanceParameter,
+        LifetimeParameter, TypeParameter, get_generic_parameters,
     },
+    instance::Instance,
     lifetime::Lifetime,
     r#type::Type,
     visitor::{self, Element},
@@ -255,7 +256,7 @@ async fn check_valid_resolution(
 }
 
 async fn is_adt_type(engine: &TrackedEngine, sym_ty: &Symbol) -> bool {
-    let kind = engine.get_kind(sym_ty.id).await;
+    let kind = engine.get_kind(sym_ty.id()).await;
     matches!(kind, Kind::Struct | Kind::Enum)
 }
 
@@ -509,28 +510,29 @@ struct UsedParameterCollector {
     used_lifetime_ids: HashSet<ID<LifetimeParameter>>,
     used_type_ids: HashSet<ID<TypeParameter>>,
     used_constant_ids: HashSet<ID<ConstantParameter>>,
+    used_instance_ids: HashSet<ID<InstanceParameter>>,
     current_symbol_id: Global<pernixc_symbol::ID>,
 }
 
 impl UsedParameterCollector {
     fn handle_lifetime(&mut self, lifetime: &Lifetime) {
         if let Lifetime::Parameter(param) = lifetime
-            && param.parent_id == self.current_symbol_id
+            && param.parent_id() == self.current_symbol_id
         {
-            self.used_lifetime_ids.insert(param.id);
+            self.used_lifetime_ids.insert(param.id());
         }
     }
 
     fn handle_type(&mut self, ty: &Type) {
         // if it's a trait associated type, we don't go deeper
-        if ty.is_trait_member() {
+        if ty.is_instance_associated() {
             return;
         }
 
         // found a type parameter, try to collect it
         if let Some(ty) = ty.as_parameter() {
-            if ty.parent_id == self.current_symbol_id {
-                self.used_type_ids.insert(ty.id);
+            if ty.parent_id() == self.current_symbol_id {
+                self.used_type_ids.insert(ty.id());
             }
 
             return;
@@ -543,8 +545,8 @@ impl UsedParameterCollector {
     fn handle_constant(&mut self, constant: &Constant) {
         // found a constant parameter, try to collect it
         if let Some(constant) = constant.as_parameter() {
-            if constant.parent_id == self.current_symbol_id {
-                self.used_constant_ids.insert(constant.id);
+            if constant.parent_id() == self.current_symbol_id {
+                self.used_constant_ids.insert(constant.id());
             }
 
             return;
@@ -552,6 +554,25 @@ impl UsedParameterCollector {
 
         // go deeper
         let _ = constant.accept_one_level(self);
+    }
+
+    fn handle_instance(&mut self, instance: &Instance) {
+        // if it's a trait associated type, we don't go deeper
+        if instance.is_instance_associated() {
+            return;
+        }
+
+        // found an instance parameter, try to collect it
+        if let Some(instance) = instance.as_parameter() {
+            if instance.parent_id() == self.current_symbol_id {
+                self.used_instance_ids.insert(instance.id());
+            }
+
+            return;
+        }
+
+        // go deeper
+        let _ = instance.accept_one_level(self);
     }
 }
 
@@ -588,6 +609,17 @@ impl visitor::Visitor<'_, Constant> for UsedParameterCollector {
     }
 }
 
+impl visitor::Visitor<'_, Instance> for UsedParameterCollector {
+    fn visit(
+        &mut self,
+        term: &'_ Instance,
+        _: <Instance as visitor::Element>::Location,
+    ) -> bool {
+        self.handle_instance(term);
+        true
+    }
+}
+
 /// Check for unused generic parameters in the implements declaration.
 async fn check_unused_generic_parameters(
     engine: &TrackedEngine,
@@ -605,30 +637,35 @@ async fn check_unused_generic_parameters(
     };
 
     // Visit all lifetimes
-    for lifetime in &generic_arguments.lifetimes {
+    for lifetime in generic_arguments.lifetimes() {
         collector.handle_lifetime(lifetime);
     }
 
     // Visit all types
-    for ty in &generic_arguments.types {
+    for ty in generic_arguments.types() {
         collector.handle_type(ty);
     }
 
     // Visit all constants
-    for constant in &generic_arguments.constants {
+    for constant in generic_arguments.constants() {
         collector.handle_constant(constant);
+    }
+
+    // Visit all instances
+    for instance in generic_arguments.instances() {
+        collector.handle_instance(instance);
     }
 
     // Check for unused lifetime parameters
     for (param_id, param) in generic_parameters.lifetime_parameters_as_order() {
         if !collector.used_lifetime_ids.contains(&param_id)
-            && let Some(span) = param.span
+            && let Some(span) = param.span().copied()
         {
             storage.receive(diagnostic::Diagnostic::UnusedGenericParameter(
                 diagnostic::UnusedGenericParameter {
                     implementation_id: implements_id,
                     unused_parameter_span: span,
-                    parameter_name: param.name.clone(),
+                    parameter_name: param.name().clone(),
                 },
             ));
         }
@@ -637,13 +674,13 @@ async fn check_unused_generic_parameters(
     // Check for unused type parameters
     for (param_id, param) in generic_parameters.type_parameters_as_order() {
         if !collector.used_type_ids.contains(&param_id)
-            && let Some(span) = param.span
+            && let Some(span) = param.span().copied()
         {
             storage.receive(diagnostic::Diagnostic::UnusedGenericParameter(
                 diagnostic::UnusedGenericParameter {
                     implementation_id: implements_id,
                     unused_parameter_span: span,
-                    parameter_name: param.name.clone(),
+                    parameter_name: param.name().clone(),
                 },
             ));
         }
@@ -652,13 +689,28 @@ async fn check_unused_generic_parameters(
     // Check for unused constant parameters
     for (param_id, param) in generic_parameters.constant_parameters_as_order() {
         if !collector.used_constant_ids.contains(&param_id)
-            && let Some(span) = param.span
+            && let Some(span) = param.span().copied()
         {
             storage.receive(diagnostic::Diagnostic::UnusedGenericParameter(
                 diagnostic::UnusedGenericParameter {
                     implementation_id: implements_id,
                     unused_parameter_span: span,
-                    parameter_name: param.name.clone(),
+                    parameter_name: param.name().clone(),
+                },
+            ));
+        }
+    }
+
+    // Check for unused instance parameters
+    for (param_id, param) in generic_parameters.instance_parameters_as_order() {
+        if !collector.used_instance_ids.contains(&param_id)
+            && let Some(span) = param.span().copied()
+        {
+            storage.receive(diagnostic::Diagnostic::UnusedGenericParameter(
+                diagnostic::UnusedGenericParameter {
+                    implementation_id: implements_id,
+                    unused_parameter_span: span,
+                    parameter_name: param.name().clone(),
                 },
             ));
         }

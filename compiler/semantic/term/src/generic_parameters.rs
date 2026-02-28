@@ -85,11 +85,19 @@ pub struct GenericParameters {
 
 mod sealed {
     use pernixc_arena::Arena;
+    use pernixc_hash::HashMap;
+    use qbice::storage::intern::Interned;
 
     pub trait Sealed {
         fn get_generic_parameters_arena(
             generic_parameters: &super::GenericParameters,
         ) -> &Arena<Self>
+        where
+            Self: Sized;
+
+        fn get_parameter_ids_by_name(
+            generic_parameters: &super::GenericParameters,
+        ) -> &HashMap<Interned<str>, pernixc_arena::ID<Self>>
         where
             Self: Sized;
     }
@@ -150,6 +158,15 @@ impl sealed::Sealed for LifetimeParameter {
     ) -> &Arena<Self> {
         &generic_parameters.lifetimes
     }
+
+    fn get_parameter_ids_by_name(
+        generic_parameters: &self::GenericParameters,
+    ) -> &HashMap<Interned<str>, pernixc_arena::ID<Self>>
+    where
+        Self: Sized,
+    {
+        &generic_parameters.lifetime_parameter_ids_by_name
+    }
 }
 
 impl GenericParameter for LifetimeParameter {
@@ -191,6 +208,15 @@ impl sealed::Sealed for TypeParameter {
         generic_parameters: &GenericParameters,
     ) -> &Arena<Self> {
         &generic_parameters.types
+    }
+
+    fn get_parameter_ids_by_name(
+        generic_parameters: &self::GenericParameters,
+    ) -> &HashMap<Interned<str>, pernixc_arena::ID<Self>>
+    where
+        Self: Sized,
+    {
+        &generic_parameters.type_parameter_ids_by_name
     }
 }
 
@@ -234,6 +260,15 @@ impl sealed::Sealed for ConstantParameter {
         generic_parameters: &GenericParameters,
     ) -> &Arena<Self> {
         &generic_parameters.constants
+    }
+
+    fn get_parameter_ids_by_name(
+        generic_parameters: &self::GenericParameters,
+    ) -> &HashMap<Interned<str>, pernixc_arena::ID<Self>>
+    where
+        Self: Sized,
+    {
+        &generic_parameters.constant_parameter_ids_by_name
     }
 }
 
@@ -291,6 +326,15 @@ impl sealed::Sealed for InstanceParameter {
         generic_parameters: &GenericParameters,
     ) -> &Arena<Self> {
         &generic_parameters.instances
+    }
+
+    fn get_parameter_ids_by_name(
+        generic_parameters: &self::GenericParameters,
+    ) -> &HashMap<Interned<str>, pernixc_arena::ID<Self>>
+    where
+        Self: Sized,
+    {
+        &generic_parameters.instance_parameter_ids_by_name
     }
 }
 
@@ -430,6 +474,15 @@ impl GenericParameters {
     ) -> impl ExactSizeIterator<Item = pernixc_arena::ID<InstanceParameter>>
     {
         self.instance_order.iter().copied()
+    }
+
+    /// Retrieves the parameter ID with the given name.
+    #[must_use]
+    pub fn get_parameter_id_by_name<T: GenericParameter>(
+        &self,
+        name: &str,
+    ) -> Option<pernixc_arena::ID<T>> {
+        T::get_parameter_ids_by_name(self).get(name).copied()
     }
 
     /// Returns an iterator of all type parameters that iterates in order as

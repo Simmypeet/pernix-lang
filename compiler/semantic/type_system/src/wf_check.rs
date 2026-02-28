@@ -6,12 +6,14 @@ use pernixc_handler::Handler;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::{
+    implements_arguments::get_implements_argument,
     implied_predicate::get_implied_predicates, variance::Variance,
     where_clause::get_where_clause,
 };
 use pernixc_symbol::kind::get_kind;
 use pernixc_target::Global;
 use pernixc_term::{
+    generic_arguments::GenericArguments,
     instantiation::{self, Instantiation},
     predicate::{Outlives, Predicate},
     r#type::Type,
@@ -20,13 +22,31 @@ use pernixc_term::{
 
 use crate::{
     Succeeded, UnrecoverableError,
+    deduction::Deduction,
     diagnostic::{
-        Diagnostic, PredicateSatisfiabilityOverflow, UnsatisfiedPredicate,
+        AdtImplementationIsNotGeneralEnough, Diagnostic,
+        MismatchedImplementationArguments, PredicateSatisfiabilityOverflow,
+        UnsatisfiedPredicate,
     },
     environment::Environment,
     lifetime_constraint::LifetimeConstraint,
     normalizer::Normalizer,
 };
+
+/// The result of [`Environment::wf_check_implementation`]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImplementsCheckResult {
+    deduction: Deduction,
+    constraints: BTreeSet<LifetimeConstraint>,
+}
+
+impl ImplementsCheckResult {
+    /// Retrieves the instantiation retrieved from the deduction.
+    #[must_use]
+    pub fn into_instantiation(self) -> instantiation::Instantiation {
+        self.deduction.instantiation
+    }
+}
 
 impl<N: Normalizer> Environment<'_, N> {
     /// Checks if the given `predicate` is satisfied in the given `environment`.
@@ -39,8 +59,8 @@ impl<N: Normalizer> Environment<'_, N> {
     pub async fn predicate_satisfied(
         &self,
         predicate: Predicate,
-        instantiation_span: RelativeSpan,
-        predicate_declaration_span: Option<RelativeSpan>,
+        instantiation_span: &RelativeSpan,
+        predicate_declaration_span: Option<&RelativeSpan>,
         do_outlives_check: bool,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError> {
@@ -71,8 +91,8 @@ impl<N: Normalizer> Environment<'_, N> {
     pub async fn predicate_satisfied_as_diagnostics(
         &self,
         predicate: Predicate,
-        instantiation_span: RelativeSpan,
-        predicate_declaration_span: Option<RelativeSpan>,
+        instantiation_span: &RelativeSpan,
+        predicate_declaration_span: Option<&RelativeSpan>,
         do_outlives_check: bool,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<
@@ -99,8 +119,8 @@ impl<N: Normalizer> Environment<'_, N> {
     async fn predicate_satisfied_internal(
         &self,
         predicate: Predicate,
-        instantiation_span: RelativeSpan,
-        predicate_declaration_span: Option<RelativeSpan>,
+        instantiation_span: &RelativeSpan,
+        predicate_declaration_span: Option<&RelativeSpan>,
         do_outlives_check: bool,
         diagnostics: &mut Vec<Diagnostic>,
         handler: &dyn Handler<Diagnostic>,
@@ -145,8 +165,9 @@ impl<N: Normalizer> Environment<'_, N> {
                             diagnostics.push(Diagnostic::UnsatisfiedPredicate(
                                 UnsatisfiedPredicate {
                                     predicate,
-                                    instantiation_span,
-                                    predicate_declaration_span,
+                                    instantiation_span: *instantiation_span,
+                                    predicate_declaration_span:
+                                        predicate_declaration_span.copied(),
                                 },
                             ));
 
@@ -157,8 +178,9 @@ impl<N: Normalizer> Environment<'_, N> {
                                 Diagnostic::PredicateSatisfiabilityOverflow(
                                     PredicateSatisfiabilityOverflow {
                                         predicate,
-                                        predicate_declaration_span,
-                                        instantiation_span,
+                                        instantiation_span: *instantiation_span,
+                                        predicate_declaration_span:
+                                            predicate_declaration_span.copied(),
                                         overflow_error,
                                     },
                                 ),
@@ -186,8 +208,9 @@ impl<N: Normalizer> Environment<'_, N> {
                             diagnostics.push(Diagnostic::UnsatisfiedPredicate(
                                 UnsatisfiedPredicate {
                                     predicate,
-                                    instantiation_span,
-                                    predicate_declaration_span,
+                                    instantiation_span: *instantiation_span,
+                                    predicate_declaration_span:
+                                        predicate_declaration_span.copied(),
                                 },
                             ));
 
@@ -199,8 +222,9 @@ impl<N: Normalizer> Environment<'_, N> {
                                 Diagnostic::PredicateSatisfiabilityOverflow(
                                     PredicateSatisfiabilityOverflow {
                                         predicate,
-                                        predicate_declaration_span,
-                                        instantiation_span,
+                                        predicate_declaration_span:
+                                            predicate_declaration_span.copied(),
+                                        instantiation_span: *instantiation_span,
                                         overflow_error,
                                     },
                                 ),
@@ -254,8 +278,9 @@ impl<N: Normalizer> Environment<'_, N> {
                 diagnostics.push(Diagnostic::UnsatisfiedPredicate(
                     UnsatisfiedPredicate {
                         predicate,
-                        instantiation_span,
-                        predicate_declaration_span,
+                        instantiation_span: *instantiation_span,
+                        predicate_declaration_span: predicate_declaration_span
+                            .copied(),
                     },
                 ));
 
@@ -266,8 +291,9 @@ impl<N: Normalizer> Environment<'_, N> {
                 handler.receive(Diagnostic::PredicateSatisfiabilityOverflow(
                     PredicateSatisfiabilityOverflow {
                         predicate,
-                        predicate_declaration_span,
-                        instantiation_span,
+                        predicate_declaration_span: predicate_declaration_span
+                            .copied(),
+                        instantiation_span: *instantiation_span,
                         overflow_error,
                     },
                 ));
@@ -280,8 +306,8 @@ impl<N: Normalizer> Environment<'_, N> {
     async fn handle_satisfy(
         &self,
         constraints: BTreeSet<LifetimeConstraint>,
-        instantiation_span: RelativeSpan,
-        predicate_declaration_span: Option<RelativeSpan>,
+        instantiation_span: &RelativeSpan,
+        predicate_declaration_span: Option<&RelativeSpan>,
         do_outlives_check: bool,
         diagnostics: &mut Vec<Diagnostic>,
         handler: &dyn Handler<Diagnostic>,
@@ -299,8 +325,9 @@ impl<N: Normalizer> Environment<'_, N> {
                     diagnostics.push(Diagnostic::UnsatisfiedPredicate(
                         UnsatisfiedPredicate {
                             predicate: constraint.into_predicate(),
-                            instantiation_span,
-                            predicate_declaration_span,
+                            instantiation_span: *instantiation_span,
+                            predicate_declaration_span:
+                                predicate_declaration_span.copied(),
                         },
                     ));
                 }
@@ -309,7 +336,7 @@ impl<N: Normalizer> Environment<'_, N> {
                     e.report_as_undecidable_predicate(
                         constraint.into_predicate(),
                         None,
-                        instantiation_span,
+                        *instantiation_span,
                         handler,
                     );
 
@@ -357,6 +384,112 @@ impl<N: Normalizer> Environment<'_, N> {
         predicates
     }
 
+    /// Checks the well-formedness of the implementation with the given
+    /// `impl_id` and returns the lifetime constraints that need to be
+    /// satisfied for the implementation to be well-formed.
+    ///
+    /// If `do_outlives_check` is true, then the outlives constraints/predicates
+    /// will be checked using symbolic evaluation. Otherwise, the outlives
+    /// constraints/predicates will be assumed to be satisfied and returned as
+    /// lifetime constraints in the Ok result.
+    pub async fn wf_check_implementation(
+        &self,
+        impl_id: Global<pernixc_symbol::ID>,
+        instantiation_span: &RelativeSpan,
+        generic_arguments: &GenericArguments,
+        do_outlives_check: bool,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<Option<ImplementsCheckResult>, UnrecoverableError> {
+        // deduce the generic arguments
+        let Some(impl_arguments) =
+            self.tracked_engine().get_implements_argument(impl_id).await
+        else {
+            return Ok(None); // can't continue
+        };
+
+        let result = match self.deduce(&impl_arguments, generic_arguments).await
+        {
+            Ok(Some(deduced)) => deduced,
+
+            Ok(None) => {
+                handler.receive(Diagnostic::MismatchedImplementationArguments(
+                    MismatchedImplementationArguments {
+                        adt_implementation_id: impl_id,
+                        found_generic_arguments: generic_arguments.clone(),
+                        instantiation_span: *instantiation_span,
+                    },
+                ));
+
+                return Ok(None); // can't continue
+            }
+
+            Err(error) => {
+                return Err(error.report_as_type_calculating_overflow(
+                    *instantiation_span,
+                    handler,
+                ));
+            }
+        };
+
+        // check if the deduced generic arguments are correct
+        let mut wf_lifetime_constraints = self
+            .wf_check_instantiation(
+                impl_id,
+                instantiation_span,
+                &result.result.instantiation,
+                do_outlives_check,
+                handler,
+            )
+            .await?;
+
+        // the implementation is not general enough
+        if result.result.is_not_general_enough {
+            handler.receive(Diagnostic::AdtImplementationIsNotGeneralEnough(
+                AdtImplementationIsNotGeneralEnough {
+                    adt_implementation_id: impl_id,
+                    generic_arguments: generic_arguments.clone(),
+                    instantiation_span: *instantiation_span,
+                },
+            ));
+        }
+
+        if do_outlives_check {
+            for constraint in result.constraints {
+                match constraint.satisfies(self).await {
+                    Ok(true) => {}
+
+                    Ok(false) => {
+                        handler.receive(Diagnostic::UnsatisfiedPredicate(
+                            UnsatisfiedPredicate {
+                                predicate: constraint.into_predicate(),
+                                instantiation_span: *instantiation_span,
+                                predicate_declaration_span: None,
+                            },
+                        ));
+                    }
+
+                    Err(e) => {
+                        e.report_as_undecidable_predicate(
+                            constraint.into_predicate(),
+                            None,
+                            *instantiation_span,
+                            handler,
+                        );
+
+                        return Err(UnrecoverableError::Reported);
+                    }
+                }
+            }
+        } else {
+            wf_lifetime_constraints.extend(result.constraints);
+        }
+
+        Ok(Some(ImplementsCheckResult {
+            deduction: result.result,
+            constraints: wf_lifetime_constraints,
+        }))
+    }
+
     /// Checks the where clause predicate requirements declared in the given
     /// `generic_id`
     ///
@@ -367,10 +500,10 @@ impl<N: Normalizer> Environment<'_, N> {
     /// should be checked using symbolic evaluation or just assumed to be
     /// satisfied. If false, then the outlives predicates will be returned
     /// as lifetime constraints in the Ok result.
-    pub async fn wf_check(
+    pub async fn wf_check_instantiation(
         &self,
         generic_id: Global<pernixc_symbol::ID>,
-        instantiation_span: RelativeSpan,
+        instantiation_span: &RelativeSpan,
         instantiation: &instantiation::Instantiation,
         do_outlives_check: bool,
         handler: &dyn Handler<Diagnostic>,
@@ -390,7 +523,7 @@ impl<N: Normalizer> Environment<'_, N> {
                 .predicate_satisfied_internal(
                     predicate,
                     instantiation_span,
-                    span,
+                    span.as_ref(),
                     do_outlives_check,
                     &mut diagnostics,
                     handler,

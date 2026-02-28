@@ -105,14 +105,20 @@ impl Report for MisorderedGenericParameter {
                 engine.to_absolute_span(&self.generic_parameter_span).await,
                 match self.generic_kind {
                     GenericKind::Type => Some(
-                        "can't be declared after constant parameters"
+                        "can't be declared after constant or instance \
+                         parameters"
                             .to_string(),
                     ),
                     GenericKind::Lifetime => Some(
-                        "can't be declared after type or constant parameters"
+                        "can't be declared after type, constant, or instance \
+                         parameters"
                             .to_string(),
                     ),
-                    GenericKind::Constant => None,
+                    GenericKind::Constant => Some(
+                        "can't be declared after instance parameters"
+                            .to_string(),
+                    ),
+                    GenericKind::Instance => None,
                 },
             )),
             message: "the generic parameter was declared in the wrong order"
@@ -192,18 +198,16 @@ impl<T: GenericParameter> Report for GenericParameterRedefinition<T> {
         engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let qualified_name = engine
-            .get_qualified_name(self.existing_generic_parameter_id.parent_id)
+            .get_qualified_name(self.existing_generic_parameter_id.parent_id())
             .await;
         let generic_parameters = engine
             .get_generic_parameters(
-                self.existing_generic_parameter_id.parent_id,
+                self.existing_generic_parameter_id.parent_id(),
             )
             .await;
 
         let generic_parameter =
-            T::get_generic_parameters_arena(&generic_parameters)
-                .get(self.existing_generic_parameter_id.id)
-                .unwrap();
+            &generic_parameters[self.existing_generic_parameter_id.id()];
 
         pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(

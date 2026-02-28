@@ -45,6 +45,16 @@ impl Unit {
     }
 }
 
+impl crate::display::Display for Unit {
+    async fn fmt(
+        &self,
+        engine: &pernixc_qbice::TrackedEngine,
+        formatter: &mut crate::display::Formatter<'_, '_>,
+    ) -> std::fmt::Result {
+        self.0.fmt(engine, formatter).await
+    }
+}
+
 /// Represents a set of effects, such as `effect Fizz + effect Buzz`. It's
 /// composed of multiple effect `Unit`s.
 #[derive(

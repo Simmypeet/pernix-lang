@@ -5,6 +5,7 @@ use pernixc_diagnostic::{Highlight, Report};
 use pernixc_handler::Handler;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
+use pernixc_semantic_element::implements_arguments::get_implements_argument;
 use pernixc_source_file::ByteIndex;
 use pernixc_symbol::{source_map::to_absolute_span, span::get_span};
 use pernixc_target::Global;
@@ -36,6 +37,8 @@ pub enum Diagnostic {
     UnsatisfiedPredicate(UnsatisfiedPredicate),
     PredicateSatisfiabilityOverflow(PredicateSatisfiabilityOverflow),
     ImplementationIsNotGeneralEnough(ImplementationIsNotGeneralEnough),
+    MismatchedImplementationArguments(MismatchedImplementationArguments),
+    AdtImplementationIsNotGeneralEnough(AdtImplementationIsNotGeneralEnough),
 }
 
 impl Report for Diagnostic {
@@ -57,6 +60,12 @@ impl Report for Diagnostic {
                 diagnostic.report(parameter).await
             }
             Self::ImplementationIsNotGeneralEnough(diagnostic) => {
+                diagnostic.report(parameter).await
+            }
+            Self::MismatchedImplementationArguments(diagnostic) => {
+                diagnostic.report(parameter).await
+            }
+            Self::AdtImplementationIsNotGeneralEnough(diagnostic) => {
                 diagnostic.report(parameter).await
             }
         }
@@ -453,5 +462,176 @@ impl OverflowError {
         );
 
         UnrecoverableError::Reported
+    }
+}
+
+/// The generic arguments are not compatible with the generic arguments defined
+/// in the implementation.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+)]
+pub struct MismatchedImplementationArguments {
+    /// The ID of the ADT implementation where the generic arguments are
+    /// mismatched.
+    pub adt_implementation_id: Global<pernixc_symbol::ID>,
+
+    /// The generic arguments found in the implementation.
+    pub found_generic_arguments: GenericArguments,
+
+    /// The span of the instantiation that causes the mismatch.
+    pub instantiation_span: RelativeSpan,
+}
+
+impl Report for MismatchedImplementationArguments {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        let impl_span = if let Some(span) =
+            engine.get_span(self.adt_implementation_id).await
+        {
+            Some(engine.to_absolute_span(&span).await)
+        } else {
+            None
+        };
+
+        let impl_arguments = engine
+            .get_implements_argument(self.adt_implementation_id)
+            .await
+            .unwrap();
+
+        pernixc_diagnostic::Rendered::builder()
+            .message(
+                "the generic arguments are not compatible with the generic \
+                 arguments defined in the implementation",
+            )
+            .primary_highlight(
+                Highlight::builder()
+                    .span(
+                        engine.to_absolute_span(&self.instantiation_span).await,
+                    )
+                    .message({
+                        let mut string = String::new();
+
+                        string.push_str("the generic arguments supplied was `");
+                        self.found_generic_arguments
+                            .write_async(engine, &mut string)
+                            .await
+                            .unwrap();
+                        string.push_str("` aren't compatible with `");
+                        impl_arguments
+                            .write_async(engine, &mut string)
+                            .await
+                            .unwrap();
+                        string.push('`');
+
+                        string
+                    })
+                    .build(),
+            )
+            .related(
+                impl_span
+                    .as_ref()
+                    .map(|span| {
+                        Highlight::new(
+                            *span,
+                            Some(
+                                "the implementation is defined here"
+                                    .to_string(),
+                            ),
+                        )
+                    })
+                    .into_iter()
+                    .collect(),
+            )
+            .build()
+    }
+}
+
+/// The ADT implementation is not general enough to satisfy the required forall
+/// lifetimes in the generic arguments
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+)]
+pub struct AdtImplementationIsNotGeneralEnough {
+    /// The ADT implementation ID where the generic arguments are not general
+    /// enough.
+    pub adt_implementation_id: Global<pernixc_symbol::ID>,
+
+    /// The generic arguments supplied to the ADT.
+    pub generic_arguments: GenericArguments,
+
+    /// The span location of where the ADT is instantiated.
+    pub instantiation_span: RelativeSpan,
+}
+
+impl Report for AdtImplementationIsNotGeneralEnough {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        let span = engine.to_absolute_span(&self.instantiation_span).await;
+        let impl_span = if let Some(span) =
+            engine.get_span(self.adt_implementation_id).await
+        {
+            Some(engine.to_absolute_span(&span).await)
+        } else {
+            None
+        };
+
+        pernixc_diagnostic::Rendered::builder()
+            .message(
+                "the struct/enum implementation is not general enough to \
+                 satisfy the required forall lifetimes in the generic \
+                 arguments",
+            )
+            .primary_highlight(Highlight::new(
+                span,
+                Some({
+                    let mut string = String::new();
+
+                    string.push_str("the generic arguments supplied was `");
+                    self.generic_arguments
+                        .write_async(engine, &mut string)
+                        .await
+                        .unwrap();
+                    string.push('`');
+
+                    string
+                }),
+            ))
+            .related(
+                impl_span
+                    .map(|span| {
+                        Highlight::new(
+                            span,
+                            Some(
+                                "the implementation is defined here"
+                                    .to_string(),
+                            ),
+                        )
+                    })
+                    .into_iter()
+                    .collect(),
+            )
+            .build()
     }
 }

@@ -173,7 +173,7 @@ impl Report for UnexpectedTypeEqualityPredicate {
                 None,
             )),
             message: "the left-hand side of the type equality predicate must \
-                      be a trait associated type"
+                      be an instance associated type"
                 .to_string(),
             severity: Severity::Error,
             help_message: None,

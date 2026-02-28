@@ -23,16 +23,16 @@ use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
     effect,
-    generic_arguments::Symbol,
     generic_parameters::get_generic_parameters,
+    instance::Instance,
     lifetime::{Forall, FromSemanticElement, GeneratedForall, Lifetime},
     r#type::Type,
 };
 use pernixc_type_system::{
-    Satisfied, Succeeded, UnrecoverableError,
+    OverflowError, Satisfied, Succeeded, UnrecoverableError,
     environment::{Environment, get_active_premise},
     normalizer,
-    unification::{self, Log, Unification},
+    unification::{self, Unification},
 };
 
 use crate::{
@@ -52,10 +52,8 @@ async fn to_effect(
 
     let kind = engine.get_kind(symbol.id).await;
 
-    (kind == Kind::Effect).then_some(effect::Unit(Symbol {
-        id: symbol.id,
-        generic_arguments: symbol.generic_arguments,
-    }))
+    (kind == Kind::Effect)
+        .then_some(effect::Unit::new(symbol.id, symbol.generic_arguments))
 }
 
 struct ElidedForallLifetimeProvider {
@@ -148,9 +146,7 @@ impl unification::Predicate<Lifetime> for LifetimeUnifyingPredicate {
         &self,
         _: &Lifetime,
         _: &Lifetime,
-        _: &[Log],
-        _: &[Log],
-    ) -> pernixc_type_system::Result<Satisfied> {
+    ) -> Result<Option<Succeeded<Satisfied>>, OverflowError> {
         Ok(Some(Succeeded::satisfied()))
     }
 }
@@ -160,9 +156,7 @@ impl unification::Predicate<Type> for LifetimeUnifyingPredicate {
         &self,
         _: &Type,
         _: &Type,
-        _: &[Log],
-        _: &[Log],
-    ) -> pernixc_type_system::Result<Satisfied> {
+    ) -> Result<Option<Succeeded<Satisfied>>, OverflowError> {
         Ok(None)
     }
 }
@@ -172,9 +166,17 @@ impl unification::Predicate<Constant> for LifetimeUnifyingPredicate {
         &self,
         _: &Constant,
         _: &Constant,
-        _: &[Log],
-        _: &[Log],
-    ) -> pernixc_type_system::Result<Satisfied> {
+    ) -> Result<Option<Succeeded<Satisfied>>, OverflowError> {
+        Ok(None)
+    }
+}
+
+impl unification::Predicate<Instance> for LifetimeUnifyingPredicate {
+    fn unifiable(
+        &self,
+        _: &Instance,
+        _: &Instance,
+    ) -> Result<Option<Succeeded<Satisfied>>, OverflowError> {
         Ok(None)
     }
 }
@@ -187,19 +189,22 @@ async fn effect_equivalent(
     handler: &Storage<diagnostic::Diagnostic>,
 ) -> Result<bool, UnrecoverableError> {
     // compare the effects by their resolved symbols
-    if a.id != b.id {
+    if a.effect_id() != b.effect_id() {
         return Ok(false);
     }
 
     // check if all the generic arguments are compatible
-    if !a.generic_arguments.has_same_arguments_count(&b.generic_arguments) {
+    if !a.generic_arguments().has_same_arguments_count(b.generic_arguments()) {
         return Ok(false);
     }
 
     // lifetimes are always compatible with each other
 
-    for (ty_a, ty_b) in
-        a.generic_arguments.types.iter().zip(b.generic_arguments.types.iter())
+    for (ty_a, ty_b) in a
+        .generic_arguments()
+        .types()
+        .iter()
+        .zip(b.generic_arguments().types().iter())
     {
         let found_diff = env
             .query(&Unification::new(
@@ -217,10 +222,10 @@ async fn effect_equivalent(
     }
 
     for (const_a, const_b) in a
-        .generic_arguments
-        .constants
+        .generic_arguments()
+        .constants()
         .iter()
-        .zip(b.generic_arguments.constants.iter())
+        .zip(b.generic_arguments().constants().iter())
     {
         let found_diff = env
             .query(&Unification::new(
@@ -319,10 +324,7 @@ impl Build for effect_annotation::Key {
                 .create_identity_generic_arguments(parent_effect_id);
 
             let mut arena = OrderedArena::new();
-            arena.insert(effect::Unit(Symbol {
-                id: parent_effect_id,
-                generic_arguments: arguments,
-            }));
+            arena.insert(effect::Unit::new(parent_effect_id, arguments));
 
             return Output {
                 item: engine.intern(arena),
