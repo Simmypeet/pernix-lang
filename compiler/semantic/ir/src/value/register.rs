@@ -16,7 +16,7 @@ use pernixc_term::{
     generic_parameters::get_generic_parameters, lifetime::Lifetime,
     r#type::Type,
 };
-use pernixc_type_system::{Error, Succeeded, normalizer::Normalizer};
+use pernixc_type_system::{OverflowError, Succeeded, normalizer::Normalizer};
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
@@ -135,7 +135,7 @@ impl TypeOf<ID<Register>> for Values {
         &self,
         id: ID<Register>,
         environment: &Environment<'_, N>,
-    ) -> Result<Succeeded<Type>, Error> {
+    ) -> Result<Succeeded<Type>, OverflowError> {
         let register = &self.registers[id];
 
         match &register.assignment {
@@ -268,10 +268,8 @@ pub(super) async fn transform_generic_arguments<
     let generic_params = engine.get_generic_parameters(symbol_id).await;
 
     for (lt_id, lt) in generic_params
-        .lifetime_order()
-        .iter()
-        .copied()
-        .zip(generic_arg.lifetimes.iter_mut())
+        .lifetime_parameter_order()
+        .zip(generic_arg.lifetimes_mut())
     {
         transformer
             .transform(
@@ -284,11 +282,8 @@ pub(super) async fn transform_generic_arguments<
             .await;
     }
 
-    for (ty_id, ty) in generic_params
-        .type_order()
-        .iter()
-        .copied()
-        .zip(generic_arg.types.iter_mut())
+    for (ty_id, ty) in
+        generic_params.type_parameter_order().zip(generic_arg.types_mut())
     {
         transformer
             .transform(
@@ -302,10 +297,8 @@ pub(super) async fn transform_generic_arguments<
     }
 
     for (ct_id, ct) in generic_params
-        .constant_order()
-        .iter()
-        .copied()
-        .zip(generic_arg.constants.iter_mut())
+        .constant_parameter_order()
+        .zip(generic_arg.constants_mut())
     {
         transformer
             .transform(

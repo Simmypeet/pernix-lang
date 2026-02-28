@@ -2,7 +2,7 @@
 
 use getset::{CopyGetters, Getters, MutGetters};
 use pernixc_term::r#type::Type;
-use pernixc_type_system::{Error, Succeeded, normalizer::Normalizer};
+use pernixc_type_system::{OverflowError, Succeeded, normalizer::Normalizer};
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
@@ -97,7 +97,7 @@ impl TypeOf<&Load> for Values {
         &self,
         load: &Load,
         environment: &Environment<'_, N>,
-    ) -> Result<Succeeded<Type>, Error> {
+    ) -> Result<Succeeded<Type>, OverflowError> {
         self.type_of(&load.address, environment).await
     }
 }

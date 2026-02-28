@@ -3,14 +3,15 @@
 use std::{fmt::Write, ops::Deref};
 
 use enum_as_inner::EnumAsInner;
+use pernixc_target::Global;
 use qbice::{Decode, Encode, Identifiable, StableHash};
 
 use crate::{
     constant::Constant,
     error::Error,
     generic_arguments::{
-        AssociatedSymbol, SubAssociatedSymbolLocation, SubSymbolLocation,
-        Symbol,
+        AssociatedSymbol, GenericArguments, SubAssociatedSymbolLocation,
+        SubSymbolLocation, Symbol,
     },
     generic_parameters::{
         GenericParameter, TypeParameterID, get_generic_parameters,
@@ -22,7 +23,7 @@ use crate::{
     lifetime::Lifetime,
     matching::{Match, Matching, Substructural},
     sub_term::{self, Location, SubTerm, TermLocation},
-    tuple::SubTupleLocation,
+    tuple::{self, SubTupleLocation},
 };
 
 #[cfg(any(test, feature = "arbitrary"))]
@@ -282,6 +283,22 @@ impl Type {
     /// Creates a boolean type.
     #[must_use]
     pub const fn bool() -> Self { Self::Primitive(Primitive::Bool) }
+
+    /// Creates a new tuple type from the given list of types.
+    #[must_use]
+    pub fn new_tuple(elements: Vec<tuple::Element<Self>>) -> Self {
+        Self::Tuple(Tuple::new(elements))
+    }
+
+    /// Creates a new symbol type with the given symbol ID and generic
+    /// arguments.
+    #[must_use]
+    pub fn new_symbol(
+        symbol_id: Global<pernixc_symbol::ID>,
+        generic_arguments: GenericArguments,
+    ) -> Self {
+        Self::Symbol(Symbol::new(symbol_id, generic_arguments))
+    }
 
     /// Keeps removing the reference until it reaches a non-reference type.
     ///

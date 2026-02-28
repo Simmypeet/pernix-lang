@@ -6,6 +6,7 @@ use pernixc_arena::{Arena, ID};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_target::Global;
 use pernixc_term::{generic_arguments::GenericArguments, r#type::Type};
+use pernixc_type_system::OverflowError;
 use qbice::{Decode, Encode, StableHash};
 
 use crate::transform::{self, TypeTermSource};
@@ -149,7 +150,7 @@ pub trait HandlerClauseMatcher {
         &mut self,
         searching_generic_arguments: &GenericArguments,
         stack_generic_arguments: &GenericArguments,
-    ) -> Result<bool, pernixc_type_system::Error>;
+    ) -> Result<bool, OverflowError>;
 }
 
 impl HandlingScope {
@@ -175,10 +176,7 @@ impl HandlingScope {
         effect_id: Global<pernixc_symbol::ID>,
         generic_arguments: &GenericArguments,
         matcher: &mut impl HandlerClauseMatcher,
-    ) -> Result<
-        Option<pernixc_arena::ID<HandlerClause>>,
-        pernixc_type_system::Error,
-    > {
+    ) -> Result<Option<pernixc_arena::ID<HandlerClause>>, OverflowError> {
         for (effect_handler_id, effect_handler) in self.handler_clauses.iter() {
             // not the same effect
             if effect_id != effect_handler.effect_id {

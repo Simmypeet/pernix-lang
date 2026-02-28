@@ -83,6 +83,34 @@ impl Instantiation {
     ) -> Option<&Instance> {
         self.instances.get(instance)
     }
+
+    /// Returns an iterator over the mutable lifetime mappings.
+    pub fn lifetime_mappings_mut(
+        &mut self,
+    ) -> impl ExactSizeIterator<Item = (&Lifetime, &mut Lifetime)> {
+        self.lifetimes.iter_mut()
+    }
+
+    /// Returns an iterator over the mutable type mappings.
+    pub fn type_mappings_mut(
+        &mut self,
+    ) -> impl ExactSizeIterator<Item = (&Type, &mut Type)> {
+        self.types.iter_mut()
+    }
+
+    /// Returns an iterator over the mutable constant mappings.
+    pub fn constant_mappings_mut(
+        &mut self,
+    ) -> impl ExactSizeIterator<Item = (&Constant, &mut Constant)> {
+        self.constants.iter_mut()
+    }
+
+    /// Returns an iterator over the mutable instance mappings.
+    pub fn instance_mappings_mut(
+        &mut self,
+    ) -> impl ExactSizeIterator<Item = (&Instance, &mut Instance)> {
+        self.instances.iter_mut()
+    }
 }
 
 struct Instantiater<'a> {

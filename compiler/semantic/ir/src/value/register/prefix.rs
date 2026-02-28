@@ -2,7 +2,7 @@
 
 use pernixc_arena::ID;
 use pernixc_term::r#type::Type;
-use pernixc_type_system::{Error, Succeeded, normalizer::Normalizer};
+use pernixc_type_system::{OverflowError, Succeeded, normalizer::Normalizer};
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
@@ -86,7 +86,7 @@ impl TypeOf<&Prefix> for Values {
         &self,
         prefix: &Prefix,
         environment: &Environment<'_, N>,
-    ) -> Result<Succeeded<Type>, Error> {
+    ) -> Result<Succeeded<Type>, OverflowError> {
         let operand_type =
             Box::pin(self.type_of(&prefix.operand, environment)).await?;
 

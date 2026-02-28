@@ -4,7 +4,7 @@ use std::{collections::BTreeSet, ops::Deref};
 
 use pernixc_arena::ID;
 use pernixc_term::r#type::Type;
-use pernixc_type_system::Succeeded;
+use pernixc_type_system::{OverflowError, Succeeded};
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
@@ -93,8 +93,7 @@ impl TypeOf<&Tuple> for Values {
         &self,
         value: &Tuple,
         environment: &crate::value::Environment<'_, N>,
-    ) -> Result<pernixc_type_system::Succeeded<Type>, pernixc_type_system::Error>
-    {
+    ) -> Result<pernixc_type_system::Succeeded<Type>, OverflowError> {
         let mut constraints = BTreeSet::new();
         let mut elements = Vec::new();
 
@@ -106,21 +105,16 @@ impl TypeOf<&Tuple> for Values {
 
             if element.is_unpacked {
                 match ty {
-                    Type::Tuple(ty) => elements.extend(ty.elements),
-                    ty => elements.push(pernixc_term::tuple::Element {
-                        term: ty,
-                        is_unpacked: true,
-                    }),
+                    Type::Tuple(ty) => elements.extend(ty.into_elements()),
+                    ty => elements
+                        .push(pernixc_term::tuple::Element::new_unpacked(ty)),
                 }
             } else {
-                elements.push(pernixc_term::tuple::Element {
-                    term: ty,
-                    is_unpacked: false,
-                });
+                elements.push(pernixc_term::tuple::Element::new_regular(ty));
             }
         }
 
-        let tuple_ty = Type::Tuple(pernixc_term::tuple::Tuple { elements });
+        let tuple_ty = Type::new_tuple(elements);
         let mut simplified_ty = environment
             .type_environment
             .simplify(tuple_ty)

@@ -12,6 +12,7 @@ use pernixc_term::{
     lifetime::Lifetime,
     r#type::Type,
 };
+use pernixc_type_system::OverflowError;
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
@@ -100,8 +101,7 @@ impl TypeOf<&Variant> for Values {
         &self,
         value: &Variant,
         environment: &crate::value::Environment<'_, N>,
-    ) -> Result<pernixc_type_system::Succeeded<Type>, pernixc_type_system::Error>
-    {
+    ) -> Result<pernixc_type_system::Succeeded<Type>, OverflowError> {
         let enum_id = environment
             .tracked_engine()
             .get_parent(value.variant_id)
@@ -110,10 +110,10 @@ impl TypeOf<&Variant> for Values {
 
         Ok(environment
             .type_environment
-            .simplify(Type::Symbol(Symbol {
-                id: value.variant_id.target_id.make_global(enum_id),
-                generic_arguments: value.generic_arguments.clone(),
-            }))
+            .simplify(Type::Symbol(Symbol::new(
+                value.variant_id.target_id.make_global(enum_id),
+                value.generic_arguments.clone(),
+            )))
             .await?
             .deref()
             .clone())

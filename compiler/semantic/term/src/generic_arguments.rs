@@ -445,6 +445,12 @@ impl Symbol {
     pub const fn generic_arguments(&self) -> &GenericArguments {
         &self.generic_arguments
     }
+
+    /// Destructures the symbol into its components.
+    #[must_use]
+    pub fn destructure(self) -> (Global<pernixc_symbol::ID>, GenericArguments) {
+        (self.id, self.generic_arguments)
+    }
 }
 
 /// Represents a term where the associated symbol is supplied with generic

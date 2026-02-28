@@ -10,7 +10,7 @@ use pernixc_term::{
     constant::Constant, effect, instantiation::Instantiation,
     lifetime::Lifetime, r#type::Type,
 };
-use pernixc_type_system::Error;
+use pernixc_type_system::OverflowError;
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
@@ -93,7 +93,8 @@ pub(super) async fn transform_function_call<
         }
     }
 
-    for (lt_id, lt) in &mut function_call.instantiation.lifetimes {
+    for (lt_id, lt) in &mut function_call.instantiation.lifetime_mappings_mut()
+    {
         let source = match lt_id {
             Lifetime::Parameter(member_id) => {
                 LifetimeTermSource::GenericParameter(*member_id)
@@ -107,7 +108,7 @@ pub(super) async fn transform_function_call<
         transformer.transform(lt, source, span).await;
     }
 
-    for (ty_id, ty) in &mut function_call.instantiation.types {
+    for (ty_id, ty) in &mut function_call.instantiation.type_mappings_mut() {
         transformer
             .transform(
                 ty,
@@ -122,7 +123,8 @@ pub(super) async fn transform_function_call<
             .await;
     }
 
-    for (ct_id, ct) in &mut function_call.instantiation.constants {
+    for (ct_id, ct) in &mut function_call.instantiation.constant_mappings_mut()
+    {
         transformer
             .transform(
                 ct,
@@ -143,7 +145,7 @@ impl TypeOf<&FunctionCall> for Values {
         &self,
         value: &FunctionCall,
         environment: &crate::value::Environment<'_, N>,
-    ) -> Result<pernixc_type_system::Succeeded<Type>, Error> {
+    ) -> Result<pernixc_type_system::Succeeded<Type>, OverflowError> {
         let mut return_type = environment
             .tracked_engine()
             .get_return_type(value.callable_id)

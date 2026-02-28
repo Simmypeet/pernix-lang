@@ -50,11 +50,21 @@ impl<Term> Element<Term> {
 
     /// Creates a new unpacked element.
     #[must_use]
+    pub const fn new_unpacked(term: Term) -> Self {
+        Self { term, is_unpacked: true }
+    }
+
+    /// Creates a new unpacked element.
+    #[must_use]
     pub const fn is_unpacked(&self) -> bool { self.is_unpacked }
 
     /// Returns a reference to the term stored in this element.
     #[must_use]
     pub const fn term(&self) -> &Term { &self.term }
+
+    /// Returns the inner term of this tuple element.
+    #[must_use]
+    pub fn into_term(self) -> Term { self.term }
 }
 
 /// Represents a tuple of terms.
@@ -125,6 +135,11 @@ impl<Term> Tuple<Term> {
     /// Converts the tuple into a vector of elements.
     #[must_use]
     pub fn into_elements(self) -> Vec<Element<Term>> { self.elements }
+
+    /// Removes the element at the given index and returns it.
+    pub fn remove_at(&mut self, idx: usize) -> Element<Term> {
+        self.elements.remove(idx)
+    }
 }
 
 impl<Term> Default for Tuple<Term> {
