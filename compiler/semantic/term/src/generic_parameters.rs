@@ -425,6 +425,20 @@ impl GenericParameters {
             .map(|x| (x, self.constants.get(x).unwrap()))
     }
 
+    /// Returns an iterator of all instance parameters that iterates in order as
+    /// they are declared.
+    #[must_use]
+    pub fn instance_parameters_as_order(
+        &self,
+    ) -> impl ExactSizeIterator<
+        Item = (pernixc_arena::ID<InstanceParameter>, &InstanceParameter),
+    > {
+        self.instance_order
+            .iter()
+            .copied()
+            .map(|x| (x, self.instances.get(x).unwrap()))
+    }
+
     implements_add_parameter!(self, Lifetime);
 
     implements_add_parameter!(self, Type);
@@ -558,6 +572,21 @@ impl GenericParameters {
         Item = (&Interned<str>, pernixc_arena::ID<InstanceParameter>),
     > {
         self.instance_parameter_ids_by_name.iter().map(|(name, id)| (name, *id))
+    }
+
+    /// The default values for type parameters, which will be used when the
+    /// caller does not provide type arguments for those type parameters.
+    #[must_use]
+    pub fn default_type_parameters(&self) -> &[Type] {
+        &self.default_type_parameters
+    }
+
+    /// The default values for constant parameters, which will be used when the
+    /// caller does not provide constant arguments for those constant
+    /// parameters.
+    #[must_use]
+    pub fn default_constant_parameters(&self) -> &[Constant] {
+        &self.default_constant_parameters
     }
 }
 

@@ -17,7 +17,7 @@ pub fn create_forall_lifetimes(
         Lifetime,
         impl BuildHasher,
     >,
-    syntax_tree: &pernixc_syntax::predicate::HigherRankedLifetimes,
+    syntax_tree: &pernixc_syntax::item::HigherRankedLifetimes,
     handler: &dyn Handler<ForallLifetimeRedefinition>,
 ) {
     for syn in syntax_tree

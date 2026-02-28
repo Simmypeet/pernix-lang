@@ -7,7 +7,9 @@ use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_target::Global;
-use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
+use pernixc_term::{
+    constant::Constant, instance::Instance, lifetime::Lifetime, r#type::Type,
+};
 use qbice::{
     Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
 };
@@ -44,6 +46,7 @@ pub struct ExtraNamespace {
     pub lifetimes: HashMap<Interned<str>, Lifetime>,
     pub types: HashMap<Interned<str>, Type>,
     pub constants: HashMap<Interned<str>, Constant>,
+    pub instances: HashMap<Interned<str>, Instance>,
 }
 
 /// A trait for observing the resolution process.
@@ -137,6 +140,11 @@ pub struct Config<'lp, 'tp, 'cp, 'ob, 'ex> {
     pub elided_constant_provider:
         Option<&'cp mut dyn ElidedTermProvider<Constant>>,
 
+    /// If specified, when the instance argument is elided, the provider will
+    /// be used to supply the missing required instances.
+    pub elided_instance_provider:
+        Option<&'cp mut dyn ElidedTermProvider<Instance>>,
+
     /// If specified, during the resolution process, the observer will be
     /// notified each time a type, lifetime, or constant is resolved.
     pub observer: Option<&'ob mut dyn Observer>,
@@ -176,6 +184,10 @@ impl Config<'_, '_, '_, '_, '_> {
                 None => None,
             },
             elided_constant_provider: match &mut self.elided_constant_provider {
+                Some(provider) => Some(&mut **provider),
+                None => None,
+            },
+            elided_instance_provider: match &mut self.elided_instance_provider {
                 Some(provider) => Some(&mut **provider),
                 None => None,
             },

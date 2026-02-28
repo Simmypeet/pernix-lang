@@ -13,7 +13,7 @@ use pernixc_symbol::kind::{Kind, get_kind};
 use pernixc_syntax::{GenericIdentifier, LifetimeIdentifier};
 use pernixc_target::Global;
 use pernixc_term::{
-    generic_arguments::{GenericArguments, MemberSymbol, Symbol, TraitMember},
+    generic_arguments::{GenericArguments, Symbol},
     generic_parameters::{GenericKind, get_generic_parameters},
     instantiation::Instantiation,
     lifetime::Lifetime,
@@ -78,7 +78,7 @@ pub(crate) async fn resolve_generic_arguments_for_internal(
 
     // add the bound type as the first type argument
     if let Some(bound_type) = bound_type {
-        generic_arguments.types.insert(0, bound_type.clone());
+        generic_arguments.insert_type_at(0, bound_type.clone());
     }
 
     let (generic_arguments, diagnostics) = self
@@ -169,7 +169,7 @@ pub async fn resolve_generic_arguments(
         todo!("implements const eval")
     }
 
-    GenericArguments { lifetimes, types, constants }
+    GenericArguments::new(lifetimes, types, constants, Vec::new())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -288,6 +288,7 @@ pub async fn verify_generic_arguments_for(
         lifetime_parameter_orders,
         type_parameter_orders,
         constant_parameter_ords,
+        instance_parameter_ords,
         default_type_arguments,
         default_constant_arguments,
     ) = {
@@ -304,8 +305,12 @@ pub async fn verify_generic_arguments_for(
                 .constant_parameters_as_order()
                 .map(|(_, x)| x)
                 .collect::<Vec<_>>(),
+            generic_parameters
+                .instance_parameters_as_order()
+                .map(|(_, x)| x)
+                .collect::<Vec<_>>(),
             generic_arguments
-                .constants
+                .constants()
                 .is_empty()
                 .then(|| generic_parameters.default_type_parameters()),
             generic_parameters.default_constant_parameters(),
@@ -313,9 +318,13 @@ pub async fn verify_generic_arguments_for(
     };
 
     let mut diagnostics = Vec::new();
-    let generic_args = GenericArguments {
-        lifetimes: resolve_generic_arguments_kinds(
-            generic_arguments.lifetimes.into_iter(),
+
+    let (lifetime_args, type_args, constant_args, instance_args) =
+        generic_arguments.into_arguments();
+
+    let generic_args = GenericArguments::new(
+        resolve_generic_arguments_kinds(
+            lifetime_args.into_iter(),
             lifetime_parameter_orders.iter(),
             Option::<std::iter::Empty<_>>::None,
             generic_identifier_span,
@@ -327,8 +336,8 @@ pub async fn verify_generic_arguments_for(
             },
             &mut diagnostics,
         ),
-        types: resolve_generic_arguments_kinds(
-            generic_arguments.types.into_iter(),
+        resolve_generic_arguments_kinds(
+            type_args.into_iter(),
             type_parameter_orders.iter(),
             default_type_arguments.as_ref().map(|x| x.iter()),
             generic_identifier_span,
@@ -340,12 +349,12 @@ pub async fn verify_generic_arguments_for(
             },
             &mut diagnostics,
         ),
-        constants: resolve_generic_arguments_kinds(
-            generic_arguments.constants.into_iter(),
+        resolve_generic_arguments_kinds(
+            constant_args.into_iter(),
             constant_parameter_ords.iter(),
             Some(default_constant_arguments.iter()),
             generic_identifier_span,
-            config,
+            config.reborrow(),
             GenericKind::Constant,
             |x| match &mut x.elided_constant_provider {
                 Some(provider) => Some(&mut **provider),
@@ -353,7 +362,20 @@ pub async fn verify_generic_arguments_for(
             },
             &mut diagnostics,
         ),
-    };
+        resolve_generic_arguments_kinds(
+            instance_args.into_iter(),
+            instance_parameter_ords.iter(),
+            Option::<std::iter::Empty<_>>::None,
+            generic_identifier_span,
+            config,
+            GenericKind::Instance,
+            |x| match &mut x.elided_instance_provider {
+                Some(provider) => Some(&mut **provider),
+                None => None,
+            },
+            &mut diagnostics,
+        ),
+    );
 
     (generic_args, diagnostics)
 }
@@ -444,10 +466,10 @@ pub async fn resolution_to_type(
             let symbol_kind = self.get_kind(symbol.id).await;
 
             match symbol_kind {
-                Kind::Struct | Kind::Enum => Ok(Type::Symbol(Symbol {
-                    id: symbol.id,
-                    generic_arguments: symbol.generic_arguments,
-                })),
+                Kind::Struct | Kind::Enum => Ok(Type::Symbol(Symbol::new(
+                    symbol.id,
+                    symbol.generic_arguments,
+                ))),
 
                 Kind::ImplementationAssociatedType | Kind::Type => {
                     let generic_parameters =
@@ -471,26 +493,6 @@ pub async fn resolution_to_type(
                 _ => Err(ResolutionToTypeError::Failed(Resolution::Generic(
                     symbol,
                 ))),
-            }
-        }
-
-        Resolution::MemberGeneric(symbol) => {
-            let symbol_kind = self.get_kind(symbol.id).await;
-
-            match symbol_kind {
-                Kind::TraitAssociatedType => {
-                    Ok(Type::TraitMember(TraitMember(MemberSymbol {
-                        id: symbol.id,
-                        member_generic_arguments: symbol
-                            .member_generic_arguments,
-                        parent_generic_arguments: symbol
-                            .parent_generic_arguments,
-                    })))
-                }
-
-                _ => Err(ResolutionToTypeError::Failed(
-                    Resolution::MemberGeneric(symbol),
-                )),
             }
         }
 
@@ -687,7 +689,7 @@ pub async fn resolve_type(
                 if element.ellipsis().is_some() {
                     match ty {
                         Type::Tuple(tuple) => {
-                            elements.extend(tuple.elements.into_iter());
+                            elements.extend(tuple.into_elements());
                         }
                         ty => {
                             if let Some(observer) = config.observer.as_mut() {
@@ -709,7 +711,7 @@ pub async fn resolve_type(
             }
 
             // check if there is more than one unpacked type
-            if elements.iter().filter(|x| x.is_unpacked).count() > 1 {
+            if elements.iter().filter(|x| x.is_unpacked()).count() > 1 {
                 handler.receive(Diagnostic::MoreThanOneUnpackedInTupleType(
                     MoreThanOneUnpackedInTupleType {
                         illegal_tuple_type_span: syntax_tree.span(),
@@ -718,7 +720,7 @@ pub async fn resolve_type(
 
                 Type::Error(pernixc_term::error::Error)
             } else {
-                Type::Tuple(tuple::Tuple { elements })
+                Type::Tuple(tuple::Tuple::new(elements))
             }
         }
 

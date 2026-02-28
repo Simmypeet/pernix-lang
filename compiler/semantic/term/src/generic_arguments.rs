@@ -223,6 +223,11 @@ impl GenericArguments {
     pub fn push_instance(&mut self, instance: Instance) {
         self.instancces.push(instance);
     }
+
+    /// Inserts a type argument at the given index in the generic arguments.
+    pub fn insert_type_at(&mut self, index: usize, ty: Type) {
+        self.types.insert(index, ty);
+    }
 }
 
 /// Represents a sub-term location where the sub-term is stored as a generic

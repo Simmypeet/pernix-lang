@@ -21,7 +21,7 @@ use pernixc_syntax::{
     Identifier, QualifiedIdentifier, QualifiedIdentifierRoot, SimplePath,
     SimplePathRoot,
 };
-use pernixc_target::{Global, get_linked_targets, get_target_map};
+use pernixc_target::{Global, TargetID, get_linked_targets, get_target_map};
 use pernixc_term::{
     generic_arguments::GenericArguments,
     generic_parameters::get_generic_parameters, r#type::Type,
@@ -209,10 +209,16 @@ fn to_resolution(
                 member_generic_arguments: generic_arguments.unwrap(),
             })
         }
-
         Kind::PositiveImplementation | Kind::NegativeImplementation => {
             unreachable!()
         }
+
+        Kind::TraitAssociatedInstance
+        | Kind::Instance
+        | Kind::InstanceAssociatedType
+        | Kind::InstanceAssociatedFunction
+        | Kind::InstanceAssociatedConstant
+        | Kind::InstanceAssociatedInstance => todo!(),
     }
 }
 
@@ -481,6 +487,7 @@ pub async fn resolve_type_bound(
 pub async fn resolve_in(
     self: &TrackedEngine,
     symbol_id: Global<pernixc_symbol::ID>,
+    site_target: TargetID,
     identifier: &str,
     consider_adt_implements: bool,
 ) -> Option<Global<pernixc_symbol::ID>> {
@@ -497,7 +504,7 @@ pub async fn resolve_in(
         return None;
     }
 
-    let implemented = self.get_implemented(symbol_id).await;
+    let implemented = self.get_implemented(symbol_id, site_target).await;
 
     for impl_id in implemented.iter().copied() {
         let impl_members = self.get_members(impl_id).await;
@@ -523,6 +530,7 @@ async fn resolve_step(
     let resolved_id = self
         .resolve_in(
             latest_resolution,
+            config.referring_site.target_id,
             &identifier.kind.0,
             config.consider_adt_implements,
         )

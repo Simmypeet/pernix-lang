@@ -121,6 +121,10 @@ impl<Term> Tuple<Term> {
 
         Some(Self { elements: result }.into())
     }
+
+    /// Converts the tuple into a vector of elements.
+    #[must_use]
+    pub fn into_elements(self) -> Vec<Element<Term>> { self.elements }
 }
 
 impl<Term> Default for Tuple<Term> {

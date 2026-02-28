@@ -205,6 +205,7 @@ impl Report for UnexpectedInference {
                         GenericKind::Type => "type",
                         GenericKind::Lifetime => "lifetime",
                         GenericKind::Constant => "constant",
+                        GenericKind::Instance => "instance",
                     }
                 )),
             )),
@@ -214,6 +215,7 @@ impl Report for UnexpectedInference {
                 GenericKind::Type => "type",
                 GenericKind::Lifetime => "lifetime",
                 GenericKind::Constant => "constant",
+                GenericKind::Instance => "instance",
             }),
             severity: Severity::Error,
             help_message: None,
@@ -340,14 +342,20 @@ impl Report for MisorderedGenericArgument {
                 engine.to_absolute_span(&self.generic_argument).await,
                 match self.generic_kind {
                     GenericKind::Type => Some(
-                        "can't be supplied after constant arguments"
+                        "can't be supplied after constant or instance \
+                         arguments"
                             .to_string(),
                     ),
                     GenericKind::Lifetime => Some(
-                        "can't be supplied after type or constant arguments"
+                        "can't be supplied after type, constant, or instance \
+                         arguments"
                             .to_string(),
                     ),
-                    GenericKind::Constant => None,
+                    GenericKind::Constant => Some(
+                        "can't be supplied after type or instance arguments"
+                            .to_string(),
+                    ),
+                    GenericKind::Instance => None,
                 },
             )),
             message: "the generic argument was supplied in the wrong order"
@@ -402,6 +410,7 @@ impl Report for MismatchedGenericArgumentCount {
                         GenericKind::Type => "type",
                         GenericKind::Lifetime => "lifetime",
                         GenericKind::Constant => "constant",
+                        GenericKind::Instance => "instance",
                     },
                     self.supplied_count,
                 )),
