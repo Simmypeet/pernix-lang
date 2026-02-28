@@ -95,10 +95,10 @@ impl CoreLibInitializer<'_> {
 
         generic_params
             .add_type_parameter(
-                pernixc_term::generic_parameters::TypeParameter {
-                    name: self.input_session.intern_unsized("T".to_owned()),
-                    span: None,
-                },
+                pernixc_term::generic_parameters::TypeParameter::new(
+                    self.input_session.intern_unsized("T".to_owned()),
+                    None,
+                ),
             )
             .unwrap();
 
@@ -149,19 +149,19 @@ impl CoreLibInitializer<'_> {
             let a_lt = Lifetime::Parameter(LifetimeParameterID::new(
                 impl_id,
                 generic_parameters
-                    .add_lifetime_parameter(LifetimeParameter {
-                        name: self.input_session.intern_unsized("a".to_owned()),
-                        span: None,
-                    })
+                    .add_lifetime_parameter(LifetimeParameter::new(
+                        self.input_session.intern_unsized("a".to_owned()),
+                        None,
+                    ))
                     .unwrap(),
             ));
             let t_ty = Type::Parameter(TypeParameterID::new(
                 impl_id,
                 generic_parameters
-                    .add_type_parameter(TypeParameter {
-                        name: self.input_session.intern_unsized("T".to_owned()),
-                        span: None,
-                    })
+                    .add_type_parameter(TypeParameter::new(
+                        self.input_session.intern_unsized("T".to_owned()),
+                        None,
+                    ))
                     .unwrap(),
             ));
             let where_clause = self.input_session.intern_unsized([Predicate {
@@ -196,19 +196,19 @@ impl CoreLibInitializer<'_> {
             let a_lt = Lifetime::Parameter(LifetimeParameterID::new(
                 impl_id,
                 generic_parameters
-                    .add_lifetime_parameter(LifetimeParameter {
-                        name: self.input_session.intern_unsized("a".to_owned()),
-                        span: None,
-                    })
+                    .add_lifetime_parameter(LifetimeParameter::new(
+                        self.input_session.intern_unsized("a".to_owned()),
+                        None,
+                    ))
                     .unwrap(),
             ));
             let t_ty = Type::Parameter(TypeParameterID::new(
                 impl_id,
                 generic_parameters
-                    .add_type_parameter(TypeParameter {
-                        name: self.input_session.intern_unsized("T".to_owned()),
-                        span: None,
-                    })
+                    .add_type_parameter(TypeParameter::new(
+                        self.input_session.intern_unsized("T".to_owned()),
+                        None,
+                    ))
                     .unwrap(),
             ));
             let where_clause = self.input_session.intern_unsized([Predicate {
@@ -245,10 +245,10 @@ impl CoreLibInitializer<'_> {
             let t_ty = Type::Parameter(TypeParameterID::new(
                 impl_id,
                 generic_parameters
-                    .add_type_parameter(TypeParameter {
-                        name: self.input_session.intern_unsized("T".to_owned()),
-                        span: None,
-                    })
+                    .add_type_parameter(TypeParameter::new(
+                        self.input_session.intern_unsized("T".to_owned()),
+                        None,
+                    ))
                     .unwrap(),
             ));
 
@@ -320,7 +320,7 @@ impl CoreLibInitializer<'_> {
         self.input_session
             .set_input(implements_arguments::Key { symbol_id: impl_id }, {
                 let mut args = GenericArguments::default();
-                args.types.push(rt);
+                args.push_type(rt);
                 Some(self.input_session.intern(args))
             })
             .await;
