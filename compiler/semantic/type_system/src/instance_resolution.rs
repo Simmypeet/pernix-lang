@@ -356,11 +356,11 @@ async fn resolve_from_lexical_instances<N: Normalizer>(
             LexicalInstance::FromInstanceParameter(member_id) => {
                 let generic_params = environment
                     .tracked_engine()
-                    .get_generic_parameters(member_id.parent_id)
+                    .get_generic_parameters(member_id.parent_id())
                     .await;
 
                 let trait_ref = generic_params
-                    .get_instance_parameter(member_id.id)
+                    .get_instance_parameter(member_id.id())
                     .trait_ref()
                     .clone();
 

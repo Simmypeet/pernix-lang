@@ -519,6 +519,46 @@ impl GenericParameters {
     ) -> pernixc_arena::ID<InstanceParameter> {
         *self.instance_order.get(index).unwrap()
     }
+
+    /// Gets the lifetime parameter ID with the given name.
+    #[must_use]
+    pub fn lifetime_parameter_ids_by_name(
+        &self,
+    ) -> impl ExactSizeIterator<
+        Item = (&Interned<str>, pernixc_arena::ID<LifetimeParameter>),
+    > {
+        self.lifetime_parameter_ids_by_name.iter().map(|(name, id)| (name, *id))
+    }
+
+    /// Gets the type parameter ID with the given name.
+    #[must_use]
+    pub fn type_parameter_ids_by_name(
+        &self,
+    ) -> impl ExactSizeIterator<
+        Item = (&Interned<str>, pernixc_arena::ID<TypeParameter>),
+    > {
+        self.type_parameter_ids_by_name.iter().map(|(name, id)| (name, *id))
+    }
+
+    /// Gets the constant parameter ID with the given name.
+    #[must_use]
+    pub fn constant_parameter_ids_by_name(
+        &self,
+    ) -> impl ExactSizeIterator<
+        Item = (&Interned<str>, pernixc_arena::ID<ConstantParameter>),
+    > {
+        self.constant_parameter_ids_by_name.iter().map(|(name, id)| (name, *id))
+    }
+
+    /// Gets the instance parameter ID with the given name.
+    #[must_use]
+    pub fn instance_parameter_ids_by_name(
+        &self,
+    ) -> impl ExactSizeIterator<
+        Item = (&Interned<str>, pernixc_arena::ID<InstanceParameter>),
+    > {
+        self.instance_parameter_ids_by_name.iter().map(|(name, id)| (name, *id))
+    }
 }
 
 /// An ID to a type parameter.

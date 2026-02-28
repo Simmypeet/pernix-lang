@@ -96,10 +96,26 @@ impl ID {
 pub struct MemberID<InnerID> {
     /// The parent ID of the member, which is the ID of the symbol that
     /// contains this member.
-    pub parent_id: Global<ID>,
+    parent_id: Global<ID>,
 
     /// The ID of the member.
-    pub id: InnerID,
+    id: InnerID,
+}
+
+impl<InnerID> MemberID<InnerID> {
+    /// Returns the parent ID of the member, which is the ID of the symbol that
+    /// contains this member.
+    #[must_use]
+    pub const fn parent_id(&self) -> Global<ID> { self.parent_id }
+
+    /// Returns the ID of the member.
+    #[must_use]
+    pub const fn id(&self) -> InnerID
+    where
+        InnerID: Copy,
+    {
+        self.id
+    }
 }
 
 /// Calculates the ID of the symbol with the given sequence of qualified names
