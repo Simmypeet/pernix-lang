@@ -13,6 +13,7 @@ pub mod diagnostic;
 pub mod environment;
 pub mod equality;
 pub mod equivalence;
+pub mod instance_resolution;
 pub mod lifetime_constraint;
 pub mod mapping;
 pub mod normalizer;
@@ -24,8 +25,7 @@ pub mod subtype;
 pub mod term;
 pub mod unification;
 pub mod variance;
-pub mod instance_resolution;
-// pub mod wf_check;
+pub mod wf_check;
 
 /// An error that occurs when the number of queries exceeds the limit.
 #[derive(

@@ -3,7 +3,11 @@
 use enum_as_inner::EnumAsInner;
 use pernixc_handler::Handler;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_term::{lifetime::Lifetime, predicate::Outlives, r#type::Type};
+use pernixc_term::{
+    lifetime::Lifetime,
+    predicate::{Outlives, Predicate},
+    r#type::Type,
+};
 
 use crate::{
     diagnostic::{Diagnostic, UnsatisfiedPredicate},
@@ -17,6 +21,19 @@ use crate::{
 pub enum LifetimeConstraint {
     LifetimeOutlives(Outlives<Lifetime>),
     TypeOutlives(Outlives<Type>),
+}
+
+impl LifetimeConstraint {
+    /// Converts this lifetime constraint into a predicate.
+    #[must_use]
+    pub fn into_predicate(self) -> Predicate {
+        match self {
+            Self::LifetimeOutlives(outlives) => {
+                Predicate::LifetimeOutlives(outlives)
+            }
+            Self::TypeOutlives(outlives) => Predicate::TypeOutlives(outlives),
+        }
+    }
 }
 
 impl<N: Normalizer> Environment<'_, N> {

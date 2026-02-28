@@ -43,8 +43,22 @@ pub mod arbitrary;
     Encode,
     Decode,
     StableHash,
+    Identifiable,
 )]
 pub struct TraitRef(Symbol);
+
+impl TraitRef {
+    /// Retrieves the trait ID of this `TraitRef`.
+    #[must_use]
+    pub const fn trait_id(&self) -> Global<pernixc_symbol::ID> { self.0.id() }
+
+    /// Returns a reference to the generic arguments of the trait associated
+    /// with this `TraitRef`.
+    #[must_use]
+    pub const fn generic_arguments(&self) -> &GenericArguments {
+        self.0.generic_arguments()
+    }
+}
 
 /// Refers to a terrm that is associated with an instance.
 ///
