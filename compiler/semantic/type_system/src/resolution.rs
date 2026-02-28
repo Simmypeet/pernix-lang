@@ -178,7 +178,10 @@ impl Query for Resolve {
 
             let implementations = environment
                 .tracked_engine()
-                .get_implemented(self.implemented_id)
+                .get_implemented(
+                    self.implemented_id,
+                    environment.premise().query_site.target_id,
+                )
                 .await
                 .iter()
                 .copied()
@@ -349,9 +352,7 @@ async fn is_in_active_implementation(
     generic_arguments: &GenericArguments,
     environment: &Environment<'_, impl Normalizer>,
 ) -> Result<Option<ResolveResult>, OverflowError> {
-    let Some(query_site) = environment.premise().query_site else {
-        return Ok(None);
-    };
+    let query_site = environment.premise().query_site;
 
     let mut scope_walker =
         environment.tracked_engine().scope_walker(query_site);

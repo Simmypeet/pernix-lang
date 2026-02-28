@@ -52,7 +52,7 @@ pub struct Premise {
     ///
     /// This can influence the result of resoliving the trait/marker
     /// implementations.
-    pub query_site: Option<Global<pernixc_symbol::ID>>,
+    pub query_site: Global<pernixc_symbol::ID>,
 }
 
 /// Retrieves the active premise at the given symbol site.
@@ -86,7 +86,8 @@ async fn active_premise_executor(
     engine: &TrackedEngine,
 ) -> Interned<Premise> {
     let mut premise =
-        Premise { predicates: BTreeSet::new(), query_site: Some(symbol_id) };
+        Premise { predicates: BTreeSet::new(), query_site: symbol_id };
+
     let mut scope_walker = engine.scope_walker(symbol_id);
     while let Some(id) = scope_walker.next().await {
         let current_id = symbol_id.target_id.make_global(id);

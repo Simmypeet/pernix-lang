@@ -493,9 +493,7 @@ async fn is_in_marker(
     generic_arguments: &GenericArguments,
     environment: &Environment<'_, impl Normalizer>,
 ) -> Result<Option<Succeeded<Satisfied>>, OverflowError> {
-    let Some(query_site) = environment.premise().query_site else {
-        return Ok(None);
-    };
+    let query_site = environment.premise().query_site;
 
     let mut scope_walker =
         environment.tracked_engine().scope_walker(query_site);

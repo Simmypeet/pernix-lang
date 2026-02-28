@@ -360,7 +360,8 @@ async fn transitive() {
         ]
         .into_iter()
         .collect(),
-        query_site: None,
+        query_site: TargetID::TEST
+            .make_global(pernixc_symbol::ID::from_u128(4)),
     };
 
     let environment = Environment::new(
