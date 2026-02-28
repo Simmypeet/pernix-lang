@@ -426,6 +426,48 @@ enum PredicateSatisfyError {
     ImplementationIsNotGeneralEnough,
 }
 
+// check for any forall lifetimes in the predicates.
+fn extend_constraints(
+    constraints: &mut BTreeSet<LifetimeConstraint>,
+    new_constraints: impl IntoIterator<Item = LifetimeConstraint>,
+) -> Result<(), PredicateSatisfyError> {
+    for constraint in new_constraints {
+        match constraint {
+            LifetimeConstraint::LifetimeOutlives(mut outlives) => {
+                if outlives.bound.is_forall() {
+                    outlives.bound = Lifetime::Static;
+                }
+
+                if outlives.operand.is_forall() {
+                    return Err(
+                        PredicateSatisfyError::ImplementationIsNotGeneralEnough,
+                    );
+                }
+
+                constraints
+                    .insert(LifetimeConstraint::LifetimeOutlives(outlives));
+            }
+            LifetimeConstraint::TypeOutlives(mut outlives) => {
+                if outlives.bound.is_forall() {
+                    outlives.bound = Lifetime::Static;
+                }
+
+                if RecursiveIterator::new(&outlives.operand)
+                    .any(|x| x.0.as_lifetime().is_some_and(|x| x.is_forall()))
+                {
+                    return Err(
+                        PredicateSatisfyError::ImplementationIsNotGeneralEnough,
+                    );
+                }
+
+                constraints.insert(LifetimeConstraint::TypeOutlives(outlives));
+            }
+        }
+    }
+
+    Ok(())
+}
+
 #[allow(clippy::too_many_lines)]
 async fn predicate_satisfies(
     predicates: Interned<[where_clause::Predicate]>,
@@ -435,6 +477,15 @@ async fn predicate_satisfies(
     Result<BTreeSet<LifetimeConstraint>, PredicateSatisfyError>,
     OverflowError,
 > {
+    macro_rules! extend_constraints {
+        ($constraints:expr, $constraints_to_extend:expr) => {
+            if let Err(err) =
+                extend_constraints($constraints, $constraints_to_extend)
+            {
+                return Ok(Err(err));
+            }
+        };
+    }
     // check if satisfies all the predicate
     let mut unsatisfied_predicates = Vec::new();
     let mut constraints = BTreeSet::new();
@@ -460,8 +511,10 @@ async fn predicate_satisfies(
                             .forall_lifetime_errors
                             .is_empty() =>
                     {
-                        constraints
-                            .extend(subtypable.constraints.iter().cloned());
+                        extend_constraints!(
+                            &mut constraints,
+                            subtypable.constraints.iter().cloned()
+                        );
                     }
 
                     _ => {
@@ -477,8 +530,10 @@ async fn predicate_satisfies(
             Predicate::ConstantType(ref constant_type) => {
                 match environment.query(constant_type).await? {
                     Some(satisfied) => {
-                        constraints
-                            .extend(satisfied.constraints.iter().cloned());
+                        extend_constraints!(
+                            &mut constraints,
+                            satisfied.constraints.iter().cloned()
+                        );
                     }
                     None => {
                         unsatisfied_predicates.push(UnsatisfiedPredicate {
@@ -493,8 +548,10 @@ async fn predicate_satisfies(
             Predicate::TupleType(ref tuple_type) => {
                 match environment.query(tuple_type).await? {
                     Some(satisfied) => {
-                        constraints
-                            .extend(satisfied.constraints.iter().cloned());
+                        extend_constraints!(
+                            &mut constraints,
+                            satisfied.constraints.iter().cloned()
+                        );
                     }
                     None => {
                         unsatisfied_predicates.push(UnsatisfiedPredicate {
@@ -509,7 +566,10 @@ async fn predicate_satisfies(
             Predicate::PositiveMarker(ref tr) => {
                 match environment.query(tr).await? {
                     Ok(result) => {
-                        constraints.extend(result.constraints.iter().cloned());
+                        extend_constraints!(
+                            &mut constraints,
+                            result.constraints.iter().cloned()
+                        );
                     }
 
                     Err(err) => {
@@ -525,7 +585,10 @@ async fn predicate_satisfies(
             Predicate::NegativeMarker(ref tr) => {
                 match environment.query(tr).await? {
                     Some(result) => {
-                        constraints.extend(result.constraints.iter().cloned());
+                        extend_constraints!(
+                            &mut constraints,
+                            result.constraints.iter().cloned()
+                        );
                     }
 
                     None => {
