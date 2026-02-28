@@ -13,7 +13,7 @@ use pernixc_term::{
 };
 use qbice::{Decode, Encode, StableHash};
 
-use crate::OverflowError;
+use crate::{OverflowError, UnrecoverableError};
 
 /// Diagnostic messages for the type system.
 #[derive(
@@ -414,9 +414,11 @@ impl OverflowError {
         self,
         overflow_span: RelativeSpan,
         handler: &dyn Handler<Diagnostic>,
-    ) {
+    ) -> UnrecoverableError {
         handler
             .receive(TypeCalculatingOverflow::new(overflow_span, self).into());
+
+        UnrecoverableError::Reported
     }
 
     /// Reports the [`OverflowError`] as a [`TypeCheckOverflow`] to
@@ -425,8 +427,10 @@ impl OverflowError {
         self,
         overflow_span: RelativeSpan,
         handler: &dyn Handler<Diagnostic>,
-    ) {
+    ) -> UnrecoverableError {
         handler.receive(TypeCheckOverflow::new(overflow_span, self).into());
+
+        UnrecoverableError::Reported
     }
 
     /// Reports the [`OverflowError`] as a [`PredicateSatisfiabilityOverflow`]
@@ -437,7 +441,7 @@ impl OverflowError {
         predicate_declaration_span: Option<RelativeSpan>,
         instantiation_span: RelativeSpan,
         handler: &dyn Handler<Diagnostic>,
-    ) {
+    ) -> UnrecoverableError {
         handler.receive(
             PredicateSatisfiabilityOverflow::new(
                 predicate,
@@ -447,5 +451,7 @@ impl OverflowError {
             )
             .into(),
         );
+
+        UnrecoverableError::Reported
     }
 }
