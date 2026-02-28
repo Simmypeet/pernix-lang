@@ -283,12 +283,12 @@ impl crate::display::Display for LifetimeParameterID {
         formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
         let generic_parameters =
-            engine.get_generic_parameters(self.parent_id).await;
+            engine.get_generic_parameters(self.parent_id()).await;
 
         write!(
             formatter,
             "'{}",
-            &**generic_parameters.get_lifetime_parameter(self.id).name()
+            &**generic_parameters.get_lifetime_parameter(self.id()).name()
         )
     }
 }

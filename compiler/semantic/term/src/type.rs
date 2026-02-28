@@ -1272,13 +1272,13 @@ impl crate::display::Display for Type {
 
             Self::Parameter(member_id) => {
                 let generic_parameters =
-                    engine.get_generic_parameters(member_id.parent_id).await;
+                    engine.get_generic_parameters(member_id.parent_id()).await;
 
                 write!(
                     formatter,
                     "{}",
                     &**generic_parameters
-                        .get_type_parameter(member_id.id)
+                        .get_type_parameter(member_id.id())
                         .name()
                 )
             }

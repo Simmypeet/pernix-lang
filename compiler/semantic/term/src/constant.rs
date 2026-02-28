@@ -518,13 +518,13 @@ impl crate::display::Display for Constant {
 
             Self::Parameter(member_id) => {
                 let generic_parameters =
-                    engine.get_generic_parameters(member_id.parent_id).await;
+                    engine.get_generic_parameters(member_id.parent_id()).await;
 
                 write!(
                     formatter,
                     "{}",
                     &**generic_parameters
-                        .get_constant_parameter(member_id.id)
+                        .get_constant_parameter(member_id.id())
                         .name()
                 )
             }

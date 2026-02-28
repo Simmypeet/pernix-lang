@@ -163,20 +163,14 @@ async fn already_simplified() {
 
 #[tokio::test]
 async fn with_lifetime_matching() {
-    let first_lifetime = Lifetime::Parameter(LifetimeParameterID {
-        parent_id: Global::new(
-            TargetID::TEST,
-            pernixc_symbol::ID::from_u128(1),
-        ),
-        id: pernixc_arena::ID::new(0),
-    });
-    let second_lifetime = Lifetime::Parameter(LifetimeParameterID {
-        parent_id: Global::new(
-            TargetID::TEST,
-            pernixc_symbol::ID::from_u128(1),
-        ),
-        id: pernixc_arena::ID::new(1),
-    });
+    let first_lifetime = Lifetime::Parameter(LifetimeParameterID::new(
+        Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(1)),
+        pernixc_arena::ID::new(0),
+    ));
+    let second_lifetime = Lifetime::Parameter(LifetimeParameterID::new(
+        Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(1)),
+        pernixc_arena::ID::new(1),
+    ));
 
     let to_be_simplified = InstanceAssociated::new(
         Box::new(Instance::Parameter(InstanceParameterID::new(
@@ -327,13 +321,10 @@ async fn transitive() {
     };
 
     let lt = |idx| {
-        Lifetime::Parameter(LifetimeParameterID {
-            parent_id: Global::new(
-                TargetID::TEST,
-                pernixc_symbol::ID::from_u128(1),
-            ),
-            id: pernixc_arena::ID::new(idx),
-        })
+        Lifetime::Parameter(LifetimeParameterID::new(
+            Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(1)),
+            pernixc_arena::ID::new(idx),
+        ))
     };
 
     let a_lt = lt(0);

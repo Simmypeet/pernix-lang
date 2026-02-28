@@ -16,20 +16,14 @@ use crate::{
 
 #[tokio::test]
 async fn ambiguous() {
-    let t_parameter = Type::Parameter(TypeParameterID {
-        parent_id: Global::new(
-            TargetID::TEST,
-            pernixc_symbol::ID::from_u128(1),
-        ),
-        id: pernixc_arena::ID::new(0),
-    });
-    let u_parameter = Type::Parameter(TypeParameterID {
-        parent_id: Global::new(
-            TargetID::TEST,
-            pernixc_symbol::ID::from_u128(2),
-        ),
-        id: pernixc_arena::ID::new(0),
-    });
+    let t_parameter = Type::Parameter(TypeParameterID::new(
+        Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(1)),
+        pernixc_arena::ID::new(0),
+    ));
+    let u_parameter = Type::Parameter(TypeParameterID::new(
+        Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(2)),
+        pernixc_arena::ID::new(0),
+    ));
 
     let lhs = GenericArguments::new(
         Vec::new(),
@@ -59,13 +53,10 @@ async fn ambiguous() {
 
 #[tokio::test]
 async fn more_general() {
-    let t_parameter = Type::Parameter(TypeParameterID {
-        parent_id: Global::new(
-            TargetID::TEST,
-            pernixc_symbol::ID::from_u128(1),
-        ),
-        id: pernixc_arena::ID::new(0),
-    });
+    let t_parameter = Type::Parameter(TypeParameterID::new(
+        Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(1)),
+        pernixc_arena::ID::new(0),
+    ));
 
     let lhs = GenericArguments::new(
         Vec::new(),
@@ -101,13 +92,10 @@ async fn more_general() {
 
 #[tokio::test]
 async fn incompatible() {
-    let t_parameter = Type::Parameter(TypeParameterID {
-        parent_id: Global::new(
-            TargetID::TEST,
-            pernixc_symbol::ID::from_u128(1),
-        ),
-        id: pernixc_arena::ID::new(0),
-    });
+    let t_parameter = Type::Parameter(TypeParameterID::new(
+        Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(1)),
+        pernixc_arena::ID::new(0),
+    ));
 
     let lhs = GenericArguments::new(
         Vec::new(),
