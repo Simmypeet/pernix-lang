@@ -177,6 +177,8 @@ pub struct Environment<'a, N> {
     normalizer: &'a N,
 
     context: RwLock<Context>,
+
+    do_outlives_check: bool,
 }
 
 impl<N> Environment<'_, N> {
@@ -207,6 +209,7 @@ impl<N> Clone for Environment<'_, N> {
             tracked_engine: self.tracked_engine.clone(),
             normalizer: self.normalizer,
             context: RwLock::new(self.context.read().clone()),
+            do_outlives_check: self.do_outlives_check,
         }
     }
 }
@@ -1343,6 +1346,33 @@ impl<'a, N: Normalizer> Environment<'a, N> {
             tracked_engine,
             normalizer,
             context: RwLock::new(Context::default()),
+            do_outlives_check: false,
         }
     }
+
+    /// Creates a new [`Environment`] with "outlives check" enabled.
+    ///
+    /// When outlives check is enabled, if the implementation or instance is
+    /// resolved, the outlives predicates (including lifetime and type outlives)
+    /// will be immediately checked for satisfiability instead of deferring it
+    /// to the lifetime constraints set. This improves the error message during
+    /// the WF check.
+    pub fn new_do_outlives_check(
+        premise: Cow<'a, Premise>,
+        tracked_engine: Cow<'a, TrackedEngine>,
+        normalizer: &'a N,
+    ) -> Self {
+        Self {
+            premise,
+            tracked_engine,
+            normalizer,
+            context: RwLock::new(Context::default()),
+            do_outlives_check: true,
+        }
+    }
+
+    /// Determines whether the environment is configured to perform outlives
+    /// check.
+    #[must_use]
+    pub const fn do_outlives_check(&self) -> bool { self.do_outlives_check }
 }

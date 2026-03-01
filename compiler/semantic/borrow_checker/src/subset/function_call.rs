@@ -140,7 +140,6 @@ impl<N: Normalizer> Context<'_, N> {
                     function_call.callable_id,
                     span,
                     &function_call.instantiation,
-                    false,
                     &self.handler(),
                 )
                 .await?,
@@ -167,7 +166,6 @@ impl<N: Normalizer> Context<'_, N> {
                             parent_implementation_id,
                             span,
                             &function_call.instantiation,
-                            false,
                             &self.handler(),
                         )
                         .await?,
@@ -181,7 +179,6 @@ impl<N: Normalizer> Context<'_, N> {
                             function_call.callable_id,
                             span,
                             &function_call.instantiation,
-                            false,
                             &self.handler(),
                         )
                         .await?,

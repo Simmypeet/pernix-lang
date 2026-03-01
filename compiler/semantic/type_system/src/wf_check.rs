@@ -64,7 +64,6 @@ impl<N: Normalizer> Environment<'_, N> {
         predicate: Predicate,
         instantiation_span: &RelativeSpan,
         predicate_declaration_span: Option<&RelativeSpan>,
-        do_outlives_check: bool,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError> {
         let mut diagnostics = Vec::new();
@@ -74,7 +73,6 @@ impl<N: Normalizer> Environment<'_, N> {
                 predicate,
                 instantiation_span,
                 predicate_declaration_span,
-                do_outlives_check,
                 &mut diagnostics,
                 handler,
             )
@@ -96,7 +94,6 @@ impl<N: Normalizer> Environment<'_, N> {
         predicate: Predicate,
         instantiation_span: &RelativeSpan,
         predicate_declaration_span: Option<&RelativeSpan>,
-        do_outlives_check: bool,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<
         (Vec<Diagnostic>, BTreeSet<LifetimeConstraint>),
@@ -109,7 +106,6 @@ impl<N: Normalizer> Environment<'_, N> {
                 predicate,
                 instantiation_span,
                 predicate_declaration_span,
-                do_outlives_check,
                 &mut diagnostics,
                 handler,
             )
@@ -124,7 +120,6 @@ impl<N: Normalizer> Environment<'_, N> {
         predicate: Predicate,
         instantiation_span: &RelativeSpan,
         predicate_declaration_span: Option<&RelativeSpan>,
-        do_outlives_check: bool,
         diagnostics: &mut Vec<Diagnostic>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError> {
@@ -159,7 +154,7 @@ impl<N: Normalizer> Environment<'_, N> {
                 .map(|x| x.map(|x| x.constraints.clone())),
 
             Predicate::LifetimeOutlives(outlives) => {
-                if do_outlives_check {
+                if self.do_outlives_check() {
                     match self.query(outlives).await {
                         Ok(true) => return Ok(BTreeSet::new()),
 
@@ -203,7 +198,7 @@ impl<N: Normalizer> Environment<'_, N> {
             }
 
             Predicate::TypeOutlives(outlives) => {
-                if do_outlives_check {
+                if self.do_outlives_check() {
                     match self.query(outlives).await {
                         Ok(true) => return Ok(BTreeSet::new()),
 
@@ -257,30 +252,33 @@ impl<N: Normalizer> Environment<'_, N> {
                 .await
                 .map(|x| x.map(|x| x.constraints.clone())),
 
-            Predicate::PositiveMarker(marker) => match self.query(marker).await
-            {
-                Ok(Ok(succeeded)) => Ok(Some(succeeded.constraints.clone())),
+            Predicate::PositiveMarker(marker) => {
+                match self.query(marker).await {
+                    Ok(Ok(succeeded)) => {
+                        Ok(Some(succeeded.constraints.clone()))
+                    }
 
-                Ok(Err(error)) => {
-                    self.generate_marker_error(
-                        marker,
-                        instantiation_span,
-                        &error,
-                        diagnostics,
-                        vec![
-                            RequiredBy::builder()
-                                .maybe_predicate_declaration_span(
-                                    predicate_declaration_span.copied(),
-                                )
-                                .build(),
-                        ],
-                    );
+                    Ok(Err(error)) => {
+                        self.generate_marker_error(
+                            marker,
+                            instantiation_span,
+                            &error,
+                            diagnostics,
+                            vec![
+                                RequiredBy::builder()
+                                    .maybe_predicate_declaration_span(
+                                        predicate_declaration_span.copied(),
+                                    )
+                                    .build(),
+                            ],
+                        );
 
-                    return Ok(BTreeSet::new());
+                        return Ok(BTreeSet::new());
+                    }
+
+                    Err(overflow_error) => Err(overflow_error),
                 }
-
-                Err(overflow_error) => Err(overflow_error),
-            },
+            }
 
             Predicate::NegativeMarker(_) => {
                 todo!()
@@ -293,7 +291,6 @@ impl<N: Normalizer> Environment<'_, N> {
                     constraints,
                     instantiation_span,
                     predicate_declaration_span,
-                    do_outlives_check,
                     diagnostics,
                     handler,
                 )
@@ -335,12 +332,11 @@ impl<N: Normalizer> Environment<'_, N> {
         constraints: BTreeSet<LifetimeConstraint>,
         instantiation_span: &RelativeSpan,
         predicate_declaration_span: Option<&RelativeSpan>,
-        do_outlives_check: bool,
         diagnostics: &mut Vec<Diagnostic>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError> {
         // if do_outlives_check is false, then we don't need to check
-        if !do_outlives_check {
+        if !self.do_outlives_check() {
             return Ok(constraints);
         }
 
@@ -425,7 +421,6 @@ impl<N: Normalizer> Environment<'_, N> {
         impl_id: Global<pernixc_symbol::ID>,
         instantiation_span: &RelativeSpan,
         generic_arguments: &GenericArguments,
-        do_outlives_check: bool,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<Option<ImplementsCheckResult>, UnrecoverableError> {
         // deduce the generic arguments
@@ -465,7 +460,6 @@ impl<N: Normalizer> Environment<'_, N> {
                 impl_id,
                 instantiation_span,
                 &result.result.instantiation,
-                do_outlives_check,
                 handler,
             )
             .await?;
@@ -481,7 +475,7 @@ impl<N: Normalizer> Environment<'_, N> {
             ));
         }
 
-        if do_outlives_check {
+        if self.do_outlives_check() {
             for constraint in result.constraints {
                 match constraint.satisfies(self).await {
                     Ok(true) => {}
@@ -532,7 +526,6 @@ impl<N: Normalizer> Environment<'_, N> {
         generic_id: Global<pernixc_symbol::ID>,
         instantiation_span: &RelativeSpan,
         instantiation: &instantiation::Instantiation,
-        do_outlives_check: bool,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError> {
         let predicates = Self::get_all_predicates(
@@ -551,7 +544,6 @@ impl<N: Normalizer> Environment<'_, N> {
                     predicate,
                     instantiation_span,
                     span.as_ref(),
-                    do_outlives_check,
                     &mut diagnostics,
                     handler,
                 )
@@ -578,13 +570,35 @@ impl<N: Normalizer> Environment<'_, N> {
         {
             match unsatisfied_predicate.cause() {
                 UnsatisfiedCause::NoInformation => {
+                    let mut requirement_stack = requirement_stack.to_vec();
+
+                    requirement_stack.push(
+                        RequiredBy::builder()
+                            .by_implements(
+                                RequiredByImplements::builder()
+                                    .resolved_implements_id(
+                                        unsatisfied_predicates
+                                            .implementation()
+                                            .id,
+                                    )
+                                    .predicate(predicate.clone())
+                                    .build(),
+                            )
+                            .maybe_predicate_declaration_span(
+                                unsatisfied_predicate
+                                    .predicate_declaration_span()
+                                    .copied(),
+                            )
+                            .build(),
+                    );
+
                     diagnostics.push(
                         UnsatisfiedPredicate::builder_with_required_by_stack()
                             .predicate(
                                 unsatisfied_predicate.predicate().clone(),
                             )
                             .instantiation_span(*instantiation_span)
-                            .requirement_stack(requirement_stack.to_vec())
+                            .requirement_stack(requirement_stack)
                             .build()
                             .into(),
                     );

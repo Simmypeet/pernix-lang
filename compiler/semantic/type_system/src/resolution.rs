@@ -646,8 +646,17 @@ async fn predicate_satisfies(
                     ));
                 }
 
-                constraints
-                    .insert(LifetimeConstraint::TypeOutlives(pred.clone()));
+                if environment.do_outlives_check() {
+                    if !environment.query(&pred).await? {
+                        unsatisfied_predicates.push(UnsatisfiedPredicate {
+                            predicate: Predicate::TypeOutlives(pred),
+                            predicate_declaration_span: span,
+                            cause: UnsatisfiedCause::NoInformation,
+                        });
+                    }
+                } else {
+                    constraints.insert(LifetimeConstraint::TypeOutlives(pred));
+                }
             }
 
             Predicate::LifetimeOutlives(mut pred) => {
@@ -661,8 +670,18 @@ async fn predicate_satisfies(
                     ));
                 }
 
-                constraints
-                    .insert(LifetimeConstraint::LifetimeOutlives(pred.clone()));
+                if environment.do_outlives_check() {
+                    if !environment.query(&pred).await? {
+                        unsatisfied_predicates.push(UnsatisfiedPredicate {
+                            predicate: Predicate::LifetimeOutlives(pred),
+                            predicate_declaration_span: span,
+                            cause: UnsatisfiedCause::NoInformation,
+                        });
+                    }
+                } else {
+                    constraints
+                        .insert(LifetimeConstraint::LifetimeOutlives(pred));
+                }
             }
         }
     }

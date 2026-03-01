@@ -52,7 +52,6 @@ impl<N: Normalizer> Context<'_, N> {
                 struct_lit.struct_id,
                 span,
                 &instantiation,
-                false,
                 &self.handler(),
             )
             .await?;

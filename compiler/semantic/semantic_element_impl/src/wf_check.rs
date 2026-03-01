@@ -94,7 +94,6 @@ impl Checker<'_> {
                                 impl_id,
                                 resolution_span,
                                 &member_generic.parent_generic_arguments,
-                                true,
                                 self.handler,
                             )
                             .await
@@ -143,7 +142,6 @@ impl Checker<'_> {
                         member_generic.id,
                         resolution_span,
                         &base_instantiation,
-                        true,
                         self.handler,
                     )
                     .await;
@@ -172,7 +170,6 @@ impl Checker<'_> {
                 instantiated,
                 instantiation_span,
                 &inst,
-                true,
                 self.handler,
             )
             .await;
@@ -308,7 +305,6 @@ impl Checker<'_> {
                 Predicate::TupleType(tuple_predicate),
                 instantiation_span,
                 None,
-                true,
                 self.handler,
             )
             .await;
@@ -445,7 +441,7 @@ pub async fn wf_check_executor(
     }
 
     let active_premise = tracked_engine.get_active_premise(symbol_id).await;
-    let environment = Environment::new(
+    let environment = Environment::new_do_outlives_check(
         Cow::Borrowed(&active_premise),
         Cow::Borrowed(tracked_engine),
         normalizer::NO_OP,

@@ -163,7 +163,6 @@ async fn handle_load<N: Normalizer>(
                     )),
                     &register_span,
                     None,
-                    false,
                     &storage,
                 )
                 .await?;

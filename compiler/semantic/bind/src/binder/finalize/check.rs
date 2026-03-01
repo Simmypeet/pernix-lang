@@ -50,7 +50,6 @@ async fn check_register_assignment<N: Normalizer>(
                     st.struct_id,
                     &register.span,
                     &instantiation,
-                    false,
                     &handler,
                 )
                 .await?;
@@ -79,7 +78,6 @@ async fn check_register_assignment<N: Normalizer>(
                     enum_id,
                     &register.span,
                     &instantiation,
-                    false,
                     &handler,
                 )
                 .await?;
@@ -113,7 +111,6 @@ async fn check_register_assignment<N: Normalizer>(
                             parent_implementation_id,
                             &register.span,
                             &function_call.instantiation,
-                            false,
                             &handler,
                         )
                         .await?;
@@ -124,7 +121,6 @@ async fn check_register_assignment<N: Normalizer>(
                             function_call.callable_id,
                             &register.span,
                             &function_call.instantiation,
-                            false,
                             &handler,
                         )
                         .await?;
@@ -141,7 +137,6 @@ async fn check_register_assignment<N: Normalizer>(
                             function_call.callable_id,
                             &register.span,
                             &function_call.instantiation,
-                            false,
                             &handler,
                         )
                         .await?;
@@ -195,7 +190,6 @@ async fn check_register_assignment<N: Normalizer>(
                         predicate,
                         &register.span,
                         None,
-                        false,
                         &handler,
                     )
                     .await?;
@@ -228,7 +222,6 @@ async fn check_register_assignment<N: Normalizer>(
                         predicate,
                         ir.values.span_of_value(&element.value),
                         None,
-                        false,
                         &handler,
                     )
                     .await?;

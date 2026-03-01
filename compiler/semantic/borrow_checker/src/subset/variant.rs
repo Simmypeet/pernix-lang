@@ -62,7 +62,6 @@ impl<N: Normalizer> Context<'_, N> {
                 enum_id,
                 span,
                 &instantiation,
-                false,
                 &self.handler(),
             )
             .await?;

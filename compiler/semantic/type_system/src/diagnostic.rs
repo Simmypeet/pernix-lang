@@ -442,19 +442,17 @@ impl Report for UnsatisfiedPredicate {
                     .span(
                         engine.to_absolute_span(&self.instantiation_span).await,
                     )
-                    .message({
-                        let mut message = String::new();
-                        message.push_str("the predicate `");
-                        self.predicate
-                            .write_async(engine, &mut message)
-                            .await
-                            .unwrap();
-                        message.push_str("` is not satisfied");
-                        message
-                    })
                     .build(),
             )
-            .message("unsatisfied predicate")
+            .message({
+                let mut message = String::new();
+
+                message.push_str("the predicate `");
+                self.predicate.write_async(engine, &mut message).await.unwrap();
+                message.push_str("` is not satisfied");
+
+                message
+            })
             .notes(generate_notes(&self.requirement_stack, engine).await)
             .build()
     }

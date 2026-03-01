@@ -39,7 +39,6 @@ impl<N: Normalizer> Context<'_, N> {
                         predicate,
                         self.values().span_of_value(&element.value),
                         None,
-                        false,
                         &self.handler(),
                     )
                     .await?,

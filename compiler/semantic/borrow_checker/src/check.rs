@@ -87,7 +87,6 @@ impl<N: Normalizer> Checker<'_, N> {
                         )),
                         register_span,
                         None,
-                        false,
                         &self.handler(),
                     )
                     .await?
