@@ -39,6 +39,7 @@ pub enum Diagnostic {
     ImplementationIsNotGeneralEnough(ImplementationIsNotGeneralEnough),
     MismatchedImplementationArguments(MismatchedImplementationArguments),
     AdtImplementationIsNotGeneralEnough(AdtImplementationIsNotGeneralEnough),
+    FoundNegativeImplementation(FoundNegativeImplementation),
 }
 
 impl Report for Diagnostic {
@@ -66,6 +67,9 @@ impl Report for Diagnostic {
                 diagnostic.report(parameter).await
             }
             Self::AdtImplementationIsNotGeneralEnough(diagnostic) => {
+                diagnostic.report(parameter).await
+            }
+            Self::FoundNegativeImplementation(diagnostic) => {
                 diagnostic.report(parameter).await
             }
         }
@@ -770,6 +774,93 @@ impl Report for AdtImplementationIsNotGeneralEnough {
                     .into_iter()
                     .collect(),
             )
+            .build()
+    }
+}
+
+/// A negative implementation was found that explicitly marks the predicate as
+/// unsatisfiable.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Builder,
+)]
+pub struct FoundNegativeImplementation {
+    /// The predicate that was found to be explicitly unsatisfiable.
+    predicate: pernixc_term::predicate::PositiveMarker,
+
+    /// The ID of the negative implementation.
+    negative_implementation_id: Global<pernixc_symbol::ID>,
+
+    /// The span of the instantiation that causes the check.
+    instantiation_span: RelativeSpan,
+
+    /// The stack of requirements that lead to the negative implementation
+    /// being checked, used to provide more context to the user.
+    requirement_stack: Vec<RequiredBy>,
+}
+
+impl Report for FoundNegativeImplementation {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        let negative_impl_span = if let Some(span) =
+            engine.get_span(self.negative_implementation_id).await
+        {
+            Some(engine.to_absolute_span(&span).await)
+        } else {
+            None
+        };
+
+        pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(
+                Highlight::builder()
+                    .span(
+                        engine.to_absolute_span(&self.instantiation_span).await,
+                    )
+                    .message({
+                        let mut message = String::new();
+                        message.push_str("the predicate `");
+                        self.predicate
+                            .write_async(engine, &mut message)
+                            .await
+                            .unwrap();
+                        message.push_str(
+                            "` is explicitly marked as unsatisfiable by a \
+                             negative implementation",
+                        );
+                        message
+                    })
+                    .build(),
+            )
+            .message("found negative implementation")
+            .related({
+                let mut related = Vec::new();
+
+                if let Some(span) = negative_impl_span.as_ref() {
+                    related.push(
+                        Highlight::builder()
+                            .span(*span)
+                            .message(
+                                "this negative implementation explicitly \
+                                 marks the predicate as unsatisfiable",
+                            )
+                            .build(),
+                    );
+                }
+
+                related
+            })
+            .notes(generate_notes(&self.requirement_stack, engine).await)
             .build()
     }
 }

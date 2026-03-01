@@ -25,9 +25,9 @@ use crate::{
     deduction::Deduction,
     diagnostic::{
         AdtImplementationIsNotGeneralEnough, Diagnostic,
-        ImplementationIsNotGeneralEnough, MismatchedImplementationArguments,
-        PredicateSatisfiabilityOverflow, RequiredBy, RequiredByImplements,
-        UnsatisfiedPredicate,
+        FoundNegativeImplementation, ImplementationIsNotGeneralEnough,
+        MismatchedImplementationArguments, PredicateSatisfiabilityOverflow,
+        RequiredBy, RequiredByImplements, UnsatisfiedPredicate,
     },
     environment::Environment,
     lifetime_constraint::LifetimeConstraint,
@@ -708,7 +708,16 @@ impl<N: Normalizer> Environment<'_, N> {
                 }
             }
 
-            PositiveError::NegativeMarkerImplementation(_succeeded) => todo!(),
+            PositiveError::NegativeMarkerImplementation(succeeded) => {
+                diagnostics.push(Diagnostic::FoundNegativeImplementation(
+                    FoundNegativeImplementation::builder()
+                        .predicate(predicate.clone())
+                        .instantiation_span(*instantiation_span)
+                        .requirement_stack(requirement_stack)
+                        .negative_implementation_id(succeeded.result.id)
+                        .build(),
+                ));
+            }
 
             PositiveError::Cyclic => {
                 diagnostics.push(Diagnostic::UnsatisfiedPredicate(
