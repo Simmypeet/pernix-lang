@@ -4,16 +4,26 @@ expression: run
 ---
 stderr:
 [error]: implementation is not general enough
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/implementation_is_not_general_enough_nested/main.pnx:36:29
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/implementation_is_not_general_enough_nested/main.pnx:32:29
    │
-10 │ final implements['a, 'b, T: 'b] Fizz['a, &'b mut T]:
+ 7 │ final implements['a, 'b, T: 'b] Fizz['a, &'b mut T]:
    │                                 ─────────────────── this implementation was used but its lifetimes are not general enough
    ‡
-21 │         trait for['x] Fizz['x, T]
-   │               ─────────────────── the predicate is declared here
-   ‡
-36 │ public type Second['a, T] = WithRequirement[&'a mut T]:
+32 │ public type Second['a, T] = WithRequirement[&'a mut T]:
    ╰╴                            ━━━━━━━━━━━━━━━━━━━━━━━━━━ the implementation is not general enought to satisfy the required forall lifetimes in the generic arguments: ['∀0, &'a mut T]
+[note]: the required predicate is declared here
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/implementation_is_not_general_enough_nested/main.pnx:22:12
+   │
+22 │         T: Buzz
+   ╰╴           ━━━━
+[note]: required for predicate marker main::Buzz[&'a mut T] to be implemented
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/implementation_is_not_general_enough_nested/main.pnx:17:20
+   │
+15 │ final implements[T] Buzz[T]:
+   │                     ───────
+16 │     where:
+17 │         for['x] T: Fizz['x]
+   ╰╴                   ━━━━━━━━ the required predicate is declared here
 
 [error]: Compilation aborted due to 1 error(s)
 

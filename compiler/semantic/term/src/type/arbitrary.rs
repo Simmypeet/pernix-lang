@@ -137,9 +137,9 @@ impl Arbitrary for Type {
                 ))
                 .prop_map(Self::AssociatedSymbol),
                 6 => Symbol::arbitrary_with((
-                    Some(lt_strat.clone()), 
-                    Some(inner.clone()), 
-                    Some(const_strat.clone()), 
+                    Some(lt_strat.clone()),
+                    Some(inner.clone()),
+                    Some(const_strat.clone()),
                     Some(inst_strat)
                 ))
                 .prop_map(Self::Symbol),

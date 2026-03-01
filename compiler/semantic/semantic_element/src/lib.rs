@@ -9,8 +9,8 @@
 pub mod effect_annotation;
 pub mod elided_lifetime;
 pub mod fields;
-pub mod implemented;
 pub mod global_instances;
+pub mod implemented;
 pub mod implements;
 pub mod implements_arguments;
 pub mod implied_predicate;

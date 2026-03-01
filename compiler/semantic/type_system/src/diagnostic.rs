@@ -473,16 +473,17 @@ impl Report for UnsatisfiedPredicate {
 )]
 pub struct ImplementationIsNotGeneralEnough {
     /// The ID of the implementation where the predicate is not satisfied.
-    pub resolvable_implementation_id: Global<pernixc_symbol::ID>,
+    resolvable_implementation_id: Global<pernixc_symbol::ID>,
 
     /// The generic arguments required by the trait predicate.
-    pub generic_arguments: GenericArguments,
-
-    /// The span where the trait predicate was declared.
-    pub predicate_declaration_span: Option<RelativeSpan>,
+    generic_arguments: GenericArguments,
 
     /// The span of the instantiation that causes the error
-    pub instantiation_span: RelativeSpan,
+    instantiation_span: RelativeSpan,
+
+    /// The stack of requirements that lead to the error, used to provide more
+    /// context to the user about why the implementation is not general enough.
+    required_by_stack: Vec<RequiredBy>,
 }
 
 impl Report for ImplementationIsNotGeneralEnough {
@@ -524,15 +525,6 @@ impl Report for ImplementationIsNotGeneralEnough {
             .related({
                 let mut related = Vec::new();
 
-                if let Some(span) = self.predicate_declaration_span.as_ref() {
-                    related.push(
-                        Highlight::builder()
-                            .span(engine.to_absolute_span(span).await)
-                            .message("the predicate is declared here")
-                            .build(),
-                    );
-                }
-
                 if let Some(span) = implementation_span.as_ref() {
                     related.push(
                         Highlight::builder()
@@ -547,6 +539,7 @@ impl Report for ImplementationIsNotGeneralEnough {
 
                 related
             })
+            .notes(generate_notes(&self.required_by_stack, engine).await)
             .build()
     }
 }

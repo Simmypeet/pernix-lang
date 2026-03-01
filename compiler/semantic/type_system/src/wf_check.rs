@@ -25,8 +25,9 @@ use crate::{
     deduction::Deduction,
     diagnostic::{
         AdtImplementationIsNotGeneralEnough, Diagnostic,
-        MismatchedImplementationArguments, PredicateSatisfiabilityOverflow,
-        RequiredBy, RequiredByImplements, UnsatisfiedPredicate,
+        ImplementationIsNotGeneralEnough, MismatchedImplementationArguments,
+        PredicateSatisfiabilityOverflow, RequiredBy, RequiredByImplements,
+        UnsatisfiedPredicate,
     },
     environment::Environment,
     lifetime_constraint::LifetimeConstraint,
@@ -626,6 +627,55 @@ impl<N: Normalizer> Environment<'_, N> {
         }
     }
 
+    fn handle_resolution_error_in_marker(
+        &self,
+        predicate: &pernixc_term::predicate::PositiveMarker,
+        instantiation_span: &RelativeSpan,
+        error: &crate::resolution::Error,
+        diagnostics: &mut Vec<Diagnostic>,
+        requirement_stack: Vec<RequiredBy>,
+    ) {
+        match error {
+            crate::resolution::Error::IsNotGeneralEnough(implementation) => {
+                diagnostics.push(Diagnostic::ImplementationIsNotGeneralEnough(
+                    ImplementationIsNotGeneralEnough::builder()
+                        .resolvable_implementation_id(implementation.id)
+                        .generic_arguments(predicate.generic_arguments.clone())
+                        .instantiation_span(*instantiation_span)
+                        .required_by_stack(requirement_stack)
+                        .build(),
+                ));
+            }
+
+            crate::resolution::Error::UnsatisfiedPredicates(
+                unsatisfied_predicates,
+            ) => self.handle_unsatisfied_predicate_in_marker(
+                predicate,
+                instantiation_span,
+                unsatisfied_predicates,
+                diagnostics,
+                &requirement_stack,
+            ),
+
+            crate::resolution::Error::Ambiguous => {
+                // NOTE: wf_check isn't responsible for reporting ambiguous
+                // marker implements. It should've been reported by the
+                // `implements` overlapping check.
+            }
+
+            crate::resolution::Error::NotFound
+            | crate::resolution::Error::Cyclic => {
+                diagnostics.push(Diagnostic::UnsatisfiedPredicate(
+                    UnsatisfiedPredicate::builder_with_required_by_stack()
+                        .predicate(predicate.clone().into())
+                        .instantiation_span(*instantiation_span)
+                        .requirement_stack(requirement_stack)
+                        .build(),
+                ));
+            }
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn generate_marker_error(
         &self,
@@ -636,31 +686,15 @@ impl<N: Normalizer> Environment<'_, N> {
         requirement_stack: Vec<RequiredBy>,
     ) {
         match error {
-            PositiveError::ImplementationResolution(error) => match error {
-                crate::resolution::Error::NotFound => {
-                    diagnostics.push(Diagnostic::UnsatisfiedPredicate(
-                        UnsatisfiedPredicate::builder_with_required_by_stack()
-                            .predicate(predicate.clone().into())
-                            .instantiation_span(*instantiation_span)
-                            .requirement_stack(requirement_stack)
-                            .build(),
-                    ));
-                }
-                crate::resolution::Error::IsNotGeneralEnough(
-                    _implementation,
-                ) => todo!(),
-                crate::resolution::Error::UnsatisfiedPredicates(
-                    unsatisfied_predicates,
-                ) => self.handle_unsatisfied_predicate_in_marker(
+            PositiveError::ImplementationResolution(error) => {
+                self.handle_resolution_error_in_marker(
                     predicate,
                     instantiation_span,
-                    unsatisfied_predicates,
+                    error,
                     diagnostics,
-                    &requirement_stack,
-                ),
-                crate::resolution::Error::Ambiguous => todo!(),
-                crate::resolution::Error::Cyclic => todo!(),
-            },
+                    requirement_stack,
+                );
+            }
 
             PositiveError::Structural(structural_errors) => {
                 for a in structural_errors.iter() {
@@ -673,9 +707,17 @@ impl<N: Normalizer> Environment<'_, N> {
                     );
                 }
             }
+
             PositiveError::NegativeMarkerImplementation(_succeeded) => todo!(),
+
             PositiveError::Cyclic => {
-                todo!()
+                diagnostics.push(Diagnostic::UnsatisfiedPredicate(
+                    UnsatisfiedPredicate::builder_with_required_by_stack()
+                        .predicate(predicate.clone().into())
+                        .instantiation_span(*instantiation_span)
+                        .requirement_stack(requirement_stack)
+                        .build(),
+                ));
             }
         }
     }

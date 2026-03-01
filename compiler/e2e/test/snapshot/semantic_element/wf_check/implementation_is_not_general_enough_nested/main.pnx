@@ -1,10 +1,7 @@
-
-public trait Fizz['a, T]:
-    pass
+public marker Fizz['a, T]
 
 
-final implements['a, 'b, T: 'b] Fizz['a, &'b T]:
-    pass
+final implements['a, 'b, T: 'b] Fizz['a, &'b T]
 
 
 final implements['a, 'b, T: 'b] Fizz['a, &'b mut T]:
@@ -12,18 +9,17 @@ final implements['a, 'b, T: 'b] Fizz['a, &'b mut T]:
         'a: 'b # this constraint makes lifetime 'a be specific to 'b
 
 
-public trait Buzz[T]:
-    pass 
+public marker Buzz[T]
 
 
 final implements[T] Buzz[T]:
     where:
-        trait for['x] Fizz['x, T]
+        for['x] T: Fizz['x]
 
 
 public type WithRequirement[T] = T:
     where:
-        trait Buzz[T]
+        T: Buzz
 
 
 # this instantiation is valid
