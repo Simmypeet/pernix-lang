@@ -101,11 +101,7 @@ impl Binder<'_> {
                     self.engine.get_return_type(self.current_site()).await;
 
                 // no checking need
-                if *return_ty
-                    == Type::Tuple(pernixc_term::tuple::Tuple {
-                        elements: Vec::new(),
-                    })
-                {
+                if *return_ty == Type::unit() {
                     break 'out;
                 }
 

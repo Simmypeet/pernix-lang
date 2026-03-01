@@ -11,10 +11,7 @@ use pernixc_symbol::{
     kind::{Kind, get_kind},
 };
 use pernixc_syntax::expression::postfix::AccessKind;
-use pernixc_term::{
-    generic_arguments::Symbol,
-    r#type::{Primitive, Qualifier, Type},
-};
+use pernixc_term::r#type::{Primitive, Qualifier, Type};
 
 use crate::{
     bind::{
@@ -144,14 +141,12 @@ async fn access_struct(
     handler: &dyn pernixc_handler::Handler<crate::diagnostic::Diagnostic>,
 ) -> Result<Address, Error> {
     let struct_id = match &address_ty {
-        Type::Symbol(Symbol { id: struct_id, .. })
+        Type::Symbol(symbol)
             if {
-                let symbol_kind = binder.engine().get_kind(*struct_id).await;
-
-                symbol_kind == Kind::Struct
+                binder.engine().get_kind(symbol.id()).await == Kind::Struct
             } =>
         {
-            *struct_id
+            symbol.id()
         }
 
         _ => {
@@ -245,12 +240,15 @@ fn access_tuple(
     };
 
     // sanity check
-    if tuple_ty.elements.iter().filter(|x| x.is_unpacked).count() > 1 {
+    if tuple_ty.elements().iter().filter(|x| x.is_unpacked()).count() > 1 {
         return Err(Error::Binding(BindingError(new_span)));
     }
 
     // used to chec if the index is past the unpacked index
-    let unpacked_index = tuple_ty.elements.iter().position(|x| x.is_unpacked);
+    let unpacked_index = tuple_ty
+        .elements()
+        .iter()
+        .position(pernixc_term::tuple::Element::is_unpacked);
 
     let Some(index_str) = tuple_index.index() else {
         return Err(Error::Binding(BindingError(new_span)));
@@ -277,11 +275,11 @@ fn access_tuple(
         },
     };
 
-    if index >= tuple_ty.elements.len() {
+    if index >= tuple_ty.elements().len() {
         handler.receive(
             Diagnostic::TupleIndexOutOfBounds(TupleIndexOutOfBounds {
                 access_span: index_str.span,
-                element_count: tuple_ty.elements.len(),
+                element_count: tuple_ty.elements().len(),
                 accessed_index: index,
             })
             .into(),
@@ -293,7 +291,7 @@ fn access_tuple(
     if let Some(unpacked_index) = unpacked_index {
         // can't access past the unpacked index
         let pass_unpacked = if tuple_index.minus().is_some() {
-            index.cmp(&(tuple_ty.elements.len() - unpacked_index - 1))
+            index.cmp(&(tuple_ty.elements().len() - unpacked_index - 1))
         } else {
             index.cmp(&unpacked_index)
         };

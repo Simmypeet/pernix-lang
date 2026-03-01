@@ -60,8 +60,8 @@ impl Bind<&pernixc_syntax::expression::unit::ResumeCall> for Binder<'_> {
         let operation_generic_parameters =
             self.engine().get_generic_parameters(operation_symbol_id).await;
 
-        handler_instantiation.lifetimes.extend(
-            operation_generic_parameters.lifetimes().ids().map(|x| {
+        handler_instantiation.extend_lifetimes_mappings(
+            operation_generic_parameters.parameter_ids().map(|x| {
                 (
                     Lifetime::Parameter(LifetimeParameterID::new(
                         operation_symbol_id,

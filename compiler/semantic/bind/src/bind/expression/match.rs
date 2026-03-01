@@ -36,10 +36,7 @@ use pernixc_symbol::{
 };
 use pernixc_syntax::expression::block::Group;
 use pernixc_target::Global;
-use pernixc_term::{
-    generic_arguments::Symbol,
-    r#type::{Primitive, Qualifier, Type},
-};
+use pernixc_term::r#type::{Primitive, Qualifier, Type};
 
 use crate::{
     bind::{Bind, Expression, Guidance, expression::group::BindGroupTarget},
@@ -111,11 +108,11 @@ impl Binder<'_> {
             }
 
             Refutable::Enum(_) => {
-                let Type::Symbol(Symbol { id: enum_id, .. }) = ty else {
+                let Type::Symbol(symbol) = ty else {
                     panic!("unexpected type {ty:#?}");
                 };
 
-                let member = self.engine().get_members(*enum_id).await;
+                let member = self.engine().get_members(symbol.id()).await;
                 let mut variant_handled = bit_vec::BitVec::from_elem(
                     member.member_ids_by_name.len(),
                     false,
@@ -1082,13 +1079,13 @@ impl Bind<&pernixc_syntax::expression::block::Match> for Binder<'_> {
             let ty = address_ty.reduce_reference();
 
             let is_inhabited = match ty {
-                Type::Symbol(Symbol { id: enum_id, .. })
+                Type::Symbol(symbol)
                     if {
-                        self.engine().get_kind(*enum_id).await == Kind::Enum
+                        self.engine().get_kind(symbol.id()).await == Kind::Enum
                     } =>
                 {
                     self.engine()
-                        .get_members(*enum_id)
+                        .get_members(symbol.id())
                         .await
                         .member_ids_by_name
                         .is_empty()

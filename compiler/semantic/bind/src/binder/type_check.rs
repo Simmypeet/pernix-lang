@@ -32,7 +32,7 @@ pub mod diagnostic;
     Encode,
     Decode,
 )]
-#[allow(missing_docs)]
+#[allow(missing_docs, clippy::large_enum_variant)]
 pub enum Expected {
     Known(Type),
     Constraint(constraint::Type),
@@ -101,7 +101,7 @@ impl Binder<'_> {
                         .into(),
                     ),
 
-                    Err(UnifyError::TypeSystem(type_system_error)) => {
+                    Err(UnifyError::OverflowError(type_system_error)) => {
                         return Err(type_system_error
                             .report_as_type_check_overflow(
                                 type_check_span,

@@ -140,6 +140,11 @@ impl<Term> Tuple<Term> {
     pub fn remove_at(&mut self, idx: usize) -> Element<Term> {
         self.elements.remove(idx)
     }
+
+    /// Pushes the given element to the end of the tuple.
+    pub fn push(&mut self, element: Element<Term>) {
+        self.elements.push(element);
+    }
 }
 
 impl<Term> Default for Tuple<Term> {

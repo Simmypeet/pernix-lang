@@ -111,6 +111,38 @@ impl Instantiation {
     ) -> impl ExactSizeIterator<Item = (&Instance, &mut Instance)> {
         self.instances.iter_mut()
     }
+
+    /// Extends the lifetime mappings with the given mappings.
+    pub fn extend_lifetimes_mappings(
+        &mut self,
+        mappings: impl IntoIterator<Item = (Lifetime, Lifetime)>,
+    ) {
+        self.lifetimes.extend(mappings);
+    }
+
+    /// Extends the type mappings with the given mappings.
+    pub fn extend_types_mappings(
+        &mut self,
+        mappings: impl IntoIterator<Item = (Type, Type)>,
+    ) {
+        self.types.extend(mappings);
+    }
+
+    /// Extends the constant mappings with the given mappings.
+    pub fn extend_constants_mappings(
+        &mut self,
+        mappings: impl IntoIterator<Item = (Constant, Constant)>,
+    ) {
+        self.constants.extend(mappings);
+    }
+
+    /// Extends the instance mappings with the given mappings.
+    pub fn extend_instances_mappings(
+        &mut self,
+        mappings: impl IntoIterator<Item = (Instance, Instance)>,
+    ) {
+        self.instances.extend(mappings);
+    }
 }
 
 struct Instantiater<'a> {

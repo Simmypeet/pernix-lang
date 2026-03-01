@@ -21,11 +21,9 @@ use pernixc_semantic_element::{
 };
 use pernixc_source_file::SourceElement;
 use pernixc_term::{
-    generic_arguments::Symbol,
     generic_parameters::get_generic_parameters,
     instantiation::Instantiation,
     lifetime::Lifetime,
-    tuple,
     r#type::{Qualifier, Reference, Type},
 };
 use qbice::storage::intern::Interned;
@@ -292,23 +290,21 @@ impl Binder<'_> {
         binding = reduce_reference(binding);
 
         // must be a struct type
-        let Type::Symbol(Symbol { id: struct_id, generic_arguments }) =
-            binding.r#type
-        else {
+        let Type::Symbol(symbol) = binding.r#type else {
             panic!("unexpected type!");
         };
 
         let struct_generic_parameters =
-            self.engine().get_generic_parameters(*struct_id).await;
+            self.engine().get_generic_parameters(symbol.id()).await;
 
         let instantiation = Instantiation::from_generic_arguments(
-            generic_arguments.clone(),
-            *struct_id,
+            symbol.generic_arguments().clone(),
+            symbol.id(),
             &struct_generic_parameters,
         )
         .unwrap();
 
-        let fields = self.engine().get_fields(*struct_id).await;
+        let fields = self.engine().get_fields(symbol.id()).await;
 
         assert_eq!(
             fields.field_declaration_order.len(),
@@ -419,18 +415,16 @@ impl Binder<'_> {
         binding = reduce_reference(binding);
 
         // must be an enum type
-        let Type::Symbol(Symbol { id: enum_id, generic_arguments }) =
-            binding.r#type
-        else {
+        let Type::Symbol(symbol) = binding.r#type else {
             panic!("unexpected type!");
         };
 
         let enum_generic_parameters =
-            self.engine().get_generic_parameters(*enum_id).await;
+            self.engine().get_generic_parameters(symbol.id()).await;
 
         let instantiation = Instantiation::from_generic_arguments(
-            generic_arguments.clone(),
-            *enum_id,
+            symbol.generic_arguments().clone(),
+            symbol.id(),
             &enum_generic_parameters,
         )
         .unwrap();
@@ -486,16 +480,19 @@ impl Binder<'_> {
         if let Some(packed_position) = packed_position {
             // find the position of the unpacked element in type
             let unpacked_position_in_type = {
-                let unpacked_count =
-                    tuple_ty.elements.iter().filter(|x| x.is_unpacked).count();
+                let unpacked_count = tuple_ty
+                    .elements()
+                    .iter()
+                    .filter(|x| x.is_unpacked())
+                    .count();
 
                 match unpacked_count {
                     0 => None,
                     1 => Some(
                         tuple_ty
-                            .elements
+                            .elements()
                             .iter()
-                            .position(|x| x.is_unpacked)
+                            .position(pernixc_term::tuple::Element::is_unpacked)
                             .unwrap(),
                     ),
 
@@ -518,19 +515,19 @@ impl Binder<'_> {
 
             let start_range = 0..packed_position;
             let tuple_end_range = packed_position + 1..tuple_pat.elements.len();
-            let type_end_range = (tuple_ty.elements.len()
+            let type_end_range = (tuple_ty.elements().len()
                 - tuple_end_range.len())
-                ..tuple_ty.elements.len();
+                ..tuple_ty.elements().len();
             let type_pack_range = packed_position..type_end_range.start;
 
             // match the start
-            for (index, (tuple_ty, tuple_pat)) in tuple_ty.elements
+            for (index, (tuple_ty, tuple_pat)) in tuple_ty.elements()
                 [start_range.clone()]
             .iter()
             .zip(&tuple_pat.elements[start_range])
             .enumerate()
             {
-                assert!(!tuple_ty.is_unpacked);
+                assert!(!tuple_ty.is_unpacked());
 
                 let element_address = Address::Tuple(address::Tuple {
                     tuple_address: Box::new(binding.address.clone()),
@@ -543,7 +540,7 @@ impl Binder<'_> {
                     &tuple_pat.pattern,
                     Binding {
                         kind: binding.kind,
-                        r#type: &tuple_ty.term,
+                        r#type: tuple_ty.term(),
                         address: element_address,
                         qualifier: binding.qualifier,
                     },
@@ -554,9 +551,9 @@ impl Binder<'_> {
             }
 
             // create a new alloca where all the elements will be stoered.
-            let packed_type = Type::Tuple(tuple::Tuple {
-                elements: tuple_ty.elements[type_pack_range.clone()].to_vec(),
-            });
+            let packed_type = Type::new_tuple(
+                tuple_ty.elements()[type_pack_range.clone()].to_vec(),
+            );
             let packed_alloca = self.create_alloca_with_scope_id(
                 packed_type.clone(),
                 config.scope_id,
@@ -618,7 +615,7 @@ impl Binder<'_> {
                     )),
                     tuple_address: binding.address.clone(),
                     before_packed_element_count: unpacked_position_in_type,
-                    after_packed_element_count: tuple_ty.elements.len()
+                    after_packed_element_count: tuple_ty.elements().len()
                         - unpacked_position_in_type
                         - 1,
                 }));
@@ -634,7 +631,7 @@ impl Binder<'_> {
                         offset: address::Offset::FromEnd(
                             Self::convert_from_start_index_to_end_index(
                                 index,
-                                tuple_ty.elements.len(),
+                                tuple_ty.elements().len(),
                             ),
                         ),
                     });
@@ -728,20 +725,21 @@ impl Binder<'_> {
             .await?;
 
             // match the end
-            for ((ty_elem, pat_elem), ty_index) in tuple_ty.elements
+            for ((ty_elem, pat_elem), ty_index) in tuple_ty.elements()
                 [type_end_range.clone()]
             .iter()
             .zip(&tuple_pat.elements[tuple_end_range])
             .zip(type_end_range)
             {
-                assert!(!ty_elem.is_unpacked);
+                assert!(!ty_elem.is_unpacked());
+
                 let element_address = Address::Tuple(address::Tuple {
                     tuple_address: Box::new(binding.address.clone()),
                     offset: if unpacked_position_in_type.is_some() {
                         address::Offset::FromEnd(
                             Self::convert_from_start_index_to_end_index(
                                 ty_index,
-                                tuple_ty.elements.len(),
+                                tuple_ty.elements().len(),
                             ),
                         )
                     } else {
@@ -755,7 +753,7 @@ impl Binder<'_> {
                     &pat_elem.pattern,
                     Binding {
                         kind: binding.kind,
-                        r#type: &ty_elem.term,
+                        r#type: ty_elem.term(),
                         address: element_address,
                         qualifier: binding.qualifier,
                     },
@@ -766,9 +764,9 @@ impl Binder<'_> {
             }
         } else {
             for (index, (tuple_ty, tuple_pat)) in tuple_ty
-                .elements
+                .elements()
                 .iter()
-                .map(|x| &x.term)
+                .map(pernixc_term::tuple::Element::term)
                 .zip(tuple_pat.elements.iter())
                 .enumerate()
             {

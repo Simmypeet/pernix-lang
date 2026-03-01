@@ -19,7 +19,8 @@ use pernixc_term::{
     effect,
     generic_arguments::GenericArguments,
     generic_parameters::{
-        ConstantParameterID, TypeParameterID, get_generic_parameters,
+        ConstantParameterID, GenericParameter, TypeParameterID,
+        get_generic_parameters,
     },
     r#type::Type,
 };
@@ -387,18 +388,17 @@ impl Report for TypeAnnotationRequired {
         engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let qualified_name =
-            engine.get_qualified_name(self.generic_parameter.parent_id).await;
+            engine.get_qualified_name(self.generic_parameter.parent_id()).await;
 
         let generic_parameters = engine
-            .get_generic_parameters(self.generic_parameter.parent_id)
+            .get_generic_parameters(self.generic_parameter.parent_id())
             .await;
 
-        let ty_parameter =
-            &generic_parameters.types()[self.generic_parameter.id];
+        let ty_parameter = &generic_parameters[self.generic_parameter.id()];
 
         let message = format!(
             "type annotation is required for generic parameter `{}` of `{}`",
-            ty_parameter.name.as_ref(),
+            ty_parameter.name().as_ref(),
             qualified_name
         );
 
@@ -434,19 +434,18 @@ impl Report for ConstantAnnotationRequired {
         engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let qualified_name =
-            engine.get_qualified_name(self.generic_parameter.parent_id).await;
+            engine.get_qualified_name(self.generic_parameter.parent_id()).await;
 
         let generic_parameters = engine
-            .get_generic_parameters(self.generic_parameter.parent_id)
+            .get_generic_parameters(self.generic_parameter.parent_id())
             .await;
 
-        let const_parameter =
-            &generic_parameters.constants()[self.generic_parameter.id];
+        let const_parameter = &generic_parameters[self.generic_parameter.id()];
 
         let message = format!(
             "constant annotation is required for generic parameter `{}` of \
              `{}`",
-            const_parameter.name.as_ref(),
+            const_parameter.name().as_ref(),
             qualified_name
         );
 
@@ -904,7 +903,6 @@ impl Report for UnhandledEffects {
             }
 
             effect_unit
-                .0
                 .write_async_with_mapping(
                     engine,
                     &mut message,

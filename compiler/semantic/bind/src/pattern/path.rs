@@ -11,9 +11,7 @@ use pernixc_semantic_element::{
     fields::{self, get_fields},
     variant::get_variant_associated_type,
 };
-use pernixc_term::{
-    generic_arguments::Symbol, instantiation::get_instantiation, r#type::Type,
-};
+use pernixc_term::{instantiation::get_instantiation, r#type::Type};
 
 use crate::binder::{Binder, UnrecoverableError};
 
@@ -250,11 +248,11 @@ impl Binder<'_> {
                     ))
                     .await?;
 
-                let Type::Symbol(Symbol { id: enum_id, generic_arguments }) =
-                    r#type
-                else {
+                let Type::Symbol(symbol) = r#type else {
                     panic!("unexpected type!");
                 };
+
+                let (enum_id, generic_arguments) = symbol.destructure();
 
                 let instantiation = self
                     .engine()
@@ -310,9 +308,8 @@ impl Binder<'_> {
                     r#type
                         .into_tuple()
                         .unwrap()
-                        .elements
-                        .remove(tuple.index)
-                        .term,
+                        .remove_at(tuple.index)
+                        .into_term(),
                     Address::Tuple(address::Tuple {
                         tuple_address: Box::new(address),
                         offset: address::Offset::FromStart(tuple.index),
@@ -333,11 +330,11 @@ impl Binder<'_> {
                     .await?;
 
                 // must be a struct type
-                let Type::Symbol(Symbol { id: struct_id, generic_arguments }) =
-                    r#type
-                else {
+                let Type::Symbol(symbol) = r#type else {
                     panic!("unexpected type!");
                 };
+
+                let (struct_id, generic_arguments) = symbol.destructure();
 
                 let field_pat = pattern
                     .as_structural()

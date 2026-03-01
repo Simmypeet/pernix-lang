@@ -62,6 +62,22 @@ impl MutableRecursive<pernixc_term::constant::Constant> for EraseInference {
     }
 }
 
+impl MutableRecursive<pernixc_term::instance::Instance> for EraseInference {
+    fn visit(
+        &mut self,
+        instance: &mut pernixc_term::instance::Instance,
+        _: impl Iterator<Item = TermLocation>,
+    ) -> bool {
+        if instance.is_inference() {
+            *instance = pernixc_term::instance::Instance::Error(
+                pernixc_term::error::Error,
+            );
+        }
+
+        true
+    }
+}
+
 #[derive(Clone, Copy)]
 struct ReplaceInference<'a> {
     environment: &'a Environment<'a, InferenceContext>,
@@ -89,7 +105,7 @@ impl Transformer<Type> for ReplaceInference<'_> {
             Ok(simplified) => {
                 *term = simplified.result.clone();
             }
-            Err(pernixc_type_system::Error::Overflow(overflow)) => {
+            Err(overflow) => {
                 overflow
                     .report_as_type_calculating_overflow(span, &self.handler);
             }
@@ -119,7 +135,8 @@ impl Transformer<pernixc_term::constant::Constant> for ReplaceInference<'_> {
             Ok(simplified) => {
                 *term = simplified.result.clone();
             }
-            Err(pernixc_type_system::Error::Overflow(overflow)) => {
+
+            Err(overflow) => {
                 overflow
                     .report_as_type_calculating_overflow(span, &self.handler);
             }

@@ -485,6 +485,15 @@ impl GenericParameters {
         T::get_parameter_ids_by_name(self).get(name).copied()
     }
 
+    /// Returns the iterator over the parameter IDs of the generic parameters of
+    /// the given kind.
+    #[must_use]
+    pub fn parameter_ids<T: GenericParameter>(
+        &self,
+    ) -> impl ExactSizeIterator<Item = pernixc_arena::ID<T>> {
+        T::get_generic_parameters_arena(self).ids()
+    }
+
     /// Returns an iterator of all type parameters that iterates in order as
     /// they are declared.
     #[must_use]

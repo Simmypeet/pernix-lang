@@ -16,9 +16,8 @@ use pernixc_symbol::{
 use pernixc_target::Global;
 use pernixc_term::{
     generic_arguments::GenericArguments,
-    generic_parameters::get_generic_parameters,
     instantiation::get_instantiation,
-    predicate::{PositiveMarker, PositiveTrait, Predicate},
+    predicate::{PositiveMarker, Predicate},
     r#type::Qualifier,
 };
 use pernixc_type_system::{
@@ -47,9 +46,9 @@ async fn check_register_assignment<N: Normalizer>(
 
             value_environment
                 .type_environment
-                .wf_check(
+                .wf_check_instantiation(
                     st.struct_id,
-                    register.span,
+                    &register.span,
                     &instantiation,
                     false,
                     &handler,
@@ -76,9 +75,9 @@ async fn check_register_assignment<N: Normalizer>(
 
             value_environment
                 .type_environment
-                .wf_check(
+                .wf_check_instantiation(
                     enum_id,
-                    register.span,
+                    &register.span,
                     &instantiation,
                     false,
                     &handler,
@@ -95,54 +94,7 @@ async fn check_register_assignment<N: Normalizer>(
 
             match symbol_kind {
                 Kind::TraitAssociatedFunction => {
-                    // parent trait requirement
-                    let parent_trait_id = Global::new(
-                        function_call.callable_id.target_id,
-                        value_environment
-                            .tracked_engine()
-                            .get_parent(function_call.callable_id)
-                            .await
-                            .unwrap(),
-                    );
-
-                    let trait_arguments =
-                        function_call.instantiation.create_generic_arguments(
-                            parent_trait_id,
-                            &*value_environment
-                                .tracked_engine()
-                                .get_generic_parameters(parent_trait_id)
-                                .await,
-                        );
-
-                    // check extra trait satisfiability
-                    value_environment
-                        .type_environment
-                        .predicate_satisfied(
-                            Predicate::PositiveTrait(PositiveTrait {
-                                trait_id: parent_trait_id,
-                                is_const: false, /* TODO: reflect the
-                                                  * actual valuec */
-                                generic_arguments: trait_arguments,
-                            }),
-                            register.span,
-                            None,
-                            false,
-                            &handler,
-                        )
-                        .await?;
-
-                    value_environment
-                        .type_environment
-                        .wf_check(
-                            function_call.callable_id,
-                            register.span,
-                            &function_call.instantiation,
-                            false,
-                            &handler,
-                        )
-                        .await?;
-
-                    Ok(())
+                    todo!("should no longer exist")
                 }
 
                 Kind::ImplementationAssociatedFunction => {
@@ -157,9 +109,9 @@ async fn check_register_assignment<N: Normalizer>(
 
                     value_environment
                         .type_environment
-                        .wf_check(
+                        .wf_check_instantiation(
                             parent_implementation_id,
-                            register.span,
+                            &register.span,
                             &function_call.instantiation,
                             false,
                             &handler,
@@ -168,9 +120,9 @@ async fn check_register_assignment<N: Normalizer>(
 
                     value_environment
                         .type_environment
-                        .wf_check(
+                        .wf_check_instantiation(
                             function_call.callable_id,
-                            register.span,
+                            &register.span,
                             &function_call.instantiation,
                             false,
                             &handler,
@@ -185,9 +137,9 @@ async fn check_register_assignment<N: Normalizer>(
                 | Kind::EffectOperation => {
                     value_environment
                         .type_environment
-                        .wf_check(
+                        .wf_check_instantiation(
                             function_call.callable_id,
-                            register.span,
+                            &register.span,
                             &function_call.instantiation,
                             false,
                             &handler,
@@ -229,18 +181,19 @@ async fn check_register_assignment<N: Normalizer>(
 
                 let predicate = Predicate::PositiveMarker(PositiveMarker::new(
                     copy_marker,
-                    GenericArguments {
-                        lifetimes: Vec::new(),
-                        types: vec![ty.result.clone()],
-                        constants: Vec::new(),
-                    },
+                    GenericArguments::new(
+                        Vec::new(),
+                        vec![ty.result.clone()],
+                        Vec::new(),
+                        Vec::new(),
+                    ),
                 ));
 
                 value_environment
                     .type_environment
                     .predicate_satisfied(
                         predicate,
-                        register.span,
+                        &register.span,
                         None,
                         false,
                         &handler,
@@ -273,7 +226,7 @@ async fn check_register_assignment<N: Normalizer>(
                     .type_environment
                     .predicate_satisfied(
                         predicate,
-                        *ir.values.span_of_value(&element.value),
+                        ir.values.span_of_value(&element.value),
                         None,
                         false,
                         &handler,

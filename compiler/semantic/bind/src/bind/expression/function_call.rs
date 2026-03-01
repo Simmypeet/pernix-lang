@@ -34,7 +34,7 @@ use pernixc_term::{
     lifetime::{ElidedLifetimeID, Lifetime},
     r#type::Qualifier,
 };
-use pernixc_type_system::{deduction, environment::Environment};
+use pernixc_type_system::environment::Environment;
 
 use crate::{
     bind::{
@@ -67,11 +67,8 @@ async fn map_elided_lifetimes_to_erased(
 ) -> Result<(), Error> {
     let elided_lts = binder.engine().get_elided_lifetimes(id).await;
 
-    inst.lifetimes.extend(elided_lts.ids().map(|x| {
-        (
-            Lifetime::Elided(ElidedLifetimeID { parent_id: id, id: x }),
-            Lifetime::Erased,
-        )
+    inst.extend_lifetimes_mappings(elided_lts.ids().map(|x| {
+        (Lifetime::Elided(ElidedLifetimeID::new(id, x)), Lifetime::Erased)
     }));
 
     Ok(())
@@ -169,13 +166,9 @@ async fn get_function_instantiation(
                 .deduce(&impl_args, &member_generic.parent_generic_arguments)
                 .await
             {
-                Ok(deduction) => deduction.result.instantiation,
+                Ok(Some(deduction)) => deduction.result.instantiation,
 
-                Err(deduction::Error::MismatchedGenericArgumentCount(_)) => {
-                    unreachable!()
-                }
-
-                Err(deduction::Error::UnificationFailure(_)) => {
+                Ok(None) => {
                     handler.receive(
                         Diagnostic::MismatchedImplementationArguments(
                             MismatchedImplementationArguments {
@@ -198,7 +191,7 @@ async fn get_function_instantiation(
                     )));
                 }
 
-                Err(deduction::Error::Overflow(overflow)) => {
+                Err(overflow) => {
                     overflow.report_as_type_calculating_overflow(
                         syntax_tree.span(),
                         &handler,
@@ -384,12 +377,9 @@ impl Bind<&pernixc_syntax::expression::unit::FunctionCall> for Binder<'_> {
                         variant_id: callable_id,
                         associated_value: Some(inner_value),
                         generic_arguments: instantiation
-                            .convert_to_generic_arguments(
-                                &generic_parameters,
+                            .create_generic_arguments(
                                 enum_id,
-                            )
-                            .expect(
-                                "should have correct generic arguments count",
+                                &generic_parameters,
                             ),
                     }),
                     syntax_tree.span(),
@@ -618,14 +608,14 @@ impl Binder<'_> {
         span: RelativeSpan,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
     ) -> Result<bool, UnrecoverableError> {
-        if capability.id != effect.id {
+        if capability.effect_id() != effect.effect_id() {
             return Ok(false);
         }
 
         let result = env
             .subtypes_generic_arguments(
-                &effect.generic_arguments,
-                &capability.generic_arguments,
+                effect.generic_arguments(),
+                capability.generic_arguments(),
             )
             .await
             .map_err(|x| {
@@ -682,11 +672,14 @@ impl Binder<'_> {
 
         'next: for (required_id, required) in required_capabilities.iter() {
             let mut required = required.clone();
-            required.generic_arguments.instantiate(instantiation);
+            required.instantiate(instantiation);
 
             // traverse in the handler stack
             if let Some(effect_handler_id) = self
-                .search_handler_clause(required.id, &required.generic_arguments)
+                .search_handler_clause(
+                    required.effect_id(),
+                    required.generic_arguments(),
+                )
                 .await
                 .map_err(|x| {
                     x.report_as_type_calculating_overflow(span, &handler)
@@ -740,9 +733,7 @@ impl Binder<'_> {
                                 let mut required =
                                     required_capabilities[*x.0].clone();
 
-                                required
-                                    .generic_arguments
-                                    .instantiate(instantiation);
+                                required.instantiate(instantiation);
 
                                 Some(required)
                             } else {

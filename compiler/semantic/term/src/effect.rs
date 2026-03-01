@@ -6,7 +6,10 @@ use std::collections::BTreeSet;
 use pernixc_target::Global;
 use qbice::{Decode, Encode, Identifiable, StableHash};
 
-use crate::generic_arguments::{GenericArguments, Symbol};
+use crate::{
+    generic_arguments::{GenericArguments, Symbol},
+    instantiation::Instantiation,
+};
 
 /// Represents a single `effect Fizz` in a set of effects.
 #[derive(
@@ -42,6 +45,11 @@ impl Unit {
     #[must_use]
     pub const fn generic_arguments(&self) -> &GenericArguments {
         self.0.generic_arguments()
+    }
+
+    /// Instantiates this [`Unit`] with the given instantiation.
+    pub fn instantiate(&mut self, inst: &Instantiation) {
+        self.0.instantiate(inst);
     }
 }
 

@@ -32,12 +32,9 @@ fn uint32_type() -> Type { Type::Primitive(Primitive::Uint32) }
 
 /// Helper function to create a tuple type with given elements
 fn tuple_type(elements: Vec<Type>) -> Type {
-    Type::Tuple(Tuple {
-        elements: elements
-            .into_iter()
-            .map(|t| Element::new(t, false))
-            .collect(),
-    })
+    Type::Tuple(Tuple::new(
+        elements.into_iter().map(Element::new_regular).collect(),
+    ))
 }
 
 /// Helper to register an inference variable in the context

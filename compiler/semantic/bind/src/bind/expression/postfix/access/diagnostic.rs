@@ -233,7 +233,7 @@ impl Report for CannotIndexPastUnpackedTuple {
                     let elem = self.offset.index(&self.tuple_type).unwrap();
                     let mut buffer = "if you try to access `".to_string();
 
-                    elem.term
+                    elem.term()
                         .write_async_with_mapping(
                             engine,
                             &mut buffer,
@@ -246,7 +246,7 @@ impl Report for CannotIndexPastUnpackedTuple {
 
                     write!(buffer, "`, try using `{}` instead", match self
                         .offset
-                        .flip(self.tuple_type.elements.len())
+                        .flip(self.tuple_type.elements().len())
                     {
                         Offset::FromStart(i) => i.to_string(),
                         Offset::FromEnd(i) => format!("-{i}"),

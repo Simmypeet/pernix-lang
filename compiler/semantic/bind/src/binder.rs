@@ -4,7 +4,6 @@ use std::{borrow::Cow, num::NonZeroUsize, sync::Arc};
 
 use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
-use pernixc_extend::extend;
 use pernixc_handler::Handler;
 use pernixc_ir::{
     address::{Address, Memory},
@@ -302,41 +301,6 @@ pub enum Error {
     /// state of the binder is corrupted.
     #[error(transparent)]
     Unrecoverable(#[from] UnrecoverableError),
-}
-
-/// In case of the Overflow error from type system, reports it as a type
-/// calculating overflow
-#[extend]
-pub fn report_as_type_calculating_overflow(
-    self: pernixc_type_system::Error,
-    overflow_span: RelativeSpan,
-    handler: &dyn Handler<Diagnostic>,
-) -> UnrecoverableError {
-    match self {
-        pernixc_type_system::Error::Overflow(overflow) => {
-            overflow
-                .report_as_type_calculating_overflow(overflow_span, &handler);
-
-            UnrecoverableError::Reported
-        }
-    }
-}
-
-/// In case of the Overflow error from type system, reports it as a type
-/// checking overflow
-#[extend]
-pub fn report_as_type_check_overflow(
-    self: pernixc_type_system::Error,
-    overflow_span: RelativeSpan,
-    handler: &dyn Handler<Diagnostic>,
-) -> UnrecoverableError {
-    match self {
-        pernixc_type_system::Error::Overflow(overflow) => {
-            overflow.report_as_type_check_overflow(overflow_span, &handler);
-
-            UnrecoverableError::Reported
-        }
-    }
 }
 
 impl Binder<'_> {

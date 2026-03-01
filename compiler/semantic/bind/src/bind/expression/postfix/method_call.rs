@@ -1,6 +1,6 @@
 use pernixc_hash::HashSet;
 use pernixc_ir::{
-    address::{self, Address, Memory},
+    address::{Address, Memory},
     value::Value,
 };
 use pernixc_lexical::tree::RelativeSpan;
@@ -8,27 +8,24 @@ use pernixc_resolution::diagnostic::{
     Diagnostic as ResolutionDiagnostic, SymbolIsNotAccessible,
 };
 use pernixc_semantic_element::{
-    implemented::get_implemented, implements::get_implements,
-    implements_arguments::get_implements_argument, import::get_import_map,
-    parameter::get_parameters,
+    implemented::get_implemented,
+    implements_arguments::get_implements_argument, parameter::get_parameters,
 };
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
     accessibility::symbol_accessible,
     kind::{Kind, get_kind},
-    member::{get_members, try_get_members},
-    parent::{get_closest_module_id, get_parent, scope_walker},
+    member::try_get_members,
+    parent::get_parent,
 };
 use pernixc_target::Global;
 use pernixc_term::{
-    generic_arguments::{GenericArguments, Symbol},
     generic_parameters::{
         ConstantParameterID, GenericParameters, LifetimeParameterID,
         TypeParameterID, get_generic_parameters,
     },
     instantiation::Instantiation,
     lifetime::Lifetime,
-    predicate::Predicate,
     r#type::{Qualifier, Type},
 };
 
@@ -38,18 +35,13 @@ use crate::{
         expression::{
             function_call::{MethodReceiver, MethodReceiverKind},
             postfix::{
-                BindState,
-                diagnostic::Diagnostic,
-                method_call::diagnostic::{
-                    AmbiguousMethodCall, MethodCallNotFound,
-                },
+                BindState, diagnostic::Diagnostic,
+                method_call::diagnostic::MethodCallNotFound,
                 reduce_address_reference,
             },
         },
     },
-    binder::{
-        Binder, BindingError, Error, UnrecoverableError, type_check::Expected,
-    },
+    binder::{BindingError, Error, UnrecoverableError, type_check::Expected},
     infer::constraint,
 };
 
@@ -100,7 +92,27 @@ pub(super) async fn bind_method_call(
     };
 
     let ty = binder.type_of_address(&lvalue.address, handler).await?;
-    let lvalue = match attempt_adt_method_call(
+    // let lvalue = match attempt_adt_method_call(
+    //     binder,
+    //     lvalue,
+    //     &ty,
+    //     method_call,
+    //     &identifier,
+    //     &call,
+    //     handler,
+    // )
+    // .await?
+    // {
+    //     Ok(value) => {
+    //         return Ok((
+    //             Expression::RValue(value),
+    //             current_span.join(&method_call.span()),
+    //         ));
+    //     }
+    //     Err(lvalue) => lvalue,
+    // };
+
+    if let Ok(value) = attempt_adt_method_call(
         binder,
         lvalue,
         &ty,
@@ -111,52 +123,24 @@ pub(super) async fn bind_method_call(
     )
     .await?
     {
-        Ok(value) => {
-            return Ok((
-                Expression::RValue(value),
-                current_span.join(&method_call.span()),
-            ));
-        }
-        Err(lvalue) => lvalue,
-    };
+        Ok((Expression::RValue(value), current_span.join(&method_call.span())))
+    } else {
+        handler.receive(
+            Diagnostic::MethodCallNotFound(MethodCallNotFound {
+                method_name: identifier.kind.0,
+                receiver_type: ty.clone(),
+                method_span: identifier.span,
+                receiver_span: current_span,
+                type_inference_map: binder.type_inference_rendering_map(),
+                constant_inference_map: binder
+                    .constant_inference_rendering_map(),
+            })
+            .into(),
+        );
 
-    match attempt_trait_method_call(
-        binder,
-        lvalue,
-        method_call,
-        &identifier,
-        &call,
-        handler,
-    )
-    .await?
-    {
-        Ok(value) => Ok((
-            Expression::RValue(value),
+        Err(Error::Binding(BindingError(
             current_span.join(&method_call.span()),
-        )),
-
-        Err(TraitMethodError::Ambiguous) => Err(Error::Binding(BindingError(
-            current_span.join(&method_call.span()),
-        ))),
-
-        Err(TraitMethodError::NotFound) => {
-            handler.receive(
-                Diagnostic::MethodCallNotFound(MethodCallNotFound {
-                    method_name: identifier.kind.0,
-                    receiver_type: ty.clone(),
-                    method_span: identifier.span,
-                    receiver_span: current_span,
-                    type_inference_map: binder.type_inference_rendering_map(),
-                    constant_inference_map: binder
-                        .constant_inference_rendering_map(),
-                })
-                .into(),
-            );
-
-            Err(Error::Binding(BindingError(
-                current_span.join(&method_call.span()),
-            )))
-        }
+        )))
     }
 }
 
@@ -166,34 +150,33 @@ fn extend_inference_instantiation(
     generic_parameters: &GenericParameters,
     global_id: Global<pernixc_symbol::ID>,
 ) {
-    inst.lifetimes.extend(
-        generic_parameters.lifetime_parameters_as_order().map(|(id, _)| {
+    // TODO: extend instance mapping!
+
+    inst.extend_lifetimes_mappings(
+        generic_parameters.lifetime_parameter_order().map(|id| {
             (
-                Lifetime::Parameter(LifetimeParameterID {
-                    parent_id: global_id,
-                    id,
-                }),
+                Lifetime::Parameter(LifetimeParameterID::new(global_id, id)),
                 Lifetime::Erased,
             )
         }),
     );
 
-    inst.types.extend(generic_parameters.type_parameters_as_order().map(
-        |(id, _)| {
+    inst.extend_types_mappings(
+        generic_parameters.type_parameters_as_order().map(|(id, _)| {
             (
-                Type::Parameter(TypeParameterID { parent_id: global_id, id }),
+                Type::Parameter(TypeParameterID::new(global_id, id)),
                 Type::Inference(
                     binder.create_type_inference(constraint::Type::All(false)),
                 ),
             )
-        },
-    ));
+        }),
+    );
 
-    inst.constants.extend(
+    inst.extend_constants_mappings(
         generic_parameters.constant_parameters_as_order().map(|(id, _)| {
             (
                 pernixc_term::constant::Constant::Parameter(
-                    ConstantParameterID { parent_id: global_id, id },
+                    ConstantParameterID::new(global_id, id),
                 ),
                 pernixc_term::constant::Constant::Inference(
                     binder.create_constant_inference(),
@@ -202,6 +185,8 @@ fn extend_inference_instantiation(
         }),
     );
 }
+
+/*
 
 #[derive(Debug)]
 struct TraitMethodCandidate {
@@ -726,6 +711,7 @@ async fn attempt_trait_method_call(
             .await?,
     )))
 }
+    */
 
 #[allow(clippy::too_many_lines)]
 async fn attempt_adt_method_call(
@@ -739,22 +725,25 @@ async fn attempt_adt_method_call(
 ) -> Result<Result<Value, LValue>, Error> {
     let ty = ty.reduce_reference();
 
-    let Type::Symbol(Symbol { id, .. }) = ty else {
+    let Type::Symbol(symbol) = ty else {
         return Ok(Err(lvalue));
     };
 
-    let kind = binder.engine().get_kind(*id).await;
+    let kind = binder.engine().get_kind(symbol.id()).await;
 
     if !kind.is_adt() {
         return Ok(Err(lvalue));
     }
 
-    let implemented = binder.engine().get_implemented(*id).await;
+    let implemented = binder
+        .engine()
+        .get_implemented(symbol.id(), binder.current_site().target_id)
+        .await;
 
     let Some((method_id, receiver_kind)) = find_method_in_implemented(
         binder,
         &implemented,
-        *id,
+        symbol.id(),
         &identifier.kind.0,
     )
     .await?
@@ -816,13 +805,10 @@ async fn attempt_adt_method_call(
 
     // type check the receiver
     if let Some(parent_impl_generic_arguments) = parent_impl_generic_arguments {
-        let expected_ty = Type::Symbol(Symbol {
-            id: *id,
-            generic_arguments: {
-                let mut args = (*parent_impl_generic_arguments).clone();
-                args.instantiate(&inst);
-                args
-            },
+        let expected_ty = Type::new_symbol(symbol.id(), {
+            let mut args = (*parent_impl_generic_arguments).clone();
+            args.instantiate(&inst);
+            args
         });
 
         binder
@@ -919,10 +905,8 @@ async fn find_method_in_implemented(
             return Ok(None);
         };
 
-        let expected_ty = Type::Symbol(Symbol {
-            id: adt_id,
-            generic_arguments: (*generic_arguments).clone(),
-        });
+        let expected_ty =
+            Type::new_symbol(adt_id, (*generic_arguments).clone());
 
         match first_parameter_ty {
             Type::Reference(reference) => {

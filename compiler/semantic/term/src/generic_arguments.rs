@@ -451,6 +451,11 @@ impl Symbol {
     pub fn destructure(self) -> (Global<pernixc_symbol::ID>, GenericArguments) {
         (self.id, self.generic_arguments)
     }
+
+    /// Instantiates this [`Symbol`] with the given instantiation.
+    pub fn instantiate(&mut self, inst: &Instantiation) {
+        self.generic_arguments.instantiate(inst);
+    }
 }
 
 /// Represents a term where the associated symbol is supplied with generic

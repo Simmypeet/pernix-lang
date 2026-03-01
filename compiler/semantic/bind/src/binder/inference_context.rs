@@ -25,12 +25,13 @@ use pernixc_term::{
     constant::Constant,
     generic_arguments::GenericArguments,
     inference,
+    instance::Instance,
     lifetime::Lifetime,
     r#type::{Primitive, Type},
     visitor::RecursiveIterator,
 };
 use pernixc_type_system::{
-    Satisfied, Succeeded, UnrecoverableError,
+    OverflowError, Satisfied, Succeeded, UnrecoverableError,
     environment::{Environment, Premise},
     mapping::Mapping,
     normalizer::Normalizer,
@@ -95,9 +96,7 @@ impl unification::Predicate<Lifetime> for InferenceUnificationPredicate {
         &self,
         _: &Lifetime,
         _: &Lifetime,
-        _: &[unification::Log],
-        _: &[unification::Log],
-    ) -> Result<Option<Succeeded<Satisfied>>, pernixc_type_system::Error> {
+    ) -> Result<Option<Succeeded<Satisfied>>, OverflowError> {
         Ok(Some(Succeeded::satisfied()))
     }
 }
@@ -107,9 +106,7 @@ impl unification::Predicate<Type> for InferenceUnificationPredicate {
         &self,
         lhs: &Type,
         rhs: &Type,
-        _: &[unification::Log],
-        _: &[unification::Log],
-    ) -> Result<Option<Succeeded<Satisfied>>, pernixc_type_system::Error> {
+    ) -> Result<Option<Succeeded<Satisfied>>, OverflowError> {
         Ok((lhs.is_inference() || rhs.is_inference())
             .then(Succeeded::satisfied))
     }
@@ -120,9 +117,18 @@ impl unification::Predicate<Constant> for InferenceUnificationPredicate {
         &self,
         lhs: &Constant,
         rhs: &Constant,
-        _: &[unification::Log],
-        _: &[unification::Log],
-    ) -> Result<Option<Succeeded<Satisfied>>, pernixc_type_system::Error> {
+    ) -> Result<Option<Succeeded<Satisfied>>, OverflowError> {
+        Ok((lhs.is_inference() || rhs.is_inference())
+            .then(Succeeded::satisfied))
+    }
+}
+
+impl unification::Predicate<Instance> for InferenceUnificationPredicate {
+    fn unifiable(
+        &self,
+        lhs: &Instance,
+        rhs: &Instance,
+    ) -> Result<Option<Succeeded<Satisfied>>, OverflowError> {
         Ok((lhs.is_inference() || rhs.is_inference())
             .then(Succeeded::satisfied))
     }
@@ -132,7 +138,7 @@ impl Normalizer for InferenceContext {
     async fn normalize_type(
         ty: &Type,
         environment: &Environment<'_, Self>,
-    ) -> Result<Option<Succeeded<Type>>, pernixc_type_system::Error> {
+    ) -> Result<Option<Succeeded<Type>>, OverflowError> {
         let Type::Inference(inference) = ty else {
             return Ok(None);
         };
@@ -153,7 +159,7 @@ impl Normalizer for InferenceContext {
     async fn normalize_constant(
         constant: &Constant,
         environment: &Environment<'_, Self>,
-    ) -> Result<Option<Succeeded<Constant>>, pernixc_type_system::Error> {
+    ) -> Result<Option<Succeeded<Constant>>, OverflowError> {
         let Constant::Inference(inference) = constant else {
             return Ok(None);
         };
@@ -170,6 +176,13 @@ impl Normalizer for InferenceContext {
             Ok(None)
         }
     }
+
+    async fn normalize_instance(
+        _: &Instance,
+        _: &Environment<'_, Self>,
+    ) -> Result<Option<Succeeded<Instance>>, OverflowError> {
+        todo!()
+    }
 }
 
 #[derive(
@@ -182,10 +195,10 @@ pub struct CyclicInferenceError<T>(inference::Variable<T>);
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
-#[allow(missing_docs)]
+#[allow(missing_docs, clippy::large_enum_variant)]
 pub enum UnifyError {
     #[error(transparent)]
-    TypeSystem(#[from] pernixc_type_system::Error),
+    OverflowError(#[from] OverflowError),
 
     #[error("the two types cannot be unified or are mismatched")]
     IncompatibleTypes { lhs: Type, rhs: Type },
@@ -646,9 +659,7 @@ impl InferenceContext {
                             continue;
                         }
 
-                        Type::Tuple(pernixc_term::tuple::Tuple {
-                            elements: Vec::new(),
-                        })
+                        Type::unit()
                     }
 
                     constraint::Type::Signed
