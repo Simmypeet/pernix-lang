@@ -13,12 +13,7 @@ use pernixc_symbol::{
     parent::get_parent,
 };
 use pernixc_target::Global;
-use pernixc_term::{
-    effect,
-    generic_parameters::get_generic_parameters,
-    instantiation::Instantiation,
-    predicate::{PositiveTrait, Predicate},
-};
+use pernixc_term::{effect, instantiation::Instantiation};
 use pernixc_type_system::{
     UnrecoverableError, lifetime_constraint::LifetimeConstraint,
     normalizer::Normalizer,
@@ -49,7 +44,7 @@ impl<N: Normalizer> Context<'_, N> {
                 called_capabilities[*required_id].clone();
 
             // instantiate the generic arguments of the required capability
-            required_capability.generic_arguments.instantiate(instantiation);
+            required_capability.instantiate(instantiation);
 
             match argument {
                 EffectHandlerArgument::FromEffectAnnotation(
@@ -63,8 +58,8 @@ impl<N: Normalizer> Context<'_, N> {
                     let subtypable = self
                         .type_environment()
                         .subtypes_generic_arguments(
-                            &required_capability.generic_arguments,
-                            &available_capability.generic_arguments,
+                            required_capability.generic_arguments(),
+                            available_capability.generic_arguments(),
                         )
                         .await
                         .map_err(|x| {
@@ -141,9 +136,9 @@ impl<N: Normalizer> Context<'_, N> {
 
         lifetime_constraints.extend(
             self.type_environment()
-                .wf_check(
+                .wf_check_instantiation(
                     function_call.callable_id,
-                    *span,
+                    span,
                     &function_call.instantiation,
                     false,
                     &self.handler(),
@@ -157,45 +152,6 @@ impl<N: Normalizer> Context<'_, N> {
         match kind {
             Kind::Function | Kind::ExternFunction => {}
 
-            Kind::TraitAssociatedFunction => {
-                // parent trait requirement
-                let parent_trait_id = Global::new(
-                    function_call.callable_id.target_id,
-                    self.tracked_engine()
-                        .get_parent(function_call.callable_id)
-                        .await
-                        .unwrap(),
-                );
-
-                let trait_generic_params = self
-                    .tracked_engine()
-                    .get_generic_parameters(parent_trait_id)
-                    .await;
-
-                let trait_arguments =
-                    function_call.instantiation.create_generic_arguments(
-                        parent_trait_id,
-                        &trait_generic_params,
-                    );
-
-                // check extra trait satisfiability
-                lifetime_constraints.extend(
-                    self.type_environment()
-                        .predicate_satisfied(
-                            Predicate::PositiveTrait(PositiveTrait {
-                                trait_id: parent_trait_id,
-                                is_const: false,
-                                generic_arguments: trait_arguments,
-                            }),
-                            *span,
-                            None,
-                            false,
-                            &self.handler(),
-                        )
-                        .await?,
-                );
-            }
-
             Kind::ImplementationAssociatedFunction => {
                 let parent_implementation_id = Global::new(
                     function_call.callable_id.target_id,
@@ -207,9 +163,9 @@ impl<N: Normalizer> Context<'_, N> {
 
                 lifetime_constraints.extend(
                     self.type_environment()
-                        .wf_check(
+                        .wf_check_instantiation(
                             parent_implementation_id,
-                            *span,
+                            span,
                             &function_call.instantiation,
                             false,
                             &self.handler(),
@@ -221,9 +177,9 @@ impl<N: Normalizer> Context<'_, N> {
             Kind::EffectOperation => {
                 lifetime_constraints.extend(
                     self.type_environment()
-                        .wf_check(
+                        .wf_check_instantiation(
                             function_call.callable_id,
-                            *span,
+                            span,
                             &function_call.instantiation,
                             false,
                             &self.handler(),

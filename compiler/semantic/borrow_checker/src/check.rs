@@ -78,13 +78,14 @@ impl<N: Normalizer> Checker<'_, N> {
                     .predicate_satisfied_as_diagnostics(
                         Predicate::PositiveMarker(PositiveMarker::new(
                             copy_marker,
-                            GenericArguments {
-                                lifetimes: Vec::new(),
-                                types: vec![ty.result],
-                                constants: Vec::new(),
-                            },
+                            GenericArguments::new(
+                                Vec::new(),
+                                vec![ty.result],
+                                Vec::new(),
+                                Vec::new(),
+                            ),
                         )),
-                        *register_span,
+                        register_span,
                         None,
                         false,
                         &self.handler(),
@@ -130,8 +131,8 @@ impl<N: Normalizer> Checker<'_, N> {
                 );
 
                 match self.type_environment().query(&outlives).await {
-                    Ok(Some(_)) => {}
-                    Ok(None) => {
+                    Ok(true) => {}
+                    Ok(false) => {
                         self.handler().receive(
                             UnsatisfiedPredicate {
                                 predicate: Predicate::LifetimeOutlives(
@@ -146,7 +147,7 @@ impl<N: Normalizer> Checker<'_, N> {
                             .into(),
                         );
                     }
-                    Err(pernixc_type_system::Error::Overflow(error)) => {
+                    Err(error) => {
                         self.handler().receive(
                             PredicateSatisfiabilityOverflow {
                                 predicate: Predicate::LifetimeOutlives(

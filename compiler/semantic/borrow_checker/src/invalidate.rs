@@ -13,6 +13,7 @@ use pernixc_qbice::TrackedEngine;
 use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
+    instance::Instance,
     lifetime::Lifetime,
     sub_term::TermLocation,
     r#type::{Qualifier, Type},
@@ -67,6 +68,16 @@ impl Recursive<'_, Constant> for Contains<'_> {
     fn visit(
         &mut self,
         _: &'_ Constant,
+        _: impl Iterator<Item = TermLocation>,
+    ) -> bool {
+        !self.contains
+    }
+}
+
+impl Recursive<'_, Instance> for Contains<'_> {
+    fn visit(
+        &mut self,
+        _: &'_ Instance,
         _: impl Iterator<Item = TermLocation>,
     ) -> bool {
         !self.contains

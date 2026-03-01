@@ -15,9 +15,7 @@ use pernixc_semantic_element::{
 };
 use pernixc_symbol::kind::{Kind, get_kind};
 use pernixc_target::Global;
-use pernixc_term::{
-    generic_arguments::Symbol, instantiation::get_instantiation, r#type::Type,
-};
+use pernixc_term::{instantiation::get_instantiation, r#type::Type};
 use pernixc_type_system::{
     UnrecoverableError, environment::Environment, normalizer::Normalizer,
 };
@@ -257,10 +255,7 @@ impl Assigned {
                 };
 
                 let (struct_id, generic_arguments) = match ty {
-                    Type::Symbol(Symbol {
-                        id: struct_id,
-                        generic_arguments,
-                    }) => (struct_id, generic_arguments),
+                    Type::Symbol(symbol) => symbol.destructure(),
 
                     ty => {
                         panic!("expected a struct type, found `{ty:?}`");
@@ -341,7 +336,7 @@ impl Assigned {
                     ) => (projection, ty),
                 };
 
-                let mut tuple_ty = ty.into_tuple().unwrap();
+                let tuple_ty = ty.into_tuple().unwrap();
 
                 if let Self::Whole(whole_proj) = proj {
                     // if have concluded, we should've returned earlier
@@ -349,11 +344,11 @@ impl Assigned {
 
                     *proj = Self::Tuple(Tuple {
                         elements: tuple_ty
-                            .elements
+                            .elements()
                             .iter()
                             .map(|term| TupleElement {
                                 projection: Self::Whole(false),
-                                is_unpacked: term.is_unpacked,
+                                is_unpacked: term.is_unpacked(),
                             })
                             .collect(),
                     });
@@ -366,7 +361,7 @@ impl Assigned {
                         let index = match tuple.offset {
                             address::Offset::FromStart(index) => index,
                             address::Offset::FromEnd(index) => {
-                                tuple_ty.elements.len() - index
+                                tuple_ty.elements().len() - index
                             }
                             address::Offset::Unpacked => {
                                 break 'proj tuple_proj
@@ -387,12 +382,12 @@ impl Assigned {
                         let index = match tuple.offset {
                             address::Offset::FromStart(index) => index,
                             address::Offset::FromEnd(index) => {
-                                tuple_ty.elements.len() - index
+                                tuple_ty.elements().len() - index
                             }
                             address::Offset::Unpacked => {
-                                for element in tuple_ty.elements {
-                                    if element.is_unpacked {
-                                        break 'ty element.term;
+                                for element in tuple_ty.into_elements() {
+                                    if element.is_unpacked() {
+                                        break 'ty element.into_term();
                                     }
                                 }
 
@@ -400,9 +395,9 @@ impl Assigned {
                             }
                         };
 
-                        assert!(index < tuple_ty.elements.len());
+                        assert!(index < tuple_ty.elements().len());
 
-                        tuple_ty.elements.swap_remove(index).term
+                        tuple_ty.into_elements().swap_remove(index).into_term()
                     },
                 )
             }
@@ -432,9 +427,7 @@ impl Assigned {
                 };
 
                 let (enum_id, generic_arguments) = match ty {
-                    Type::Symbol(Symbol { id: enum_id, generic_arguments }) => {
-                        (enum_id, generic_arguments)
-                    }
+                    Type::Symbol(symbol) => symbol.destructure(),
 
                     ty => {
                         panic!("expected an enum type, found `{ty:?}`");

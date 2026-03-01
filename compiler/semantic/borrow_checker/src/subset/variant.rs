@@ -58,7 +58,13 @@ impl<N: Normalizer> Context<'_, N> {
         // struct
         let well_fromed_lifetime_constraints = self
             .type_environment()
-            .wf_check(enum_id, *span, &instantiation, false, &self.handler())
+            .wf_check_instantiation(
+                enum_id,
+                span,
+                &instantiation,
+                false,
+                &self.handler(),
+            )
             .await?;
 
         Ok(Changes {

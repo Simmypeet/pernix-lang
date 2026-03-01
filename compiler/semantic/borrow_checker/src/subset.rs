@@ -293,16 +293,11 @@ impl<N: Normalizer> Builder<'_, N> {
                         .tracked_engine()
                         .get_generic_parameters(global_id)
                         .await
-                        .lifetime_order()
-                        .iter()
-                        .copied()
+                        .lifetime_parameter_order()
                         .map(|x| {
                             Region::Universal(UniversalRegion::NonStatic(
                                 NonStaticUniversalRegion::Named(
-                                    LifetimeParameterID {
-                                        parent_id: global_id,
-                                        id: x,
-                                    },
+                                    LifetimeParameterID::new(global_id, x),
                                 ),
                             ))
                         }),
@@ -319,10 +314,7 @@ impl<N: Normalizer> Builder<'_, N> {
                         .map(|x| {
                             Region::Universal(UniversalRegion::NonStatic(
                                 NonStaticUniversalRegion::Elided(
-                                    ElidedLifetimeID {
-                                        parent_id: global_id,
-                                        id: x,
-                                    },
+                                    ElidedLifetimeID::new(global_id, x),
                                 ),
                             ))
                         }),
@@ -591,9 +583,11 @@ impl<N: Normalizer> Builder<'_, N> {
                         tuple_ty.map(|x| {
                             x.into_tuple()
                                 .unwrap()
-                                .elements
+                                .into_elements()
                                 .into_iter()
-                                .find_map(|x| x.is_unpacked.then_some(x.term))
+                                .find_map(|x| {
+                                    x.is_unpacked().then_some(x.into_term())
+                                })
                                 .unwrap()
                         }),
                         &tuple_pack.packed_tuple_span,
