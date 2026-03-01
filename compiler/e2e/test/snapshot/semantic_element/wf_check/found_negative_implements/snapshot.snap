@@ -1,0 +1,38 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: run
+---
+stderr:
+[error]: found negative implementation
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/found_negative_implements/main.pnx:22:22
+   │
+ 4 │ final implements Marker[int32] delete
+   │                  ───────────── this negative implementation explicitly marks the predicate as unsatisfiable
+   ‡
+22 │ public type Failed = RequireOuter[int32]
+   ╰╴                     ━━━━━━━━━━━━━━━━━━━ the predicate `marker main::Marker[int32]` is explicitly marked as unsatisfiable by a negative implementation
+[note]: the required predicate is declared here
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/found_negative_implements/main.pnx:19:29
+   │
+19 │ public type RequireOuter[T: Outer] = T
+   ╰╴                            ━━━━━
+[note]: required for predicate marker main::Outer[int32] to be implemented
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/found_negative_implements/main.pnx:16:21
+   │
+16 │ final implements[T: Inner] Outer[T]
+   │                     ┯━━━━  ────────
+   │                     │
+   ╰╴                    the required predicate is declared here
+[note]: required for predicate marker main::Inner[int32] to be implemented
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/found_negative_implements/main.pnx:13:21
+   │
+13 │ final implements[T: Marker] Inner[T]
+   │                     ┯━━━━━  ────────
+   │                     │
+   ╰╴                    the required predicate is declared here
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:
