@@ -1,6 +1,6 @@
 //! Contains the diagnostics related to import statements.
 
-use pernixc_diagnostic::{Highlight, Report, Severity};
+use pernixc_diagnostic::{Highlight, Report};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_source_file::ByteIndex;
@@ -74,21 +74,19 @@ impl Report for TargetRootInImportIsNotAllowedwithFrom {
         &self,
         engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
-        pernixc_diagnostic::Rendered {
-            primary_highlight: Some(Highlight::new(
+        pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(Highlight::new(
                 engine.to_absolute_span(&self.target_root_span).await,
                 Some(
                     "the `target` root path is not allowed with `from` clause"
                         .to_string(),
                 ),
-            )),
-            message: "import items that have a `from` clause cannot have the \
-                      `target` as the root path"
-                .to_string(),
-            severity: Severity::Error,
-            help_message: None,
-            related: Vec::new(),
-        }
+            ))
+            .message(
+                "import items that have a `from` clause cannot have the \
+                 `target` as the root path",
+            )
+            .build()
     }
 }
 
@@ -130,32 +128,32 @@ impl Report for ConflictingUsing {
         let module_qualified_name =
             engine.get_qualified_name(self.module_id).await;
 
-        pernixc_diagnostic::Rendered {
-            primary_highlight: Some(Highlight::new(
+        let related = if let Some(span) = self.conflicting_span.as_ref() {
+            Some(vec![Highlight::new(
+                engine.to_absolute_span(span).await,
+                Some(format!(
+                    "this symbol already defined the name `{}`",
+                    self.name.as_ref()
+                )),
+            )])
+        } else {
+            None
+        };
+
+        pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(Highlight::new(
                 engine.to_absolute_span(&self.using_span).await,
                 Some(format!(
                     "the using `{name}` conflicts with the existing name in \
                      the module `{module_qualified_name}`",
                     name = self.name.as_ref()
                 )),
-            )),
-            message: "the using statement conflicts with an existing name in \
-                      the module"
-                .to_string(),
-            severity: Severity::Error,
-            help_message: None,
-            related: match self.conflicting_span.as_ref() {
-                Some(span) => {
-                    vec![Highlight::new(
-                        engine.to_absolute_span(span).await,
-                        Some(format!(
-                            "this symbol already defined the name `{}`",
-                            self.name.as_ref()
-                        )),
-                    )]
-                }
-                None => vec![],
-            },
-        }
+            ))
+            .message(
+                "the using statement conflicts with an existing name in the \
+                 module",
+            )
+            .maybe_related(related)
+            .build()
     }
 }

@@ -1,4 +1,4 @@
-use pernixc_diagnostic::{Highlight, Report, Severity};
+use pernixc_diagnostic::{Highlight, Report};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_source_file::ByteIndex;
@@ -100,8 +100,8 @@ impl Report for MisorderedGenericParameter {
         &self,
         engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
-        pernixc_diagnostic::Rendered {
-            primary_highlight: Some(Highlight::new(
+        pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(Highlight::new(
                 engine.to_absolute_span(&self.generic_parameter_span).await,
                 match self.generic_kind {
                     GenericKind::Type => Some(
@@ -120,13 +120,9 @@ impl Report for MisorderedGenericParameter {
                     ),
                     GenericKind::Instance => None,
                 },
-            )),
-            message: "the generic parameter was declared in the wrong order"
-                .to_string(),
-            severity: Severity::Error,
-            help_message: None,
-            related: Vec::new(),
-        }
+            ))
+            .message("the generic parameter was declared in the wrong order")
+            .build()
     }
 }
 
@@ -153,21 +149,17 @@ impl Report for DefaultGenericParameterMustBeTrailing {
         &self,
         engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
-        pernixc_diagnostic::Rendered {
-            primary_highlight: Some(Highlight::new(
+        pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(Highlight::new(
                 engine
                     .to_absolute_span(
                         &self.invalid_generic_default_parameter_span,
                     )
                     .await,
                 None,
-            )),
-            message: "the default generic parameter must be trailing"
-                .to_string(),
-            severity: Severity::Error,
-            help_message: None,
-            related: Vec::new(),
-        }
+            ))
+            .message("the default generic parameter must be trailing")
+            .build()
     }
 }
 
@@ -209,29 +201,29 @@ impl<T: GenericParameter> Report for GenericParameterRedefinition<T> {
         let generic_parameter =
             &generic_parameters[self.existing_generic_parameter_id.id()];
 
-        pernixc_diagnostic::Rendered {
-            primary_highlight: Some(Highlight::new(
+        let related = if let Some(span) = generic_parameter.span() {
+            Some(vec![Highlight::new(
+                engine.to_absolute_span(span).await,
+                Some("previously defined here".to_string()),
+            )])
+        } else {
+            None
+        };
+
+        pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(Highlight::new(
                 engine
                     .to_absolute_span(&self.duplicating_generic_parameter_span)
                     .await,
                 Some("redefinition here".to_string()),
-            )),
-            message: format!(
+            ))
+            .message(format!(
                 "generic parameter `{}` is already defined in the `{}`",
                 generic_parameter.name().as_ref(),
                 qualified_name
-            ),
-            severity: Severity::Error,
-            help_message: None,
-            related: if let Some(span) = generic_parameter.span() {
-                vec![Highlight::new(
-                    engine.to_absolute_span(span).await,
-                    Some("previously defined here".to_string()),
-                )]
-            } else {
-                Vec::new()
-            },
-        }
+            ))
+            .maybe_related(related)
+            .build()
     }
 }
 

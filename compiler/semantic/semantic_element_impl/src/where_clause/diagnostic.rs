@@ -1,6 +1,6 @@
 //! Contains the diagnostic information related to building the where clause.
 
-use pernixc_diagnostic::{Highlight, Report, Severity};
+use pernixc_diagnostic::{Highlight, Report};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_resolution::diagnostic::{
@@ -113,31 +113,27 @@ impl Report for UnexpectedSymbolInPredicate {
 
         let expected = match self.predicate_kind {
             PredicateKind::Trait => "trait",
-            PredicateKind::Marker => "marker",
-            PredicateKind::TypeBound => "either a trait or marker",
+            PredicateKind::TypeBound | PredicateKind::Marker => "marker",
         };
 
-        pernixc_diagnostic::Rendered {
-            primary_highlight: Some(Highlight::new(
+        pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(Highlight::new(
                 engine.to_absolute_span(&self.qualified_identifier_span).await,
                 Some(format!(
                     "expected {expected} symbol but found `{} \
                      {found_symbol_qualified_name}`",
                     symbol_kind.kind_str()
                 )),
-            )),
-            message: format!(
+            ))
+            .message(format!(
                 "unexpected symbol in the {} predicate",
                 match self.predicate_kind {
                     PredicateKind::Trait => "trait",
                     PredicateKind::Marker => "marker",
                     PredicateKind::TypeBound => "type bound",
                 },
-            ),
-            severity: Severity::Error,
-            help_message: None,
-            related: Vec::new(),
-        }
+            ))
+            .build()
     }
 }
 
@@ -167,18 +163,16 @@ impl Report for UnexpectedTypeEqualityPredicate {
         &self,
         engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
-        pernixc_diagnostic::Rendered {
-            primary_highlight: Some(Highlight::new(
+        pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(Highlight::new(
                 engine.to_absolute_span(&self.invalid_lhs_type_span).await,
                 None,
-            )),
-            message: "the left-hand side of the type equality predicate must \
-                      be an instance associated type"
-                .to_string(),
-            severity: Severity::Error,
-            help_message: None,
-            related: Vec::new(),
-        }
+            ))
+            .message(
+                "the left-hand side of the type equality predicate must be an \
+                 instance associated type",
+            )
+            .build()
     }
 }
 
@@ -238,21 +232,16 @@ impl Report for ForallLifetimeIsNotAllowedInOutlivesPredicate {
         }
         let forall_lifetimes = forall_lifetimes.join(", ");
 
-        pernixc_diagnostic::Rendered {
-            primary_highlight: Some(Highlight::new(
+        pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(Highlight::new(
                 engine.to_absolute_span(&self.forall_lifetime_span).await,
                 Some(format!(
                     "the forall lifetime(s) `{forall_lifetimes}` cannot \
                      appear in the outlives predicate",
                 )),
-            )),
-            message: "forall lifetimes cannot appear in the outlives predicate"
-                .to_string(),
-
-            severity: Severity::Error,
-            help_message: None,
-            related: Vec::new(),
-        }
+            ))
+            .message("forall lifetimes cannot appear in the outlives predicate")
+            .build()
     }
 }
 
