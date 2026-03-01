@@ -28,6 +28,7 @@ use pernixc_term::{
     display::Display,
     generic_arguments::{GenericArguments, Symbol},
     generic_parameters::get_generic_parameters,
+    instance::Instance,
     instantiation::Instantiation,
     lifetime::Lifetime,
     sub_term::TermLocation,
@@ -217,6 +218,16 @@ impl MutableRecursive<Constant> for EraseLifetime {
     }
 }
 
+impl MutableRecursive<Instance> for EraseLifetime {
+    fn visit(
+        &mut self,
+        _: &mut Instance,
+        _: impl Iterator<Item = TermLocation>,
+    ) -> bool {
+        true
+    }
+}
+
 impl<'ctx> Context<'_, 'ctx> {
     /// Performs [`Self::normalize_term`] on all the terms in the generic
     /// arguments.
@@ -226,14 +237,14 @@ impl<'ctx> Context<'_, 'ctx> {
     ) {
         let mut erase_lifetime = EraseLifetime;
 
-        for lifetime in instantiation.lifetimes.values_mut() {
+        for (_, lifetime) in instantiation.lifetime_mappings_mut() {
             pernixc_term::visitor::accept_recursive_mut(
                 lifetime,
                 &mut erase_lifetime,
             );
         }
 
-        for ty in &mut instantiation.types.values_mut() {
+        for (_, ty) in &mut instantiation.type_mappings_mut() {
             pernixc_term::visitor::accept_recursive_mut(
                 ty,
                 &mut erase_lifetime,
@@ -242,13 +253,22 @@ impl<'ctx> Context<'_, 'ctx> {
             *ty = self.normalize_term(std::mem::take(ty)).await;
         }
 
-        for constant in &mut instantiation.constants.values_mut() {
+        for (_, constant) in &mut instantiation.constant_mappings_mut() {
             pernixc_term::visitor::accept_recursive_mut(
                 constant,
                 &mut erase_lifetime,
             );
 
             *constant = self.normalize_term(std::mem::take(constant)).await;
+        }
+
+        for (_, instance) in instantiation.instance_mappings_mut() {
+            pernixc_term::visitor::accept_recursive_mut(
+                instance,
+                &mut erase_lifetime,
+            );
+
+            *instance = self.normalize_term(std::mem::take(instance)).await;
         }
     }
 
@@ -260,14 +280,14 @@ impl<'ctx> Context<'_, 'ctx> {
     ) {
         let mut erase_lifetime = EraseLifetime;
 
-        for lifetime in &mut generic_arguments.lifetimes {
+        for lifetime in generic_arguments.lifetimes_mut() {
             pernixc_term::visitor::accept_recursive_mut(
                 lifetime,
                 &mut erase_lifetime,
             );
         }
 
-        for ty in &mut generic_arguments.types {
+        for ty in generic_arguments.types_mut() {
             pernixc_term::visitor::accept_recursive_mut(
                 ty,
                 &mut erase_lifetime,
@@ -275,12 +295,20 @@ impl<'ctx> Context<'_, 'ctx> {
             *ty = self.normalize_term(std::mem::take(ty)).await;
         }
 
-        for constant in &mut generic_arguments.constants {
+        for constant in generic_arguments.constants_mut() {
             pernixc_term::visitor::accept_recursive_mut(
                 constant,
                 &mut erase_lifetime,
             );
             *constant = self.normalize_term(std::mem::take(constant)).await;
+        }
+
+        for inst in generic_arguments.instances_mut() {
+            pernixc_term::visitor::accept_recursive_mut(
+                inst,
+                &mut erase_lifetime,
+            );
+            *inst = self.normalize_term(std::mem::take(inst)).await;
         }
     }
 
@@ -292,7 +320,7 @@ impl<'ctx> Context<'_, 'ctx> {
                 predicates: BTreeSet::default(),
                 // NOTE: query site should not influence the simplification
                 // process
-                query_site: None,
+                query_site: self.main_function_id(),
             }),
             Cow::Borrowed(self.engine()),
             normalizer::NO_OP,
@@ -326,11 +354,11 @@ impl<'ctx> Context<'_, 'ctx> {
         symbol: Symbol,
     ) -> Result<Rc<LlvmStructSignature<'ctx>>, Zst> {
         let generic_params =
-            self.engine().get_generic_parameters(symbol.id).await;
+            self.engine().get_generic_parameters(symbol.id()).await;
 
         let instantiation = Instantiation::from_generic_arguments(
-            symbol.generic_arguments.clone(),
-            symbol.id,
+            symbol.generic_arguments().clone(),
+            symbol.id(),
             &generic_params,
         )
         .unwrap();
@@ -342,7 +370,7 @@ impl<'ctx> Context<'_, 'ctx> {
             return value.ok_or(Zst);
         }
 
-        let fields = self.engine().get_fields(symbol.id).await;
+        let fields = self.engine().get_fields(symbol.id()).await;
 
         let mut llvm_field_types = Vec::new();
         let mut llvm_field_indices_by_field_id = HashMap::new();
@@ -409,14 +437,14 @@ impl<'ctx> Context<'_, 'ctx> {
         let mut llvm_indices_by_tuple_index = HashMap::new();
         let mut elements = Vec::new();
 
-        for (index, element) in tuple.elements.iter().enumerate() {
+        for (index, element) in tuple.elements().iter().enumerate() {
             assert!(
-                !element.is_unpacked,
+                !element.is_unpacked(),
                 "unpacked tuple element found {element:?}"
             );
 
             if let Ok(llvm_ty) =
-                Box::pin(self.get_type(element.term.clone())).await
+                Box::pin(self.get_type(element.term().clone())).await
             {
                 llvm_indices_by_tuple_index.insert(index, elements.len());
                 elements.push(llvm_ty);
@@ -487,11 +515,11 @@ impl<'ctx> Context<'_, 'ctx> {
         }
 
         let generic_params =
-            self.engine().get_generic_parameters(symbol.id).await;
+            self.engine().get_generic_parameters(symbol.id()).await;
 
         let instantiation = Instantiation::from_generic_arguments(
-            symbol.generic_arguments.clone(),
-            symbol.id,
+            symbol.generic_arguments().clone(),
+            symbol.id(),
             &generic_params,
         )
         .unwrap();
@@ -500,12 +528,12 @@ impl<'ctx> Context<'_, 'ctx> {
 
         for variant in self
             .engine()
-            .get_members(symbol.id)
+            .get_members(symbol.id())
             .await
             .member_ids_by_name
             .values()
             .copied()
-            .map(|x| symbol.id.target_id.make_global(x))
+            .map(|x| symbol.id().target_id.make_global(x))
         {
             variants.push((
                 variant,
@@ -810,7 +838,7 @@ impl<'ctx> Context<'_, 'ctx> {
             }
 
             Type::Symbol(symbol) => {
-                let symbol_kind = self.engine().get_kind(symbol.id).await;
+                let symbol_kind = self.engine().get_kind(symbol.id()).await;
 
                 match symbol_kind {
                     Kind::Struct => {
@@ -855,7 +883,7 @@ impl<'ctx> Context<'_, 'ctx> {
 
             Type::Phantom(_) => Err(Zst),
 
-            Type::MemberSymbol(_) | Type::TraitMember(_) => {
+            Type::AssociatedSymbol(_) | Type::InstanceAssociated(_) => {
                 panic!("unsupported type {ty:?}")
             }
 

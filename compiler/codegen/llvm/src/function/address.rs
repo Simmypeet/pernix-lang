@@ -45,7 +45,8 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     Box::pin(self.get_address(&field.struct_address)).await?
                 );
 
-                let struct_id = struct_ty.id;
+                let struct_id = struct_ty.id();
+
                 let Ok(llvm_struct) =
                     self.context.get_struct_type(struct_ty).await
                 else {
@@ -88,7 +89,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     Box::pin(self.get_address(&index.tuple_address)).await?
                 );
 
-                let elements_len = tuple_ty.elements.len();
+                let elements_len = tuple_ty.elements().len();
                 let Ok(llvm_tuple) =
                     self.context.get_tuple_type(tuple_ty).await
                 else {

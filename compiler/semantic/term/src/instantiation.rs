@@ -112,6 +112,70 @@ impl Instantiation {
         self.instances.iter_mut()
     }
 
+    /// Returns an iterator over the mutable lifetime values.
+    #[must_use]
+    pub fn lifetime_values_mut(
+        &mut self,
+    ) -> impl ExactSizeIterator<Item = &mut Lifetime> {
+        self.lifetimes.values_mut()
+    }
+
+    /// Returns an iterator over the mutable type values.
+    #[must_use]
+    pub fn type_values_mut(
+        &mut self,
+    ) -> impl ExactSizeIterator<Item = &mut Type> {
+        self.types.values_mut()
+    }
+
+    /// Returns an iterator over the mutable constant values.
+    #[must_use]
+    pub fn constant_values_mut(
+        &mut self,
+    ) -> impl ExactSizeIterator<Item = &mut Constant> {
+        self.constants.values_mut()
+    }
+
+    /// Returns an iterator over the mutable instance values.
+    #[must_use]
+    pub fn instance_values_mut(
+        &mut self,
+    ) -> impl ExactSizeIterator<Item = &mut Instance> {
+        self.instances.values_mut()
+    }
+
+    /// Returns an iterator over the lifetime mappings.
+    #[must_use]
+    pub fn lifetime_mappings(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&Lifetime, &Lifetime)> {
+        self.lifetimes.iter()
+    }
+
+    /// Returns an iterator over the type mappings.
+    #[must_use]
+    pub fn type_mappings(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&Type, &Type)> {
+        self.types.iter()
+    }
+
+    /// Returns an iterator over the constant mappings.
+    #[must_use]
+    pub fn constant_mappings(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&Constant, &Constant)> {
+        self.constants.iter()
+    }
+
+    /// Returns an iterator over the instance mappings.
+    #[must_use]
+    pub fn instance_mappings(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&Instance, &Instance)> {
+        self.instances.iter()
+    }
+
     /// Extends the lifetime mappings with the given mappings.
     pub fn extend_lifetimes_mappings(
         &mut self,
@@ -142,6 +206,72 @@ impl Instantiation {
         mappings: impl IntoIterator<Item = (Instance, Instance)>,
     ) {
         self.instances.extend(mappings);
+    }
+
+    /// Instantiates the term values in this instantiation with the given
+    /// instantiation.
+    pub fn instantiate_values(&mut self, inst: &Self) {
+        self.lifetime_values_mut().for_each(|term| {
+            inst.instantiate(term);
+        });
+        self.type_values_mut().for_each(|term| {
+            inst.instantiate(term);
+        });
+        self.constant_values_mut().for_each(|term| {
+            inst.instantiate(term);
+        });
+        self.instance_values_mut().for_each(|term| {
+            inst.instantiate(term);
+        });
+    }
+
+    /// Inserts a mapping from one lifetime to another.
+    pub fn insert_lifetime_mapping(&mut self, from: Lifetime, to: Lifetime) {
+        self.lifetimes.insert(from, to);
+    }
+
+    /// Inserts a mapping from one type to another.
+    pub fn insert_type_mapping(&mut self, from: Type, to: Type) {
+        self.types.insert(from, to);
+    }
+
+    /// Inserts a mapping from one constant to another.
+    pub fn insert_constant_mapping(&mut self, from: Constant, to: Constant) {
+        self.constants.insert(from, to);
+    }
+
+    /// Inserts a mapping from one instance to another.
+    pub fn insert_instance_mapping(&mut self, from: Instance, to: Instance) {
+        self.instances.insert(from, to);
+    }
+
+    /// Removes the mapping for the given lifetime if it exists.
+    pub fn remove_lifetime_mapping(
+        &mut self,
+        from: &Lifetime,
+    ) -> Option<Lifetime> {
+        self.lifetimes.remove(from)
+    }
+
+    /// Removes the mapping for the given type if it exists.
+    pub fn remove_type_mapping(&mut self, from: &Type) -> Option<Type> {
+        self.types.remove(from)
+    }
+
+    /// Removes the mapping for the given constant if it exists.
+    pub fn remove_constant_mapping(
+        &mut self,
+        from: &Constant,
+    ) -> Option<Constant> {
+        self.constants.remove(from)
+    }
+
+    /// Removes the mapping for the given instance if it exists.
+    pub fn remove_instance_mapping(
+        &mut self,
+        from: &Instance,
+    ) -> Option<Instance> {
+        self.instances.remove(from)
     }
 }
 

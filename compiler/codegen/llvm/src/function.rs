@@ -57,7 +57,6 @@ use qbice::storage::intern::Interned;
 use crate::{context::Context, r#type::IsAggregateTypeExt, zst::Zst};
 
 mod address;
-mod drop;
 mod instruction;
 mod literal;
 
@@ -280,7 +279,7 @@ impl<'ctx> Context<'_, 'ctx> {
 
         match self.engine().get_name(key.callable_id).await.as_ref() {
             "sizeof" => {
-                let ty = key.instantiation.types.values().next().unwrap();
+                let ty = key.instantiation.type_mappings().next().unwrap().1;
                 let llvm_ty = self.get_type(ty.clone()).await;
 
                 let size = llvm_ty.map_or(0, |llvm_ty| {
@@ -296,7 +295,7 @@ impl<'ctx> Context<'_, 'ctx> {
             }
 
             "alignof" => {
-                let ty = key.instantiation.types.values().next().unwrap();
+                let ty = key.instantiation.type_mappings().next().unwrap().1;
                 let llvm_ty = self.get_type(ty.clone()).await;
 
                 let align = llvm_ty.map_or(0, |llvm_ty| {
@@ -312,26 +311,27 @@ impl<'ctx> Context<'_, 'ctx> {
             }
 
             "dropAt" => {
-                let ty = key.instantiation.types.values().next().unwrap();
+                todo!("restore the dropAt intrinsic")
+                // let ty = key.instantiation.type_mappings().next().unwrap().1;
 
-                let drop = self.get_drop(ty.clone()).await;
+                // let drop = self.get_drop(ty.clone()).await;
 
-                if let Some(drop) = drop {
-                    let param_value = llvm_function_signature
-                        .llvm_function_value
-                        .get_nth_param(0)
-                        .unwrap();
+                // if let Some(drop) = drop {
+                //     let param_value = llvm_function_signature
+                //         .llvm_function_value
+                //         .get_nth_param(0)
+                //         .unwrap();
 
-                    builder
-                        .build_call(drop, &[param_value.into()], "call_drop")
-                        .unwrap();
-                }
+                //     builder
+                //         .build_call(drop, &[param_value.into()], "call_drop")
+                //         .unwrap();
+                // }
 
-                builder.build_return(None).unwrap();
+                // builder.build_return(None).unwrap();
             }
 
             "read" => {
-                let ty = key.instantiation.types.values().next().unwrap();
+                let ty = key.instantiation.type_mappings().next().unwrap().1;
                 let llvm_ty = self.get_type(ty.clone()).await;
 
                 if let Ok(llvm_ty) = llvm_ty {
@@ -622,7 +622,7 @@ impl<'ctx> Context<'_, 'ctx> {
             let environment = Environment::new(
                 Cow::Owned(Premise {
                     predicates: BTreeSet::default(),
-                    query_site: Some(key.callable_id),
+                    query_site: key.callable_id,
                 }),
                 Cow::Borrowed(self.engine()),
                 normalizer::NO_OP,

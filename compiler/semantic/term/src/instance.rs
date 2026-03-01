@@ -642,6 +642,10 @@ pub enum Instance {
     Error(Error),
 }
 
+impl Default for Instance {
+    fn default() -> Self { Self::Error(Error) }
+}
+
 impl crate::display::Display for InstanceParameterID {
     async fn fmt(
         &self,

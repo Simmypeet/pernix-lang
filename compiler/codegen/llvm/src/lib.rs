@@ -19,9 +19,8 @@ use pernixc_symbol::{
 };
 use pernixc_target::Global;
 use pernixc_term::{
-    generic_parameters::get_generic_parameters,
-    instantiation::Instantiation,
-    r#type::{Tuple, Type},
+    generic_parameters::get_generic_parameters, instantiation::Instantiation,
+    r#type::Type,
 };
 
 use crate::diagnostic::{
@@ -80,9 +79,7 @@ async fn check_function_main(input: &Input<'_, '_>) -> bool {
     let func_parameters = input.engine.get_parameters(main_function_id).await;
     let return_type = input.engine.get_return_type(main_function_id).await;
 
-    if !func_parameters.parameters.is_empty()
-        || *return_type != Type::Tuple(Tuple { elements: Vec::new() })
-    {
+    if !func_parameters.parameters.is_empty() || *return_type != Type::unit() {
         input.handler.receive(Diagnostic::InvalidMainFunctionSignature(
             InvalidMainFunctionSignature { main_function_id },
         ));
@@ -93,10 +90,7 @@ async fn check_function_main(input: &Input<'_, '_>) -> bool {
         input.engine.get_generic_parameters(main_function_id).await;
 
     // must not have any generic parameters
-    if !generic_params.lifetimes().is_empty()
-        || !generic_params.types().is_empty()
-        || !generic_params.constants().is_empty()
-    {
+    if !generic_params.is_empty() {
         input.handler.receive(
             Diagnostic::GenericParametersAreNotAllowedInMainFunction(
                 GenericParametersAreNotAllowedInMainFunction {
