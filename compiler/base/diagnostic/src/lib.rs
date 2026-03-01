@@ -2,7 +2,7 @@
 
 use std::future::Future;
 
-use bon::Builder;
+use bon::{Builder, bon, builder};
 use pernixc_qbice::TrackedEngine;
 // re-export
 pub use pernixc_source_file::ByteIndex;
@@ -73,11 +73,11 @@ pub enum Severity {
 pub struct Highlight<L> {
     /// Represents a region in the source code involved in the diagnostic
     /// displaying
-    pub span: Span<L>,
+    span: Span<L>,
 
     /// The additional message to display at the highlighted region.
     #[builder(into)]
-    pub message: Option<String>,
+    message: Option<String>,
 }
 
 /// A strucut representing a diagnostic message ready to be displayed to the
@@ -93,30 +93,91 @@ pub struct Highlight<L> {
     Encode,
     Decode,
     StableHash,
-    Builder,
     Identifiable,
 )]
 pub struct Rendered<L> {
     /// The severity of the diagnostic.
-    #[builder(default = Severity::Error)]
-    pub severity: Severity,
+    severity: Severity,
 
     /// The span location where the diagnostic occurred.
-    pub primary_highlight: Option<Highlight<L>>,
+    primary_highlight: Option<Highlight<L>>,
+
+    /// The message to display to the user.
+    message: String,
+
+    /// The optional help message to display to the user. This will be
+    /// displayed alongside the main message.
+    help_message: Option<String>,
+
+    /// List of related useful information to display to the user.
+    ///
+    /// For example, for unimplemented methods, this could be a list of
+    /// methods that need to be implemented.
+    related: Vec<Highlight<L>>,
+
+    /// List of related notes to display to the user.
+    ///
+    /// Each of these notes will be rendered as a separate diagnostic, but
+    /// they are still related to the main diagnostic.
+    notes: Vec<Note<L>>,
+}
+
+#[bon]
+impl<L> Rendered<L> {
+    /// Creates a builder for constructing a [`Rendered`] diagnostic.
+    #[builder(finish_fn = build)]
+    pub const fn builder(
+        #[builder(default = Severity::Error)] severity: Severity,
+        primary_highlight: Option<Highlight<L>>,
+        #[builder(into)] message: String,
+        #[builder(into)] help_message: Option<String>,
+        #[builder(default = Vec::new())] related: Vec<Highlight<L>>,
+        #[builder(default = Vec::new())] notes: Vec<Note<L>>,
+    ) -> Self {
+        Self {
+            severity,
+            primary_highlight,
+            message,
+            help_message,
+            related,
+            notes,
+        }
+    }
+}
+
+/// A struct used to attaching additional information to the main [`Rendered`]
+/// diagnostic.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    Builder,
+    Identifiable,
+)]
+pub struct Note<L> {
+    /// The span location where the diagnostic occurred.
+    primary_highlight: Option<Highlight<L>>,
 
     /// The message to display to the user.
     #[builder(into)]
-    pub message: String,
+    message: String,
 
     /// The optional help message to display to the user. This will be
     /// displayed alongside the main message.
     #[builder(into)]
-    pub help_message: Option<String>,
+    help_message: Option<String>,
 
     /// List of related useful information to display to the user.
     ///
     /// For example, for unimplemented methods, this could be a list of
     /// methods that need to be implemented.
     #[builder(default = Vec::new())]
-    pub related: Vec<Highlight<L>>,
+    related: Vec<Highlight<L>>,
 }
