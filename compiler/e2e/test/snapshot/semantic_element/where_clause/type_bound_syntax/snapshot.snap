@@ -4,31 +4,37 @@ expression: run
 ---
 stderr:
 [error]: unsatisfied predicate
-  ╭▸ compiler/e2e/test/snapshot/semantic_element/where_clause/type_bound_syntax/main.pnx:8:23
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/where_clause/type_bound_syntax/main.pnx:7:23
   │
-5 │ public type Test[T: Fizz] = T
-  │                     ──── the required predicate was declared here
-  ‡
-8 │ public type Inst[T] = Test[T]
-  ╰╴                      ━━━━━━━ the predicate `trait main::Fizz[T]` is not satisfied
+7 │ public type Inst[T] = Test[T]
+  ╰╴                      ━━━━━━━ the predicate `marker main::Fizz[T]` is not satisfied
+[note]: the required predicate is declared here
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/where_clause/type_bound_syntax/main.pnx:4:21
+  │
+4 │ public type Test[T: Fizz] = T
+  ╰╴                    ━━━━
 
 [error]: unsatisfied predicate
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/where_clause/type_bound_syntax/main.pnx:18:24
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/where_clause/type_bound_syntax/main.pnx:16:24
    │
-15 │ public type Test2[T: for['x] Buzz['x]] = T
-   │                      ──────────────── the required predicate was declared here
-   ‡
-18 │ public type Inst2[T] = Test2[T]
-   ╰╴                       ━━━━━━━━ the predicate `trait main::Buzz['∀0, T]` is not satisfied
+16 │ public type Inst2[T] = Test2[T]
+   ╰╴                       ━━━━━━━━ the predicate `marker main::Buzz['∀0, T]` is not satisfied
+[note]: the required predicate is declared here
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/where_clause/type_bound_syntax/main.pnx:13:22
+   │
+13 │ public type Test2[T: for['x] Buzz['x]] = T
+   ╰╴                     ━━━━━━━━━━━━━━━━
 
 [error]: unsatisfied predicate
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/where_clause/type_bound_syntax/main.pnx:26:24
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/where_clause/type_bound_syntax/main.pnx:24:24
    │
-23 │         T: for['x] target::Buzz['x]
-   │            ──────────────────────── the required predicate was declared here
-   ‡
-26 │ public type Inst3[T] = Test3[T]
-   ╰╴                       ━━━━━━━━ the predicate `trait main::Buzz['∀0, T]` is not satisfied
+24 │ public type Inst3[T] = Test3[T]
+   ╰╴                       ━━━━━━━━ the predicate `marker main::Buzz['∀0, T]` is not satisfied
+[note]: the required predicate is declared here
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/where_clause/type_bound_syntax/main.pnx:21:12
+   │
+21 │         T: for['x] target::Buzz['x]
+   ╰╴           ━━━━━━━━━━━━━━━━━━━━━━━━
 
 [error]: Compilation aborted due to 3 error(s)
 

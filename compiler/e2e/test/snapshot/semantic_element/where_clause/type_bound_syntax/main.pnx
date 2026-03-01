@@ -1,5 +1,4 @@
-public trait Fizz[T]:
-    pass
+public marker Fizz[T]
 
 
 public type Test[T: Fizz] = T
@@ -8,8 +7,7 @@ public type Test[T: Fizz] = T
 public type Inst[T] = Test[T]
 
 
-public trait Buzz['a, T]:
-    pass
+public marker Buzz['a, T]
 
 
 public type Test2[T: for['x] Buzz['x]] = T
