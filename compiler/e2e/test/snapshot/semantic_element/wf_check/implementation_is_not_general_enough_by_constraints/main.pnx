@@ -1,9 +1,7 @@
-public trait Fizz['a, T]:
-    pass
+public marker Fizz['a, T]
 
 
-final implements['a, 'b, T: 'b] Fizz['a, &'b T]:
-    pass
+final implements['a, 'b, T: 'b] Fizz['a, &'b T]
 
 
 final implements['a, 'b, T: 'b] Fizz['a, &'b mut T]:
@@ -13,7 +11,7 @@ final implements['a, 'b, T: 'b] Fizz['a, &'b mut T]:
 
 public type WithRequirement[T] = T:
     where:
-        trait for['x] Fizz['x, T]
+        for['x] T: Fizz['x]
 
 
 # this instantiation is valid

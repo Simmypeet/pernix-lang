@@ -3,11 +3,11 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: run
 ---
 stderr:
-[error]: unsatisfied predicate
+[error]: the predicate `marker main::None[int32]` is not satisfied
    ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/impl_chain/main.pnx:19:31
    │
 19 │ public type UseRequireOuter = RequireOuter[int32]
-   ╰╴                              ━━━━━━━━━━━━━━━━━━━ the predicate `marker main::None[int32]` is not satisfied
+   ╰╴                              ━━━━━━━━━━━━━━━━━━━
 [note]: the required predicate is declared here
    ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/impl_chain/main.pnx:16:29
    │

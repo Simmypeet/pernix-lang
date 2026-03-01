@@ -280,8 +280,12 @@ impl<N: Normalizer> Environment<'_, N> {
                 }
             }
 
-            Predicate::NegativeMarker(_) => {
-                todo!()
+            Predicate::NegativeMarker(marker) => {
+                match self.query(marker).await {
+                    Ok(test) => Ok(test.map(|x| x.constraints.clone())),
+
+                    Err(overflow_error) => Err(overflow_error),
+                }
             }
         };
 
