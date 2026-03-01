@@ -21,7 +21,7 @@ use pernixc_term::{
 };
 
 use crate::{
-    Succeeded, UnrecoverableError,
+    UnrecoverableError,
     deduction::Deduction,
     diagnostic::{
         AdtImplementationIsNotGeneralEnough, Diagnostic,
@@ -31,6 +31,7 @@ use crate::{
     environment::Environment,
     lifetime_constraint::LifetimeConstraint,
     normalizer::Normalizer,
+    predicate::marker::PositiveError,
 };
 
 /// The result of [`Environment::wf_check_implementation`]
@@ -138,9 +139,7 @@ impl<N: Normalizer> Environment<'_, N> {
                 match result {
                     Ok(Some(result)) => {
                         if result.result.forall_lifetime_errors.is_empty() {
-                            Ok(Some(Succeeded::satisfied_with(
-                                result.constraints.clone(),
-                            )))
+                            Ok(Some(result.constraints.clone()))
                         } else {
                             Ok(None)
                         }
@@ -152,9 +151,10 @@ impl<N: Normalizer> Environment<'_, N> {
                 }
             }
 
-            Predicate::ConstantType(constant_type) => {
-                self.query(constant_type).await.map(|x| x.as_deref().cloned())
-            }
+            Predicate::ConstantType(constant_type) => self
+                .query(constant_type)
+                .await
+                .map(|x| x.map(|x| x.constraints.clone())),
 
             Predicate::LifetimeOutlives(outlives) => {
                 if do_outlives_check {
@@ -163,12 +163,13 @@ impl<N: Normalizer> Environment<'_, N> {
 
                         Ok(false) => {
                             diagnostics.push(Diagnostic::UnsatisfiedPredicate(
-                                UnsatisfiedPredicate {
-                                    predicate,
-                                    instantiation_span: *instantiation_span,
-                                    predicate_declaration_span:
+                                UnsatisfiedPredicate::builder()
+                                    .predicate(predicate)
+                                    .instantiation_span(*instantiation_span)
+                                    .maybe_predicate_declaration_span(
                                         predicate_declaration_span.copied(),
-                                },
+                                    )
+                                    .build(),
                             ));
 
                             return Ok(BTreeSet::new());
@@ -191,12 +192,12 @@ impl<N: Normalizer> Environment<'_, N> {
                     }
                 }
 
-                Ok(Some(Succeeded::satisfied_with(
+                Ok(Some(
                     std::iter::once(LifetimeConstraint::LifetimeOutlives(
                         outlives.clone(),
                     ))
                     .collect(),
-                )))
+                ))
             }
 
             Predicate::TypeOutlives(outlives) => {
@@ -206,12 +207,13 @@ impl<N: Normalizer> Environment<'_, N> {
 
                         Ok(false) => {
                             diagnostics.push(Diagnostic::UnsatisfiedPredicate(
-                                UnsatisfiedPredicate {
-                                    predicate,
-                                    instantiation_span: *instantiation_span,
-                                    predicate_declaration_span:
+                                UnsatisfiedPredicate::builder()
+                                    .predicate(predicate)
+                                    .instantiation_span(*instantiation_span)
+                                    .maybe_predicate_declaration_span(
                                         predicate_declaration_span.copied(),
-                                },
+                                    )
+                                    .build(),
                             ));
 
                             return Ok(BTreeSet::new());
@@ -235,7 +237,7 @@ impl<N: Normalizer> Environment<'_, N> {
                     }
                 }
 
-                Ok(Some(Succeeded::satisfied_with(
+                Ok(Some(
                     RecursiveIterator::new(&outlives.bound)
                         .filter_map(|x| x.0.into_lifetime().ok())
                         .map(|x| {
@@ -245,16 +247,33 @@ impl<N: Normalizer> Environment<'_, N> {
                             ))
                         })
                         .collect(),
-                )))
+                ))
             }
 
-            Predicate::TupleType(tuple) => {
-                self.query(tuple).await.map(|x| x.as_deref().cloned())
-            }
+            Predicate::TupleType(tuple) => self
+                .query(tuple)
+                .await
+                .map(|x| x.map(|x| x.constraints.clone())),
 
-            Predicate::PositiveMarker(_) => {
-                todo!()
-            }
+            Predicate::PositiveMarker(marker) => match self.query(marker).await
+            {
+                Ok(Ok(succeeded)) => Ok(Some(succeeded.constraints.clone())),
+
+                Ok(Err(error)) => {
+                    self.generate_marker_error(
+                        marker.clone(),
+                        *instantiation_span,
+                        error,
+                        diagnostics,
+                        handler,
+                    )
+                    .await?;
+
+                    return Ok(BTreeSet::new());
+                }
+
+                Err(overflow_error) => Err(overflow_error),
+            },
 
             Predicate::NegativeMarker(_) => {
                 todo!()
@@ -262,7 +281,7 @@ impl<N: Normalizer> Environment<'_, N> {
         };
 
         match result {
-            Ok(Some(Succeeded { constraints, .. })) => {
+            Ok(Some(constraints)) => {
                 self.handle_satisfy(
                     constraints,
                     instantiation_span,
@@ -276,12 +295,13 @@ impl<N: Normalizer> Environment<'_, N> {
 
             Ok(None) => {
                 diagnostics.push(Diagnostic::UnsatisfiedPredicate(
-                    UnsatisfiedPredicate {
-                        predicate,
-                        instantiation_span: *instantiation_span,
-                        predicate_declaration_span: predicate_declaration_span
-                            .copied(),
-                    },
+                    UnsatisfiedPredicate::builder()
+                        .predicate(predicate)
+                        .instantiation_span(*instantiation_span)
+                        .maybe_predicate_declaration_span(
+                            predicate_declaration_span.copied(),
+                        )
+                        .build(),
                 ));
 
                 Ok(BTreeSet::new())
@@ -323,12 +343,13 @@ impl<N: Normalizer> Environment<'_, N> {
 
                 Ok(false) => {
                     diagnostics.push(Diagnostic::UnsatisfiedPredicate(
-                        UnsatisfiedPredicate {
-                            predicate: constraint.into_predicate(),
-                            instantiation_span: *instantiation_span,
-                            predicate_declaration_span:
+                        UnsatisfiedPredicate::builder()
+                            .predicate(constraint.into_predicate())
+                            .instantiation_span(*instantiation_span)
+                            .maybe_predicate_declaration_span(
                                 predicate_declaration_span.copied(),
-                        },
+                            )
+                            .build(),
                     ));
                 }
 
@@ -460,11 +481,10 @@ impl<N: Normalizer> Environment<'_, N> {
 
                     Ok(false) => {
                         handler.receive(Diagnostic::UnsatisfiedPredicate(
-                            UnsatisfiedPredicate {
-                                predicate: constraint.into_predicate(),
-                                instantiation_span: *instantiation_span,
-                                predicate_declaration_span: None,
-                            },
+                            UnsatisfiedPredicate::builder()
+                                .predicate(constraint.into_predicate())
+                                .instantiation_span(*instantiation_span)
+                                .build(),
                         ));
                     }
 
@@ -536,5 +556,34 @@ impl<N: Normalizer> Environment<'_, N> {
         handler.receieve_many(diagnostics);
 
         Ok(lifetime_constraints)
+    }
+
+    #[allow(clippy::unused_async, clippy::ptr_arg)]
+    async fn generate_marker_error(
+        &self,
+        _predicate: pernixc_term::predicate::PositiveMarker,
+        _instantiation_span: RelativeSpan,
+        error: PositiveError,
+        _diagnostics: &mut Vec<Diagnostic>,
+        _handler: &dyn Handler<Diagnostic>,
+    ) -> Result<(), UnrecoverableError> {
+        match error {
+            PositiveError::ImplementationResolution(error) => match error {
+                crate::resolution::Error::NotFound => todo!(),
+                crate::resolution::Error::IsNotGeneralEnough(
+                    _implementation,
+                ) => todo!(),
+                crate::resolution::Error::UnsatisfiedPredicates(
+                    _unsatisfied_predicates,
+                ) => todo!(),
+                crate::resolution::Error::Ambiguous => todo!(),
+                crate::resolution::Error::Cyclic => todo!(),
+            },
+            PositiveError::Structural(_structural_errors) => todo!(),
+            PositiveError::NegativeMarkerImplementation(_succeeded) => todo!(),
+            PositiveError::Cyclic => {
+                todo!()
+            }
+        }
     }
 }

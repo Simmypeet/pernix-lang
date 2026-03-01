@@ -2,7 +2,7 @@
 
 use std::future::Future;
 
-use bon::{Builder, bon, builder};
+use bon::{Builder, bon};
 use pernixc_qbice::TrackedEngine;
 // re-export
 pub use pernixc_source_file::ByteIndex;

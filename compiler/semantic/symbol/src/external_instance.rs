@@ -1,6 +1,5 @@
 //! Contains the query determining whether the `implements` is external or not.
 
-use pernixc_extend::extend;
 use pernixc_target::Global;
 use qbice::{Decode, Encode, Query, StableHash};
 

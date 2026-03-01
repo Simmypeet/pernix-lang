@@ -209,11 +209,12 @@ impl Checker<'_> {
                     Ok(true) => {}
 
                     Ok(false) => {
-                        self.handler.receive(UnsatisfiedPredicate {
-                            predicate: Predicate::TypeOutlives(outlives),
-                            instantiation_span: *instantiation_span,
-                            predicate_declaration_span: None,
-                        });
+                        self.handler.receive(
+                            UnsatisfiedPredicate::builder()
+                                .predicate(Predicate::TypeOutlives(outlives))
+                                .instantiation_span(*instantiation_span)
+                                .build(),
+                        );
                     }
 
                     Err(overflow_error) => {

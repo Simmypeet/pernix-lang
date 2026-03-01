@@ -1,7 +1,7 @@
 //! Defines the diagnostic related to the type system checking
 
-use bon::Builder;
-use pernixc_diagnostic::{Highlight, Report};
+use bon::{Builder, bon};
+use pernixc_diagnostic::{Highlight, Note, Report};
 use pernixc_handler::Handler;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
@@ -245,7 +245,8 @@ impl Report for PredicateSatisfiabilityOverflow {
     }
 }
 
-/// The bound is not satisfied upon instantiation.
+/// Used to attach to the [`RequiredBy`] to indicate that the required predicate
+/// is required by an implementation.
 #[derive(
     Debug,
     Clone,
@@ -259,15 +260,145 @@ impl Report for PredicateSatisfiabilityOverflow {
     Decode,
     Builder,
 )]
+pub struct RequiredByImplements {
+    resolved_implements_id: Global<pernixc_symbol::ID>,
+    predicate: pernixc_term::predicate::PositiveMarker,
+}
+
+/// Used to attach to [`UnsatisfiedPredicate`] to indicate where the unsatisfied
+/// predicate is required by an implementation.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Builder,
+)]
+pub struct RequiredBy {
+    predicate_declaration_span: Option<RelativeSpan>,
+    by_implements: Option<RequiredByImplements>,
+}
+
+impl RequiredBy {
+    async fn generate_note(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Option<pernixc_diagnostic::Note<ByteIndex>> {
+        if let Some(by_implements) = &self.by_implements {
+            let mut message = "required for predicate ".to_string();
+            by_implements
+                .predicate
+                .write_async(engine, &mut message)
+                .await
+                .unwrap();
+            message.push_str(" to be implemented");
+
+            let implements_span = if let Some(implements_span) =
+                engine.get_span(by_implements.resolved_implements_id).await
+            {
+                Some(engine.to_absolute_span(&implements_span).await)
+            } else {
+                None
+            };
+
+            let primary_highlight =
+                if let Some(span) = self.predicate_declaration_span.as_ref() {
+                    Some(
+                        Highlight::builder()
+                            .span(engine.to_absolute_span(span).await)
+                            .message("the required predicate is declared here")
+                            .build(),
+                    )
+                } else {
+                    None
+                };
+
+            Some(
+                Note::builder()
+                    .message(message)
+                    .maybe_primary_highlight(primary_highlight)
+                    .related(
+                        implements_span
+                            .map(|span| Highlight::builder().span(span).build())
+                            .into_iter()
+                            .collect(),
+                    )
+                    .build(),
+            )
+        } else {
+            let primary_highlight = self.predicate_declaration_span.as_ref()?;
+
+            Some(
+                Note::builder()
+                    .message("the required predicate is declared here")
+                    .primary_highlight(
+                        Highlight::builder()
+                            .span(
+                                engine
+                                    .to_absolute_span(primary_highlight)
+                                    .await,
+                            )
+                            .build(),
+                    )
+                    .build(),
+            )
+        }
+    }
+}
+
+/// The bound is not satisfied upon instantiation.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+)]
 pub struct UnsatisfiedPredicate {
     /// The unsatisfied bound.
-    pub predicate: Predicate,
+    predicate: Predicate,
 
     /// The span of the instantiation that causes the bound check.
-    pub instantiation_span: RelativeSpan,
+    instantiation_span: RelativeSpan,
 
-    /// The span of the predicate declaration.
-    pub predicate_declaration_span: Option<RelativeSpan>,
+    /// The stack of requirements that lead to the unsatisfied predicate, used
+    /// to provide more context to the user about why the predicate is not
+    /// satisfied.
+    requirement_stack: Vec<RequiredBy>,
+}
+
+#[bon]
+impl UnsatisfiedPredicate {
+    /// Returns a builder for creating [`UnsatisfiedPredicate`].
+    #[builder(finish_fn = build)]
+    pub fn builder(
+        predicate: Predicate,
+        instantiation_span: RelativeSpan,
+        predicate_declaration_span: Option<RelativeSpan>,
+    ) -> Self {
+        Self {
+            predicate,
+            instantiation_span,
+            requirement_stack: predicate_declaration_span
+                .map(|span| RequiredBy {
+                    by_implements: None,
+                    predicate_declaration_span: Some(span),
+                })
+                .into_iter()
+                .collect(),
+        }
+    }
 }
 
 impl Report for UnsatisfiedPredicate {
@@ -294,18 +425,17 @@ impl Report for UnsatisfiedPredicate {
                     .build(),
             )
             .message("unsatisfied predicate")
-            .related(match &self.predicate_declaration_span {
-                Some(span) => {
-                    let declaration_span = engine.to_absolute_span(span).await;
+            .notes({
+                let mut notes = Vec::new();
 
-                    vec![
-                        Highlight::builder()
-                            .span(declaration_span)
-                            .message("the required predicate was declared here")
-                            .build(),
-                    ]
+                for requirement in &self.requirement_stack {
+                    if let Some(note) = requirement.generate_note(engine).await
+                    {
+                        notes.push(note);
+                    }
                 }
-                None => Vec::new(),
+
+                notes
             })
             .build()
     }

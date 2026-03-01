@@ -134,17 +134,16 @@ impl<N: Normalizer> Checker<'_, N> {
                     Ok(true) => {}
                     Ok(false) => {
                         self.handler().receive(
-                            UnsatisfiedPredicate {
-                                predicate: Predicate::LifetimeOutlives(
+                            UnsatisfiedPredicate::builder()
+                                .predicate(Predicate::LifetimeOutlives(
                                     Outlives::new(
                                         universal_region.into(),
                                         to_universal.region.into(),
                                     ),
-                                ),
-                                instantiation_span: *span,
-                                predicate_declaration_span: None,
-                            }
-                            .into(),
+                                ))
+                                .instantiation_span(*span)
+                                .build()
+                                .into(),
                         );
                     }
                     Err(error) => {
