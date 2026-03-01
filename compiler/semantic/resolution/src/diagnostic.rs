@@ -1,6 +1,6 @@
 //! Defines all kinds of diagnostics occurred during resolution.
 
-use pernixc_diagnostic::{Highlight, Report, Severity};
+use pernixc_diagnostic::{Highlight, Report};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::import::get_import_map;
@@ -103,20 +103,17 @@ impl Report for ThisNotFound {
         &self,
         engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
-        pernixc_diagnostic::Rendered {
-            primary_highlight: Some(Highlight::new(
+        pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(Highlight::new(
                 engine.to_absolute_span(&self.this_span).await,
                 Some(
                     "`this` keyword is only available in `implements`, \
                      `struct`, `enum`, or `trait`"
                         .to_string(),
                 ),
-            )),
-            message: "the `this` keyword is not allowed here".to_string(),
-            severity: Severity::Error,
-            help_message: None,
-            related: Vec::new(),
-        }
+            ))
+            .message("the `this` keyword is not allowed here")
+            .build()
     }
 }
 
@@ -152,20 +149,17 @@ impl Report for LifetimeParameterNotFound {
         let referring_site_qualified_name =
             engine.get_qualified_name(self.referring_site).await;
 
-        pernixc_diagnostic::Rendered {
-            primary_highlight: Some(Highlight::new(
+        pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(Highlight::new(
                 engine.to_absolute_span(&self.referred_span).await,
                 Some(format!(
                     "the lifetime parameter `{}` was not found in \
                      `{referring_site_qualified_name}`",
                     &*self.name
                 )),
-            )),
-            message: "cannot find the lifetime parameter".to_string(),
-            severity: Severity::Error,
-            help_message: None,
-            related: Vec::new(),
-        }
+            ))
+            .message("cannot find the lifetime parameter")
+            .build()
     }
 }
 
@@ -196,8 +190,8 @@ impl Report for UnexpectedInference {
         &self,
         engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
-        pernixc_diagnostic::Rendered {
-            primary_highlight: Some(Highlight::new(
+        pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(Highlight::new(
                 engine.to_absolute_span(&self.unexpected_span).await,
                 Some(format!(
                     "expected an explicit {} to be inserted here",
@@ -208,19 +202,16 @@ impl Report for UnexpectedInference {
                         GenericKind::Instance => "instance",
                     }
                 )),
-            )),
-            message: format!("{} inference is not allowed here", match self
+            ))
+            .message(format!("{} inference is not allowed here", match self
                 .generic_kind
             {
                 GenericKind::Type => "type",
                 GenericKind::Lifetime => "lifetime",
                 GenericKind::Constant => "constant",
                 GenericKind::Instance => "instance",
-            }),
-            severity: Severity::Error,
-            help_message: None,
-            related: Vec::new(),
-        }
+            }))
+            .build()
     }
 }
 
@@ -255,19 +246,16 @@ impl Report for ExpectType {
             table.get_qualified_name(self.resolved_global_id).await;
         let kind = table.get_kind(self.resolved_global_id).await;
 
-        pernixc_diagnostic::Rendered {
-            primary_highlight: Some(Highlight::new(
+        pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(Highlight::new(
                 table.to_absolute_span(&self.non_type_symbol_span).await,
                 Some(format!(
                     "the type was expected but found `{} {qualified_name}`",
                     kind.kind_str()
                 )),
-            )),
-            message: "type expected".to_string(),
-            severity: Severity::Error,
-            help_message: None,
-            related: Vec::new(),
-        }
+            ))
+            .message("type expected")
+            .build()
     }
 }
 
@@ -295,18 +283,15 @@ impl Report for MoreThanOneUnpackedInTupleType {
         &self,
         engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
-        pernixc_diagnostic::Rendered {
-            primary_highlight: Some(Highlight::new(
+        pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(Highlight::new(
                 engine.to_absolute_span(&self.illegal_tuple_type_span).await,
                 None,
-            )),
-            message: "the tuple type cannot contain more than one unpacked \
-                      type"
-                .to_string(),
-            severity: Severity::Error,
-            help_message: None,
-            related: Vec::new(),
-        }
+            ))
+            .message(
+                "the tuple type cannot contain more than one unpacked type",
+            )
+            .build()
     }
 }
 
@@ -337,8 +322,8 @@ impl Report for MisorderedGenericArgument {
         &self,
         engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
-        pernixc_diagnostic::Rendered {
-            primary_highlight: Some(Highlight::new(
+        pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(Highlight::new(
                 engine.to_absolute_span(&self.generic_argument).await,
                 match self.generic_kind {
                     GenericKind::Type => Some(
@@ -357,13 +342,9 @@ impl Report for MisorderedGenericArgument {
                     ),
                     GenericKind::Instance => None,
                 },
-            )),
-            message: "the generic argument was supplied in the wrong order"
-                .to_string(),
-            severity: Severity::Error,
-            help_message: None,
-            related: Vec::new(),
-        }
+            ))
+            .message("the generic argument was supplied in the wrong order")
+            .build()
     }
 }
 
@@ -400,8 +381,8 @@ impl Report for MismatchedGenericArgumentCount {
         &self,
         engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
-        pernixc_diagnostic::Rendered {
-            primary_highlight: Some(Highlight::new(
+        pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(Highlight::new(
                 engine.to_absolute_span(&self.generic_identifier_span).await,
                 Some(format!(
                     "expected {} {} arguments, but {} were supplied",
@@ -414,12 +395,9 @@ impl Report for MismatchedGenericArgumentCount {
                     },
                     self.supplied_count,
                 )),
-            )),
-            message: "mismatched generic argument count".to_string(),
-            severity: Severity::Error,
-            help_message: None,
-            related: Vec::new(),
-        }
+            ))
+            .message("mismatched generic argument count")
+            .build()
     }
 }
 
@@ -452,21 +430,19 @@ impl Report for NoGenericArgumentsRequired {
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let qualified_name = engine.get_qualified_name(self.global_id).await;
 
-        pernixc_diagnostic::Rendered {
-            primary_highlight: Some(Highlight::new(
+        pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(Highlight::new(
                 engine.to_absolute_span(&self.generic_argument_span).await,
                 Some(format!(
                     "the symbol `{qualified_name}` doesn't require any \
                      generic arguments"
                 )),
-            )),
-            message: "generic arguments was supplied to the symbol that \
-                      doesn't have a generic parameter"
-                .to_string(),
-            severity: Severity::Error,
-            help_message: None,
-            related: Vec::new(),
-        }
+            ))
+            .message(
+                "generic arguments was supplied to the symbol that doesn't \
+                 have a generic parameter",
+            )
+            .build()
     }
 }
 
@@ -597,18 +573,18 @@ impl Report for SymbolNotFound {
             },
         );
 
-        pernixc_diagnostic::Rendered {
-            primary_highlight: Some(Highlight::new(
+        pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(Highlight::new(
                 engine.to_absolute_span(&self.resolution_span).await,
                 Some(span_message),
-            )),
-            message: "the symbol could not be found".to_string(),
-            severity: Severity::Error,
-            help_message: did_you_mean
-                .as_ref()
-                .map(|suggestion| format!("did you mean `{suggestion}`?")),
-            related: Vec::new(),
-        }
+            ))
+            .message("the symbol could not be found")
+            .maybe_help_message(
+                did_you_mean
+                    .as_ref()
+                    .map(|suggestion| format!("did you mean `{suggestion}`?")),
+            )
+            .build()
     }
 }
 
@@ -647,19 +623,16 @@ impl Report for SymbolIsNotAccessible {
         let referred_qualified_name =
             engine.get_qualified_name(self.referred).await;
 
-        pernixc_diagnostic::Rendered {
-            primary_highlight: Some(Highlight::new(
+        pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(Highlight::new(
                 engine.to_absolute_span(&self.referred_span).await,
                 Some(format!(
                     "the symbol `{referred_qualified_name}` is not accessible \
                      from `{referring_site_qualified_name}`",
                 )),
-            )),
-            message: "the symbol is not accessible".to_string(),
-            severity: Severity::Error,
-            help_message: None,
-            related: Vec::new(),
-        }
+            ))
+            .message("the symbol is not accessible")
+            .build()
     }
 }
 
@@ -695,20 +668,17 @@ impl Report for ExpectModule {
 
         let kind = engine.get_kind(self.found_id).await;
 
-        pernixc_diagnostic::Rendered {
-            primary_highlight: Some(Highlight::new(
+        pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(Highlight::new(
                 engine.to_absolute_span(&self.module_path).await,
                 None,
-            )),
-            message: format!(
+            ))
+            .message(format!(
                 "expected a module in the module path, but found `{} {}`",
                 kind.kind_str(),
                 found_symbol_qualified_name
-            ),
-            severity: Severity::Error,
-            help_message: None,
-            related: Vec::new(),
-        }
+            ))
+            .build()
     }
 }
 
@@ -737,19 +707,16 @@ impl Report for ForallLifetimeRedefinition {
         &self,
         engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
-        pernixc_diagnostic::Rendered {
-            primary_highlight: Some(Highlight::new(
+        pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(Highlight::new(
                 engine.to_absolute_span(&self.redefinition_span).await,
                 Some(
                     "forall lifetime with the same name already exists in \
                      this scope"
                         .to_string(),
                 ),
-            )),
-            message: "forall lifetime redefinition".to_string(),
-            severity: Severity::Error,
-            help_message: None,
-            related: Vec::new(),
-        }
+            ))
+            .message("forall lifetime redefinition")
+            .build()
     }
 }
