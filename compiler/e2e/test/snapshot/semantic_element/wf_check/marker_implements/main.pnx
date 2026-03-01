@@ -1,5 +1,4 @@
-public trait Fizz[T]:
-    pass
+public marker Fizz[T]
 
 
 final implements[T] Fizz[T]:
@@ -9,7 +8,7 @@ final implements[T] Fizz[T]:
 
 public struct RequiresFizz[T]:
     where:
-        trait Fizz[T]
+        T: Fizz
 
 
 public type UseFizz[T] = RequiresFizz[T]

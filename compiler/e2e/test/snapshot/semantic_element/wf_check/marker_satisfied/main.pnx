@@ -25,9 +25,7 @@ public enum EmptyEnum:
     pass
 
 
-public type WithRequirement[T] = T:
-    where:
-        marker Marker[T]
+public type WithRequirement[T: Marker] = T
 
 
 public type InstMyStruct    = WithRequirement[MyStruct]

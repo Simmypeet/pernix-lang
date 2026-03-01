@@ -1,31 +1,27 @@
-public trait ForAllFail[T, U]:
-    pass
+public marker ForAllFail[T, U]
 
 
-final implements[T] ForAllFail[T, T]:
-    pass
+final implements[T] ForAllFail[T, T]
 
 
 public function requireForallFail[T: 'static]():
     where:
-        trait for['x, 'y] ForAllFail[&'x T, &'y T]
+        for['x, 'y] &'x T: ForAllFail[&'y T]
     
 
 public function useForallFail():
     requireForallFail[int32]()
 
 
-public trait ForAllPass[T, U]:
-    pass
+public marker ForAllPass[T, U]
 
 
-final implements[T, U] ForAllPass[T, U]:
-    pass
+final implements[T, U] ForAllPass[T, U]
 
 
 public function requireForallPass[T: 'static]():
     where:
-        trait for['x] ForAllPass[&'x T, &'x T]
+        for['x] &'x T: ForAllPass[&'x T]
     
 
 public function useForallPass():

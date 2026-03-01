@@ -4,16 +4,18 @@ expression: run
 ---
 stderr:
 [error]: implementation is not general enough
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/implementation_is_not_general_enough_ref/main.pnx:15:5
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/implementation_is_not_general_enough_ref/main.pnx:13:5
    │
- 5 │ final implements[T] ForAllFail[T, T]:
+ 4 │ final implements[T] ForAllFail[T, T]
    │                     ──────────────── this implementation was used but its lifetimes are not general enough
    ‡
-11 │         trait for['x, 'y] ForAllFail[&'x T, &'y T]
-   │               ──────────────────────────────────── the predicate is declared here
-   ‡
-15 │     requireForallFail[int32]()
+13 │     requireForallFail[int32]()
    ╰╴    ━━━━━━━━━━━━━━━━━━━━━━━━━━ the implementation is not general enought to satisfy the required forall lifetimes in the generic arguments: [&'∀0 int32, &'∀1 int32]
+[note]: the required predicate is declared here
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/implementation_is_not_general_enough_ref/main.pnx:9:28
+  │
+9 │         for['x, 'y] &'x T: ForAllFail[&'y T]
+  ╰╴                           ━━━━━━━━━━━━━━━━━
 
 [error]: Compilation aborted due to 1 error(s)
 
