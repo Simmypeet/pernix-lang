@@ -49,7 +49,7 @@ pub enum UnsatisfiedCause {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UnsatisfiedPredicate {
     predicate: Predicate,
-    span: Option<RelativeSpan>,
+    predicate_declaration_span: Option<RelativeSpan>,
     cause: UnsatisfiedCause,
 }
 
@@ -63,13 +63,41 @@ impl UnsatisfiedPredicate {
             }
         }
     }
+
+    /// Retrieves the predicate that is unsatisfied.
+    #[must_use]
+    pub const fn predicate(&self) -> &Predicate { &self.predicate }
+
+    /// Retrieves the cause of the unsatisfaction.
+    #[must_use]
+    pub const fn cause(&self) -> &UnsatisfiedCause { &self.cause }
+
+    /// Retrieves the span where the predicate was declared, if any.
+    #[must_use]
+    pub const fn predicate_declaration_span(&self) -> Option<&RelativeSpan> {
+        self.predicate_declaration_span.as_ref()
+    }
 }
 
 /// Failed to satisfy one or more predicates defined in the `implements` where
 /// clause.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UnsatisfiedPredicates {
+    implementation: Arc<Implementation>,
     unsatisfied_predicate: Arc<[UnsatisfiedPredicate]>,
+}
+
+impl UnsatisfiedPredicates {
+    /// Iterates over the unsatisfied predicates.
+    pub fn unsatisfied_predicates(
+        &self,
+    ) -> impl Iterator<Item = &UnsatisfiedPredicate> {
+        self.unsatisfied_predicate.iter()
+    }
+
+    /// Retrieves the implementation that contains the unsatisfied predicates.
+    #[must_use]
+    pub fn implementation(&self) -> &Implementation { &self.implementation }
 }
 
 /// An error that can occur during implementation resolution.
@@ -330,6 +358,10 @@ async fn finialize_candidate(
                     PredicateSatisfyError::UnsatisfiedPredicates(
                         unsatisfied_predicates,
                     ) => Error::UnsatisfiedPredicates(UnsatisfiedPredicates {
+                        implementation: Arc::new(Implementation {
+                            instantiation: deduction.instantiation,
+                            id: implementation_id,
+                        }),
                         unsatisfied_predicate: unsatisfied_predicates,
                     }),
                     PredicateSatisfyError::ImplementationIsNotGeneralEnough => {
@@ -520,7 +552,7 @@ async fn predicate_satisfies(
                     _ => {
                         unsatisfied_predicates.push(UnsatisfiedPredicate {
                             predicate,
-                            span,
+                            predicate_declaration_span: span,
                             cause: UnsatisfiedCause::NoInformation,
                         });
                     }
@@ -538,7 +570,7 @@ async fn predicate_satisfies(
                     None => {
                         unsatisfied_predicates.push(UnsatisfiedPredicate {
                             predicate,
-                            span,
+                            predicate_declaration_span: span,
                             cause: UnsatisfiedCause::NoInformation,
                         });
                     }
@@ -556,7 +588,7 @@ async fn predicate_satisfies(
                     None => {
                         unsatisfied_predicates.push(UnsatisfiedPredicate {
                             predicate,
-                            span,
+                            predicate_declaration_span: span,
                             cause: UnsatisfiedCause::NoInformation,
                         });
                     }
@@ -575,7 +607,7 @@ async fn predicate_satisfies(
                     Err(err) => {
                         unsatisfied_predicates.push(UnsatisfiedPredicate {
                             predicate,
-                            span,
+                            predicate_declaration_span: span,
                             cause: UnsatisfiedCause::PositiveMarker(err),
                         });
                     }
@@ -594,7 +626,7 @@ async fn predicate_satisfies(
                     None => {
                         unsatisfied_predicates.push(UnsatisfiedPredicate {
                             predicate,
-                            span,
+                            predicate_declaration_span: span,
                             cause: UnsatisfiedCause::NoInformation,
                         });
                     }

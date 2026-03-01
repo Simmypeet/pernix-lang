@@ -26,12 +26,13 @@ use crate::{
     diagnostic::{
         AdtImplementationIsNotGeneralEnough, Diagnostic,
         MismatchedImplementationArguments, PredicateSatisfiabilityOverflow,
-        RequiredBy, UnsatisfiedPredicate,
+        RequiredBy, RequiredByImplements, UnsatisfiedPredicate,
     },
     environment::Environment,
     lifetime_constraint::LifetimeConstraint,
     normalizer::Normalizer,
     predicate::marker::PositiveError,
+    resolution::{UnsatisfiedCause, UnsatisfiedPredicates},
 };
 
 /// The result of [`Environment::wf_check_implementation`]
@@ -263,13 +264,16 @@ impl<N: Normalizer> Environment<'_, N> {
                     self.generate_marker_error(
                         marker,
                         instantiation_span,
-                        predicate_declaration_span,
                         &error,
                         diagnostics,
-                        Vec::new(),
-                        handler,
-                    )
-                    .await?;
+                        vec![
+                            RequiredBy::builder()
+                                .maybe_predicate_declaration_span(
+                                    predicate_declaration_span.copied(),
+                                )
+                                .build(),
+                        ],
+                    );
 
                     return Ok(BTreeSet::new());
                 }
@@ -560,28 +564,80 @@ impl<N: Normalizer> Environment<'_, N> {
         Ok(lifetime_constraints)
     }
 
-    #[allow(clippy::too_many_arguments)]
-    async fn generate_marker_error(
+    fn handle_unsatisfied_predicate_in_marker(
         &self,
         predicate: &pernixc_term::predicate::PositiveMarker,
         instantiation_span: &RelativeSpan,
-        predicate_declaration_span: Option<&RelativeSpan>,
-        error: &PositiveError,
+        unsatisfied_predicates: &UnsatisfiedPredicates,
         diagnostics: &mut Vec<Diagnostic>,
-        mut requirement_stack: Vec<RequiredBy>,
-        handler: &dyn Handler<Diagnostic>,
-    ) -> Result<(), UnrecoverableError> {
-        match error {
-            PositiveError::ImplementationResolution(error) => match error {
-                crate::resolution::Error::NotFound => {
+        requirement_stack: &[RequiredBy],
+    ) {
+        for unsatisfied_predicate in
+            unsatisfied_predicates.unsatisfied_predicates()
+        {
+            match unsatisfied_predicate.cause() {
+                UnsatisfiedCause::NoInformation => {
+                    diagnostics.push(
+                        UnsatisfiedPredicate::builder_with_required_by_stack()
+                            .predicate(
+                                unsatisfied_predicate.predicate().clone(),
+                            )
+                            .instantiation_span(*instantiation_span)
+                            .requirement_stack(requirement_stack.to_vec())
+                            .build()
+                            .into(),
+                    );
+                }
+                UnsatisfiedCause::PositiveMarker(positive_error) => {
+                    let mut requirement_stack = requirement_stack.to_vec();
+
                     requirement_stack.push(
                         RequiredBy::builder()
+                            .by_implements(
+                                RequiredByImplements::builder()
+                                    .resolved_implements_id(
+                                        unsatisfied_predicates
+                                            .implementation()
+                                            .id,
+                                    )
+                                    .predicate(predicate.clone())
+                                    .build(),
+                            )
                             .maybe_predicate_declaration_span(
-                                predicate_declaration_span.copied(),
+                                unsatisfied_predicate
+                                    .predicate_declaration_span()
+                                    .copied(),
                             )
                             .build(),
                     );
 
+                    self.generate_marker_error(
+                        unsatisfied_predicate
+                            .predicate()
+                            .as_positive_marker()
+                            .unwrap(),
+                        instantiation_span,
+                        positive_error,
+                        diagnostics,
+                        requirement_stack,
+                    );
+                }
+            }
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn generate_marker_error(
+        &self,
+        predicate: &pernixc_term::predicate::PositiveMarker,
+        instantiation_span: &RelativeSpan,
+        error: &PositiveError,
+        diagnostics: &mut Vec<Diagnostic>,
+        requirement_stack: Vec<RequiredBy>,
+    ) {
+        match error {
+            PositiveError::ImplementationResolution(error) => match error {
+                crate::resolution::Error::NotFound => {
                     diagnostics.push(Diagnostic::UnsatisfiedPredicate(
                         UnsatisfiedPredicate::builder_with_required_by_stack()
                             .predicate(predicate.clone().into())
@@ -589,37 +645,33 @@ impl<N: Normalizer> Environment<'_, N> {
                             .requirement_stack(requirement_stack)
                             .build(),
                     ));
-
-                    Ok(())
                 }
                 crate::resolution::Error::IsNotGeneralEnough(
                     _implementation,
                 ) => todo!(),
                 crate::resolution::Error::UnsatisfiedPredicates(
-                    _unsatisfied_predicates,
-                ) => todo!(),
+                    unsatisfied_predicates,
+                ) => self.handle_unsatisfied_predicate_in_marker(
+                    predicate,
+                    instantiation_span,
+                    unsatisfied_predicates,
+                    diagnostics,
+                    &requirement_stack,
+                ),
                 crate::resolution::Error::Ambiguous => todo!(),
                 crate::resolution::Error::Cyclic => todo!(),
             },
 
             PositiveError::Structural(structural_errors) => {
-                Box::pin(async move {
-                    for a in structural_errors.iter() {
-                        self.generate_marker_error(
-                            a.sub_predicate(),
-                            instantiation_span,
-                            predicate_declaration_span,
-                            a.error(),
-                            diagnostics,
-                            requirement_stack.clone(),
-                            handler,
-                        )
-                        .await?;
-                    }
-
-                    Ok(())
-                })
-                .await
+                for a in structural_errors.iter() {
+                    self.generate_marker_error(
+                        a.sub_predicate(),
+                        instantiation_span,
+                        a.error(),
+                        diagnostics,
+                        requirement_stack.clone(),
+                    );
+                }
             }
             PositiveError::NegativeMarkerImplementation(_succeeded) => todo!(),
             PositiveError::Cyclic => {
