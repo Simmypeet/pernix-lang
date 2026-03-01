@@ -102,29 +102,29 @@ impl Report for ItemRedefinition {
         let existing_symbol_name = engine.get_name(self.existing_id).await;
         let in_name = engine.get_qualified_name(self.in_id).await;
 
-        pernixc_diagnostic::Rendered {
-            primary_highlight: Some(Highlight::new(
+        let related = if let Some(span) = existing_symbol_span.as_ref() {
+            Some(vec![pernixc_diagnostic::Highlight::new(
+                engine.to_absolute_span(span).await,
+                Some(format!(
+                    "symbol `{}` is already defined here",
+                    existing_symbol_name.as_ref()
+                )),
+            )])
+        } else {
+            None
+        };
+
+        pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(Highlight::new(
                 engine.to_absolute_span(&self.redefinition_span).await,
                 Some("redefinition here".to_string()),
-            )),
-
-            message: format!(
+            ))
+            .message(format!(
                 "symbol `{}` is already defined in the scope `{in_name}`",
                 existing_symbol_name.as_ref(),
-            ),
-            severity: pernixc_diagnostic::Severity::Error,
-            help_message: None,
-            related: match existing_symbol_span.as_ref() {
-                Some(span) => vec![pernixc_diagnostic::Highlight::new(
-                    engine.to_absolute_span(span).await,
-                    Some(format!(
-                        "symbol `{}` is already defined here",
-                        existing_symbol_name.as_ref()
-                    )),
-                )],
-                None => Vec::new(),
-            },
-        }
+            ))
+            .maybe_related(related)
+            .build()
     }
 }
 
@@ -156,26 +156,24 @@ impl Report for RecursiveFileRequest {
         &self,
         engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
-        pernixc_diagnostic::Rendered {
-            primary_highlight: Some(Highlight::new(
+        pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(Highlight::new(
                 engine.to_absolute_span(&self.submodule_span).await,
                 Some(
                     "this module declaration causes recursive loading"
                         .to_string(),
                 ),
-            )),
-            message: format!(
+            ))
+            .message(format!(
                 "the module declaration ened up loading the current file `{}`",
                 self.path.display()
-            ),
-            severity: pernixc_diagnostic::Severity::Error,
-            help_message: Some(format!(
+            ))
+            .help_message(format!(
                 "try changing the module name from `{}` to something else \
                  that is not the same as the file name",
                 self.path.file_stem().unwrap_or_default().to_string_lossy()
-            )),
-            related: Vec::new(),
-        }
+            ))
+            .build()
     }
 }
 
@@ -226,15 +224,11 @@ impl Report for SourceFileLoadFail {
             ),
         };
 
-        pernixc_diagnostic::Rendered {
-            primary_highlight: highlight,
-            message: format!("{}: {}", context_message, self.error_message),
-            severity: pernixc_diagnostic::Severity::Error,
-            help_message: Some(
-                "check if the file exists and is accessible".to_string(),
-            ),
-            related: Vec::new(),
-        }
+        pernixc_diagnostic::Rendered::builder()
+            .maybe_primary_highlight(highlight)
+            .message(format!("{}: {}", context_message, self.error_message))
+            .help_message("check if the file exists and is accessible")
+            .build()
     }
 }
 
