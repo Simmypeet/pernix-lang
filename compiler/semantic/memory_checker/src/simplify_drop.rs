@@ -7,45 +7,25 @@
 //! the product type itself does not implement the `Drop` trait.
 
 use pernixc_handler::Handler;
-use pernixc_hash::HashSet;
-use pernixc_ir::{
-    Values,
-    address::{self, Address, Field, Index, Variant},
-    instruction::{Drop, DropUnpackTuple, Instruction},
-    value::{
-        Environment, TypeOf, Value,
-        literal::{Literal, Unreachable},
-    },
-};
-use pernixc_semantic_element::{
-    fields::get_fields, variant::get_variant_associated_type,
-};
-use pernixc_symbol::{
-    kind::{Kind, get_kind},
-    member::get_members,
-    name::get_by_qualified_name,
-};
-use pernixc_target::{Global, TargetID};
-use pernixc_term::{
-    generic_arguments::GenericArguments,
-    predicate::{PositiveTrait, Predicate},
-    r#type::{Primitive, Type},
-};
+use pernixc_ir::{Values, instruction::Instruction, value::Environment};
 use pernixc_type_system::{UnrecoverableError, normalizer::Normalizer};
 
 use crate::diagnostic::Diagnostic;
 
+#[allow(clippy::unused_async)]
 pub(super) async fn simplify_drops<
     T: IntoIterator<Item = Instruction>,
     N: Normalizer,
 >(
-    drop_instructions: T,
-    values: &Values,
-    environment: &Environment<'_, N>,
-    handler: &dyn Handler<Diagnostic>,
+    _drop_instructions: T,
+    _values: &Values,
+    _environment: &Environment<'_, N>,
+    _handler: &dyn Handler<Diagnostic>,
 ) -> Result<Vec<Instruction>, UnrecoverableError> {
-    let mut results = Vec::new();
+    let results = Vec::new();
+    // TODO: implement the logic for simplifying the drop instructions
 
+    /*
     for instruction in drop_instructions {
         if let Instruction::Drop(drop) = instruction {
             results.extend(
@@ -62,16 +42,18 @@ pub(super) async fn simplify_drops<
             results.push(instruction);
         }
     }
+    */
 
     Ok(results)
 }
 
+/*
 #[allow(
     clippy::uninhabited_references,
     clippy::too_many_lines,
     clippy::cognitive_complexity
 )]
-pub(super) async fn simplify_drop<N: Normalizer>(
+async fn simplify_drop<N: Normalizer>(
     drop: &Drop,
     values: &Values,
     visited_types: &mut HashSet<Type>,
@@ -359,7 +341,7 @@ pub(super) async fn simplify_drop<N: Normalizer>(
             Ok(instructions)
         }
 
-        Type::MemberSymbol(_)
+        Type::AssociatedSymbol(_)
         | Type::Reference(_)
         | Type::Pointer(_)
         | Type::FunctionSignature(_)
@@ -409,3 +391,4 @@ pub(super) async fn simplify_drop<N: Normalizer>(
         }
     }
 }
+*/

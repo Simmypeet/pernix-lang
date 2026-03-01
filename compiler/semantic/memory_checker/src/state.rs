@@ -20,9 +20,7 @@ use pernixc_semantic_element::{
 use pernixc_symbol::kind::{Kind, get_kind};
 use pernixc_target::Global;
 use pernixc_term::{
-    generic_arguments::Symbol,
     instantiation::get_instantiation,
-    tuple,
     r#type::{self, Qualifier, Type},
 };
 use pernixc_type_system::{
@@ -960,7 +958,7 @@ impl Default for Memory {
     fn default() -> Self {
         Self {
             state: State::Total(Initialized::True),
-            r#type: Type::Tuple(tuple::Tuple { elements: Vec::new() }),
+            r#type: Type::unit(),
             version: 0,
         }
     }
@@ -1280,11 +1278,11 @@ impl Scope {
                     rest => return Ok(rest),
                 };
 
-                let Type::Symbol(Symbol { id: struct_id, generic_arguments }) =
-                    ty
-                else {
+                let Type::Symbol(symbol) = ty else {
                     panic!("expected struct type");
                 };
+
+                let (struct_id, generic_arguments) = symbol.destructure();
 
                 assert_eq!(
                     environment.tracked_engine().get_kind(struct_id).await,
@@ -1368,9 +1366,11 @@ impl Scope {
                     rest => return Ok(rest),
                 };
 
-                let Type::Tuple(tuple::Tuple { elements }) = ty else {
+                let Type::Tuple(tuple_ty) = ty else {
                     panic!("expected tuple type");
                 };
+
+                let elements = tuple_ty.into_elements();
 
                 if let State::Total(current) = state {
                     // already satisfied
@@ -1386,7 +1386,7 @@ impl Scope {
                             .iter()
                             .map(|x| TupleElement {
                                 state: State::Total(current.clone()),
-                                is_unpacked: x.is_unpacked,
+                                is_unpacked: x.is_unpacked(),
                             })
                             .collect(),
                     }));
@@ -1423,13 +1423,14 @@ impl Scope {
                                 break 'type_result elements
                                     .iter()
                                     .find_map(|x| {
-                                        x.is_unpacked.then(|| x.term.clone())
+                                        x.is_unpacked()
+                                            .then(|| x.term().clone())
                                     })
                                     .unwrap();
                             }
                         };
 
-                        elements[index].term.clone()
+                        elements[index].term().clone()
                     },
                     version,
                 )
@@ -1458,11 +1459,11 @@ impl Scope {
                     rest => return Ok(rest),
                 };
 
-                let Type::Symbol(Symbol { id: enum_id, generic_arguments }) =
-                    ty
-                else {
+                let Type::Symbol(symbol) = ty else {
                     panic!("expected enum type");
                 };
+
+                let (enum_id, generic_arguments) = symbol.destructure();
 
                 assert_eq!(
                     environment.tracked_engine().get_kind(enum_id).await,
