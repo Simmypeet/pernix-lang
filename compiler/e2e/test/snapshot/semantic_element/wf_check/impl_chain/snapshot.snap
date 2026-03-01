@@ -1,0 +1,35 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: run
+---
+stderr:
+[error]: unsatisfied predicate
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/impl_chain/main.pnx:19:31
+   │
+19 │ public type UseRequireOuter = RequireOuter[int32]
+   ╰╴                              ━━━━━━━━━━━━━━━━━━━ the predicate `marker main::None[int32]` is not satisfied
+[note]: the required predicate is declared here
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/impl_chain/main.pnx:16:29
+   │
+16 │ public type RequireOuter[T: Outer] = T
+   ╰╴                            ━━━━━
+[note]: required for predicate marker main::Outer[int32] to be implemented
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/impl_chain/main.pnx:13:21
+   │
+13 │ final implements[T: Inner] Outer[T]
+   │                     ┯━━━━  ────────
+   │                     │
+   ╰╴                    the required predicate is declared here
+[note]: required for predicate marker main::Inner[int32] to be implemented
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/impl_chain/main.pnx:10:21
+   │
+10 │ final implements[T: None] Inner[T]
+   │                     ┯━━━  ────────
+   │                     │
+   ╰╴                    the required predicate is declared here
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

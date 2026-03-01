@@ -1,0 +1,19 @@
+public marker Outer[T]
+
+
+public marker Inner[T]
+
+
+public marker None[T]
+
+
+final implements[T: None] Inner[T]
+
+
+final implements[T: Inner] Outer[T]
+
+
+public type RequireOuter[T: Outer] = T
+
+
+public type UseRequireOuter = RequireOuter[int32]

@@ -57,11 +57,11 @@ pub struct StructuralError {
 impl StructuralError {
     /// Gets the sub-predicate that failed to be satisfied.
     #[must_use]
-    pub fn sub_predicate(&self) -> &PositiveMarker { &self.sub_predicate }
+    pub const fn sub_predicate(&self) -> &PositiveMarker { &self.sub_predicate }
 
     /// Gets the error that occurred when trying to satisfy the field.
     #[must_use]
-    pub fn error(&self) -> &PositiveError { &self.error }
+    pub const fn error(&self) -> &PositiveError { &self.error }
 }
 
 /// An error type indiciating that the positive marker failed to be satisfied.
