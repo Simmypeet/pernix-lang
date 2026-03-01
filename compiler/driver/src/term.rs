@@ -187,6 +187,7 @@ fn render_diagnostic(
         let note_group =
             render_group(Severity::Info, note.group(), source_map, renderer);
 
+        group.push('\n');
         group.push_str(&note_group);
     }
 

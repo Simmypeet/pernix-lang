@@ -399,6 +399,32 @@ impl UnsatisfiedPredicate {
                 .collect(),
         }
     }
+
+    /// Returns a builder for creating [`UnsatisfiedPredicate`] with explicitly
+    /// given requirement stack.
+    #[builder(finish_fn = build)]
+    pub const fn builder_with_required_by_stack(
+        predicate: Predicate,
+        instantiation_span: RelativeSpan,
+        requirement_stack: Vec<RequiredBy>,
+    ) -> Self {
+        Self { predicate, instantiation_span, requirement_stack }
+    }
+}
+
+async fn generate_notes(
+    requirement_stack: &[RequiredBy],
+    engine: &TrackedEngine,
+) -> Vec<pernixc_diagnostic::Note<ByteIndex>> {
+    let mut notes = Vec::new();
+
+    for requirement in requirement_stack {
+        if let Some(note) = requirement.generate_note(engine).await {
+            notes.push(note);
+        }
+    }
+
+    notes
 }
 
 impl Report for UnsatisfiedPredicate {
@@ -425,18 +451,7 @@ impl Report for UnsatisfiedPredicate {
                     .build(),
             )
             .message("unsatisfied predicate")
-            .notes({
-                let mut notes = Vec::new();
-
-                for requirement in &self.requirement_stack {
-                    if let Some(note) = requirement.generate_note(engine).await
-                    {
-                        notes.push(note);
-                    }
-                }
-
-                notes
-            })
+            .notes(generate_notes(&self.requirement_stack, engine).await)
             .build()
     }
 }
