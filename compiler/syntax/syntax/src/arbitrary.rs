@@ -549,6 +549,7 @@ reference! {
     #[derive(Debug, Clone)]
     pub enum GenericArgument for super::GenericArgument {
         Lifetime(Lifetime),
+        QualifiedIdentifier(QualifiedIdentifier),
         Type(Type),
         Constant(ConstantArgument),
     }
@@ -564,6 +565,7 @@ impl IndentDisplay for GenericArgument {
             Self::Lifetime(i) => i.fmt(f),
             Self::Type(i) => i.indent_fmt(f, indent),
             Self::Constant(i) => i.indent_fmt(f, indent),
+            Self::QualifiedIdentifier(i) => i.indent_fmt(f, indent),
         }
     }
 }
@@ -579,7 +581,14 @@ impl Arbitrary for GenericArgument {
 
         prop_oneof![
             Lifetime::arbitrary().prop_map(Self::Lifetime),
-            ty.prop_map(Self::Type),
+            ty.prop_map(|x| {
+                match x {
+                    Type::QualifiedIdentifier(qualified_identifier) => {
+                        Self::QualifiedIdentifier(qualified_identifier)
+                    }
+                    x => Self::Type(x),
+                }
+            }),
             ConstantArgument::arbitrary_with(expr).prop_map(Self::Constant),
         ]
         .boxed()

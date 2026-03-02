@@ -131,6 +131,7 @@ abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
     pub enum GenericArgument {
         Lifetime(Lifetime = ast::<Lifetime>()),
+        QualifiedIdentifier(QualifiedIdentifier = ast::<QualifiedIdentifier>()),
         Type(Type = ast::<Type>()),
         Constant(ConstantArgument = ast::<ConstantArgument>()),
     }
