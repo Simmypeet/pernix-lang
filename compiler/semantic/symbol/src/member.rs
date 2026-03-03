@@ -45,6 +45,17 @@ impl Member {
     }
 }
 
+/// Retrieves the member ID of the given name in the symbol with the given ID.
+#[extend]
+pub async fn get_member_by_name(
+    self: &TrackedEngine,
+    symbol_id: Global<ID>,
+    name: &str,
+) -> Option<Global<ID>> {
+    let members = self.get_members(symbol_id).await;
+    members.get_by_name(name).map(|id| symbol_id.target_id.make_global(id))
+}
+
 /// The key type used with [`TrackedEngine`] to access the members of a symbol.
 #[derive(
     Debug,
