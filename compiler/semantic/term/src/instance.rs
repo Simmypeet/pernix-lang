@@ -3,6 +3,7 @@
 use std::fmt::Write;
 
 use enum_as_inner::EnumAsInner;
+use pernixc_extend::extend;
 use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::name::get_name;
 use pernixc_target::Global;
