@@ -239,7 +239,7 @@ async fn create_type_bound_predicates_internal(
                             matches!(engine.get_kind(id).await, Kind::Marker)
                         } =>
                     {
-                        if qualified_identifier_bound.not_keyword().is_some() {
+                        if qualified_identifier_bound.not_keyword().is_none() {
                             predicate::Predicate::PositiveMarker(
                                 PositiveMarker {
                                     marker_id: id,

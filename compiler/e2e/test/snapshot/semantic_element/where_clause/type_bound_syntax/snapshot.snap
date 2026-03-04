@@ -3,7 +3,7 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: run
 ---
 stderr:
-[error]: the predicate `marker not main::Fizz[T]` is not satisfied
+[error]: the predicate `marker main::Fizz[T]` is not satisfied
   ╭▸ compiler/e2e/test/snapshot/semantic_element/where_clause/type_bound_syntax/main.pnx:7:23
   │
 7 │ public type Inst[T] = Test[T]
@@ -14,7 +14,7 @@ stderr:
 4 │ public type Test[T: Fizz] = T
   ╰╴                    ━━━━
 
-[error]: the predicate `marker not main::Buzz['∀0, T]` is not satisfied
+[error]: the predicate `marker main::Buzz['∀0, T]` is not satisfied
    ╭▸ compiler/e2e/test/snapshot/semantic_element/where_clause/type_bound_syntax/main.pnx:16:24
    │
 16 │ public type Inst2[T] = Test2[T]
@@ -25,7 +25,7 @@ stderr:
 13 │ public type Test2[T: for['x] Buzz['x]] = T
    ╰╴                     ━━━━━━━━━━━━━━━━
 
-[error]: the predicate `marker not main::Buzz['∀0, T]` is not satisfied
+[error]: the predicate `marker main::Buzz['∀0, T]` is not satisfied
    ╭▸ compiler/e2e/test/snapshot/semantic_element/where_clause/type_bound_syntax/main.pnx:24:24
    │
 24 │ public type Inst3[T] = Test3[T]
