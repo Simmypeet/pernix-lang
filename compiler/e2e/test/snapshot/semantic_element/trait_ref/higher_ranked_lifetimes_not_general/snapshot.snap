@@ -1,0 +1,21 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: run
+---
+stderr:
+[error]: the predicate `'∀0: '∀1` is not satisfied
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/trait_ref/higher_ranked_lifetimes_not_general/main.pnx:8:40
+  │
+8 │     public instance Assoc: for['x, 'y] Test['x, 'y]
+  ╰╴                                       ━━━━━━━━━━━━
+[note]: the required predicate is declared here
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/trait_ref/higher_ranked_lifetimes_not_general/main.pnx:3:9
+  │
+3 │         'x: 'y
+  ╰╴        ━━━━━━
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

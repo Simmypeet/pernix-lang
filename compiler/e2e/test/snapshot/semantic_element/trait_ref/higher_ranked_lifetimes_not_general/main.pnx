@@ -1,0 +1,8 @@
+public trait Test['x, 'y]:
+    where:
+        'x: 'y
+
+
+public trait WithAssoc:
+    # this is not fine due to the `'x: 'y` bound on `Test`
+    public instance Assoc: for['x, 'y] Test['x, 'y]

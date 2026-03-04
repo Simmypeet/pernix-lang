@@ -6,8 +6,9 @@ use pernixc_diagnostic::Report;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_semantic_element::{
     effect_annotation::Key as DoEffectKey, fields::Key as FieldsKey,
-    import::Key as ImportKey, type_alias::Key as TypeAliasKey,
-    variant::Key as VariantKey, where_clause::Key as WhereClauseKey,
+    import::Key as ImportKey, trait_ref::Key as TraitRefKey,
+    type_alias::Key as TypeAliasKey, variant::Key as VariantKey,
+    where_clause::Key as WhereClauseKey,
 };
 use pernixc_source_file::ByteIndex;
 use pernixc_symbol::{
@@ -131,6 +132,16 @@ async fn single_rendered_executor(
     if kind.has_capabilities() {
         let diags = engine
             .query(&BuildDiagnosticKey::new(DoEffectKey { symbol_id }))
+            .await;
+
+        for diag in diags.iter() {
+            final_diagnostics.push(diag.report(engine).await);
+        }
+    }
+
+    if kind.has_trait_ref() {
+        let diags = engine
+            .query(&BuildDiagnosticKey::new(TraitRefKey { symbol_id }))
             .await;
 
         for diag in diags.iter() {
