@@ -1,0 +1,20 @@
+public trait Test['a]:
+    pass
+
+
+public type RequireForall[instance I: for['x] Test['x]] = int32
+
+
+# error, lifetime is not general enough
+public type UseError['a, instance I: Test['a]] = RequireForall[I]
+
+
+# good, lifetime is general enough
+public type UseOk[instance I: for['x] Test['x]] = RequireForall[I]
+
+
+public type RequireSpecific['a, instance I: Test['a]] = int32
+
+
+# good, I can accept any lifetime, including 'static
+public type UseOkSpecific[instance I: for['x] Test['x]] = RequireSpecific['static, I]

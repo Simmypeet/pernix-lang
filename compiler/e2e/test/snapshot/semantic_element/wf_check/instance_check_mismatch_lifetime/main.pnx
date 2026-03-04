@@ -1,0 +1,8 @@
+public trait Test['a]:
+    pass
+
+
+public type Require['a, instance I: Test['a]] = int32
+
+
+public type Use['a, 'b, instance I: Test['b]] = Require['a, I]
