@@ -51,7 +51,15 @@ stderr:
    │           │
    ╰╴          previously defined here
 
-[error]: Compilation aborted due to 6 error(s)
+[error]: generic parameter `I` is already defined in the `main::Fifth`
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/generic_parameters/redefinition/main.pnx:20:52
+   │
+20 │ public type Fifth[T, instance I: Test[T], instance I: Test[int32]] = int32
+   │                               ┬                    ━ redefinition here
+   │                               │
+   ╰╴                              previously defined here
+
+[error]: Compilation aborted due to 7 error(s)
 
 
 
