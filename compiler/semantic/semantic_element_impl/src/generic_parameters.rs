@@ -1,10 +1,11 @@
-use std::ops::Deref;
+use std::{ops::Deref, pin::Pin};
 
 use pernixc_handler::{Handler, Storage};
 use pernixc_qbice::TrackedEngine;
 use pernixc_resolution::{
-    Config, generic_parameter_namespace::get_generic_parameter_namespace,
-    term::resolve_type,
+    Config, ExtraNamespaceWithForallLifetimes,
+    generic_parameter_namespace::get_generic_parameter_namespace,
+    term::{resolve_qualified_identifier_trait_ref, resolve_type},
 };
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
@@ -18,9 +19,11 @@ use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
     generic_parameters::{
-        ConstantParameter, GenericKind, GenericParameters, LifetimeParameter,
-        TypeParameter,
+        ConstantParameter, GenericKind, GenericParameters, InstanceParameter,
+        InstanceParameterID, LifetimeParameter, TypeParameter,
+        get_generic_parameters,
     },
+    instance::Instance,
     lifetime::Lifetime,
     r#type::Type,
 };
@@ -36,6 +39,39 @@ use crate::{
 };
 
 pub mod diagnostic;
+
+struct ResolveInstanceParameterTraitRef<'a> {
+    engine: &'a TrackedEngine,
+    generic_parameters: &'a GenericParameters,
+    symbol_id: Global<pernixc_symbol::ID>,
+}
+
+impl pernixc_resolution::ResolveInstanceParameterTraitRef
+    for ResolveInstanceParameterTraitRef<'_>
+{
+    fn resolve_instance_parameter_trait_ref<'a>(
+        &'a self,
+        instance_parameter: &'a InstanceParameterID,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Option<Global<pernixc_symbol::ID>>> + Send + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            if instance_parameter.parent_id() == self.symbol_id {
+                self.generic_parameters[instance_parameter.id()]
+                    .trait_ref()
+                    .map(pernixc_term::instance::TraitRef::trait_id)
+            } else {
+                self.engine
+                    .get_generic_parameters(instance_parameter.parent_id())
+                    .await[instance_parameter.id()]
+                .trait_ref()
+                .map(pernixc_term::instance::TraitRef::trait_id)
+            }
+        })
+    }
+}
 
 impl build::Build for pernixc_term::generic_parameters::Key {
     type Diagnostic = diagnostic::Diagnostic;
@@ -107,7 +143,12 @@ impl build::Build for pernixc_term::generic_parameters::Key {
                 }
 
                 GenericParameterSyn::Instance(instance_syn) => {
-                    instance_parameter_syns.push(instance_syn);
+                    let Some(name) = instance_syn.identifier() else {
+                        continue;
+                    };
+
+                    instance_parameter_syns
+                        .push((name, instance_syn.trait_ref()));
                 }
 
                 GenericParameterSyn::Lifetime(lifetiem)
@@ -181,7 +222,7 @@ impl build::Build for pernixc_term::generic_parameters::Key {
                 ),
             ) {
                 Ok(id) => {
-                    extra_name_space.lifetimes.insert(
+                    extra_name_space.insert_lifetime(
                         lifetime_parameter_syn.kind.0,
                         Lifetime::Parameter(MemberID::new(key.symbol_id, id)),
                     );
@@ -235,7 +276,7 @@ impl build::Build for pernixc_term::generic_parameters::Key {
                 Some(type_parameter_syn.span),
             )) {
                 Ok(id) => {
-                    extra_name_space.types.insert(
+                    extra_name_space.insert_type(
                         type_parameter_syn.kind.0,
                         Type::Parameter(MemberID::new(key.symbol_id, id)),
                     );
@@ -290,7 +331,7 @@ impl build::Build for pernixc_term::generic_parameters::Key {
             match generic_parameters.add_constant_parameter(constant_parameter)
             {
                 Ok(id) => {
-                    extra_name_space.constants.insert(
+                    extra_name_space.insert_constant(
                         constant_parameter_syn.0.kind.0.clone(),
                         Constant::Parameter(MemberID::new(key.symbol_id, id)),
                     );
@@ -304,6 +345,77 @@ impl build::Build for pernixc_term::generic_parameters::Key {
                             ),
                             duplicating_generic_parameter_span:
                                 constant_parameter_syn.0.span,
+                        },
+                    ));
+                }
+            }
+        }
+
+        for (identifier, trait_ref_syn) in instance_parameter_syns {
+            let trait_ref = 'trait_ref: {
+                let Some(trait_ref_syn) = trait_ref_syn else {
+                    break 'trait_ref None;
+                };
+
+                let Some(qualified_identifier) =
+                    trait_ref_syn.qualified_identifier()
+                else {
+                    break 'trait_ref None;
+                };
+
+                let resolver = ResolveInstanceParameterTraitRef {
+                    engine,
+                    generic_parameters: &generic_parameters,
+                    symbol_id: key.symbol_id,
+                };
+
+                let extra_namespace_wrapper =
+                    ExtraNamespaceWithForallLifetimes::new(
+                        &mut extra_name_space,
+                        trait_ref_syn.higher_ranked_lifetimes().as_ref(),
+                        &storage,
+                    );
+
+                engine
+                    .resolve_qualified_identifier_trait_ref(
+                        &qualified_identifier,
+                        Config::builder()
+                            .observer(&mut occurrences)
+                            .extra_namespace(
+                                extra_namespace_wrapper.extra_namespace(),
+                            )
+                            .referring_site(Global::new(
+                                key.symbol_id.target_id,
+                                engine.get_parent(key.symbol_id).await.unwrap(),
+                            ))
+                            .resolve_instance_parameter_trait_ref(&resolver)
+                            .build(),
+                        &storage,
+                    )
+                    .await
+            };
+
+            match generic_parameters.add_instance_parameter(
+                InstanceParameter::new(
+                    identifier.kind.0.clone(),
+                    trait_ref,
+                    Some(identifier.span),
+                ),
+            ) {
+                Ok(id) => {
+                    extra_name_space.insert_instance(
+                        identifier.kind.0.clone(),
+                        Instance::Parameter(MemberID::new(key.symbol_id, id)),
+                    );
+                }
+                Err(id) => {
+                    storage.receive(Diagnostic::InstanceParameterRedefinition(
+                        GenericParameterRedefinition {
+                            existing_generic_parameter_id: MemberID::new(
+                                key.symbol_id,
+                                id,
+                            ),
+                            duplicating_generic_parameter_span: identifier.span,
                         },
                     ));
                 }

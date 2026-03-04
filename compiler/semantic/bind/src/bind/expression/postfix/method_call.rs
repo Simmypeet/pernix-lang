@@ -751,41 +751,33 @@ async fn attempt_adt_method_call(
         return Ok(Err(lvalue));
     };
 
-    let mut inst = if let Some(generic_arguments) =
-        method_call.generic_identifier().and_then(|x| x.generic_arguments())
-    {
-        let mut generic_arguments = binder
-            .resolve_generic_arguments_with_inference(
-                &generic_arguments,
-                handler,
-            )
-            .await?;
-        generic_arguments = binder
-            .verify_generic_arguments_for_with_inference(
+    let mut inst =
+        if let Some(generic_arguments) = method_call.generic_identifier() {
+            let generic_arguments = binder
+                .resolve_generic_arguments_with_inference(
+                    &generic_arguments,
+                    method_id,
+                    handler,
+                )
+                .await?;
+
+            Instantiation::from_generic_arguments(
                 generic_arguments,
                 method_id,
-                method_call.generic_identifier().unwrap().span(),
-                handler,
+                &*binder.engine().get_generic_parameters(method_id).await,
             )
-            .await?;
+            .expect("generic arguments have been verified")
+        } else {
+            let mut inst = Instantiation::default();
+            extend_inference_instantiation(
+                binder,
+                &mut inst,
+                &*binder.engine().get_generic_parameters(method_id).await,
+                method_id,
+            );
 
-        Instantiation::from_generic_arguments(
-            generic_arguments,
-            method_id,
-            &*binder.engine().get_generic_parameters(method_id).await,
-        )
-        .expect("generic arguments have been verified")
-    } else {
-        let mut inst = Instantiation::default();
-        extend_inference_instantiation(
-            binder,
-            &mut inst,
-            &*binder.engine().get_generic_parameters(method_id).await,
-            method_id,
-        );
-
-        inst
-    };
+            inst
+        };
 
     let parent_impl_id = method_id
         .target_id

@@ -15,6 +15,7 @@ use pernixc_symbol::{
     get_target_root_module_id,
     kind::{Kind, get_kind},
     member::{get_member_by_name, get_members},
+    name::get_qualified_name,
     parent::{get_closest_module_id, scope_walker},
 };
 use pernixc_syntax::{
@@ -23,6 +24,7 @@ use pernixc_syntax::{
 };
 use pernixc_target::{Global, TargetID, get_linked_targets, get_target_map};
 use pernixc_term::{
+    display::Display,
     generic_arguments::GenericArguments,
     generic_parameters::get_generic_parameters,
     instance::{Instance, InstanceAssociated, TraitRef},
@@ -203,6 +205,40 @@ impl Resolution {
             }
 
             Self::Instance(_) | Self::Type(_) => None,
+        }
+    }
+
+    /// Renders the resolved [`Resolution`] into a user-friendly string for
+    /// diagnostics.
+    #[must_use]
+    pub async fn found_string(&self, engine: &TrackedEngine) -> String {
+        if let Some(global_id) = self.global_id() {
+            let qualified_name = engine.get_qualified_name(global_id).await;
+            let kind = engine.get_kind(global_id).await;
+
+            format!("{} {qualified_name}", kind.kind_str())
+        } else {
+            match self {
+                Self::Module(_)
+                | Self::Variant(_)
+                | Self::Generic(_)
+                | Self::MemberGeneric(_)
+                | Self::InstanceAssociatedFunction(_) => {
+                    unreachable!("should've gotten a global_id()")
+                }
+
+                Self::Type(ty) => {
+                    let mut string = "type ".to_string();
+                    ty.write_async(engine, &mut string).await.unwrap();
+                    string
+                }
+
+                Self::Instance(instance) => {
+                    let mut string = "instance ".to_string();
+                    instance.write_async(engine, &mut string).await.unwrap();
+                    string
+                }
+            }
         }
     }
 }
@@ -737,6 +773,7 @@ async fn resolve_step(
                 {
                     adhoc_resolver
                         .resolve_instance_parameter_trait_ref(member_id)
+                        .await
                         .ok_or(Error::Abort)?
                 } else {
                     self.get_generic_parameters(member_id.parent_id()).await

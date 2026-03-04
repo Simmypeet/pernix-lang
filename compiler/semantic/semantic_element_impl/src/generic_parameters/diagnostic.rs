@@ -8,8 +8,8 @@ use pernixc_symbol::{
 };
 use pernixc_target::Global;
 use pernixc_term::generic_parameters::{
-    ConstantParameter, GenericKind, GenericParameter, LifetimeParameter,
-    TypeParameter, get_generic_parameters,
+    ConstantParameter, GenericKind, GenericParameter, InstanceParameter,
+    LifetimeParameter, TypeParameter, get_generic_parameters,
 };
 use qbice::{Decode, Encode, Identifiable, StableHash};
 
@@ -27,6 +27,7 @@ use qbice::{Decode, Encode, Identifiable, StableHash};
     Decode,
     derive_more::From,
 )]
+#[allow(clippy::large_enum_variant)]
 pub enum Diagnostic {
     Resolution(pernixc_resolution::diagnostic::Diagnostic),
     MisorderedGenericParameter(MisorderedGenericParameter),
@@ -40,8 +41,14 @@ pub enum Diagnostic {
     ConstantParameterRedefinition(
         GenericParameterRedefinition<ConstantParameter>,
     ),
+    InstanceParameterRedefinition(
+        GenericParameterRedefinition<InstanceParameter>,
+    ),
     EffectOperationCanNotHaveTypeOrConstantParameters(
         EffectOperationCanNotHaveTypeOrConstantParameters,
+    ),
+    ForallLifetimeRedefinition(
+        pernixc_resolution::diagnostic::ForallLifetimeRedefinition,
     ),
 }
 
@@ -70,6 +77,12 @@ impl Report for Diagnostic {
             Self::EffectOperationCanNotHaveTypeOrConstantParameters(
                 diagnostic,
             ) => diagnostic.report(engine).await,
+            Self::ForallLifetimeRedefinition(diagnostic) => {
+                diagnostic.report(engine).await
+            }
+            Self::InstanceParameterRedefinition(diagnostic) => {
+                diagnostic.report(engine).await
+            }
         }
     }
 }

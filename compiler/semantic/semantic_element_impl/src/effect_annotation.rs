@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, ops::Deref};
 
 use pernixc_arena::OrderedArena;
 use pernixc_handler::{Handler, Storage};
@@ -6,8 +6,7 @@ use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_resolution::{
-    Config, ExtraNamespace,
-    forall_lifetimes::create_forall_lifetimes,
+    Config, ExtraNamespace, ExtraNamespaceWithForallLifetimes,
     generic_parameter_namespace::get_generic_parameter_namespace,
     qualified_identifier::{Resolution, resolve_qualified_identifier},
 };
@@ -45,15 +44,18 @@ pub mod diagnostic;
 async fn to_effect(
     engine: &TrackedEngine,
     resolution: Resolution,
-) -> Option<effect::Unit> {
+) -> Result<effect::Unit, Resolution> {
     let Resolution::Generic(symbol) = resolution else {
-        return None;
+        return Err(resolution);
     };
 
     let kind = engine.get_kind(symbol.id).await;
 
-    (kind == Kind::Effect)
-        .then_some(effect::Unit::new(symbol.id, symbol.generic_arguments))
+    if kind != Kind::Effect {
+        return Err(Resolution::Generic(symbol));
+    }
+
+    Ok(effect::Unit::new(symbol.id, symbol.generic_arguments))
 }
 
 struct ElidedForallLifetimeProvider {
@@ -81,26 +83,16 @@ async fn build_effect_annotation(
     effect_unit_syntax: EffectUnit,
     current_site: Global<pernixc_symbol::ID>,
     observer: &mut Occurrences,
-    extra_namespace: &ExtraNamespace,
+    extra_namespace: &mut ExtraNamespace,
     handler: &Storage<diagnostic::Diagnostic>,
 ) -> Option<(effect::Unit, RelativeSpan)> {
     let q_ident = effect_unit_syntax.qualified_identifier()?;
 
-    let with_forall_lifetime =
-        effect_unit_syntax.higher_ranked_lifetimes().map(|x| {
-            let mut extra_namespace = extra_namespace.clone();
-
-            create_forall_lifetimes(
-                &mut extra_namespace.lifetimes,
-                &x,
-                handler,
-            );
-
-            extra_namespace
-        });
-
-    let extra_namespace =
-        with_forall_lifetime.as_ref().unwrap_or(extra_namespace);
+    let extra_namespace_wrapper = ExtraNamespaceWithForallLifetimes::new(
+        extra_namespace,
+        effect_unit_syntax.higher_ranked_lifetimes().as_ref(),
+        handler,
+    );
 
     let mut elided_lifetime_provider =
         ElidedForallLifetimeProvider { count: 0, current_site };
@@ -108,7 +100,7 @@ async fn build_effect_annotation(
     let config = Config::builder()
         .observer(observer)
         .referring_site(current_site)
-        .extra_namespace(extra_namespace)
+        .extra_namespace(extra_namespace_wrapper.extra_namespace())
         .elided_lifetime_provider(&mut elided_lifetime_provider)
         .build();
 
@@ -121,13 +113,12 @@ async fn build_effect_annotation(
             pernixc_resolution::Error::Abort => return None,
         },
     };
-    let id = resolution.global_id();
 
     to_effect(engine, resolution).await.map_or_else(
-        || {
+        |resolution| {
             handler.receive(diagnostic::Diagnostic::EffectExpected(
                 diagnostic::EffectExpected {
-                    found: id,
+                    found: resolution,
                     found_span: q_ident.span(),
                 },
             ));
@@ -336,8 +327,12 @@ impl Build for effect_annotation::Key {
         let effect_annotation_syntax =
             engine.get_function_effect_annotation_syntax(key.symbol_id).await;
 
-        let generic_namespace =
-            engine.get_generic_parameter_namespace(key.symbol_id).await;
+        let mut generic_namespace = engine
+            .get_generic_parameter_namespace(key.symbol_id)
+            .await
+            .deref()
+            .clone();
+
         let mut observer = Occurrences::default();
         let mut effect_annotations = HashMap::default();
         let storage = Storage::<diagnostic::Diagnostic>::default();
@@ -354,7 +349,7 @@ impl Build for effect_annotation::Key {
                             effect_unit,
                             key.symbol_id,
                             &mut observer,
-                            &generic_namespace,
+                            &mut generic_namespace,
                             &storage,
                         )
                         .await
@@ -377,7 +372,7 @@ impl Build for effect_annotation::Key {
                             effect_unit,
                             key.symbol_id,
                             &mut observer,
-                            &generic_namespace,
+                            &mut generic_namespace,
                             &storage,
                         )
                         .await

@@ -3,11 +3,12 @@ use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_hash::HashSet;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
+use pernixc_resolution::qualified_identifier::Resolution;
 use pernixc_semantic_element::fields::{Field, get_fields};
 use pernixc_source_file::ByteIndex;
 use pernixc_symbol::{
-    accessibility::accessibility_description, kind::get_kind,
-    name::get_qualified_name, source_map::to_absolute_span,
+    accessibility::accessibility_description, name::get_qualified_name,
+    source_map::to_absolute_span,
 };
 use pernixc_target::Global;
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
@@ -37,7 +38,6 @@ diagnostic_enum! {
 #[derive(
     Debug,
     Clone,
-    Copy,
     PartialEq,
     Eq,
     PartialOrd,
@@ -52,7 +52,7 @@ pub struct ExpectedStructSymbol {
     pub span: RelativeSpan,
 
     /// The resolved symbol that wasn't the struct type.
-    pub id: Global<pernixc_symbol::ID>,
+    pub found: Resolution,
 }
 
 impl Report for ExpectedStructSymbol {
@@ -61,8 +61,7 @@ impl Report for ExpectedStructSymbol {
         engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let span = engine.to_absolute_span(&self.span).await;
-        let qualified_name = engine.get_qualified_name(self.id).await;
-        let kind = engine.get_kind(self.id).await;
+        let found_string = self.found.found_string(engine).await;
 
         pernixc_diagnostic::Rendered::builder()
             .severity(Severity::Error)
@@ -70,8 +69,7 @@ impl Report for ExpectedStructSymbol {
             .primary_highlight(
                 Highlight::builder()
                     .message(format!(
-                        "expected struct type, found {} '{qualified_name}'",
-                        kind.kind_str()
+                        "expected struct type, found `{found_string}'",
                     ))
                     .span(span)
                     .build(),

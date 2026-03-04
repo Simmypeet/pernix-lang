@@ -305,8 +305,12 @@ async fn resolve_from_lexical_instances<N: Normalizer>(
     for inherent_instance in &inherent_instance_scope.available_instances {
         match inherent_instance {
             LexicalInstance::InInstance(global) => {
-                let trait_ref =
-                    environment.tracked_engine().get_trait_ref(*global).await;
+                // malformed
+                let Some(trait_ref) =
+                    environment.tracked_engine().get_trait_ref(*global).await
+                else {
+                    continue;
+                };
 
                 // if different trait, skip
                 if trait_ref.trait_id() != expected_trait_ref.trait_id() {
@@ -359,10 +363,13 @@ async fn resolve_from_lexical_instances<N: Normalizer>(
                     .get_generic_parameters(member_id.parent_id())
                     .await;
 
-                let trait_ref = generic_params
+                let Some(trait_ref) = generic_params
                     .get_instance_parameter(member_id.id())
                     .trait_ref()
-                    .clone();
+                    .cloned()
+                else {
+                    continue;
+                };
 
                 // if different trait, skip
                 if trait_ref.trait_id() != expected_trait_ref.trait_id() {

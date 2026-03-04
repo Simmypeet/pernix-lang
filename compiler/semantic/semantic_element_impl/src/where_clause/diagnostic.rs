@@ -3,14 +3,12 @@
 use pernixc_diagnostic::{Highlight, Report};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
-use pernixc_resolution::diagnostic::{
-    self as resolution_diagnostic, ForallLifetimeRedefinition,
+use pernixc_resolution::{
+    diagnostic::{self as resolution_diagnostic, ForallLifetimeRedefinition},
+    qualified_identifier::Resolution,
 };
 use pernixc_source_file::{ByteIndex, get_source_file_path};
-use pernixc_symbol::{
-    kind::get_kind, name::get_qualified_name, source_map::to_absolute_span,
-};
-use pernixc_target::Global;
+use pernixc_symbol::source_map::to_absolute_span;
 use pernixc_term::{lifetime, r#type::Type};
 use qbice::{Decode, Encode, Identifiable, StableHash};
 
@@ -96,7 +94,7 @@ pub struct UnexpectedSymbolInPredicate {
     pub predicate_kind: PredicateKind,
 
     /// The ID of the found symbol.
-    pub found_id: Global<pernixc_symbol::ID>,
+    pub found: Resolution,
 
     /// The span of the qualified identifier of the found symbol.
     pub qualified_identifier_span: RelativeSpan,
@@ -107,9 +105,7 @@ impl Report for UnexpectedSymbolInPredicate {
         &self,
         engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
-        let found_symbol_qualified_name =
-            engine.get_qualified_name(self.found_id).await;
-        let symbol_kind = engine.get_kind(self.found_id).await;
+        let found_string = self.found.found_string(engine).await;
 
         let expected = match self.predicate_kind {
             PredicateKind::Trait => "trait",
@@ -120,9 +116,7 @@ impl Report for UnexpectedSymbolInPredicate {
             .primary_highlight(Highlight::new(
                 engine.to_absolute_span(&self.qualified_identifier_span).await,
                 Some(format!(
-                    "expected {expected} symbol but found `{} \
-                     {found_symbol_qualified_name}`",
-                    symbol_kind.kind_str()
+                    "expected {expected} symbol but found `{found_string}`",
                 )),
             ))
             .message(format!(

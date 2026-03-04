@@ -16,7 +16,8 @@ use pernixc_resolution::{
     Config, ElidedTermProvider,
     qualified_identifier::{Resolution, resolve_qualified_identifier},
     term::{
-        resolve_generic_arguments, resolve_type, verify_generic_arguments_for,
+        resolve_generic_arguments_for, resolve_type,
+        verify_generic_arguments_for,
     },
 };
 use pernixc_source_file::SourceElement;
@@ -844,7 +845,8 @@ impl Binder<'_> {
     /// where inference is allowed.
     pub async fn resolve_generic_arguments_with_inference(
         &mut self,
-        generic_arguments: &pernixc_syntax::GenericArguments,
+        generic_arguments: &pernixc_syntax::GenericIdentifier,
+        id: Global<pernixc_symbol::ID>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<GenericArguments, UnrecoverableError> {
         let extra_namespace = &self.environment.extra_namespace;
@@ -868,7 +870,8 @@ impl Binder<'_> {
 
         let ty = self
             .engine
-            .resolve_generic_arguments(
+            .resolve_generic_arguments_for(
+                id,
                 generic_arguments,
                 pernixc_resolution::Config::builder()
                     .extra_namespace(extra_namespace)

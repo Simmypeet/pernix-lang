@@ -7,9 +7,7 @@ use pernixc_qbice::{PERNIX_PROGRAM, TrackedEngine};
 use pernixc_resolution::{
     Config,
     generic_parameter_namespace::get_generic_parameter_namespace,
-    qualified_identifier::{
-        MemberGeneric, Resolution, resolve_qualified_identifier,
-    },
+    qualified_identifier::{Resolution, resolve_qualified_identifier},
     term::{ResolutionToTermError, resolution_to_type},
 };
 use pernixc_source_file::SourceElement;
@@ -172,33 +170,11 @@ async fn check_valid_resolution(
     storage: &Storage<diagnostic::Diagnostic>,
 ) {
     match resolution {
-        Resolution::Module(global) => {
-            storage.receive(
-                diagnostic::Diagnostic::InvalidSymbolForImplements(
-                    InvalidSymbolForImplements {
-                        qualified_identifier_span: qualified_identifier,
-                        symbol_id: global,
-                    },
-                ),
-            );
-        }
-
-        Resolution::Variant(variant) => {
-            storage.receive(
-                diagnostic::Diagnostic::InvalidSymbolForImplements(
-                    InvalidSymbolForImplements {
-                        qualified_identifier_span: qualified_identifier,
-                        symbol_id: variant.variant_id,
-                    },
-                ),
-            );
-        }
-
         Resolution::Generic(generic) => {
             let kind = tracked_engine.get_kind(generic.id).await;
 
             match kind {
-                Kind::Trait | Kind::Marker | Kind::Struct | Kind::Enum => {
+                Kind::Marker | Kind::Struct | Kind::Enum => {
                     // valid implements symbol
                 }
 
@@ -234,7 +210,7 @@ async fn check_valid_resolution(
                         diagnostic::Diagnostic::InvalidSymbolForImplements(
                             InvalidSymbolForImplements {
                                 qualified_identifier_span: qualified_identifier,
-                                symbol_id: generic.id,
+                                found: Resolution::Generic(generic),
                             },
                         ),
                     );
@@ -242,12 +218,12 @@ async fn check_valid_resolution(
             }
         }
 
-        Resolution::MemberGeneric(MemberGeneric { id: global_id, .. }) => {
+        resolution => {
             storage.receive(
                 diagnostic::Diagnostic::InvalidSymbolForImplements(
                     InvalidSymbolForImplements {
                         qualified_identifier_span: qualified_identifier,
-                        symbol_id: global_id,
+                        found: resolution,
                     },
                 ),
             );
@@ -731,7 +707,7 @@ impl Executor<pernixc_semantic_element::implements::Key, pernixc_qbice::Config>
         let resolution =
             engine.query(&Key { symbol_id: key.symbol_id }).await?;
 
-        Some(resolution.global_id())
+        resolution.global_id()
     }
 }
 

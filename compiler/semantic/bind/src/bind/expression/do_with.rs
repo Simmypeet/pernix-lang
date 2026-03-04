@@ -17,19 +17,15 @@ use pernixc_ir::{
 };
 use pernixc_lexical::tree::{RelativeLocation, RelativeSpan};
 use pernixc_resolution::{
-    Config,
-    qualified_identifier::{Resolution, resolve_qualified_identifier},
+    Config, term::resolve_qualified_identifier_effect_unit,
 };
 use pernixc_semantic_element::parameter::get_parameters;
 use pernixc_source_file::{SourceElement, Span};
-use pernixc_symbol::{
-    kind::{Kind, get_kind},
-    member::get_members,
-};
+use pernixc_symbol::member::get_members;
 use pernixc_syntax::QualifiedIdentifier;
 use pernixc_target::Global;
 use pernixc_term::{
-    generic_arguments::GenericArguments,
+    effect,
     instantiation::get_instantiation,
     r#type::{Qualifier, Type},
 };
@@ -42,7 +38,7 @@ use crate::{
     },
     diagnostic::{
         Diagnostic, DuplicatedEffectHandler, DuplicatedEffectOperationHandler,
-        EffectExpected, MismatchedArgumentCountInEffectOperationHandler,
+        MismatchedArgumentCountInEffectOperationHandler,
         UnhandledEffectOperations, UnknownEffectOperation,
     },
     pattern::insert_name_binding,
@@ -139,10 +135,9 @@ struct HandlerChain {
 
 struct HandlerClauseBlock {
     qualified_identifier: QualifiedIdentifier,
-    effect_id: Global<pernixc_symbol::ID>,
-    generic_arguments: GenericArguments,
     handler_clause_id: pernixc_arena::ID<HandlerClause>,
     handlers: HashMap<pernixc_symbol::ID, OperationHanderBlock>,
+    unit: effect::Unit,
 }
 
 struct OperationHanderBlock {
@@ -168,8 +163,8 @@ async fn build_with_blocks(
         let instantiation = binder
             .engine()
             .get_instantiation(
-                with_block.effect_id,
-                with_block.generic_arguments,
+                with_block.unit.effect_id(),
+                with_block.unit.generic_arguments().clone(),
             )
             .await
             .expect("instantiation must be available");
@@ -179,7 +174,7 @@ async fn build_with_blocks(
             let effect_operation_parameters = binder
                 .engine()
                 .get_parameters(Global::new(
-                    with_block.effect_id.target_id,
+                    with_block.unit.effect_id().target_id,
                     effect_operation_id,
                 ))
                 .await;
@@ -460,10 +455,9 @@ async fn extract_handler_chain(
             continue;
         };
 
-        // resolves for the effect
-        let resolution = match binder
+        let Some(effect) = binder
             .engine()
-            .resolve_qualified_identifier(
+            .resolve_qualified_identifier_effect_unit(
                 &qualified_identifier,
                 Config::builder()
                     .elided_lifetime_provider(&mut ErasedLifetimeProvider)
@@ -473,49 +467,22 @@ async fn extract_handler_chain(
                 &handler,
             )
             .await
-        {
-            Ok(resolution) => resolution,
-            Err(pernixc_resolution::Error::Abort) => {
-                // failed to resolve
-                continue;
-            }
-        };
-
-        // try extract the effect
-        let effect = match resolution {
-            Resolution::Generic(generic)
-                if {
-                    // must be a kind of effect
-                    let kind = binder.engine().get_kind(generic.id).await;
-                    kind == Kind::Effect
-                } =>
-            {
-                generic
-            }
-
-            // not an effect, report error and skip
-            resolution => {
-                handler.receive(Diagnostic::EffectExpected(EffectExpected {
-                    span: qualified_identifier.span(),
-                    global_id: resolution.global_id(),
-                }));
-
-                continue;
-            }
+        else {
+            continue;
         };
 
         // check if the effect has already been handled
         let environment = binder.create_environment();
         for effect_handler in &with_handlers {
-            if effect_handler.effect_id != effect.id {
+            if effect_handler.unit.effect_id() != effect.effect_id() {
                 continue;
             }
 
             // check generic arguments compatibility
             if environment
                 .subtypes_generic_arguments(
-                    &effect_handler.generic_arguments,
-                    &effect.generic_arguments,
+                    effect_handler.unit.generic_arguments(),
+                    effect.generic_arguments(),
                 )
                 .await
                 .map_err(|x| {
@@ -528,8 +495,8 @@ async fn extract_handler_chain(
             {
                 handler.receive(Diagnostic::DuplicatedEffectHandler(
                     DuplicatedEffectHandler {
-                        effect_id: effect.id,
-                        generic_arguments: effect.generic_arguments.clone(),
+                        effect_id: effect.effect_id(),
+                        generic_arguments: effect.generic_arguments().clone(),
                         type_inference_map: binder
                             .type_inference_rendering_map(),
                         constant_inference_map: binder
@@ -547,7 +514,7 @@ async fn extract_handler_chain(
             extract_effect_operations(
                 binder,
                 x.handlers().filter_map(|x| x.into_line().ok()),
-                effect.id,
+                effect.effect_id(),
                 with_span,
                 handler,
             )
@@ -556,7 +523,7 @@ async fn extract_handler_chain(
             extract_effect_operations(
                 binder,
                 std::iter::empty(),
-                effect.id,
+                effect.effect_id(),
                 with_span,
                 handler,
             )
@@ -565,12 +532,14 @@ async fn extract_handler_chain(
 
         with_handlers.push(HandlerClauseBlock {
             qualified_identifier: qualified_identifier.clone(),
-            effect_id: effect.id,
             handler_clause_id: binder.insert_handler_clause_to_handling_scope(
                 handling_scope_id,
-                HandlerClause::new(effect.id, effect.generic_arguments.clone()),
+                HandlerClause::new(
+                    effect.effect_id(),
+                    effect.generic_arguments().clone(),
+                ),
             ),
-            generic_arguments: effect.generic_arguments,
+            unit: effect,
             handlers,
         });
     }

@@ -55,7 +55,11 @@ impl Checker<'_> {
         resolution_span: &RelativeSpan,
     ) {
         match resolution {
-            Resolution::Module(_) | Resolution::Variant(_) => {}
+            Resolution::Type(_)
+            | Resolution::Instance(_)
+            | Resolution::InstanceAssociatedFunction(_)
+            | Resolution::Module(_)
+            | Resolution::Variant(_) => {}
 
             Resolution::Generic(generic) => {
                 self.check_instantiation_predicates_by_generic_arguments(
@@ -65,7 +69,6 @@ impl Checker<'_> {
                 )
                 .await;
             }
-
             Resolution::MemberGeneric(member_generic) => {
                 // additional adt implementation check
 

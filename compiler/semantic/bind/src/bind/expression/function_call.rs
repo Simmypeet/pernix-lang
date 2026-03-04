@@ -223,7 +223,7 @@ async fn get_function_instantiation(
             // the symbol can't be called as a function
             handler.receive(
                 Diagnostic::SymbolIsNotCallable(SymbolIsNotCallable {
-                    symbol_id: resolution.global_id(),
+                    found: resolution,
                     span: syntax_tree.span(),
                 })
                 .into(),

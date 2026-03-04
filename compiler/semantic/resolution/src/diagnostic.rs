@@ -55,6 +55,7 @@ pub enum Diagnostic {
     ExpectModule(ExpectModule),
     ExpectInstance(ExpectInstance),
     ExpectTrait(ExpectTrait),
+    ExpectEffect(ExpectEffect),
     NoMemberInType(NoMemberInType),
     NoMemberInFunction(NoMemberInFunction),
     MismatchedKindInArgument(MismatchedKindInArgument),
@@ -100,6 +101,7 @@ impl Report for Diagnostic {
             }
             Self::ExpectInstance(diagnostic) => diagnostic.report(engine).await,
             Self::ExpectTrait(diagnostic) => diagnostic.report(engine).await,
+            Self::ExpectEffect(diagnostic) => diagnostic.report(engine).await,
         }
     }
 }
@@ -886,10 +888,11 @@ impl Report for ExpectModule {
     StableHash,
     Encode,
     Decode,
+    Builder,
 )]
 pub struct ForallLifetimeRedefinition {
     /// The span of the redefinition.
-    pub redefinition_span: RelativeSpan,
+    redefinition_span: RelativeSpan,
 }
 
 impl Report for ForallLifetimeRedefinition {
@@ -901,8 +904,7 @@ impl Report for ForallLifetimeRedefinition {
             .primary_highlight(Highlight::new(
                 engine.to_absolute_span(&self.redefinition_span).await,
                 Some(
-                    "forall lifetime with the same name already exists in \
-                     this scope"
+                    "lifetime with the same name is already defined"
                         .to_string(),
                 ),
             ))
@@ -1108,6 +1110,45 @@ impl Report for MismatchedKindInArgument {
                     })
                     .build(),
             )
+            .build()
+    }
+}
+
+/// The effect was expected but the non-effect symbol was found.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    Builder,
+)]
+pub struct ExpectEffect {
+    /// The span where the non-effect symbol was found.
+    non_effect_symbol_span: RelativeSpan,
+
+    /// The resolved symbol ID where the non-effect symbol was found.
+    resolved_resolution: Resolution,
+}
+
+impl Report for ExpectEffect {
+    async fn report(
+        &self,
+        table: &TrackedEngine,
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        let found = self.resolved_resolution.found_string(table).await;
+
+        pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(Highlight::new(
+                table.to_absolute_span(&self.non_effect_symbol_span).await,
+                Some(format!("the effect was expected but found `{found}`",)),
+            ))
+            .message("effect expected")
             .build()
     }
 }
