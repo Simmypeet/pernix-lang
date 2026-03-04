@@ -9,6 +9,7 @@ use pernixc_handler::{Handler, Storage};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_resolution::qualified_identifier::Resolution;
+use pernixc_semantic_element::trait_ref;
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
     kind::{Kind, get_kind},
@@ -465,6 +466,16 @@ pub async fn wf_check_executor(
         occurrences.push(
             tracked_engine
                 .query(&build::OccurrencesKey::new(function_signature::Key {
+                    symbol_id,
+                }))
+                .await,
+        );
+    }
+
+    if kind.has_trait_ref() {
+        occurrences.push(
+            tracked_engine
+                .query(&build::OccurrencesKey::new(trait_ref::Key {
                     symbol_id,
                 }))
                 .await,

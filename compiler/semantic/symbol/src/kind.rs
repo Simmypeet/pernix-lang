@@ -262,6 +262,17 @@ impl Kind {
         )
     }
 
+    /// Checks if the symbol has a trait reference.
+    #[must_use]
+    pub const fn has_trait_ref(&self) -> bool {
+        matches!(
+            self,
+            Self::Instance
+                | Self::TraitAssociatedInstance
+                | Self::InstanceAssociatedInstance
+        )
+    }
+
     /// Checks if the symbol has a `do Effects` clause.
     #[must_use]
     pub const fn has_capabilities(&self) -> bool {

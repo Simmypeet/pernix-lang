@@ -26,6 +26,7 @@ qbice.workspace = true
 linkme.workspace = true
 derive_more = { workspace = true }
 enum-as-inner = { workspace = true }
+bon.workspace = true
 
 [lints]
 workspace = true

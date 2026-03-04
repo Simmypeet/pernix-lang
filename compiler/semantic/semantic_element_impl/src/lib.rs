@@ -13,6 +13,7 @@ mod implemented;
 mod implements_qualified_identifier;
 mod import;
 mod occurrences;
+mod trait_ref;
 mod type_alias;
 mod variance;
 mod variant;
