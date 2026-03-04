@@ -1,19 +1,22 @@
 //! Contains the well-formedness check implementation.
 
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, ops::Deref};
 
 use pernixc_handler::Handler;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::{
     implements_arguments::get_implements_argument,
-    implied_predicate::get_implied_predicates, variance::Variance,
+    implied_predicate::get_implied_predicates,
+    trait_ref::get_trait_ref_of_instance, variance::Variance,
     where_clause::get_where_clause,
 };
 use pernixc_symbol::kind::get_kind;
 use pernixc_target::Global;
 use pernixc_term::{
     generic_arguments::GenericArguments,
+    generic_parameters::get_generic_parameters,
+    instance::Instance,
     instantiation::{self, Instantiation},
     predicate::{Outlives, Predicate},
     r#type::Type,
@@ -26,8 +29,9 @@ use crate::{
     diagnostic::{
         AdtImplementationIsNotGeneralEnough, Diagnostic,
         FoundNegativeImplementation, ImplementationIsNotGeneralEnough,
-        MismatchedImplementationArguments, PredicateSatisfiabilityOverflow,
-        RequiredBy, RequiredByImplements, UnsatisfiedPredicate,
+        MismatchedImplementationArguments, MismatchedTraitRef,
+        PredicateSatisfiabilityOverflow, RequiredBy, RequiredByImplements,
+        UnsatisfiedPredicate,
     },
     environment::Environment,
     lifetime_constraint::LifetimeConstraint,
@@ -513,6 +517,106 @@ impl<N: Normalizer> Environment<'_, N> {
             deduction: result.result,
             constraints: wf_lifetime_constraints,
         }))
+    }
+
+    /// Type-checks the trait-ref of the instance arguments supplied to the
+    /// generic with the given `generic_id`.
+    pub async fn check_instance_trait_ref(
+        &self,
+        generic_id: Global<pernixc_symbol::ID>,
+        instance_arguments: &[Instance],
+        instantiation_span: &RelativeSpan,
+        instantiation: &Instantiation,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError> {
+        let generic_parameters =
+            self.tracked_engine().get_generic_parameters(generic_id).await;
+
+        let mut lifetime_constraints = BTreeSet::new();
+
+        for ((_, instance_parameter), instance_arg) in generic_parameters
+            .instance_parameters_as_order()
+            .zip(instance_arguments)
+        {
+            let Some(instance_trait_ref) = self
+                .tracked_engine()
+                .get_trait_ref_of_instance(instance_arg)
+                .await
+            else {
+                continue;
+            };
+
+            let Some(mut expected_trait_ref) =
+                instance_parameter.trait_ref().map(|x| x.deref().clone())
+            else {
+                continue;
+            };
+
+            expected_trait_ref.instantiate(instantiation);
+
+            if instance_trait_ref.trait_id() != expected_trait_ref.trait_id() {
+                handler.receive(Diagnostic::MismatchedTraitRef(
+                    MismatchedTraitRef::builder()
+                        .expected_trait_ref(expected_trait_ref)
+                        .found_trait_ref(instance_trait_ref)
+                        .instance(instance_arg.clone())
+                        .span(*instantiation_span)
+                        .build(),
+                ));
+
+                continue;
+            }
+
+            let ok = match self
+                .subtypes_generic_arguments(
+                    expected_trait_ref.generic_arguments(),
+                    instance_trait_ref.generic_arguments(),
+                )
+                .await
+            {
+                Ok(Some(res)) => {
+                    if res.result.forall_lifetime_errors.is_empty() {
+                        if self.do_outlives_check() {
+                            self.check_lifetime_constraints(
+                                res.constraints.iter(),
+                                instantiation_span,
+                                handler,
+                            )
+                            .await;
+                        } else {
+                            lifetime_constraints
+                                .extend(res.constraints.iter().cloned());
+                        }
+
+                        true
+                    } else {
+                        false
+                    }
+                }
+
+                Ok(None) => false,
+
+                Err(overflow_error) => {
+                    return Err(overflow_error.report_as_type_check_overflow(
+                        *instantiation_span,
+                        handler,
+                    ));
+                }
+            };
+
+            if !ok {
+                handler.receive(Diagnostic::MismatchedTraitRef(
+                    MismatchedTraitRef::builder()
+                        .expected_trait_ref(expected_trait_ref)
+                        .found_trait_ref(instance_trait_ref)
+                        .span(*instantiation_span)
+                        .instance(instance_arg.clone())
+                        .build(),
+                ));
+            }
+        }
+
+        Ok(lifetime_constraints)
     }
 
     /// Checks the where clause predicate requirements declared in the given

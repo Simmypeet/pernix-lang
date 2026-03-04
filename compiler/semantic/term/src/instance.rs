@@ -68,6 +68,11 @@ impl TraitRef {
     pub const fn generic_arguments(&self) -> &GenericArguments {
         self.0.generic_arguments()
     }
+
+    /// Instantiates this `TraitRef` with the given instantiation.
+    pub fn instantiate(&mut self, instantiation: &Instantiation) {
+        self.0.instantiate(instantiation);
+    }
 }
 
 /// Refers to a terrm that is associated with an instance.

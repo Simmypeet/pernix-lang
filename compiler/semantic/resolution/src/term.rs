@@ -86,7 +86,8 @@ macro_rules! resolve_generic_arguments_kind {
 
         if let Some(generic_arguments_syn) = $generic_arguments_syn.as_mut() {
             while let Some($param_id) = parameter_order.next()
-                && let Some($syn) = generic_arguments_syn.pop()
+                && let Some($syn) = (!generic_arguments_syn.is_empty())
+                    .then(|| generic_arguments_syn.remove(0))
             {
                 let term = $terms.push($resolve);
             }

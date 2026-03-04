@@ -1,0 +1,9 @@
+public trait Trait[A]:
+    pass
+
+
+public type Require[instance I: Trait[int32], instance J: Trait[bool]] = int32
+
+
+# should error with two instances that are not the same
+public type Use[instance I: Trait[bool], instance J: Trait[int32]] = Require[I, J]

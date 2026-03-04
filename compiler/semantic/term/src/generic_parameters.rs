@@ -327,7 +327,7 @@ impl GenericParameter for ConstantParameter {
 )]
 pub struct InstanceParameter {
     name: Interned<str>,
-    trait_ref: Option<TraitRef>,
+    trait_ref: Option<Interned<TraitRef>>,
     span: Option<RelativeSpan>,
 }
 
@@ -338,7 +338,7 @@ impl InstanceParameter {
 
     /// Gets the trait reference that this instance parameter implements.
     #[must_use]
-    pub const fn trait_ref(&self) -> Option<&TraitRef> {
+    pub const fn trait_ref(&self) -> Option<&Interned<TraitRef>> {
         self.trait_ref.as_ref()
     }
 

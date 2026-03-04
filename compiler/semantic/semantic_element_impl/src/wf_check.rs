@@ -140,9 +140,24 @@ impl Checker<'_> {
                     )
                     .unwrap();
 
+                let instances = member_generic
+                    .member_generic_arguments
+                    .instances()
+                    .to_vec();
+
                 self.environment
                     .wf_check_instantiation(
                         member_generic.id,
+                        resolution_span,
+                        &base_instantiation,
+                        self.handler,
+                    )
+                    .await;
+
+                self.environment
+                    .check_instance_trait_ref(
+                        member_generic.id,
+                        &instances,
                         resolution_span,
                         &base_instantiation,
                         self.handler,
@@ -160,6 +175,8 @@ impl Checker<'_> {
         generic_arguments: GenericArguments,
         instantiation_span: &RelativeSpan,
     ) {
+        let instances = generic_arguments.instances().to_vec();
+
         let inst = self
             .environment
             .tracked_engine()
@@ -171,6 +188,17 @@ impl Checker<'_> {
             .environment
             .wf_check_instantiation(
                 instantiated,
+                instantiation_span,
+                &inst,
+                self.handler,
+            )
+            .await;
+
+        let _ = self
+            .environment
+            .check_instance_trait_ref(
+                instantiated,
+                &instances,
                 instantiation_span,
                 &inst,
                 self.handler,

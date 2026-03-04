@@ -27,7 +27,7 @@ use pernixc_term::{
     display::Display,
     generic_arguments::GenericArguments,
     generic_parameters::get_generic_parameters,
-    instance::{Instance, InstanceAssociated, TraitRef},
+    instance::{Instance, InstanceAssociated},
     r#type::Type,
 };
 use qbice::{Decode, Encode, Identifiable, StableHash};
@@ -779,7 +779,7 @@ async fn resolve_step(
                     self.get_generic_parameters(member_id.parent_id()).await
                         [member_id.id()]
                     .trait_ref()
-                    .map(TraitRef::trait_id)
+                    .map(|x| x.trait_id())
                     .ok_or(Error::Abort)?
                 };
 

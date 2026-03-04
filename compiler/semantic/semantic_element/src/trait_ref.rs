@@ -1,11 +1,14 @@
 //! Contains the [`Key`] query definition.
 
+use std::ops::Deref;
+
 use pernixc_extend::extend;
 use pernixc_qbice::TrackedEngine;
 use pernixc_target::Global;
 use pernixc_term::{
     generic_parameters::get_generic_parameters,
     instance::{Instance, TraitRef},
+    instantiation::get_instantiation_for_associated_symbol,
 };
 use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 
@@ -46,12 +49,61 @@ pub async fn get_trait_ref_id_of_instance(
             .get_generic_parameters(member_id.parent_id())
             .await[member_id.id()]
         .trait_ref()
-        .map(pernixc_term::instance::TraitRef::trait_id),
+        .map(|x| x.trait_id()),
 
         Instance::InstanceAssociated(instance_associated) => self
             .get_trait_ref(instance_associated.trait_associated_symbol_id())
             .await
             .map(|x| x.trait_id()),
+
+        Instance::Inference(_) | Instance::Error(_) => None,
+    }
+}
+
+/// Resolves the trait ref of the given instance.
+#[extend]
+pub async fn get_trait_ref_of_instance(
+    self: &TrackedEngine,
+    instance: &Instance,
+) -> Option<TraitRef> {
+    match instance {
+        Instance::Symbol(symbol) => {
+            self.get_trait_ref(symbol.id()).await.map(|x| x.deref().clone())
+        }
+
+        Instance::Parameter(member_id) => self
+            .get_generic_parameters(member_id.parent_id())
+            .await[member_id.id()]
+        .trait_ref()
+        .map(|x| x.deref().clone()),
+
+        Instance::InstanceAssociated(instance_associated) => {
+            let parent_trait_ref = Box::pin(
+                self.get_trait_ref_of_instance(instance_associated.instance()),
+            )
+            .await?;
+
+            let mut trait_ref = self
+                .get_trait_ref(instance_associated.trait_associated_symbol_id())
+                .await?
+                .deref()
+                .clone();
+
+            let instantiation = self
+                .get_instantiation_for_associated_symbol(
+                    instance_associated.trait_associated_symbol_id(),
+                    parent_trait_ref.generic_arguments().clone(),
+                    instance_associated
+                        .associated_instance_generic_arguments()
+                        .clone(),
+                )
+                .await
+                .unwrap();
+
+            trait_ref.instantiate(&instantiation);
+
+            Some(trait_ref)
+        }
 
         Instance::Inference(_) | Instance::Error(_) => None,
     }

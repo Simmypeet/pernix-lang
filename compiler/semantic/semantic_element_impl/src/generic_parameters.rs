@@ -61,13 +61,13 @@ impl pernixc_resolution::ResolveInstanceParameterTraitRef
             if instance_parameter.parent_id() == self.symbol_id {
                 self.generic_parameters[instance_parameter.id()]
                     .trait_ref()
-                    .map(pernixc_term::instance::TraitRef::trait_id)
+                    .map(|x| x.trait_id())
             } else {
                 self.engine
                     .get_generic_parameters(instance_parameter.parent_id())
                     .await[instance_parameter.id()]
                 .trait_ref()
-                .map(pernixc_term::instance::TraitRef::trait_id)
+                .map(|x| x.trait_id())
             }
         })
     }
@@ -398,7 +398,7 @@ impl build::Build for pernixc_term::generic_parameters::Key {
             match generic_parameters.add_instance_parameter(
                 InstanceParameter::new(
                     identifier.kind.0.clone(),
-                    trait_ref,
+                    trait_ref.map(|x| engine.intern(x)),
                     Some(identifier.span),
                 ),
             ) {
