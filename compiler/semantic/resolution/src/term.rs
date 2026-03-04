@@ -25,7 +25,7 @@ use pernixc_term::{
         ConstantParameter, GenericKind, InstanceParameter, InstanceParameterID,
         TypeParameter, TypeParameterID, get_generic_parameters,
     },
-    instance::Instance,
+    instance::{Instance, TraitRef},
     instantiation::{Instantiation, get_instantiation_for_associated_symbol},
     lifetime::Lifetime,
     tuple,
@@ -35,10 +35,10 @@ use pernixc_term::{
 use crate::{
     Config, ElidedTermProvider, Error,
     diagnostic::{
-        Diagnostic, ExpectInstance, ExpectType, LifetimeParameterNotFound,
-        MismatchedGenericArgumentCount, MismatchedKindInArgument,
-        MisorderedGenericArgument, MoreThanOneUnpackedInTupleType,
-        UnexpectedInference,
+        Diagnostic, ExpectInstance, ExpectTrait, ExpectType,
+        LifetimeParameterNotFound, MismatchedGenericArgumentCount,
+        MismatchedKindInArgument, MisorderedGenericArgument,
+        MoreThanOneUnpackedInTupleType, UnexpectedInference,
     },
     qualified_identifier::{Resolution, resolve_qualified_identifier},
 };
@@ -845,6 +845,31 @@ pub async fn resolution_to_type(
     }
 }
 
+/// Interprets the [`Resolution`] as a [`TraitRef`].
+#[extend]
+pub async fn resolution_to_trait_ref(
+    self: &TrackedEngine,
+    resolution: Resolution,
+) -> Result<TraitRef, ResolutionToTermError> {
+    match resolution {
+        Resolution::Generic(symbol) => {
+            let symbol_kind = self.get_kind(symbol.id).await;
+
+            match symbol_kind {
+                Kind::Trait => {
+                    Ok(TraitRef::new(symbol.id, symbol.generic_arguments))
+                }
+
+                _ => Err(ResolutionToTermError::Failed(Resolution::Generic(
+                    symbol,
+                ))),
+            }
+        }
+
+        resolution => Err(ResolutionToTermError::Failed(resolution)),
+    }
+}
+
 /// Resolves a [`pernixc_syntax::QualifiedIdentifier`] as a [`Type`] term.
 #[extend]
 pub async fn resolve_qualified_identifier_instance(
@@ -869,7 +894,7 @@ pub async fn resolve_qualified_identifier_instance(
         Err(ResolutionToTermError::Failed(resolution)) => {
             handler.receive(Diagnostic::ExpectInstance(
                 ExpectInstance::builder()
-                    .non_type_symbol_span(syntax_tree.span())
+                    .non_instance_symbol_span(syntax_tree.span())
                     .resolved_resolution(resolution)
                     .build(),
             ));
@@ -909,6 +934,40 @@ pub async fn resolve_qualified_identifier_type(
             ));
 
             Type::Error(pernixc_term::error::Error)
+        }
+    }
+}
+
+/// Resolves a [`pernixc_syntax::QualifiedIdentifier`] as a [`TraitRef`].
+#[extend]
+pub async fn resolve_qualified_identifier_trait_ref(
+    self: &TrackedEngine,
+    syntax_tree: &pernixc_syntax::QualifiedIdentifier,
+    config: Config<'_, '_, '_, '_, '_>,
+    handler: &dyn Handler<Diagnostic>,
+) -> Option<TraitRef> {
+    let resolution = match self
+        .resolve_qualified_identifier(syntax_tree, config, handler)
+        .await
+    {
+        Ok(resolution) => resolution,
+
+        Err(Error::Abort) => {
+            return None;
+        }
+    };
+
+    match self.resolution_to_trait_ref(resolution).await {
+        Ok(trait_ref) => Some(trait_ref),
+        Err(ResolutionToTermError::Failed(resolution)) => {
+            handler.receive(Diagnostic::ExpectTrait(
+                ExpectTrait::builder()
+                    .non_trait_symbol_span(syntax_tree.span())
+                    .resolved_resolution(resolution)
+                    .build(),
+            ));
+
+            None
         }
     }
 }

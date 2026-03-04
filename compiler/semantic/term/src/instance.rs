@@ -49,6 +49,16 @@ pub mod arbitrary;
 pub struct TraitRef(Symbol);
 
 impl TraitRef {
+    /// Creates a new `TraitRef` with the given trait symbol ID and generic
+    /// arguments.
+    #[must_use]
+    pub fn new(
+        id: Global<pernixc_symbol::ID>,
+        generic_arguments: GenericArguments,
+    ) -> Self {
+        Self(Symbol::new(id, generic_arguments))
+    }
+
     /// Retrieves the trait ID of this `TraitRef`.
     #[must_use]
     pub const fn trait_id(&self) -> Global<pernixc_symbol::ID> { self.0.id() }

@@ -54,6 +54,7 @@ pub enum Diagnostic {
     ExpectType(ExpectType),
     ExpectModule(ExpectModule),
     ExpectInstance(ExpectInstance),
+    ExpectTrait(ExpectTrait),
     NoMemberInType(NoMemberInType),
     NoMemberInFunction(NoMemberInFunction),
     MismatchedKindInArgument(MismatchedKindInArgument),
@@ -98,6 +99,7 @@ impl Report for Diagnostic {
                 diagnostic.report(engine).await
             }
             Self::ExpectInstance(diagnostic) => diagnostic.report(engine).await,
+            Self::ExpectTrait(diagnostic) => diagnostic.report(engine).await,
         }
     }
 }
@@ -306,7 +308,7 @@ impl Report for ExpectType {
     }
 }
 
-/// The type was expected but the non-type symbol was found.
+/// The instance was expected but the non-instance symbol was found.
 #[derive(
     Debug,
     Clone,
@@ -321,10 +323,10 @@ impl Report for ExpectType {
     Builder,
 )]
 pub struct ExpectInstance {
-    /// The span where the non-type symbol was found.
-    non_type_symbol_span: RelativeSpan,
+    /// The span where the non-instance symbol was found.
+    non_instance_symbol_span: RelativeSpan,
 
-    /// The resolved symbol ID where the non-type symbol was found.
+    /// The resolved symbol ID where the non-instance symbol was found.
     resolved_resolution: Resolution,
 }
 
@@ -368,10 +370,81 @@ impl Report for ExpectInstance {
 
         pernixc_diagnostic::Rendered::builder()
             .primary_highlight(Highlight::new(
-                table.to_absolute_span(&self.non_type_symbol_span).await,
+                table.to_absolute_span(&self.non_instance_symbol_span).await,
                 Some(format!("the instance was expected but found `{found}`",)),
             ))
             .message("instance expected")
+            .build()
+    }
+}
+
+/// The trait was expected but the non-trait symbol was found.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Builder,
+)]
+pub struct ExpectTrait {
+    /// The span where the non-trait symbol was found.
+    non_trait_symbol_span: RelativeSpan,
+
+    /// The resolved symbol ID where the non-trait symbol was found.
+    resolved_resolution: Resolution,
+}
+
+impl Report for ExpectTrait {
+    async fn report(
+        &self,
+        table: &TrackedEngine,
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        let found =
+            if let Some(global_id) = self.resolved_resolution.global_id() {
+                let qualified_name = table.get_qualified_name(global_id).await;
+                let kind = table.get_kind(global_id).await;
+
+                format!("`{} {qualified_name}`", kind.kind_str())
+            } else {
+                match &self.resolved_resolution {
+                    Resolution::Module(_)
+                    | Resolution::Variant(_)
+                    | Resolution::Generic(_)
+                    | Resolution::MemberGeneric(_)
+                    | Resolution::InstanceAssociatedFunction(_) => {
+                        unreachable!("should've gotten a global_id()")
+                    }
+
+                    Resolution::Type(ty) => {
+                        let mut string = "`type ".to_string();
+                        ty.write_async(table, &mut string).await.unwrap();
+                        string.push('`');
+
+                        string
+                    }
+
+                    Resolution::Instance(instance) => {
+                        let mut string = "`instance ".to_string();
+                        instance.write_async(table, &mut string).await.unwrap();
+                        string.push('`');
+
+                        string
+                    }
+                }
+            };
+
+        pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(Highlight::new(
+                table.to_absolute_span(&self.non_trait_symbol_span).await,
+                Some(format!("the trait was expected but found `{found}`",)),
+            ))
+            .message("trait expected")
             .build()
     }
 }
