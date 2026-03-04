@@ -8,7 +8,9 @@ use pernixc_target::Global;
 use pernixc_term::{
     generic_parameters::get_generic_parameters,
     instance::{Instance, TraitRef},
-    instantiation::get_instantiation_for_associated_symbol,
+    instantiation::{
+        get_instantiation, get_instantiation_for_associated_symbol,
+    },
 };
 use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 
@@ -68,7 +70,22 @@ pub async fn get_trait_ref_of_instance(
 ) -> Option<TraitRef> {
     match instance {
         Instance::Symbol(symbol) => {
-            self.get_trait_ref(symbol.id()).await.map(|x| x.deref().clone())
+            let mut trait_ref = self
+                .get_trait_ref(symbol.id())
+                .await
+                .map(|x| x.deref().clone())?;
+
+            let inst = self
+                .get_instantiation(
+                    symbol.id(),
+                    symbol.generic_arguments().clone(),
+                )
+                .await
+                .unwrap();
+
+            trait_ref.instantiate(&inst);
+
+            Some(trait_ref)
         }
 
         Instance::Parameter(member_id) => self
