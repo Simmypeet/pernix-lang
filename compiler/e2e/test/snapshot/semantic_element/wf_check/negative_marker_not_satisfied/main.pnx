@@ -16,7 +16,7 @@ public struct MyStruct:
 
 public type WithRequirement[T] = T:
     where:
-        marker not Marker[T]
+        T: not Marker
 
 
 public type InstMyStruct = WithRequirement[MyStruct]

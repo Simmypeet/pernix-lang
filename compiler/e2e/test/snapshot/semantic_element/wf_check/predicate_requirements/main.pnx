@@ -1,19 +1,15 @@
-public trait Fizz['a, T]:
-    pass
+public marker Fizz['a, T]
 
 
-public trait Identity[T]:
-    public type Output
+public marker Identity[T]
 
 
-implements[T] Identity[T]:
-    type Output = int32
+final implements[T] Identity[T]
 
 
 public type Qux['a, T] = &'a T:
     where:
-        trait Fizz['a, T] + Identity[T]
-        Identity[T]::Output = T
+        T: Fizz['a] + Identity
         T: 'a + const + tuple
         'a: 'static
 
