@@ -121,14 +121,14 @@ macro_rules! resolve_generic_arguments_kind {
                 }
             }
 
-            if $generic_parameters.parameter_len::<$param>() != 0 {
+            if $generic_parameters.parameter_len::<$param>() != $terms.len() {
                 $handler.receive(Diagnostic::MismatchedGenericArgumentCount(
                     MismatchedGenericArgumentCount {
                         generic_kind: $kind,
                         generic_identifier_span: $span,
                         expected_count: $generic_parameters
                             .parameter_len::<$param>(),
-                        supplied_count: 0,
+                        supplied_count: $terms.len(),
                     },
                 ));
             }
