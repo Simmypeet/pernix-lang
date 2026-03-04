@@ -16,11 +16,10 @@ public marker FirstMarker[T]
 public marker SecondMarker[T]
 
 
-public type Test['a, 'b, 'c, T, U, V] = usize:
+public type Test['a, 'b, 'c, T, U, V, instance I: FirstTrait[T]] = usize:
     where:
-        FirstTrait[T]::Member[U] = usize
-        trait FirstTrait[T] + const SecondTrait[U] + not ThirdTrait[V]
-        marker FirstMarker[T] + not SecondMarker[U]
+        I::Member[U] = usize
+        T: FirstMarker
         T: tuple
         U: tuple
         V: const
