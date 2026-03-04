@@ -5,8 +5,8 @@ use pernixc_symbol::syntax::{
     FunctionSignatureKey, FunctionUnsafeKeywordKey, GenericParametersKey,
     ImplementsFinalKeywordKey, ImplementsMemberAccessModifierKey,
     ImplementsQualifiedIdentifierKey, ImportKey,
-    InstanceAssociatedValueSyntaxKey, TypeAliasKey, VariantAssociatedTypeKey,
-    WhereClauseKey,
+    InstanceAssociatedValueSyntaxKey, InstanceTraitRefSyntaxKey, TypeAliasKey,
+    VariantAssociatedTypeKey, WhereClauseKey,
 };
 use pernixc_syntax::QualifiedIdentifier;
 use pernixc_target::Global;
@@ -772,4 +772,61 @@ static INSTANCE_ASSOCIATED_VALUE_SYNTAX_EXECUTOR: Registration<Config> =
     Registration::new::<
         InstanceAssociatedValueSyntaxKey,
         GetInstanceAssociatedValueSyntax,
+    >();
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    Query,
+)]
+#[value(Option<Option<pernixc_syntax::item::TraitRef>>)]
+pub struct InstanceTraitRefSyntaxProjectionKey {
+    pub symbol_id: Global<pernixc_symbol::ID>,
+}
+
+#[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
+async fn instance_trait_ref_syntax_projection_executor(
+    key: &InstanceTraitRefSyntaxProjectionKey,
+    engine: &TrackedEngine,
+) -> Option<Option<pernixc_syntax::item::TraitRef>> {
+    let table = engine.get_table_of_symbol(key.symbol_id).await?;
+
+    table.instance_trait_ref_syntaxes.get(&key.symbol_id.id).cloned()
+}
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static INSTANCE_TRAIT_REF_SYNTAX_PROJECTION_EXECUTOR: Registration<Config> =
+    Registration::new::<
+        InstanceTraitRefSyntaxProjectionKey,
+        InstanceTraitRefSyntaxProjectionExecutor,
+    >();
+
+/// Implementation of the `get_instance_trait_ref_syntax` method
+#[executor(config = Config)]
+async fn instance_trait_ref_syntax_executor(
+    key: &InstanceTraitRefSyntaxKey,
+    engine: &TrackedEngine,
+) -> Option<pernixc_syntax::item::TraitRef> {
+    engine
+        .query(&InstanceTraitRefSyntaxProjectionKey {
+            symbol_id: key.symbol_id,
+        })
+        .await
+        .unwrap()
+}
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static INSTANCE_TRAIT_REF_SYNTAX_EXECUTOR: Registration<Config> =
+    Registration::new::<
+        InstanceTraitRefSyntaxKey,
+        InstanceTraitRefSyntaxExecutor,
     >();

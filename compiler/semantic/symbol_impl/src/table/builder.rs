@@ -69,6 +69,8 @@ pub struct Builder {
         DashMap<ID, pernixc_syntax::QualifiedIdentifier>,
     final_keywords: DashMap<ID, Option<pernixc_syntax::Keyword>>,
 
+    instance_trait_ref_syntaxes:
+        DashMap<ID, Option<pernixc_syntax::item::TraitRef>>,
     function_body_syntaxes: DashMap<
         ID,
         Option<
@@ -132,6 +134,7 @@ impl Builder {
             instance_associated_value_syntaxes: DashMap::default(),
             external_instances: DashMap::default(),
             scope_spans: DashMap::default(),
+            instance_trait_ref_syntaxes: DashMap::default(),
             function_unsafe_keywords: DashMap::default(),
             token_tree,
             source_file,
@@ -213,6 +216,9 @@ impl Builder {
             instance_associated_value_syntaxes: self.engine.intern(
                 self.instance_associated_value_syntaxes.into_iter().collect(),
             ),
+            instance_trait_ref_syntaxes: self
+                .engine
+                .intern(self.instance_trait_ref_syntaxes.into_iter().collect()),
             function_unsafe_keywords: self
                 .engine
                 .intern(self.function_unsafe_keywords.into_iter().collect()),
@@ -363,6 +369,18 @@ impl Builder {
     ) {
         assert!(
             self.instance_associated_value_syntaxes
+                .insert(id, qualified_identifier)
+                .is_none()
+        );
+    }
+
+    pub fn insert_instance_trait_ref(
+        &self,
+        id: pernixc_symbol::ID,
+        qualified_identifier: Option<pernixc_syntax::item::TraitRef>,
+    ) {
+        assert!(
+            self.instance_trait_ref_syntaxes
                 .insert(id, qualified_identifier)
                 .is_none()
         );

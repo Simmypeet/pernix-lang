@@ -50,6 +50,10 @@ impl Builder {
             instance_id,
             instance_syntax.extern_keyword().is_some(),
         );
+        self.insert_instance_trait_ref(
+            instance_id,
+            instance_syntax.signature().and_then(|x| x.trait_ref()),
+        );
 
         join_set.spawn(async move {
             let mut instance_member_builder = MemberBuilder::new(
@@ -214,6 +218,10 @@ impl Builder {
                                 .and_then(|x| x.trailing_where_clause())
                                 .and_then(|x| x.where_clause())
                                 .and_then(|x| x.predicates()),
+                        );
+                        builder.insert_instance_trait_ref(
+                            id,
+                            inst.signature().and_then(|x| x.trait_ref()),
                         );
                         builder.insert_instance_associated_value(
                             id,

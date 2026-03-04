@@ -219,6 +219,10 @@ impl Builder {
                                 .and_then(|x| x.where_clause())
                                 .and_then(|x| x.predicates()),
                         );
+                        builder.insert_instance_trait_ref(
+                            id,
+                            inst.signature().and_then(|x| x.trait_ref()),
+                        );
                     }
                 }
             }
