@@ -5,41 +5,37 @@ public struct Invariant['x, 'a]:
     private mutableRef: &'x mut &'a int32
 
 
-public trait Identity[T]:
+public trait Identity:
     public type Output
 
 
-public type ConstrainedInvariant['x, 'a, T] = T:
+public type ConstrainedInvariant['x, 'a, instance I: Identity] = int32:
     where:
         'a: 'x
-        Identity[T]::Output = Invariant['x, 'a]
-        trait Identity[T]
+        I::Output = Invariant['x, 'a]
 
 
 # should error with 'b: 'a and 'a: 'b
-public type UseInvariant['x, 'a, 'b, T] = ConstrainedInvariant['x, 'a, T]:
+public type UseInvariant['x, 'a, 'b, instance I: Identity] = ConstrainedInvariant['x, 'a, I]:
     where:
         'a: 'x
         'b: 'x
-        Identity[T]::Output = Invariant['x, 'b]
-        trait Identity[T]
+        I::Output = Invariant['x, 'b]
 
 
 public struct Covariant['a]:
     private immutableRef: &'a int32
 
 
-public type ConstrainedCovariant['a, T] = T:
+public type ConstrainedCovariant['a, instance I: Identity] = int32:
     where:
-        Identity[T]::Output = Covariant['a]
-        trait Identity[T]
+        I::Output = Covariant['a]
 
 
 # should error with 'b: 'a
-public type UseVariant['a, 'b, T] = ConstrainedCovariant['a, T]:
+public type UseCovariant['a, 'b, instance I: Identity] = ConstrainedCovariant['a, I]:
     where:
-        Identity[T]::Output = Covariant['b]
-        trait Identity[T]
+        I::Output = Covariant['b]
 
 
 public struct ConstraintLifetime['a, T]:
@@ -61,15 +57,13 @@ public struct Bivariant['a]:
     pass
 
 
-public type ConstraintBivariant['a, T] = T:
+public type ConstraintBivariant['a, instance I: Identity] = int32:
     where:
-        Identity[T]::Output = Bivariant['a]
-        trait Identity[T]
+        I::Output = Bivariant['a]
 
 
 # should have no lifetime errors, since the lifetime 'a  of `Bivariant` is
 # bivariant
-public type UseConstraintBivariant['a, 'b, T] = ConstraintBivariant['a, T]:
+public type UseConstraintBivariant['a, 'b, instance I: Identity] = ConstraintBivariant['a, I]:
     where:
-        Identity[T]::Output = Bivariant['b]
-        trait Identity[T]
+        I::Output = Bivariant['b]
