@@ -1,6 +1,8 @@
 //! Defines all kinds of diagnostics occurred during resolution.
 
-use pernixc_diagnostic::{Highlight, Report};
+use bon::Builder;
+use derive_more::From;
+use pernixc_diagnostic::{Highlight, Rendered, Report};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::import::get_import_map;
@@ -12,8 +14,17 @@ use pernixc_symbol::{
     source_map::to_absolute_span,
 };
 use pernixc_target::{Global, get_target_map};
-use pernixc_term::generic_parameters::GenericKind;
+use pernixc_term::{
+    display::Display,
+    generic_parameters::{
+        ConstantParameterID, GenericKind, GenericParameter,
+        InstanceParameterID, TypeParameterID, get_generic_parameters,
+    },
+    r#type::Type,
+};
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
+
+use crate::qualified_identifier::Resolution;
 
 /// Enumeration of all kinds of diagnostic generated during resolution.
 #[derive(
@@ -42,6 +53,10 @@ pub enum Diagnostic {
     NoGenericArgumentsRequired(NoGenericArgumentsRequired),
     ExpectType(ExpectType),
     ExpectModule(ExpectModule),
+    ExpectInstance(ExpectInstance),
+    NoMemberInType(NoMemberInType),
+    NoMemberInFunction(NoMemberInFunction),
+    MismatchedKindInArgument(MismatchedKindInArgument),
 }
 
 impl Report for Diagnostic {
@@ -75,6 +90,14 @@ impl Report for Diagnostic {
             }
             Self::ExpectType(diagnostic) => diagnostic.report(engine).await,
             Self::ExpectModule(diagnostic) => diagnostic.report(engine).await,
+            Self::NoMemberInType(diagnostic) => diagnostic.report(engine).await,
+            Self::NoMemberInFunction(diagnostic) => {
+                diagnostic.report(engine).await
+            }
+            Self::MismatchedKindInArgument(diagnostic) => {
+                diagnostic.report(engine).await
+            }
+            Self::ExpectInstance(diagnostic) => diagnostic.report(engine).await,
         }
     }
 }
@@ -219,7 +242,6 @@ impl Report for UnexpectedInference {
 #[derive(
     Debug,
     Clone,
-    Copy,
     PartialEq,
     Eq,
     PartialOrd,
@@ -228,13 +250,14 @@ impl Report for UnexpectedInference {
     StableHash,
     Encode,
     Decode,
+    Builder,
 )]
 pub struct ExpectType {
     /// The span where the non-type symbol was found.
-    pub non_type_symbol_span: RelativeSpan,
+    non_type_symbol_span: RelativeSpan,
 
     /// The resolved symbol ID where the non-type symbol was found.
-    pub resolved_global_id: Global<pernixc_symbol::ID>,
+    resolved_resolution: Resolution,
 }
 
 impl Report for ExpectType {
@@ -242,19 +265,113 @@ impl Report for ExpectType {
         &self,
         table: &TrackedEngine,
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
-        let qualified_name =
-            table.get_qualified_name(self.resolved_global_id).await;
-        let kind = table.get_kind(self.resolved_global_id).await;
+        let found =
+            if let Some(global_id) = self.resolved_resolution.global_id() {
+                let qualified_name = table.get_qualified_name(global_id).await;
+                let kind = table.get_kind(global_id).await;
+
+                format!("`{} {qualified_name}`", kind.kind_str())
+            } else {
+                match &self.resolved_resolution {
+                    Resolution::Module(_)
+                    | Resolution::Variant(_)
+                    | Resolution::Generic(_)
+                    | Resolution::MemberGeneric(_)
+                    | Resolution::InstanceAssociatedFunction(_) => {
+                        unreachable!("should've gotten a global_id()")
+                    }
+
+                    Resolution::Type(_) => {
+                        unreachable!(
+                            "this is already a type, should've not caused \
+                             this error"
+                        )
+                    }
+
+                    Resolution::Instance(instance) => {
+                        let mut string = "`instance ".to_string();
+                        instance.write_async(table, &mut string).await.unwrap();
+                        string
+                    }
+                }
+            };
 
         pernixc_diagnostic::Rendered::builder()
             .primary_highlight(Highlight::new(
                 table.to_absolute_span(&self.non_type_symbol_span).await,
-                Some(format!(
-                    "the type was expected but found `{} {qualified_name}`",
-                    kind.kind_str()
-                )),
+                Some(format!("the type was expected but found `{found}`",)),
             ))
             .message("type expected")
+            .build()
+    }
+}
+
+/// The type was expected but the non-type symbol was found.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Builder,
+)]
+pub struct ExpectInstance {
+    /// The span where the non-type symbol was found.
+    non_type_symbol_span: RelativeSpan,
+
+    /// The resolved symbol ID where the non-type symbol was found.
+    resolved_resolution: Resolution,
+}
+
+impl Report for ExpectInstance {
+    async fn report(
+        &self,
+        table: &TrackedEngine,
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        let found =
+            if let Some(global_id) = self.resolved_resolution.global_id() {
+                let qualified_name = table.get_qualified_name(global_id).await;
+                let kind = table.get_kind(global_id).await;
+
+                format!("`{} {qualified_name}`", kind.kind_str())
+            } else {
+                match &self.resolved_resolution {
+                    Resolution::Module(_)
+                    | Resolution::Variant(_)
+                    | Resolution::Generic(_)
+                    | Resolution::MemberGeneric(_)
+                    | Resolution::InstanceAssociatedFunction(_) => {
+                        unreachable!("should've gotten a global_id()")
+                    }
+
+                    Resolution::Type(ty) => {
+                        let mut string = "`type ".to_string();
+                        ty.write_async(table, &mut string).await.unwrap();
+                        string.push('`');
+
+                        string
+                    }
+
+                    Resolution::Instance(_) => {
+                        unreachable!(
+                            "this is already an instance, should've not \
+                             caused this error"
+                        )
+                    }
+                }
+            };
+
+        pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(Highlight::new(
+                table.to_absolute_span(&self.non_type_symbol_span).await,
+                Some(format!("the instance was expected but found `{found}`",)),
+            ))
+            .message("instance expected")
             .build()
     }
 }
@@ -717,6 +834,207 @@ impl Report for ForallLifetimeRedefinition {
                 ),
             ))
             .message("forall lifetime redefinition")
+            .build()
+    }
+}
+
+/// The type doesn't have a member to be accessed.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    Builder,
+)]
+pub struct NoMemberInType {
+    resolution_span: RelativeSpan,
+    r#type: Type,
+}
+
+impl Report for NoMemberInType {
+    async fn report(
+        &self,
+        parameter: &TrackedEngine,
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        Rendered::builder()
+            .message({
+                let mut message =
+                    "cannot access to the member of type `".to_string();
+
+                self.r#type.write_async(parameter, &mut message).await.unwrap();
+
+                message.push('`');
+
+                message
+            })
+            .primary_highlight(
+                Highlight::builder()
+                    .span(
+                        parameter.to_absolute_span(&self.resolution_span).await,
+                    )
+                    .build(),
+            )
+            .build()
+    }
+}
+
+/// The function doesn't have a member to be accessed.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    Builder,
+)]
+pub struct NoMemberInFunction {
+    resolution_span: RelativeSpan,
+    function_id: Global<pernixc_symbol::ID>,
+}
+
+impl Report for NoMemberInFunction {
+    async fn report(
+        &self,
+        parameter: &TrackedEngine,
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        let function_qualified_name =
+            parameter.get_qualified_name(self.function_id).await;
+
+        Rendered::builder()
+            .message(format!(
+                "cannot access to the member of function \
+                 `{function_qualified_name}`"
+            ))
+            .primary_highlight(
+                Highlight::builder()
+                    .span(
+                        parameter.to_absolute_span(&self.resolution_span).await,
+                    )
+                    .build(),
+            )
+            .build()
+    }
+}
+
+/// The kind of parameter was expected.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    From,
+)]
+#[allow(missing_docs)]
+pub enum ExpectedParameter {
+    Type(TypeParameterID),
+    Constant(ConstantParameterID),
+    Instance(InstanceParameterID),
+}
+
+/// Expected type argument at the given position
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    Builder,
+)]
+pub struct MismatchedKindInArgument {
+    argument_span: RelativeSpan,
+    found_kind: GenericKind,
+    found_parameter: ExpectedParameter,
+}
+
+impl Report for MismatchedKindInArgument {
+    async fn report(
+        &self,
+        parameter: &TrackedEngine,
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        Rendered::builder()
+            .message(format!(
+                "expected {} argument, but found {} argument",
+                match self.found_parameter {
+                    ExpectedParameter::Type(_) => "a type",
+                    ExpectedParameter::Constant(_) => "a constant",
+                    ExpectedParameter::Instance(_) => "an instance",
+                },
+                match self.found_kind {
+                    GenericKind::Type => "a type",
+                    GenericKind::Lifetime => "a lifetime",
+                    GenericKind::Constant => "a constant",
+                    GenericKind::Instance => "an instance",
+                }
+            ))
+            .primary_highlight(
+                Highlight::builder()
+                    .span(parameter.to_absolute_span(&self.argument_span).await)
+                    .message({
+                        let generic_parameters = parameter
+                            .get_generic_parameters(
+                                match self.found_parameter {
+                                    ExpectedParameter::Type(member_id) => {
+                                        member_id.parent_id()
+                                    }
+                                    ExpectedParameter::Constant(member_id) => {
+                                        member_id.parent_id()
+                                    }
+                                    ExpectedParameter::Instance(member_id) => {
+                                        member_id.parent_id()
+                                    }
+                                },
+                            )
+                            .await;
+
+                        let parameter_name = match self.found_parameter {
+                            ExpectedParameter::Type(member_id) => {
+                                generic_parameters[member_id.id()].name()
+                            }
+                            ExpectedParameter::Constant(member_id) => {
+                                generic_parameters[member_id.id()].name()
+                            }
+                            ExpectedParameter::Instance(member_id) => {
+                                generic_parameters[member_id.id()].name()
+                            }
+                        };
+
+                        format!(
+                            "required {} for the generic parameter `{}`",
+                            match self.found_parameter {
+                                ExpectedParameter::Type(_) => "a type",
+                                ExpectedParameter::Constant(_) => "a constant",
+                                ExpectedParameter::Instance(_) => "an instance",
+                            },
+                            parameter_name.as_ref()
+                        )
+                    })
+                    .build(),
+            )
             .build()
     }
 }

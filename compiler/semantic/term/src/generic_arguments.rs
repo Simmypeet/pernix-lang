@@ -452,6 +452,12 @@ impl Symbol {
         (self.id, self.generic_arguments)
     }
 
+    /// Destructures into the generic arguments supplied to the symbol.
+    #[must_use]
+    pub fn into_generic_arguments(self) -> GenericArguments {
+        self.generic_arguments
+    }
+
     /// Instantiates this [`Symbol`] with the given instantiation.
     pub fn instantiate(&mut self, inst: &Instantiation) {
         self.generic_arguments.instantiate(inst);

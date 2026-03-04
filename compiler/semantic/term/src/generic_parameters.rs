@@ -100,6 +100,12 @@ mod sealed {
         ) -> &HashMap<Interned<str>, pernixc_arena::ID<Self>>
         where
             Self: Sized;
+
+        fn get_parameter_order(
+            generic_parameters: &super::GenericParameters,
+        ) -> &Vec<pernixc_arena::ID<Self>>
+        where
+            Self: Sized;
     }
 }
 
@@ -167,6 +173,12 @@ impl sealed::Sealed for LifetimeParameter {
     {
         &generic_parameters.lifetime_parameter_ids_by_name
     }
+
+    fn get_parameter_order(
+        generic_parameters: &GenericParameters,
+    ) -> &Vec<pernixc_arena::ID<Self>> {
+        &generic_parameters.lifetime_order
+    }
 }
 
 impl GenericParameter for LifetimeParameter {
@@ -217,6 +229,12 @@ impl sealed::Sealed for TypeParameter {
         Self: Sized,
     {
         &generic_parameters.type_parameter_ids_by_name
+    }
+
+    fn get_parameter_order(
+        generic_parameters: &GenericParameters,
+    ) -> &Vec<pernixc_arena::ID<Self>> {
+        &generic_parameters.type_order
     }
 }
 
@@ -269,6 +287,12 @@ impl sealed::Sealed for ConstantParameter {
         Self: Sized,
     {
         &generic_parameters.constant_parameter_ids_by_name
+    }
+
+    fn get_parameter_order(
+        generic_parameters: &GenericParameters,
+    ) -> &Vec<pernixc_arena::ID<Self>> {
+        &generic_parameters.constant_order
     }
 }
 
@@ -337,6 +361,12 @@ impl sealed::Sealed for InstanceParameter {
         Self: Sized,
     {
         &generic_parameters.instance_parameter_ids_by_name
+    }
+
+    fn get_parameter_order(
+        generic_parameters: &GenericParameters,
+    ) -> &Vec<pernixc_arena::ID<Self>> {
+        &generic_parameters.instance_order
     }
 }
 
@@ -449,6 +479,28 @@ impl GenericParameters {
         self.lifetime_order.iter().copied()
     }
 
+    /// Returns the number of lifetime parameters.
+    #[must_use]
+    pub const fn lifetime_parameters_len(&self) -> usize {
+        self.lifetime_order.len()
+    }
+
+    /// Returns the number of type parameters.
+    #[must_use]
+    pub const fn type_parameters_len(&self) -> usize { self.type_order.len() }
+
+    /// Returns the number of constant parameters.
+    #[must_use]
+    pub const fn constant_parameters_len(&self) -> usize {
+        self.constant_order.len()
+    }
+
+    /// Returns the number of instance parameters.
+    #[must_use]
+    pub const fn instance_parameters_len(&self) -> usize {
+        self.instance_order.len()
+    }
+
     /// Returns an iterator of all type parameter IDs that iterates in order
     /// as they are declared.
     #[must_use]
@@ -494,6 +546,21 @@ impl GenericParameters {
         &self,
     ) -> impl ExactSizeIterator<Item = pernixc_arena::ID<T>> {
         T::get_generic_parameters_arena(self).ids()
+    }
+
+    /// Returns the number of generic parameters of the given kind.
+    #[must_use]
+    pub fn parameter_len<T: GenericParameter>(&self) -> usize {
+        T::get_parameter_order(self).len()
+    }
+
+    /// Returns an iterator of all parameter IDs of the given kind that iterates
+    /// in order as they are declared.
+    #[must_use]
+    pub fn parameter_order<T: GenericParameter>(
+        &self,
+    ) -> impl ExactSizeIterator<Item = pernixc_arena::ID<T>> {
+        T::get_parameter_order(self).iter().copied()
     }
 
     /// Returns an iterator of all type parameters that iterates in order as

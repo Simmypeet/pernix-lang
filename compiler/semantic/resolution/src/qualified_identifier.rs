@@ -14,7 +14,7 @@ use pernixc_symbol::{
     accessibility::symbol_accessible,
     get_target_root_module_id,
     kind::{Kind, get_kind},
-    member::get_members,
+    member::{get_member_by_name, get_members},
     parent::{get_closest_module_id, scope_walker},
 };
 use pernixc_syntax::{
@@ -24,15 +24,17 @@ use pernixc_syntax::{
 use pernixc_target::{Global, TargetID, get_linked_targets, get_target_map};
 use pernixc_term::{
     generic_arguments::GenericArguments,
-    generic_parameters::get_generic_parameters, r#type::Type,
+    generic_parameters::get_generic_parameters,
+    instance::{Instance, InstanceAssociated, TraitRef},
+    r#type::Type,
 };
 use qbice::{Decode, Encode, Identifiable, StableHash};
 
 use crate::{
     Config, Diagnostic, Error, Handler,
     diagnostic::{
-        NoGenericArgumentsRequired, SymbolIsNotAccessible, SymbolNotFound,
-        ThisNotFound,
+        NoGenericArgumentsRequired, NoMemberInFunction, NoMemberInType,
+        SymbolIsNotAccessible, SymbolNotFound, ThisNotFound,
     },
     term::resolve_generic_arguments_for_internal,
 };
@@ -119,6 +121,34 @@ pub struct MemberGeneric {
     pub member_generic_arguments: GenericArguments,
 }
 
+/// Represents a resolution to an instance associated type such as
+/// `I::func(...)`.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+)]
+pub struct InstanceAssociatedFunction {
+    /// The instance that the associated function is resolved from. Suppose
+    /// `I::func(...)`, then `I` is the instance.
+    pub instance: Instance,
+
+    /// The resolved trait associated function symbol. Suppose `I::func(...)`,
+    /// then `func` is the trait associated function.
+    pub trait_associated_function_id: Global<pernixc_symbol::ID>,
+
+    /// The generic arguments that are supplied to the trait associated
+    /// function.
+    pub generic_arguments: GenericArguments,
+}
+
 /// Represents a resolution of a qualified identifier syntax.
 #[derive(
     Debug,
@@ -147,21 +177,37 @@ pub enum Resolution {
     /// Resolved to a member symbol with generic arguments such as
     /// `Symbol[V]::member['a, T, U]`.
     MemberGeneric(MemberGeneric),
+
+    /// Resolved to a type, supplied from [`ExtraNamespace`].
+    Type(Type),
+
+    /// Resolved to an instance, supplied from [`ExtraNamespace`].
+    Instance(Instance),
+
+    /// Resolved to an instance associated function such as
+    /// `I::function['a, T]`.
+    InstanceAssociatedFunction(InstanceAssociatedFunction),
 }
 
 impl Resolution {
     /// Returns the ID of the resolved symbol.
     #[must_use]
-    pub const fn global_id(&self) -> Global<pernixc_symbol::ID> {
+    pub const fn global_id(&self) -> Option<Global<pernixc_symbol::ID>> {
         match self {
-            Self::Module(id) => *id,
-            Self::Variant(variant) => variant.variant_id,
-            Self::Generic(generic) => generic.id,
-            Self::MemberGeneric(member) => member.id,
+            Self::Module(id) => Some(*id),
+            Self::Variant(variant) => Some(variant.variant_id),
+            Self::Generic(generic) => Some(generic.id),
+            Self::MemberGeneric(member) => Some(member.id),
+            Self::InstanceAssociatedFunction(func) => {
+                Some(func.trait_associated_function_id)
+            }
+
+            Self::Instance(_) | Self::Type(_) => None,
         }
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn to_resolution(
     resolved_id: Global<pernixc_symbol::ID>,
     symbol_kind: Kind,
@@ -170,6 +216,7 @@ fn to_resolution(
 ) -> Resolution {
     match symbol_kind {
         Kind::Module => Resolution::Module(resolved_id),
+
         Kind::Struct
         | Kind::Enum
         | Kind::Function
@@ -178,6 +225,7 @@ fn to_resolution(
         | Kind::Constant
         | Kind::Type
         | Kind::Effect
+        | Kind::Instance
         | Kind::Marker => {
             assert!(latest_resolution.is_module());
 
@@ -193,10 +241,64 @@ fn to_resolution(
                 .unwrap()
                 .generic_arguments,
         }),
-        Kind::TraitAssociatedType
+
+        trait_associated @ (Kind::TraitAssociatedType
         | Kind::TraitAssociatedFunction
         | Kind::TraitAssociatedConstant
-        | Kind::ImplementationAssociatedConstant
+        | Kind::TraitAssociatedInstance) => match latest_resolution {
+            Resolution::Generic(generic) => {
+                Resolution::MemberGeneric(MemberGeneric {
+                    id: resolved_id,
+                    parent_generic_arguments: generic.generic_arguments,
+                    member_generic_arguments: generic_arguments.unwrap(),
+                })
+            }
+
+            Resolution::Instance(instance) => match trait_associated {
+                // turned to instance associated type
+                Kind::TraitAssociatedType => Resolution::Type(
+                    Type::InstanceAssociated(InstanceAssociated::new(
+                        Box::new(instance),
+                        resolved_id,
+                        generic_arguments.unwrap(),
+                    )),
+                ),
+
+                Kind::TraitAssociatedFunction => {
+                    Resolution::InstanceAssociatedFunction(
+                        InstanceAssociatedFunction {
+                            instance,
+                            trait_associated_function_id: resolved_id,
+                            generic_arguments: generic_arguments.unwrap(),
+                        },
+                    )
+                }
+
+                Kind::TraitAssociatedConstant => {
+                    todo!("implement instance associated constant")
+                }
+
+                Kind::TraitAssociatedInstance => Resolution::Instance(
+                    Instance::InstanceAssociated(InstanceAssociated::new(
+                        Box::new(instance),
+                        resolved_id,
+                        generic_arguments.unwrap(),
+                    )),
+                ),
+
+                _ => {
+                    unreachable!()
+                }
+            },
+
+            Resolution::Type(_)
+            | Resolution::MemberGeneric(_)
+            | Resolution::Module(_)
+            | Resolution::InstanceAssociatedFunction(_)
+            | Resolution::Variant(_) => unreachable!(),
+        },
+
+        Kind::ImplementationAssociatedConstant
         | Kind::ImplementationAssociatedFunction
         | Kind::EffectOperation
         | Kind::ImplementationAssociatedType => {
@@ -213,12 +315,26 @@ fn to_resolution(
             unreachable!()
         }
 
-        Kind::TraitAssociatedInstance
-        | Kind::Instance
-        | Kind::InstanceAssociatedType
+        Kind::InstanceAssociatedType
         | Kind::InstanceAssociatedFunction
         | Kind::InstanceAssociatedConstant
-        | Kind::InstanceAssociatedInstance => todo!(),
+        | Kind::InstanceAssociatedInstance => {
+            Resolution::MemberGeneric(MemberGeneric {
+                id: resolved_id,
+                // can either come from directly continue from generic
+                // resolution or from instance's symbol.
+                parent_generic_arguments: match latest_resolution {
+                    Resolution::Generic(generic) => generic.generic_arguments,
+                    Resolution::Instance(instance) => {
+                        instance.into_symbol().unwrap().into_generic_arguments()
+                    }
+
+                    _ => unreachable!(),
+                },
+
+                member_generic_arguments: generic_arguments.unwrap(),
+            })
+        }
     }
 }
 
@@ -315,6 +431,7 @@ async fn resolve_root(
                 .get_target_root_module_id(config.referring_site.target_id)
                 .await,
         )),
+
         QualifiedIdentifierRoot::This(this) => {
             let found_this =
                 search_this(tracked_engine, config.referring_site).await;
@@ -362,6 +479,7 @@ async fn resolve_root(
                 _ => unreachable!(),
             }
         }
+
         QualifiedIdentifierRoot::GenericIdentifier(generic_identifier) => {
             let current_module_id = tracked_engine
                 .get_closest_module_id(config.referring_site)
@@ -372,6 +490,28 @@ async fn resolve_root(
 
             let identifier =
                 generic_identifier.identifier().ok_or(Error::Abort)?;
+
+            // try reoslve from the extra namespace first
+            if let Some(extra_namespace_resolution) =
+                config.extra_namespace.as_ref()
+            {
+                // search from type then instance
+                if let Some(ty) = extra_namespace_resolution
+                    .types
+                    .get(identifier.kind.0.as_ref())
+                    .cloned()
+                {
+                    return Ok(Resolution::Type(ty));
+                }
+
+                if let Some(instance) = extra_namespace_resolution
+                    .instances
+                    .get(identifier.kind.0.as_ref())
+                    .cloned()
+                {
+                    return Ok(Resolution::Instance(instance));
+                }
+            }
 
             let id = match tracked_engine
                 .get_members(current_module_id)
@@ -519,45 +659,159 @@ pub async fn resolve_in(
     None
 }
 
+#[allow(clippy::too_many_lines)]
 #[extend]
 async fn resolve_step(
     self: &TrackedEngine,
-    latest_resolution: Global<pernixc_symbol::ID>,
+    latest_resolution: &Resolution,
     identifier: &pernixc_syntax::Identifier,
     config: Config<'_, '_, '_, '_, '_>,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<Global<pernixc_symbol::ID>, Error> {
-    let resolved_id = self
-        .resolve_in(
-            latest_resolution,
-            config.referring_site.target_id,
-            &identifier.kind.0,
-            config.consider_adt_implements,
-        )
-        .await;
+    let resolved = match latest_resolution {
+        normal @ (Resolution::Module(_)
+        | Resolution::Variant(_)
+        | Resolution::Generic(_)
+        | Resolution::MemberGeneric(_)) => {
+            let global_id = normal
+                .global_id()
+                .expect("these four variants should have global_id");
 
-    let Some(resolved_id) = resolved_id else {
-        handler.receive(Diagnostic::SymbolNotFound(SymbolNotFound {
-            searched_item_id: Some(latest_resolution),
-            resolution_span: identifier.span,
-            name: identifier.kind.0.clone(),
-        }));
+            let resolved_id = self
+                .resolve_in(
+                    global_id,
+                    config.referring_site.target_id,
+                    &identifier.kind.0,
+                    config.consider_adt_implements,
+                )
+                .await;
 
-        return Err(Error::Abort);
+            let Some(resolved_id) = resolved_id else {
+                handler.receive(Diagnostic::SymbolNotFound(SymbolNotFound {
+                    searched_item_id: Some(global_id),
+                    resolution_span: identifier.span,
+                    name: identifier.kind.0.clone(),
+                }));
+
+                return Err(Error::Abort);
+            };
+
+            resolved_id
+        }
+
+        Resolution::Type(ty) => {
+            handler.receive(Diagnostic::NoMemberInType(
+                NoMemberInType::builder()
+                    .resolution_span(identifier.span)
+                    .r#type(ty.clone())
+                    .build(),
+            ));
+
+            return Err(Error::Abort);
+        }
+
+        Resolution::Instance(instance) => match instance {
+            Instance::Symbol(symbol) => {
+                let member_id = self
+                    .get_member_by_name(symbol.id(), &identifier.kind)
+                    .await;
+
+                let Some(member_id) = member_id else {
+                    handler.receive(Diagnostic::SymbolNotFound(
+                        SymbolNotFound {
+                            searched_item_id: Some(symbol.id()),
+                            resolution_span: identifier.span,
+                            name: identifier.kind.0.clone(),
+                        },
+                    ));
+
+                    return Err(Error::Abort);
+                };
+
+                member_id
+            }
+
+            Instance::Parameter(member_id) => {
+                let trait_id = if let Some(adhoc_resolver) =
+                    config.resolve_instance_parameter_trait_ref
+                {
+                    adhoc_resolver
+                        .resolve_instance_parameter_trait_ref(member_id)
+                        .ok_or(Error::Abort)?
+                } else {
+                    self.get_generic_parameters(member_id.parent_id()).await
+                        [member_id.id()]
+                    .trait_ref()
+                    .map(TraitRef::trait_id)
+                    .ok_or(Error::Abort)?
+                };
+
+                let Some(member_id) =
+                    self.get_member_by_name(trait_id, &identifier.kind).await
+                else {
+                    handler.receive(Diagnostic::SymbolNotFound(
+                        SymbolNotFound {
+                            searched_item_id: Some(trait_id),
+                            resolution_span: identifier.span,
+                            name: identifier.kind.0.clone(),
+                        },
+                    ));
+
+                    return Err(Error::Abort);
+                };
+
+                member_id
+            }
+
+            Instance::InstanceAssociated(instance_associated) => {
+                let trait_id = instance_associated.trait_associated_symbol_id();
+
+                let Some(member_id) =
+                    self.get_member_by_name(trait_id, &identifier.kind).await
+                else {
+                    handler.receive(Diagnostic::SymbolNotFound(
+                        SymbolNotFound {
+                            searched_item_id: Some(trait_id),
+                            resolution_span: identifier.span,
+                            name: identifier.kind.0.clone(),
+                        },
+                    ));
+
+                    return Err(Error::Abort);
+                };
+
+                member_id
+            }
+
+            Instance::Inference(_) | Instance::Error(_) => {
+                return Err(Error::Abort);
+            }
+        },
+
+        Resolution::InstanceAssociatedFunction(function_id) => {
+            handler.receive(Diagnostic::NoMemberInFunction(
+                NoMemberInFunction::builder()
+                    .resolution_span(identifier.span)
+                    .function_id(function_id.trait_associated_function_id)
+                    .build(),
+            ));
+
+            return Err(Error::Abort);
+        }
     };
 
     // check if the symbol is accessible
-    if !self.symbol_accessible(config.referring_site, resolved_id).await {
+    if !self.symbol_accessible(config.referring_site, resolved).await {
         handler.receive(Diagnostic::SymbolIsNotAccessible(
             SymbolIsNotAccessible {
                 referring_site: config.referring_site,
-                referred: resolved_id,
+                referred: resolved,
                 referred_span: identifier.span,
             },
         ));
     }
 
-    Ok(resolved_id)
+    Ok(resolved)
 }
 
 #[extend]
@@ -588,7 +842,7 @@ async fn resolve_qualified_identifier_internal(
 
         let resolved_id = self
             .resolve_step(
-                latest_resolution.global_id(),
+                &latest_resolution,
                 &identifier,
                 config.reborrow(),
                 handler,

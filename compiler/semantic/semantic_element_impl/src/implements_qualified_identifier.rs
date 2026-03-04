@@ -10,7 +10,7 @@ use pernixc_resolution::{
     qualified_identifier::{
         MemberGeneric, Resolution, resolve_qualified_identifier,
     },
-    term::{ResolutionToTypeError, resolution_to_type},
+    term::{ResolutionToTermError, resolution_to_type},
 };
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
@@ -209,7 +209,7 @@ async fn check_valid_resolution(
                         .await
                     {
                         Ok(ty) => ty,
-                        Err(ResolutionToTypeError::Failed(_)) => unreachable!(),
+                        Err(ResolutionToTermError::Failed(_)) => unreachable!(),
                     };
 
                     if !matches!(

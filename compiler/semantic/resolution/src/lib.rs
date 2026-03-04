@@ -8,7 +8,8 @@ use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_target::Global;
 use pernixc_term::{
-    constant::Constant, instance::Instance, lifetime::Lifetime, r#type::Type,
+    constant::Constant, generic_parameters::InstanceParameterID,
+    instance::Instance, lifetime::Lifetime, r#type::Type,
 };
 use qbice::{
     Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
@@ -40,13 +41,21 @@ pub trait ElidedTermProvider<T>: Send {
     Encode,
     Decode,
     Identifiable,
+    Builder,
 )]
 #[allow(missing_docs)]
 pub struct ExtraNamespace {
-    pub lifetimes: HashMap<Interned<str>, Lifetime>,
-    pub types: HashMap<Interned<str>, Type>,
-    pub constants: HashMap<Interned<str>, Constant>,
-    pub instances: HashMap<Interned<str>, Instance>,
+    #[builder(default = HashMap::default(), into)]
+    lifetimes: HashMap<Interned<str>, Lifetime>,
+
+    #[builder(default = HashMap::default(), into)]
+    types: HashMap<Interned<str>, Type>,
+
+    #[builder(default = HashMap::default(), into)]
+    constants: HashMap<Interned<str>, Constant>,
+
+    #[builder(default = HashMap::default(), into)]
+    instances: HashMap<Interned<str>, Instance>,
 }
 
 /// A trait for observing the resolution process.
@@ -121,6 +130,20 @@ pub trait Observer: Send {
     );
 }
 
+/// An ad-hoc trait for resolving the instance's trait ref.
+///
+/// This is primarily used to avoid cyclic query when building "generic
+/// parameter" item and when resolving from the trait ref of the instance during
+/// the resolution, which requires the information of the "generic parameter"
+/// item as well.
+pub trait ResolveInstanceParameterTraitRef {
+    /// Resolves the instance parameter's trait ref and returns the trait ID.
+    fn resolve_instance_parameter_trait_ref(
+        &self,
+        instance_parameter: &InstanceParameterID,
+    ) -> Option<Global<pernixc_symbol::ID>>;
+}
+
 /// The configuration struct specifying the behaviour of the resolution process.
 #[derive(Default, Builder)]
 #[allow(missing_debug_implementations)]
@@ -156,6 +179,13 @@ pub struct Config<'lp, 'tp, 'cp, 'ob, 'ex> {
     /// in the table but are acessible such as higher-ranked lifetimes
     /// `for['x]`.
     pub extra_namespace: Option<&'ex ExtraNamespace>,
+
+    /// If specified, when an instance is resolved and requires to resolve its
+    /// trait ref, the resolver will call this to resolve the trait ref of the
+    /// instance parameter instead of querying the information from the global
+    /// engine.
+    pub resolve_instance_parameter_trait_ref:
+        Option<&'ex dyn ResolveInstanceParameterTraitRef>,
 
     /// If `true`, the resolution will search for symbols inside the ADT's
     /// implements
@@ -198,6 +228,8 @@ impl Config<'_, '_, '_, '_, '_> {
             extra_namespace: self.extra_namespace,
             consider_adt_implements: self.consider_adt_implements,
             referring_site: self.referring_site,
+            resolve_instance_parameter_trait_ref: self
+                .resolve_instance_parameter_trait_ref,
         }
     }
 }
