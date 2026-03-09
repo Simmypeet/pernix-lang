@@ -154,7 +154,7 @@ async fn resolve_type_argument(
     handler: &dyn Handler<Diagnostic>,
 ) -> Type {
     match syn {
-        pernixc_syntax::GenericArgument::Lifetime(lifetime) => {
+        GenericArgumentSyn::Lifetime(lifetime) => {
             handler.receive(Diagnostic::MismatchedKindInArgument(
                 MismatchedKindInArgument::builder()
                     .argument_span(lifetime.span())
@@ -168,26 +168,28 @@ async fn resolve_type_argument(
             Type::Error(pernixc_term::error::Error)
         }
 
-        pernixc_syntax::GenericArgument::QualifiedIdentifier(
+        GenericArgumentSyn::QualifiedIdentifierWithHigherRankedLifetimes(
             qualified_identifier,
         ) => {
+            let Some(q) = qualified_identifier.qualified_identifier() else {
+                return Type::Error(pernixc_term::error::Error);
+            };
+
             Box::pin(async move {
-                self.resolve_qualified_identifier_type(
-                    qualified_identifier,
-                    config,
-                    handler,
-                )
-                .await
+                self.resolve_qualified_identifier_type(&q, config, handler)
+                    .await
             })
             .await
         }
-        pernixc_syntax::GenericArgument::Type(ty) => {
+
+        GenericArgumentSyn::Type(ty) => {
             Box::pin(
                 async move { self.resolve_type(ty, config, handler).await },
             )
             .await
         }
-        pernixc_syntax::GenericArgument::Constant(constant_argument) => {
+
+        GenericArgumentSyn::Constant(constant_argument) => {
             handler.receive(Diagnostic::MismatchedKindInArgument(
                 MismatchedKindInArgument::builder()
                     .argument_span(constant_argument.span())
@@ -213,16 +215,16 @@ async fn resolv_instance_argument(
     handler: &dyn Handler<Diagnostic>,
 ) -> Instance {
     match syn {
-        pernixc_syntax::GenericArgument::QualifiedIdentifier(
+        GenericArgumentSyn::QualifiedIdentifierWithHigherRankedLifetimes(
             qualified_identifier,
         ) => {
+            let Some(q) = qualified_identifier.qualified_identifier() else {
+                return Instance::Error(pernixc_term::error::Error);
+            };
+
             Box::pin(async move {
-                self.resolve_qualified_identifier_instance(
-                    qualified_identifier,
-                    config,
-                    handler,
-                )
-                .await
+                self.resolve_qualified_identifier_instance(&q, config, handler)
+                    .await
             })
             .await
         }
@@ -243,7 +245,7 @@ async fn resolv_instance_argument(
                             GenericKind::Constant
                         }
 
-                        GenericArgumentSyn::QualifiedIdentifier(
+                        GenericArgumentSyn::QualifiedIdentifierWithHigherRankedLifetimes(
                             qualified_identifier,
                         ) => unreachable!(),
                     })

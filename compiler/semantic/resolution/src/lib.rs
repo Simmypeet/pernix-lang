@@ -8,7 +8,7 @@ use pernixc_handler::Handler;
 use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
-use pernixc_syntax::item::HigherRankedLifetimes;
+use pernixc_syntax::HigherRankedLifetimes;
 use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
@@ -115,7 +115,7 @@ impl<'x> ExtraNamespaceWithForallLifetimes<'x> {
         let mut created_lifetimes = Vec::new();
 
         if let Some(forall_lifetimes) = forall_lifetimes
-            .and_then(pernixc_syntax::item::HigherRankedLifetimes::lifetimes)
+            .and_then(pernixc_syntax::HigherRankedLifetimes::lifetimes)
         {
             for forall_lifetime in
                 forall_lifetimes.lifetimes().filter_map(|x| x.identifier())
