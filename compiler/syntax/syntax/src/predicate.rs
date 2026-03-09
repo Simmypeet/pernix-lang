@@ -6,8 +6,8 @@ use pernixc_parser::{
 };
 
 use crate::{
-    Keyword, Lifetime, LifetimeParameter, Punctuation, QualifiedIdentifier,
-    item::HigherRankedLifetimes, r#type,
+    HigherRankedLifetimes, Keyword, Lifetime, LifetimeParameter, Punctuation,
+    QualifiedIdentifier, r#type,
 };
 
 #[cfg(any(test, feature = "arbitrary"))]

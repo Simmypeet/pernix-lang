@@ -1,13 +1,13 @@
 use enum_as_inner::EnumAsInner;
 use pernixc_parser::{
     abstract_tree, expect,
-    parser::{ParserExt, ast},
+    parser::{ast, ParserExt},
 };
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
-    Keyword, Passable, Punctuation, expression::Expression,
-    pattern::Irrefutable, r#type::Type,
+    expression::Expression, pattern::Irrefutable, r#type::Type, Keyword,
+    Passable, Punctuation,
 };
 
 #[cfg(any(test, feature = "arbitrary"))]

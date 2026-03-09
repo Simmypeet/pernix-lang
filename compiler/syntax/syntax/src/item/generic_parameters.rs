@@ -8,8 +8,8 @@ use pernixc_parser::{
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
-    Identifier, Keyword, LifetimeParameter, Punctuation,
-    expression::Expression, item::TraitRef, predicate::TypeBound, r#type::Type,
+    Identifier, Keyword, LifetimeParameter, Punctuation, TraitRef,
+    expression::Expression, predicate::TypeBound, r#type::Type,
 };
 
 #[cfg(any(test, feature = "arbitrary"))]

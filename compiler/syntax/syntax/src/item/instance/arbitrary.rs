@@ -7,10 +7,10 @@ use proptest::{
 };
 
 use crate::{
-    arbitrary::{AccessModifier, IndentDisplay, QualifiedIdentifier},
+    arbitrary::{AccessModifier, IndentDisplay, QualifiedIdentifier, TraitRef},
     item::{
         self,
-        arbitrary::{Body, TrailingWhereClause, TraitRef},
+        arbitrary::{Body, TrailingWhereClause},
         constant, function,
         generic_parameters::arbitrary::GenericParameters,
         r#type,

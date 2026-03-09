@@ -128,10 +128,23 @@ abstract_tree::abstract_tree! {
 }
 
 abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct QualiifiedIdentifierWithHigherRankedLifetimes {
+        pub higher_ranked_lifetimes: HigherRankedLifetimes
+            = ast::<HigherRankedLifetimes>().optional(),
+        pub qualified_identifier: QualifiedIdentifier
+            = ast::<QualifiedIdentifier>(),
+    }
+}
+
+abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
     pub enum GenericArgument {
         Lifetime(Lifetime = ast::<Lifetime>()),
-        QualifiedIdentifier(QualifiedIdentifier = ast::<QualifiedIdentifier>()),
+        QualifiedIdentifierWithHigherRankedLifetimes(
+            QualiifiedIdentifierWithHigherRankedLifetimes
+                = ast::<QualiifiedIdentifierWithHigherRankedLifetimes>()
+        ),
         Type(Type = ast::<Type>()),
         Constant(ConstantArgument = ast::<ConstantArgument>()),
     }
@@ -257,6 +270,44 @@ abstract_tree::abstract_tree! {
     pub enum ConstantArgument {
         Expression(Expression =  ast::<Expression>()),
         Elided(Elided = ast::<Elided>()),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #{fragment = expect::Fragment::Delimited(DelimiterKind::Bracket)}
+    pub struct LifetimeParameters {
+        pub lifetimes: #[multi] LifetimeParameter
+            = ast::<LifetimeParameter>().repeat_all_with_separator(','),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct HigherRankedLifetimes {
+        pub for_keyword: Keyword = expect::Keyword::For,
+        pub lifetimes: LifetimeParameters = ast::<LifetimeParameters>(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        Encode,
+        Decode,
+        StableHash,
+    )]
+    pub struct TraitRef {
+        pub higher_ranked_lifetimes: HigherRankedLifetimes
+            = ast::<HigherRankedLifetimes>().optional(),
+        pub qualified_identifier: QualifiedIdentifier
+            = ast::<QualifiedIdentifier>(),
     }
 }
 

@@ -8,11 +8,9 @@ use pernixc_parser::{
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
-    AccessModifier, Identifier, Keyword, Punctuation, QualifiedIdentifier,
-    item::{HigherRankedLifetimes, generic_parameters::GenericParameters},
-    pattern::Irrefutable,
-    statement::Statement,
-    r#type::Type,
+    AccessModifier, HigherRankedLifetimes, Identifier, Keyword, Punctuation,
+    QualifiedIdentifier, item::generic_parameters::GenericParameters,
+    pattern::Irrefutable, statement::Statement, r#type::Type,
 };
 
 #[cfg(any(test, feature = "arbitrary"))]

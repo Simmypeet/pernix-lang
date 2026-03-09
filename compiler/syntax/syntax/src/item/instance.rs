@@ -6,8 +6,9 @@ use pernixc_parser::{
 
 use crate::{
     AccessModifier, Identifier, Keyword, Punctuation, QualifiedIdentifier,
+    TraitRef,
     item::{
-        Body, TrailingWhereClause, TraitRef, constant, function,
+        Body, TrailingWhereClause, constant, function,
         generic_parameters::GenericParameters, r#type,
     },
 };

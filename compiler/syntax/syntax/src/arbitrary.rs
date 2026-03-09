@@ -5,7 +5,7 @@ use std::fmt::{Display, Write};
 #[doc(hidden)]
 pub use derive_more as __derive_more;
 use enum_as_inner::EnumAsInner;
-use pernixc_lexical::kind;
+use pernixc_lexical::kind::{self};
 use pernixc_parser::expect;
 #[doc(hidden)]
 pub use pernixc_test_input as __test_input;
@@ -544,12 +544,56 @@ impl Arbitrary for Lifetime {
             .boxed()
     }
 }
+reference! {
+    #[derive(Debug, Clone)]
+    pub struct QualifiedIdentifierWithHigherRankedLifetimes
+        for super::QualiifiedIdentifierWithHigherRankedLifetimes {
+        higher_ranked_lifetimes (Option<HigherRankedLifetimes>),
+        qualified_identifier (QualifiedIdentifier),
+    }
+}
+
+impl Arbitrary for QualifiedIdentifierWithHigherRankedLifetimes {
+    type Parameters = Option<BoxedStrategy<QualifiedIdentifier>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let qualified_identifier =
+            args.unwrap_or_else(QualifiedIdentifier::arbitrary);
+
+        (
+            proptest::option::of(HigherRankedLifetimes::arbitrary()),
+            qualified_identifier,
+        )
+            .prop_map(|(higher_ranked_lifetimes, qualified_identifier)| Self {
+                higher_ranked_lifetimes,
+                qualified_identifier,
+            })
+            .boxed()
+    }
+}
+
+impl IndentDisplay for QualifiedIdentifierWithHigherRankedLifetimes {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        if let Some(higher_ranked_lifetimes) = &self.higher_ranked_lifetimes {
+            write!(f, "{higher_ranked_lifetimes} ")?;
+        }
+
+        self.qualified_identifier.indent_fmt(f, indent)
+    }
+}
 
 reference! {
     #[derive(Debug, Clone)]
     pub enum GenericArgument for super::GenericArgument {
         Lifetime(Lifetime),
-        QualifiedIdentifier(QualifiedIdentifier),
+        QualifiedIdentifierWithHigherRankedLifetimes(
+            QualifiedIdentifierWithHigherRankedLifetimes
+        ),
         Type(Type),
         Constant(ConstantArgument),
     }
@@ -565,30 +609,49 @@ impl IndentDisplay for GenericArgument {
             Self::Lifetime(i) => i.fmt(f),
             Self::Type(i) => i.indent_fmt(f, indent),
             Self::Constant(i) => i.indent_fmt(f, indent),
-            Self::QualifiedIdentifier(i) => i.indent_fmt(f, indent),
+            Self::QualifiedIdentifierWithHigherRankedLifetimes(i) => {
+                i.indent_fmt(f, indent)
+            }
         }
     }
 }
 
 impl Arbitrary for GenericArgument {
-    type Parameters =
-        (Option<BoxedStrategy<Type>>, Option<BoxedStrategy<Expression>>);
+    type Parameters = (
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Expression>>,
+    );
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with((ty, expr): Self::Parameters) -> Self::Strategy {
-        let ty =
-            ty.unwrap_or_else(|| Type::arbitrary_with((expr.clone(), None)));
+    fn arbitrary_with((ty, qual, expr): Self::Parameters) -> Self::Strategy {
+        let qual = qual.unwrap_or_else(|| {
+            QualifiedIdentifier::arbitrary_with((ty.clone(), expr.clone()))
+        });
+
+        let ty = ty.unwrap_or_else(|| {
+            Type::arbitrary_with((expr.clone(), Some(qual.clone())))
+        });
 
         prop_oneof![
             Lifetime::arbitrary().prop_map(Self::Lifetime),
             ty.prop_map(|x| {
                 match x {
                     Type::QualifiedIdentifier(qualified_identifier) => {
-                        Self::QualifiedIdentifier(qualified_identifier)
+                        Self::QualifiedIdentifierWithHigherRankedLifetimes(
+                            QualifiedIdentifierWithHigherRankedLifetimes {
+                                higher_ranked_lifetimes: None,
+                                qualified_identifier,
+                            },
+                        )
                     }
                     x => Self::Type(x),
                 }
             }),
+            QualifiedIdentifierWithHigherRankedLifetimes::arbitrary_with(Some(
+                qual
+            ))
+            .prop_map(Self::QualifiedIdentifierWithHigherRankedLifetimes),
             ConstantArgument::arbitrary_with(expr).prop_map(Self::Constant),
         ]
         .boxed()
@@ -603,8 +666,11 @@ reference! {
 }
 
 impl Arbitrary for GenericArguments {
-    type Parameters =
-        (Option<BoxedStrategy<Type>>, Option<BoxedStrategy<Expression>>);
+    type Parameters = (
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Expression>>,
+    );
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(arg: Self::Parameters) -> Self::Strategy {
@@ -704,8 +770,11 @@ impl IndentDisplay for GenericIdentifier {
 }
 
 impl Arbitrary for GenericIdentifier {
-    type Parameters =
-        (Option<BoxedStrategy<Type>>, Option<BoxedStrategy<Expression>>);
+    type Parameters = (
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Expression>>,
+    );
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(arg: Self::Parameters) -> Self::Strategy {
@@ -919,21 +988,116 @@ impl Arbitrary for QualifiedIdentifier {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(arg: Self::Parameters) -> Self::Strategy {
-        let generic_identifier_strategy =
-            GenericIdentifier::arbitrary_with(arg);
-        (
-            QualifiedIdentifierRoot::arbitrary_with(Some(
-                generic_identifier_strategy.clone(),
-            )),
-            proptest::collection::vec(
-                QualifiedIdentifierSubsequent::arbitrary_with(Some(
-                    generic_identifier_strategy,
-                )),
-                0..=6,
+        let leaf = kind::Identifier::arbitrary().prop_map(|identifier| Self {
+            root: QualifiedIdentifierRoot::GenericIdentifier(
+                GenericIdentifier { identifier, generic_arguments: None },
             ),
-        )
-            .prop_map(|(root, subsequences)| Self { root, subsequences })
+            subsequences: Vec::new(),
+        });
+
+        leaf.prop_recursive(4, 16, 4, move |x| {
+            let generic_identifier_strategy = GenericIdentifier::arbitrary_with(
+                (arg.0.clone(), Some(x), arg.1.clone()),
+            );
+
+            (
+                QualifiedIdentifierRoot::arbitrary_with(Some(
+                    generic_identifier_strategy.clone(),
+                )),
+                proptest::collection::vec(
+                    QualifiedIdentifierSubsequent::arbitrary_with(Some(
+                        generic_identifier_strategy,
+                    )),
+                    0..=6,
+                ),
+            )
+                .prop_map(|(root, subsequences)| Self { root, subsequences })
+        })
+        .boxed()
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone, derive_more::Display)]
+    #[display("for{lifetimes}")]
+    pub struct HigherRankedLifetimes for super::HigherRankedLifetimes {
+        pub lifetimes (LifetimeParameters)
+    }
+}
+
+impl Arbitrary for HigherRankedLifetimes {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+        LifetimeParameters::arbitrary()
+            .prop_map(|lifetimes| Self { lifetimes })
             .boxed()
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone, derive_more::Display)]
+    #[display(
+        "[{}]",
+        self.lifetimes
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ")
+    )]
+    pub struct LifetimeParameters for super::LifetimeParameters {
+        pub lifetimes (Vec<LifetimeParameter>)
+    }
+}
+
+impl Arbitrary for LifetimeParameters {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+        proptest::collection::vec(LifetimeParameter::arbitrary(), 1..10)
+            .prop_map(|lifetimes| Self { lifetimes })
+            .boxed()
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone)]
+    pub struct TraitRef for super::TraitRef {
+        pub higher_ranked_lifetimes (Option<HigherRankedLifetimes>),
+        pub qualified_identifier (QualifiedIdentifier),
+    }
+}
+
+impl Arbitrary for TraitRef {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        (
+            proptest::option::of(HigherRankedLifetimes::arbitrary()),
+            QualifiedIdentifier::arbitrary(),
+        )
+            .prop_map(|(higher_ranked_lifetimes, qualified_identifier)| Self {
+                higher_ranked_lifetimes,
+                qualified_identifier,
+            })
+            .boxed()
+    }
+}
+
+impl IndentDisplay for TraitRef {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        if let Some(higher_ranked_lifetimes) = &self.higher_ranked_lifetimes {
+            write!(f, "{higher_ranked_lifetimes} ")?;
+        }
+
+        self.qualified_identifier.indent_fmt(f, indent)
     }
 }
 

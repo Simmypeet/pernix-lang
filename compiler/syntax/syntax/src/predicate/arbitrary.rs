@@ -8,10 +8,9 @@ use proptest::{
 
 use crate::{
     arbitrary::{
-        IndentDisplay, IntoSeparated, Lifetime, LifetimeParameter,
-        QualifiedIdentifier,
+        HigherRankedLifetimes, IndentDisplay, IntoSeparated, Lifetime,
+        LifetimeParameter, QualifiedIdentifier,
     },
-    item::arbitrary::HigherRankedLifetimes,
     reference, r#type,
 };
 
