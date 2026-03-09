@@ -7,7 +7,7 @@ use pernixc_hash::HashSet;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_resolution::{
-    Resolver as ResolutionConfig, ElidedTermProvider, ExtraNamespace,
+    ElidedTermProvider, ExtraNamespace, Resolver as ResolutionConfig,
     generic_parameter_namespace::get_generic_parameter_namespace,
 };
 use pernixc_semantic_element::{
@@ -146,27 +146,26 @@ impl Build for Key {
                 )),
             });
 
-        let return_type =
-            if let Some(ty_syn) = return_type_syn.and_then(|x| x.r#type()) {
-                let ty = ResolutionConfig::builder()
-                    .tracked_engine(engine)
-                    .handler(&storage)
-                    .referring_site(key.symbol_id)
-                    .maybe_elided_lifetime_provider(
-                        return_elided_lifetime_provider
-                            .as_mut()
-                            .map(|x| x as _),
-                    )
-                    .extra_namespace(&extra_namespace)
-                    .observer(&mut occurrences)
-                    .build()
-                    .resolve_type(&ty_syn)
-                    .await;
+        let return_type = if let Some(ty_syn) =
+            return_type_syn.and_then(|x| x.r#type())
+        {
+            let ty = ResolutionConfig::builder()
+                .tracked_engine(engine)
+                .handler(&storage)
+                .referring_site(key.symbol_id)
+                .maybe_elided_lifetime_provider(
+                    return_elided_lifetime_provider.as_mut().map(|x| x as _),
+                )
+                .extra_namespace(&extra_namespace)
+                .observer(&mut occurrences)
+                .build()
+                .resolve_type(&ty_syn)
+                .await;
 
-                Some((ty, ty_syn.span()))
-            } else {
-                None
-            };
+            Some((ty, ty_syn.span()))
+        } else {
+            None
+        };
 
         let mut active_premise =
             engine

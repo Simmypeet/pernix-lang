@@ -5,7 +5,7 @@ use pernixc_handler::{Handler, Storage};
 use pernixc_hash::HashMap;
 use pernixc_qbice::TrackedEngine;
 use pernixc_resolution::{
-    Resolver, ExtraNamespace,
+    ExtraNamespace, Resolver,
     generic_parameter_namespace::get_generic_parameter_namespace,
 };
 use pernixc_semantic_element::fields::{Field, Fields};
