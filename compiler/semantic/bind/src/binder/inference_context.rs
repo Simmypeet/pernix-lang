@@ -9,16 +9,10 @@ use std::{
 
 use getset::Getters;
 use pernixc_arena::ID;
-use pernixc_handler::Handler;
-use pernixc_lexical::tree::RelativeSpan;
+use pernixc_handler::{Handler, Storage};
 use pernixc_qbice::TrackedEngine;
 use pernixc_resolution::{
-    Config, ElidedTermProvider,
-    qualified_identifier::{Resolution, resolve_qualified_identifier},
-    term::{
-        resolve_generic_arguments_for, resolve_type,
-        verify_generic_arguments_for,
-    },
+    ElidedTermProvider, Resolver, qualified_identifier::Resolution,
 };
 use pernixc_source_file::SourceElement;
 use pernixc_target::Global;
@@ -737,7 +731,12 @@ impl Binder<'_> {
                 .constant_inference_counter,
         };
 
-        let config = Config::builder()
+        let resolution_handler =
+            Storage::<pernixc_resolution::diagnostic::Diagnostic>::new();
+
+        let mut resolver = Resolver::builder()
+            .tracked_engine(self.engine)
+            .handler(&resolution_handler)
             .extra_namespace(extra_namespace)
             .elided_lifetime_provider(&mut lifetime_inference_providers)
             .elided_type_provider(&mut type_inferences)
@@ -745,10 +744,10 @@ impl Binder<'_> {
             .referring_site(current_site)
             .build();
 
-        let resolution = self
-            .engine
-            .resolve_qualified_identifier(syntax_tree, config, &handler)
-            .await;
+        let resolution =
+            resolver.resolve_qualified_identifier(syntax_tree).await;
+
+        resolution_handler.propagate(handler);
 
         let resolution = match resolution {
             Ok(result) => result,
@@ -805,20 +804,22 @@ impl Binder<'_> {
 
         let mut lifetime_inference_providers = ErasedLifetimeProvider;
 
-        let ty = self
-            .engine
-            .resolve_type(
-                syntax_tree,
-                pernixc_resolution::Config::builder()
-                    .extra_namespace(extra_namespace)
-                    .elided_lifetime_provider(&mut lifetime_inference_providers)
-                    .elided_type_provider(&mut type_inferences)
-                    .elided_constant_provider(&mut constant_inferences)
-                    .referring_site(current_site)
-                    .build(),
-                &handler,
-            )
+        let resolution_handler =
+            Storage::<pernixc_resolution::diagnostic::Diagnostic>::new();
+
+        let ty = pernixc_resolution::Resolver::builder()
+            .tracked_engine(self.engine)
+            .handler(&resolution_handler)
+            .extra_namespace(extra_namespace)
+            .elided_lifetime_provider(&mut lifetime_inference_providers)
+            .elided_type_provider(&mut type_inferences)
+            .elided_constant_provider(&mut constant_inferences)
+            .referring_site(current_site)
+            .build()
+            .resolve_type(syntax_tree)
             .await;
+
+        resolution_handler.propagate(handler);
 
         let created_type_inferences = type_inferences.created_inferences;
         let created_constant_inferences =
@@ -868,21 +869,22 @@ impl Binder<'_> {
 
         let mut lifetime_inference_providers = ErasedLifetimeProvider;
 
-        let ty = self
-            .engine
-            .resolve_generic_arguments_for(
-                id,
-                generic_arguments,
-                pernixc_resolution::Config::builder()
-                    .extra_namespace(extra_namespace)
-                    .elided_lifetime_provider(&mut lifetime_inference_providers)
-                    .elided_type_provider(&mut type_inferences)
-                    .elided_constant_provider(&mut constant_inferences)
-                    .referring_site(current_site)
-                    .build(),
-                &handler,
-            )
+        let resolution_handler =
+            Storage::<pernixc_resolution::diagnostic::Diagnostic>::new();
+
+        let ty = pernixc_resolution::Resolver::builder()
+            .tracked_engine(self.engine)
+            .handler(&resolution_handler)
+            .extra_namespace(extra_namespace)
+            .elided_lifetime_provider(&mut lifetime_inference_providers)
+            .elided_type_provider(&mut type_inferences)
+            .elided_constant_provider(&mut constant_inferences)
+            .referring_site(current_site)
+            .build()
+            .resolve_generic_arguments_for(id, generic_arguments)
             .await;
+
+        resolution_handler.propagate(handler);
 
         let created_type_inferences = type_inferences.created_inferences;
         let created_constant_inferences =
@@ -903,75 +905,6 @@ impl Binder<'_> {
         }
 
         Ok(ty)
-    }
-
-    /// Verifies that the given `generic_arguments` are valid for the
-    /// given `resolved_id`.
-    pub async fn verify_generic_arguments_for_with_inference(
-        &mut self,
-        generic_arguments: GenericArguments,
-        resolved_id: Global<pernixc_symbol::ID>,
-        generic_identifier_span: RelativeSpan,
-        handler: &dyn Handler<Diagnostic>,
-    ) -> Result<GenericArguments, UnrecoverableError> {
-        let extra_namespace = &self.environment.extra_namespace;
-        let current_site = self.current_site();
-
-        let mut type_inferences = InferenceProvider {
-            created_inferences: Vec::new(),
-            inference_counter: &mut self
-                .inference_context
-                .type_inference_counter,
-        };
-
-        let mut constant_inferences = InferenceProvider {
-            created_inferences: Vec::new(),
-            inference_counter: &mut self
-                .inference_context
-                .constant_inference_counter,
-        };
-
-        let mut lifetime_inference_providers = ErasedLifetimeProvider;
-
-        let (arg, diags) = self
-            .engine
-            .verify_generic_arguments_for(
-                generic_arguments,
-                resolved_id,
-                generic_identifier_span,
-                pernixc_resolution::Config::builder()
-                    .extra_namespace(extra_namespace)
-                    .elided_lifetime_provider(&mut lifetime_inference_providers)
-                    .elided_type_provider(&mut type_inferences)
-                    .elided_constant_provider(&mut constant_inferences)
-                    .referring_site(current_site)
-                    .build(),
-            )
-            .await;
-
-        for diag in diags {
-            (&handler).receive(diag);
-        }
-
-        let created_type_inferences = type_inferences.created_inferences;
-        let created_constant_inferences =
-            constant_inferences.created_inferences;
-
-        for inference in created_type_inferences {
-            assert!(
-                self.inference_context
-                    .register(inference, constraint::Type::All(false))
-            );
-        }
-
-        for inference in created_constant_inferences {
-            assert!(
-                self.inference_context
-                    .register(inference, constraint::Constant)
-            );
-        }
-
-        Ok(arg)
     }
 }
 

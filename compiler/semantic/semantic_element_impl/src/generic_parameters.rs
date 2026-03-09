@@ -3,9 +3,8 @@ use std::{ops::Deref, pin::Pin};
 use pernixc_handler::{Handler, Storage};
 use pernixc_qbice::TrackedEngine;
 use pernixc_resolution::{
-    Config, ExtraNamespaceWithForallLifetimes,
+    ExtraNamespaceWithForallLifetimes, Resolver,
     generic_parameter_namespace::get_generic_parameter_namespace,
-    term::{resolve_qualified_identifier_trait_ref, resolve_type},
 };
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
@@ -300,19 +299,17 @@ impl build::Build for pernixc_term::generic_parameters::Key {
         for constant_parameter_syn in constant_parameter_syns {
             let constant_parameter = {
                 // the type used for the constant parameter
-                let constant_type = engine
-                    .resolve_type(
-                        &constant_parameter_syn.1,
-                        Config::builder()
-                            .observer(&mut occurrences)
-                            .extra_namespace(&extra_name_space)
-                            .referring_site(Global::new(
-                                key.symbol_id.target_id,
-                                engine.get_parent(key.symbol_id).await.unwrap(),
-                            ))
-                            .build(),
-                        &storage,
-                    )
+                let constant_type = Resolver::builder()
+                    .tracked_engine(engine)
+                    .handler(&storage)
+                    .observer(&mut occurrences)
+                    .extra_namespace(&extra_name_space)
+                    .referring_site(Global::new(
+                        key.symbol_id.target_id,
+                        engine.get_parent(key.symbol_id).await.unwrap(),
+                    ))
+                    .build()
+                    .resolve_type(&constant_parameter_syn.1)
                     .await;
 
                 // add the constant type to the occurrences
@@ -376,22 +373,20 @@ impl build::Build for pernixc_term::generic_parameters::Key {
                         &storage,
                     );
 
-                engine
-                    .resolve_qualified_identifier_trait_ref(
-                        &qualified_identifier,
-                        Config::builder()
-                            .observer(&mut occurrences)
-                            .extra_namespace(
-                                extra_namespace_wrapper.extra_namespace(),
-                            )
-                            .referring_site(Global::new(
-                                key.symbol_id.target_id,
-                                engine.get_parent(key.symbol_id).await.unwrap(),
-                            ))
-                            .resolve_instance_parameter_trait_ref(&resolver)
-                            .build(),
-                        &storage,
+                Resolver::builder()
+                    .tracked_engine(engine)
+                    .handler(&storage)
+                    .observer(&mut occurrences)
+                    .extra_namespace(
+                        extra_namespace_wrapper.extra_namespace(),
                     )
+                    .referring_site(Global::new(
+                        key.symbol_id.target_id,
+                        engine.get_parent(key.symbol_id).await.unwrap(),
+                    ))
+                    .resolve_instance_parameter_trait_ref(&resolver)
+                    .build()
+                    .resolve_qualified_identifier_trait_ref(&qualified_identifier)
                     .await
             };
 

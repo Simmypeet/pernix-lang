@@ -5,9 +5,9 @@ use pernixc_hash::{HashMap, HashSet};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::{PERNIX_PROGRAM, TrackedEngine};
 use pernixc_resolution::{
-    Config,
+    Resolver,
     generic_parameter_namespace::get_generic_parameter_namespace,
-    qualified_identifier::{Resolution, resolve_qualified_identifier},
+    qualified_identifier::Resolution,
     term::{ResolutionToTermError, resolution_to_type},
 };
 use pernixc_source_file::SourceElement;
@@ -84,17 +84,15 @@ impl crate::build::Build for Key {
         let generic_parameter_namespace =
             engine.get_generic_parameter_namespace(key.symbol_id).await;
 
-        let resolution = match engine
-            .resolve_qualified_identifier(
-                &qualified_identifier,
-                Config::builder()
-                    .consider_adt_implements(false)
-                    .observer(&mut occurrences)
-                    .referring_site(key.symbol_id)
-                    .extra_namespace(&generic_parameter_namespace)
-                    .build(),
-                &storage,
-            )
+        let resolution = match Resolver::builder()
+            .tracked_engine(engine)
+            .handler(&storage)
+            .consider_adt_implements(false)
+            .observer(&mut occurrences)
+            .referring_site(key.symbol_id)
+            .extra_namespace(&generic_parameter_namespace)
+            .build()
+            .resolve_qualified_identifier(&qualified_identifier)
             .await
         {
             Ok(resolution) => resolution,

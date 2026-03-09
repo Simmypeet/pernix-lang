@@ -1,6 +1,6 @@
 use std::collections::hash_map::Entry;
 
-use pernixc_handler::Handler;
+use pernixc_handler::{Handler, Storage};
 use pernixc_hash::HashMap;
 use pernixc_ir::{
     address::{Address, Memory},
@@ -16,9 +16,7 @@ use pernixc_ir::{
     },
 };
 use pernixc_lexical::tree::{RelativeLocation, RelativeSpan};
-use pernixc_resolution::{
-    Config, term::resolve_qualified_identifier_effect_unit,
-};
+use pernixc_resolution::Resolver;
 use pernixc_semantic_element::parameter::get_parameters;
 use pernixc_source_file::{SourceElement, Span};
 use pernixc_symbol::member::get_members;
@@ -455,21 +453,24 @@ async fn extract_handler_chain(
             continue;
         };
 
-        let Some(effect) = binder
-            .engine()
-            .resolve_qualified_identifier_effect_unit(
-                &qualified_identifier,
-                Config::builder()
-                    .elided_lifetime_provider(&mut ErasedLifetimeProvider)
-                    .extra_namespace(binder.extra_namespace())
-                    .referring_site(binder.current_site())
-                    .build(),
-                &handler,
-            )
+        let resolution_handler =
+            Storage::<pernixc_resolution::diagnostic::Diagnostic>::new();
+
+        let Some(effect) = Resolver::builder()
+            .tracked_engine(binder.engine())
+            .handler(&resolution_handler)
+            .elided_lifetime_provider(&mut ErasedLifetimeProvider)
+            .extra_namespace(binder.extra_namespace())
+            .referring_site(binder.current_site())
+            .build()
+            .resolve_qualified_identifier_effect_unit(&qualified_identifier)
             .await
         else {
+            resolution_handler.propagate(handler);
             continue;
         };
+
+        resolution_handler.propagate(handler);
 
         // check if the effect has already been handled
         let environment = binder.create_environment();

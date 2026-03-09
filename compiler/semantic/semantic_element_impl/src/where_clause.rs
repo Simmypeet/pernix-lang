@@ -6,10 +6,9 @@ use pernixc_handler::{Handler, Storage};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_resolution::{
-    Config, ExtraNamespace, ExtraNamespaceWithForallLifetimes,
+    ExtraNamespace, ExtraNamespaceWithForallLifetimes, Resolver,
     generic_parameter_namespace::get_generic_parameter_namespace,
-    qualified_identifier::{Generic, Resolution, resolve_type_bound},
-    term::{resolve_lifetime, resolve_type},
+    qualified_identifier::{Generic, Resolution},
 };
 use pernixc_semantic_element::where_clause;
 use pernixc_source_file::SourceElement;
@@ -57,18 +56,28 @@ async fn create_trait_member_predicates(
         handler,
     );
 
-    let mut config = Config::builder()
+    let ty = Resolver::builder()
+        .tracked_engine(engine)
+        .handler(handler)
         .observer(occurrences)
         .referring_site(global_id)
         .extra_namespace(extra_namespace.extra_namespace())
-        .build();
-
-    let ty = engine.resolve_type(&lhs, config.reborrow(), handler).await;
+        .build()
+        .resolve_type(&lhs)
+        .await;
 
     match ty {
         // trait type
         Type::InstanceAssociated(instance_associated) => {
-            let resolve_ty = engine.resolve_type(&rhs, config, handler).await;
+            let resolve_ty = Resolver::builder()
+                .tracked_engine(engine)
+                .handler(handler)
+                .observer(occurrences)
+                .referring_site(global_id)
+                .extra_namespace(extra_namespace.extra_namespace())
+                .build()
+                .resolve_type(&rhs)
+                .await;
 
             where_clause.push(where_clause::Predicate {
                 predicate: predicate::Predicate::InstanceAssociatedTypeEquality(
@@ -90,7 +99,7 @@ async fn create_trait_member_predicates(
 }
 
 #[allow(clippy::too_many_lines)]
-async fn create_outlives_predicates(
+fn create_outlives_predicates(
     engine: &TrackedEngine,
     global_id: Global<pernixc_symbol::ID>,
     syntax_tree: &pernixc_syntax::predicate::LifetimeOutlives,
@@ -106,17 +115,16 @@ async fn create_outlives_predicates(
 
     let mut bounds = Vec::new();
 
-    let mut config = Config::builder()
-        .observer(occurrences)
-        .extra_namespace(extra_namespace)
-        .referring_site(global_id)
-        .build();
-
     for bound_syn in syntax_tree.bounds() {
         bounds.push(
-            engine
-                .resolve_lifetime(&bound_syn, config.reborrow(), handler)
-                .await,
+            Resolver::builder()
+                .tracked_engine(engine)
+                .handler(handler)
+                .observer(occurrences)
+                .extra_namespace(extra_namespace)
+                .referring_site(global_id)
+                .build()
+                .resolve_lifetime(&bound_syn),
         );
     }
 
@@ -160,16 +168,14 @@ async fn create_type_bound_predicates(
         handler,
     );
 
-    let ty = engine
-        .resolve_type(
-            &ty_syn,
-            Config::builder()
-                .referring_site(global_id)
-                .observer(occurrences)
-                .extra_namespace(extra_namespace.extra_namespace())
-                .build(),
-            handler,
-        )
+    let ty = Resolver::builder()
+        .tracked_engine(engine)
+        .handler(handler)
+        .referring_site(global_id)
+        .observer(occurrences)
+        .extra_namespace(extra_namespace.extra_namespace())
+        .build()
+        .resolve_type(&ty_syn)
         .await;
 
     create_type_bound_predicates_internal(
@@ -216,17 +222,14 @@ async fn create_type_bound_predicates_internal(
                     handler,
                 );
 
-                let resolution = match engine
-                    .resolve_type_bound(
-                        &qualified_identifier,
-                        ty,
-                        Config::builder()
-                            .referring_site(referring_site)
-                            .observer(occurrences)
-                            .extra_namespace(extra_namespace.extra_namespace())
-                            .build(),
-                        handler,
-                    )
+                let resolution = match Resolver::builder()
+                    .tracked_engine(engine)
+                    .handler(handler)
+                    .referring_site(referring_site)
+                    .observer(occurrences)
+                    .extra_namespace(extra_namespace.extra_namespace())
+                    .build()
+                    .resolve_type_bound(&qualified_identifier, ty)
                     .await
                 {
                     Ok(resolution) => resolution,
@@ -295,17 +298,14 @@ async fn create_type_bound_predicates_internal(
                 });
             }
             pernixc_syntax::predicate::TypeBound::Outlives(lifetime) => {
-                let bound = engine
-                    .resolve_lifetime(
-                        &lifetime,
-                        Config::builder()
-                            .referring_site(referring_site)
-                            .observer(occurrences)
-                            .extra_namespace(extra_namespace.extra_namespace())
-                            .build(),
-                        handler,
-                    )
-                    .await;
+                let bound = Resolver::builder()
+                    .tracked_engine(engine)
+                    .handler(handler)
+                    .referring_site(referring_site)
+                    .observer(occurrences)
+                    .extra_namespace(extra_namespace.extra_namespace())
+                    .build()
+                    .resolve_lifetime(&lifetime);
 
                 let forall_lts_in_ty = RecursiveIterator::new(ty)
                     .filter_map(|x| {
@@ -409,8 +409,7 @@ impl build::Build for pernixc_semantic_element::where_clause::Key {
                         &mut where_clause,
                         &mut occurrences,
                         &storage,
-                    )
-                    .await;
+                    );
                 }
             }
         }

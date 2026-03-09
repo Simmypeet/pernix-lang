@@ -5,9 +5,8 @@ use pernixc_handler::{Handler, Storage};
 use pernixc_hash::HashMap;
 use pernixc_qbice::TrackedEngine;
 use pernixc_resolution::{
-    Config, ExtraNamespace,
+    Resolver, ExtraNamespace,
     generic_parameter_namespace::get_generic_parameter_namespace,
-    term::resolve_type,
 };
 use pernixc_semantic_element::fields::{Field, Fields};
 use pernixc_source_file::SourceElement;
@@ -143,16 +142,14 @@ async fn process_field(
 
     let field_type = if let Some(field_type_syntax) = field_syntax.r#type() {
         // Resolve field type
-        let field_type = engine
-            .resolve_type(
-                &field_type_syntax,
-                Config::builder()
-                    .observer(occurrences)
-                    .extra_namespace(extra_namespace)
-                    .referring_site(struct_id)
-                    .build(),
-                storage,
-            )
+        let field_type = Resolver::builder()
+            .tracked_engine(engine)
+            .handler(storage)
+            .observer(occurrences)
+            .extra_namespace(extra_namespace)
+            .referring_site(struct_id)
+            .build()
+            .resolve_type(&field_type_syntax)
             .await;
 
         let premise = engine.get_active_premise(struct_id).await;

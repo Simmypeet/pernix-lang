@@ -3,8 +3,7 @@ use std::borrow::Cow;
 use pernixc_handler::Storage;
 use pernixc_qbice::TrackedEngine;
 use pernixc_resolution::{
-    Config, generic_parameter_namespace::get_generic_parameter_namespace,
-    term::resolve_type,
+    Resolver, generic_parameter_namespace::get_generic_parameter_namespace,
 };
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::syntax::get_variant_associated_type_syntax;
@@ -44,16 +43,14 @@ impl build::Build for pernixc_semantic_element::variant::Key {
         let extra_namespace =
             engine.get_generic_parameter_namespace(key.symbol_id).await;
 
-        let mut ty = engine
-            .resolve_type(
-                &syntax_tree,
-                Config::builder()
-                    .observer(&mut occurrences)
-                    .extra_namespace(&extra_namespace)
-                    .referring_site(key.symbol_id)
-                    .build(),
-                &storage,
-            )
+        let mut ty = Resolver::builder()
+            .tracked_engine(engine)
+            .handler(&storage)
+            .observer(&mut occurrences)
+            .extra_namespace(&extra_namespace)
+            .referring_site(key.symbol_id)
+            .build()
+            .resolve_type(&syntax_tree)
             .await;
 
         let premise = engine.get_active_premise(key.symbol_id).await;

@@ -7,9 +7,8 @@ use pernixc_hash::HashSet;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_resolution::{
-    Config as ResolutionConfig, ElidedTermProvider, ExtraNamespace,
+    Resolver as ResolutionConfig, ElidedTermProvider, ExtraNamespace,
     generic_parameter_namespace::get_generic_parameter_namespace,
-    term::resolve_type,
 };
 use pernixc_semantic_element::{
     elided_lifetime,
@@ -85,17 +84,15 @@ async fn create_parameters<
     for parameter in parameters {
         let ty = match parameter.r#type() {
             Some(ty) => {
-                engine
-                    .resolve_type(
-                        &ty,
-                        ResolutionConfig::builder()
-                            .referring_site(id)
-                            .extra_namespace(extra_namespace)
-                            .elided_lifetime_provider(elided_lifetimes_provider)
-                            .observer(occurrences)
-                            .build(),
-                        storage,
-                    )
+                ResolutionConfig::builder()
+                    .tracked_engine(engine)
+                    .handler(storage)
+                    .referring_site(id)
+                    .extra_namespace(extra_namespace)
+                    .elided_lifetime_provider(elided_lifetimes_provider)
+                    .observer(occurrences)
+                    .build()
+                    .resolve_type(&ty)
                     .await
             }
             None => Type::Error(pernixc_term::error::Error),
@@ -151,21 +148,19 @@ impl Build for Key {
 
         let return_type =
             if let Some(ty_syn) = return_type_syn.and_then(|x| x.r#type()) {
-                let ty = engine
-                    .resolve_type(
-                        &ty_syn,
-                        ResolutionConfig::builder()
-                            .referring_site(key.symbol_id)
-                            .maybe_elided_lifetime_provider(
-                                return_elided_lifetime_provider
-                                    .as_mut()
-                                    .map(|x| x as _),
-                            )
-                            .extra_namespace(&extra_namespace)
-                            .observer(&mut occurrences)
-                            .build(),
-                        &storage,
+                let ty = ResolutionConfig::builder()
+                    .tracked_engine(engine)
+                    .handler(&storage)
+                    .referring_site(key.symbol_id)
+                    .maybe_elided_lifetime_provider(
+                        return_elided_lifetime_provider
+                            .as_mut()
+                            .map(|x| x as _),
                     )
+                    .extra_namespace(&extra_namespace)
+                    .observer(&mut occurrences)
+                    .build()
+                    .resolve_type(&ty_syn)
                     .await;
 
                 Some((ty, ty_syn.span()))

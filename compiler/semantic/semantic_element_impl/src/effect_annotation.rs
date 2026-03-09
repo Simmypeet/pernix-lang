@@ -6,9 +6,9 @@ use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_resolution::{
-    Config, ExtraNamespace, ExtraNamespaceWithForallLifetimes,
+    ExtraNamespace, ExtraNamespaceWithForallLifetimes, Resolver,
     generic_parameter_namespace::get_generic_parameter_namespace,
-    qualified_identifier::{Resolution, resolve_qualified_identifier},
+    qualified_identifier::Resolution,
 };
 use pernixc_semantic_element::effect_annotation;
 use pernixc_source_file::SourceElement;
@@ -97,16 +97,16 @@ async fn build_effect_annotation(
     let mut elided_lifetime_provider =
         ElidedForallLifetimeProvider { count: 0, current_site };
 
-    let config = Config::builder()
+    let mut resolver = Resolver::builder()
+        .tracked_engine(engine)
+        .handler(handler)
         .observer(observer)
         .referring_site(current_site)
         .extra_namespace(extra_namespace_wrapper.extra_namespace())
         .elided_lifetime_provider(&mut elided_lifetime_provider)
         .build();
 
-    let resolution = match engine
-        .resolve_qualified_identifier(&q_ident, config, handler)
-        .await
+    let resolution = match resolver.resolve_qualified_identifier(&q_ident).await
     {
         Ok(resolution) => resolution,
         Err(er) => match er {

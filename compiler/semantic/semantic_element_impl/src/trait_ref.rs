@@ -2,9 +2,8 @@ use std::ops::Deref;
 
 use pernixc_handler::{Handler, Storage};
 use pernixc_resolution::{
-    Config, ExtraNamespaceWithForallLifetimes,
+    Resolver, ExtraNamespaceWithForallLifetimes,
     generic_parameter_namespace::get_generic_parameter_namespace,
-    term::resolve_qualified_identifier_trait_ref,
 };
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
@@ -68,16 +67,14 @@ impl build::Build for pernixc_semantic_element::trait_ref::Key {
             &storage,
         );
 
-        let Some(result) = engine
-            .resolve_qualified_identifier_trait_ref(
-                &qualified_identifier,
-                Config::builder()
-                    .observer(&mut occurrences)
-                    .extra_namespace(extra_namespace.extra_namespace())
-                    .referring_site(key.symbol_id)
-                    .build(),
-                &storage,
-            )
+        let Some(result) = Resolver::builder()
+            .tracked_engine(engine)
+            .handler(&storage)
+            .observer(&mut occurrences)
+            .extra_namespace(extra_namespace.extra_namespace())
+            .referring_site(key.symbol_id)
+            .build()
+            .resolve_qualified_identifier_trait_ref(&qualified_identifier)
             .await
         else {
             return build::Output::new_with(
