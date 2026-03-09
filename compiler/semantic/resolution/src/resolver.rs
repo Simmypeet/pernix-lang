@@ -1,9 +1,9 @@
 //! Contains the [`Config`] struct and related types for configuring the
 //! resolution process.
 
-use std::pin::Pin;
+use std::{borrow::Cow, pin::Pin};
 
-use bon::Builder;
+use bon::bon;
 use pernixc_handler::Handler;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
@@ -24,8 +24,7 @@ pub trait ElidedTermProvider<T>: Send {
     fn create(&mut self) -> T;
 }
 
-/// The configuration struct specifying the behaviour of the resolution process.
-#[derive(Builder)]
+/// The state and configuration for the resolution process.
 #[allow(missing_debug_implementations)]
 pub struct Resolver<'i, 'm> {
     /// The tracked engine used for querying.
@@ -60,7 +59,7 @@ pub struct Resolver<'i, 'm> {
     /// This is useful for including the symbols that are not directly defined
     /// in the table but are acessible such as higher-ranked lifetimes
     /// `for['x]`.
-    extra_namespace: Option<&'i ExtraNamespace>,
+    extra_namespace: Option<Cow<'i, ExtraNamespace>>,
 
     /// If specified, when an instance is resolved and requires to resolve its
     /// trait ref, the resolver will call this to resolve the trait ref of the
@@ -75,11 +74,51 @@ pub struct Resolver<'i, 'm> {
     /// This flag is primarily used when resolving a qualified identifier for
     /// the `implements` but cyclic query might happen when the resolution
     /// considers the ADT implementations as well.
-    #[builder(default = true)]
     consider_adt_implements: bool,
 
     /// Represents the site where the resolution occurred.
     referring_site: Global<pernixc_symbol::ID>,
+}
+
+#[bon]
+impl<'i, 'm> Resolver<'i, 'm> {
+    /// Creates a new [`Resolver`] with the specified configuration.
+    #[builder(finish_fn = build)]
+    pub fn builder(
+        tracked_engine: &'i TrackedEngine,
+        handler: &'i dyn Handler<Diagnostic>,
+        elided_lifetime_provider: Option<
+            &'m mut dyn ElidedTermProvider<Lifetime>,
+        >,
+        elided_type_provider: Option<&'m mut dyn ElidedTermProvider<Type>>,
+        elided_constant_provider: Option<
+            &'m mut dyn ElidedTermProvider<Constant>,
+        >,
+        elided_instance_provider: Option<
+            &'m mut dyn ElidedTermProvider<Instance>,
+        >,
+        observer: Option<&'m mut dyn Observer>,
+        extra_namespace: Option<&'i ExtraNamespace>,
+        resolve_instance_parameter_trait_ref: Option<
+            &'i dyn ResolveInstanceParameterTraitRef,
+        >,
+        #[builder(default = true)] consider_adt_implements: bool,
+        referring_site: Global<pernixc_symbol::ID>,
+    ) -> Self {
+        Self {
+            tracked_engine,
+            handler,
+            elided_lifetime_provider,
+            elided_type_provider,
+            elided_constant_provider,
+            elided_instance_provider,
+            observer,
+            extra_namespace: extra_namespace.map(Cow::Borrowed),
+            resolve_instance_parameter_trait_ref,
+            consider_adt_implements,
+            referring_site,
+        }
+    }
 }
 
 impl<'i, 'm> Resolver<'i, 'm> {
@@ -269,25 +308,31 @@ impl<'i, 'm> Resolver<'i, 'm> {
     /// Looks up a lifetime in the extra namespace.
     #[must_use]
     pub fn lookup_extra_lifetime(&self, name: &str) -> Option<Lifetime> {
-        self.extra_namespace.and_then(|ns| ns.get_lifetime(name).cloned())
+        self.extra_namespace
+            .as_ref()
+            .and_then(|ns| ns.get_lifetime(name).cloned())
     }
 
     /// Looks up a type in the extra namespace.
     #[must_use]
     pub fn lookup_extra_type(&self, name: &str) -> Option<Type> {
-        self.extra_namespace.and_then(|ns| ns.get_type(name).cloned())
+        self.extra_namespace.as_ref().and_then(|ns| ns.get_type(name).cloned())
     }
 
     /// Looks up a constant in the extra namespace.
     #[must_use]
     pub fn lookup_extra_constant(&self, name: &str) -> Option<Constant> {
-        self.extra_namespace.and_then(|ns| ns.get_constant(name).cloned())
+        self.extra_namespace
+            .as_ref()
+            .and_then(|ns| ns.get_constant(name).cloned())
     }
 
     /// Looks up an instance in the extra namespace.
     #[must_use]
     pub fn lookup_extra_instance(&self, name: &str) -> Option<Instance> {
-        self.extra_namespace.and_then(|ns| ns.get_instance(name).cloned())
+        self.extra_namespace
+            .as_ref()
+            .and_then(|ns| ns.get_instance(name).cloned())
     }
 
     // =========================================================================
