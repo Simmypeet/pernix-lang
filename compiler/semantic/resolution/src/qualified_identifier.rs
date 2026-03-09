@@ -38,7 +38,6 @@ use crate::{
         NoGenericArgumentsRequired, NoMemberInFunction, NoMemberInType,
         SymbolIsNotAccessible, SymbolNotFound, ThisNotFound,
     },
-    term::resolve_generic_arguments_for_internal,
 };
 
 /// Repersents a resolution to a symbol that can be supplied with generic
@@ -452,509 +451,472 @@ pub async fn resolve_simple_qualified_identifier_root(
     }
 }
 
-#[allow(clippy::too_many_lines)]
-async fn resolve_root(
-    tracked_engine: &TrackedEngine,
-    root: &QualifiedIdentifierRoot,
-    type_bound: Option<&Type>,
-    mut config: Config<'_, '_, '_, '_, '_>,
-    handler: &dyn Handler<Diagnostic>,
-) -> Result<Resolution, Error> {
-    let resolution = match root {
-        QualifiedIdentifierRoot::Target(_) => Resolution::Module(Global::new(
-            config.referring_site.target_id,
-            tracked_engine
-                .get_target_root_module_id(config.referring_site.target_id)
-                .await,
-        )),
+impl Config<'_, '_, '_, '_, '_, '_, '_> {
+    #[allow(clippy::too_many_lines)]
+    async fn resolve_root(
+        &mut self,
+        root: &QualifiedIdentifierRoot,
+        type_bound: Option<&Type>,
+    ) -> Result<Resolution, Error> {
+        let resolution = match root {
+            QualifiedIdentifierRoot::Target(_) => {
+                Resolution::Module(Global::new(
+                    self.referring_site.target_id,
+                    self.tracked_engine
+                        .get_target_root_module_id(
+                            self.referring_site.target_id,
+                        )
+                        .await,
+                ))
+            }
 
-        QualifiedIdentifierRoot::This(this) => {
-            let found_this =
-                search_this(tracked_engine, config.referring_site).await;
+            QualifiedIdentifierRoot::This(this) => {
+                let found_this =
+                    search_this(self.tracked_engine, self.referring_site).await;
 
-            let Some((this_symbol, kind)) = found_this else {
-                handler.receive(Diagnostic::ThisNotFound(ThisNotFound {
-                    this_span: this.span,
-                }));
-                return Err(Error::Abort);
-            };
+                let Some((this_symbol, kind)) = found_this else {
+                    self.handler.receive(Diagnostic::ThisNotFound(
+                        ThisNotFound { this_span: this.span },
+                    ));
+                    return Err(Error::Abort);
+                };
 
-            match kind {
-                Kind::Trait | Kind::Enum | Kind::Struct => {
-                    Resolution::Generic(Generic {
-                        id: this_symbol,
-                        generic_arguments: tracked_engine
-                            .get_generic_parameters(this_symbol)
+                match kind {
+                    Kind::Trait | Kind::Enum | Kind::Struct => {
+                        Resolution::Generic(Generic {
+                            id: this_symbol,
+                            generic_arguments: self
+                                .tracked_engine
+                                .get_generic_parameters(this_symbol)
+                                .await
+                                .create_identity_generic_arguments(this_symbol),
+                        })
+                    }
+
+                    Kind::PositiveImplementation => {
+                        let Some(implemented_id) = self
+                            .tracked_engine
+                            .get_implements(this_symbol)
                             .await
-                            .create_identity_generic_arguments(this_symbol),
-                    })
-                }
+                        else {
+                            return Err(Error::Abort);
+                        };
 
-                Kind::PositiveImplementation => {
-                    let Some(implemented_id) =
-                        tracked_engine.get_implements(this_symbol).await
-                    else {
-                        return Err(Error::Abort);
-                    };
+                        let Some(implemented_generic_arguments) = self
+                            .tracked_engine
+                            .get_implements_argument(this_symbol)
+                            .await
+                        else {
+                            return Err(Error::Abort);
+                        };
 
-                    let Some(implemented_generic_arguments) = tracked_engine
-                        .get_implements_argument(this_symbol)
-                        .await
-                    else {
-                        return Err(Error::Abort);
-                    };
+                        Resolution::Generic(Generic {
+                            id: implemented_id,
+                            generic_arguments: implemented_generic_arguments
+                                .deref()
+                                .clone(),
+                        })
+                    }
 
-                    Resolution::Generic(Generic {
-                        id: implemented_id,
-                        generic_arguments: implemented_generic_arguments
-                            .deref()
-                            .clone(),
-                    })
-                }
-
-                _ => unreachable!(),
-            }
-        }
-
-        QualifiedIdentifierRoot::GenericIdentifier(generic_identifier) => {
-            let current_module_id = tracked_engine
-                .get_closest_module_id(config.referring_site)
-                .await;
-
-            let current_module_id =
-                Global::new(config.referring_site.target_id, current_module_id);
-
-            let identifier =
-                generic_identifier.identifier().ok_or(Error::Abort)?;
-
-            // try reoslve from the extra namespace first
-            if let Some(extra_namespace_resolution) =
-                config.extra_namespace.as_ref()
-            {
-                // search from type then instance
-                if let Some(ty) = extra_namespace_resolution
-                    .types
-                    .get(identifier.kind.0.as_ref())
-                    .cloned()
-                {
-                    return Ok(Resolution::Type(ty));
-                }
-
-                if let Some(instance) = extra_namespace_resolution
-                    .instances
-                    .get(identifier.kind.0.as_ref())
-                    .cloned()
-                {
-                    return Ok(Resolution::Instance(instance));
+                    _ => unreachable!(),
                 }
             }
 
-            let id = match tracked_engine
-                .get_members(current_module_id)
-                .await
-                .member_ids_by_name
-                .get(&identifier.kind.0)
-                .copied()
-                .map(|x| Global::new(current_module_id.target_id, x))
-            {
-                Some(id) => Some(id),
-                None => tracked_engine
-                    .get_import_map(current_module_id)
+            QualifiedIdentifierRoot::GenericIdentifier(generic_identifier) => {
+                let current_module_id = self
+                    .tracked_engine
+                    .get_closest_module_id(self.referring_site)
+                    .await;
+
+                let current_module_id = Global::new(
+                    self.referring_site.target_id,
+                    current_module_id,
+                );
+
+                let identifier =
+                    generic_identifier.identifier().ok_or(Error::Abort)?;
+
+                // try resolve from the extra namespace first
+                if let Some(extra_namespace_resolution) =
+                    self.extra_namespace.as_ref()
+                {
+                    // search from type then instance
+                    if let Some(ty) = extra_namespace_resolution
+                        .types
+                        .get(identifier.kind.0.as_ref())
+                        .cloned()
+                    {
+                        return Ok(Resolution::Type(ty));
+                    }
+
+                    if let Some(instance) = extra_namespace_resolution
+                        .instances
+                        .get(identifier.kind.0.as_ref())
+                        .cloned()
+                    {
+                        return Ok(Resolution::Instance(instance));
+                    }
+                }
+
+                let id = match self
+                    .tracked_engine
+                    .get_members(current_module_id)
                     .await
+                    .member_ids_by_name
                     .get(&identifier.kind.0)
                     .copied()
-                    .map(|x| x.id),
-            };
+                    .map(|x| Global::new(current_module_id.target_id, x))
+                {
+                    Some(id) => Some(id),
+                    None => self
+                        .tracked_engine
+                        .get_import_map(current_module_id)
+                        .await
+                        .get(&identifier.kind.0)
+                        .copied()
+                        .map(|x| x.id),
+                };
 
-            let Some(id) = id else {
-                handler.receive(Diagnostic::SymbolNotFound(SymbolNotFound {
-                    searched_item_id: Some(current_module_id),
-                    name: identifier.kind.0,
-                    resolution_span: identifier.span,
-                }));
+                let Some(id) = id else {
+                    self.handler.receive(Diagnostic::SymbolNotFound(
+                        SymbolNotFound {
+                            searched_item_id: Some(current_module_id),
+                            name: identifier.kind.0,
+                            resolution_span: identifier.span,
+                        },
+                    ));
 
-                return Err(Error::Abort);
-            };
+                    return Err(Error::Abort);
+                };
 
-            let symbol_kind = tracked_engine.get_kind(id).await;
+                let symbol_kind = self.tracked_engine.get_kind(id).await;
 
-            let generic_arguments = if symbol_kind.has_generic_parameters() {
-                Some(
-                    tracked_engine
-                        .resolve_generic_arguments_for_internal(
+                let generic_arguments = if symbol_kind.has_generic_parameters()
+                {
+                    Some(
+                        self.resolve_generic_arguments_for_internal(
                             id,
                             (symbol_kind == Kind::Marker
                                 || symbol_kind == Kind::Trait)
                                 .then_some(type_bound)
                                 .flatten(),
                             generic_identifier,
-                            config.reborrow(),
-                            handler,
                         )
                         .await,
+                    )
+                } else {
+                    if let Some(gen_args) =
+                        generic_identifier.generic_arguments().as_ref()
+                    {
+                        self.handler.receive(
+                            Diagnostic::NoGenericArgumentsRequired(
+                                NoGenericArgumentsRequired {
+                                    global_id: id,
+                                    generic_argument_span: gen_args.span(),
+                                },
+                            ),
+                        );
+                    }
+
+                    None
+                };
+
+                match (symbol_kind, generic_arguments) {
+                    (Kind::Module, None) => Resolution::Module(id),
+
+                    (_, Some(generic_arguments)) => {
+                        Resolution::Generic(Generic { id, generic_arguments })
+                    }
+
+                    _ => unreachable!(),
+                }
+            }
+        };
+
+        if let Some(observer) = self.observer.as_mut() {
+            observer.on_resolution_resolved(
+                self.tracked_engine,
+                self.referring_site,
+                &resolution,
+                &root.span(),
+                self.handler,
+            );
+        }
+
+        Ok(resolution)
+    }
+
+    /// Resolves a [`QualifiedIdentifier`] to a [`Resolution`] where the last
+    /// identifier is expected to be a `marker` or `trait`. The resolution will
+    /// insert the given `type_bound` as the first generic argument to the last
+    /// identifier if it is a `marker` or `trait`.
+    #[allow(clippy::too_many_lines)]
+    pub async fn resolve_type_bound(
+        &mut self,
+        qualified_identifier: &QualifiedIdentifier,
+        type_bound: &Type,
+    ) -> Result<Resolution, Error> {
+        self.resolve_qualified_identifier_internal(
+            qualified_identifier,
+            Some(type_bound),
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_lines)]
+    async fn resolve_step(
+        &mut self,
+        latest_resolution: &Resolution,
+        identifier: &pernixc_syntax::Identifier,
+    ) -> Result<Global<pernixc_symbol::ID>, Error> {
+        let resolved = match latest_resolution {
+            normal @ (Resolution::Module(_)
+            | Resolution::Variant(_)
+            | Resolution::Generic(_)
+            | Resolution::MemberGeneric(_)) => {
+                let global_id = normal
+                    .global_id()
+                    .expect("these four variants should have global_id");
+
+                let resolved_id = self
+                    .tracked_engine
+                    .resolve_in(
+                        global_id,
+                        self.referring_site.target_id,
+                        &identifier.kind.0,
+                        self.consider_adt_implements,
+                    )
+                    .await;
+
+                let Some(resolved_id) = resolved_id else {
+                    self.handler.receive(Diagnostic::SymbolNotFound(
+                        SymbolNotFound {
+                            searched_item_id: Some(global_id),
+                            resolution_span: identifier.span,
+                            name: identifier.kind.0.clone(),
+                        },
+                    ));
+
+                    return Err(Error::Abort);
+                };
+
+                resolved_id
+            }
+
+            Resolution::Type(ty) => {
+                self.handler.receive(Diagnostic::NoMemberInType(
+                    NoMemberInType::builder()
+                        .resolution_span(identifier.span)
+                        .r#type(ty.clone())
+                        .build(),
+                ));
+
+                return Err(Error::Abort);
+            }
+
+            Resolution::Instance(instance) => match instance {
+                Instance::Symbol(symbol) => {
+                    let member_id = self
+                        .tracked_engine
+                        .get_member_by_name(symbol.id(), &identifier.kind)
+                        .await;
+
+                    let Some(member_id) = member_id else {
+                        self.handler.receive(Diagnostic::SymbolNotFound(
+                            SymbolNotFound {
+                                searched_item_id: Some(symbol.id()),
+                                resolution_span: identifier.span,
+                                name: identifier.kind.0.clone(),
+                            },
+                        ));
+
+                        return Err(Error::Abort);
+                    };
+
+                    member_id
+                }
+
+                Instance::Parameter(member_id) => {
+                    let trait_id = if let Some(adhoc_resolver) =
+                        self.resolve_instance_parameter_trait_ref
+                    {
+                        adhoc_resolver
+                            .resolve_instance_parameter_trait_ref(member_id)
+                            .await
+                            .ok_or(Error::Abort)?
+                    } else {
+                        self.tracked_engine
+                            .get_generic_parameters(member_id.parent_id())
+                            .await[member_id.id()]
+                        .trait_ref()
+                        .map(|x| x.trait_id())
+                        .ok_or(Error::Abort)?
+                    };
+
+                    let Some(member_id) = self
+                        .tracked_engine
+                        .get_member_by_name(trait_id, &identifier.kind)
+                        .await
+                    else {
+                        self.handler.receive(Diagnostic::SymbolNotFound(
+                            SymbolNotFound {
+                                searched_item_id: Some(trait_id),
+                                resolution_span: identifier.span,
+                                name: identifier.kind.0.clone(),
+                            },
+                        ));
+
+                        return Err(Error::Abort);
+                    };
+
+                    member_id
+                }
+
+                Instance::InstanceAssociated(instance_associated) => {
+                    let trait_id =
+                        instance_associated.trait_associated_symbol_id();
+
+                    let Some(member_id) = self
+                        .tracked_engine
+                        .get_member_by_name(trait_id, &identifier.kind)
+                        .await
+                    else {
+                        self.handler.receive(Diagnostic::SymbolNotFound(
+                            SymbolNotFound {
+                                searched_item_id: Some(trait_id),
+                                resolution_span: identifier.span,
+                                name: identifier.kind.0.clone(),
+                            },
+                        ));
+
+                        return Err(Error::Abort);
+                    };
+
+                    member_id
+                }
+
+                Instance::Inference(_) | Instance::Error(_) => {
+                    return Err(Error::Abort);
+                }
+            },
+
+            Resolution::InstanceAssociatedFunction(function_id) => {
+                self.handler.receive(Diagnostic::NoMemberInFunction(
+                    NoMemberInFunction::builder()
+                        .resolution_span(identifier.span)
+                        .function_id(function_id.trait_associated_function_id)
+                        .build(),
+                ));
+
+                return Err(Error::Abort);
+            }
+        };
+
+        // check if the symbol is accessible
+        if !self
+            .tracked_engine
+            .symbol_accessible(self.referring_site, resolved)
+            .await
+        {
+            self.handler.receive(Diagnostic::SymbolIsNotAccessible(
+                SymbolIsNotAccessible {
+                    referring_site: self.referring_site,
+                    referred: resolved,
+                    referred_span: identifier.span,
+                },
+            ));
+        }
+
+        Ok(resolved)
+    }
+
+    async fn resolve_qualified_identifier_internal(
+        &mut self,
+        qualified_identifier: &QualifiedIdentifier,
+        bound_type: Option<&Type>,
+    ) -> Result<Resolution, Error> {
+        // create the current root
+        let mut latest_resolution = self
+            .resolve_root(
+                &qualified_identifier.root().ok_or(Error::Abort)?,
+                bound_type,
+            )
+            .await?;
+
+        for generic_identifier in qualified_identifier
+            .subsequences()
+            .filter_map(|x| x.generic_identifier())
+        {
+            let Some(identifier) = generic_identifier.identifier() else {
+                continue;
+            };
+
+            let resolved_id =
+                self.resolve_step(&latest_resolution, &identifier).await?;
+
+            let symbol_kind = self.tracked_engine.get_kind(resolved_id).await;
+
+            let generic_arguments = if symbol_kind.has_generic_parameters() {
+                Some(
+                    self.resolve_generic_arguments_for_internal(
+                        resolved_id,
+                        (symbol_kind == Kind::Marker
+                            || symbol_kind == Kind::Trait)
+                            .then_some(bound_type)
+                            .flatten(),
+                        &generic_identifier,
+                    )
+                    .await,
                 )
             } else {
                 if let Some(gen_args) =
                     generic_identifier.generic_arguments().as_ref()
                 {
-                    handler.receive(Diagnostic::NoGenericArgumentsRequired(
-                        NoGenericArgumentsRequired {
-                            global_id: id,
-                            generic_argument_span: gen_args.span(),
-                        },
-                    ));
+                    self.handler.receive(
+                        Diagnostic::NoGenericArgumentsRequired(
+                            NoGenericArgumentsRequired {
+                                global_id: resolved_id,
+                                generic_argument_span: gen_args.span(),
+                            },
+                        ),
+                    );
                 }
 
                 None
             };
 
-            match (symbol_kind, generic_arguments) {
-                (Kind::Module, None) => Resolution::Module(id),
-
-                (_, Some(generic_arguments)) => {
-                    Resolution::Generic(Generic { id, generic_arguments })
-                }
-
-                _ => unreachable!(),
-            }
-        }
-    };
-
-    if let Some(observer) = config.observer.as_mut() {
-        observer.on_resolution_resolved(
-            tracked_engine,
-            config.referring_site,
-            &resolution,
-            &root.span(),
-            handler,
-        );
-    }
-
-    Ok(resolution)
-}
-
-/// Resolves a [`QualifiedIdentifier`] to a [`Resolution`] where the last
-/// identifier is expected to be a `marker` or `trait`. The resolution will
-/// insert the given `type_bound` as the first generic argument to the last
-/// identifier if it is a `marker` or `trait`.
-#[allow(clippy::too_many_lines)]
-#[extend]
-pub async fn resolve_type_bound(
-    self: &TrackedEngine,
-    qualified_identifier: &QualifiedIdentifier,
-    type_bound: &Type,
-    mut config: Config<'_, '_, '_, '_, '_>,
-    handler: &dyn Handler<Diagnostic>,
-) -> Result<Resolution, Error> {
-    self.resolve_qualified_identifier_internal(
-        qualified_identifier,
-        Some(type_bound),
-        config.reborrow(),
-        handler,
-    )
-    .await
-}
-
-/// Resolves a member of given name in the given symbol ID.
-///
-/// This analogous to doing `Symbol::member` resolution. where `Symbol` is
-/// the `symbol_id` and `member` is the `identifier`.
-#[extend]
-pub async fn resolve_in(
-    self: &TrackedEngine,
-    symbol_id: Global<pernixc_symbol::ID>,
-    site_target: TargetID,
-    identifier: &str,
-    consider_adt_implements: bool,
-) -> Option<Global<pernixc_symbol::ID>> {
-    if let Some(resolved_id) = self.get_member_of(symbol_id, identifier).await {
-        return Some(resolved_id);
-    }
-
-    // try to search in the implements if the latest resolution is an
-    // ADT
-
-    let kind = self.get_kind(symbol_id).await;
-
-    if !(kind.is_adt() && consider_adt_implements) {
-        return None;
-    }
-
-    let implemented = self.get_implemented(symbol_id, site_target).await;
-
-    for impl_id in implemented.iter().copied() {
-        let impl_members = self.get_members(impl_id).await;
-
-        if let Some(resolved_id) =
-            impl_members.member_ids_by_name.get(identifier)
-        {
-            return Some(Global::new(impl_id.target_id, *resolved_id));
-        }
-    }
-
-    None
-}
-
-#[allow(clippy::too_many_lines)]
-#[extend]
-async fn resolve_step(
-    self: &TrackedEngine,
-    latest_resolution: &Resolution,
-    identifier: &pernixc_syntax::Identifier,
-    config: Config<'_, '_, '_, '_, '_>,
-    handler: &dyn Handler<Diagnostic>,
-) -> Result<Global<pernixc_symbol::ID>, Error> {
-    let resolved = match latest_resolution {
-        normal @ (Resolution::Module(_)
-        | Resolution::Variant(_)
-        | Resolution::Generic(_)
-        | Resolution::MemberGeneric(_)) => {
-            let global_id = normal
-                .global_id()
-                .expect("these four variants should have global_id");
-
-            let resolved_id = self
-                .resolve_in(
-                    global_id,
-                    config.referring_site.target_id,
-                    &identifier.kind.0,
-                    config.consider_adt_implements,
-                )
-                .await;
-
-            let Some(resolved_id) = resolved_id else {
-                handler.receive(Diagnostic::SymbolNotFound(SymbolNotFound {
-                    searched_item_id: Some(global_id),
-                    resolution_span: identifier.span,
-                    name: identifier.kind.0.clone(),
-                }));
-
-                return Err(Error::Abort);
-            };
-
-            resolved_id
-        }
-
-        Resolution::Type(ty) => {
-            handler.receive(Diagnostic::NoMemberInType(
-                NoMemberInType::builder()
-                    .resolution_span(identifier.span)
-                    .r#type(ty.clone())
-                    .build(),
-            ));
-
-            return Err(Error::Abort);
-        }
-
-        Resolution::Instance(instance) => match instance {
-            Instance::Symbol(symbol) => {
-                let member_id = self
-                    .get_member_by_name(symbol.id(), &identifier.kind)
-                    .await;
-
-                let Some(member_id) = member_id else {
-                    handler.receive(Diagnostic::SymbolNotFound(
-                        SymbolNotFound {
-                            searched_item_id: Some(symbol.id()),
-                            resolution_span: identifier.span,
-                            name: identifier.kind.0.clone(),
-                        },
-                    ));
-
-                    return Err(Error::Abort);
-                };
-
-                member_id
-            }
-
-            Instance::Parameter(member_id) => {
-                let trait_id = if let Some(adhoc_resolver) =
-                    config.resolve_instance_parameter_trait_ref
-                {
-                    adhoc_resolver
-                        .resolve_instance_parameter_trait_ref(member_id)
-                        .await
-                        .ok_or(Error::Abort)?
-                } else {
-                    self.get_generic_parameters(member_id.parent_id()).await
-                        [member_id.id()]
-                    .trait_ref()
-                    .map(|x| x.trait_id())
-                    .ok_or(Error::Abort)?
-                };
-
-                let Some(member_id) =
-                    self.get_member_by_name(trait_id, &identifier.kind).await
-                else {
-                    handler.receive(Diagnostic::SymbolNotFound(
-                        SymbolNotFound {
-                            searched_item_id: Some(trait_id),
-                            resolution_span: identifier.span,
-                            name: identifier.kind.0.clone(),
-                        },
-                    ));
-
-                    return Err(Error::Abort);
-                };
-
-                member_id
-            }
-
-            Instance::InstanceAssociated(instance_associated) => {
-                let trait_id = instance_associated.trait_associated_symbol_id();
-
-                let Some(member_id) =
-                    self.get_member_by_name(trait_id, &identifier.kind).await
-                else {
-                    handler.receive(Diagnostic::SymbolNotFound(
-                        SymbolNotFound {
-                            searched_item_id: Some(trait_id),
-                            resolution_span: identifier.span,
-                            name: identifier.kind.0.clone(),
-                        },
-                    ));
-
-                    return Err(Error::Abort);
-                };
-
-                member_id
-            }
-
-            Instance::Inference(_) | Instance::Error(_) => {
-                return Err(Error::Abort);
-            }
-        },
-
-        Resolution::InstanceAssociatedFunction(function_id) => {
-            handler.receive(Diagnostic::NoMemberInFunction(
-                NoMemberInFunction::builder()
-                    .resolution_span(identifier.span)
-                    .function_id(function_id.trait_associated_function_id)
-                    .build(),
-            ));
-
-            return Err(Error::Abort);
-        }
-    };
-
-    // check if the symbol is accessible
-    if !self.symbol_accessible(config.referring_site, resolved).await {
-        handler.receive(Diagnostic::SymbolIsNotAccessible(
-            SymbolIsNotAccessible {
-                referring_site: config.referring_site,
-                referred: resolved,
-                referred_span: identifier.span,
-            },
-        ));
-    }
-
-    Ok(resolved)
-}
-
-#[extend]
-async fn resolve_qualified_identifier_internal(
-    self: &TrackedEngine,
-    qualified_identifier: &QualifiedIdentifier,
-    bound_type: Option<&Type>,
-    mut config: Config<'_, '_, '_, '_, '_>,
-    handler: &dyn Handler<Diagnostic>,
-) -> Result<Resolution, Error> {
-    // create the current root
-    let mut latest_resolution = resolve_root(
-        self,
-        &qualified_identifier.root().ok_or(Error::Abort)?,
-        bound_type,
-        config.reborrow(),
-        handler,
-    )
-    .await?;
-
-    for generic_identifier in qualified_identifier
-        .subsequences()
-        .filter_map(|x| x.generic_identifier())
-    {
-        let Some(identifier) = generic_identifier.identifier() else {
-            continue;
-        };
-
-        let resolved_id = self
-            .resolve_step(
-                &latest_resolution,
-                &identifier,
-                config.reborrow(),
-                handler,
-            )
-            .await?;
-
-        let symbol_kind = self.get_kind(resolved_id).await;
-
-        let generic_arguments = if symbol_kind.has_generic_parameters() {
-            Some(
-                self.resolve_generic_arguments_for_internal(
-                    resolved_id,
-                    (symbol_kind == Kind::Marker || symbol_kind == Kind::Trait)
-                        .then_some(bound_type)
-                        .flatten(),
-                    &generic_identifier,
-                    config.reborrow(),
-                    handler,
-                )
-                .await,
-            )
-        } else {
-            if let Some(gen_args) =
-                generic_identifier.generic_arguments().as_ref()
-            {
-                handler.receive(Diagnostic::NoGenericArgumentsRequired(
-                    NoGenericArgumentsRequired {
-                        global_id: resolved_id,
-                        generic_argument_span: gen_args.span(),
-                    },
-                ));
-            }
-
-            None
-        };
-
-        let next_resolution = to_resolution(
-            resolved_id,
-            symbol_kind,
-            generic_arguments,
-            latest_resolution,
-        );
-
-        if let Some(observer) = config.observer.as_mut() {
-            observer.on_resolution_resolved(
-                self,
-                config.referring_site,
-                &next_resolution,
-                &generic_identifier.span(),
-                handler,
+            let next_resolution = to_resolution(
+                resolved_id,
+                symbol_kind,
+                generic_arguments,
+                latest_resolution,
             );
+
+            if let Some(observer) = self.observer.as_mut() {
+                observer.on_resolution_resolved(
+                    self.tracked_engine,
+                    self.referring_site,
+                    &next_resolution,
+                    &generic_identifier.span(),
+                    self.handler,
+                );
+            }
+
+            latest_resolution = next_resolution;
         }
 
-        latest_resolution = next_resolution;
+        Ok(latest_resolution)
     }
 
-    Ok(latest_resolution)
-}
-
-/// Resolves a [`QualifiedIdentifier`] to a [`Resolution`].
-#[allow(clippy::too_many_lines)]
-#[extend]
-pub async fn resolve_qualified_identifier(
-    self: &TrackedEngine,
-    qualified_identifier: &QualifiedIdentifier,
-    mut config: Config<'_, '_, '_, '_, '_>,
-    handler: &dyn Handler<Diagnostic>,
-) -> Result<Resolution, Error> {
-    self.resolve_qualified_identifier_internal(
-        qualified_identifier,
-        None,
-        config.reborrow(),
-        handler,
-    )
-    .await
+    /// Resolves a [`QualifiedIdentifier`] to a [`Resolution`].
+    #[allow(clippy::too_many_lines)]
+    pub async fn resolve_qualified_identifier(
+        &mut self,
+        qualified_identifier: &QualifiedIdentifier,
+    ) -> Result<Resolution, Error> {
+        self.resolve_qualified_identifier_internal(qualified_identifier, None)
+            .await
+    }
 }
 
 /// Resolves a [`SimplePath`] as a [`GlobalID`].
@@ -1108,4 +1070,42 @@ pub async fn get_member_of(
     } else {
         None
     }
+}
+
+/// Resolves a member of given name in the given symbol ID.
+///
+/// This analogous to doing `Symbol::member` resolution. where `Symbol` is
+/// the `symbol_id` and `member` is the `identifier`.
+#[extend]
+pub async fn resolve_in(
+    self: &TrackedEngine,
+    symbol_id: Global<pernixc_symbol::ID>,
+    site_target: TargetID,
+    identifier: &str,
+    consider_adt_implements: bool,
+) -> Option<Global<pernixc_symbol::ID>> {
+    if let Some(resolved_id) = self.get_member_of(symbol_id, identifier).await {
+        return Some(resolved_id);
+    }
+
+    // try to search in the implements if the latest resolution is an ADT
+    let kind = self.get_kind(symbol_id).await;
+
+    if !(kind.is_adt() && consider_adt_implements) {
+        return None;
+    }
+
+    let implemented = self.get_implemented(symbol_id, site_target).await;
+
+    for impl_id in implemented.iter().copied() {
+        let impl_members = self.get_members(impl_id).await;
+
+        if let Some(resolved_id) =
+            impl_members.member_ids_by_name.get(identifier)
+        {
+            return Some(Global::new(impl_id.target_id, *resolved_id));
+        }
+    }
+
+    None
 }

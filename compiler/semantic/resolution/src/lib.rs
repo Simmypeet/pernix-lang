@@ -271,10 +271,15 @@ pub trait ResolveInstanceParameterTraitRef: Send + Sync {
 }
 
 /// The configuration struct specifying the behaviour of the resolution process.
-#[derive(Default, Builder)]
+#[derive(Builder)]
 #[allow(missing_debug_implementations)]
-pub struct Config<'lp, 'tp, 'cp, 'ob, 'ex> {
-    /* These lifetimes are such a bad idea */
+pub struct Config<'te, 'h, 'lp, 'tp, 'cp, 'ob, 'ex> {
+    /// The tracked engine used for querying.
+    pub tracked_engine: &'te TrackedEngine,
+
+    /// The handler used for reporting diagnostics.
+    pub handler: &'h dyn Handler<Diagnostic>,
+
     /// If specified, when the lifetime argument is elided, the provider will
     /// be used to supply the missing required lifetimes.
     pub elided_lifetime_provider:
@@ -326,38 +331,16 @@ pub struct Config<'lp, 'tp, 'cp, 'ob, 'ex> {
     pub referring_site: Global<pernixc_symbol::ID>,
 }
 
-impl Config<'_, '_, '_, '_, '_> {
-    /// Creates a new instance of the config.
-    #[allow(clippy::option_if_let_else)]
-    pub fn reborrow(&mut self) -> Config<'_, '_, '_, '_, '_> {
-        Config {
-            elided_lifetime_provider: match &mut self.elided_lifetime_provider {
-                Some(provider) => Some(&mut **provider),
-                None => None,
-            },
-            elided_type_provider: match &mut self.elided_type_provider {
-                Some(provider) => Some(&mut **provider),
-                None => None,
-            },
-            elided_constant_provider: match &mut self.elided_constant_provider {
-                Some(provider) => Some(&mut **provider),
-                None => None,
-            },
-            elided_instance_provider: match &mut self.elided_instance_provider {
-                Some(provider) => Some(&mut **provider),
-                None => None,
-            },
-            observer: match &mut self.observer {
-                Some(observer) => Some(&mut **observer),
-                None => None,
-            },
-            extra_namespace: self.extra_namespace,
-            consider_adt_implements: self.consider_adt_implements,
-            referring_site: self.referring_site,
-            resolve_instance_parameter_trait_ref: self
-                .resolve_instance_parameter_trait_ref,
-        }
+impl<'te, 'h> Config<'te, 'h, '_, '_, '_, '_, '_> {
+    /// Returns a reference to the tracked engine.
+    #[must_use]
+    pub const fn tracked_engine(&self) -> &'te TrackedEngine {
+        self.tracked_engine
     }
+
+    /// Returns a reference to the handler.
+    #[must_use]
+    pub const fn handler(&self) -> &'h dyn Handler<Diagnostic> { self.handler }
 }
 
 /// The error type occurred during the resolution.
