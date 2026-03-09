@@ -788,7 +788,7 @@ static INSTANCE_ASSOCIATED_VALUE_SYNTAX_EXECUTOR: Registration<Config> =
     StableHash,
     Query,
 )]
-#[value(Option<Option<pernixc_syntax::item::TraitRef>>)]
+#[value(Option<Option<pernixc_syntax::TraitRef>>)]
 pub struct InstanceTraitRefSyntaxProjectionKey {
     pub symbol_id: Global<pernixc_symbol::ID>,
 }
@@ -797,7 +797,7 @@ pub struct InstanceTraitRefSyntaxProjectionKey {
 async fn instance_trait_ref_syntax_projection_executor(
     key: &InstanceTraitRefSyntaxProjectionKey,
     engine: &TrackedEngine,
-) -> Option<Option<pernixc_syntax::item::TraitRef>> {
+) -> Option<Option<pernixc_syntax::TraitRef>> {
     let table = engine.get_table_of_symbol(key.symbol_id).await?;
 
     table.instance_trait_ref_syntaxes.get(&key.symbol_id.id).cloned()
@@ -815,7 +815,7 @@ static INSTANCE_TRAIT_REF_SYNTAX_PROJECTION_EXECUTOR: Registration<Config> =
 async fn instance_trait_ref_syntax_executor(
     key: &InstanceTraitRefSyntaxKey,
     engine: &TrackedEngine,
-) -> Option<pernixc_syntax::item::TraitRef> {
+) -> Option<pernixc_syntax::TraitRef> {
     engine
         .query(&InstanceTraitRefSyntaxProjectionKey {
             symbol_id: key.symbol_id,

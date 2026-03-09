@@ -262,7 +262,7 @@ pub struct Table {
     /// Maps the instance ID to its trait ref syntax. This represents the trait
     /// that the instance implements.
     pub instance_trait_ref_syntaxes:
-        ReadOnlyMap<Option<pernixc_syntax::item::TraitRef>>,
+        ReadOnlyMap<Option<pernixc_syntax::TraitRef>>,
 
     /// Maps the function ID to its `unsafe` keyword if it has one.
     pub function_unsafe_keywords: ReadOnlyMap<Option<pernixc_syntax::Keyword>>,

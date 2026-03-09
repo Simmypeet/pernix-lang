@@ -69,8 +69,7 @@ pub struct Builder {
         DashMap<ID, pernixc_syntax::QualifiedIdentifier>,
     final_keywords: DashMap<ID, Option<pernixc_syntax::Keyword>>,
 
-    instance_trait_ref_syntaxes:
-        DashMap<ID, Option<pernixc_syntax::item::TraitRef>>,
+    instance_trait_ref_syntaxes: DashMap<ID, Option<pernixc_syntax::TraitRef>>,
     function_body_syntaxes: DashMap<
         ID,
         Option<
@@ -377,7 +376,7 @@ impl Builder {
     pub fn insert_instance_trait_ref(
         &self,
         id: pernixc_symbol::ID,
-        qualified_identifier: Option<pernixc_syntax::item::TraitRef>,
+        qualified_identifier: Option<pernixc_syntax::TraitRef>,
     ) {
         assert!(
             self.instance_trait_ref_syntaxes
