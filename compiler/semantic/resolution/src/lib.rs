@@ -26,16 +26,14 @@ use crate::{
     qualified_identifier::Resolution,
 };
 
+pub mod config;
 pub mod diagnostic;
 pub mod generic_parameter_namespace;
 pub mod qualified_identifier;
 pub mod term;
 
-/// A trait for providing elided terms.
-pub trait ElidedTermProvider<T>: Send {
-    /// Creates a new instance of the term to supply the required missing term.
-    fn create(&mut self) -> T;
-}
+// Re-export config types for convenience
+pub use config::{Config, ElidedTermProvider};
 
 /// The extra namespace that is used to resolve the symbols prior to the
 /// resolution process.
@@ -92,6 +90,25 @@ impl ExtraNamespace {
     #[must_use]
     pub fn get_lifetime(&self, name: &str) -> Option<&Lifetime> {
         self.lifetimes.get(name)
+    }
+
+    /// Returns the type with the given name from the extra namespace, if
+    /// exists.
+    #[must_use]
+    pub fn get_type(&self, name: &str) -> Option<&Type> { self.types.get(name) }
+
+    /// Returns the constant with the given name from the extra namespace, if
+    /// exists.
+    #[must_use]
+    pub fn get_constant(&self, name: &str) -> Option<&Constant> {
+        self.constants.get(name)
+    }
+
+    /// Returns the instance with the given name from the extra namespace, if
+    /// exists.
+    #[must_use]
+    pub fn get_instance(&self, name: &str) -> Option<&Instance> {
+        self.instances.get(name)
     }
 }
 
@@ -268,79 +285,6 @@ pub trait ResolveInstanceParameterTraitRef: Send + Sync {
             dyn Future<Output = Option<Global<pernixc_symbol::ID>>> + Send + 'a,
         >,
     >;
-}
-
-/// The configuration struct specifying the behaviour of the resolution process.
-#[derive(Builder)]
-#[allow(missing_debug_implementations)]
-pub struct Config<'te, 'h, 'lp, 'tp, 'cp, 'ob, 'ex> {
-    /// The tracked engine used for querying.
-    pub tracked_engine: &'te TrackedEngine,
-
-    /// The handler used for reporting diagnostics.
-    pub handler: &'h dyn Handler<Diagnostic>,
-
-    /// If specified, when the lifetime argument is elided, the provider will
-    /// be used to supply the missing required lifetimes.
-    pub elided_lifetime_provider:
-        Option<&'lp mut dyn ElidedTermProvider<Lifetime>>,
-
-    /// If specified, when the type argument is elided, the provider will be
-    /// used to supply the missing required types.
-    pub elided_type_provider: Option<&'tp mut dyn ElidedTermProvider<Type>>,
-
-    /// If specified, when the constant argument is elided, the provider will
-    /// be used to supply the missing required constants.
-    pub elided_constant_provider:
-        Option<&'cp mut dyn ElidedTermProvider<Constant>>,
-
-    /// If specified, when the instance argument is elided, the provider will
-    /// be used to supply the missing required instances.
-    pub elided_instance_provider:
-        Option<&'cp mut dyn ElidedTermProvider<Instance>>,
-
-    /// If specified, during the resolution process, the observer will be
-    /// notified each time a type, lifetime, or constant is resolved.
-    pub observer: Option<&'ob mut dyn Observer>,
-
-    /// If specified, the extra namespace will be used to resolve the symbols
-    /// prior to the resolution process.
-    ///
-    /// This is useful for including the symbols that are not directly defined
-    /// in the table but are acessible such as higher-ranked lifetimes
-    /// `for['x]`.
-    pub extra_namespace: Option<&'ex ExtraNamespace>,
-
-    /// If specified, when an instance is resolved and requires to resolve its
-    /// trait ref, the resolver will call this to resolve the trait ref of the
-    /// instance parameter instead of querying the information from the global
-    /// engine.
-    pub resolve_instance_parameter_trait_ref:
-        Option<&'ex dyn ResolveInstanceParameterTraitRef>,
-
-    /// If `true`, the resolution will search for symbols inside the ADT's
-    /// implements
-    ///
-    /// This flag is primarily used when resolving a qualified identifier for
-    /// the `implements` but cyclic query might happen when the resolution
-    /// considers the ADT implementations as well.
-    #[builder(default = true)]
-    pub consider_adt_implements: bool,
-
-    /// Represents the site where the resolution occurred.
-    pub referring_site: Global<pernixc_symbol::ID>,
-}
-
-impl<'te, 'h> Config<'te, 'h, '_, '_, '_, '_, '_> {
-    /// Returns a reference to the tracked engine.
-    #[must_use]
-    pub const fn tracked_engine(&self) -> &'te TrackedEngine {
-        self.tracked_engine
-    }
-
-    /// Returns a reference to the handler.
-    #[must_use]
-    pub const fn handler(&self) -> &'h dyn Handler<Diagnostic> { self.handler }
 }
 
 /// The error type occurred during the resolution.

@@ -68,7 +68,7 @@ macro_rules! resolve_generic_arguments_kind {
             }
 
             if $terms.len() != $generic_parameters.parameter_len::<$param>() {
-                $self.handler.receive(
+                $self.receive_diagnostic(
                     Diagnostic::MismatchedGenericArgumentCount(
                         MismatchedGenericArgumentCount {
                             generic_kind: $kind,
@@ -100,7 +100,7 @@ macro_rules! resolve_generic_arguments_kind {
             }
 
             if $generic_parameters.parameter_len::<$param>() != $terms.len() {
-                $self.handler.receive(
+                $self.receive_diagnostic(
                     Diagnostic::MismatchedGenericArgumentCount(
                         MismatchedGenericArgumentCount {
                             generic_kind: $kind,
@@ -132,7 +132,7 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
     ) -> Type {
         match syn {
             GenericArgumentSyn::Lifetime(lifetime) => {
-                self.handler.receive(Diagnostic::MismatchedKindInArgument(
+                self.receive_diagnostic(Diagnostic::MismatchedKindInArgument(
                     MismatchedKindInArgument::builder()
                         .argument_span(lifetime.span())
                         .found_kind(GenericKind::Lifetime)
@@ -164,7 +164,7 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
             }
 
             GenericArgumentSyn::Constant(constant_argument) => {
-                self.handler.receive(Diagnostic::MismatchedKindInArgument(
+                self.receive_diagnostic(Diagnostic::MismatchedKindInArgument(
                     MismatchedKindInArgument::builder()
                         .argument_span(constant_argument.span())
                         .found_kind(GenericKind::Constant)
@@ -201,7 +201,7 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
             }
 
             syn => {
-                self.handler.receive(Diagnostic::MismatchedKindInArgument(
+                self.receive_diagnostic(Diagnostic::MismatchedKindInArgument(
                     MismatchedKindInArgument::builder()
                         .argument_span(syn.span())
                         .found_parameter(
@@ -264,7 +264,7 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
             .map(|x| x.arguments().collect::<Vec<_>>());
 
         let generic_parameters =
-            self.tracked_engine.get_generic_parameters(symbol_id).await;
+            self.tracked_engine().get_generic_parameters(symbol_id).await;
 
         let lifetimes = 'lifetime: {
             let lifetime_syn = {
@@ -286,7 +286,7 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
                             .extract_if(.., |x| x.is_lifetime())
                             .map(|x| x.into_lifetime().unwrap())
                         {
-                            self.handler.receive(
+                            self.receive_diagnostic(
                                 Diagnostic::MisorderedGenericArgument(
                                     MisorderedGenericArgument {
                                         generic_kind: GenericKind::Lifetime,
@@ -305,10 +305,10 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
             // elided lifetime provider (if any) to fill the lifetime arguments
             if lifetime_syn.is_empty()
                 && generic_parameters.lifetime_parameters_len() > 0
-                && let Some(provider) = self.elided_lifetime_provider.as_mut()
+                && let Some(lt) = self.create_elided_lifetime()
             {
                 break 'lifetime vec![
-                    provider.create();
+                    lt;
                     generic_parameters
                         .lifetime_parameters_len()
                 ];
@@ -326,7 +326,7 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
             if lifetimes.len()
                 != generic_parameters.lifetime_parameter_order().len()
             {
-                self.handler.receive(
+                self.receive_diagnostic(
                     Diagnostic::MismatchedGenericArgumentCount(
                         MismatchedGenericArgumentCount {
                             generic_kind: GenericKind::Lifetime,
@@ -364,7 +364,7 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
                 GenericKind::Type,
                 generic_identifier.span(),
                 Type::Error(pernixc_term::error::Error),
-                self.elided_type_provider.as_mut(),
+                self.elided_type_provider_mut(),
                 break 'ty types,
                 |syn, param_id| self.resolve_type_argument(
                     &syn,
@@ -387,7 +387,7 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
                 GenericKind::Constant,
                 generic_identifier.span(),
                 Constant::Error(pernixc_term::error::Error),
-                self.elided_constant_provider.as_mut(),
+                self.elided_constant_provider_mut(),
                 break 'consts constants,
                 |syn, param_id| {
                     todo!("constant evaluation is not implemented yet")
@@ -407,7 +407,7 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
                 GenericKind::Instance,
                 generic_identifier.span(),
                 Instance::Error(pernixc_term::error::Error),
-                self.elided_instance_provider.as_mut(),
+                self.elided_instance_provider_mut(),
                 break 'instances instances,
                 |syn, param_id| {
                     self.resolve_instance_argument(
@@ -433,31 +433,21 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
                 self.resolve_lifetime_parameter(&ident)
             }
             Some(LifetimeIdentifier::Elided(elided)) => {
-                if let Some(provider) = self.elided_lifetime_provider.as_mut() {
-                    provider.create()
-                } else {
-                    self.handler.receive(Diagnostic::UnexpectedInference(
+                self.create_elided_lifetime().unwrap_or_else(|| {
+                    self.receive_diagnostic(Diagnostic::UnexpectedInference(
                         UnexpectedInference {
                             unexpected_span: elided.span(),
                             generic_kind: GenericKind::Lifetime,
                         },
                     ));
                     Lifetime::Error(pernixc_term::error::Error)
-                }
+                })
             }
 
             None => Lifetime::Error(pernixc_term::error::Error),
         };
 
-        if let Some(observer) = self.observer.as_mut() {
-            observer.on_lifetime_resolved(
-                self.tracked_engine,
-                self.referring_site,
-                &lifetime,
-                lifetime_argument,
-                self.handler,
-            );
-        }
+        self.notify_lifetime_resolved(&lifetime, lifetime_argument);
 
         lifetime
     }
@@ -469,17 +459,16 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
         identifier: &pernixc_syntax::Identifier,
     ) -> Lifetime {
         // reach to the extra namespace first
-        if let Some(extra_lifetime) = self
-            .extra_namespace
-            .and_then(|x| x.lifetimes.get(&*identifier.kind.0).cloned())
+        if let Some(extra_lifetime) =
+            self.lookup_extra_lifetime(&identifier.kind.0)
         {
             return extra_lifetime;
         }
 
-        self.handler.receive(Diagnostic::LifetimeParameterNotFound(
+        self.receive_diagnostic(Diagnostic::LifetimeParameterNotFound(
             LifetimeParameterNotFound {
                 referred_span: identifier.span(),
-                referring_site: self.referring_site,
+                referring_site: self.referring_site(),
                 name: identifier.kind.0.clone(),
             },
         ));
@@ -500,10 +489,10 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
                 }
             };
 
-        match self.tracked_engine.resolution_to_instance(resolution).await {
+        match self.tracked_engine().resolution_to_instance(resolution).await {
             Ok(instance) => instance,
             Err(ResolutionToTermError::Failed(resolution)) => {
-                self.handler.receive(Diagnostic::ExpectInstance(
+                self.receive_diagnostic(Diagnostic::ExpectInstance(
                     ExpectInstance::builder()
                         .non_instance_symbol_span(syntax_tree.span())
                         .resolved_resolution(resolution)
@@ -529,10 +518,10 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
                 }
             };
 
-        match self.tracked_engine.resolution_to_type(resolution).await {
+        match self.tracked_engine().resolution_to_type(resolution).await {
             Ok(ty) => ty,
             Err(ResolutionToTermError::Failed(resolution)) => {
-                self.handler.receive(Diagnostic::ExpectType(
+                self.receive_diagnostic(Diagnostic::ExpectType(
                     ExpectType::builder()
                         .non_type_symbol_span(syntax_tree.span())
                         .resolved_resolution(resolution)
@@ -558,10 +547,10 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
                 }
             };
 
-        match self.tracked_engine.resolution_to_trait_ref(resolution).await {
+        match self.tracked_engine().resolution_to_trait_ref(resolution).await {
             Ok(trait_ref) => Some(trait_ref),
             Err(ResolutionToTermError::Failed(resolution)) => {
-                self.handler.receive(Diagnostic::ExpectTrait(
+                self.receive_diagnostic(Diagnostic::ExpectTrait(
                     ExpectTrait::builder()
                         .non_trait_symbol_span(syntax_tree.span())
                         .resolved_resolution(resolution)
@@ -587,10 +576,11 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
                 }
             };
 
-        match self.tracked_engine.resolution_to_effect_unit(resolution).await {
+        match self.tracked_engine().resolution_to_effect_unit(resolution).await
+        {
             Ok(effect_unit) => Some(effect_unit),
             Err(ResolutionToTermError::Failed(resolution)) => {
-                self.handler.receive(Diagnostic::ExpectEffect(
+                self.receive_diagnostic(Diagnostic::ExpectEffect(
                     ExpectEffect::builder()
                         .non_effect_symbol_span(syntax_tree.span())
                         .resolved_resolution(resolution)
@@ -670,23 +660,24 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
                     .as_ref()
                     .map(|lifetime| self.resolve_lifetime(lifetime));
 
-                let lifetime = if let Some(lifetime) = lifetime {
-                    lifetime
-                } else if let Some(provider) =
-                    self.elided_lifetime_provider.as_mut()
-                {
-                    provider.create()
-                } else {
-                    self.handler.receive(Diagnostic::UnexpectedInference(
-                        UnexpectedInference {
-                            unexpected_span: reference
-                                .ampersand()
-                                .map_or_else(|| reference.span(), |x| x.span),
-                            generic_kind: GenericKind::Lifetime,
-                        },
-                    ));
-                    Lifetime::Error(pernixc_term::error::Error)
-                };
+                let lifetime = lifetime.unwrap_or_else(|| {
+                    self.create_elided_lifetime().unwrap_or_else(|| {
+                        self.receive_diagnostic(
+                            Diagnostic::UnexpectedInference(
+                                UnexpectedInference {
+                                    unexpected_span: reference
+                                        .ampersand()
+                                        .map_or_else(
+                                            || reference.span(),
+                                            |x| x.span,
+                                        ),
+                                    generic_kind: GenericKind::Lifetime,
+                                },
+                            ),
+                        );
+                        Lifetime::Error(pernixc_term::error::Error)
+                    })
+                });
 
                 let qualifier = if reference.mut_keyword().is_some() {
                     Qualifier::Mutable
@@ -732,15 +723,9 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
                                 elements.extend(tuple.into_elements());
                             }
                             ty => {
-                                if let Some(observer) = self.observer.as_mut() {
-                                    observer.on_unpacked_type_resolved(
-                                        self.tracked_engine,
-                                        self.referring_site,
-                                        &ty,
-                                        &element,
-                                        self.handler,
-                                    );
-                                }
+                                self.notify_unpacked_type_resolved(
+                                    &ty, &element,
+                                );
 
                                 elements.push(tuple::Element::new(ty, true));
                             }
@@ -752,7 +737,7 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
 
                 // check if there is more than one unpacked type
                 if elements.iter().filter(|x| x.is_unpacked()).count() > 1 {
-                    self.handler.receive(
+                    self.receive_diagnostic(
                         Diagnostic::MoreThanOneUnpackedInTupleType(
                             MoreThanOneUnpackedInTupleType {
                                 illegal_tuple_type_span: syntax_tree.span(),
@@ -786,29 +771,19 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
                 Type::Phantom(Phantom(Box::new(ty)))
             }
             pernixc_syntax::r#type::Type::Elided(elided) => {
-                if let Some(provider) = self.elided_type_provider.as_mut() {
-                    provider.create()
-                } else {
-                    self.handler.receive(Diagnostic::UnexpectedInference(
+                self.create_elided_type().unwrap_or_else(|| {
+                    self.receive_diagnostic(Diagnostic::UnexpectedInference(
                         UnexpectedInference {
                             unexpected_span: elided.span(),
                             generic_kind: GenericKind::Type,
                         },
                     ));
                     Type::Error(pernixc_term::error::Error)
-                }
+                })
             }
         };
 
-        if let Some(observer) = self.observer.as_mut() {
-            observer.on_type_resolved(
-                self.tracked_engine,
-                self.referring_site,
-                &ty,
-                syntax_tree,
-                self.handler,
-            );
-        }
+        self.notify_type_resolved(&ty, syntax_tree);
 
         ty
     }

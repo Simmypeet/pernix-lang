@@ -4,6 +4,7 @@ use std::ops::Deref;
 
 use enum_as_inner::EnumAsInner;
 use pernixc_extend::extend;
+use pernixc_handler::Handler;
 use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::{
     implemented::get_implemented, implements::get_implements,
@@ -33,10 +34,10 @@ use pernixc_term::{
 use qbice::{Decode, Encode, Identifiable, StableHash};
 
 use crate::{
-    Config, Diagnostic, Error, Handler,
+    Config, Error,
     diagnostic::{
-        NoGenericArgumentsRequired, NoMemberInFunction, NoMemberInType,
-        SymbolIsNotAccessible, SymbolNotFound, ThisNotFound,
+        Diagnostic, NoGenericArgumentsRequired, NoMemberInFunction,
+        NoMemberInType, SymbolIsNotAccessible, SymbolNotFound, ThisNotFound,
     },
 };
 
@@ -461,10 +462,10 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
         let resolution = match root {
             QualifiedIdentifierRoot::Target(_) => {
                 Resolution::Module(Global::new(
-                    self.referring_site.target_id,
-                    self.tracked_engine
+                    self.referring_site().target_id,
+                    self.tracked_engine()
                         .get_target_root_module_id(
-                            self.referring_site.target_id,
+                            self.referring_site().target_id,
                         )
                         .await,
                 ))
@@ -472,10 +473,11 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
 
             QualifiedIdentifierRoot::This(this) => {
                 let found_this =
-                    search_this(self.tracked_engine, self.referring_site).await;
+                    search_this(self.tracked_engine(), self.referring_site())
+                        .await;
 
                 let Some((this_symbol, kind)) = found_this else {
-                    self.handler.receive(Diagnostic::ThisNotFound(
+                    self.receive_diagnostic(Diagnostic::ThisNotFound(
                         ThisNotFound { this_span: this.span },
                     ));
                     return Err(Error::Abort);
@@ -486,7 +488,7 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
                         Resolution::Generic(Generic {
                             id: this_symbol,
                             generic_arguments: self
-                                .tracked_engine
+                                .tracked_engine()
                                 .get_generic_parameters(this_symbol)
                                 .await
                                 .create_identity_generic_arguments(this_symbol),
@@ -495,7 +497,7 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
 
                     Kind::PositiveImplementation => {
                         let Some(implemented_id) = self
-                            .tracked_engine
+                            .tracked_engine()
                             .get_implements(this_symbol)
                             .await
                         else {
@@ -503,7 +505,7 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
                         };
 
                         let Some(implemented_generic_arguments) = self
-                            .tracked_engine
+                            .tracked_engine()
                             .get_implements_argument(this_symbol)
                             .await
                         else {
@@ -524,12 +526,12 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
 
             QualifiedIdentifierRoot::GenericIdentifier(generic_identifier) => {
                 let current_module_id = self
-                    .tracked_engine
-                    .get_closest_module_id(self.referring_site)
+                    .tracked_engine()
+                    .get_closest_module_id(self.referring_site())
                     .await;
 
                 let current_module_id = Global::new(
-                    self.referring_site.target_id,
+                    self.referring_site().target_id,
                     current_module_id,
                 );
 
@@ -537,29 +539,21 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
                     generic_identifier.identifier().ok_or(Error::Abort)?;
 
                 // try resolve from the extra namespace first
-                if let Some(extra_namespace_resolution) =
-                    self.extra_namespace.as_ref()
+                // search from type then instance
+                if let Some(ty) =
+                    self.lookup_extra_type(identifier.kind.0.as_ref())
                 {
-                    // search from type then instance
-                    if let Some(ty) = extra_namespace_resolution
-                        .types
-                        .get(identifier.kind.0.as_ref())
-                        .cloned()
-                    {
-                        return Ok(Resolution::Type(ty));
-                    }
+                    return Ok(Resolution::Type(ty));
+                }
 
-                    if let Some(instance) = extra_namespace_resolution
-                        .instances
-                        .get(identifier.kind.0.as_ref())
-                        .cloned()
-                    {
-                        return Ok(Resolution::Instance(instance));
-                    }
+                if let Some(instance) =
+                    self.lookup_extra_instance(identifier.kind.0.as_ref())
+                {
+                    return Ok(Resolution::Instance(instance));
                 }
 
                 let id = match self
-                    .tracked_engine
+                    .tracked_engine()
                     .get_members(current_module_id)
                     .await
                     .member_ids_by_name
@@ -569,7 +563,7 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
                 {
                     Some(id) => Some(id),
                     None => self
-                        .tracked_engine
+                        .tracked_engine()
                         .get_import_map(current_module_id)
                         .await
                         .get(&identifier.kind.0)
@@ -578,7 +572,7 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
                 };
 
                 let Some(id) = id else {
-                    self.handler.receive(Diagnostic::SymbolNotFound(
+                    self.receive_diagnostic(Diagnostic::SymbolNotFound(
                         SymbolNotFound {
                             searched_item_id: Some(current_module_id),
                             name: identifier.kind.0,
@@ -589,7 +583,7 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
                     return Err(Error::Abort);
                 };
 
-                let symbol_kind = self.tracked_engine.get_kind(id).await;
+                let symbol_kind = self.tracked_engine().get_kind(id).await;
 
                 let generic_arguments = if symbol_kind.has_generic_parameters()
                 {
@@ -608,7 +602,7 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
                     if let Some(gen_args) =
                         generic_identifier.generic_arguments().as_ref()
                     {
-                        self.handler.receive(
+                        self.receive_diagnostic(
                             Diagnostic::NoGenericArgumentsRequired(
                                 NoGenericArgumentsRequired {
                                     global_id: id,
@@ -633,15 +627,7 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
             }
         };
 
-        if let Some(observer) = self.observer.as_mut() {
-            observer.on_resolution_resolved(
-                self.tracked_engine,
-                self.referring_site,
-                &resolution,
-                &root.span(),
-                self.handler,
-            );
-        }
+        self.notify_resolution_resolved(&resolution, &root.span());
 
         Ok(resolution)
     }
@@ -679,17 +665,17 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
                     .expect("these four variants should have global_id");
 
                 let resolved_id = self
-                    .tracked_engine
+                    .tracked_engine()
                     .resolve_in(
                         global_id,
-                        self.referring_site.target_id,
+                        self.referring_site().target_id,
                         &identifier.kind.0,
-                        self.consider_adt_implements,
+                        self.consider_adt_implements(),
                     )
                     .await;
 
                 let Some(resolved_id) = resolved_id else {
-                    self.handler.receive(Diagnostic::SymbolNotFound(
+                    self.receive_diagnostic(Diagnostic::SymbolNotFound(
                         SymbolNotFound {
                             searched_item_id: Some(global_id),
                             resolution_span: identifier.span,
@@ -704,7 +690,7 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
             }
 
             Resolution::Type(ty) => {
-                self.handler.receive(Diagnostic::NoMemberInType(
+                self.receive_diagnostic(Diagnostic::NoMemberInType(
                     NoMemberInType::builder()
                         .resolution_span(identifier.span)
                         .r#type(ty.clone())
@@ -717,12 +703,12 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
             Resolution::Instance(instance) => match instance {
                 Instance::Symbol(symbol) => {
                     let member_id = self
-                        .tracked_engine
+                        .tracked_engine()
                         .get_member_by_name(symbol.id(), &identifier.kind)
                         .await;
 
                     let Some(member_id) = member_id else {
-                        self.handler.receive(Diagnostic::SymbolNotFound(
+                        self.receive_diagnostic(Diagnostic::SymbolNotFound(
                             SymbolNotFound {
                                 searched_item_id: Some(symbol.id()),
                                 resolution_span: identifier.span,
@@ -737,15 +723,12 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
                 }
 
                 Instance::Parameter(member_id) => {
-                    let trait_id = if let Some(adhoc_resolver) =
-                        self.resolve_instance_parameter_trait_ref
+                    let trait_id = if let Some(fut) =
+                        self.resolve_instance_parameter_trait_ref(member_id)
                     {
-                        adhoc_resolver
-                            .resolve_instance_parameter_trait_ref(member_id)
-                            .await
-                            .ok_or(Error::Abort)?
+                        fut.await.ok_or(Error::Abort)?
                     } else {
-                        self.tracked_engine
+                        self.tracked_engine()
                             .get_generic_parameters(member_id.parent_id())
                             .await[member_id.id()]
                         .trait_ref()
@@ -754,11 +737,11 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
                     };
 
                     let Some(member_id) = self
-                        .tracked_engine
+                        .tracked_engine()
                         .get_member_by_name(trait_id, &identifier.kind)
                         .await
                     else {
-                        self.handler.receive(Diagnostic::SymbolNotFound(
+                        self.receive_diagnostic(Diagnostic::SymbolNotFound(
                             SymbolNotFound {
                                 searched_item_id: Some(trait_id),
                                 resolution_span: identifier.span,
@@ -777,11 +760,11 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
                         instance_associated.trait_associated_symbol_id();
 
                     let Some(member_id) = self
-                        .tracked_engine
+                        .tracked_engine()
                         .get_member_by_name(trait_id, &identifier.kind)
                         .await
                     else {
-                        self.handler.receive(Diagnostic::SymbolNotFound(
+                        self.receive_diagnostic(Diagnostic::SymbolNotFound(
                             SymbolNotFound {
                                 searched_item_id: Some(trait_id),
                                 resolution_span: identifier.span,
@@ -801,7 +784,7 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
             },
 
             Resolution::InstanceAssociatedFunction(function_id) => {
-                self.handler.receive(Diagnostic::NoMemberInFunction(
+                self.receive_diagnostic(Diagnostic::NoMemberInFunction(
                     NoMemberInFunction::builder()
                         .resolution_span(identifier.span)
                         .function_id(function_id.trait_associated_function_id)
@@ -814,13 +797,13 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
 
         // check if the symbol is accessible
         if !self
-            .tracked_engine
-            .symbol_accessible(self.referring_site, resolved)
+            .tracked_engine()
+            .symbol_accessible(self.referring_site(), resolved)
             .await
         {
-            self.handler.receive(Diagnostic::SymbolIsNotAccessible(
+            self.receive_diagnostic(Diagnostic::SymbolIsNotAccessible(
                 SymbolIsNotAccessible {
-                    referring_site: self.referring_site,
+                    referring_site: self.referring_site(),
                     referred: resolved,
                     referred_span: identifier.span,
                 },
@@ -854,7 +837,7 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
             let resolved_id =
                 self.resolve_step(&latest_resolution, &identifier).await?;
 
-            let symbol_kind = self.tracked_engine.get_kind(resolved_id).await;
+            let symbol_kind = self.tracked_engine().get_kind(resolved_id).await;
 
             let generic_arguments = if symbol_kind.has_generic_parameters() {
                 Some(
@@ -872,7 +855,7 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
                 if let Some(gen_args) =
                     generic_identifier.generic_arguments().as_ref()
                 {
-                    self.handler.receive(
+                    self.receive_diagnostic(
                         Diagnostic::NoGenericArgumentsRequired(
                             NoGenericArgumentsRequired {
                                 global_id: resolved_id,
@@ -892,15 +875,10 @@ impl Config<'_, '_, '_, '_, '_, '_, '_> {
                 latest_resolution,
             );
 
-            if let Some(observer) = self.observer.as_mut() {
-                observer.on_resolution_resolved(
-                    self.tracked_engine,
-                    self.referring_site,
-                    &next_resolution,
-                    &generic_identifier.span(),
-                    self.handler,
-                );
-            }
+            self.notify_resolution_resolved(
+                &next_resolution,
+                &generic_identifier.span(),
+            );
 
             latest_resolution = next_resolution;
         }
