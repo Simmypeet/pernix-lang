@@ -1,9 +1,7 @@
 use pernixc_diagnostic::{ByteIndex, Highlight, Report};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
-use pernixc_resolution::{
-    diagnostic::ForallLifetimeRedefinition, qualified_identifier::Resolution,
-};
+use pernixc_resolution::qualified_identifier::Resolution;
 use pernixc_symbol::source_map::to_absolute_span;
 use pernixc_term::{display::Display, effect};
 use qbice::{Decode, Encode, Identifiable, StableHash};
@@ -26,7 +24,6 @@ use qbice::{Decode, Encode, Identifiable, StableHash};
 pub enum Diagnostic {
     Resolution(pernixc_resolution::diagnostic::Diagnostic),
     TypeSystem(pernixc_type_system::diagnostic::Diagnostic),
-    ForallLifetimeRedefinition(ForallLifetimeRedefinition),
     AmbiguousEffectDefinition(AmbiguousEffectDefinition),
     EffectExpected(EffectExpected),
 }
@@ -39,7 +36,6 @@ impl Report for Diagnostic {
         match self {
             Self::Resolution(d) => d.report(engine).await,
             Self::TypeSystem(d) => d.report(engine).await,
-            Self::ForallLifetimeRedefinition(d) => d.report(engine).await,
             Self::AmbiguousEffectDefinition(d) => d.report(engine).await,
             Self::EffectExpected(d) => d.report(engine).await,
         }

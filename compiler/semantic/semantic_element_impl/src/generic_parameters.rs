@@ -3,8 +3,7 @@ use std::{ops::Deref, pin::Pin};
 use pernixc_handler::{Handler, Storage};
 use pernixc_qbice::TrackedEngine;
 use pernixc_resolution::{
-    ExtraNamespaceWithForallLifetimes, Resolver,
-    generic_parameter_namespace::get_generic_parameter_namespace,
+    Resolver, generic_parameter_namespace::get_generic_parameter_namespace,
 };
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
@@ -366,28 +365,31 @@ impl build::Build for pernixc_term::generic_parameters::Key {
                     symbol_id: key.symbol_id,
                 };
 
-                let extra_namespace_wrapper =
-                    ExtraNamespaceWithForallLifetimes::new(
-                        &mut extra_name_space,
-                        trait_ref_syn.higher_ranked_lifetimes().as_ref(),
-                        &storage,
-                    );
-
-                Resolver::builder()
+                let mut pernix_resolver = Resolver::builder()
                     .tracked_engine(engine)
                     .handler(&storage)
                     .observer(&mut occurrences)
-                    .extra_namespace(
-                        extra_namespace_wrapper.extra_namespace(),
-                    )
+                    .extra_namespace(&extra_name_space)
                     .referring_site(Global::new(
                         key.symbol_id.target_id,
                         engine.get_parent(key.symbol_id).await.unwrap(),
                     ))
                     .resolve_instance_parameter_trait_ref(&resolver)
-                    .build()
-                    .resolve_qualified_identifier_trait_ref(&qualified_identifier)
-                    .await
+                    .build();
+
+                pernix_resolver.push_higher_ranked_lifetimes(
+                    trait_ref_syn.higher_ranked_lifetimes().as_ref(),
+                );
+
+                let result = pernix_resolver
+                    .resolve_qualified_identifier_trait_ref(
+                        &qualified_identifier,
+                    )
+                    .await;
+
+                pernix_resolver.pop_higher_ranked_lifetimes();
+
+                result
             };
 
             match generic_parameters.add_instance_parameter(

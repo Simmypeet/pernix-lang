@@ -1,4 +1,4 @@
-use std::{borrow::Cow, ops::Deref};
+use std::borrow::Cow;
 
 use pernixc_arena::OrderedArena;
 use pernixc_handler::{Handler, Storage};
@@ -6,7 +6,7 @@ use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_resolution::{
-    ExtraNamespace, ExtraNamespaceWithForallLifetimes, Resolver,
+    ExtraNamespace, Resolver,
     generic_parameter_namespace::get_generic_parameter_namespace,
     qualified_identifier::Resolution,
 };
@@ -83,16 +83,10 @@ async fn build_effect_annotation(
     effect_unit_syntax: EffectUnit,
     current_site: Global<pernixc_symbol::ID>,
     observer: &mut Occurrences,
-    extra_namespace: &mut ExtraNamespace,
+    extra_namespace: &ExtraNamespace,
     handler: &Storage<diagnostic::Diagnostic>,
 ) -> Option<(effect::Unit, RelativeSpan)> {
     let q_ident = effect_unit_syntax.qualified_identifier()?;
-
-    let extra_namespace_wrapper = ExtraNamespaceWithForallLifetimes::new(
-        extra_namespace,
-        effect_unit_syntax.higher_ranked_lifetimes().as_ref(),
-        handler,
-    );
 
     let mut elided_lifetime_provider =
         ElidedForallLifetimeProvider { count: 0, current_site };
@@ -102,17 +96,26 @@ async fn build_effect_annotation(
         .handler(handler)
         .observer(observer)
         .referring_site(current_site)
-        .extra_namespace(extra_namespace_wrapper.extra_namespace())
+        .extra_namespace(extra_namespace)
         .elided_lifetime_provider(&mut elided_lifetime_provider)
         .build();
+
+    resolver.push_higher_ranked_lifetimes(
+        effect_unit_syntax.higher_ranked_lifetimes().as_ref(),
+    );
 
     let resolution = match resolver.resolve_qualified_identifier(&q_ident).await
     {
         Ok(resolution) => resolution,
         Err(er) => match er {
-            pernixc_resolution::Error::Abort => return None,
+            pernixc_resolution::Error::Abort => {
+                resolver.pop_higher_ranked_lifetimes();
+                return None;
+            }
         },
     };
+
+    resolver.pop_higher_ranked_lifetimes();
 
     to_effect(engine, resolution).await.map_or_else(
         |resolution| {
@@ -327,11 +330,8 @@ impl Build for effect_annotation::Key {
         let effect_annotation_syntax =
             engine.get_function_effect_annotation_syntax(key.symbol_id).await;
 
-        let mut generic_namespace = engine
-            .get_generic_parameter_namespace(key.symbol_id)
-            .await
-            .deref()
-            .clone();
+        let generic_namespace =
+            engine.get_generic_parameter_namespace(key.symbol_id).await;
 
         let mut observer = Occurrences::default();
         let mut effect_annotations = HashMap::default();
@@ -349,7 +349,7 @@ impl Build for effect_annotation::Key {
                             effect_unit,
                             key.symbol_id,
                             &mut observer,
-                            &mut generic_namespace,
+                            &generic_namespace,
                             &storage,
                         )
                         .await
@@ -372,7 +372,7 @@ impl Build for effect_annotation::Key {
                             effect_unit,
                             key.symbol_id,
                             &mut observer,
-                            &mut generic_namespace,
+                            &generic_namespace,
                             &storage,
                         )
                         .await

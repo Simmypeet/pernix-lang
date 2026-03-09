@@ -1,9 +1,6 @@
-use std::ops::Deref;
-
 use pernixc_handler::{Handler, Storage};
 use pernixc_resolution::{
-    Resolver, ExtraNamespaceWithForallLifetimes,
-    generic_parameter_namespace::get_generic_parameter_namespace,
+    Resolver, generic_parameter_namespace::get_generic_parameter_namespace,
 };
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
@@ -27,11 +24,8 @@ impl build::Build for pernixc_semantic_element::trait_ref::Key {
     ) -> build::Output<Self> {
         let mut occurrences = Occurrences::default();
         let storage = Storage::<diagnostic::Diagnostic>::default();
-        let mut extra_namespace = engine
-            .get_generic_parameter_namespace(key.symbol_id)
-            .await
-            .deref()
-            .clone();
+        let extra_namespace =
+            engine.get_generic_parameter_namespace(key.symbol_id).await;
 
         let Some(trait_ref) =
             engine.get_instance_trait_ref_syntax(key.symbol_id).await
@@ -59,24 +53,27 @@ impl build::Build for pernixc_semantic_element::trait_ref::Key {
             );
         }
 
-        let extra_namespace = ExtraNamespaceWithForallLifetimes::new(
-            &mut extra_namespace,
-            (kind != Kind::Instance)
-                .then_some(forall_lifetimes.as_ref())
-                .flatten(),
-            &storage,
-        );
-
-        let Some(result) = Resolver::builder()
+        let mut resolver = Resolver::builder()
             .tracked_engine(engine)
             .handler(&storage)
             .observer(&mut occurrences)
-            .extra_namespace(extra_namespace.extra_namespace())
+            .extra_namespace(&extra_namespace)
             .referring_site(key.symbol_id)
-            .build()
+            .build();
+
+        resolver.push_higher_ranked_lifetimes(
+            (kind != Kind::Instance)
+                .then_some(forall_lifetimes.as_ref())
+                .flatten(),
+        );
+
+        let result = resolver
             .resolve_qualified_identifier_trait_ref(&qualified_identifier)
-            .await
-        else {
+            .await;
+
+        resolver.pop_higher_ranked_lifetimes();
+
+        let Some(result) = result else {
             return build::Output::new_with(
                 None,
                 storage.into_vec(),

@@ -4,7 +4,7 @@ use pernixc_diagnostic::{Highlight, Report};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_resolution::{
-    diagnostic::{self as resolution_diagnostic, ForallLifetimeRedefinition},
+    diagnostic::{self as resolution_diagnostic},
     qualified_identifier::Resolution,
 };
 use pernixc_source_file::{ByteIndex, get_source_file_path};
@@ -30,7 +30,6 @@ use qbice::{Decode, Encode, Identifiable, StableHash};
 )]
 pub enum Diagnostic {
     Resolution(pernixc_resolution::diagnostic::Diagnostic),
-    ForallLifetimeRedefinition(ForallLifetimeRedefinition),
     UnexpectedSymbolInPredicate(UnexpectedSymbolInPredicate),
     UnexpectedTypeEqualityPredicate(UnexpectedTypeEqualityPredicate),
     ForallLifetimeIsNotAllowedInOutlivesPredicate(
@@ -45,7 +44,6 @@ impl Report for Diagnostic {
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         match self {
             Self::Resolution(d) => d.report(engine).await,
-            Self::ForallLifetimeRedefinition(d) => d.report(engine).await,
             Self::UnexpectedSymbolInPredicate(d) => d.report(engine).await,
             Self::UnexpectedTypeEqualityPredicate(d) => d.report(engine).await,
             Self::ForallLifetimeIsNotAllowedInOutlivesPredicate(d) => {

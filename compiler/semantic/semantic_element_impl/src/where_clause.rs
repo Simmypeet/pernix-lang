@@ -1,12 +1,10 @@
 //! Contains the builder for the where clause.
 
-use std::ops::Deref;
-
 use pernixc_handler::{Handler, Storage};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_resolution::{
-    ExtraNamespace, ExtraNamespaceWithForallLifetimes, Resolver,
+    ExtraNamespace, Resolver,
     generic_parameter_namespace::get_generic_parameter_namespace,
     qualified_identifier::{Generic, Resolution},
 };
@@ -41,7 +39,7 @@ async fn create_trait_member_predicates(
     engine: &TrackedEngine,
     global_id: Global<pernixc_symbol::ID>,
     syntax_tree: &pernixc_syntax::predicate::TraitTypeEquality,
-    extra_namespace: &mut ExtraNamespace,
+    extra_namespace: &ExtraNamespace,
     where_clause: &mut Vec<where_clause::Predicate>,
     occurrences: &mut Occurrences,
     handler: &Storage<Diagnostic>,
@@ -50,34 +48,26 @@ async fn create_trait_member_predicates(
         return;
     };
 
-    let extra_namespace = ExtraNamespaceWithForallLifetimes::new(
-        extra_namespace,
-        syntax_tree.higher_ranked_lifetimes().as_ref(),
-        handler,
-    );
-
-    let ty = Resolver::builder()
+    let mut resolver = Resolver::builder()
         .tracked_engine(engine)
         .handler(handler)
         .observer(occurrences)
         .referring_site(global_id)
-        .extra_namespace(extra_namespace.extra_namespace())
-        .build()
-        .resolve_type(&lhs)
-        .await;
+        .extra_namespace(extra_namespace)
+        .build();
+
+    resolver.push_higher_ranked_lifetimes(
+        syntax_tree.higher_ranked_lifetimes().as_ref(),
+    );
+
+    let ty = resolver.resolve_type(&lhs).await;
 
     match ty {
         // trait type
         Type::InstanceAssociated(instance_associated) => {
-            let resolve_ty = Resolver::builder()
-                .tracked_engine(engine)
-                .handler(handler)
-                .observer(occurrences)
-                .referring_site(global_id)
-                .extra_namespace(extra_namespace.extra_namespace())
-                .build()
-                .resolve_type(&rhs)
-                .await;
+            let resolve_ty = resolver.resolve_type(&rhs).await;
+
+            resolver.pop_higher_ranked_lifetimes();
 
             where_clause.push(where_clause::Predicate {
                 predicate: predicate::Predicate::InstanceAssociatedTypeEquality(
@@ -88,6 +78,8 @@ async fn create_trait_member_predicates(
         }
 
         resolution => {
+            resolver.pop_higher_ranked_lifetimes();
+
             handler.receive(Diagnostic::UnexpectedTypeEqualityPredicate(
                 UnexpectedTypeEqualityPredicate {
                     invalid_lhs_type_span: lhs.span(),
@@ -156,40 +148,39 @@ async fn create_type_bound_predicates(
     engine: &TrackedEngine,
     global_id: Global<pernixc_symbol::ID>,
     syntax_tree: &pernixc_syntax::predicate::Type,
-    extra_namespace: &mut ExtraNamespace,
+    extra_namespace: &ExtraNamespace,
     where_clause: &mut Vec<where_clause::Predicate>,
     occurrences: &mut Occurrences,
     handler: &Storage<Diagnostic>,
 ) {
     let Some(ty_syn) = syntax_tree.r#type() else { return };
-    let mut extra_namespace = ExtraNamespaceWithForallLifetimes::new(
-        extra_namespace,
-        syntax_tree.higher_ranked_lifetimes().as_ref(),
-        handler,
-    );
 
-    let ty = Resolver::builder()
+    let mut resolver = Resolver::builder()
         .tracked_engine(engine)
         .handler(handler)
         .referring_site(global_id)
         .observer(occurrences)
-        .extra_namespace(extra_namespace.extra_namespace())
-        .build()
-        .resolve_type(&ty_syn)
-        .await;
+        .extra_namespace(extra_namespace)
+        .build();
+
+    resolver.push_higher_ranked_lifetimes(
+        syntax_tree.higher_ranked_lifetimes().as_ref(),
+    );
+
+    let ty = resolver.resolve_type(&ty_syn).await;
 
     create_type_bound_predicates_internal(
         engine,
         &ty,
         &ty_syn.span(),
         syntax_tree.bounds(),
-        &mut extra_namespace,
-        global_id,
-        occurrences,
+        &mut resolver,
         where_clause,
         handler,
     )
     .await;
+
+    resolver.pop_higher_ranked_lifetimes();
 }
 
 #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
@@ -198,9 +189,7 @@ async fn create_type_bound_predicates_internal(
     ty: &Type,
     type_span: &RelativeSpan,
     bounds: impl IntoIterator<Item = pernixc_syntax::predicate::TypeBound>,
-    extra_namespace: &mut ExtraNamespaceWithForallLifetimes<'_>,
-    referring_site: Global<pernixc_symbol::ID>,
-    occurrences: &mut Occurrences,
+    resolver: &mut Resolver<'_, '_>,
     where_clause: &mut Vec<where_clause::Predicate>,
     handler: &Storage<Diagnostic>,
 ) {
@@ -215,26 +204,24 @@ async fn create_type_bound_predicates_internal(
                     continue;
                 };
 
-                let extra_namespace = extra_namespace.nest(
+                resolver.push_higher_ranked_lifetimes(
                     qualified_identifier_bound
                         .higher_ranked_lifetimes()
                         .as_ref(),
-                    handler,
                 );
 
-                let resolution = match Resolver::builder()
-                    .tracked_engine(engine)
-                    .handler(handler)
-                    .referring_site(referring_site)
-                    .observer(occurrences)
-                    .extra_namespace(extra_namespace.extra_namespace())
-                    .build()
+                let resolution = match resolver
                     .resolve_type_bound(&qualified_identifier, ty)
                     .await
                 {
                     Ok(resolution) => resolution,
-                    Err(pernixc_resolution::Error::Abort) => continue,
+                    Err(pernixc_resolution::Error::Abort) => {
+                        resolver.pop_higher_ranked_lifetimes();
+                        continue;
+                    }
                 };
+
+                resolver.pop_higher_ranked_lifetimes();
 
                 let preidcate = match resolution {
                     Resolution::Generic(Generic { id, generic_arguments })
@@ -298,14 +285,7 @@ async fn create_type_bound_predicates_internal(
                 });
             }
             pernixc_syntax::predicate::TypeBound::Outlives(lifetime) => {
-                let bound = Resolver::builder()
-                    .tracked_engine(engine)
-                    .handler(handler)
-                    .referring_site(referring_site)
-                    .observer(occurrences)
-                    .extra_namespace(extra_namespace.extra_namespace())
-                    .build()
-                    .resolve_lifetime(&lifetime);
+                let bound = resolver.resolve_lifetime(&lifetime);
 
                 let forall_lts_in_ty = RecursiveIterator::new(ty)
                     .filter_map(|x| {
@@ -358,11 +338,8 @@ impl build::Build for pernixc_semantic_element::where_clause::Key {
         let mut occurrences = Occurrences::default();
         let storage = Storage::<Diagnostic>::new();
 
-        let mut extra_namespace = engine
-            .get_generic_parameter_namespace(key.symbol_id)
-            .await
-            .deref()
-            .clone();
+        let extra_namespace =
+            engine.get_generic_parameter_namespace(key.symbol_id).await;
 
         for predicate in where_clause_syntax_tree
             .into_iter()
@@ -375,7 +352,7 @@ impl build::Build for pernixc_semantic_element::where_clause::Key {
                         engine,
                         key.symbol_id,
                         &ty_bound,
-                        &mut extra_namespace,
+                        &extra_namespace,
                         &mut where_clause,
                         &mut occurrences,
                         &storage,
@@ -390,7 +367,7 @@ impl build::Build for pernixc_semantic_element::where_clause::Key {
                         engine,
                         key.symbol_id,
                         &trait_type_equality,
-                        &mut extra_namespace,
+                        &extra_namespace,
                         &mut where_clause,
                         &mut occurrences,
                         &storage,
@@ -438,12 +415,13 @@ impl build::Build for pernixc_semantic_element::where_clause::Key {
                         continue;
                     };
 
-                    let mut extra_namespace =
-                        ExtraNamespaceWithForallLifetimes::new(
-                            &mut extra_namespace,
-                            None,
-                            &storage,
-                        );
+                    let mut resolver = Resolver::builder()
+                        .tracked_engine(engine)
+                        .handler(&storage)
+                        .observer(&mut occurrences)
+                        .extra_namespace(&extra_namespace)
+                        .referring_site(key.symbol_id)
+                        .build();
 
                     create_type_bound_predicates_internal(
                         engine,
@@ -453,9 +431,7 @@ impl build::Build for pernixc_semantic_element::where_clause::Key {
                         )),
                         &identifier.span,
                         bounds.bounds(),
-                        &mut extra_namespace,
-                        key.symbol_id,
-                        &mut occurrences,
+                        &mut resolver,
                         &mut where_clause,
                         &storage,
                     )

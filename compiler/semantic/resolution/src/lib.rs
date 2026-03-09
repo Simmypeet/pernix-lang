@@ -1,30 +1,23 @@
 //! Contains the logic for resolving syntax tree into some form of semantic
 //! term/information.
 
-use std::{collections::hash_map::Entry, pin::Pin};
+use std::pin::Pin;
 
 use bon::Builder;
 use pernixc_handler::Handler;
 use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
-use pernixc_syntax::HigherRankedLifetimes;
 use pernixc_target::Global;
 use pernixc_term::{
-    constant::Constant,
-    generic_parameters::InstanceParameterID,
-    instance::Instance,
-    lifetime::{Forall, Lifetime, NamedForall},
-    r#type::Type,
+    constant::Constant, generic_parameters::InstanceParameterID,
+    instance::Instance, lifetime::Lifetime, r#type::Type,
 };
 use qbice::{
     Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
 };
 
-use crate::{
-    diagnostic::{Diagnostic, ForallLifetimeRedefinition},
-    qualified_identifier::Resolution,
-};
+use crate::{diagnostic::Diagnostic, qualified_identifier::Resolution};
 
 pub mod diagnostic;
 pub mod generic_parameter_namespace;
@@ -109,91 +102,6 @@ impl ExtraNamespace {
     #[must_use]
     pub fn get_instance(&self, name: &str) -> Option<&Instance> {
         self.instances.get(name)
-    }
-}
-
-/// An RAII wrapper for the extra namespace including the forall lifetimes
-/// created from the syntax tree, which ensures the created forall lifetimes are
-/// removed from the extra namespace when dropped.
-#[derive(Debug)]
-pub struct ExtraNamespaceWithForallLifetimes<'x> {
-    extra_namespace: &'x mut ExtraNamespace,
-    created_forall_lifetimes: Vec<Interned<str>>,
-}
-
-impl<'x> ExtraNamespaceWithForallLifetimes<'x> {
-    /// Creates a new instance of the extra namespace with the forall lifetimes
-    /// from the given syntax tree and inserts them into the extra namespace.
-    pub fn new(
-        extra_namespace: &'x mut ExtraNamespace,
-        forall_lifetimes: Option<&HigherRankedLifetimes>,
-        handler: &dyn Handler<ForallLifetimeRedefinition>,
-    ) -> Self {
-        let mut created_lifetimes = Vec::new();
-
-        if let Some(forall_lifetimes) = forall_lifetimes
-            .and_then(pernixc_syntax::HigherRankedLifetimes::lifetimes)
-        {
-            for forall_lifetime in
-                forall_lifetimes.lifetimes().filter_map(|x| x.identifier())
-            {
-                match extra_namespace
-                    .lifetimes
-                    .entry(forall_lifetime.kind.0.clone())
-                {
-                    Entry::Vacant(entry) => {
-                        let lifetime =
-                            Lifetime::Forall(Forall::Named(NamedForall::new(
-                                forall_lifetime.span,
-                                forall_lifetime.kind.0.clone(),
-                            )));
-
-                        entry.insert(lifetime.clone());
-
-                        created_lifetimes.push(forall_lifetime.kind.0.clone());
-                    }
-
-                    Entry::Occupied(_) => {
-                        handler.receive(
-                            ForallLifetimeRedefinition::builder()
-                                .redefinition_span(forall_lifetime.span)
-                                .build(),
-                        );
-                    }
-                }
-            }
-        }
-
-        Self { extra_namespace, created_forall_lifetimes: created_lifetimes }
-    }
-
-    /// Creates a new instance of the extra namespace with the forall lifetimes
-    /// from the given syntax tree and inserts them into the extra namespace.
-    #[must_use]
-    pub fn nest<'a>(
-        &'a mut self,
-        forall_lifetimes: Option<&HigherRankedLifetimes>,
-        handler: &dyn Handler<ForallLifetimeRedefinition>,
-    ) -> ExtraNamespaceWithForallLifetimes<'a> {
-        ExtraNamespaceWithForallLifetimes::new(
-            self.extra_namespace,
-            forall_lifetimes,
-            handler,
-        )
-    }
-
-    /// Returns the [`ExtraNamespace`] with the created forall lifetimes.
-    #[must_use]
-    pub const fn extra_namespace(&self) -> &ExtraNamespace {
-        self.extra_namespace
-    }
-}
-
-impl Drop for ExtraNamespaceWithForallLifetimes<'_> {
-    fn drop(&mut self) {
-        for lifetime in &self.created_forall_lifetimes {
-            self.extra_namespace.lifetimes.remove(lifetime);
-        }
     }
 }
 

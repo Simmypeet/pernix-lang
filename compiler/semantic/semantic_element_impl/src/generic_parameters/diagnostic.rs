@@ -47,9 +47,6 @@ pub enum Diagnostic {
     EffectOperationCanNotHaveTypeOrConstantParameters(
         EffectOperationCanNotHaveTypeOrConstantParameters,
     ),
-    ForallLifetimeRedefinition(
-        pernixc_resolution::diagnostic::ForallLifetimeRedefinition,
-    ),
 }
 
 impl Report for Diagnostic {
@@ -77,9 +74,6 @@ impl Report for Diagnostic {
             Self::EffectOperationCanNotHaveTypeOrConstantParameters(
                 diagnostic,
             ) => diagnostic.report(engine).await,
-            Self::ForallLifetimeRedefinition(diagnostic) => {
-                diagnostic.report(engine).await
-            }
             Self::InstanceParameterRedefinition(diagnostic) => {
                 diagnostic.report(engine).await
             }

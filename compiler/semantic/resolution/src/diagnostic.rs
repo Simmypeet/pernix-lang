@@ -59,6 +59,7 @@ pub enum Diagnostic {
     NoMemberInType(NoMemberInType),
     NoMemberInFunction(NoMemberInFunction),
     MismatchedKindInArgument(MismatchedKindInArgument),
+    ForallLifetimeRedefinition(ForallLifetimeRedefinition),
 }
 
 impl Report for Diagnostic {
@@ -102,6 +103,9 @@ impl Report for Diagnostic {
             Self::ExpectInstance(diagnostic) => diagnostic.report(engine).await,
             Self::ExpectTrait(diagnostic) => diagnostic.report(engine).await,
             Self::ExpectEffect(diagnostic) => diagnostic.report(engine).await,
+            Self::ForallLifetimeRedefinition(diagnostic) => {
+                diagnostic.report(engine).await
+            }
         }
     }
 }

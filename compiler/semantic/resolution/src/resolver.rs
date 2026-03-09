@@ -1,21 +1,27 @@
 //! Contains the [`Config`] struct and related types for configuring the
 //! resolution process.
 
-use std::{borrow::Cow, pin::Pin};
+use std::{borrow::Cow, collections::hash_map::Entry, pin::Pin};
 
 use bon::bon;
 use pernixc_handler::Handler;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
+use pernixc_syntax::HigherRankedLifetimes;
 use pernixc_target::Global;
 use pernixc_term::{
-    constant::Constant, generic_parameters::InstanceParameterID,
-    instance::Instance, lifetime::Lifetime, r#type::Type,
+    constant::Constant,
+    generic_parameters::InstanceParameterID,
+    instance::Instance,
+    lifetime::{Forall, Lifetime, NamedForall},
+    r#type::Type,
 };
+use qbice::storage::intern::Interned;
 
 use crate::{
     ExtraNamespace, Observer, ResolveInstanceParameterTraitRef,
-    diagnostic::Diagnostic, qualified_identifier::Resolution,
+    diagnostic::{Diagnostic, ForallLifetimeRedefinition},
+    qualified_identifier::Resolution,
 };
 
 /// A trait for providing elided terms.
@@ -78,6 +84,10 @@ pub struct Resolver<'i, 'm> {
 
     /// Represents the site where the resolution occurred.
     referring_site: Global<pernixc_symbol::ID>,
+
+    /// A stack of logs tracking which forall lifetimes were added at each
+    /// level. Used for proper cleanup when popping higher-ranked lifetimes.
+    log_stack: Vec<Vec<Interned<str>>>,
 }
 
 #[bon]
@@ -117,6 +127,7 @@ impl<'i, 'm> Resolver<'i, 'm> {
             resolve_instance_parameter_trait_ref,
             consider_adt_implements,
             referring_site,
+            log_stack: Vec::new(),
         }
     }
 }
@@ -333,6 +344,96 @@ impl<'i, 'm> Resolver<'i, 'm> {
         self.extra_namespace
             .as_ref()
             .and_then(|ns| ns.get_instance(name).cloned())
+    }
+
+    // =========================================================================
+    // Higher-ranked lifetimes management
+    // =========================================================================
+
+    /// Pushes the higher-ranked lifetimes from the given syntax tree into the
+    /// extra namespace.
+    ///
+    /// This method adds the forall lifetimes to the extra namespace and tracks
+    /// them in the log stack for later cleanup via
+    /// [`pop_higher_ranked_lifetimes`].
+    ///
+    /// [`pop_higher_ranked_lifetimes`]: Self::pop_higher_ranked_lifetimes
+    pub fn push_higher_ranked_lifetimes(
+        &mut self,
+        forall_lifetimes: Option<&HigherRankedLifetimes>,
+    ) {
+        let mut created_lifetimes = Vec::new();
+
+        if let Some(forall_lifetimes) = forall_lifetimes
+            .and_then(pernixc_syntax::HigherRankedLifetimes::lifetimes)
+        {
+            // Ensure we have a mutable extra namespace
+            let extra_namespace = self
+                .extra_namespace
+                .get_or_insert_with(|| Cow::Owned(ExtraNamespace::default()));
+
+            for forall_lifetime in
+                forall_lifetimes.lifetimes().filter_map(|x| x.identifier())
+            {
+                match extra_namespace
+                    .to_mut()
+                    .lifetimes
+                    .entry(forall_lifetime.kind.0.clone())
+                {
+                    Entry::Vacant(entry) => {
+                        let lifetime =
+                            Lifetime::Forall(Forall::Named(NamedForall::new(
+                                forall_lifetime.span,
+                                forall_lifetime.kind.0.clone(),
+                            )));
+
+                        entry.insert(lifetime);
+                        created_lifetimes.push(forall_lifetime.kind.0.clone());
+                    }
+
+                    Entry::Occupied(_) => {
+                        self.handler.receive(
+                            Diagnostic::ForallLifetimeRedefinition(
+                                ForallLifetimeRedefinition::builder()
+                                    .redefinition_span(forall_lifetime.span)
+                                    .build(),
+                            ),
+                        );
+                    }
+                }
+            }
+        }
+
+        self.log_stack.push(created_lifetimes);
+    }
+
+    /// Pops the higher-ranked lifetimes that were pushed by the last call to
+    /// [`push_higher_ranked_lifetimes`].
+    ///
+    /// This method removes the forall lifetimes from the extra namespace that
+    /// were added during the corresponding push operation.
+    ///
+    /// # Panics
+    ///
+    /// Panics if there are no higher-ranked lifetimes to pop (i.e., the log
+    /// stack is empty).
+    ///
+    /// [`push_higher_ranked_lifetimes`]: Self::push_higher_ranked_lifetimes
+    pub fn pop_higher_ranked_lifetimes(&mut self) {
+        let lifetimes =
+            self.log_stack.pop().expect("no higher-ranked lifetimes to pop");
+
+        if let Some(extra_namespace) = self.extra_namespace.as_mut() {
+            for lifetime in lifetimes {
+                assert!(
+                    extra_namespace
+                        .to_mut()
+                        .lifetimes
+                        .remove(&lifetime)
+                        .is_some()
+                );
+            }
+        }
     }
 
     // =========================================================================

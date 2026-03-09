@@ -1,7 +1,6 @@
 use bon::Builder;
 use pernixc_diagnostic::{Highlight, Rendered, Report};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_resolution::diagnostic::ForallLifetimeRedefinition;
 use pernixc_symbol::source_map::to_absolute_span;
 use qbice::{Decode, Encode, Identifiable, StableHash};
 
@@ -25,7 +24,6 @@ pub enum Diagnostic {
     HigherRankedLifetimesInModuleLevelInstance(
         HigherRankedLifetimesInModuleLevelInstance,
     ),
-    ForallLifetimeRedefinition(ForallLifetimeRedefinition),
 }
 
 impl Report for Diagnostic {
@@ -36,9 +34,6 @@ impl Report for Diagnostic {
         match self {
             Self::Resolution(diagnostic) => diagnostic.report(parameter).await,
             Self::HigherRankedLifetimesInModuleLevelInstance(diagnostic) => {
-                diagnostic.report(parameter).await
-            }
-            Self::ForallLifetimeRedefinition(diagnostic) => {
                 diagnostic.report(parameter).await
             }
         }
