@@ -123,7 +123,7 @@ macro_rules! resolve_generic_arguments_kind {
     }};
 }
 
-impl Resolver<'_, '_, '_, '_, '_, '_, '_> {
+impl Resolver<'_, '_> {
     async fn resolve_type_argument(
         &mut self,
         syn: &pernixc_syntax::GenericArgument,

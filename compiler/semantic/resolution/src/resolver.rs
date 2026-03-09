@@ -27,32 +27,32 @@ pub trait ElidedTermProvider<T>: Send {
 /// The configuration struct specifying the behaviour of the resolution process.
 #[derive(Builder)]
 #[allow(missing_debug_implementations)]
-pub struct Resolver<'te, 'h, 'lp, 'tp, 'cp, 'ob, 'ex> {
+pub struct Resolver<'i, 'm> {
     /// The tracked engine used for querying.
-    tracked_engine: &'te TrackedEngine,
+    tracked_engine: &'i TrackedEngine,
 
     /// The handler used for reporting diagnostics.
-    handler: &'h dyn Handler<Diagnostic>,
+    handler: &'i dyn Handler<Diagnostic>,
 
     /// If specified, when the lifetime argument is elided, the provider will
     /// be used to supply the missing required lifetimes.
-    elided_lifetime_provider: Option<&'lp mut dyn ElidedTermProvider<Lifetime>>,
+    elided_lifetime_provider: Option<&'m mut dyn ElidedTermProvider<Lifetime>>,
 
     /// If specified, when the type argument is elided, the provider will be
     /// used to supply the missing required types.
-    elided_type_provider: Option<&'tp mut dyn ElidedTermProvider<Type>>,
+    elided_type_provider: Option<&'m mut dyn ElidedTermProvider<Type>>,
 
     /// If specified, when the constant argument is elided, the provider will
     /// be used to supply the missing required constants.
-    elided_constant_provider: Option<&'cp mut dyn ElidedTermProvider<Constant>>,
+    elided_constant_provider: Option<&'m mut dyn ElidedTermProvider<Constant>>,
 
     /// If specified, when the instance argument is elided, the provider will
     /// be used to supply the missing required instances.
-    elided_instance_provider: Option<&'cp mut dyn ElidedTermProvider<Instance>>,
+    elided_instance_provider: Option<&'m mut dyn ElidedTermProvider<Instance>>,
 
     /// If specified, during the resolution process, the observer will be
     /// notified each time a type, lifetime, or constant is resolved.
-    observer: Option<&'ob mut dyn Observer>,
+    observer: Option<&'m mut dyn Observer>,
 
     /// If specified, the extra namespace will be used to resolve the symbols
     /// prior to the resolution process.
@@ -60,14 +60,14 @@ pub struct Resolver<'te, 'h, 'lp, 'tp, 'cp, 'ob, 'ex> {
     /// This is useful for including the symbols that are not directly defined
     /// in the table but are acessible such as higher-ranked lifetimes
     /// `for['x]`.
-    extra_namespace: Option<&'ex ExtraNamespace>,
+    extra_namespace: Option<&'i ExtraNamespace>,
 
     /// If specified, when an instance is resolved and requires to resolve its
     /// trait ref, the resolver will call this to resolve the trait ref of the
     /// instance parameter instead of querying the information from the global
     /// engine.
     resolve_instance_parameter_trait_ref:
-        Option<&'ex dyn ResolveInstanceParameterTraitRef>,
+        Option<&'i dyn ResolveInstanceParameterTraitRef>,
 
     /// If `true`, the resolution will search for symbols inside the ADT's
     /// implements
@@ -82,20 +82,20 @@ pub struct Resolver<'te, 'h, 'lp, 'tp, 'cp, 'ob, 'ex> {
     referring_site: Global<pernixc_symbol::ID>,
 }
 
-impl<'te, 'h, 'tp, 'cp> Resolver<'te, 'h, '_, 'tp, 'cp, '_, '_> {
+impl<'i, 'm> Resolver<'i, 'm> {
     // =========================================================================
     // Getters for basic fields
     // =========================================================================
 
     /// Returns a reference to the tracked engine.
     #[must_use]
-    pub const fn tracked_engine(&self) -> &'te TrackedEngine {
+    pub const fn tracked_engine(&self) -> &'i TrackedEngine {
         self.tracked_engine
     }
 
     /// Returns a reference to the handler.
     #[must_use]
-    pub const fn handler(&self) -> &'h dyn Handler<Diagnostic> { self.handler }
+    pub const fn handler(&self) -> &'i dyn Handler<Diagnostic> { self.handler }
 
     /// Returns the referring site where the resolution occurred.
     #[must_use]
@@ -218,7 +218,7 @@ impl<'te, 'h, 'tp, 'cp> Resolver<'te, 'h, '_, 'tp, 'cp, '_, '_> {
     /// Returns a mutable reference to the elided type provider, if available.
     pub fn elided_type_provider_mut(
         &mut self,
-    ) -> Option<&mut (dyn ElidedTermProvider<Type> + 'tp)> {
+    ) -> Option<&mut (dyn ElidedTermProvider<Type> + 'm)> {
         self.elided_type_provider.as_deref_mut()
     }
 
@@ -226,7 +226,7 @@ impl<'te, 'h, 'tp, 'cp> Resolver<'te, 'h, '_, 'tp, 'cp, '_, '_> {
     /// available.
     pub fn elided_constant_provider_mut(
         &mut self,
-    ) -> Option<&mut (dyn ElidedTermProvider<Constant> + 'cp)> {
+    ) -> Option<&mut (dyn ElidedTermProvider<Constant> + 'm)> {
         self.elided_constant_provider.as_deref_mut()
     }
 
@@ -234,7 +234,7 @@ impl<'te, 'h, 'tp, 'cp> Resolver<'te, 'h, '_, 'tp, 'cp, '_, '_> {
     /// available.
     pub fn elided_instance_provider_mut(
         &mut self,
-    ) -> Option<&mut (dyn ElidedTermProvider<Instance> + 'cp)> {
+    ) -> Option<&mut (dyn ElidedTermProvider<Instance> + 'm)> {
         self.elided_instance_provider.as_deref_mut()
     }
 
