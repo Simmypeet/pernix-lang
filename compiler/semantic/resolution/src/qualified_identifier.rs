@@ -34,7 +34,7 @@ use pernixc_term::{
 use qbice::{Decode, Encode, Identifiable, StableHash};
 
 use crate::{
-    Config, Error,
+    Resolver, Error,
     diagnostic::{
         Diagnostic, NoGenericArgumentsRequired, NoMemberInFunction,
         NoMemberInType, SymbolIsNotAccessible, SymbolNotFound, ThisNotFound,
@@ -452,7 +452,7 @@ pub async fn resolve_simple_qualified_identifier_root(
     }
 }
 
-impl Config<'_, '_, '_, '_, '_, '_, '_> {
+impl Resolver<'_, '_, '_, '_, '_, '_, '_> {
     #[allow(clippy::too_many_lines)]
     async fn resolve_root(
         &mut self,

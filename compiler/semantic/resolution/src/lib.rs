@@ -26,14 +26,14 @@ use crate::{
     qualified_identifier::Resolution,
 };
 
-pub mod config;
 pub mod diagnostic;
 pub mod generic_parameter_namespace;
 pub mod qualified_identifier;
+pub mod resolver;
 pub mod term;
 
 // Re-export config types for convenience
-pub use config::{Config, ElidedTermProvider};
+pub use resolver::{ElidedTermProvider, Resolver};
 
 /// The extra namespace that is used to resolve the symbols prior to the
 /// resolution process.

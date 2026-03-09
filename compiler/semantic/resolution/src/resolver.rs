@@ -27,7 +27,7 @@ pub trait ElidedTermProvider<T>: Send {
 /// The configuration struct specifying the behaviour of the resolution process.
 #[derive(Builder)]
 #[allow(missing_debug_implementations)]
-pub struct Config<'te, 'h, 'lp, 'tp, 'cp, 'ob, 'ex> {
+pub struct Resolver<'te, 'h, 'lp, 'tp, 'cp, 'ob, 'ex> {
     /// The tracked engine used for querying.
     tracked_engine: &'te TrackedEngine,
 
@@ -82,7 +82,7 @@ pub struct Config<'te, 'h, 'lp, 'tp, 'cp, 'ob, 'ex> {
     referring_site: Global<pernixc_symbol::ID>,
 }
 
-impl<'te, 'h, 'tp, 'cp> Config<'te, 'h, '_, 'tp, 'cp, '_, '_> {
+impl<'te, 'h, 'tp, 'cp> Resolver<'te, 'h, '_, 'tp, 'cp, '_, '_> {
     // =========================================================================
     // Getters for basic fields
     // =========================================================================
