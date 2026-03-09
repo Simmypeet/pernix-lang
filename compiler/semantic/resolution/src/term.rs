@@ -148,13 +148,21 @@ impl Resolver<'_, '_> {
             GenericArgumentSyn::QualifiedIdentifierWithHigherRankedLifetimes(
                 qualified_identifier,
             ) => {
-                let Some(q) = qualified_identifier.qualified_identifier()
-                else {
-                    return Type::Error(pernixc_term::error::Error);
-                };
+                 Box::pin(async move {
+                    let Some(q) = qualified_identifier.qualified_identifier()
+                    else {
+                        return Type::Error(pernixc_term::error::Error);
+                    };
 
-                Box::pin(async move {
-                    self.resolve_qualified_identifier_type(&q).await
+                    self.push_higher_ranked_lifetimes(
+                        qualified_identifier.higher_ranked_lifetimes().as_ref()
+                    );
+
+                    let res = self.resolve_qualified_identifier_type(&q).await;
+
+                    self.pop_higher_ranked_lifetimes();
+
+                    res
                 })
                 .await
             }
@@ -185,17 +193,28 @@ impl Resolver<'_, '_> {
         symbol_id: Global<pernixc_symbol::ID>,
         param_id: pernixc_arena::ID<InstanceParameter>,
     ) -> Instance {
+        use GenericArgumentSyn::QualifiedIdentifierWithHigherRankedLifetimes;
+
         match syn {
             GenericArgumentSyn::QualifiedIdentifierWithHigherRankedLifetimes(
                 qualified_identifier,
             ) => {
-                let Some(q) = qualified_identifier.qualified_identifier()
-                else {
-                    return Instance::Error(pernixc_term::error::Error);
-                };
-
                 Box::pin(async move {
-                    self.resolve_qualified_identifier_instance(&q).await
+                    let Some(q) = qualified_identifier.qualified_identifier()
+                    else {
+                        return Instance::Error(pernixc_term::error::Error);
+                    };
+
+                    self.push_higher_ranked_lifetimes(
+                        qualified_identifier.higher_ranked_lifetimes().as_ref()
+                    );
+
+                    let res =
+                        self.resolve_qualified_identifier_instance(&q).await;
+
+                    self.pop_higher_ranked_lifetimes();
+
+                    res
                 })
                 .await
             }
@@ -217,7 +236,7 @@ impl Resolver<'_, '_> {
                                 GenericKind::Constant
                             }
 
-                            GenericArgumentSyn::QualifiedIdentifierWithHigherRankedLifetimes(
+                            QualifiedIdentifierWithHigherRankedLifetimes(
                                 _,
                             ) => unreachable!(),
                         })
