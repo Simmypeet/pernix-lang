@@ -89,3 +89,5 @@ impl build::Build for instance_associated_value::Key {
         )
     }
 }
+
+crate::build::register_build! {instance_associated_value::Key}

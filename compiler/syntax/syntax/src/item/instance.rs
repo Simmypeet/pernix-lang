@@ -53,7 +53,7 @@ abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct AssociatedInstanceBody {
         pub value: AssociatedInstanceValue
-            = ast::<AssociatedInstanceValue>().optional(),
+            = ast::<AssociatedInstanceValue>(),
         pub trailing_where_clause: TrailingWhereClause
             = ast::<TrailingWhereClause>().optional(),
     }

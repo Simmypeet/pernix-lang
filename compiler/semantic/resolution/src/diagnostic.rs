@@ -384,44 +384,12 @@ impl Report for ExpectTrait {
         &self,
         table: &TrackedEngine,
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
-        let found =
-            if let Some(global_id) = self.resolved_resolution.global_id() {
-                let qualified_name = table.get_qualified_name(global_id).await;
-                let kind = table.get_kind(global_id).await;
-
-                format!("`{} {qualified_name}`", kind.kind_str())
-            } else {
-                match &self.resolved_resolution {
-                    Resolution::Module(_)
-                    | Resolution::Variant(_)
-                    | Resolution::Generic(_)
-                    | Resolution::MemberGeneric(_)
-                    | Resolution::InstanceAssociatedFunction(_) => {
-                        unreachable!("should've gotten a global_id()")
-                    }
-
-                    Resolution::Type(ty) => {
-                        let mut string = "`type ".to_string();
-                        ty.write_async(table, &mut string).await.unwrap();
-                        string.push('`');
-
-                        string
-                    }
-
-                    Resolution::Instance(instance) => {
-                        let mut string = "`instance ".to_string();
-                        instance.write_async(table, &mut string).await.unwrap();
-                        string.push('`');
-
-                        string
-                    }
-                }
-            };
+        let found = self.resolved_resolution.found_string(table).await;
 
         pernixc_diagnostic::Rendered::builder()
             .primary_highlight(Highlight::new(
                 table.to_absolute_span(&self.non_trait_symbol_span).await,
-                Some(format!("the trait was expected but found `{found}`",)),
+                Some(format!("the trait was expected but found {found}",)),
             ))
             .message("trait expected")
             .build()
