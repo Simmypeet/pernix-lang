@@ -125,7 +125,6 @@ pub struct Binder<'t> {
     stack: stack::Stack,
 
     /// The inference context used for managing type and constant inferences.
-    #[get = "pub"]
     inference_context: InferenceContext,
 
     unreachable_register_ids: Vec<ID<Register>>,

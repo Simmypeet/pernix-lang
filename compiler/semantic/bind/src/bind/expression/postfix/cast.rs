@@ -178,11 +178,7 @@ async fn type_can_pointer_cast(
         | Type::Primitive(Primitive::Usize) => true,
 
         Type::Inference(inference) => {
-            let inference = binder
-                .inference_context()
-                .type_table()
-                .get_inference(*inference)
-                .unwrap();
+            let inference = binder.get_type_inference(*inference).unwrap();
 
             match inference {
                 infer::table::Inference::Known(known) => {
@@ -194,12 +190,9 @@ async fn type_can_pointer_cast(
                     ))
                     .await
                 }
+
                 infer::table::Inference::Inferring(id) => {
-                    let constraint = binder
-                        .inference_context()
-                        .type_table()
-                        .get_constraint(*id)
-                        .unwrap();
+                    let constraint = binder.get_type_constraint(*id).unwrap();
 
                     match constraint {
                         constraint::Type::All(_)

@@ -23,6 +23,7 @@ diagnostic_enum! {
         Encode,
         Decode,
     )]
+    #[allow(clippy::large_enum_variant)]
     pub enum Diagnostic {
         MismatchedPatternBindingType(MismatchedPatternBindingType),
         TooLargeNumericLiteral(TooLargeNumericLiteral),

@@ -73,16 +73,8 @@ impl<T> InferenceCounter<T> {
 /// possible.
 #[derive(Debug, Default, Getters)]
 pub struct InferenceContext {
-    /// The inference table for the type term.
-    #[getset(get = "pub")]
     type_table: table::Table<constraint::Type>,
-
-    /// The inference table for the constant term.
-    #[getset(get = "pub")]
     const_table: table::Table<constraint::Constant>,
-
-    /// The inference table for the instance term.
-    #[getset(get = "pub")]
     instance_table: table::Table<constraint::Instance>,
 
     type_inference_counter: InferenceCounter<Type>,
@@ -1021,6 +1013,24 @@ impl Binder<'_> {
 }
 
 impl Binder<'_> {
+    /// Gets the inference state of a type inference variable.
+    #[must_use]
+    pub fn get_type_inference(
+        &self,
+        inference_variable: inference::Variable<Type>,
+    ) -> Option<&table::Inference<constraint::Type>> {
+        self.inference_context.type_table.get_inference(inference_variable)
+    }
+
+    /// Gets the constraint associated with the given type constraint ID.
+    #[must_use]
+    pub fn get_type_constraint(
+        &self,
+        id: pernixc_arena::ID<constraint::Type>,
+    ) -> Option<&constraint::Type> {
+        self.inference_context.type_table.get_constraint(id)
+    }
+
     /// Gets the rendering map for all inference variables, which can be used
     /// for diagnostics.
     #[must_use]

@@ -420,18 +420,13 @@ impl Binder<'_> {
 
                     Type::Inference(inference) => {
                         let constraint_id = *self
-                            .inference_context()
-                            .type_table()
-                            .get_inference(inference)
+                            .get_type_inference(inference)
                             .unwrap()
                             .as_inferring()
                             .unwrap();
 
-                        let constraint = *self
-                            .inference_context()
-                            .type_table()
-                            .get_constraint(constraint_id)
-                            .unwrap();
+                        let constraint =
+                            *self.get_type_constraint(constraint_id).unwrap();
 
                         match constraint {
                             constraint::Type::Number
