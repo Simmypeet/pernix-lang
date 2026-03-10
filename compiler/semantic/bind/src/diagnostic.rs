@@ -19,8 +19,8 @@ use pernixc_term::{
     effect,
     generic_arguments::GenericArguments,
     generic_parameters::{
-        ConstantParameterID, GenericParameter, TypeParameterID,
-        get_generic_parameters,
+        ConstantParameterID, GenericParameter, InstanceParameterID,
+        TypeParameterID, get_generic_parameters,
     },
     r#type::Type,
 };
@@ -68,6 +68,7 @@ diagnostic_enum! {
         ReturnIsNotAllowed(ReturnIsNotAllowed),
         TypeAnnotationRequired(TypeAnnotationRequired),
         ConstantAnnotationRequired(ConstantAnnotationRequired),
+        InstanceAnnotationRequired(InstanceAnnotationRequired),
         NotAllFlowPathsExpressValue(NotAllFlowPathsExpressValue),
         ScopeWithGivenLableNameNotFound(ScopeWithGivenLableNameNotFound),
         ExpressOutsideScope(ExpressOutsideScope),
@@ -461,6 +462,52 @@ impl Report for ConstantAnnotationRequired {
                 "consider adding a constant annotation using syntax such as \
                  `{qualified_name}[ {{ EXPR }} ]`"
             ))
+            .build()
+    }
+}
+
+/// An instance argument annotation is required for a generic instance
+/// parameter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, StableHash, Encode, Decode)]
+pub struct InstanceAnnotationRequired {
+    /// The span where the type annotation is required.
+    pub span: RelativeSpan,
+
+    /// The generic parameter that requires a type annotation.
+    pub generic_parameter: InstanceParameterID,
+}
+
+impl Report for InstanceAnnotationRequired {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        let qualified_name =
+            engine.get_qualified_name(self.generic_parameter.parent_id()).await;
+
+        let generic_parameters = engine
+            .get_generic_parameters(self.generic_parameter.parent_id())
+            .await;
+
+        let instance_parameter =
+            &generic_parameters[self.generic_parameter.id()];
+
+        let message = format!(
+            "explicit instance argument is required for generic parameter \
+             `{}` of `{}`",
+            instance_parameter.name().as_ref(),
+            qualified_name
+        );
+
+        pernixc_diagnostic::Rendered::builder()
+            .message(message)
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .build(),
+            )
+            .severity(pernixc_diagnostic::Severity::Error)
+            .help_message("consider adding an instance argument")
             .build()
     }
 }

@@ -17,7 +17,10 @@ use pernixc_ir::{
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_target::Global;
-use pernixc_term::{generic_arguments::GenericArguments, r#type::Type};
+use pernixc_term::{
+    constant::Constant, generic_arguments::GenericArguments,
+    instance::Instance, lifetime::Lifetime, r#type::Type,
+};
 use pernixc_type_system::{OverflowError, environment::Premise};
 
 use crate::{
@@ -38,9 +41,10 @@ pub struct Context {
 
 impl transform::Element for Context {
     async fn transform<
-        T: transform::Transformer<pernixc_term::lifetime::Lifetime>
+        T: transform::Transformer<Lifetime>
             + transform::Transformer<Type>
-            + transform::Transformer<pernixc_term::constant::Constant>,
+            + transform::Transformer<Constant>
+            + transform::Transformer<Instance>,
     >(
         &mut self,
         transformer: &mut T,
@@ -116,8 +120,10 @@ impl HandlerClauseMatcher<'_, '_> {
             Err(
                 UnifyError::CyclicTypeInference(_)
                 | UnifyError::CyclicConstantInference(_)
+                | UnifyError::CyclicInstanceInference(_)
                 | UnifyError::IncompatibleTypes { .. }
                 | UnifyError::IncompatibleConstants { .. }
+                | UnifyError::IncompatibleInstances { .. }
                 | UnifyError::UnsatisfiedConstraint(_)
                 | UnifyError::CombineConstraint(_),
             ) => Ok(false),

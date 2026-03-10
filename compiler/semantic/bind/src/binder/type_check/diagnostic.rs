@@ -8,6 +8,7 @@ use pernixc_symbol::source_map::to_absolute_span;
 use pernixc_term::{
     constant::Constant,
     display::{Display, InferenceRenderingMap},
+    instance::Instance,
     r#type::Type,
 };
 use qbice::{Decode, Encode, StableHash};

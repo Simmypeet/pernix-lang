@@ -81,7 +81,8 @@ impl Binder<'_> {
 
                     Err(
                         UnifyError::CyclicTypeInference(_)
-                        | UnifyError::CyclicConstantInference(_),
+                        | UnifyError::CyclicConstantInference(_)
+                        | UnifyError::CyclicInstanceInference(_),
                     ) => Some(
                         diagnostic::Diagnostic::CyclicInference(
                             CyclicInference {

@@ -18,6 +18,7 @@ use pernixc_source_file::SourceElement;
 use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
+    display::{self, InferenceRenderingMap},
     generic_arguments::GenericArguments,
     inference,
     instance::Instance,
@@ -72,15 +73,38 @@ impl<T> InferenceCounter<T> {
 #[derive(Debug, Default, Getters)]
 pub struct InferenceContext {
     /// The inference table for the type term.
-    #[get = "pub"]
     type_table: table::Table<constraint::Type>,
 
     /// The inference table for the constant term.
-    #[get = "pub"]
     const_table: table::Table<constraint::Constant>,
+
+    /// The inference table for the instance term.
+    instance_table: table::Table<constraint::Instance>,
 
     type_inference_counter: InferenceCounter<Type>,
     constant_inference_counter: InferenceCounter<Constant>,
+    instance_inference_conter: InferenceCounter<Instance>,
+}
+
+/// A struct that holds the rendering maps for all inference variables, which
+/// can be used for diagnostics.A
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenderingMap {
+    types: InferenceRenderingMap<Type>,
+    constants: InferenceRenderingMap<Constant>,
+    instances: InferenceRenderingMap<Instance>,
+}
+
+impl RenderingMap {
+    /// Creates a new rendering map from the given inference context.
+    #[must_use]
+    pub fn configuration(&self) -> display::Configuration<'_> {
+        display::Configuration::builder()
+            .type_inferences(&self.types)
+            .constant_inferences(&self.constants)
+            .instance_infernces(&self.instances)
+            .build()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -201,6 +225,9 @@ pub enum UnifyError {
     #[error("the two constants cannot be unified or are mismatched")]
     IncompatibleConstants { lhs: Constant, rhs: Constant },
 
+    #[error("the two instances cannot be unified or are mismatched")]
+    IncompatibleInstances { lhs: Instance, rhs: Instance },
+
     #[error(transparent)]
     UnsatisfiedConstraint(UnsatisfiedConstraintError<constraint::Type>),
 
@@ -209,6 +236,9 @@ pub enum UnifyError {
 
     #[error(transparent)]
     CyclicConstantInference(#[from] CyclicInferenceError<Constant>),
+
+    #[error(transparent)]
+    CyclicInstanceInference(#[from] CyclicInferenceError<Instance>),
 
     #[error(transparent)]
     CyclicTypeInference(#[from] CyclicInferenceError<Type>),
@@ -363,6 +393,56 @@ impl sealed::Sealed for Constant {
     }
 }
 
+impl sealed::Sealed for Instance {
+    type Constraint = constraint::Instance;
+
+    fn from_incompatible_error(lhs: &Self, rhs: &Self) -> UnifyError {
+        UnifyError::IncompatibleInstances { lhs: lhs.clone(), rhs: rhs.clone() }
+    }
+
+    fn from_constraint_error(
+        _: UnsatisfiedConstraintError<Self::Constraint>,
+    ) -> UnifyError {
+        unreachable!("instance doesn't have constraint restriction");
+    }
+
+    fn from_combine_constraint_error(
+        _: CombineConstraintError<Self::Constraint>,
+    ) -> UnifyError {
+        unreachable!("instance doesn't have constraint restriction");
+    }
+
+    fn as_inference(&self) -> Option<&inference::Variable<Self>> {
+        if let Self::Inference(var) = self { Some(var) } else { None }
+    }
+
+    fn inference_table(
+        ctx: &InferenceContext,
+    ) -> &table::Table<Self::Constraint> {
+        &ctx.instance_table
+    }
+
+    fn inference_table_mut(
+        ctx: &mut InferenceContext,
+    ) -> &mut table::Table<Self::Constraint> {
+        &mut ctx.instance_table
+    }
+
+    fn try_from_term_ref(kind: pernixc_term::TermRef<'_>) -> Option<&'_ Self> {
+        if let pernixc_term::TermRef::Instance(instance) = kind {
+            Some(instance)
+        } else {
+            None
+        }
+    }
+
+    fn from_cyclic_inference_error(
+        error: CyclicInferenceError<Self>,
+    ) -> UnifyError {
+        UnifyError::CyclicInstanceInference(error)
+    }
+}
+
 /// A checkpoint for both type and constant inference tables.
 #[derive(Debug)]
 pub struct Checkpoint {
@@ -434,7 +514,7 @@ impl InferenceContext {
             .assign_constraint(inference_variable, constraint)
     }
 
-    /// Unifies two types/constants
+    /// Unifies two types/constants/instances
     pub async fn unify<T: Unifiable>(
         &mut self,
         lhs: &T,
@@ -473,6 +553,7 @@ impl InferenceContext {
 
         self.handle_mapping(premise, engine, &mapping.types).await?;
         self.handle_mapping(premise, engine, &mapping.constants).await?;
+        self.handle_mapping(premise, engine, &mapping.instances).await?;
 
         Ok(())
     }
@@ -730,6 +811,12 @@ impl Binder<'_> {
                 .inference_context
                 .constant_inference_counter,
         };
+        let mut instance_inferences = InferenceProvider {
+            created_inferences: Vec::new(),
+            inference_counter: &mut self
+                .inference_context
+                .instance_inference_conter,
+        };
 
         let resolution_handler =
             Storage::<pernixc_resolution::diagnostic::Diagnostic>::new();
@@ -741,6 +828,7 @@ impl Binder<'_> {
             .elided_lifetime_provider(&mut lifetime_inference_providers)
             .elided_type_provider(&mut type_inferences)
             .elided_constant_provider(&mut constant_inferences)
+            .elided_instance_provider(&mut instance_inferences)
             .referring_site(current_site)
             .build();
 
@@ -762,6 +850,8 @@ impl Binder<'_> {
         let created_type_inferences = type_inferences.created_inferences;
         let created_constant_inferences =
             constant_inferences.created_inferences;
+        let created_instance_inferences =
+            instance_inferences.created_inferences;
 
         for inference in created_type_inferences {
             assert!(
@@ -774,6 +864,13 @@ impl Binder<'_> {
             assert!(
                 self.inference_context
                     .register(inference, constraint::Constant)
+            );
+        }
+
+        for inference in created_instance_inferences {
+            assert!(
+                self.inference_context
+                    .register(inference, constraint::Instance)
             );
         }
 
@@ -905,6 +1002,28 @@ impl Binder<'_> {
         }
 
         Ok(ty)
+    }
+}
+
+impl Binder<'_> {
+    /// Gets the rendering map for all inference variables, which can be used
+    /// for diagnostics.
+    #[must_use]
+    pub fn get_rendering_map(&self) -> RenderingMap {
+        RenderingMap {
+            types: self
+                .inference_context
+                .type_table
+                .get_inference_rendering_map(),
+            constants: self
+                .inference_context
+                .const_table
+                .get_inference_rendering_map(),
+            instances: self
+                .inference_context
+                .instance_table
+                .get_inference_rendering_map(),
+        }
     }
 }
 

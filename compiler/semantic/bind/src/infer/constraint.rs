@@ -256,3 +256,34 @@ impl Constraint for Constant {
         Some(*self)
     }
 }
+
+/// The set of instances that can be inferred. Used in type inference.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    derive_more::Display,
+)]
+#[display("_")]
+pub struct Instance;
+
+impl Constraint for Instance {
+    type Term = pernixc_term::instance::Instance;
+
+    fn satisfies(&self, _: &pernixc_term::instance::Instance) -> bool { true }
+
+    fn combine(&self, _: &Self) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        Some(*self)
+    }
+}
