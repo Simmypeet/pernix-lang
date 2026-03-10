@@ -3,17 +3,17 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: run
 ---
 stderr:
-[error]: unsatisfied predicate
-  ╭▸ compiler/e2e/test/snapshot/semantic_element/type_alias/simplify/main.pnx:4:31
+[error]: the predicate `'a: 'b` is not satisfied
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/type_alias/simplify/main.pnx:5:46
   │
-4 │ public type Test['a, 'b, T] = Fizz['a, T]::Output:
-  ╰╴                              ━━━━━━━━━━━━━━━━━━━ the predicate `'a: 'b` is not satisfied
+5 │ public type Test['a, 'b, instance I: Fizz] = I::Output['a]:
+  ╰╴                                             ━━━━━━━━━━━━━
 
-[error]: unsatisfied predicate
-  ╭▸ compiler/e2e/test/snapshot/semantic_element/type_alias/simplify/main.pnx:4:31
+[error]: the predicate `'b: 'a` is not satisfied
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/type_alias/simplify/main.pnx:5:46
   │
-4 │ public type Test['a, 'b, T] = Fizz['a, T]::Output:
-  ╰╴                              ━━━━━━━━━━━━━━━━━━━ the predicate `'b: 'a` is not satisfied
+5 │ public type Test['a, 'b, instance I: Fizz] = I::Output['a]:
+  ╰╴                                             ━━━━━━━━━━━━━
 
 [error]: Compilation aborted due to 2 error(s)
 

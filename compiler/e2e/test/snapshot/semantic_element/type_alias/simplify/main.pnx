@@ -1,7 +1,7 @@
-public trait Fizz['a, T]:
-    public type Output
+public trait Fizz:
+    public type Output['a]
 
-public type Test['a, 'b, T] = Fizz['a, T]::Output:
+
+public type Test['a, 'b, instance I: Fizz] = I::Output['a]:
     where:
-        Fizz['b, T]::Output = int32
-        trait for['x] Fizz['x, T]
+        I::Output['b] = int32
