@@ -1,14 +1,5 @@
 public module inner:
-    private trait InAccessible[T]:
-        pass
-
-    public trait MemberInAccessible[T]:
-        private function inaccessible()
+    private marker InAccessible[T]
 
 
-implements inner::InAccessible[int32]:
-    pass
-
-implements inner::MemberInAccessible[int32]:
-    function inaccessible():
-        pass
+final implements inner::InAccessible[int32]
