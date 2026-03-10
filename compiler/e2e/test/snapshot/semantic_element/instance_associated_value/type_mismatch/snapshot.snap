@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: run
+---
+stderr:
+[error]: mismatched trait reference
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/instance_associated_value/type_mismatch/main.pnx:14:27
+   │
+14 │     instance I: Test[T] = MyTest[U] # error: should've been MyTest[T]
+   ╰╴                          ━━━━━━━━━ instance `main::MyTest[U]` implements `main::Test[U]` but `main::Test[T]` was expected
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:
