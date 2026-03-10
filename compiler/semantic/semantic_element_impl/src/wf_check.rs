@@ -156,7 +156,7 @@ impl Checker<'_> {
                     .await;
 
                 self.environment
-                    .check_instance_trait_ref(
+                    .check_instantiated_instance_arguments(
                         member_generic.id,
                         &instances,
                         resolution_span,
@@ -197,7 +197,7 @@ impl Checker<'_> {
 
         let _ = self
             .environment
-            .check_instance_trait_ref(
+            .check_instantiated_instance_arguments(
                 instantiated,
                 &instances,
                 instantiation_span,

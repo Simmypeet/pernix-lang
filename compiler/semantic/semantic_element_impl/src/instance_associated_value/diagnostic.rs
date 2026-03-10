@@ -18,6 +18,7 @@ use qbice::{Decode, Encode, Identifiable, StableHash};
 #[allow(clippy::large_enum_variant)]
 pub enum Diagnostic {
     Resolution(pernixc_resolution::diagnostic::Diagnostic),
+    TypeSystem(pernixc_type_system::diagnostic::Diagnostic),
 }
 
 impl Report for Diagnostic {
@@ -27,6 +28,7 @@ impl Report for Diagnostic {
     ) -> pernixc_diagnostic::Rendered<pernixc_diagnostic::ByteIndex> {
         match self {
             Self::Resolution(diagnostic) => diagnostic.report(parameter).await,
+            Self::TypeSystem(diagnostic) => diagnostic.report(parameter).await,
         }
     }
 }

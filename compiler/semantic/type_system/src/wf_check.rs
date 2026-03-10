@@ -16,7 +16,7 @@ use pernixc_target::Global;
 use pernixc_term::{
     generic_arguments::GenericArguments,
     generic_parameters::get_generic_parameters,
-    instance::Instance,
+    instance::{Instance, TraitRef},
     instantiation::{self, Instantiation},
     predicate::{Outlives, Predicate},
     r#type::Type,
@@ -519,9 +519,112 @@ impl<N: Normalizer> Environment<'_, N> {
         }))
     }
 
+    async fn check_instance_trait_ref_internal(
+        &self,
+        instance: &Instance,
+        instance_trait_ref: &TraitRef,
+        expected_trait_ref: &TraitRef,
+        instantiation_span: &RelativeSpan,
+        lifetime_constraints: &mut BTreeSet<LifetimeConstraint>,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<(), UnrecoverableError> {
+        if instance_trait_ref.trait_id() != expected_trait_ref.trait_id() {
+            handler.receive(Diagnostic::MismatchedTraitRef(
+                MismatchedTraitRef::builder()
+                    .expected_trait_ref(expected_trait_ref.clone())
+                    .found_trait_ref(instance_trait_ref.clone())
+                    .instance(instance.clone())
+                    .span(*instantiation_span)
+                    .build(),
+            ));
+
+            return Ok(());
+        }
+
+        let ok = match self
+            .subtypes_generic_arguments(
+                expected_trait_ref.generic_arguments(),
+                instance_trait_ref.generic_arguments(),
+            )
+            .await
+        {
+            Ok(Some(res)) => {
+                if res.result.forall_lifetime_errors.is_empty() {
+                    if self.do_outlives_check() {
+                        self.check_lifetime_constraints(
+                            res.constraints.iter(),
+                            instantiation_span,
+                            handler,
+                        )
+                        .await;
+                    } else {
+                        lifetime_constraints
+                            .extend(res.constraints.iter().cloned());
+                    }
+
+                    true
+                } else {
+                    false
+                }
+            }
+
+            Ok(None) => false,
+
+            Err(overflow_error) => {
+                return Err(overflow_error.report_as_type_check_overflow(
+                    *instantiation_span,
+                    handler,
+                ));
+            }
+        };
+
+        if !ok {
+            handler.receive(Diagnostic::MismatchedTraitRef(
+                MismatchedTraitRef::builder()
+                    .expected_trait_ref(expected_trait_ref.clone())
+                    .found_trait_ref(instance_trait_ref.clone())
+                    .span(*instantiation_span)
+                    .instance(instance.clone())
+                    .build(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Checks if the given `instance`'s trait-ref matches the
+    /// `expected_trait_ref` and returns the lifetime constraints that need to
+    /// be satisfied for the instance to be well-formed.
+    pub async fn check_instance_trait_ref(
+        &self,
+        instance: &Instance,
+        expected_trait_ref: &TraitRef,
+        instantiation_span: &RelativeSpan,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError> {
+        let Some(instance_trait_ref) =
+            self.tracked_engine().get_trait_ref_of_instance(instance).await
+        else {
+            return Ok(BTreeSet::new()); // can't continue
+        };
+
+        let mut lifetime_constraints = BTreeSet::new();
+        self.check_instance_trait_ref_internal(
+            instance,
+            &instance_trait_ref,
+            expected_trait_ref,
+            instantiation_span,
+            &mut lifetime_constraints,
+            handler,
+        )
+        .await?;
+
+        Ok(lifetime_constraints)
+    }
+
     /// Type-checks the trait-ref of the instance arguments supplied to the
     /// generic with the given `generic_id`.
-    pub async fn check_instance_trait_ref(
+    pub async fn check_instantiated_instance_arguments(
         &self,
         generic_id: Global<pernixc_symbol::ID>,
         instance_arguments: &[Instance],
@@ -554,66 +657,15 @@ impl<N: Normalizer> Environment<'_, N> {
 
             expected_trait_ref.instantiate(instantiation);
 
-            if instance_trait_ref.trait_id() != expected_trait_ref.trait_id() {
-                handler.receive(Diagnostic::MismatchedTraitRef(
-                    MismatchedTraitRef::builder()
-                        .expected_trait_ref(expected_trait_ref)
-                        .found_trait_ref(instance_trait_ref)
-                        .instance(instance_arg.clone())
-                        .span(*instantiation_span)
-                        .build(),
-                ));
-
-                continue;
-            }
-
-            let ok = match self
-                .subtypes_generic_arguments(
-                    expected_trait_ref.generic_arguments(),
-                    instance_trait_ref.generic_arguments(),
-                )
-                .await
-            {
-                Ok(Some(res)) => {
-                    if res.result.forall_lifetime_errors.is_empty() {
-                        if self.do_outlives_check() {
-                            self.check_lifetime_constraints(
-                                res.constraints.iter(),
-                                instantiation_span,
-                                handler,
-                            )
-                            .await;
-                        } else {
-                            lifetime_constraints
-                                .extend(res.constraints.iter().cloned());
-                        }
-
-                        true
-                    } else {
-                        false
-                    }
-                }
-
-                Ok(None) => false,
-
-                Err(overflow_error) => {
-                    return Err(overflow_error.report_as_type_check_overflow(
-                        *instantiation_span,
-                        handler,
-                    ));
-                }
-            };
-
-            if !ok {
-                handler.receive(Diagnostic::MismatchedTraitRef(
-                    MismatchedTraitRef::builder()
-                        .expected_trait_ref(expected_trait_ref)
-                        .found_trait_ref(instance_trait_ref)
-                        .span(*instantiation_span)
-                        .instance(instance_arg.clone())
-                        .build(),
-                ));
-            }
+            self.check_instance_trait_ref_internal(
+                instance_arg,
+                &instance_trait_ref,
+                &expected_trait_ref,
+                instantiation_span,
+                &mut lifetime_constraints,
+                handler,
+            )
+            .await?;
         }
 
         Ok(lifetime_constraints)
