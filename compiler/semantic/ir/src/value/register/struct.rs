@@ -9,7 +9,7 @@ use pernixc_semantic_element::fields::Field;
 use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant, generic_arguments::GenericArguments,
-    lifetime::Lifetime, r#type::Type,
+    instance::Instance, lifetime::Lifetime, r#type::Type,
 };
 use pernixc_type_system::OverflowError;
 use qbice::{Decode, Encode, StableHash};
@@ -56,7 +56,10 @@ impl crate::visitor::Element for Struct {
 }
 
 pub(super) async fn transform_struct<
-    T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
+    T: Transformer<Lifetime>
+        + Transformer<Type>
+        + Transformer<Constant>
+        + Transformer<Instance>,
 >(
     st: &mut Struct,
     transformer: &mut T,

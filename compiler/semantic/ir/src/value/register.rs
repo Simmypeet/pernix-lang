@@ -13,8 +13,8 @@ use pernixc_symbol::MemberID;
 use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant, generic_arguments::GenericArguments,
-    generic_parameters::get_generic_parameters, lifetime::Lifetime,
-    r#type::Type,
+    generic_parameters::get_generic_parameters, instance::Instance,
+    lifetime::Lifetime, r#type::Type,
 };
 use pernixc_type_system::{OverflowError, Succeeded, normalizer::Normalizer};
 use qbice::{Decode, Encode, StableHash};
@@ -185,7 +185,10 @@ impl TypeOf<ID<Register>> for Values {
 
 impl transform::Element for Register {
     async fn transform<
-        T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
+        T: Transformer<Lifetime>
+            + Transformer<Type>
+            + Transformer<Constant>
+            + Transformer<Instance>,
     >(
         &mut self,
         transformer: &mut T,
@@ -257,7 +260,10 @@ impl transform::Element for Register {
 }
 
 pub(super) async fn transform_generic_arguments<
-    T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
+    T: Transformer<Lifetime>
+        + Transformer<Type>
+        + Transformer<Constant>
+        + Transformer<Instance>,
 >(
     transformer: &mut T,
     symbol_id: Global<pernixc_symbol::ID>,
@@ -305,6 +311,22 @@ pub(super) async fn transform_generic_arguments<
                 ct,
                 ConstantTermSource::GenericParameter(MemberID::new(
                     symbol_id, ct_id,
+                )),
+                span,
+            )
+            .await;
+    }
+
+    for (instance_id, instance) in generic_params
+        .instance_parameter_order()
+        .zip(generic_arg.instances_mut())
+    {
+        transformer
+            .transform(
+                instance,
+                transform::InstanceTermSource::GenericParameter(MemberID::new(
+                    symbol_id,
+                    instance_id,
                 )),
                 span,
             )

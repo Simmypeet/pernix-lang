@@ -5,7 +5,9 @@ use std::ops::{Not, RangeBounds};
 use getset::{CopyGetters, Getters};
 use pernixc_arena::{Arena, ID};
 use pernixc_hash::{HashMap, HashSet};
-use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
+use pernixc_term::{
+    constant::Constant, instance::Instance, lifetime::Lifetime, r#type::Type,
+};
 use pernixc_transitive_closure::TransitiveClosure;
 use qbice::{Decode, Encode, StableHash};
 
@@ -139,7 +141,10 @@ impl Block {
 
 impl transform::Element for Block {
     async fn transform<
-        T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
+        T: Transformer<Lifetime>
+            + Transformer<Type>
+            + Transformer<Constant>
+            + Transformer<Instance>,
     >(
         &mut self,
         transformer: &mut T,
@@ -725,7 +730,10 @@ impl ControlFlowGraph {
 
 impl transform::Element for ControlFlowGraph {
     async fn transform<
-        T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
+        T: Transformer<Lifetime>
+            + Transformer<Type>
+            + Transformer<Constant>
+            + Transformer<Instance>,
     >(
         &mut self,
         transformer: &mut T,

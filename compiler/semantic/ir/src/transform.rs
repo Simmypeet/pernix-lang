@@ -8,8 +8,10 @@ use pernixc_qbice::TrackedEngine;
 use pernixc_term::{
     constant::Constant,
     generic_parameters::{
-        ConstantParameterID, LifetimeParameterID, TypeParameterID,
+        ConstantParameterID, InstanceParameterID, LifetimeParameterID,
+        TypeParameterID,
     },
+    instance::Instance,
     lifetime::{ElidedLifetimeID, Lifetime},
     r#type::Type,
 };
@@ -105,6 +107,17 @@ impl Transformable for Constant {
     type Source = ConstantTermSource;
 }
 
+/// An enumeration of sources for instance terms used in the expression.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum InstanceTermSource {
+    /// As an instance generic argument supplied to a generic symbol.
+    GenericParameter(InstanceParameterID),
+}
+
+impl Transformable for Instance {
+    type Source = InstanceTermSource;
+}
+
 /// A trait for transforming terms of type `T`.
 pub trait Transformer<T: Transformable> {
     /// Transforms the given term `term`, using the provided `source` for error
@@ -125,7 +138,10 @@ pub trait Element {
     /// transformer.
     #[allow(async_fn_in_trait)]
     async fn transform<
-        T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
+        T: Transformer<Lifetime>
+            + Transformer<Type>
+            + Transformer<Constant>
+            + Transformer<Instance>,
     >(
         &mut self,
         transformer: &mut T,

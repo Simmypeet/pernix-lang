@@ -6,7 +6,9 @@ use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
 use pernixc_hash::HashMap;
 use pernixc_qbice::TrackedEngine;
-use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
+use pernixc_term::{
+    constant::Constant, instance::Instance, lifetime::Lifetime, r#type::Type,
+};
 use pernixc_type_system::{OverflowError, Succeeded, normalizer::Normalizer};
 use qbice::{Decode, Encode, StableHash};
 
@@ -102,7 +104,10 @@ impl Do {
 
 impl transform::Element for Do {
     async fn transform<
-        T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
+        T: Transformer<Lifetime>
+            + Transformer<Type>
+            + Transformer<Constant>
+            + Transformer<Instance>,
     >(
         &mut self,
         transformer: &mut T,
@@ -195,7 +200,10 @@ impl HandlerChain {
 
 impl transform::Element for HandlerChain {
     async fn transform<
-        T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
+        T: Transformer<Lifetime>
+            + Transformer<Type>
+            + Transformer<Constant>
+            + Transformer<Instance>,
     >(
         &mut self,
         transformer: &mut T,
@@ -255,7 +263,10 @@ impl crate::visitor::Element for DoWith {
 }
 
 pub(super) async fn transform_do_with<
-    T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
+    T: Transformer<Lifetime>
+        + Transformer<Type>
+        + Transformer<Constant>
+        + Transformer<Instance>,
 >(
     do_with: &mut DoWith,
     transformer: &mut T,

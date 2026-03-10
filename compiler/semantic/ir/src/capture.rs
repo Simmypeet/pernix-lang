@@ -6,6 +6,8 @@ use pernixc_arena::Arena;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_term::{
+    constant::Constant,
+    instance::Instance,
     lifetime::Lifetime,
     r#type::{Qualifier, Reference, Type},
 };
@@ -33,9 +35,7 @@ pub struct Captures {
 
 impl transform::Element for Captures {
     async fn transform<
-        T: Transformer<Lifetime>
-            + Transformer<Type>
-            + Transformer<pernixc_term::constant::Constant>,
+        T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
     >(
         &mut self,
         transformer: &mut T,
@@ -226,9 +226,10 @@ impl CapturesMap {
 
 impl transform::Element for CapturesMap {
     async fn transform<
-        T: transform::Transformer<pernixc_term::lifetime::Lifetime>
+        T: transform::Transformer<Lifetime>
             + transform::Transformer<Type>
-            + transform::Transformer<pernixc_term::constant::Constant>,
+            + transform::Transformer<Constant>
+            + transform::Transformer<Instance>,
     >(
         &mut self,
         transformer: &mut T,

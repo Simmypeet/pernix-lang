@@ -9,6 +9,7 @@ use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
     generic_arguments::{GenericArguments, Symbol},
+    instance::Instance,
     lifetime::Lifetime,
     r#type::Type,
 };
@@ -70,7 +71,10 @@ impl crate::visitor::Element for Variant {
 }
 
 pub(super) async fn transform_variant<
-    T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
+    T: Transformer<Lifetime>
+        + Transformer<Type>
+        + Transformer<Constant>
+        + Transformer<Instance>,
 >(
     variant: &mut Variant,
     transformer: &mut T,
