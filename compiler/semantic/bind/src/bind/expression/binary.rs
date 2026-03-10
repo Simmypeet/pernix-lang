@@ -389,10 +389,7 @@ impl Binder<'_> {
                                 lhs_span: syntax_tree.left.span(),
                                 operator_kind: BinaryOperatorKind::Arithmetic,
                                 lhs_type: lhs_register_ty.clone(),
-                                type_inference_map: self
-                                    .type_inference_rendering_map(),
-                                constant_inference_map: self
-                                    .constant_inference_rendering_map(),
+                                rendering_map: self.get_rendering_map(),
                             }
                             .into(),
                         );
@@ -456,10 +453,7 @@ impl Binder<'_> {
                             lhs_span: syntax_tree.left.span(),
                             operator_kind: BinaryOperatorKind::Relational,
                             lhs_type: lhs_register_ty.clone(),
-                            type_inference_map: self
-                                .type_inference_rendering_map(),
-                            constant_inference_map: self
-                                .constant_inference_rendering_map(),
+                            rendering_map: self.get_rendering_map(),
                         }
                         .into(),
                     );
@@ -494,10 +488,7 @@ impl Binder<'_> {
                                 lhs_span: syntax_tree.left.span(),
                                 operator_kind: BinaryOperatorKind::Relational,
                                 lhs_type: lhs_register_ty.clone(),
-                                type_inference_map: self
-                                    .type_inference_rendering_map(),
-                                constant_inference_map: self
-                                    .constant_inference_rendering_map(),
+                                rendering_map: self.get_rendering_map(),
                             }
                             .into(),
                         );

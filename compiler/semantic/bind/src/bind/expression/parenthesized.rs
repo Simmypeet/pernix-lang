@@ -84,9 +84,7 @@ impl Bind<&pernixc_syntax::expression::unit::Parenthesized>
                     MoreThanOneUnpackedInTupleExpression {
                         span: syntax_tree.span(),
                         r#type: tuple_type.result.clone(),
-                        constant_inference_map: self
-                            .constant_inference_rendering_map(),
-                        type_inference_map: self.type_inference_rendering_map(),
+                        rendering_map: self.get_rendering_map(),
                     },
                 )
                 .into(),

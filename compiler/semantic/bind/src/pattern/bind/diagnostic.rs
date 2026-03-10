@@ -8,14 +8,10 @@ use pernixc_semantic_element::fields::{Field, get_fields};
 use pernixc_source_file::ByteIndex;
 use pernixc_symbol::{name::get_qualified_name, source_map::to_absolute_span};
 use pernixc_target::Global;
-use pernixc_term::{
-    constant::Constant,
-    display::{Display, InferenceRenderingMap},
-    r#type::Type,
-};
+use pernixc_term::{display::Display, r#type::Type};
 use qbice::{Decode, Encode, StableHash};
 
-use crate::diagnostic_enum;
+use crate::{binder::inference_context::RenderingMap, diagnostic_enum};
 
 diagnostic_enum! {
     #[derive(
@@ -83,11 +79,8 @@ pub struct MismatchedPatternBindingType {
     /// The span of the pattern.
     pub span: RelativeSpan,
 
-    /// The inference rendering map for constants.
-    pub constant_inference_map: InferenceRenderingMap<Constant>,
-
-    /// The inference rendering map for types.
-    pub type_inference_map: InferenceRenderingMap<Type>,
+    /// The rendering map for inference variables.
+    pub rendering_map: RenderingMap,
 }
 
 impl Report for MismatchedPatternBindingType {
@@ -101,12 +94,10 @@ impl Report for MismatchedPatternBindingType {
         let mut found_type_str = String::new();
         let _ = self
             .found
-            .write_async_with_mapping(
+            .write_async_with_configuration(
                 engine,
                 &mut found_type_str,
-                None,
-                Some(&self.type_inference_map),
-                Some(&self.constant_inference_map),
+                &self.rendering_map.configuration(),
             )
             .await;
 

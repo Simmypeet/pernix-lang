@@ -498,10 +498,7 @@ async fn extract_handler_chain(
                     DuplicatedEffectHandler {
                         effect_id: effect.effect_id(),
                         generic_arguments: effect.generic_arguments().clone(),
-                        type_inference_map: binder
-                            .type_inference_rendering_map(),
-                        constant_inference_map: binder
-                            .constant_inference_rendering_map(),
+                        rendering_map: binder.get_rendering_map(),
                         first_span: effect_handler.qualified_identifier.span(),
                         second_span: qualified_identifier.span(),
                     },

@@ -5,15 +5,13 @@ use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_source_file::ByteIndex;
 use pernixc_symbol::source_map::to_absolute_span;
-use pernixc_term::{
-    constant::Constant,
-    display::{Display, InferenceRenderingMap},
-    instance::Instance,
-    r#type::Type,
-};
+use pernixc_term::{display::Display, r#type::Type};
 use qbice::{Decode, Encode, StableHash};
 
-use crate::{binder::type_check::Expected, diagnostic_enum};
+use crate::{
+    binder::{inference_context::RenderingMap, type_check::Expected},
+    diagnostic_enum,
+};
 
 diagnostic_enum! {
     #[derive(
@@ -43,11 +41,8 @@ pub struct CyclicInference {
     /// The span where the type check occurred.
     pub span: RelativeSpan,
 
-    /// The inference rendering map for constants.
-    pub constant_inference_map: InferenceRenderingMap<Constant>,
-
-    /// The inference rendering map for types.
-    pub type_inference_map: InferenceRenderingMap<Type>,
+    /// The rendering map for inference variables.
+    pub rendering_map: RenderingMap,
 }
 
 impl Report for CyclicInference {
@@ -63,23 +58,19 @@ impl Report for CyclicInference {
 
         let _ = self
             .first
-            .write_async_with_mapping(
+            .write_async_with_configuration(
                 engine,
                 &mut first_type_str,
-                None,
-                Some(&self.type_inference_map),
-                Some(&self.constant_inference_map),
+                &self.rendering_map.configuration(),
             )
             .await;
 
         let _ = self
             .second
-            .write_async_with_mapping(
+            .write_async_with_configuration(
                 engine,
                 &mut second_type_str,
-                None,
-                Some(&self.type_inference_map),
-                Some(&self.constant_inference_map),
+                &self.rendering_map.configuration(),
             )
             .await;
 
@@ -114,11 +105,8 @@ pub struct MismatchedType {
     /// The sapn where the type check occurred.
     pub span: RelativeSpan,
 
-    /// The inference rendering map for constants.
-    pub constant_inference_map: InferenceRenderingMap<Constant>,
-
-    /// The inference rendering map for types.
-    pub type_inference_map: InferenceRenderingMap<Type>,
+    /// The rendering map for inference variables.
+    pub rendering_map: RenderingMap,
 }
 
 impl Report for MismatchedType {
@@ -133,12 +121,10 @@ impl Report for MismatchedType {
         match &self.expected_type {
             Expected::Known(ty) => {
                 let _ = ty
-                    .write_async_with_mapping(
+                    .write_async_with_configuration(
                         engine,
                         &mut expected_str,
-                        None,
-                        Some(&self.type_inference_map),
-                        Some(&self.constant_inference_map),
+                        &self.rendering_map.configuration(),
                     )
                     .await;
             }
@@ -154,12 +140,10 @@ impl Report for MismatchedType {
         let mut found_str = String::new();
         let _ = self
             .found_type
-            .write_async_with_mapping(
+            .write_async_with_configuration(
                 engine,
                 &mut found_str,
-                None,
-                Some(&self.type_inference_map),
-                Some(&self.constant_inference_map),
+                &self.rendering_map.configuration(),
             )
             .await;
 

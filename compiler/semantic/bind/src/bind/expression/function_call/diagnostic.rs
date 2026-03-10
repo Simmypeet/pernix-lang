@@ -8,15 +8,10 @@ use pernixc_symbol::{
     name::get_qualified_name, source_map::to_absolute_span, span::get_span,
 };
 use pernixc_target::Global;
-use pernixc_term::{
-    constant::Constant,
-    display::{Display, InferenceRenderingMap},
-    generic_arguments::GenericArguments,
-    r#type::Type,
-};
+use pernixc_term::{display::Display, generic_arguments::GenericArguments};
 use qbice::{Decode, Encode, StableHash};
 
-use crate::diagnostic_enum;
+use crate::{binder::inference_context::RenderingMap, diagnostic_enum};
 
 diagnostic_enum! {
     #[derive(
@@ -320,11 +315,8 @@ pub struct MismatchedImplementationArguments {
     /// The span of the instantiation that causes the mismatch.
     pub instantiation_span: RelativeSpan,
 
-    /// The inference rendering map for constants.
-    pub constant_inference_map: InferenceRenderingMap<Constant>,
-
-    /// The inference rendering map for types.
-    pub type_inference_map: InferenceRenderingMap<Type>,
+    /// The rendering map for inference variables.
+    pub rendering_map: RenderingMap,
 }
 
 impl Report for MismatchedImplementationArguments {
@@ -360,12 +352,10 @@ impl Report for MismatchedImplementationArguments {
                         string.push_str("the generic arguments supplied was `");
 
                         self.found_generic_arguments
-                            .write_async_with_mapping(
+                            .write_async_with_configuration(
                                 engine,
                                 &mut string,
-                                None,
-                                Some(&self.type_inference_map),
-                                Some(&self.constant_inference_map),
+                                &self.rendering_map.configuration(),
                             )
                             .await
                             .unwrap();

@@ -4,12 +4,10 @@ use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::{name::get_qualified_name, source_map::to_absolute_span};
 use pernixc_target::Global;
-use pernixc_term::{
-    constant::Constant,
-    display::{Display, InferenceRenderingMap},
-    r#type::Type,
-};
+use pernixc_term::{display::Display, r#type::Type};
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
+
+use crate::binder::inference_context::RenderingMap;
 
 /// A method with the given name could not be found for the given type.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
@@ -26,11 +24,8 @@ pub struct MethodCallNotFound {
     /// The span of the receiver expression.
     pub receiver_span: RelativeSpan,
 
-    /// The type inference map to use when rendering types.
-    pub type_inference_map: InferenceRenderingMap<Type>,
-
-    /// The constant inference map to use when rendering types.
-    pub constant_inference_map: InferenceRenderingMap<Constant>,
+    /// The rendering map for inference variables.
+    pub rendering_map: RenderingMap,
 }
 
 impl Report for MethodCallNotFound {
@@ -44,12 +39,10 @@ impl Report for MethodCallNotFound {
         );
 
         self.receiver_type
-            .write_async_with_mapping(
+            .write_async_with_configuration(
                 parameter,
                 &mut message,
-                None,
-                Some(&self.type_inference_map),
-                Some(&self.constant_inference_map),
+                &self.rendering_map.configuration(),
             )
             .await
             .unwrap();
@@ -58,12 +51,10 @@ impl Report for MethodCallNotFound {
 
         let mut expression_message = "this expression has type `".to_string();
         self.receiver_type
-            .write_async_with_mapping(
+            .write_async_with_configuration(
                 parameter,
                 &mut expression_message,
-                None,
-                Some(&self.type_inference_map),
-                Some(&self.constant_inference_map),
+                &self.rendering_map.configuration(),
             )
             .await
             .unwrap();
@@ -111,11 +102,8 @@ pub struct AmbiguousMethodCall {
     /// The candidates that were found.
     pub candidates: HashSet<Global<pernixc_symbol::ID>>,
 
-    /// The type inference map to use when rendering types.
-    pub type_inference_map: InferenceRenderingMap<Type>,
-
-    /// The constant inference map to use when rendering types.
-    pub constant_inference_map: InferenceRenderingMap<Constant>,
+    /// The rendering map for inference variables.
+    pub rendering_map: RenderingMap,
 }
 
 impl Report for AmbiguousMethodCall {
@@ -129,12 +117,10 @@ impl Report for AmbiguousMethodCall {
         );
 
         self.receiver_type
-            .write_async_with_mapping(
+            .write_async_with_configuration(
                 parameter,
                 &mut message,
-                None,
-                Some(&self.type_inference_map),
-                Some(&self.constant_inference_map),
+                &self.rendering_map.configuration(),
             )
             .await
             .unwrap();
@@ -143,12 +129,10 @@ impl Report for AmbiguousMethodCall {
 
         let mut expression_message = "this expression has type `".to_string();
         self.receiver_type
-            .write_async_with_mapping(
+            .write_async_with_configuration(
                 parameter,
                 &mut expression_message,
-                None,
-                Some(&self.type_inference_map),
-                Some(&self.constant_inference_map),
+                &self.rendering_map.configuration(),
             )
             .await
             .unwrap();

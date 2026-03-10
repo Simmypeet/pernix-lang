@@ -33,7 +33,6 @@ use pernixc_symbol::syntax::get_function_signature_syntax;
 use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
-    display::InferenceRenderingMap,
     inference,
     r#type::{Qualifier, Type},
 };
@@ -320,20 +319,6 @@ impl Binder<'_> {
             },
             span,
         })
-    }
-
-    /// Returns the inference rendering map for types.
-    #[must_use]
-    pub fn type_inference_rendering_map(&self) -> InferenceRenderingMap<Type> {
-        self.inference_context.type_table().get_inference_rendering_map()
-    }
-
-    /// Returns the inference rendering map for constants.
-    #[must_use]
-    pub fn constant_inference_rendering_map(
-        &self,
-    ) -> InferenceRenderingMap<Constant> {
-        self.inference_context.const_table().get_inference_rendering_map()
     }
 
     /// Creates a new unreachable literal with an inferred type.

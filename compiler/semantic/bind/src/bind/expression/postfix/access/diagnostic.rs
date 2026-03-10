@@ -6,13 +6,10 @@ use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_source_file::ByteIndex;
 use pernixc_symbol::source_map::to_absolute_span;
-use pernixc_term::{
-    constant::Constant,
-    display::{Display, InferenceRenderingMap},
-    r#type::Type,
-};
+use pernixc_term::{display::Display, r#type::Type};
 use qbice::{Decode, Encode, StableHash};
 
+use crate::binder::inference_context::RenderingMap;
 pub use crate::pattern::bind::diagnostic::{
     FieldIsNotAccessible, FieldNotFound,
 };
@@ -36,11 +33,8 @@ pub struct UnexpectedTypeForAccess {
     /// The expected struct type.
     pub found_type: Type,
 
-    /// The inference rendering map for constants.
-    pub constant_inference_map: InferenceRenderingMap<Constant>,
-
-    /// The inference rendering map for types.
-    pub type_inference_map: InferenceRenderingMap<Type>,
+    /// The rendering map for inference variables.
+    pub rendering_map: RenderingMap,
 }
 
 impl Report for UnexpectedTypeForAccess {
@@ -53,12 +47,10 @@ impl Report for UnexpectedTypeForAccess {
         // Format the found type with inference rendering maps
         let mut found_type_str = String::new();
         self.found_type
-            .write_async_with_mapping(
+            .write_async_with_configuration(
                 engine,
                 &mut found_type_str,
-                None,
-                Some(&self.type_inference_map),
-                Some(&self.constant_inference_map),
+                &self.rendering_map.configuration(),
             )
             .await
             .unwrap();
@@ -185,11 +177,8 @@ pub struct CannotIndexPastUnpackedTuple {
     /// The index that was accessed.
     pub offset: address::Offset,
 
-    /// The inference rendering map for types.
-    pub type_inference_map: InferenceRenderingMap<Type>,
-
-    /// The inference rendering map for constants.
-    pub constant_inference_map: InferenceRenderingMap<Constant>,
+    /// The rendering map for inference variables.
+    pub rendering_map: RenderingMap,
 }
 
 impl Report for CannotIndexPastUnpackedTuple {
@@ -202,12 +191,10 @@ impl Report for CannotIndexPastUnpackedTuple {
         // Format the tuple type with inference rendering maps
         let mut tuple_type_str = String::new();
         self.tuple_type
-            .write_async_with_mapping(
+            .write_async_with_configuration(
                 engine,
                 &mut tuple_type_str,
-                None,
-                Some(&self.type_inference_map),
-                Some(&self.constant_inference_map),
+                &self.rendering_map.configuration(),
             )
             .await
             .unwrap();
@@ -234,12 +221,10 @@ impl Report for CannotIndexPastUnpackedTuple {
                     let mut buffer = "if you try to access `".to_string();
 
                     elem.term()
-                        .write_async_with_mapping(
+                        .write_async_with_configuration(
                             engine,
                             &mut buffer,
-                            None,
-                            Some(&self.type_inference_map),
-                            Some(&self.constant_inference_map),
+                            &self.rendering_map.configuration(),
                         )
                         .await
                         .unwrap();

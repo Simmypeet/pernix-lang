@@ -171,9 +171,7 @@ impl Binder<'_> {
                         found: unit,
                         has_no_return: !has_return,
                         closure_span,
-                        type_inference_map: self.type_inference_rendering_map(),
-                        constant_inference_map: self
-                            .constant_inference_rendering_map(),
+                        rendering_map: self.get_rendering_map(),
                     },
                 ));
             }
@@ -213,10 +211,7 @@ impl Binder<'_> {
                         NotAllFlowPathsReturnAValueInClosure {
                             closure_span,
                             return_type: expected_type,
-                            type_inference_map: self
-                                .type_inference_rendering_map(),
-                            constant_inference_map: self
-                                .constant_inference_rendering_map(),
+                            rendering_map: self.get_rendering_map(),
                         },
                     ),
                 );

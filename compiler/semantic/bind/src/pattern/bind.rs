@@ -187,9 +187,7 @@ impl Binder<'_> {
                         expected: PatternBindingType::Boolean,
                         found: ty.clone(),
                         span: syntax_tree.span(),
-                        type_inference_map: self.type_inference_rendering_map(),
-                        constant_inference_map: self
-                            .constant_inference_rendering_map(),
+                        rendering_map: self.get_rendering_map(),
                     },
                 )
                 .into(),
@@ -273,9 +271,7 @@ impl Binder<'_> {
                         expected: PatternBindingType::Tuple,
                         found: ty.clone(),
                         span: syntax_tree.span(),
-                        type_inference_map: self.type_inference_rendering_map(),
-                        constant_inference_map: self
-                            .constant_inference_rendering_map(),
+                        rendering_map: self.get_rendering_map(),
                     },
                 )
                 .into(),
@@ -541,9 +537,7 @@ impl Binder<'_> {
                         expected: PatternBindingType::Struct,
                         found: ty.clone(),
                         span: syntax_tree.span(),
-                        type_inference_map: self.type_inference_rendering_map(),
-                        constant_inference_map: self
-                            .constant_inference_rendering_map(),
+                        rendering_map: self.get_rendering_map(),
                     },
                 )
                 .into(),
@@ -737,9 +731,7 @@ impl Binder<'_> {
                         expected: PatternBindingType::Enum,
                         found: ty.clone(),
                         span: syntax_tree.span(),
-                        type_inference_map: self.type_inference_rendering_map(),
-                        constant_inference_map: self
-                            .constant_inference_rendering_map(),
+                        rendering_map: self.get_rendering_map(),
                     },
                 )
                 .into(),

@@ -101,10 +101,7 @@ pub(super) async fn bind_cast(
                         span: current_span,
                         r#type: type_of_value,
                         casted_pointer_kind: PointerKind::RawPointer,
-                        type_inference_map: binder
-                            .type_inference_rendering_map(),
-                        constant_inference_map: binder
-                            .constant_inference_rendering_map(),
+                        rendering_map: binder.get_rendering_map(),
                     },
                 )
                 .into(),
@@ -124,10 +121,7 @@ pub(super) async fn bind_cast(
                         span: current_span,
                         r#type: type_of_value,
                         casted_pointer_kind: PointerKind::RawPointer,
-                        type_inference_map: binder
-                            .type_inference_rendering_map(),
-                        constant_inference_map: binder
-                            .constant_inference_rendering_map(),
+                        rendering_map: binder.get_rendering_map(),
                     },
                 )
                 .into(),
@@ -153,9 +147,7 @@ pub(super) async fn bind_cast(
             Diagnostic::InvalidCastType(InvalidCastType {
                 span: ty.span(),
                 r#type: cast_type.result.clone(),
-                type_inference_map: binder.type_inference_rendering_map(),
-                constant_inference_map: binder
-                    .constant_inference_rendering_map(),
+                rendering_map: binder.get_rendering_map(),
             })
             .into(),
         );

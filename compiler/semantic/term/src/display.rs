@@ -188,33 +188,6 @@ pub trait Display: Send + Sync {
         }
     }
 
-    /// Writes the value asynchronously into the given buffer, using the given
-    /// inference variable mappings.
-    fn write_async_with_mapping<W: std::fmt::Write + Send>(
-        &self,
-        engine: &TrackedEngine,
-        buffer: &mut W,
-        lifetime_inference_map: Option<&InferenceRenderingMap<Lifetime>>,
-        type_inference_map: Option<&InferenceRenderingMap<Type>>,
-        constant_inference_map: Option<&InferenceRenderingMap<Constant>>,
-    ) -> impl std::future::Future<Output = std::fmt::Result> {
-        async move {
-            let configuration = Configuration::builder()
-                .maybe_lifetime_inferences(lifetime_inference_map)
-                .maybe_type_inferences(type_inference_map)
-                .maybe_constant_inferences(constant_inference_map)
-                .build();
-
-            let mut formatter = Formatter {
-                buffer,
-                forall_lifetime_names: HashMap::default(),
-                configuration: &configuration,
-            };
-
-            self.fmt(engine, &mut formatter).await
-        }
-    }
-
     /// Writes the value into a string
     fn write_to_string(
         &self,

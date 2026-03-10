@@ -2,12 +2,10 @@ use pernixc_diagnostic::{Highlight, Report};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::source_map::to_absolute_span;
-use pernixc_term::{
-    constant::Constant,
-    display::{Display, InferenceRenderingMap},
-    r#type::Type,
-};
+use pernixc_term::{display::Display, r#type::Type};
 use qbice::{Decode, Encode, StableHash};
+
+use crate::binder::inference_context::RenderingMap;
 
 /// The kind of pointer involved in a pointer type casting operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, StableHash, Encode, Decode)]
@@ -31,11 +29,8 @@ pub struct InvalidPointerTypeCasting {
     /// The kind of pointer being cast to.
     pub casted_pointer_kind: PointerKind,
 
-    /// Mapping for rendering type inferences
-    pub type_inference_map: InferenceRenderingMap<Type>,
-
-    /// Mapping for rendering constant inferences
-    pub constant_inference_map: InferenceRenderingMap<Constant>,
+    /// The rendering map for inference variables.
+    pub rendering_map: RenderingMap,
 }
 
 impl Report for InvalidPointerTypeCasting {
@@ -52,12 +47,10 @@ impl Report for InvalidPointerTypeCasting {
         );
 
         self.r#type
-            .write_async_with_mapping(
+            .write_async_with_configuration(
                 parameter,
                 &mut message,
-                None,
-                Some(&self.type_inference_map),
-                Some(&self.constant_inference_map),
+                &self.rendering_map.configuration(),
             )
             .await
             .unwrap();
@@ -89,11 +82,8 @@ pub struct InvalidCastType {
     /// The type that cannot be used in cast expression.
     pub r#type: Type,
 
-    /// Mapping for rendering type inferences
-    pub type_inference_map: InferenceRenderingMap<Type>,
-
-    /// Mapping for rendering constant inferences
-    pub constant_inference_map: InferenceRenderingMap<Constant>,
+    /// The rendering map for inference variables.
+    pub rendering_map: RenderingMap,
 }
 
 impl Report for InvalidCastType {
@@ -104,12 +94,10 @@ impl Report for InvalidCastType {
         let mut message = "the type `".to_string();
 
         self.r#type
-            .write_async_with_mapping(
+            .write_async_with_configuration(
                 parameter,
                 &mut message,
-                None,
-                Some(&self.type_inference_map),
-                Some(&self.constant_inference_map),
+                &self.rendering_map.configuration(),
             )
             .await
             .unwrap();

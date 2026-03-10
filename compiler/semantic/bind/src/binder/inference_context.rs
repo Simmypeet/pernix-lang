@@ -33,6 +33,7 @@ use pernixc_type_system::{
     normalizer::Normalizer,
     unification,
 };
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     binder::{
@@ -73,12 +74,15 @@ impl<T> InferenceCounter<T> {
 #[derive(Debug, Default, Getters)]
 pub struct InferenceContext {
     /// The inference table for the type term.
+    #[getset(get = "pub")]
     type_table: table::Table<constraint::Type>,
 
     /// The inference table for the constant term.
+    #[getset(get = "pub")]
     const_table: table::Table<constraint::Constant>,
 
     /// The inference table for the instance term.
+    #[getset(get = "pub")]
     instance_table: table::Table<constraint::Instance>,
 
     type_inference_counter: InferenceCounter<Type>,
@@ -88,7 +92,7 @@ pub struct InferenceContext {
 
 /// A struct that holds the rendering maps for all inference variables, which
 /// can be used for diagnostics.A
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct RenderingMap {
     types: InferenceRenderingMap<Type>,
     constants: InferenceRenderingMap<Constant>,
@@ -451,6 +455,17 @@ pub struct Checkpoint {
 }
 
 impl InferenceContext {
+    /// Creates the rendering map for all inference variables that can be used
+    /// for diagnostics.
+    #[must_use]
+    pub fn get_rendering_map(&self) -> RenderingMap {
+        RenderingMap {
+            types: self.type_table.get_inference_rendering_map(),
+            constants: self.const_table.get_inference_rendering_map(),
+            instances: self.instance_table.get_inference_rendering_map(),
+        }
+    }
+
     /// Start a new checkpoint for both type and constant inference tables.
     /// The checkpoint can be replayed later via [`Self::restore`].
     #[must_use]

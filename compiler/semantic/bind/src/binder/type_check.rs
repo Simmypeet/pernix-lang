@@ -89,14 +89,7 @@ impl Binder<'_> {
                                 first: simplified_ty.result.clone(),
                                 second: simplified_expected.result.clone(),
                                 span: type_check_span,
-                                type_inference_map: self
-                                    .inference_context
-                                    .type_table()
-                                    .get_inference_rendering_map(),
-                                constant_inference_map: self
-                                    .inference_context
-                                    .const_table()
-                                    .get_inference_rendering_map(),
+                                rendering_map: self.get_rendering_map(),
                             },
                         )
                         .into(),
@@ -113,6 +106,7 @@ impl Binder<'_> {
                     Err(
                         UnifyError::IncompatibleTypes { .. }
                         | UnifyError::IncompatibleConstants { .. }
+                        | UnifyError::IncompatibleInstances { .. }
                         | UnifyError::UnsatisfiedConstraint(_)
                         | UnifyError::CombineConstraint(_),
                     ) => Some(
@@ -123,14 +117,7 @@ impl Binder<'_> {
                                 ),
                                 found_type: simplified_ty.result.clone(),
                                 span: type_check_span,
-                                type_inference_map: self
-                                    .inference_context
-                                    .type_table()
-                                    .get_inference_rendering_map(),
-                                constant_inference_map: self
-                                    .inference_context
-                                    .const_table()
-                                    .get_inference_rendering_map(),
+                                rendering_map: self.get_rendering_map(),
                             },
                         )
                         .into(),
@@ -161,14 +148,7 @@ impl Binder<'_> {
                                 expected_type: Expected::Constraint(constraint),
                                 found_type: simplified_ty.result.clone(),
                                 span: type_check_span,
-                                type_inference_map: self
-                                    .inference_context
-                                    .type_table()
-                                    .get_inference_rendering_map(),
-                                constant_inference_map: self
-                                    .inference_context
-                                    .const_table()
-                                    .get_inference_rendering_map(),
+                                rendering_map: self.get_rendering_map(),
                             },
                         )
                         .into(),

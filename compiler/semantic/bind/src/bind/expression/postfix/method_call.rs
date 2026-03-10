@@ -131,9 +131,7 @@ pub(super) async fn bind_method_call(
                 receiver_type: ty.clone(),
                 method_span: identifier.span,
                 receiver_span: current_span,
-                type_inference_map: binder.type_inference_rendering_map(),
-                constant_inference_map: binder
-                    .constant_inference_rendering_map(),
+                rendering_map: binder.get_rendering_map(),
             })
             .into(),
         );
@@ -563,10 +561,7 @@ async fn attempt_trait_method_call(
                             .iter()
                             .map(|x| x.0.method_id)
                             .collect(),
-                        type_inference_map: binder
-                            .type_inference_rendering_map(),
-                        constant_inference_map: binder
-                            .constant_inference_rendering_map(),
+                        rendering_map: binder.get_rendering_map(),
                     })
                     .into(),
                 );

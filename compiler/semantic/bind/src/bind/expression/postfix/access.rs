@@ -155,9 +155,7 @@ async fn access_struct(
                     expected_type: diagnostic::ExpectedType::Struct,
                     span: current_span,
                     found_type: address_ty,
-                    type_inference_map: binder.type_inference_rendering_map(),
-                    constant_inference_map: binder
-                        .constant_inference_rendering_map(),
+                    rendering_map: binder.get_rendering_map(),
                 })
                 .into(),
             );
@@ -228,9 +226,7 @@ fn access_tuple(
                     expected_type: diagnostic::ExpectedType::Tuple,
                     span: current_span,
                     found_type,
-                    type_inference_map: binder.type_inference_rendering_map(),
-                    constant_inference_map: binder
-                        .constant_inference_rendering_map(),
+                    rendering_map: binder.get_rendering_map(),
                 })
                 .into(),
             );
@@ -312,10 +308,7 @@ fn access_tuple(
                             (_, Some(_)) => address::Offset::FromEnd(index),
                             (_, None) => address::Offset::FromStart(index),
                         },
-                        type_inference_map: binder
-                            .type_inference_rendering_map(),
-                        constant_inference_map: binder
-                            .constant_inference_rendering_map(),
+                        rendering_map: binder.get_rendering_map(),
                     },
                 )
                 .into(),
@@ -361,9 +354,7 @@ async fn access_index(
                 expected_type: diagnostic::ExpectedType::Array,
                 span: current_span,
                 found_type: address_ty,
-                constant_inference_map: binder
-                    .constant_inference_rendering_map(),
-                type_inference_map: binder.type_inference_rendering_map(),
+                rendering_map: binder.get_rendering_map(),
             })
             .into(),
         );

@@ -14,8 +14,7 @@ use pernixc_symbol::{
 };
 use pernixc_target::Global;
 use pernixc_term::{
-    constant::Constant,
-    display::{Configuration, Display, InferenceRenderingMap},
+    display::Display,
     effect,
     generic_arguments::GenericArguments,
     generic_parameters::{
@@ -26,7 +25,10 @@ use pernixc_term::{
 };
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
-use crate::{binder, pattern};
+use crate::{
+    binder::{self, inference_context::RenderingMap},
+    pattern,
+};
 
 diagnostic_enum! {
     /// An enumeration of all diagnostics that can occur during binding the
@@ -250,11 +252,8 @@ pub struct InvalidTypeInBinaryOperator {
     /// The type of the left-hand side expression.
     pub lhs_type: Type,
 
-    /// Mapping for rendering type inferences
-    pub type_inference_map: InferenceRenderingMap<Type>,
-
-    /// Mapping for rendering constant inferences
-    pub constant_inference_map: InferenceRenderingMap<Constant>,
+    /// The rendering map for inference variables.
+    pub rendering_map: RenderingMap,
 }
 
 impl Report for InvalidTypeInBinaryOperator {
@@ -279,12 +278,10 @@ impl Report for InvalidTypeInBinaryOperator {
         };
 
         self.lhs_type
-            .write_async_with_mapping(
+            .write_async_with_configuration(
                 parameter,
                 &mut message,
-                None,
-                Some(&self.type_inference_map),
-                Some(&self.constant_inference_map),
+                &self.rendering_map.configuration(),
             )
             .await
             .unwrap();
@@ -929,11 +926,8 @@ pub struct UnhandledEffects {
     /// The span of the function call expression.
     pub span: RelativeSpan,
 
-    /// Mapping for rendering type inferences
-    pub type_inference_map: InferenceRenderingMap<Type>,
-
-    /// Mapping for rendering constant inferences
-    pub constant_inference_map: InferenceRenderingMap<Constant>,
+    /// The rendering map for inference variables.
+    pub rendering_map: RenderingMap,
 }
 
 impl Report for UnhandledEffects {
@@ -950,12 +944,10 @@ impl Report for UnhandledEffects {
             }
 
             effect_unit
-                .write_async_with_mapping(
+                .write_async_with_configuration(
                     engine,
                     &mut message,
-                    None,
-                    Some(&self.type_inference_map),
-                    Some(&self.constant_inference_map),
+                    &self.rendering_map.configuration(),
                 )
                 .await
                 .unwrap();
@@ -1038,11 +1030,8 @@ pub struct DuplicatedEffectHandler {
     /// The generic arguments used in the first handler.
     pub generic_arguments: GenericArguments,
 
-    /// Mapping for rendering type inferences
-    pub type_inference_map: InferenceRenderingMap<Type>,
-
-    /// Mapping for rendering constant inferences
-    pub constant_inference_map: InferenceRenderingMap<Constant>,
+    /// The rendering map for inference variables.
+    pub rendering_map: RenderingMap,
 
     /// The span of the first handler.
     pub first_span: RelativeSpan,
@@ -1061,10 +1050,7 @@ impl Report for DuplicatedEffectHandler {
             .generic_arguments
             .write_to_string_with_configuration(
                 engine,
-                &Configuration::builder()
-                    .type_inferences(&self.type_inference_map)
-                    .constant_inferences(&self.constant_inference_map)
-                    .build(),
+                &self.rendering_map.configuration(),
             )
             .await
             .unwrap();
@@ -1327,11 +1313,8 @@ pub struct MismatchedClosureReturnType {
     /// The span of the closure expression
     pub closure_span: RelativeSpan,
 
-    /// The inference mapping for rendering types
-    pub type_inference_map: InferenceRenderingMap<Type>,
-
-    /// The inference mapping for rendering constants
-    pub constant_inference_map: InferenceRenderingMap<Constant>,
+    /// The rendering map for inference variables.
+    pub rendering_map: RenderingMap,
 }
 
 impl Report for MismatchedClosureReturnType {
@@ -1343,10 +1326,7 @@ impl Report for MismatchedClosureReturnType {
             .expected
             .write_to_string_with_configuration(
                 engine,
-                &Configuration::builder()
-                    .type_inferences(&self.type_inference_map)
-                    .constant_inferences(&self.constant_inference_map)
-                    .build(),
+                &self.rendering_map.configuration(),
             )
             .await
             .unwrap();
@@ -1355,10 +1335,7 @@ impl Report for MismatchedClosureReturnType {
             .found
             .write_to_string_with_configuration(
                 engine,
-                &Configuration::builder()
-                    .type_inferences(&self.type_inference_map)
-                    .constant_inferences(&self.constant_inference_map)
-                    .build(),
+                &self.rendering_map.configuration(),
             )
             .await
             .unwrap();
@@ -1401,11 +1378,8 @@ pub struct NotAllFlowPathsReturnAValueInClosure {
     /// The expected return type of the closure.
     pub return_type: Type,
 
-    /// The inference mapping for rendering types
-    pub type_inference_map: InferenceRenderingMap<Type>,
-
-    /// The inference mapping for rendering constants
-    pub constant_inference_map: InferenceRenderingMap<Constant>,
+    /// The rendering map for inference variables.
+    pub rendering_map: RenderingMap,
 }
 
 impl Report for NotAllFlowPathsReturnAValueInClosure {
@@ -1417,10 +1391,7 @@ impl Report for NotAllFlowPathsReturnAValueInClosure {
             .return_type
             .write_to_string_with_configuration(
                 engine,
-                &Configuration::builder()
-                    .type_inferences(&self.type_inference_map)
-                    .constant_inferences(&self.constant_inference_map)
-                    .build(),
+                &self.rendering_map.configuration(),
             )
             .await
             .unwrap();

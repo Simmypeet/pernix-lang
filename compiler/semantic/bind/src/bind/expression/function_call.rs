@@ -177,10 +177,7 @@ async fn get_function_instantiation(
                                     .member_generic_arguments
                                     .clone(),
                                 instantiation_span: syntax_tree.span(),
-                                type_inference_map: binder
-                                    .type_inference_rendering_map(),
-                                constant_inference_map: binder
-                                    .constant_inference_rendering_map(),
+                                rendering_map: binder.get_rendering_map(),
                             },
                         )
                         .into(),
@@ -743,9 +740,7 @@ impl Binder<'_> {
                         .collect(),
                     callable_id,
                     span,
-                    type_inference_map: self.type_inference_rendering_map(),
-                    constant_inference_map: self
-                        .constant_inference_rendering_map(),
+                    rendering_map: self.get_rendering_map(),
                 },
             ));
         }
