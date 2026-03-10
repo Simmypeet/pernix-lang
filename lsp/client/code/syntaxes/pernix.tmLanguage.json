@@ -19,8 +19,8 @@
             }
         },
         {
-            "comment": "using statements",
-            "name": "meta.using.pernix",
+            "comment": "import statements",
+            "name": "meta.import.pernix",
             "begin": "\\b(import)\\s",
             "beginCaptures": {
                 "1": {
@@ -578,7 +578,7 @@
                 {
                     "comment": "other keywords",
                     "name": "keyword.other.pernix",
-                    "match": "\\b(pass|public|private|interanl|where|implements|as|unsafe|null|property|mark|at|tuple|delete|final|and|or|inherits|not)\\b"
+                    "match": "\\b(pass|public|private|interanl|where|implements|as|unsafe|null|property|mark|at|tuple|delete|instance|final|and|or|inherits|not)\\b"
                 },
                 {
                     "comment": "target",
