@@ -43,6 +43,14 @@ impl Member {
     pub fn get_by_name(&self, name: &str) -> Option<ID> {
         self.member_ids_by_name.get(name).copied()
     }
+
+    /// Retrieves all the member IDs of the symbol.
+    pub fn all_ids(&self) -> impl Iterator<Item = ID> + '_ {
+        self.member_ids_by_name
+            .values()
+            .copied()
+            .chain(self.unnameds.iter().copied())
+    }
 }
 
 /// Retrieves the member ID of the given name in the symbol with the given ID.

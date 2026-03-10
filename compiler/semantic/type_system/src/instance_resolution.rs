@@ -13,6 +13,7 @@ use pernixc_semantic_element::{
 };
 use pernixc_symbol::{
     kind::{Kind, get_kind},
+    member::get_members,
     parent::{get_closest_module_id, scope_walker},
 };
 use pernixc_target::Global;
@@ -127,6 +128,27 @@ async fn lexical_instance_candidates_executor(
                         InstanceParameterID::new(scope_id, instance_param),
                     ),
                 );
+            }
+        }
+
+        // we're in the scope of a `trait` or `instance`, so the associated
+        // instances are also available.
+        if kind == Kind::Trait || kind == Kind::Instance {
+            let members = engine.get_members(scope_id).await;
+
+            for member in
+                members.all_ids().map(|x| scope_id.target_id.make_global(x))
+            {
+                let member_kind = engine.get_kind(member).await;
+
+                if matches!(
+                    member_kind,
+                    Kind::TraitAssociatedInstance
+                        | Kind::InstanceAssociatedInstance
+                ) {
+                    available_instances
+                        .push(LexicalInstance::FromAssociatedInstance(member));
+                }
             }
         }
     }
