@@ -12,6 +12,7 @@ mod generic_parameters;
 mod implemented;
 mod implements_qualified_identifier;
 mod import;
+mod instance_associated_value;
 mod occurrences;
 mod trait_ref;
 mod type_alias;

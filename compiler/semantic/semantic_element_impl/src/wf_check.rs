@@ -9,7 +9,7 @@ use pernixc_handler::{Handler, Storage};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_resolution::qualified_identifier::Resolution;
-use pernixc_semantic_element::trait_ref;
+use pernixc_semantic_element::{instance_associated_value, trait_ref};
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
     kind::{Kind, get_kind},
@@ -478,6 +478,16 @@ pub async fn wf_check_executor(
                 .query(&build::OccurrencesKey::new(trait_ref::Key {
                     symbol_id,
                 }))
+                .await,
+        );
+    }
+
+    if kind.has_instance_associated_value() {
+        occurrences.push(
+            tracked_engine
+                .query(&build::OccurrencesKey::new(
+                    instance_associated_value::Key { symbol_id },
+                ))
                 .await,
         );
     }

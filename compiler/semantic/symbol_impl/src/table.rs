@@ -257,7 +257,7 @@ pub struct Table {
     /// syntax, which represents the `= QualifiedIdentifier` part of an
     /// associated instance declaration.
     pub instance_associated_value_syntaxes:
-        ReadOnlyMap<Option<pernixc_syntax::QualifiedIdentifier>>,
+        ReadOnlyMap<Option<pernixc_syntax::InstanceValue>>,
 
     /// Maps the instance ID to its trait ref syntax. This represents the trait
     /// that the instance implements.

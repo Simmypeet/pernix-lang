@@ -5,8 +5,7 @@ use pernixc_parser::{
 };
 
 use crate::{
-    AccessModifier, Identifier, Keyword, Punctuation, QualifiedIdentifier,
-    TraitRef,
+    AccessModifier, Identifier, InstanceValue, Keyword, Punctuation, TraitRef,
     item::{
         Body, TrailingWhereClause, constant, function,
         generic_parameters::GenericParameters, r#type,
@@ -46,8 +45,7 @@ abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct AssociatedInstanceValue {
         pub equals: Punctuation = '=',
-        pub qualified_identifier: QualifiedIdentifier
-            = ast::<QualifiedIdentifier>(),
+        pub instance_value: InstanceValue = ast::<InstanceValue>(),
     }
 }
 

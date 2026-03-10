@@ -546,14 +546,14 @@ impl Arbitrary for Lifetime {
 }
 reference! {
     #[derive(Debug, Clone)]
-    pub struct QualifiedIdentifierWithHigherRankedLifetimes
-        for super::QualiifiedIdentifierWithHigherRankedLifetimes {
+    pub struct InstanceValue
+        for super::InstanceValue {
         higher_ranked_lifetimes (Option<HigherRankedLifetimes>),
         qualified_identifier (QualifiedIdentifier),
     }
 }
 
-impl Arbitrary for QualifiedIdentifierWithHigherRankedLifetimes {
+impl Arbitrary for InstanceValue {
     type Parameters = Option<BoxedStrategy<QualifiedIdentifier>>;
     type Strategy = BoxedStrategy<Self>;
 
@@ -573,7 +573,7 @@ impl Arbitrary for QualifiedIdentifierWithHigherRankedLifetimes {
     }
 }
 
-impl IndentDisplay for QualifiedIdentifierWithHigherRankedLifetimes {
+impl IndentDisplay for InstanceValue {
     fn indent_fmt(
         &self,
         f: &mut std::fmt::Formatter<'_>,
@@ -591,9 +591,7 @@ reference! {
     #[derive(Debug, Clone)]
     pub enum GenericArgument for super::GenericArgument {
         Lifetime(Lifetime),
-        QualifiedIdentifierWithHigherRankedLifetimes(
-            QualifiedIdentifierWithHigherRankedLifetimes
-        ),
+        InstanceValue(InstanceValue),
         Type(Type),
         Constant(ConstantArgument),
     }
@@ -609,9 +607,7 @@ impl IndentDisplay for GenericArgument {
             Self::Lifetime(i) => i.fmt(f),
             Self::Type(i) => i.indent_fmt(f, indent),
             Self::Constant(i) => i.indent_fmt(f, indent),
-            Self::QualifiedIdentifierWithHigherRankedLifetimes(i) => {
-                i.indent_fmt(f, indent)
-            }
+            Self::InstanceValue(i) => i.indent_fmt(f, indent),
         }
     }
 }
@@ -638,20 +634,16 @@ impl Arbitrary for GenericArgument {
             ty.prop_map(|x| {
                 match x {
                     Type::QualifiedIdentifier(qualified_identifier) => {
-                        Self::QualifiedIdentifierWithHigherRankedLifetimes(
-                            QualifiedIdentifierWithHigherRankedLifetimes {
-                                higher_ranked_lifetimes: None,
-                                qualified_identifier,
-                            },
-                        )
+                        Self::InstanceValue(InstanceValue {
+                            higher_ranked_lifetimes: None,
+                            qualified_identifier,
+                        })
                     }
                     x => Self::Type(x),
                 }
             }),
-            QualifiedIdentifierWithHigherRankedLifetimes::arbitrary_with(Some(
-                qual
-            ))
-            .prop_map(Self::QualifiedIdentifierWithHigherRankedLifetimes),
+            InstanceValue::arbitrary_with(Some(qual))
+                .prop_map(Self::InstanceValue),
             ConstantArgument::arbitrary_with(expr).prop_map(Self::Constant),
         ]
         .boxed()

@@ -315,7 +315,7 @@ pub struct FunctionUnsafeKeywordKey {
     StableHash,
     Query,
 )]
-#[value(Option<pernixc_syntax::QualifiedIdentifier>)]
+#[value(Option<pernixc_syntax::InstanceValue>)]
 #[extend(name = get_instance_associated_value_syntax, by_val)]
 pub struct InstanceAssociatedValueSyntaxKey {
     /// The global identifier of the instance associated value symbol.

@@ -227,7 +227,7 @@ impl Builder {
                             id,
                             inst.body()
                                 .and_then(|x| x.value())
-                                .and_then(|x| x.qualified_identifier()),
+                                .and_then(|x| x.instance_value()),
                         );
                     }
                 }

@@ -145,17 +145,15 @@ impl Resolver<'_, '_> {
                 Type::Error(pernixc_term::error::Error)
             }
 
-            GenericArgumentSyn::QualifiedIdentifierWithHigherRankedLifetimes(
-                qualified_identifier,
-            ) => {
-                 Box::pin(async move {
+            GenericArgumentSyn::InstanceValue(qualified_identifier) => {
+                Box::pin(async move {
                     let Some(q) = qualified_identifier.qualified_identifier()
                     else {
                         return Type::Error(pernixc_term::error::Error);
                     };
 
                     self.push_higher_ranked_lifetimes(
-                        qualified_identifier.higher_ranked_lifetimes().as_ref()
+                        qualified_identifier.higher_ranked_lifetimes().as_ref(),
                     );
 
                     let res = self.resolve_qualified_identifier_type(&q).await;
@@ -193,12 +191,10 @@ impl Resolver<'_, '_> {
         symbol_id: Global<pernixc_symbol::ID>,
         param_id: pernixc_arena::ID<InstanceParameter>,
     ) -> Instance {
-        use GenericArgumentSyn::QualifiedIdentifierWithHigherRankedLifetimes;
+        use GenericArgumentSyn::InstanceValue;
 
         match syn {
-            GenericArgumentSyn::QualifiedIdentifierWithHigherRankedLifetimes(
-                qualified_identifier,
-            ) => {
+            GenericArgumentSyn::InstanceValue(qualified_identifier) => {
                 Box::pin(async move {
                     let Some(q) = qualified_identifier.qualified_identifier()
                     else {
@@ -206,7 +202,7 @@ impl Resolver<'_, '_> {
                     };
 
                     self.push_higher_ranked_lifetimes(
-                        qualified_identifier.higher_ranked_lifetimes().as_ref()
+                        qualified_identifier.higher_ranked_lifetimes().as_ref(),
                     );
 
                     let res =
@@ -236,9 +232,7 @@ impl Resolver<'_, '_> {
                                 GenericKind::Constant
                             }
 
-                            QualifiedIdentifierWithHigherRankedLifetimes(
-                                _,
-                            ) => unreachable!(),
+                            InstanceValue(_) => unreachable!(),
                         })
                         .build(),
                 ));
@@ -492,6 +486,26 @@ impl Resolver<'_, '_> {
             },
         ));
         Lifetime::Error(pernixc_term::error::Error)
+    }
+
+    /// Resolves a [`pernixc_syntax::QualifiedIdentifier`] as an [`Instance`].
+    pub async fn resolve_instance_value(
+        &mut self,
+        syntax_tree: &pernixc_syntax::InstanceValue,
+    ) -> Instance {
+        let Some(qual) = syntax_tree.qualified_identifier() else {
+            return Instance::Error(pernixc_term::error::Error);
+        };
+
+        self.push_higher_ranked_lifetimes(
+            syntax_tree.higher_ranked_lifetimes().as_ref(),
+        );
+
+        let instance = self.resolve_qualified_identifier_instance(&qual).await;
+
+        self.pop_higher_ranked_lifetimes();
+
+        instance
     }
 
     /// Resolves a [`pernixc_syntax::QualifiedIdentifier`] as an [`Instance`].

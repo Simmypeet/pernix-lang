@@ -730,7 +730,7 @@ static FUNCTION_EFFECT_ANNOTATION_EXECUTOR: Registration<Config> =
     StableHash,
     Query,
 )]
-#[value(Option<Option<pernixc_syntax::QualifiedIdentifier>>)]
+#[value(Option<Option<pernixc_syntax::InstanceValue>>)]
 pub struct InstanceAssociatedValueSyntaxProjectionKey {
     pub symbol_id: Global<pernixc_symbol::ID>,
 }
@@ -739,7 +739,7 @@ pub struct InstanceAssociatedValueSyntaxProjectionKey {
 async fn instance_associated_value_syntax_projection_executor(
     key: &InstanceAssociatedValueSyntaxProjectionKey,
     engine: &TrackedEngine,
-) -> Option<Option<pernixc_syntax::QualifiedIdentifier>> {
+) -> Option<Option<pernixc_syntax::InstanceValue>> {
     let table = engine.get_table_of_symbol(key.symbol_id).await?;
 
     table.instance_associated_value_syntaxes.get(&key.symbol_id.id).cloned()
@@ -758,7 +758,7 @@ static INSTANCE_ASSOCIATED_VALUE_SYNTAX_PROJECTION_EXECUTOR: Registration<
 async fn get_instance_associated_value_syntax(
     key: &InstanceAssociatedValueSyntaxKey,
     engine: &TrackedEngine,
-) -> Option<pernixc_syntax::QualifiedIdentifier> {
+) -> Option<pernixc_syntax::InstanceValue> {
     engine
         .query(&InstanceAssociatedValueSyntaxProjectionKey {
             symbol_id: key.symbol_id,

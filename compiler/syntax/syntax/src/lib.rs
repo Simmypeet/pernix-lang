@@ -128,8 +128,21 @@ abstract_tree::abstract_tree! {
 }
 
 abstract_tree::abstract_tree! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    pub struct QualiifiedIdentifierWithHigherRankedLifetimes {
+    /// NOTE: this syntax tree is essentially just a qualified identifier with
+    /// optional higher-ranked lifetimes prefixed to it.
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Encode,
+        Decode,
+    )]
+    pub struct InstanceValue {
         pub higher_ranked_lifetimes: HigherRankedLifetimes
             = ast::<HigherRankedLifetimes>().optional(),
         pub qualified_identifier: QualifiedIdentifier
@@ -141,10 +154,9 @@ abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
     pub enum GenericArgument {
         Lifetime(Lifetime = ast::<Lifetime>()),
-        QualifiedIdentifierWithHigherRankedLifetimes(
-            QualiifiedIdentifierWithHigherRankedLifetimes
-                = ast::<QualiifiedIdentifierWithHigherRankedLifetimes>()
-        ),
+        /// During resolution in generic parameter, this variant can be
+        /// interpreted as a type argument if the HigherRankedLifetimes is None.
+        InstanceValue(InstanceValue = ast::<InstanceValue>()),
         Type(Type = ast::<Type>()),
         Constant(ConstantArgument = ast::<ConstantArgument>()),
     }

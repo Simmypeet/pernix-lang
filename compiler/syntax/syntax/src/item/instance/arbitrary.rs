@@ -7,7 +7,7 @@ use proptest::{
 };
 
 use crate::{
-    arbitrary::{AccessModifier, IndentDisplay, QualifiedIdentifier, TraitRef},
+    arbitrary::{AccessModifier, IndentDisplay, InstanceValue, TraitRef},
     item::{
         self,
         arbitrary::{Body, TrailingWhereClause},
@@ -136,7 +136,7 @@ pub type InstanceMember = MemberTemplate<Signature, AssociatedInstanceBody>;
 reference! {
     #[derive(Debug, Clone)]
     pub struct AssociatedInstanceValue for super::AssociatedInstanceValue {
-        pub qualified_identifier (QualifiedIdentifier),
+        pub instance_value (InstanceValue),
     }
 }
 
@@ -145,8 +145,8 @@ impl Arbitrary for AssociatedInstanceValue {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        QualifiedIdentifier::arbitrary()
-            .prop_map(|qualified_identifier| Self { qualified_identifier })
+        InstanceValue::arbitrary()
+            .prop_map(|instance_value| Self { instance_value })
             .boxed()
     }
 }
@@ -158,7 +158,7 @@ impl IndentDisplay for AssociatedInstanceValue {
         indent: usize,
     ) -> std::fmt::Result {
         formatter.write_str(" = ")?;
-        self.qualified_identifier.indent_fmt(formatter, indent)
+        self.instance_value.indent_fmt(formatter, indent)
     }
 }
 

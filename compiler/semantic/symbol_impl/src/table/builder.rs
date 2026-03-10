@@ -81,7 +81,7 @@ pub struct Builder {
         DashMap<ID, Option<pernixc_syntax::item::function::EffectAnnotation>>,
 
     instance_associated_value_syntaxes:
-        DashMap<ID, Option<pernixc_syntax::QualifiedIdentifier>>,
+        DashMap<ID, Option<pernixc_syntax::InstanceValue>>,
 
     function_unsafe_keywords: DashMap<ID, Option<pernixc_syntax::Keyword>>,
 
@@ -364,7 +364,7 @@ impl Builder {
     pub fn insert_instance_associated_value(
         &self,
         id: pernixc_symbol::ID,
-        qualified_identifier: Option<pernixc_syntax::QualifiedIdentifier>,
+        qualified_identifier: Option<pernixc_syntax::InstanceValue>,
     ) {
         assert!(
             self.instance_associated_value_syntaxes

@@ -193,6 +193,12 @@ impl Kind {
         )
     }
 
+    /// Checks if the symbol kind has an instance associated value.
+    #[must_use]
+    pub const fn has_instance_associated_value(&self) -> bool {
+        matches!(self, Self::InstanceAssociatedInstance)
+    }
+
     /// Checks if the symbol kind has a where clause.
     #[must_use]
     pub const fn has_where_clause(&self) -> bool {
