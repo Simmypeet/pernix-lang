@@ -37,7 +37,7 @@ use pernixc_term::{
     r#type::Type,
 };
 use qbice::{
-    CyclicError, Decode, Encode, Identifiable, Query, StableHash, executor,
+    Decode, Encode, Identifiable, Query, StableHash, executor,
     program::Registration, storage::intern::Interned,
 };
 
@@ -272,6 +272,7 @@ pub enum ResolveError {
 /// The instance resolution ended up requiring another instance resolution,
 /// which has failed with the given error.
 #[derive(Debug, Clone)]
+#[allow(unused)]
 pub struct RecursiveError {
     current_trait_ref: TraitRef,
     resolving_symbol: Global<pernixc_symbol::ID>,
@@ -309,7 +310,8 @@ impl environment::Query for ResolveInstance {
                 )));
             }
 
-            Ok(Err(ResolveError::NotFound))
+            // if no lexical instance found, we look for global candidates
+            environment.handle_global_resolution(&self.trait_ref).await
         })
     }
 
@@ -500,6 +502,18 @@ impl ResolvedCandidate {
 struct CurrentCandidate {
     head: ResolvedCandidate,
     amb: Vec<ResolvedCandidate>,
+}
+
+impl<N: Normalizer> Environment<'_, N> {
+    /// Resolves an instance with the given expected trait reference.
+    pub async fn resolve_instance(
+        &self,
+        expected_trait_ref: &TraitRef,
+    ) -> Result<Result<Arc<ResolvedInstance>, ResolveError>, OverflowError>
+    {
+        self.query(&ResolveInstance { trait_ref: expected_trait_ref.clone() })
+            .await
+    }
 }
 
 impl<N: Normalizer> Environment<'_, N> {
@@ -866,7 +880,8 @@ impl<N: Normalizer> Environment<'_, N> {
     async fn handle_global_resolution(
         &self,
         expected_trait_ref: &TraitRef,
-    ) -> Result<Result<ResolvedInstance, ResolveError>, OverflowError> {
+    ) -> Result<Result<Arc<ResolvedInstance>, ResolveError>, OverflowError>
+    {
         let global_instance_ids = self
             .tracked_engine()
             .get_global_instance_candidates(
@@ -962,10 +977,10 @@ impl<N: Normalizer> Environment<'_, N> {
                     )
                     .await;
 
-                Ok(Ok(ResolvedInstance {
+                Ok(Ok(Arc::new(ResolvedInstance {
                     instance: Instance::new_symbol(global, generic_args),
                     source: InstanceSource::FromGlobalInstance(global),
-                }))
+                })))
             }
 
             ResolvedCandidate::WithError(recursive_error) => {
