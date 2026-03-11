@@ -11,8 +11,7 @@ use std::{
 use linkme::distributed_slice;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_semantic_element::{
-    implements_arguments::get_implements_argument,
-    trait_ref::{get_trait_ref, get_trait_ref_of_instance},
+    implements_arguments::get_implements_argument, trait_ref::get_trait_ref,
 };
 use pernixc_target::Global;
 use pernixc_term::{
