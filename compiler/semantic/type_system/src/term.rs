@@ -457,9 +457,10 @@ impl Term for Instance {
 
     fn definite_satisfiability(&self) -> Satisfiability {
         match self {
-            Self::Error(_) | Self::Inference(_) | Self::Parameter(_) => {
-                Satisfiability::Unsatisfied
-            }
+            Self::AnonymousTrait(_)
+            | Self::Error(_)
+            | Self::Inference(_)
+            | Self::Parameter(_) => Satisfiability::Unsatisfied,
 
             Self::Symbol(_) | Self::InstanceAssociated(_) => {
                 Satisfiability::Congruent

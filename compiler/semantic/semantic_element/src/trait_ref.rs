@@ -6,6 +6,7 @@ use pernixc_extend::extend;
 use pernixc_qbice::TrackedEngine;
 use pernixc_target::Global;
 use pernixc_term::{
+    generic_arguments::create_identity_generic_arguments,
     generic_parameters::get_generic_parameters,
     instance::{Instance, TraitRef},
     instantiation::{
@@ -47,6 +48,8 @@ pub async fn get_trait_ref_id_of_instance(
             self.get_trait_ref(symbol.id()).await.map(|x| x.trait_id())
         }
 
+        Instance::AnonymousTrait(tr) => Some(tr.trait_id()),
+
         Instance::Parameter(member_id) => self
             .get_generic_parameters(member_id.parent_id())
             .await[member_id.id()]
@@ -86,6 +89,13 @@ pub async fn get_trait_ref_of_instance(
             trait_ref.instantiate(&inst);
 
             Some(trait_ref)
+        }
+
+        Instance::AnonymousTrait(tr) => {
+            let ident_generic_args =
+                self.create_identity_generic_arguments(tr.trait_id()).await;
+
+            Some(TraitRef::new(tr.trait_id(), ident_generic_args))
         }
 
         Instance::Parameter(member_id) => self

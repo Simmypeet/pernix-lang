@@ -3,6 +3,8 @@
 use std::{fmt::Write, ops::Not};
 
 use derive_new::new;
+use pernixc_extend::extend;
+use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::{
     name::{get_name, get_qualified_name},
     parent::get_parent,
@@ -15,6 +17,7 @@ use crate::{
     generic_parameters::{
         ConstantParameterID, GenericKind, GenericParameters,
         InstanceParameterID, LifetimeParameterID, TypeParameterID,
+        get_generic_parameters,
     },
     instance::Instance,
     instantiation::Instantiation,
@@ -87,6 +90,76 @@ impl GenericArguments {
     /// Returns a mutable reference to the instances supplied to the term.
     #[must_use]
     pub fn instances_mut(&mut self) -> &mut [Instance] { &mut self.instancces }
+
+    /// Checks if the generic arguments are the identity generic arguments for
+    /// the symbol with the given ID.
+    #[must_use]
+    pub fn is_identity(
+        &self,
+        generic_parameters: &GenericParameters,
+        symbol_id: Global<pernixc_symbol::ID>,
+    ) -> bool {
+        if !self.param_arity_matches(generic_parameters) {
+            return false;
+        }
+
+        for (lifetime, lifetime_param) in self
+            .lifetimes
+            .iter()
+            .zip(generic_parameters.lifetime_parameter_order())
+        {
+            if lifetime
+                != &Lifetime::Parameter(LifetimeParameterID::new(
+                    symbol_id,
+                    lifetime_param,
+                ))
+            {
+                return false;
+            }
+        }
+
+        for (ty, type_param) in
+            self.types.iter().zip(generic_parameters.type_parameter_order())
+        {
+            if ty
+                != &Type::Parameter(TypeParameterID::new(symbol_id, type_param))
+            {
+                return false;
+            }
+        }
+
+        for (constant, constant_param) in self
+            .constants
+            .iter()
+            .zip(generic_parameters.constant_parameter_order())
+        {
+            if constant
+                != &Constant::Parameter(ConstantParameterID::new(
+                    symbol_id,
+                    constant_param,
+                ))
+            {
+                return false;
+            }
+        }
+
+        for (instance, instance_param) in self
+            .instancces
+            .iter()
+            .zip(generic_parameters.instance_parameter_order())
+        {
+            if instance
+                != &Instance::Parameter(InstanceParameterID::new(
+                    symbol_id,
+                    instance_param,
+                ))
+            {
+                return false;
+            }
+        }
+
+        true
+    }
 
     /// Constructs the generic arguments from the given generic parameters and
     /// instantiation.
@@ -188,14 +261,6 @@ impl GenericArguments {
             && self.constants.is_empty()
     }
 
-    /// Checks if `self` and `other` have the same number of generic arguments.
-    #[must_use]
-    pub const fn has_same_arguments_count(&self, other: &Self) -> bool {
-        self.lifetimes.len() == other.lifetimes.len()
-            && self.types.len() == other.types.len()
-            && self.constants.len() == other.constants.len()
-    }
-
     /// Checks if both generic arguments have the same arity for each generic
     /// kind.
     #[must_use]
@@ -204,6 +269,21 @@ impl GenericArguments {
             && self.types.len() == generic_arguments.types.len()
             && self.constants.len() == generic_arguments.constants.len()
             && self.instancces.len() == generic_arguments.instancces.len()
+    }
+
+    /// Checks if the generic arguments have the same arguments as the given
+    /// generic parameters.
+    #[must_use]
+    pub fn param_arity_matches(
+        &self,
+        generic_params: &GenericParameters,
+    ) -> bool {
+        self.lifetimes.len() == generic_params.lifetime_parameter_order().len()
+            && self.types.len() == generic_params.type_parameter_order().len()
+            && self.constants.len()
+                == generic_params.constant_parameter_order().len()
+            && self.instancces.len()
+                == generic_params.instance_parameter_order().len()
     }
 
     /// Pushes a lifetime to the generic arguments.
@@ -228,6 +308,55 @@ impl GenericArguments {
     pub fn insert_type_at(&mut self, index: usize, ty: Type) {
         self.types.insert(index, ty);
     }
+}
+
+/// Creates an identity generic arguments for the symbol with the given ID.
+///
+/// The identity generic arguments for a symbol has all the arguments the same
+/// as the generic parameters of the symbol.
+#[extend]
+pub async fn create_identity_generic_arguments(
+    self: &TrackedEngine,
+    symbol_id: Global<pernixc_symbol::ID>,
+) -> GenericArguments {
+    let generic_params = self.get_generic_parameters(symbol_id).await;
+
+    let mut generic_arguments = GenericArguments::default();
+
+    for lifetime_param in generic_params.lifetime_parameter_order() {
+        let lt_param = Lifetime::new_parameter(symbol_id, lifetime_param);
+        generic_arguments.push_lifetime(lt_param);
+    }
+
+    for type_param in generic_params.type_parameter_order() {
+        let ty_param = Type::new_parameter(symbol_id, type_param);
+        generic_arguments.push_type(ty_param);
+    }
+
+    for constant_param in generic_params.constant_parameter_order() {
+        let const_param = Constant::new_parameter(symbol_id, constant_param);
+        generic_arguments.push_constant(const_param);
+    }
+
+    for instance_param in generic_params.instance_parameter_order() {
+        let instance_param = Instance::new_parameter(symbol_id, instance_param);
+        generic_arguments.push_instance(instance_param);
+    }
+
+    generic_arguments
+}
+
+/// Checks if the given generic arguments are identity to the symbol with the
+/// given ID.
+#[extend]
+pub async fn is_generic_arguments_identity_to(
+    self: &TrackedEngine,
+    generic_arguments: &GenericArguments,
+    symbol_id: Global<pernixc_symbol::ID>,
+) -> bool {
+    let generic_params = self.get_generic_parameters(symbol_id).await;
+
+    generic_arguments.is_identity(&generic_params, symbol_id)
 }
 
 /// Represents a sub-term location where the sub-term is stored as a generic

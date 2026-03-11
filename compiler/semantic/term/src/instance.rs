@@ -15,7 +15,9 @@ use crate::{
         GenericArguments, SubGenericArgumentsLocation, SubSymbolLocation,
         Symbol,
     },
-    generic_parameters::{InstanceParameterID, get_generic_parameters},
+    generic_parameters::{
+        InstanceParameter, InstanceParameterID, get_generic_parameters,
+    },
     inference,
     instantiation::Instantiation,
     lifetime::Lifetime,
@@ -606,6 +608,51 @@ impl InstanceAssociated {
     }
 }
 
+/// Refers to an instance that is coupled with a trait when user writes
+/// `this::Associated` syntax.
+///
+/// For example, consider the following program:
+///
+/// ```pnx
+/// public trait MyTrait:
+///   public type Assoc
+///
+///   public function a(a: this::Assoc)
+/// ```
+///
+/// The type `this::Assoc` declared under `MyTrait` would be represented as an
+/// instance associated type where the instance is `AnonymousTrait {MyTrait}`.
+///
+/// The `AnonymousTrait` can only appear under the trait declaration.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+)]
+pub struct AnoymousTrait {
+    trait_id: Global<pernixc_symbol::ID>,
+}
+
+impl AnoymousTrait {
+    /// Creates a new `AnonymousTrait` with the given trait ID.
+    #[must_use]
+    pub const fn new(trait_id: Global<pernixc_symbol::ID>) -> Self {
+        Self { trait_id }
+    }
+
+    /// Returns the trait ID of this `AnonymousTrait`.
+    #[must_use]
+    pub const fn trait_id(&self) -> Global<pernixc_symbol::ID> { self.trait_id }
+}
+
 /// An instance of a trait implementation.
 #[derive(
     Debug,
@@ -652,6 +699,10 @@ pub enum Instance {
     #[from]
     Inference(inference::Variable<Self>),
 
+    /// See [`AnoymousTrait`] for details.
+    #[from]
+    AnonymousTrait(AnoymousTrait),
+
     /// Represents an erroneous instance term, used for error recovery.
     #[from]
     Error(Error),
@@ -659,6 +710,47 @@ pub enum Instance {
 
 impl Default for Instance {
     fn default() -> Self { Self::Error(Error) }
+}
+
+impl Instance {
+    /// Creates an instance parameter with the given symbol ID where the
+    /// instance parameter is declared and the ID of the instance parameter
+    /// in the generic parameters arena.
+    #[must_use]
+    pub fn new_parameter(
+        parent_global_id: Global<pernixc_symbol::ID>,
+        ty_id: pernixc_arena::ID<InstanceParameter>,
+    ) -> Self {
+        Self::Parameter(InstanceParameterID::new(parent_global_id, ty_id))
+    }
+
+    /// Creates a new error instance.
+    #[must_use]
+    pub const fn new_error() -> Self { Self::Error(Error) }
+
+    /// Creates a new [`Instance::AnonymousTrait`] with the given trait ID.
+    #[must_use]
+    pub const fn new_anonymous_trait(
+        trait_id: Global<pernixc_symbol::ID>,
+    ) -> Self {
+        Self::AnonymousTrait(AnoymousTrait::new(trait_id))
+    }
+
+    /// Creates a new [`Instance::InstanceAssociated`] with the given inner
+    /// instance, trait associated symbol ID, and generic arguments for the
+    /// trait associated symbol.
+    #[must_use]
+    pub const fn new_instance_associated(
+        instance: Box<Self>,
+        trait_associated_symbol_id: Global<pernixc_symbol::ID>,
+        trait_associated_symbol_generic_arguments: GenericArguments,
+    ) -> Self {
+        Self::InstanceAssociated(InstanceAssociated::new(
+            instance,
+            trait_associated_symbol_id,
+            trait_associated_symbol_generic_arguments,
+        ))
+    }
 }
 
 impl crate::display::Display for InstanceParameterID {
@@ -728,9 +820,11 @@ impl crate::display::Display for Instance {
                 ))
                 .await
             }
+
             Self::Parameter(param_id) => {
                 crate::display::Display::fmt(param_id, engine, formatter).await
             }
+
             Self::InstanceAssociated(instance_associated) => {
                 Box::pin(crate::display::Display::fmt(
                     instance_associated,
@@ -758,6 +852,8 @@ impl crate::display::Display for Instance {
                     }
                 }
             }
+
+            Self::AnonymousTrait(_) => write!(formatter, "this"),
 
             Self::Error(_) => write!(formatter, "{{error}}"),
         }

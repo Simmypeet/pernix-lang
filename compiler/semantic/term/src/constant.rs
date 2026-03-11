@@ -12,7 +12,8 @@ use crate::{
     Never,
     error::Error,
     generic_parameters::{
-        ConstantParameterID, GenericParameter, get_generic_parameters,
+        ConstantParameter, ConstantParameterID, GenericParameter,
+        get_generic_parameters,
     },
     inference,
     instance::Instance,
@@ -166,6 +167,19 @@ pub enum Constant {
     Phantom,
     #[from]
     Error(Error),
+}
+
+impl Constant {
+    /// Creates a constant parameter with the given symbol ID where the constant
+    /// parameter is declared and the ID of the constant parameter in the
+    /// generic parameters arena.
+    #[must_use]
+    pub fn new_parameter(
+        parent_global_id: Global<pernixc_symbol::ID>,
+        ty_id: pernixc_arena::ID<ConstantParameter>,
+    ) -> Self {
+        Self::Parameter(ConstantParameterID::new(parent_global_id, ty_id))
+    }
 }
 
 impl Default for Constant {

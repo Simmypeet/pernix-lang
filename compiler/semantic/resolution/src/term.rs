@@ -10,7 +10,10 @@ use pernixc_semantic_element::{
     type_alias::get_type_alias,
 };
 use pernixc_source_file::SourceElement;
-use pernixc_symbol::kind::{Kind, get_kind};
+use pernixc_symbol::{
+    kind::{Kind, get_kind},
+    parent::get_parent_global,
+};
 use pernixc_syntax::{
     GenericArgument as GenericArgumentSyn, GenericIdentifier,
     LifetimeIdentifier,
@@ -19,7 +22,9 @@ use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
     effect,
-    generic_arguments::{GenericArguments, Symbol},
+    generic_arguments::{
+        GenericArguments, Symbol, is_generic_arguments_identity_to,
+    },
     generic_parameters::{
         ConstantParameter, GenericKind, InstanceParameter, InstanceParameterID,
         TypeParameter, TypeParameterID, get_generic_parameters,
@@ -849,31 +854,62 @@ pub async fn resolution_to_instance(
             )))
         }
 
-        Resolution::MemberGeneric(member_generic)
-            if {
-                let symbol_kind = self.get_kind(member_generic.id).await;
+        Resolution::MemberGeneric(member_generic) => {
+            let kind = self.get_kind(member_generic.id).await;
 
-                matches!(symbol_kind, Kind::InstanceAssociatedInstance)
-            } =>
-        {
-            let inst = self
-                .get_instantiation_for_associated_symbol(
-                    member_generic.id,
-                    member_generic.parent_generic_arguments,
-                    member_generic.member_generic_arguments,
-                )
-                .await
-                .unwrap();
+            match kind {
+                Kind::TraitAssociatedInstance => {
+                    let parent_trait_id = self
+                        .get_parent_global(member_generic.id)
+                        .await
+                        .unwrap();
 
-            let mut instance_value = self
-                .get_instance_associated_value(member_generic.id)
-                .await
-                .deref()
-                .clone();
+                    if !self
+                        .is_generic_arguments_identity_to(
+                            &member_generic.parent_generic_arguments,
+                            parent_trait_id,
+                        )
+                        .await
+                    {
+                        return Err(ResolutionToTermError::Failed(
+                            Resolution::MemberGeneric(member_generic),
+                        ));
+                    }
 
-            inst.instantiate(&mut instance_value);
+                    Ok(Instance::new_instance_associated(
+                        Box::new(Instance::new_anonymous_trait(
+                            parent_trait_id,
+                        )),
+                        member_generic.id,
+                        member_generic.member_generic_arguments,
+                    ))
+                }
 
-            Ok(instance_value)
+                Kind::InstanceAssociatedInstance => {
+                    let inst = self
+                        .get_instantiation_for_associated_symbol(
+                            member_generic.id,
+                            member_generic.parent_generic_arguments,
+                            member_generic.member_generic_arguments,
+                        )
+                        .await
+                        .unwrap();
+
+                    let mut instance_value = self
+                        .get_instance_associated_value(member_generic.id)
+                        .await
+                        .deref()
+                        .clone();
+
+                    inst.instantiate(&mut instance_value);
+
+                    Ok(instance_value)
+                }
+
+                _ => Err(ResolutionToTermError::Failed(
+                    Resolution::MemberGeneric(member_generic),
+                )),
+            }
         }
 
         Resolution::Instance(instance) => Ok(instance),
@@ -946,6 +982,34 @@ pub async fn resolution_to_type(
                     inst.instantiate(&mut type_alias);
 
                     Ok(type_alias)
+                }
+
+                Kind::TraitAssociatedType => {
+                    // if the parent generic arugments is identical to the
+                    // trait, we can make it an instance
+                    // associated type and make the instance be anonymous trait
+                    let parent_trait = self
+                        .get_parent_global(member_generic.id)
+                        .await
+                        .unwrap();
+
+                    if !self
+                        .is_generic_arguments_identity_to(
+                            &member_generic.parent_generic_arguments,
+                            parent_trait,
+                        )
+                        .await
+                    {
+                        return Err(ResolutionToTermError::Failed(
+                            Resolution::MemberGeneric(member_generic),
+                        ));
+                    }
+
+                    Ok(Type::new_instance_associated(
+                        Box::new(Instance::new_anonymous_trait(parent_trait)),
+                        member_generic.id,
+                        member_generic.member_generic_arguments,
+                    ))
                 }
 
                 _ => Err(ResolutionToTermError::Failed(

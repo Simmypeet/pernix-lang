@@ -1040,7 +1040,10 @@ macro_rules! implements_instance_ref {
         $(, $await:ident)?
     ) => {
         match $self {
-            Self::Inference(_) | Self::Parameter(_) | Self::Error(_) => {
+            Self::AnonymousTrait(_)
+            | Self::Inference(_)
+            | Self::Parameter(_)
+            | Self::Error(_) => {
                 Err(VisitNonApplicationTermError)
             }
 
@@ -1071,7 +1074,10 @@ macro_rules! implements_instance_mut {
         $(, $await:ident)?
     ) => {
         match $self {
-            Self::Inference(_) | Self::Parameter(_) | Self::Error(_) => {
+            Self::AnonymousTrait(_)
+            | Self::Inference(_)
+            | Self::Parameter(_)
+            | Self::Error(_) => {
                 Err(VisitNonApplicationTermError)
             }
 

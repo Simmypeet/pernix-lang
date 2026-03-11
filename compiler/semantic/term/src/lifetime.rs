@@ -16,7 +16,8 @@ use crate::{
     constant::Constant,
     error::Error,
     generic_parameters::{
-        GenericParameter, LifetimeParameterID, get_generic_parameters,
+        GenericParameter, LifetimeParameter, LifetimeParameterID,
+        get_generic_parameters,
     },
     inference,
     instance::Instance,
@@ -170,6 +171,19 @@ pub enum Lifetime {
     Static,
     Erased,
     Error(Error),
+}
+
+impl Lifetime {
+    /// Creates a lifetime parameter with the given symbol ID where the lifetime
+    /// parameter is declared and the ID of the lifetime parameter in the
+    /// generic parameters arena.
+    #[must_use]
+    pub fn new_parameter(
+        parent_global_id: Global<pernixc_symbol::ID>,
+        lt_id: pernixc_arena::ID<LifetimeParameter>,
+    ) -> Self {
+        Self::Parameter(LifetimeParameterID::new(parent_global_id, lt_id))
+    }
 }
 
 impl From<Never> for Lifetime {

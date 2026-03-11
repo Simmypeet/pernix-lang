@@ -270,6 +270,7 @@ fn to_resolution(
                 generic_arguments: generic_arguments.unwrap(),
             })
         }
+
         Kind::Variant => Resolution::Variant(Variant {
             variant_id: resolved_id,
             generic_arguments: latest_resolution
@@ -701,6 +702,27 @@ impl Resolver<'_, '_> {
             }
 
             Resolution::Instance(instance) => match instance {
+                Instance::AnonymousTrait(tr) => {
+                    let member_id = self
+                        .tracked_engine()
+                        .get_member_by_name(tr.trait_id(), &identifier.kind)
+                        .await;
+
+                    let Some(member_id) = member_id else {
+                        self.receive_diagnostic(Diagnostic::SymbolNotFound(
+                            SymbolNotFound {
+                                searched_item_id: Some(tr.trait_id()),
+                                resolution_span: identifier.span,
+                                name: identifier.kind.0.clone(),
+                            },
+                        ));
+
+                        return Err(Error::Abort);
+                    };
+
+                    member_id
+                }
+
                 Instance::Symbol(symbol) => {
                     let member_id = self
                         .tracked_engine()

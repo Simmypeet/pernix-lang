@@ -1,0 +1,5 @@
+public trait Test:
+    public type AssocType
+
+    
+    public function test(a: this::AssocType)

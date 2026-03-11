@@ -188,7 +188,7 @@ async fn effect_equivalent(
     }
 
     // check if all the generic arguments are compatible
-    if !a.generic_arguments().has_same_arguments_count(b.generic_arguments()) {
+    if !a.generic_arguments().arity_matches(b.generic_arguments()) {
         return Ok(false);
     }
 

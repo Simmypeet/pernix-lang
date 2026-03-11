@@ -115,6 +115,17 @@ impl Transformer<Constant> for ToBorrowTransformer {
     }
 }
 
+impl Transformer<Instance> for ToBorrowTransformer {
+    async fn transform(
+        &mut self,
+        term: &mut Instance,
+        _: <Instance as Transformable>::Source,
+        _: RelativeSpan,
+    ) {
+        visitor::accept_recursive_mut(term, self);
+    }
+}
+
 pub(super) async fn transform_to_inference(
     ir: &mut IR,
     engine: &TrackedEngine,

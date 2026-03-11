@@ -14,7 +14,8 @@ use crate::{
         SubSymbolLocation, Symbol,
     },
     generic_parameters::{
-        GenericParameter, TypeParameterID, get_generic_parameters,
+        GenericParameter, TypeParameter, TypeParameterID,
+        get_generic_parameters,
     },
     inference,
     instance::{
@@ -284,10 +285,36 @@ impl Type {
     #[must_use]
     pub const fn bool() -> Self { Self::Primitive(Primitive::Bool) }
 
+    /// Creates a type parameter with the given symbol ID where the type
+    /// parameter is declared and the ID of the type parameter in the
+    /// generic parameters arena.
+    #[must_use]
+    pub fn new_parameter(
+        parent_global_id: Global<pernixc_symbol::ID>,
+        ty_id: pernixc_arena::ID<TypeParameter>,
+    ) -> Self {
+        Self::Parameter(TypeParameterID::new(parent_global_id, ty_id))
+    }
+
     /// Creates a new tuple type from the given list of types.
     #[must_use]
     pub fn new_tuple(elements: Vec<tuple::Element<Self>>) -> Self {
         Self::Tuple(Tuple::new(elements))
+    }
+
+    /// Creates a new instance associated type with the given instance, trait
+    /// associated symbol ID and generic arguments.
+    #[must_use]
+    pub const fn new_instance_associated(
+        instance: Box<Instance>,
+        trait_associated_symbol_id: Global<pernixc_symbol::ID>,
+        trait_associated_symbol_generic_arguments: GenericArguments,
+    ) -> Self {
+        Self::InstanceAssociated(InstanceAssociated::new(
+            instance,
+            trait_associated_symbol_id,
+            trait_associated_symbol_generic_arguments,
+        ))
     }
 
     /// Creates a new symbol type with the given symbol ID and generic
