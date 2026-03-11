@@ -627,6 +627,19 @@ pub async fn get_instantiation_for_associated_symbol(
     Ok(instantiation)
 }
 
+/// Retrieves the [`GenericArguments`] for the given generic ID with the given
+/// instantiation.
+#[extend]
+pub async fn create_generic_arguments_from_instantiation(
+    self: &TrackedEngine,
+    id: Global<pernixc_symbol::ID>,
+    instantiation: Instantiation,
+) -> GenericArguments {
+    let generic_parameters = self.get_generic_parameters(id).await;
+
+    instantiation.create_generic_arguments(id, &generic_parameters)
+}
+
 /// A trait for retrieving the instantiation map from the [`Instantiation`]
 /// struct.
 #[allow(missing_docs)]

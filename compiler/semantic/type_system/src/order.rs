@@ -10,7 +10,10 @@ use std::{
 
 use linkme::distributed_slice;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
-use pernixc_semantic_element::implements_arguments::get_implements_argument;
+use pernixc_semantic_element::{
+    implements_arguments::get_implements_argument,
+    trait_ref::{get_trait_ref, get_trait_ref_of_instance},
+};
 use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant, generic_arguments::GenericArguments,
@@ -263,7 +266,8 @@ impl<N: Normalizer> Environment<'_, N> {
     derive_new::new,
 )]
 #[value(Result<Option<Order>, OverflowError>)]
-pub struct Key {
+#[extend(name = get_implements_order, by_val)]
+pub struct ImplementsOrderKey {
     /// The `this` in the [`Environment::order`]
     pub this: Global<pernixc_symbol::ID>,
     /// The `other` in the [`Environment::order`]
@@ -273,7 +277,7 @@ pub struct Key {
 /// The executor for the [`ImplementsOrderExecutor`] query.
 #[executor(config = Config)]
 pub async fn implements_order_executor(
-    Key { this, other }: &Key,
+    ImplementsOrderKey { this, other }: &ImplementsOrderKey,
     tracked_engine: &TrackedEngine,
 ) -> Result<Option<Order>, OverflowError> {
     let (Some(lhs_generic_arguments), Some(rhs_generic_arguments)) = (
@@ -300,7 +304,72 @@ pub async fn implements_order_executor(
 
 #[distributed_slice(PERNIX_PROGRAM)]
 static IMPLEMENTS_ORDER_EXECUTOR: Registration<Config> =
-    Registration::new::<Key, ImplementsOrderExecutor>();
+    Registration::new::<ImplementsOrderKey, ImplementsOrderExecutor>();
+
+/// A query for retrieving the order (level of specificity) between two
+/// `instance`'s trait ref arguments.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Query,
+    derive_new::new,
+)]
+#[value(Result<Option<Order>, OverflowError>)]
+#[extend(name = get_instance_order, by_val)]
+pub struct InstanceOrderKey {
+    /// The `this` in the [`Environment::order`]
+    pub this: Global<pernixc_symbol::ID>,
+    /// The `other` in the [`Environment::order`]
+    pub other: Global<pernixc_symbol::ID>,
+}
+
+/// The executor for the [`InstanceOrderExecutor`] query.
+#[executor(config = Config)]
+pub async fn instance_order_executor(
+    InstanceOrderKey { this, other }: &InstanceOrderKey,
+    tracked_engine: &TrackedEngine,
+) -> Result<Option<Order>, OverflowError> {
+    let (Some(lhs_generic_arguments), Some(rhs_generic_arguments)) = (
+        tracked_engine.get_trait_ref(*this).await,
+        tracked_engine.get_trait_ref(*other).await,
+    ) else {
+        return Ok(None);
+    };
+
+    if lhs_generic_arguments.trait_id() != rhs_generic_arguments.trait_id() {
+        return Ok(None);
+    }
+
+    let default_environment = Environment::new(
+        Cow::Owned(Premise::default()),
+        Cow::Borrowed(tracked_engine),
+        normalizer::NO_OP,
+    );
+
+    match default_environment
+        .order(
+            lhs_generic_arguments.generic_arguments(),
+            rhs_generic_arguments.generic_arguments(),
+        )
+        .await
+    {
+        Ok(order) => Ok(Some(order)),
+        Err(overflow) => Err(overflow),
+    }
+}
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static INSTANCE_ORDER_EXECUTOR: Registration<Config> =
+    Registration::new::<InstanceOrderKey, InstanceOrderExecutor>();
 
 #[cfg(test)]
 mod test;

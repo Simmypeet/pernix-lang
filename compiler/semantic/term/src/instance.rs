@@ -751,6 +751,16 @@ impl Instance {
             trait_associated_symbol_generic_arguments,
         ))
     }
+
+    /// Creates a new [`Instance::Symbol`] with the given symbol ID and generic
+    /// arguments.
+    #[must_use]
+    pub fn new_symbol(
+        instance_symbol_id: Global<pernixc_symbol::ID>,
+        generic_arguments: GenericArguments,
+    ) -> Self {
+        Self::Symbol(Symbol::new(instance_symbol_id, generic_arguments))
+    }
 }
 
 impl crate::display::Display for InstanceParameterID {

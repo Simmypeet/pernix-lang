@@ -255,7 +255,7 @@ impl Query for Resolve {
                         // check which one is more specific
                         match environment
                             .tracked_engine()
-                            .query(&order::Key::new(
+                            .query(&order::ImplementsOrderKey::new(
                                 current_impl_id,
                                 *candidate_id,
                             ))
