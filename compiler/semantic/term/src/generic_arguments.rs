@@ -308,6 +308,23 @@ impl GenericArguments {
     pub fn insert_type_at(&mut self, index: usize, ty: Type) {
         self.types.insert(index, ty);
     }
+
+    /// Pushes an element to the generic arguments.
+    pub fn push<T: Element>(&mut self, element: T) {
+        T::get_mut(self).push(element);
+    }
+
+    /// Returns the number of arguments of the given generic kind in the generic
+    /// arguments.
+    #[must_use]
+    pub fn len_of<T: Element>(&self) -> usize { T::get(self).len() }
+
+    /// Resizes the arguments of the given generic kind in the generic arguments
+    /// to the given new length, filling new elements with the given default
+    /// value if the new length is greater than the current length.
+    pub fn resize<T: Element + Clone>(&mut self, new_len: usize, default: T) {
+        T::get_mut(self).resize(new_len, default);
+    }
 }
 
 /// Creates an identity generic arguments for the symbol with the given ID.

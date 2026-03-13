@@ -101,3 +101,25 @@ pub fn contains_error<T: visitor::Element>(term: &T) -> bool {
 
     visitor.contains_error
 }
+
+/// A trait for creating an error term.
+pub trait MakeError {
+    /// Creates an error term.
+    fn new_error() -> Self;
+}
+
+impl MakeError for Lifetime {
+    fn new_error() -> Self { Self::Error(Error) }
+}
+
+impl MakeError for Type {
+    fn new_error() -> Self { Self::Error(Error) }
+}
+
+impl MakeError for Constant {
+    fn new_error() -> Self { Self::Error(Error) }
+}
+
+impl MakeError for Instance {
+    fn new_error() -> Self { Self::Error(Error) }
+}

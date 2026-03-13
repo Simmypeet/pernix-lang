@@ -1,9 +1,10 @@
 //! Contains the logic for solving terms (types, lifetimes, and constants) in
 //! the resolution process.
 
-use std::{fmt::Debug, ops::Deref};
+use std::{fmt::Debug, future::Future, ops::Deref, pin::Pin};
 
 use pernixc_extend::extend;
+use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::{
     instance_associated_value::get_instance_associated_value,
@@ -26,8 +27,9 @@ use pernixc_term::{
         GenericArguments, Symbol, is_generic_arguments_identity_to,
     },
     generic_parameters::{
-        ConstantParameter, GenericKind, InstanceParameter, InstanceParameterID,
-        TypeParameter, TypeParameterID, get_generic_parameters,
+        ConstantParameter, GenericKind, GenericParameter, InstanceParameter,
+        InstanceParameterID, TypeParameter, TypeParameterID,
+        get_generic_parameters,
     },
     instance::{Instance, TraitRef},
     instantiation::{Instantiation, get_instantiation_for_associated_symbol},
@@ -47,88 +49,115 @@ use crate::{
     qualified_identifier::Resolution,
 };
 
-macro_rules! resolve_generic_arguments_kind {
-    (
-        $self:ident,
-        $generic_parameters:ident,
-        $param:ident,
-        $generic_arguments_syn:ident,
-        $terms:ident,
-        $kind:expr,
-        $span:expr,
-        $error_term:expr,
-        $ellided_provider:expr,
-        $done:expr,
-        |$syn:ident, $param_id:ident| $resolve:expr,
-    ) => {{
-        let mut parameter_order =
-            $generic_parameters.parameter_order::<$param>();
-
-        if let Some(generic_arguments_syn) = $generic_arguments_syn.as_mut() {
-            while let Some($param_id) = parameter_order.next()
-                && let Some($syn) = (!generic_arguments_syn.is_empty())
-                    .then(|| generic_arguments_syn.remove(0))
-            {
-                $terms.push($resolve);
-            }
-
-            if $terms.len() != $generic_parameters.parameter_len::<$param>() {
-                $self.receive_diagnostic(
-                    Diagnostic::MismatchedGenericArgumentCount(
-                        MismatchedGenericArgumentCount {
-                            generic_kind: $kind,
-                            generic_identifier_span: $span,
-                            expected_count: $generic_parameters
-                                .parameter_len::<$param>(),
-                            supplied_count: $terms.len(),
-                        },
-                    ),
-                );
-            }
-
-            $terms.resize(
-                $generic_parameters.parameter_len::<$param>(),
-                $error_term,
-            );
-
-            $terms
-        } else {
-            if $generic_parameters.parameter_len::<$param>() > 0 {
-                if let Some(provider) = $ellided_provider {
-                    $terms.resize_with(
-                        $generic_parameters.parameter_len::<$param>(),
-                        || provider.create(),
-                    );
-
-                    $done
-                }
-            }
-
-            if $generic_parameters.parameter_len::<$param>() != $terms.len() {
-                $self.receive_diagnostic(
-                    Diagnostic::MismatchedGenericArgumentCount(
-                        MismatchedGenericArgumentCount {
-                            generic_kind: $kind,
-                            generic_identifier_span: $span,
-                            expected_count: $generic_parameters
-                                .parameter_len::<$param>(),
-                            supplied_count: $terms.len(),
-                        },
-                    ),
-                );
-            }
-
-            $terms.resize(
-                $generic_parameters.parameter_len::<$param>(),
-                $error_term,
-            );
-
-            $terms
-        }
-    }};
-}
-
 impl Resolver<'_, '_> {
+    #[allow(clippy::too_many_arguments)]
+    async fn resolve_generic_argument_kind<
+        Param,
+        Term: pernixc_term::error::MakeError
+            + pernixc_term::generic_arguments::Element
+            + Clone,
+    >(
+        &mut self,
+        generic_parameters: &pernixc_term::generic_parameters::GenericParameters,
+        generic_identifier: &GenericIdentifier,
+        generic_arguments_syn: &mut Option<Vec<GenericArgumentSyn>>,
+        args: &mut GenericArguments,
+        mut create_elided: impl FnMut(&mut Self) -> Option<Term>,
+        mut resolve: impl for<'a> FnMut(
+            &'a mut Self,
+            GenericArgumentSyn,
+            pernixc_arena::ID<Param>,
+        )
+            -> Pin<Box<dyn Future<Output = Term> + 'a>>,
+        mut on_term_resolved_for_argument: impl for<'a> FnMut(
+            &'a mut Self,
+            &'a Term,
+            &GenericArguments,
+            pernixc_arena::ID<Param>,
+            &RelativeSpan,
+        ),
+    ) where
+        Param: GenericParameter,
+    {
+        let expected_count = generic_parameters.parameter_len::<Param>();
+
+        if let Some(generic_arguments_syn) = generic_arguments_syn.as_mut() {
+            let parameter_order = generic_parameters.parameter_order::<Param>();
+
+            for param_id in parameter_order {
+                let Some(syn) = (!generic_arguments_syn.is_empty())
+                    .then(|| generic_arguments_syn.remove(0))
+                else {
+                    break;
+                };
+
+                let span = syn.span();
+                let res = resolve(self, syn, param_id).await;
+
+                on_term_resolved_for_argument(
+                    self, &res, args, param_id, &span,
+                );
+
+                args.push(res);
+            }
+
+            if args.len_of::<Term>() != expected_count {
+                self.receive_diagnostic(
+                    Diagnostic::MismatchedGenericArgumentCount(
+                        MismatchedGenericArgumentCount {
+                            generic_kind: Param::kind(),
+                            generic_identifier_span: generic_identifier.span(),
+                            expected_count,
+                            supplied_count: args.len_of::<Term>(),
+                        },
+                    ),
+                );
+            }
+
+            args.resize(expected_count, Term::new_error());
+            return;
+        }
+
+        if expected_count > 0 {
+            let missing_count =
+                expected_count.saturating_sub(args.len_of::<Term>());
+
+            if missing_count == 0 {
+                return;
+            }
+
+            let order = generic_parameters
+                .parameter_order::<Param>()
+                .skip(args.len_of::<Term>());
+
+            for id in order {
+                let Some(term) = create_elided(self) else {
+                    break;
+                };
+
+                let span = generic_identifier.span();
+                on_term_resolved_for_argument(self, &term, args, id, &span);
+
+                args.push(term);
+            }
+        }
+
+        if args.len_of::<Term>() != expected_count {
+            self.receive_diagnostic(
+                Diagnostic::MismatchedGenericArgumentCount(
+                    MismatchedGenericArgumentCount {
+                        generic_kind: Param::kind(),
+                        generic_identifier_span: generic_identifier.span(),
+                        expected_count,
+                        supplied_count: args.len_of::<Term>(),
+                    },
+                ),
+            );
+        }
+
+        args.resize(expected_count, Term::new_error());
+    }
+
     async fn resolve_type_argument(
         &mut self,
         syn: &pernixc_syntax::GenericArgument,
@@ -281,10 +310,12 @@ impl Resolver<'_, '_> {
             .generic_arguments()
             .map(|x| x.arguments().collect::<Vec<_>>());
 
+        let mut generic_arguments = GenericArguments::default();
+
         let generic_parameters =
             self.tracked_engine().get_generic_parameters(symbol_id).await;
 
-        let lifetimes = 'lifetime: {
+        'lifetime: {
             let lifetime_syn = {
                 generic_arguments_syn.as_mut().map_or_else(
                     Vec::new,
@@ -325,23 +356,27 @@ impl Resolver<'_, '_> {
                 && generic_parameters.lifetime_parameters_len() > 0
                 && let Some(lt) = self.create_elided_lifetime()
             {
-                break 'lifetime vec![
-                    lt;
-                    generic_parameters
-                        .lifetime_parameters_len()
-                ];
+                generic_arguments.push_lifetime(lt);
+
+                // if can create elided lifetime, then it should able to create
+                // the rest too
+                for _ in 1..generic_parameters.lifetime_parameters_len() {
+                    generic_arguments
+                        .push_lifetime(self.create_elided_lifetime().unwrap());
+                }
+
+                break 'lifetime;
             }
 
-            let mut lifetimes = Vec::new();
             for lifetime_syn in lifetime_syn {
-                lifetimes.push(
+                generic_arguments.push_lifetime(
                     self.resolve_lifetime(
                         &lifetime_syn.into_lifetime().unwrap(),
                     ),
                 );
             }
 
-            if lifetimes.len()
+            if generic_arguments.lifetimes().len()
                 != generic_parameters.lifetime_parameter_order().len()
             {
                 self.receive_diagnostic(
@@ -352,92 +387,84 @@ impl Resolver<'_, '_> {
                             expected_count: generic_parameters
                                 .lifetime_parameter_order()
                                 .len(),
-                            supplied_count: lifetimes.len(),
+                            supplied_count: generic_arguments.lifetimes().len(),
                         },
                     ),
                 );
             }
 
-            lifetimes.resize(
+            generic_arguments.resize(
                 generic_parameters.lifetime_parameters_len(),
                 Lifetime::Error(pernixc_term::error::Error),
             );
-
-            lifetimes
         };
 
-        let types = 'ty: {
-            let mut types = Vec::new();
+        // NOTE: This is such a mess. Was separating each kind of generic
+        // argument into different types a bad idea 😭🙏
 
-            if let Some(bound_type) = bound_type {
-                types.push(bound_type.clone());
-            }
+        if let Some(bound_type) = bound_type {
+            generic_arguments.push(bound_type.clone());
+        }
 
-            resolve_generic_arguments_kind! {
-                self,
-                generic_parameters,
-                TypeParameter,
-                generic_arguments_syn,
-                types,
-                GenericKind::Type,
-                generic_identifier.span(),
-                Type::Error(pernixc_term::error::Error),
-                self.elided_type_provider_mut(),
-                break 'ty types,
-                |syn, param_id| self.resolve_type_argument(
-                    &syn,
-                    symbol_id,
-                    param_id,
-                ).await,
-            }
-        };
+        self.resolve_generic_argument_kind::<TypeParameter, Type>(
+            &generic_parameters,
+            generic_identifier,
+            &mut generic_arguments_syn,
+            &mut generic_arguments,
+            super::resolver::Resolver::create_elided_type,
+            |resolver, syn, param_id| {
+                Box::pin(async move {
+                    resolver
+                        .resolve_type_argument(&syn, symbol_id, param_id)
+                        .await
+                })
+            },
+            |_, _, _, _, _| {},
+        )
+        .await;
 
         #[allow(unused_variables)]
-        let constants = 'consts: {
-            let mut constants = Vec::new();
-
-            resolve_generic_arguments_kind! {
-                self,
-                generic_parameters,
-                ConstantParameter,
-                generic_arguments_syn,
-                constants,
-                GenericKind::Constant,
-                generic_identifier.span(),
-                Constant::Error(pernixc_term::error::Error),
-                self.elided_constant_provider_mut(),
-                break 'consts constants,
-                |syn, param_id| {
+        self.resolve_generic_argument_kind::<ConstantParameter, Constant>(
+            &generic_parameters,
+            generic_identifier,
+            &mut generic_arguments_syn,
+            &mut generic_arguments,
+            super::resolver::Resolver::create_elided_constant,
+            |_, _, _| {
+                Box::pin(async {
                     todo!("constant evaluation is not implemented yet")
-                },
-            }
-        };
+                })
+            },
+            |_, _, _, _, _| {},
+        )
+        .await;
 
-        let instances = 'instances: {
-            let mut instances = Vec::new();
+        self.resolve_generic_argument_kind::<InstanceParameter, Instance>(
+            &generic_parameters,
+            generic_identifier,
+            &mut generic_arguments_syn,
+            &mut generic_arguments,
+            super::resolver::Resolver::create_elided_instance,
+            |resolver, syn, param_id| {
+                Box::pin(async move {
+                    resolver
+                        .resolve_instance_argument(&syn, symbol_id, param_id)
+                        .await
+                })
+            },
+            |resolver, inst, generic_args, id, span| {
+                resolver.notify_instance_resolved_in_generic_arguments(
+                    inst,
+                    generic_args,
+                    symbol_id,
+                    id,
+                    span,
+                );
+            },
+        )
+        .await;
 
-            resolve_generic_arguments_kind! {
-                self,
-                generic_parameters,
-                InstanceParameter,
-                generic_arguments_syn,
-                instances,
-                GenericKind::Instance,
-                generic_identifier.span(),
-                Instance::Error(pernixc_term::error::Error),
-                self.elided_instance_provider_mut(),
-                break 'instances instances,
-                |syn, param_id| {
-                    self.resolve_instance_argument(
-                        &syn,
-                        symbol_id,
-                        param_id,
-                    ).await
-                },
-            }
-        };
-
-        GenericArguments::new(lifetimes, types, constants, instances)
+        generic_arguments
     }
 
     /// Resolves a [`pernixc_syntax::Lifetime`] as a [`Lifetime`] term.

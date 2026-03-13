@@ -41,6 +41,8 @@ pub trait Term:
     pernixc_term::visitor::Element
     + pernixc_term::matching::Match
     + pernixc_term::instantiation::Element
+    + pernixc_term::generic_arguments::Element
+    + pernixc_term::error::MakeError
     + crate::equivalence::Impl
     + crate::unification::Element
     + crate::subtype::Impl
