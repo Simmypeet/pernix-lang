@@ -49,7 +49,7 @@ use crate::{
     qualified_identifier::Resolution,
 };
 
-impl Resolver<'_, '_> {
+impl<'i, 'm> Resolver<'i, 'm> {
     #[allow(clippy::too_many_arguments)]
     async fn resolve_generic_argument_kind<
         Param,
@@ -67,8 +67,9 @@ impl Resolver<'_, '_> {
             &'a mut Self,
             GenericArgumentSyn,
             pernixc_arena::ID<Param>,
-        )
-            -> Pin<Box<dyn Future<Output = Term> + 'a>>,
+        ) -> Pin<
+            Box<dyn Future<Output = Term> + Send + 'a>,
+        >,
         mut on_term_resolved_for_argument: impl for<'a> FnMut(
             &'a mut Self,
             &'a Term,
@@ -158,120 +159,146 @@ impl Resolver<'_, '_> {
         args.resize(expected_count, Term::new_error());
     }
 
-    async fn resolve_type_argument(
-        &mut self,
-        syn: &pernixc_syntax::GenericArgument,
+    #[allow(clippy::manual_async_fn)]
+    fn resolve_type_argument<'s, 'g>(
+        &'s mut self,
+        syn: &'g pernixc_syntax::GenericArgument,
         symbol_id: Global<pernixc_symbol::ID>,
         param_id: pernixc_arena::ID<TypeParameter>,
-    ) -> Type {
-        match syn {
-            GenericArgumentSyn::Lifetime(lifetime) => {
-                self.receive_diagnostic(Diagnostic::MismatchedKindInArgument(
-                    MismatchedKindInArgument::builder()
-                        .argument_span(lifetime.span())
-                        .found_kind(GenericKind::Lifetime)
-                        .found_parameter(
-                            TypeParameterID::new(symbol_id, param_id).into(),
-                        )
-                        .build(),
-                ));
-
-                Type::Error(pernixc_term::error::Error)
-            }
-
-            GenericArgumentSyn::InstanceValue(qualified_identifier) => {
-                Box::pin(async move {
-                    let Some(q) = qualified_identifier.qualified_identifier()
-                    else {
-                        return Type::Error(pernixc_term::error::Error);
-                    };
-
-                    self.push_higher_ranked_lifetimes(
-                        qualified_identifier.higher_ranked_lifetimes().as_ref(),
+    ) -> impl Future<Output = Type> + use<'s, 'g, 'i, 'm> + Send {
+        async move {
+            match syn {
+                GenericArgumentSyn::Lifetime(lifetime) => {
+                    self.receive_diagnostic(
+                        Diagnostic::MismatchedKindInArgument(
+                            MismatchedKindInArgument::builder()
+                                .argument_span(lifetime.span())
+                                .found_kind(GenericKind::Lifetime)
+                                .found_parameter(
+                                    TypeParameterID::new(symbol_id, param_id)
+                                        .into(),
+                                )
+                                .build(),
+                        ),
                     );
 
-                    let res = self.resolve_qualified_identifier_type(&q).await;
+                    Type::Error(pernixc_term::error::Error)
+                }
 
-                    self.pop_higher_ranked_lifetimes();
+                GenericArgumentSyn::InstanceValue(qualified_identifier) => {
+                    Box::pin(async move {
+                        let Some(q) =
+                            qualified_identifier.qualified_identifier()
+                        else {
+                            return Type::Error(pernixc_term::error::Error);
+                        };
 
-                    res
-                })
-                .await
-            }
+                        self.push_higher_ranked_lifetimes(
+                            qualified_identifier
+                                .higher_ranked_lifetimes()
+                                .as_ref(),
+                        );
 
-            GenericArgumentSyn::Type(ty) => {
-                Box::pin(async move { self.resolve_type(ty).await }).await
-            }
+                        let res =
+                            self.resolve_qualified_identifier_type(&q).await;
 
-            GenericArgumentSyn::Constant(constant_argument) => {
-                self.receive_diagnostic(Diagnostic::MismatchedKindInArgument(
-                    MismatchedKindInArgument::builder()
-                        .argument_span(constant_argument.span())
-                        .found_kind(GenericKind::Constant)
-                        .found_parameter(
-                            TypeParameterID::new(symbol_id, param_id).into(),
-                        )
-                        .build(),
-                ));
+                        self.pop_higher_ranked_lifetimes();
 
-                Type::Error(pernixc_term::error::Error)
+                        res
+                    })
+                    .await
+                }
+
+                GenericArgumentSyn::Type(ty) => {
+                    Box::pin(async move { self.resolve_type(ty).await }).await
+                }
+
+                GenericArgumentSyn::Constant(constant_argument) => {
+                    self.receive_diagnostic(
+                        Diagnostic::MismatchedKindInArgument(
+                            MismatchedKindInArgument::builder()
+                                .argument_span(constant_argument.span())
+                                .found_kind(GenericKind::Constant)
+                                .found_parameter(
+                                    TypeParameterID::new(symbol_id, param_id)
+                                        .into(),
+                                )
+                                .build(),
+                        ),
+                    );
+
+                    Type::Error(pernixc_term::error::Error)
+                }
             }
         }
     }
 
-    async fn resolve_instance_argument(
-        &mut self,
-        syn: &pernixc_syntax::GenericArgument,
+    #[allow(clippy::manual_async_fn)]
+    fn resolve_instance_argument<'s, 'g>(
+        &'s mut self,
+        syn: &'g pernixc_syntax::GenericArgument,
         symbol_id: Global<pernixc_symbol::ID>,
         param_id: pernixc_arena::ID<InstanceParameter>,
-    ) -> Instance {
-        use GenericArgumentSyn::InstanceValue;
+    ) -> impl Future<Output = Instance> + use<'s, 'g, 'i, 'm> + Send {
+        async move {
+            use GenericArgumentSyn::InstanceValue;
 
-        match syn {
-            GenericArgumentSyn::InstanceValue(qualified_identifier) => {
-                Box::pin(async move {
-                    let Some(q) = qualified_identifier.qualified_identifier()
-                    else {
-                        return Instance::Error(pernixc_term::error::Error);
-                    };
+            match syn {
+                GenericArgumentSyn::InstanceValue(qualified_identifier) => {
+                    Box::pin(async move {
+                        let Some(q) =
+                            qualified_identifier.qualified_identifier()
+                        else {
+                            return Instance::Error(pernixc_term::error::Error);
+                        };
 
-                    self.push_higher_ranked_lifetimes(
-                        qualified_identifier.higher_ranked_lifetimes().as_ref(),
+                        self.push_higher_ranked_lifetimes(
+                            qualified_identifier
+                                .higher_ranked_lifetimes()
+                                .as_ref(),
+                        );
+
+                        let res = self
+                            .resolve_qualified_identifier_instance(&q)
+                            .await;
+
+                        self.pop_higher_ranked_lifetimes();
+
+                        res
+                    })
+                    .await
+                }
+
+                syn => {
+                    self.receive_diagnostic(
+                        Diagnostic::MismatchedKindInArgument(
+                            MismatchedKindInArgument::builder()
+                                .argument_span(syn.span())
+                                .found_parameter(
+                                    InstanceParameterID::new(
+                                        symbol_id, param_id,
+                                    )
+                                    .into(),
+                                )
+                                .found_kind(match syn {
+                                    GenericArgumentSyn::Lifetime(_) => {
+                                        GenericKind::Lifetime
+                                    }
+                                    GenericArgumentSyn::Type(_) => {
+                                        GenericKind::Type
+                                    }
+                                    GenericArgumentSyn::Constant(_) => {
+                                        GenericKind::Constant
+                                    }
+
+                                    InstanceValue(_) => unreachable!(),
+                                })
+                                .build(),
+                        ),
                     );
 
-                    let res =
-                        self.resolve_qualified_identifier_instance(&q).await;
-
-                    self.pop_higher_ranked_lifetimes();
-
-                    res
-                })
-                .await
-            }
-
-            syn => {
-                self.receive_diagnostic(Diagnostic::MismatchedKindInArgument(
-                    MismatchedKindInArgument::builder()
-                        .argument_span(syn.span())
-                        .found_parameter(
-                            InstanceParameterID::new(symbol_id, param_id)
-                                .into(),
-                        )
-                        .found_kind(match syn {
-                            GenericArgumentSyn::Lifetime(_) => {
-                                GenericKind::Lifetime
-                            }
-                            GenericArgumentSyn::Type(_) => GenericKind::Type,
-                            GenericArgumentSyn::Constant(_) => {
-                                GenericKind::Constant
-                            }
-
-                            InstanceValue(_) => unreachable!(),
-                        })
-                        .build(),
-                ));
-
-                Instance::Error(pernixc_term::error::Error)
+                    Instance::Error(pernixc_term::error::Error)
+                }
             }
         }
     }
