@@ -4,10 +4,8 @@
 use std::pin::Pin;
 
 use bon::Builder;
-use pernixc_handler::Handler;
 use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_qbice::TrackedEngine;
 use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant, generic_parameters::InstanceParameterID,
@@ -17,7 +15,7 @@ use qbice::{
     Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
 };
 
-use crate::{diagnostic::Diagnostic, qualified_identifier::Resolution};
+use crate::qualified_identifier::Resolution;
 
 pub mod diagnostic;
 pub mod generic_parameter_namespace;
@@ -117,63 +115,45 @@ pub trait Observer: Send {
     /// Notifies the observer when a resolution is resolved.
     fn on_resolution_resolved(
         &mut self,
-        tracked_engine: &TrackedEngine,
-        referring_site: Global<pernixc_symbol::ID>,
         resolution: &Resolution,
         span: &RelativeSpan,
-        handler: &dyn Handler<Diagnostic>,
     );
 
     /// Notifies the observer when a type is resolved.
     fn on_type_resolved(
         &mut self,
-        tracked_engine: &TrackedEngine,
-        referring_site: Global<pernixc_symbol::ID>,
         ty: &Type,
         syntax_tree: &pernixc_syntax::r#type::Type,
-        handler: &dyn Handler<Diagnostic>,
     );
 
     /// Notifies the observer when a lifetime is resolved.
     fn on_lifetime_resolved(
         &mut self,
-        tracked_engine: &TrackedEngine,
-        referring_site: Global<pernixc_symbol::ID>,
         lifetime: &Lifetime,
         syntax_tree: &pernixc_syntax::Lifetime,
-        handler: &dyn Handler<Diagnostic>,
     );
 
     /// Notifies the observer when a constant is resolved.
     fn on_constant_arguments_resolved(
         &mut self,
-        tracked_engine: &TrackedEngine,
-        referring_site: Global<pernixc_symbol::ID>,
         constant: &Constant,
         syntax_tree: &pernixc_syntax::expression::Expression,
-        handler: &dyn Handler<Diagnostic>,
     );
 
     /// Notifies the observer when a type is resolved as an unpacked element
     /// in a tuple type.
     fn on_unpacked_type_resolved(
         &mut self,
-        tracked_engine: &TrackedEngine,
-        referring_site: Global<pernixc_symbol::ID>,
         ty: &Type,
         syntax_tree: &pernixc_syntax::r#type::Unpackable,
-        handler: &dyn Handler<Diagnostic>,
     );
 
     /// Notifies the observer when a constant is resolved as an unpacked element
     /// in a tuple constant.
     fn on_unpacked_constant_resolved(
         &mut self,
-        tracked_engine: &TrackedEngine,
-        referring_site: Global<pernixc_symbol::ID>,
         constant: &Constant,
         syntax_tree: &pernixc_syntax::expression::Expression,
-        handler: &dyn Handler<Diagnostic>,
     );
 }
 

@@ -179,13 +179,7 @@ impl<'i, 'm> Resolver<'i, 'm> {
         span: &RelativeSpan,
     ) {
         if let Some(observer) = self.observer.as_mut() {
-            observer.on_resolution_resolved(
-                self.tracked_engine,
-                self.referring_site,
-                resolution,
-                span,
-                self.handler,
-            );
+            observer.on_resolution_resolved(resolution, span);
         }
     }
 
@@ -196,13 +190,7 @@ impl<'i, 'm> Resolver<'i, 'm> {
         syntax_tree: &pernixc_syntax::r#type::Type,
     ) {
         if let Some(observer) = self.observer.as_mut() {
-            observer.on_type_resolved(
-                self.tracked_engine,
-                self.referring_site,
-                ty,
-                syntax_tree,
-                self.handler,
-            );
+            observer.on_type_resolved(ty, syntax_tree);
         }
     }
 
@@ -213,13 +201,7 @@ impl<'i, 'm> Resolver<'i, 'm> {
         syntax_tree: &pernixc_syntax::Lifetime,
     ) {
         if let Some(observer) = self.observer.as_mut() {
-            observer.on_lifetime_resolved(
-                self.tracked_engine,
-                self.referring_site,
-                lifetime,
-                syntax_tree,
-                self.handler,
-            );
+            observer.on_lifetime_resolved(lifetime, syntax_tree);
         }
     }
 
@@ -231,13 +213,7 @@ impl<'i, 'm> Resolver<'i, 'm> {
         syntax_tree: &pernixc_syntax::r#type::Unpackable,
     ) {
         if let Some(observer) = self.observer.as_mut() {
-            observer.on_unpacked_type_resolved(
-                self.tracked_engine,
-                self.referring_site,
-                ty,
-                syntax_tree,
-                self.handler,
-            );
+            observer.on_unpacked_type_resolved(ty, syntax_tree);
         }
     }
 
