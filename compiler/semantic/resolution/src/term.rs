@@ -4,7 +4,6 @@
 use std::{fmt::Debug, future::Future, ops::Deref, pin::Pin};
 
 use pernixc_extend::extend;
-use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::{
     instance_associated_value::get_instance_associated_value,
@@ -70,13 +69,6 @@ impl<'i, 'm> Resolver<'i, 'm> {
         ) -> Pin<
             Box<dyn Future<Output = Term> + Send + 'a>,
         >,
-        mut on_term_resolved_for_argument: impl for<'a> FnMut(
-            &'a mut Self,
-            &'a Term,
-            &GenericArguments,
-            pernixc_arena::ID<Param>,
-            &RelativeSpan,
-        ),
     ) where
         Param: GenericParameter,
     {
@@ -92,14 +84,7 @@ impl<'i, 'm> Resolver<'i, 'm> {
                     break;
                 };
 
-                let span = syn.span();
-                let res = resolve(self, syn, param_id).await;
-
-                on_term_resolved_for_argument(
-                    self, &res, args, param_id, &span,
-                );
-
-                args.push(res);
+                args.push(resolve(self, syn, param_id).await);
             }
 
             if args.len_of::<Term>() != expected_count {
@@ -131,13 +116,10 @@ impl<'i, 'm> Resolver<'i, 'm> {
                 .parameter_order::<Param>()
                 .skip(args.len_of::<Term>());
 
-            for id in order {
+            for _ in order {
                 let Some(term) = create_elided(self) else {
                     break;
                 };
-
-                let span = generic_identifier.span();
-                on_term_resolved_for_argument(self, &term, args, id, &span);
 
                 args.push(term);
             }
@@ -446,7 +428,6 @@ impl<'i, 'm> Resolver<'i, 'm> {
                         .await
                 })
             },
-            |_, _, _, _, _| {},
         )
         .await;
 
@@ -462,7 +443,6 @@ impl<'i, 'm> Resolver<'i, 'm> {
                     todo!("constant evaluation is not implemented yet")
                 })
             },
-            |_, _, _, _, _| {},
         )
         .await;
 
@@ -478,15 +458,6 @@ impl<'i, 'm> Resolver<'i, 'm> {
                         .resolve_instance_argument(&syn, symbol_id, param_id)
                         .await
                 })
-            },
-            |resolver, inst, generic_args, id, span| {
-                resolver.notify_instance_resolved_in_generic_arguments(
-                    inst,
-                    generic_args,
-                    symbol_id,
-                    id,
-                    span,
-                );
             },
         )
         .await;

@@ -8,12 +8,8 @@ use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_target::Global;
 use pernixc_term::{
-    constant::Constant,
-    generic_arguments::GenericArguments,
-    generic_parameters::{InstanceParameter, InstanceParameterID},
-    instance::Instance,
-    lifetime::Lifetime,
-    r#type::Type,
+    constant::Constant, generic_parameters::InstanceParameterID,
+    instance::Instance, lifetime::Lifetime, r#type::Type,
 };
 use qbice::{
     Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
@@ -158,21 +154,6 @@ pub trait Observer: Send {
         &mut self,
         constant: &Constant,
         syntax_tree: &pernixc_syntax::expression::Expression,
-    );
-
-    /// Notifies the observer when an instance is resolved and will be used as
-    /// a generic argument for the instance parameter.
-    ///
-    /// It's primarily used for collecting the resolved instance that is used
-    /// as a generic argument for the instance parameter, which is used to check
-    /// whether the instance satisfies the trait ref of the instance parameter.
-    fn on_instance_resolved_in_generic_arguments(
-        &mut self,
-        instance: &Instance,
-        generic_arguments: &GenericArguments,
-        symbol: Global<pernixc_symbol::ID>,
-        instance_parameter_id: pernixc_arena::ID<InstanceParameter>,
-        span: &RelativeSpan,
     );
 }
 

@@ -1,10 +1,6 @@
-use pernixc_arena::ID;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_resolution::qualified_identifier::Resolution;
-use pernixc_term::{
-    constant::Constant, generic_parameters::InstanceParameter,
-    lifetime::Lifetime, r#type::Type,
-};
+use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
 use qbice::{Decode, Encode, Identifiable, StableHash};
 
 /// Collects all the terms and symbols resolved during building a particular
@@ -36,28 +32,6 @@ pub struct Occurrences {
         Vec<(Constant, pernixc_syntax::expression::Expression)>,
 
     pub constant_types: Vec<(Type, pernixc_syntax::r#type::Type)>,
-    pub resolved_instaces_in_generic_arguments: Vec<ResolvedInstance>,
-}
-
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    StableHash,
-    Encode,
-    Decode,
-    Identifiable,
-)]
-pub struct ResolvedInstance {
-    instance: pernixc_term::instance::Instance,
-    generic_arguments: pernixc_term::generic_arguments::GenericArguments,
-    symbol: pernixc_target::Global<pernixc_symbol::ID>,
-    instance_parameter_id: ID<InstanceParameter>,
-    span: RelativeSpan,
 }
 
 impl pernixc_resolution::Observer for Occurrences {
@@ -107,22 +81,5 @@ impl pernixc_resolution::Observer for Occurrences {
         syntax_tree: &pernixc_syntax::expression::Expression,
     ) {
         self.unpacked_constants.push((constant.clone(), syntax_tree.clone()));
-    }
-
-    fn on_instance_resolved_in_generic_arguments(
-        &mut self,
-        instance: &pernixc_term::instance::Instance,
-        generic_arguments: &pernixc_term::generic_arguments::GenericArguments,
-        symbol: pernixc_target::Global<pernixc_symbol::ID>,
-        instance_parameter_id: ID<InstanceParameter>,
-        span: &RelativeSpan,
-    ) {
-        self.resolved_instaces_in_generic_arguments.push(ResolvedInstance {
-            instance: instance.clone(),
-            generic_arguments: generic_arguments.clone(),
-            symbol,
-            instance_parameter_id,
-            span: *span,
-        });
     }
 }

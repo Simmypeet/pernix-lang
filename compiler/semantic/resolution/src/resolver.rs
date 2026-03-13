@@ -11,8 +11,7 @@ use pernixc_syntax::HigherRankedLifetimes;
 use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
-    generic_arguments::GenericArguments,
-    generic_parameters::{InstanceParameter, InstanceParameterID},
+    generic_parameters::InstanceParameterID,
     instance::Instance,
     lifetime::{Forall, Lifetime, NamedForall},
     r#type::Type,
@@ -215,27 +214,6 @@ impl<'i, 'm> Resolver<'i, 'm> {
     ) {
         if let Some(observer) = self.observer.as_mut() {
             observer.on_unpacked_type_resolved(ty, syntax_tree);
-        }
-    }
-
-    /// Notifies the observer when a constant is resolved as an unpacked
-    /// element.
-    pub fn notify_instance_resolved_in_generic_arguments(
-        &mut self,
-        instance: &Instance,
-        generic_arguments: &GenericArguments,
-        symbol: Global<pernixc_symbol::ID>,
-        instance_parameter_id: pernixc_arena::ID<InstanceParameter>,
-        span: &RelativeSpan,
-    ) {
-        if let Some(observer) = self.observer.as_mut() {
-            observer.on_instance_resolved_in_generic_arguments(
-                instance,
-                generic_arguments,
-                symbol,
-                instance_parameter_id,
-                span,
-            );
         }
     }
 
