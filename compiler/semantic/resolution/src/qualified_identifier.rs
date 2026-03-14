@@ -25,10 +25,8 @@ use pernixc_syntax::{
 };
 use pernixc_target::{Global, TargetID, get_linked_targets, get_target_map};
 use pernixc_term::{
-    display::Display,
-    generic_arguments::GenericArguments,
-    generic_parameters::get_generic_parameters,
-    instance::{Instance, InstanceAssociated},
+    display::Display, generic_arguments::GenericArguments,
+    generic_parameters::get_generic_parameters, instance::Instance,
     r#type::Type,
 };
 use qbice::{Decode, Encode, Identifiable, StableHash};
@@ -123,8 +121,8 @@ pub struct MemberGeneric {
     pub member_generic_arguments: GenericArguments,
 }
 
-/// Represents a resolution to an instance associated type such as
-/// `I::func(...)`.
+/// Represents a resolution to a symbol associated to an instance such as
+/// `I::function['a, T]` where `I` is an instance.
 #[derive(
     Debug,
     Clone,
@@ -137,14 +135,18 @@ pub struct MemberGeneric {
     Encode,
     Decode,
 )]
-pub struct InstanceAssociatedFunction {
-    /// The instance that the associated function is resolved from. Suppose
+pub struct InstanceAssociatedSymbol {
+    /// The instance that the associated symbol is resolved from. Suppose
     /// `I::func(...)`, then `I` is the instance.
     pub instance: Instance,
 
-    /// The resolved trait associated function symbol. Suppose `I::func(...)`,
-    /// then `func` is the trait associated function.
-    pub trait_associated_function_id: Global<pernixc_symbol::ID>,
+    /// The resolved trait associated symbol. Suppose `I::func(...)`, then
+    /// `func` is the trait associated function.
+    ///
+    /// This is **NOT** the instance associated symbol but the trait associated
+    /// symbol that the instance associated symbol. Where that particular trait
+    /// is the trait that the instance implements.
+    pub trait_associated_symbol_id: Global<pernixc_symbol::ID>,
 
     /// The generic arguments that are supplied to the trait associated
     /// function.
@@ -186,9 +188,9 @@ pub enum Resolution {
     /// Resolved to an instance, supplied from [`ExtraNamespace`].
     Instance(Instance),
 
-    /// Resolved to an instance associated function such as
-    /// `I::function['a, T]`.
-    InstanceAssociatedFunction(InstanceAssociatedFunction),
+    /// Resolved to an instance associated symbol such as `I::function['a, T]`
+    /// where `I` is an instance.
+    InstanceAssociatedSymbol(InstanceAssociatedSymbol),
 }
 
 impl Resolution {
@@ -200,8 +202,8 @@ impl Resolution {
             Self::Variant(variant) => Some(variant.variant_id),
             Self::Generic(generic) => Some(generic.id),
             Self::MemberGeneric(member) => Some(member.id),
-            Self::InstanceAssociatedFunction(func) => {
-                Some(func.trait_associated_function_id)
+            Self::InstanceAssociatedSymbol(func) => {
+                Some(func.trait_associated_symbol_id)
             }
 
             Self::Instance(_) | Self::Type(_) => None,
@@ -223,7 +225,7 @@ impl Resolution {
                 | Self::Variant(_)
                 | Self::Generic(_)
                 | Self::MemberGeneric(_)
-                | Self::InstanceAssociatedFunction(_) => {
+                | Self::InstanceAssociatedSymbol(_) => {
                     unreachable!("should've gotten a global_id()")
                 }
 
@@ -292,36 +294,18 @@ fn to_resolution(
             }
 
             Resolution::Instance(instance) => match trait_associated {
-                // turned to instance associated type
-                Kind::TraitAssociatedType => Resolution::Type(
-                    Type::InstanceAssociated(InstanceAssociated::new(
-                        Box::new(instance),
-                        resolved_id,
-                        generic_arguments.unwrap(),
-                    )),
-                ),
-
-                Kind::TraitAssociatedFunction => {
-                    Resolution::InstanceAssociatedFunction(
-                        InstanceAssociatedFunction {
+                Kind::TraitAssociatedInstance
+                | Kind::TraitAssociatedConstant
+                | Kind::TraitAssociatedType
+                | Kind::TraitAssociatedFunction => {
+                    Resolution::InstanceAssociatedSymbol(
+                        InstanceAssociatedSymbol {
                             instance,
-                            trait_associated_function_id: resolved_id,
+                            trait_associated_symbol_id: resolved_id,
                             generic_arguments: generic_arguments.unwrap(),
                         },
                     )
                 }
-
-                Kind::TraitAssociatedConstant => {
-                    todo!("implement instance associated constant")
-                }
-
-                Kind::TraitAssociatedInstance => Resolution::Instance(
-                    Instance::InstanceAssociated(InstanceAssociated::new(
-                        Box::new(instance),
-                        resolved_id,
-                        generic_arguments.unwrap(),
-                    )),
-                ),
 
                 _ => {
                     unreachable!()
@@ -331,7 +315,7 @@ fn to_resolution(
             Resolution::Type(_)
             | Resolution::MemberGeneric(_)
             | Resolution::Module(_)
-            | Resolution::InstanceAssociatedFunction(_)
+            | Resolution::InstanceAssociatedSymbol(_)
             | Resolution::Variant(_) => unreachable!(),
         },
 
@@ -805,11 +789,11 @@ impl Resolver<'_, '_> {
                 }
             },
 
-            Resolution::InstanceAssociatedFunction(function_id) => {
+            Resolution::InstanceAssociatedSymbol(function_id) => {
                 self.receive_diagnostic(Diagnostic::NoMemberInFunction(
                     NoMemberInFunction::builder()
                         .resolution_span(identifier.span)
-                        .function_id(function_id.trait_associated_function_id)
+                        .function_id(function_id.trait_associated_symbol_id)
                         .build(),
                 ));
 

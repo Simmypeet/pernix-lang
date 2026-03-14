@@ -326,7 +326,7 @@ impl Report for ExpectInstance {
                     | Resolution::Variant(_)
                     | Resolution::Generic(_)
                     | Resolution::MemberGeneric(_)
-                    | Resolution::InstanceAssociatedFunction(_) => {
+                    | Resolution::InstanceAssociatedSymbol(_) => {
                         unreachable!("should've gotten a global_id()")
                     }
 

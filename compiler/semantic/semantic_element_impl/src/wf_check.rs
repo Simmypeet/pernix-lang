@@ -8,8 +8,13 @@ use linkme::distributed_slice;
 use pernixc_handler::{Handler, Storage};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
-use pernixc_resolution::qualified_identifier::Resolution;
-use pernixc_semantic_element::{instance_associated_value, trait_ref};
+use pernixc_resolution::qualified_identifier::{
+    InstanceAssociatedSymbol, Resolution,
+};
+use pernixc_semantic_element::{
+    instance_associated_value,
+    trait_ref::{self, get_trait_ref_of_instance},
+};
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
     kind::{Kind, get_kind},
@@ -19,7 +24,9 @@ use pernixc_target::Global;
 use pernixc_term::{
     generic_arguments::GenericArguments,
     generic_parameters::get_generic_parameters,
-    instantiation::get_instantiation,
+    instantiation::{
+        get_instantiation, get_instantiation_for_associated_symbol,
+    },
     predicate::{self, Outlives, Predicate},
     r#type::Type,
 };
@@ -58,9 +65,16 @@ impl Checker<'_> {
         match resolution {
             Resolution::Type(_)
             | Resolution::Instance(_)
-            | Resolution::InstanceAssociatedFunction(_)
             | Resolution::Module(_)
             | Resolution::Variant(_) => {}
+
+            Resolution::InstanceAssociatedSymbol(inst_assoc) => {
+                self.check_instantiation_predicates_of_instance_associated(
+                    inst_assoc,
+                    resolution_span,
+                )
+                .await;
+            }
 
             Resolution::Generic(generic) => {
                 self.check_instantiation_predicates_by_generic_arguments(
@@ -70,6 +84,7 @@ impl Checker<'_> {
                 )
                 .await;
             }
+
             Resolution::MemberGeneric(member_generic) => {
                 // additional adt implementation check
 
@@ -166,6 +181,58 @@ impl Checker<'_> {
                     .await;
             }
         }
+    }
+
+    /// Do where clause predicates check for the given instantiation. The errors
+    /// are reported to the `handler`.
+    pub(super) async fn check_instantiation_predicates_of_instance_associated(
+        &self,
+        instance_associated: &InstanceAssociatedSymbol,
+        instantiation_span: &RelativeSpan,
+    ) {
+        let instances =
+            instance_associated.generic_arguments.instances().to_vec();
+
+        let Some(trait_ref) = self
+            .environment
+            .tracked_engine()
+            .get_trait_ref_of_instance(&instance_associated.instance)
+            .await
+        else {
+            return;
+        };
+
+        let inst = self
+            .environment
+            .tracked_engine()
+            .get_instantiation_for_associated_symbol(
+                instance_associated.trait_associated_symbol_id,
+                trait_ref.into_generic_arguments(),
+                instance_associated.generic_arguments.clone(),
+            )
+            .await
+            .unwrap();
+
+        let _ = self
+            .environment
+            .wf_check_instantiation(
+                instance_associated.trait_associated_symbol_id,
+                instantiation_span,
+                &inst,
+                self.handler,
+            )
+            .await;
+
+        let _ = self
+            .environment
+            .check_instantiated_instance_arguments(
+                instance_associated.trait_associated_symbol_id,
+                &instances,
+                instantiation_span,
+                &inst,
+                self.handler,
+            )
+            .await;
     }
 
     /// Do where clause predicates check for the given instantiation. The errors

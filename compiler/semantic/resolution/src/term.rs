@@ -937,6 +937,20 @@ pub async fn resolution_to_instance(
             }
         }
 
+        Resolution::InstanceAssociatedSymbol(inst)
+            if {
+                let symbol_kind =
+                    self.get_kind(inst.trait_associated_symbol_id).await;
+                matches!(symbol_kind, Kind::TraitAssociatedInstance)
+            } =>
+        {
+            Ok(Instance::new_instance_associated(
+                Box::new(inst.instance),
+                inst.trait_associated_symbol_id,
+                inst.generic_arguments,
+            ))
+        }
+
         Resolution::Instance(instance) => Ok(instance),
 
         resolution => Err(ResolutionToTermError::Failed(resolution)),
@@ -1044,6 +1058,21 @@ pub async fn resolution_to_type(
         }
 
         Resolution::Type(ty) => Ok(ty),
+
+        Resolution::InstanceAssociatedSymbol(sym)
+            if {
+                let symbol_kind =
+                    self.get_kind(sym.trait_associated_symbol_id).await;
+
+                matches!(symbol_kind, Kind::TraitAssociatedType)
+            } =>
+        {
+            Ok(Type::new_instance_associated(
+                Box::new(sym.instance),
+                sym.trait_associated_symbol_id,
+                sym.generic_arguments,
+            ))
+        }
 
         resolution => Err(ResolutionToTermError::Failed(resolution)),
     }

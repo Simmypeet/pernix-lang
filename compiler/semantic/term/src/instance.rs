@@ -75,6 +75,12 @@ impl TraitRef {
     pub fn instantiate(&mut self, instantiation: &Instantiation) {
         self.0.instantiate(instantiation);
     }
+
+    /// Destructs this `TraitRef` and returns its generic arguments.
+    #[must_use]
+    pub fn into_generic_arguments(self) -> GenericArguments {
+        self.0.into_generic_arguments()
+    }
 }
 
 /// Refers to a terrm that is associated with an instance.
