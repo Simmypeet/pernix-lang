@@ -9,23 +9,14 @@ use enum_as_inner::EnumAsInner;
 use pernixc_arena::ID;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
-use pernixc_symbol::MemberID;
-use pernixc_target::Global;
-use pernixc_term::{
-    constant::Constant, generic_arguments::GenericArguments,
-    generic_parameters::get_generic_parameters, instance::Instance,
-    lifetime::Lifetime, r#type::Type,
-};
+use pernixc_term::r#type::Type;
 use pernixc_type_system::{OverflowError, Succeeded, normalizer::Normalizer};
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Values,
     address::Address,
-    transform::{
-        self, ConstantTermSource, LifetimeTermSource, Transformer,
-        TypeTermSource,
-    },
+    transform::{self, Transformer},
     value::{Environment, TypeOf, Value},
     visitor,
 };
@@ -184,20 +175,14 @@ impl TypeOf<ID<Register>> for Values {
 }
 
 impl transform::Element for Register {
-    async fn transform<
-        T: Transformer<Lifetime>
-            + Transformer<Type>
-            + Transformer<Constant>
-            + Transformer<Instance>,
-    >(
+    async fn transform<T: Transformer>(
         &mut self,
         transformer: &mut T,
         engine: &TrackedEngine,
     ) {
         match &mut self.assignment {
             Assignment::Tuple(tuple) => {
-                tuple::transform_tuple(tuple, transformer, self.span, engine)
-                    .await;
+                tuple::transform_tuple(tuple, transformer).await;
             }
             Assignment::Load(load) => {
                 load::transform_load(load, transformer, self.span).await;
@@ -209,17 +194,11 @@ impl transform::Element for Register {
                 prefix::transform_prefix(prefix, transformer, self.span).await;
             }
             Assignment::Struct(st) => {
-                r#struct::transform_struct(st, transformer, self.span, engine)
-                    .await;
+                r#struct::transform_struct(st, transformer, self.span).await;
             }
             Assignment::Variant(variant) => {
-                variant::transform_variant(
-                    variant,
-                    transformer,
-                    self.span,
-                    engine,
-                )
-                .await;
+                variant::transform_variant(variant, transformer, self.span)
+                    .await;
             }
             Assignment::FunctionCall(function_call) => {
                 function_call::transform_function_call(
@@ -245,7 +224,6 @@ impl transform::Element for Register {
                 variant_number::transform_variant_number(
                     variant_number,
                     transformer,
-                    self.span,
                 )
                 .await;
             }
@@ -256,81 +234,6 @@ impl transform::Element for Register {
                 resume_call::transform_resume_call(r, transformer).await;
             }
         }
-    }
-}
-
-pub(super) async fn transform_generic_arguments<
-    T: Transformer<Lifetime>
-        + Transformer<Type>
-        + Transformer<Constant>
-        + Transformer<Instance>,
->(
-    transformer: &mut T,
-    symbol_id: Global<pernixc_symbol::ID>,
-    span: RelativeSpan,
-    engine: &TrackedEngine,
-    generic_arg: &mut GenericArguments,
-) {
-    let generic_params = engine.get_generic_parameters(symbol_id).await;
-
-    for (lt_id, lt) in generic_params
-        .lifetime_parameter_order()
-        .zip(generic_arg.lifetimes_mut())
-    {
-        transformer
-            .transform(
-                lt,
-                LifetimeTermSource::GenericParameter(MemberID::new(
-                    symbol_id, lt_id,
-                )),
-                span,
-            )
-            .await;
-    }
-
-    for (ty_id, ty) in
-        generic_params.type_parameter_order().zip(generic_arg.types_mut())
-    {
-        transformer
-            .transform(
-                ty,
-                TypeTermSource::GenericParameter(MemberID::new(
-                    symbol_id, ty_id,
-                )),
-                span,
-            )
-            .await;
-    }
-
-    for (ct_id, ct) in generic_params
-        .constant_parameter_order()
-        .zip(generic_arg.constants_mut())
-    {
-        transformer
-            .transform(
-                ct,
-                ConstantTermSource::GenericParameter(MemberID::new(
-                    symbol_id, ct_id,
-                )),
-                span,
-            )
-            .await;
-    }
-
-    for (instance_id, instance) in generic_params
-        .instance_parameter_order()
-        .zip(generic_arg.instances_mut())
-    {
-        transformer
-            .transform(
-                instance,
-                transform::InstanceTermSource::GenericParameter(MemberID::new(
-                    symbol_id,
-                    instance_id,
-                )),
-                span,
-            )
-            .await;
     }
 }
 

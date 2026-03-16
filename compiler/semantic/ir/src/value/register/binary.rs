@@ -186,7 +186,7 @@ impl crate::visitor::Element for Binary {
     }
 }
 
-pub(super) async fn transform_binary<T: Transformer<Type>>(
+pub(super) async fn transform_binary<T: Transformer>(
     binary: &mut Binary,
     transformer: &mut T,
     _span: pernixc_lexical::tree::RelativeSpan,

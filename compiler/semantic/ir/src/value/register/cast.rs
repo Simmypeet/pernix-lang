@@ -9,7 +9,7 @@ use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Values,
-    transform::{Transformer, TypeTermSource},
+    transform::{ResolutionMut, Transformer},
     value::{Environment, TypeOf, Value, register::Register},
 };
 
@@ -48,7 +48,7 @@ impl crate::visitor::Element for Cast {
     }
 }
 
-pub(super) async fn transform_cast<T: Transformer<Type>>(
+pub(super) async fn transform_cast<T: Transformer>(
     cast: &mut Cast,
     transformer: &mut T,
     span: pernixc_lexical::tree::RelativeSpan,
@@ -57,7 +57,7 @@ pub(super) async fn transform_cast<T: Transformer<Type>>(
         literal.transform(transformer).await;
     }
 
-    transformer.transform(&mut cast.r#type, TypeTermSource::Cast, span).await;
+    transformer.transform(ResolutionMut::Type(&mut cast.r#type), span).await;
 }
 
 impl TypeOf<&Cast> for Values {

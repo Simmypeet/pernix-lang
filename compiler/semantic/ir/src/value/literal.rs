@@ -13,7 +13,7 @@ use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
 use crate::{
     Values,
-    transform::{Transformer, TypeTermSource},
+    transform::{ResolutionMut, Transformer},
     value::{Environment, TypeOf},
 };
 
@@ -294,16 +294,12 @@ impl TypeOf<&Literal> for Values {
 
 impl Literal {
     /// Transforms the types in the literal using the provided transformer.
-    pub async fn transform<T: Transformer<Type>>(
-        &mut self,
-        transformer: &mut T,
-    ) {
+    pub async fn transform<T: Transformer>(&mut self, transformer: &mut T) {
         match self {
             Self::Numeric(numeric) => {
                 transformer
                     .transform(
-                        &mut numeric.r#type,
-                        TypeTermSource::Numeric,
+                        ResolutionMut::Type(&mut numeric.r#type),
                         numeric.span,
                     )
                     .await;
@@ -312,8 +308,7 @@ impl Literal {
             Self::Error(error) => {
                 transformer
                     .transform(
-                        &mut error.r#type,
-                        TypeTermSource::Error,
+                        ResolutionMut::Type(&mut error.r#type),
                         error.span,
                     )
                     .await;
@@ -322,8 +317,7 @@ impl Literal {
             Self::Character(character) => {
                 transformer
                     .transform(
-                        &mut character.r#type,
-                        TypeTermSource::Character,
+                        ResolutionMut::Type(&mut character.r#type),
                         character.span,
                     )
                     .await;
@@ -332,8 +326,7 @@ impl Literal {
             Self::Unreachable(unreachable) => {
                 transformer
                     .transform(
-                        &mut unreachable.r#type,
-                        TypeTermSource::Error,
+                        ResolutionMut::Type(&mut unreachable.r#type),
                         unreachable.span,
                     )
                     .await;
@@ -342,8 +335,7 @@ impl Literal {
             Self::Phantom(phantom) => {
                 transformer
                     .transform(
-                        &mut phantom.r#type,
-                        TypeTermSource::Phantom,
+                        ResolutionMut::Type(&mut phantom.r#type),
                         phantom.span,
                     )
                     .await;

@@ -25,6 +25,7 @@ use pernixc_syntax::{
 };
 use pernixc_target::{Global, TargetID, get_linked_targets, get_target_map};
 use pernixc_term::{
+    TermMut,
     display::Display,
     generic_arguments::{
         AssociatedSymbol, GenericArguments, Symbol,
@@ -99,6 +100,14 @@ impl Variant {
         engine: &TrackedEngine,
     ) -> Instantiation {
         self.0.create_instantiation_parent(engine).await
+    }
+
+    /// Returns an iterator yielding mutable references to all terms appeared in
+    /// the generic arguments
+    pub fn iter_all_term_mut(
+        &mut self,
+    ) -> impl Iterator<Item = TermMut<'_>> + '_ {
+        self.0.iter_all_term_mut()
     }
 }
 

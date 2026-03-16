@@ -708,6 +708,14 @@ impl Symbol {
             Err(ty)
         }
     }
+
+    /// Returns an iterator yielding mutable references to all terms appeared in
+    /// the generic arguments
+    pub fn iter_all_term_mut(
+        &mut self,
+    ) -> impl Iterator<Item = TermMut<'_>> + '_ {
+        self.generic_arguments.iter_all_term_mut()
+    }
 }
 
 /// Represents a term where the associated symbol is supplied with generic
@@ -794,6 +802,16 @@ impl AssociatedSymbol {
         self,
     ) -> (Global<pernixc_symbol::ID>, GenericArguments) {
         (self.id, self.member_generic_arguments)
+    }
+
+    /// Returns an iterator yielding mutable references to all terms appeared in
+    /// the generic arguments
+    pub fn iter_all_term_mut(
+        &mut self,
+    ) -> impl Iterator<Item = TermMut<'_>> + '_ {
+        self.member_generic_arguments
+            .iter_all_term_mut()
+            .chain(self.parent_generic_arguments.iter_all_term_mut())
     }
 }
 

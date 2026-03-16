@@ -12,8 +12,6 @@ use pernixc_semantic_element::{
 };
 use pernixc_target::Global;
 use pernixc_term::{
-    generic_parameters::get_generic_parameters,
-    instantiation::Instantiation,
     tuple,
     r#type::{self, Qualifier, Type},
 };
@@ -551,29 +549,21 @@ impl TypeOf<&Address> for Values {
                     panic!("expected struct type");
                 };
 
-                let (struct_id, generic_arguments) = symbol.destructure();
-
-                let generic_parameters = environment
-                    .tracked_engine()
-                    .get_generic_parameters(struct_id)
+                let inst = symbol
+                    .create_instantiation(environment.tracked_engine())
                     .await;
 
                 let fields =
-                    environment.tracked_engine().get_fields(struct_id).await;
-
-                let instantiation = Instantiation::from_generic_arguments(
-                    generic_arguments,
-                    struct_id,
-                    &generic_parameters,
-                )
-                .unwrap();
+                    environment.tracked_engine().get_fields(symbol.id()).await;
 
                 let mut field_ty =
                     fields.fields[field_address.id].r#type.clone();
 
-                instantiation.instantiate(&mut field_ty);
+                inst.instantiate(&mut field_ty);
+
                 let simplification =
                     environment.type_environment.simplify(field_ty).await?;
+
                 constraints.extend(simplification.constraints.iter().cloned());
 
                 Ok(Succeeded {
@@ -645,19 +635,9 @@ impl TypeOf<&Address> for Values {
                     panic!("expected enum type");
                 };
 
-                let (enum_id, generic_arguments) = symbol.destructure();
-
-                let enum_generic_params = environment
-                    .tracked_engine()
-                    .get_generic_parameters(enum_id)
+                let instantiation = symbol
+                    .create_instantiation(environment.tracked_engine())
                     .await;
-
-                let instantiation = Instantiation::from_generic_arguments(
-                    generic_arguments,
-                    enum_id,
-                    &enum_generic_params,
-                )
-                .unwrap();
 
                 let variant = environment
                     .tracked_engine()
@@ -690,7 +670,7 @@ impl TypeOf<&Address> for Values {
 
 impl Address {
     /// Transforms the types in the address using the provided transformer.
-    pub async fn transform<T: Transformer<Type>>(
+    pub async fn transform<T: Transformer>(
         mut self: &mut Self,
         transformer: &mut T,
     ) {

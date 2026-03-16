@@ -2,131 +2,87 @@
 //! transforming the inference variables in the IR to concrete types after
 //! type inference has been completed.
 
-use pernixc_arena::ID;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_term::{
-    constant::Constant,
-    generic_parameters::{
-        ConstantParameterID, InstanceParameterID, LifetimeParameterID,
-        TypeParameterID,
-    },
-    instance::Instance,
-    lifetime::{ElidedLifetimeID, Lifetime},
+    self, TermMut,
+    generic_arguments::{AssociatedSymbol, Symbol},
+    instance::InstanceAssociated,
+    lifetime::Lifetime,
     r#type::Type,
 };
 
-use crate::alloca::Alloca;
-
-/// A trait implemented by terms that can be transformed by a [`Transformer`]
-/// (lifetimes, types, and constants).
-pub trait Transformable {
-    /// A type representing where the term is coming from, useful for error
-    /// reporting.
-    type Source;
+#[derive(Debug)]
+pub enum ResolutionMut<'x> {
+    Symbol(&'x mut Symbol),
+    Variant(&'x mut pernixc_resolution::qualified_identifier::Variant),
+    AssociatedSymbol(&'x mut AssociatedSymbol),
+    InstanceAssociated(&'x mut InstanceAssociated),
+    Type(&'x mut Type),
+    Lifetime(&'x mut Lifetime),
 }
 
-/// An enumeration of sources for lifetime terms used in the expression.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum LifetimeTermSource {
-    /// From the borrow expression like `&'? x`.
-    Borrow,
+impl ResolutionMut<'_> {
+    /// Returns an iterator over mutable references to all sub-terms in the
+    /// resolution.
+    pub fn iter_all_term_mut(&mut self) -> impl Iterator<Item = TermMut<'_>> {
+        enum Six<A, B, C, D, E, F> {
+            A(A),
+            B(B),
+            C(C),
+            D(D),
+            E(E),
+            F(F),
+        }
 
-    /// From a capture field that has been captured by reference.
-    Capture,
+        impl<
+            A: Iterator,
+            B: Iterator<Item = A::Item>,
+            C: Iterator<Item = A::Item>,
+            D: Iterator<Item = A::Item>,
+            E: Iterator<Item = A::Item>,
+            F: Iterator<Item = A::Item>,
+        > Iterator for Six<A, B, C, D, E, F>
+        {
+            type Item = A::Item;
 
-    /// As a generic argument supplied to a generic symbol.
-    GenericParameter(LifetimeParameterID),
+            fn next(&mut self) -> Option<Self::Item> {
+                match self {
+                    Self::A(a) => a.next(),
+                    Self::B(b) => b.next(),
+                    Self::C(c) => c.next(),
+                    Self::D(d) => d.next(),
+                    Self::E(e) => e.next(),
+                    Self::F(f) => f.next(),
+                }
+            }
+        }
 
-    /// From an elided lifetime argument to the function call.
-    ElidedLifetimeParameter(ElidedLifetimeID),
+        match self {
+            Self::Symbol(symbol) => Six::A(symbol.iter_all_term_mut()),
+            Self::Variant(variant) => Six::B(variant.iter_all_term_mut()),
+            Self::AssociatedSymbol(associated_symbol) => {
+                Six::C(associated_symbol.iter_all_term_mut())
+            }
+            Self::InstanceAssociated(instance_associated) => {
+                Six::D(instance_associated.iter_all_term_mut())
+            }
+            Self::Type(ty) => Six::E(std::iter::once(TermMut::Type(ty))),
+            Self::Lifetime(lifetime) => {
+                Six::F(std::iter::once(TermMut::Lifetime(lifetime)))
+            }
+        }
+    }
 }
 
-impl Transformable for Lifetime {
-    type Source = LifetimeTermSource;
-}
-
-/// An enumeration of sources for type terms used in the expression.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum TypeTermSource {
-    /// From inferring the concreete type of a numeric literal.
-    Numeric,
-
-    /// From each field in a capture structure.
-    Capture,
-
-    /// From inferring the concrete type of a character literal.
-    Character,
-
-    /// From inferring the concrete type of a `phantom ?T` expression.
-    Phantom,
-
-    /// From the free type variable of an errorneous expression.
-    Error,
-
-    /// From the unreachable expression like `break`, `continue`, or `return`
-    Unreachable,
-
-    /// From inferring the concrete type of a phi instruction.
-    Phi,
-
-    /// From inferring the array type like `[expr; N]`.
-    Array,
-
-    /// As a generic argument supplied to a generic symbol.
-    GenericParameter(TypeParameterID),
-
-    /// From the type in a cast expression like `expr as T`.
-    Cast,
-
-    /// The type comes from a do return instruction.
-    DoReturnType,
-
-    /// The type comes from closure parameters.
-    ClosureParameter,
-
-    /// The type comes from an alloca instruction.
-    Alloca(ID<Alloca>),
-
-    /// The type comes from a resume call instruction.
-    ResumeCall,
-}
-
-impl Transformable for Type {
-    type Source = TypeTermSource;
-}
-
-/// An enumeration of sources for constant terms used in the expression.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum ConstantTermSource {
-    /// As a generic argument supplied to a generic symbol.
-    GenericParameter(ConstantParameterID),
-}
-
-impl Transformable for Constant {
-    type Source = ConstantTermSource;
-}
-
-/// An enumeration of sources for instance terms used in the expression.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum InstanceTermSource {
-    /// As an instance generic argument supplied to a generic symbol.
-    GenericParameter(InstanceParameterID),
-}
-
-impl Transformable for Instance {
-    type Source = InstanceTermSource;
-}
-
-/// A trait for transforming terms of type `T`.
-pub trait Transformer<T: Transformable> {
+/// A trait for transforming the [`ResolutionMut`]s in an object
+pub trait Transformer {
     /// Transforms the given term `term`, using the provided `source` for error
     /// reporting if necessary.
     #[allow(async_fn_in_trait)]
     async fn transform(
         &mut self,
-        term: &mut T,
-        source: T::Source,
+        resolution: ResolutionMut<'_>,
         span: RelativeSpan,
     );
 }
@@ -137,12 +93,7 @@ pub trait Element {
     /// Transforms the types, lifetimes, and constants in self using the given
     /// transformer.
     #[allow(async_fn_in_trait)]
-    async fn transform<
-        T: Transformer<Lifetime>
-            + Transformer<Type>
-            + Transformer<Constant>
-            + Transformer<Instance>,
-    >(
+    async fn transform<T: Transformer>(
         &mut self,
         transformer: &mut T,
         engine: &TrackedEngine,

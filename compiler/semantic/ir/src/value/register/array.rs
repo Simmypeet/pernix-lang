@@ -9,7 +9,7 @@ use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Values,
-    transform::{Transformer, TypeTermSource},
+    transform::{ResolutionMut, Transformer},
     value::{Environment, TypeOf, Value, register::Register},
 };
 
@@ -54,7 +54,7 @@ impl crate::visitor::Element for Array {
     }
 }
 
-pub(super) async fn transform_array<T: Transformer<Type>>(
+pub(super) async fn transform_array<T: Transformer>(
     array: &mut Array,
     transformer: &mut T,
     span: pernixc_lexical::tree::RelativeSpan,
@@ -66,7 +66,7 @@ pub(super) async fn transform_array<T: Transformer<Type>>(
     }
 
     transformer
-        .transform(&mut array.element_type, TypeTermSource::Array, span)
+        .transform(ResolutionMut::Type(&mut array.element_type), span)
         .await;
 }
 

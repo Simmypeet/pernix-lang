@@ -9,6 +9,7 @@ use pernixc_target::Global;
 use qbice::{Decode, Encode, Identifiable, StableHash};
 
 use crate::{
+    TermMut,
     constant::Constant,
     error::{Error, contains_error},
     generic_arguments::{
@@ -438,6 +439,16 @@ impl InstanceAssociated {
     pub fn contains_error(&self) -> bool {
         self.trait_associated_symbol_generic_arguments.contains_error()
             || contains_error(&*self.instance)
+    }
+
+    /// Returns an iterator yielding mutable references to all terms appeared in
+    /// the generic arguments including this inner associated instance.
+    pub fn iter_all_term_mut(
+        &mut self,
+    ) -> impl Iterator<Item = TermMut<'_>> + '_ {
+        std::iter::once(TermMut::Instance(&mut self.instance)).chain(
+            self.trait_associated_symbol_generic_arguments.iter_all_term_mut(),
+        )
     }
 }
 

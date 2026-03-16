@@ -5,14 +5,11 @@ use getset::{CopyGetters, Getters};
 use pernixc_arena::{Arena, ID};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_target::Global;
-use pernixc_term::{
-    constant::Constant, generic_arguments::GenericArguments,
-    instance::Instance, lifetime::Lifetime, r#type::Type,
-};
+use pernixc_term::{generic_arguments::GenericArguments, r#type::Type};
 use pernixc_type_system::OverflowError;
 use qbice::{Decode, Encode, StableHash};
 
-use crate::transform::{self, Transformer, TypeTermSource};
+use crate::transform::{self, ResolutionMut, Transformer};
 
 /// A collection of all the effect handler groups in a function body.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Default)]
@@ -40,12 +37,7 @@ impl std::ops::Index<ID<HandlingScope>> for HandlingScopes {
 }
 
 impl transform::Element for HandlingScopes {
-    async fn transform<
-        T: Transformer<Lifetime>
-            + Transformer<Type>
-            + Transformer<Constant>
-            + Transformer<Instance>,
-    >(
+    async fn transform<T: Transformer>(
         &mut self,
         transformer: &mut T,
         engine: &pernixc_qbice::TrackedEngine,
@@ -126,17 +118,14 @@ pub struct HandlingScope {
 }
 
 impl transform::Element for HandlingScope {
-    async fn transform<
-        T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
-    >(
+    async fn transform<T: Transformer>(
         &mut self,
         transformer: &mut T,
         _engine: &pernixc_qbice::TrackedEngine,
     ) {
         transformer
             .transform(
-                &mut self.return_type,
-                TypeTermSource::DoReturnType,
+                ResolutionMut::Type(&mut self.return_type),
                 self.do_with_span,
             )
             .await;

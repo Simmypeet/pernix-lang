@@ -11,7 +11,7 @@ use qbice::{Decode, Encode, StableHash};
 use crate::{
     Values,
     control_flow_graph::Block,
-    transform::{Transformer, TypeTermSource},
+    transform::{ResolutionMut, Transformer},
     value::{Environment, TypeOf, Value, register::Register},
 };
 
@@ -52,7 +52,7 @@ impl crate::visitor::Element for Phi {
     }
 }
 
-pub(super) async fn transform_phi<T: Transformer<Type>>(
+pub(super) async fn transform_phi<T: Transformer>(
     phi: &mut Phi,
     transformer: &mut T,
     span: pernixc_lexical::tree::RelativeSpan,
@@ -63,7 +63,7 @@ pub(super) async fn transform_phi<T: Transformer<Type>>(
         }
     }
 
-    transformer.transform(&mut phi.r#type, TypeTermSource::Phi, span).await;
+    transformer.transform(ResolutionMut::Type(&mut phi.r#type), span).await;
 }
 
 impl TypeOf<&Phi> for Values {

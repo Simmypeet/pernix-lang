@@ -6,9 +6,7 @@ use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
 use pernixc_hash::HashMap;
 use pernixc_qbice::TrackedEngine;
-use pernixc_term::{
-    constant::Constant, instance::Instance, lifetime::Lifetime, r#type::Type,
-};
+use pernixc_term::r#type::Type;
 use pernixc_type_system::{OverflowError, Succeeded, normalizer::Normalizer};
 use qbice::{Decode, Encode, StableHash};
 
@@ -63,9 +61,7 @@ impl CaptureArguments {
 }
 
 impl transform::Element for CaptureArguments {
-    async fn transform<
-        T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
-    >(
+    async fn transform<T: Transformer>(
         &mut self,
         transformer: &mut T,
         _engine: &TrackedEngine,
@@ -103,12 +99,7 @@ impl Do {
 }
 
 impl transform::Element for Do {
-    async fn transform<
-        T: Transformer<Lifetime>
-            + Transformer<Type>
-            + Transformer<Constant>
-            + Transformer<Instance>,
-    >(
+    async fn transform<T: Transformer>(
         &mut self,
         transformer: &mut T,
         engine: &TrackedEngine,
@@ -199,12 +190,7 @@ impl HandlerChain {
 }
 
 impl transform::Element for HandlerChain {
-    async fn transform<
-        T: Transformer<Lifetime>
-            + Transformer<Type>
-            + Transformer<Constant>
-            + Transformer<Instance>,
-    >(
+    async fn transform<T: Transformer>(
         &mut self,
         transformer: &mut T,
         engine: &TrackedEngine,
@@ -262,12 +248,7 @@ impl crate::visitor::Element for DoWith {
     }
 }
 
-pub(super) async fn transform_do_with<
-    T: Transformer<Lifetime>
-        + Transformer<Type>
-        + Transformer<Constant>
-        + Transformer<Instance>,
->(
+pub(super) async fn transform_do_with<T: Transformer>(
     do_with: &mut DoWith,
     transformer: &mut T,
     engine: &TrackedEngine,

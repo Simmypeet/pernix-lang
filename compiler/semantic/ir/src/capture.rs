@@ -6,8 +6,6 @@ use pernixc_arena::Arena;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_term::{
-    constant::Constant,
-    instance::Instance,
     lifetime::Lifetime,
     r#type::{Qualifier, Reference, Type},
 };
@@ -15,7 +13,7 @@ use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     address::Address,
-    transform::{self, Transformer, TypeTermSource},
+    transform::{self, ResolutionMut, Transformer},
 };
 
 pub mod builder;
@@ -34,9 +32,7 @@ pub struct Captures {
 }
 
 impl transform::Element for Captures {
-    async fn transform<
-        T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
-    >(
+    async fn transform<T: Transformer>(
         &mut self,
         transformer: &mut T,
         _: &TrackedEngine,
@@ -44,8 +40,7 @@ impl transform::Element for Captures {
         for (_, capture) in self.captures.iter_mut() {
             transformer
                 .transform(
-                    &mut capture.address_type,
-                    TypeTermSource::Capture,
+                    ResolutionMut::Type(&mut capture.address_type),
                     capture.span,
                 )
                 .await;
@@ -55,8 +50,7 @@ impl transform::Element for Captures {
             {
                 transformer
                     .transform(
-                        &mut reference_mode.lifetime,
-                        transform::LifetimeTermSource::Capture,
+                        ResolutionMut::Lifetime(&mut reference_mode.lifetime),
                         capture.span,
                     )
                     .await;
@@ -225,12 +219,7 @@ impl CapturesMap {
 }
 
 impl transform::Element for CapturesMap {
-    async fn transform<
-        T: transform::Transformer<Lifetime>
-            + transform::Transformer<Type>
-            + transform::Transformer<Constant>
-            + transform::Transformer<Instance>,
-    >(
+    async fn transform<T: transform::Transformer>(
         &mut self,
         transformer: &mut T,
         engine: &TrackedEngine,
