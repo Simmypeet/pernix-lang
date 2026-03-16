@@ -811,7 +811,9 @@ impl<N: Normalizer> Environment<'_, N> {
                 diagnostics.push(Diagnostic::ImplementationIsNotGeneralEnough(
                     ImplementationIsNotGeneralEnough::builder()
                         .resolvable_implementation_id(implementation.id)
-                        .generic_arguments(predicate.generic_arguments.clone())
+                        .generic_arguments(
+                            predicate.generic_arguments().clone(),
+                        )
                         .instantiation_span(*instantiation_span)
                         .required_by_stack(requirement_stack)
                         .build(),

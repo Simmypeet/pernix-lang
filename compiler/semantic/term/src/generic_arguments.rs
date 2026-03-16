@@ -59,6 +59,16 @@ pub struct GenericArguments {
     instancces: Vec<Instance>,
 }
 
+/// The result from [`GenericArguments::zip_ref`].
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash)]
+#[allow(missing_docs)]
+pub enum ZipRef<'a> {
+    Lifetime(&'a Lifetime, &'a Lifetime),
+    Type(&'a Type, &'a Type),
+    Constant(&'a Constant, &'a Constant),
+    Instance(&'a Instance, &'a Instance),
+}
+
 impl GenericArguments {
     /// Returns the lifetimes supplied to the term.
     #[must_use]
@@ -338,6 +348,37 @@ impl GenericArguments {
             .chain(self.types.iter_mut().map(TermMut::Type))
             .chain(self.constants.iter_mut().map(TermMut::Constant))
             .chain(self.instancces.iter_mut().map(TermMut::Instance))
+    }
+
+    /// Returns an iterator that matches each argument in `self` to the
+    /// corresponding argument in `other` and yields a reference to the matched
+    /// pair.
+    pub fn zip_ref<'a>(
+        &'a self,
+        other: &'a Self,
+    ) -> impl Iterator<Item = ZipRef<'a>> + 'a {
+        self.lifetimes
+            .iter()
+            .zip(other.lifetimes.iter())
+            .map(|(l1, l2)| ZipRef::Lifetime(l1, l2))
+            .chain(
+                self.types
+                    .iter()
+                    .zip(other.types.iter())
+                    .map(|(t1, t2)| ZipRef::Type(t1, t2)),
+            )
+            .chain(
+                self.constants
+                    .iter()
+                    .zip(other.constants.iter())
+                    .map(|(c1, c2)| ZipRef::Constant(c1, c2)),
+            )
+            .chain(
+                self.instancces
+                    .iter()
+                    .zip(other.instancces.iter())
+                    .map(|(i1, i2)| ZipRef::Instance(i1, i2)),
+            )
     }
 }
 
@@ -654,6 +695,18 @@ impl Symbol {
             parent_id,
             &generic_parameters,
         )
+    }
+
+    /// Sets the first type argument of this symbol to the given type.
+    #[allow(clippy::result_large_err)]
+    pub fn set_first_type_argument(&mut self, ty: Type) -> Result<(), Type> {
+        if let Some(first) = self.generic_arguments.types_mut().first_mut() {
+            *first = ty;
+
+            Ok(())
+        } else {
+            Err(ty)
+        }
     }
 }
 

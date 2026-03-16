@@ -173,8 +173,8 @@ impl Query for PositiveMarker {
             // if this query was made in marker, then check if the marker is the
             // same as the query one.
             if let Some(result) = is_in_marker(
-                self.marker_id,
-                &self.generic_arguments,
+                self.marker_id(),
+                self.generic_arguments(),
                 environment,
             )
             .await?
@@ -193,14 +193,14 @@ impl Query for PositiveMarker {
                 .filter_map(Predicate::as_positive_marker)
             {
                 // skip if id is different
-                if premise.marker_id != self.marker_id {
+                if premise.marker_id() != self.marker_id() {
                     continue;
                 }
 
                 let Some(compatiblity) = environment
                     .subtypes_generic_arguments(
-                        &self.generic_arguments,
-                        &premise.generic_arguments,
+                        self.generic_arguments(),
+                        premise.generic_arguments(),
                     )
                     .await?
                 else {
@@ -220,8 +220,8 @@ impl Query for PositiveMarker {
             // manually search for the trait implementation
             let resolve = environment
                 .query(&resolution::Resolve::new(
-                    self.marker_id,
-                    self.generic_arguments.clone(),
+                    self.marker_id(),
+                    self.generic_arguments().clone(),
                 ))
                 .await?;
 
@@ -262,7 +262,7 @@ impl Query for PositiveMarker {
 
             // replace the first type argument with sub-terms/fields and check
             // if all the replacements are satisfied
-            if let Some(ty) = self.generic_arguments.types().first() {
+            if let Some(ty) = self.first_type_argument() {
                 // try to structurally prove the marker for each field of the
                 // type
                 if let Some(result) =
@@ -277,8 +277,9 @@ impl Query for PositiveMarker {
                     let mut positive_marker_clone = self.clone();
 
                     // replace the first type argument with the equivalent type
-                    positive_marker_clone.generic_arguments.types_mut()[0] =
-                        term.result.clone();
+                    positive_marker_clone
+                        .set_first_type_argument(term.result.clone())
+                        .unwrap();
 
                     match environment
                         .query_with(
@@ -359,8 +360,9 @@ async fn substructural_derive(
         let mut positive_marker_clone = marker.clone();
 
         // replace the first type argument with the field type
-        positive_marker_clone.generic_arguments.types_mut()[0] =
-            ty.r#type().clone();
+        positive_marker_clone
+            .set_first_type_argument(ty.r#type().clone())
+            .unwrap();
 
         match environment.query(&positive_marker_clone).await? {
             Ok(result) => {
@@ -409,8 +411,8 @@ impl Query for NegativeMarker {
             // manually search for the trait implementation
             if let Ok(result) = environment
                 .query(&resolution::Resolve::new(
-                    self.marker_id,
-                    self.generic_arguments.clone(),
+                    self.marker_id(),
+                    self.generic_arguments().clone(),
                 ))
                 .await?
                 && environment.tracked_engine().get_kind(result.result.id).await
@@ -433,14 +435,14 @@ impl Query for NegativeMarker {
                 .filter_map(Predicate::as_negative_marker)
             {
                 // skip if the trait id is different
-                if marker_premise.marker_id != self.marker_id {
+                if marker_premise.marker_id() != self.marker_id() {
                     continue;
                 }
 
                 let Some(compatiblity) = environment
                     .subtypes_generic_arguments(
-                        &self.generic_arguments,
-                        &marker_premise.generic_arguments,
+                        self.generic_arguments(),
+                        marker_premise.generic_arguments(),
                     )
                     .await?
                 else {
@@ -459,25 +461,20 @@ impl Query for NegativeMarker {
 
             // must be definite and failed to prove the positive trait
             let Some(definition) = environment
-                .generic_arguments_definite(&self.generic_arguments)
+                .generic_arguments_definite(self.generic_arguments())
                 .await?
             else {
                 return Ok(None);
             };
 
-            Ok(environment
-                .query(&PositiveMarker::new(
-                    self.marker_id,
-                    self.generic_arguments.clone(),
-                ))
-                .await?
-                .is_err()
-                .then(|| {
+            Ok(environment.query(&self.to_positive()).await?.is_err().then(
+                || {
                     Arc::new(Succeeded::with_constraints(
                         NegativeSatisfied::UnsatisfiedPositive,
                         definition.constraints,
                     ))
-                }))
+                },
+            ))
         })
     }
 
