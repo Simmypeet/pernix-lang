@@ -905,6 +905,12 @@ impl Binder<'_> {
                 .inference_context
                 .constant_inference_counter,
         };
+        let mut instance_inferences = InferenceProvider {
+            created_inferences: Vec::new(),
+            inference_counter: &mut self
+                .inference_context
+                .instance_inference_conter,
+        };
 
         let mut lifetime_inference_providers = ErasedLifetimeProvider;
 
@@ -918,6 +924,7 @@ impl Binder<'_> {
             .elided_lifetime_provider(&mut lifetime_inference_providers)
             .elided_type_provider(&mut type_inferences)
             .elided_constant_provider(&mut constant_inferences)
+            .elided_instance_provider(&mut instance_inferences)
             .referring_site(current_site)
             .build()
             .resolve_type(syntax_tree)
@@ -928,6 +935,8 @@ impl Binder<'_> {
         let created_type_inferences = type_inferences.created_inferences;
         let created_constant_inferences =
             constant_inferences.created_inferences;
+        let created_instance_inferences =
+            instance_inferences.created_inferences;
 
         for inference in created_type_inferences {
             assert!(
@@ -940,6 +949,13 @@ impl Binder<'_> {
             assert!(
                 self.inference_context
                     .register(inference, constraint::Constant)
+            );
+        }
+
+        for inference in created_instance_inferences {
+            assert!(
+                self.inference_context
+                    .register(inference, constraint::Instance)
             );
         }
 
@@ -971,6 +987,13 @@ impl Binder<'_> {
                 .constant_inference_counter,
         };
 
+        let mut instance_inferences = InferenceProvider {
+            created_inferences: Vec::new(),
+            inference_counter: &mut self
+                .inference_context
+                .instance_inference_conter,
+        };
+
         let mut lifetime_inference_providers = ErasedLifetimeProvider;
 
         let resolution_handler =
@@ -983,6 +1006,7 @@ impl Binder<'_> {
             .elided_lifetime_provider(&mut lifetime_inference_providers)
             .elided_type_provider(&mut type_inferences)
             .elided_constant_provider(&mut constant_inferences)
+            .elided_instance_provider(&mut instance_inferences)
             .referring_site(current_site)
             .build()
             .resolve_generic_arguments_for(id, generic_arguments)
@@ -993,6 +1017,8 @@ impl Binder<'_> {
         let created_type_inferences = type_inferences.created_inferences;
         let created_constant_inferences =
             constant_inferences.created_inferences;
+        let created_instance_inferences =
+            instance_inferences.created_inferences;
 
         for inference in created_type_inferences {
             assert!(
@@ -1005,6 +1031,13 @@ impl Binder<'_> {
             assert!(
                 self.inference_context
                     .register(inference, constraint::Constant)
+            );
+        }
+
+        for inference in created_instance_inferences {
+            assert!(
+                self.inference_context
+                    .register(inference, constraint::Instance)
             );
         }
 
