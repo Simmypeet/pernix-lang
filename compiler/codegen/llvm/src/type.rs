@@ -27,7 +27,6 @@ use pernixc_term::{
     constant::Constant,
     display::Display,
     generic_arguments::{GenericArguments, Symbol},
-    generic_parameters::get_generic_parameters,
     instance::Instance,
     instantiation::Instantiation,
     lifetime::Lifetime,
@@ -353,15 +352,7 @@ impl<'ctx> Context<'_, 'ctx> {
         &mut self,
         symbol: Symbol,
     ) -> Result<Rc<LlvmStructSignature<'ctx>>, Zst> {
-        let generic_params =
-            self.engine().get_generic_parameters(symbol.id()).await;
-
-        let instantiation = Instantiation::from_generic_arguments(
-            symbol.generic_arguments().clone(),
-            symbol.id(),
-            &generic_params,
-        )
-        .unwrap();
+        let instantiation = symbol.create_instantiation(self.engine()).await;
 
         // already monomorphized
         if let Some(value) =
@@ -514,15 +505,7 @@ impl<'ctx> Context<'_, 'ctx> {
             return value;
         }
 
-        let generic_params =
-            self.engine().get_generic_parameters(symbol.id()).await;
-
-        let instantiation = Instantiation::from_generic_arguments(
-            symbol.generic_arguments().clone(),
-            symbol.id(),
-            &generic_params,
-        )
-        .unwrap();
+        let instantiation = symbol.create_instantiation(self.engine()).await;
 
         let mut variants = Vec::new();
 

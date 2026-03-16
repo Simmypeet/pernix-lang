@@ -32,7 +32,7 @@ impl<N: Normalizer> Context<'_, N> {
 
             self.subtypes_value(
                 field_ty,
-                struct_lit.get_initializer_by_field_id(field_id).unwrap(),
+                struct_lit.get_initializer_by_field_id(field_id),
                 Variance::Covariant,
                 &mut lifetime_constraints,
             )

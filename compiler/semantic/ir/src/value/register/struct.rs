@@ -58,11 +58,8 @@ impl Struct {
     }
 
     #[must_use]
-    pub fn get_initializer_by_field_id(
-        &self,
-        field_id: ID<Field>,
-    ) -> Option<&Value> {
-        self.initializers_by_field_id.get(&field_id)
+    pub fn get_initializer_by_field_id(&self, field_id: ID<Field>) -> &Value {
+        self.initializers_by_field_id.get(&field_id).unwrap()
     }
 }
 
