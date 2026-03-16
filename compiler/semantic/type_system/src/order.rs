@@ -11,7 +11,8 @@ use std::{
 use linkme::distributed_slice;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_semantic_element::{
-    implements_arguments::get_implements_argument, trait_ref::get_trait_ref,
+    implements_arguments::get_implements_argument,
+    trait_ref::get_trait_ref_of_instance_symbol,
 };
 use pernixc_target::Global;
 use pernixc_term::{
@@ -338,8 +339,8 @@ pub async fn instance_order_executor(
     tracked_engine: &TrackedEngine,
 ) -> Result<Option<Order>, OverflowError> {
     let (Some(lhs_generic_arguments), Some(rhs_generic_arguments)) = (
-        tracked_engine.get_trait_ref(*this).await,
-        tracked_engine.get_trait_ref(*other).await,
+        tracked_engine.get_trait_ref_of_instance_symbol(*this).await,
+        tracked_engine.get_trait_ref_of_instance_symbol(*other).await,
     ) else {
         return Ok(None);
     };

@@ -117,14 +117,7 @@ async fn try_get_adt_fields(
                 return None;
             }
 
-            Some(
-                engine
-                    .get_instantiated_adt_fields(
-                        symbol.id(),
-                        symbol.generic_arguments(),
-                    )
-                    .await,
-            )
+            Some(engine.get_instantiated_adt_fields(symbol).await)
         }
 
         Type::Pointer(pointer) => {

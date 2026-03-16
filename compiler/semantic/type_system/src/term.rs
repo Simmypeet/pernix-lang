@@ -19,7 +19,7 @@ use pernixc_term::{
     },
     inference,
     instance::{Instance, InstanceAssociated},
-    instantiation::{Instantiation, get_instantiation},
+    instantiation::Instantiation,
     lifetime::Lifetime,
     predicate::{Compatible, Outlives, Predicate},
     r#type::Type,
@@ -498,14 +498,9 @@ async fn try_normalize_instance_associated(
         .await?;
 
     // create instantiation from the "instance symbol"
-    let mut instantiation = environment
-        .tracked_engine()
-        .get_instantiation(
-            instance_symbol.id(),
-            instance_symbol.generic_arguments().clone(),
-        )
-        .await
-        .unwrap();
+    let mut instantiation = instance_symbol
+        .create_instantiation(environment.tracked_engine())
+        .await;
 
     // append instantiation from the "instance associated instance symbol"
     {
@@ -514,15 +509,11 @@ async fn try_normalize_instance_associated(
             .get_generic_parameters(equiv_instance_associated)
             .await;
 
-        instantiation
-            .append_from_generic_arguments(
-                instance_associated
-                    .associated_instance_generic_arguments()
-                    .clone(),
-                equiv_instance_associated,
-                &instance_associated_instance_generic_parameters,
-            )
-            .unwrap();
+        instantiation.append_from_generic_arguments(
+            instance_associated.associated_instance_generic_arguments(),
+            equiv_instance_associated,
+            &instance_associated_instance_generic_parameters,
+        );
     }
 
     Some((instantiation, equiv_instance_associated))

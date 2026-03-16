@@ -15,10 +15,7 @@ use pernixc_symbol::{
     span::get_span,
 };
 use pernixc_target::Global;
-use pernixc_term::{
-    generic_parameters::get_generic_parameters, instantiation::Instantiation,
-    r#type::Type,
-};
+use pernixc_term::{generic_arguments::Symbol, r#type::Type};
 use qbice::{
     Decode, Encode, Identifiable, Query, StableHash, executor,
     program::Registration, storage::intern::Interned,
@@ -147,18 +144,10 @@ static ADT_FIELDS_EXECUTOR: Registration<Config> =
 #[pernixc_extend::extend]
 pub async fn get_instantiated_adt_fields(
     self: &TrackedEngine,
-    adt_id: Global<pernixc_symbol::ID>,
-    generic_arguments: &pernixc_term::generic_arguments::GenericArguments,
+    symbol: &Symbol,
 ) -> Vec<FieldType> {
-    let types = self.get_adt_fields(adt_id).await;
-    let generic_parameters = self.get_generic_parameters(adt_id).await;
-
-    let instantiation = Instantiation::from_generic_arguments(
-        generic_arguments.clone(),
-        adt_id,
-        &generic_parameters,
-    )
-    .unwrap();
+    let types = self.get_adt_fields(symbol.id()).await;
+    let instantiation = symbol.create_instantiation(self).await;
 
     let mut results = Vec::with_capacity(types.len());
 

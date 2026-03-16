@@ -7,9 +7,8 @@ use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::{
     implements_arguments::get_implements_argument,
-    implied_predicate::get_implied_predicates,
-    trait_ref::get_trait_ref_of_instance, variance::Variance,
-    where_clause::get_where_clause,
+    implied_predicate::get_implied_predicates, trait_ref::get_trait_ref,
+    variance::Variance, where_clause::get_where_clause,
 };
 use pernixc_symbol::kind::get_kind;
 use pernixc_target::Global;
@@ -603,7 +602,7 @@ impl<N: Normalizer> Environment<'_, N> {
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError> {
         let Some(instance_trait_ref) =
-            self.tracked_engine().get_trait_ref_of_instance(instance).await
+            instance.get_trait_ref(self.tracked_engine()).await
         else {
             return Ok(BTreeSet::new()); // can't continue
         };
@@ -641,10 +640,8 @@ impl<N: Normalizer> Environment<'_, N> {
             .instance_parameters_as_order()
             .zip(instance_arguments)
         {
-            let Some(instance_trait_ref) = self
-                .tracked_engine()
-                .get_trait_ref_of_instance(instance_arg)
-                .await
+            let Some(instance_trait_ref) =
+                instance_arg.get_trait_ref(self.tracked_engine()).await
             else {
                 continue;
             };

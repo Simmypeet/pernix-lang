@@ -14,7 +14,7 @@ use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_semantic_element::{
     global_instances::get_global_instances_of, import::get_import_map,
     instance_associated_value::get_instance_associated_value,
-    trait_ref::get_trait_ref,
+    trait_ref::get_trait_ref_of_instance_symbol,
 };
 use pernixc_symbol::{
     kind::{Kind, get_kind},
@@ -368,8 +368,10 @@ async fn resolve_from_lexical_instances<N: Normalizer>(
         match inherent_instance {
             LexicalInstance::InInstance(global) => {
                 // malformed
-                let Some(trait_ref) =
-                    environment.tracked_engine().get_trait_ref(*global).await
+                let Some(trait_ref) = environment
+                    .tracked_engine()
+                    .get_trait_ref_of_instance_symbol(*global)
+                    .await
                 else {
                     continue;
                 };
@@ -714,7 +716,10 @@ impl<N: Normalizer> Environment<'_, N> {
         symbol_id: Global<pernixc_symbol::ID>,
         expected_trait_ref: &TraitRef,
     ) -> Result<Instantiation, ResolveSymbolError> {
-        let trait_ref = self.tracked_engine().get_trait_ref(symbol_id).await;
+        let trait_ref = self
+            .tracked_engine()
+            .get_trait_ref_of_instance_symbol(symbol_id)
+            .await;
 
         let Some(trait_ref) = trait_ref else {
             return Err(ResolveSymbolError::Incompatible);
@@ -765,7 +770,10 @@ impl<N: Normalizer> Environment<'_, N> {
         symbol_id: Global<pernixc_symbol::ID>,
         expected_trait_ref: &TraitRef,
     ) -> Result<Option<Instantiation>, OverflowError> {
-        let trait_ref = self.tracked_engine().get_trait_ref(symbol_id).await;
+        let trait_ref = self
+            .tracked_engine()
+            .get_trait_ref_of_instance_symbol(symbol_id)
+            .await;
 
         let Some(trait_ref) = trait_ref else { return Ok(None) };
 
