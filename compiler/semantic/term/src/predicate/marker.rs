@@ -31,7 +31,7 @@ impl Positive {
 
     /// Creates a new [`Positive`] predicate
     #[must_use]
-    pub fn new(
+    pub const fn new(
         marker_id: Global<pernixc_symbol::ID>,
         generic_arguments: GenericArguments,
     ) -> Self {
@@ -109,7 +109,7 @@ impl Negative {
 
     /// Creates a new [`Negative`] predicate
     #[must_use]
-    pub fn new(
+    pub const fn new(
         marker_id: Global<pernixc_symbol::ID>,
         generic_arguments: GenericArguments,
     ) -> Self {

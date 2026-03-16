@@ -31,11 +31,7 @@ use pernixc_semantic_element::parameter::get_parameters;
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::syntax::get_function_signature_syntax;
 use pernixc_target::Global;
-use pernixc_term::{
-    constant::Constant,
-    inference,
-    r#type::{Qualifier, Type},
-};
+use pernixc_term::r#type::{Qualifier, Type};
 pub use pernixc_type_system::UnrecoverableError;
 use pernixc_type_system::{
     Succeeded,
@@ -301,21 +297,21 @@ pub enum Error {
     Unrecoverable(#[from] UnrecoverableError),
 }
 
+impl Error {
+    #[must_use]
+    pub const fn new_binding_error(span: RelativeSpan) -> Self {
+        Self::Binding(BindingError(span))
+    }
+}
+
 impl Binder<'_> {
     /// Creates a new error literal with an inferred type.
     pub fn create_error(&mut self, span: RelativeSpan) -> Literal {
         Literal::Error(pernixc_ir::value::literal::Error {
-            r#type: {
-                let inference =
-                    self.inference_context.next_type_inference_variable();
+            r#type: Type::Inference(
+                self.create_type_inference(constraint::Type::All(true)),
+            ),
 
-                assert!(
-                    self.inference_context
-                        .register(inference, constraint::Type::All(true))
-                );
-
-                Type::Inference(inference)
-            },
             span,
         })
     }
@@ -323,17 +319,10 @@ impl Binder<'_> {
     /// Creates a new unreachable literal with an inferred type.
     pub fn create_unreachable(&mut self, span: RelativeSpan) -> Literal {
         Literal::Unreachable(Unreachable {
-            r#type: {
-                let inference =
-                    self.inference_context.next_type_inference_variable();
+            r#type: Type::Inference(
+                self.create_type_inference(constraint::Type::All(true)),
+            ),
 
-                assert!(
-                    self.inference_context
-                        .register(inference, constraint::Type::All(true))
-                );
-
-                Type::Inference(inference)
-            },
             span,
         })
     }
@@ -455,32 +444,6 @@ impl Binder<'_> {
         self.ir
             .control_flow_graph
             .insert_terminator(self.current_block_id, terminator);
-    }
-
-    /// Creates a new type inference variable and assigns it to the inference
-    /// context with the given constraint.
-    pub fn create_type_inference(
-        &mut self,
-        constraint: constraint::Type,
-    ) -> inference::Variable<Type> {
-        let infer_var = self.inference_context.next_type_inference_variable();
-        assert!(self.inference_context.register(infer_var, constraint));
-
-        infer_var
-    }
-
-    /// Creates a new constant inference variable and assigns it to the
-    /// inference context.
-    pub fn create_constant_inference(
-        &mut self,
-    ) -> inference::Variable<Constant> {
-        let infer_var =
-            self.inference_context.next_constant_inference_variable();
-        assert!(
-            self.inference_context.register(infer_var, constraint::Constant)
-        );
-
-        infer_var
     }
 
     /// Creates a new child branch of scopes at the given `parent_scope_id`.

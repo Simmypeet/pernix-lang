@@ -3,7 +3,9 @@
 use std::ops::Deref;
 
 use pernixc_arena::ID;
-use pernixc_term::r#type::Type;
+use pernixc_qbice::TrackedEngine;
+use pernixc_target::Global;
+use pernixc_term::{instantiation::Instantiation, r#type::Type};
 use pernixc_type_system::OverflowError;
 use qbice::{Decode, Encode, StableHash};
 
@@ -29,6 +31,30 @@ use crate::{
 pub struct Variant {
     symbol: pernixc_resolution::qualified_identifier::Variant,
     associated_value: Option<Value>,
+}
+
+impl Variant {
+    #[must_use]
+    pub const fn new(
+        symbol: pernixc_resolution::qualified_identifier::Variant,
+        associated_value: Option<Value>,
+    ) -> Self {
+        Self { symbol, associated_value }
+    }
+
+    pub async fn parent_enum_id(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Global<pernixc_symbol::ID> {
+        self.symbol.parent_enum_id(engine).await
+    }
+
+    pub async fn create_instantiation(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Instantiation {
+        self.symbol.create_instantiation(engine).await
+    }
 }
 
 impl Variant {

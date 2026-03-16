@@ -1,3 +1,4 @@
+use enum_as_inner::EnumAsInner;
 use pernixc_arena::{ID, OrderedArena};
 use pernixc_handler::Handler;
 use pernixc_hash::HashMap;
@@ -5,7 +6,7 @@ use pernixc_ir::value::{
     Value,
     register::{
         Assignment, EffectHandlerArgument, FunctionCall, Register, Variant,
-        load::Load,
+        function_call::Callee, load::Load,
     },
 };
 use pernixc_lexical::tree::RelativeSpan;
@@ -20,18 +21,15 @@ use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
     kind::{Kind, get_kind},
     linkage::{C, Linkage, get_linkage},
-    parent::get_parent,
     r#unsafe::is_function_unsafe,
 };
 use pernixc_target::Global;
 use pernixc_term::{
     effect,
+    generic_arguments::{AssociatedSymbol, GenericArguments},
     generic_parameters::get_generic_parameters,
-    instantiation::{
-        Instantiation, get_instantiation,
-        get_instantiation_for_associated_symbol,
-    },
-    lifetime::{ElidedLifetimeID, Lifetime},
+    instantiation::Instantiation,
+    lifetime::{ElidedLifetime, Lifetime},
     r#type::Qualifier,
 };
 use pernixc_type_system::environment::Environment;
@@ -63,15 +61,16 @@ use crate::{
 async fn map_elided_lifetimes_to_erased(
     binder: &mut Binder<'_>,
     id: Global<pernixc_symbol::ID>,
-    inst: &mut Instantiation,
-) -> Result<(), Error> {
+) -> HashMap<ID<ElidedLifetime>, Lifetime> {
     let elided_lts = binder.engine().get_elided_lifetimes(id).await;
 
-    inst.extend_lifetimes_mappings(elided_lts.ids().map(|x| {
-        (Lifetime::Elided(ElidedLifetimeID::new(id, x)), Lifetime::Erased)
-    }));
+    elided_lts.ids().map(|x| (x, Lifetime::Erased)).collect()
+}
 
-    Ok(())
+#[derive(Debug, EnumAsInner)]
+enum CalleeOrVariant {
+    Callee(Callee),
+    Variant(pernixc_resolution::qualified_identifier::Variant),
 }
 
 #[allow(clippy::too_many_lines)]
@@ -79,7 +78,7 @@ async fn get_function_instantiation(
     binder: &mut Binder<'_>,
     syntax_tree: &pernixc_syntax::expression::unit::FunctionCall,
     handler: &dyn Handler<crate::diagnostic::Diagnostic>,
-) -> Result<(Global<pernixc_symbol::ID>, Instantiation), Error> {
+) -> Result<CalleeOrVariant, Error> {
     let Some(qualified_identifier) = syntax_tree.qualified_identifier() else {
         return Err(Error::Binding(BindingError(syntax_tree.span())));
     };
@@ -92,67 +91,33 @@ async fn get_function_instantiation(
         .await?;
 
     // get the function id and instantation
-    let (id, instantation) = match resolution {
-        Resolution::Variant(variant) => (
-            variant.variant_id,
-            binder
-                .engine()
-                .get_instantiation(
-                    variant.variant_id.target_id.make_global(
-                        binder
-                            .engine()
-                            .get_parent(variant.variant_id)
-                            .await
-                            .unwrap(),
-                    ),
-                    variant.generic_arguments,
-                )
-                .await
-                .unwrap(),
-        ),
-        Resolution::Generic(generic)
+    match resolution {
+        Resolution::Variant(variant) => Ok(CalleeOrVariant::Variant(variant)),
+
+        Resolution::GenericSymbol(generic)
             if {
-                let kind = binder.engine().get_kind(generic.id).await;
+                let kind = binder.engine().get_kind(generic.id()).await;
                 kind.has_function_signature()
             } =>
         {
-            (
-                generic.id,
-                binder
-                    .engine()
-                    .get_instantiation(generic.id, generic.generic_arguments)
-                    .await
-                    .unwrap(),
-            )
+            Ok(CalleeOrVariant::Callee(Callee::Function(generic)))
         }
 
-        Resolution::MemberGeneric(member_generic)
+        Resolution::GenericAssociatedSymbol(member_generic)
             if {
-                let kind = binder.engine().get_kind(member_generic.id).await;
+                let kind = binder.engine().get_kind(member_generic.id()).await;
                 kind.has_function_signature() || kind == Kind::EffectOperation
             } =>
-        'result: {
-            let kind = binder.engine().get_kind(member_generic.id).await;
+        {
+            Ok(CalleeOrVariant::Callee(Callee::AssociatedFunction(
+                member_generic,
+            )))
+        }
 
-            // no need to perform argument deduction for the implements
-            if kind != Kind::ImplementationAssociatedFunction {
-                break 'result (
-                    member_generic.id,
-                    binder
-                        .engine()
-                        .get_instantiation_for_associated_symbol(
-                            member_generic.id,
-                            member_generic.parent_generic_arguments,
-                            member_generic.member_generic_arguments,
-                        )
-                        .await
-                        .unwrap(),
-                );
-            }
-
-            let parent_impl_id = member_generic.id.target_id.make_global(
-                binder.engine().get_parent(member_generic.id).await.unwrap(),
-            );
+        Resolution::IntermediateAdtImplSymbol(sym) => {
+            let parent_impl_id = sym.get_parent_impl_id(binder.engine()).await;
+            let impl_generic_parameters =
+                binder.engine().get_generic_parameters(parent_impl_id).await;
 
             let Some(impl_args) =
                 binder.engine().get_implements_argument(parent_impl_id).await
@@ -162,58 +127,57 @@ async fn get_function_instantiation(
 
             let env = binder.create_environment();
 
-            let mut instantiation = match env
-                .deduce(&impl_args, &member_generic.parent_generic_arguments)
-                .await
-            {
-                Ok(Some(deduction)) => deduction.result.instantiation,
+            let instantiation =
+                match env.deduce(&impl_args, sym.adt_generic_arguments()).await
+                {
+                    Ok(Some(deduction)) => deduction.result.instantiation,
 
-                Ok(None) => {
-                    handler.receive(
-                        Diagnostic::MismatchedImplementationArguments(
-                            MismatchedImplementationArguments {
-                                implementation_id: parent_impl_id,
-                                found_generic_arguments: member_generic
-                                    .member_generic_arguments
-                                    .clone(),
-                                instantiation_span: syntax_tree.span(),
-                                rendering_map: binder.get_rendering_map(),
-                            },
-                        )
-                        .into(),
-                    );
+                    Ok(None) => {
+                        handler.receive(
+                            Diagnostic::MismatchedImplementationArguments(
+                                MismatchedImplementationArguments {
+                                    implementation_id: parent_impl_id,
+                                    found_generic_arguments: sym
+                                        .adt_generic_arguments()
+                                        .clone(),
+                                    instantiation_span: syntax_tree.span(),
+                                    rendering_map: binder.get_rendering_map(),
+                                },
+                            )
+                            .into(),
+                        );
 
-                    return Err(Error::Binding(BindingError(
-                        syntax_tree.span(),
-                    )));
-                }
+                        return Err(Error::Binding(BindingError(
+                            syntax_tree.span(),
+                        )));
+                    }
 
-                Err(overflow) => {
-                    overflow.report_as_type_calculating_overflow(
-                        syntax_tree.span(),
-                        &handler,
-                    );
+                    Err(overflow) => {
+                        overflow.report_as_type_calculating_overflow(
+                            syntax_tree.span(),
+                            &handler,
+                        );
 
-                    return Err(Error::Unrecoverable(
-                        UnrecoverableError::Reported,
-                    ));
-                }
-            };
+                        return Err(Error::Unrecoverable(
+                            UnrecoverableError::Reported,
+                        ));
+                    }
+                };
 
-            // append the instantiation for the member generic arguments
-            instantiation
-                .append_from_generic_arguments(
-                    member_generic.member_generic_arguments,
-                    member_generic.id,
-                    binder
-                        .engine()
-                        .get_generic_parameters(member_generic.id)
-                        .await
-                        .as_ref(),
-                )
-                .expect("should have correct generic arguments count");
+            let impl_generic_arguments =
+                GenericArguments::from_generic_parameters_and_instantiation(
+                    &instantiation,
+                    &impl_generic_parameters,
+                    parent_impl_id,
+                );
 
-            (member_generic.id, instantiation)
+            Ok(CalleeOrVariant::Callee(Callee::AssociatedFunction(
+                AssociatedSymbol::new(
+                    sym.impl_associated_symbol_id(),
+                    impl_generic_arguments,
+                    sym.into_impl_associated_generic_arguments(),
+                ),
+            )))
         }
 
         resolution => {
@@ -226,49 +190,56 @@ async fn get_function_instantiation(
                 .into(),
             );
 
-            return Err(Error::Binding(BindingError(syntax_tree.span())));
+            Err(Error::Binding(BindingError(syntax_tree.span())))
         }
-    };
-
-    Ok((id, instantation))
+    }
 }
 
 async fn get_callable_expected_types(
     binder: &mut Binder<'_>,
-    callable_id: Global<pernixc_symbol::ID>,
-    instantiation: &Instantiation,
+    span: RelativeSpan,
+    callee_or_variant: &CalleeOrVariant,
 ) -> Result<Vec<pernixc_term::r#type::Type>, Error> {
-    // can either be a function or an enum variant
-    let kind = binder.engine().get_kind(callable_id).await;
+    match callee_or_variant {
+        CalleeOrVariant::Callee(callee) => {
+            let Some(inst) = callee.create_instantiation(binder.engine()).await
+            else {
+                return Err(Error::new_binding_error(span));
+            };
 
-    if kind == Kind::Variant {
-        let associated_type = binder
-            .engine()
-            .get_variant_associated_type(callable_id)
-            .await
-            .as_deref()
-            .cloned();
+            let callable_id = callee.get_symbol_id();
+            let parameters = binder.engine().get_parameters(callable_id).await;
 
-        let Some(mut associated_type) = associated_type else {
-            return Ok(Vec::new());
-        };
+            let mut result = Vec::with_capacity(parameters.len());
 
-        instantiation.instantiate(&mut associated_type);
+            for (_, parameter) in parameters.parameters_as_order() {
+                let mut ty = parameter.r#type.clone();
 
-        Ok(vec![associated_type])
-    } else {
-        let parameters = binder.engine().get_parameters(callable_id).await;
+                inst.instantiate(&mut ty);
 
-        let mut expected_types =
-            Vec::with_capacity(parameters.parameters.len());
+                result.push(ty);
+            }
 
-        for (_, parameter) in parameters.parameters_as_order() {
-            let mut ty = parameter.r#type.clone();
-            instantiation.instantiate(&mut ty);
-            expected_types.push(ty);
+            Ok(result)
         }
 
-        Ok(expected_types)
+        CalleeOrVariant::Variant(variant) => {
+            let associated_type = binder
+                .engine()
+                .get_variant_associated_type(variant.variant_id())
+                .await
+                .as_deref()
+                .cloned();
+
+            let Some(mut ty) = associated_type else { return Ok(Vec::new()) };
+
+            let instantiation =
+                variant.create_instantiation(binder.engine()).await;
+
+            instantiation.instantiate(&mut ty);
+
+            Ok(vec![ty])
+        }
     }
 }
 
@@ -280,27 +251,27 @@ impl Bind<&pernixc_syntax::expression::unit::FunctionCall> for Binder<'_> {
         _config: &Guidance<'_>,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
     ) -> Result<Expression, Error> {
-        let (callable_id, instantiation) =
+        let callee_or_variant =
             get_function_instantiation(self, syntax_tree, handler).await?;
 
-        // Check if calling an unsafe function outside an unsafe scope
-        let kind = self.engine().get_kind(callable_id).await;
-
-        let mut expected_types =
-            get_callable_expected_types(self, callable_id, &instantiation)
-                .await?;
+        let mut expected_types = get_callable_expected_types(
+            self,
+            syntax_tree.span(),
+            &callee_or_variant,
+        )
+        .await?;
 
         let arguments = syntax_tree
             .call()
             .map(|x| x.expressions().collect::<Vec<_>>())
             .unwrap_or_default();
 
-        match (kind, expected_types.len()) {
-            (Kind::Variant, 0) => {
+        match (callee_or_variant, expected_types.len()) {
+            (CalleeOrVariant::Variant(var), 0) => {
                 handler.receive(
                     Diagnostic::VariantDoesntHaveAssociatedValue(
                         VariantDoesntHaveAssociatedValue {
-                            variant_id: callable_id,
+                            variant_id: var.variant_id(),
                             span: syntax_tree.span(),
                             supplied_count: arguments.len(),
                         },
@@ -311,13 +282,13 @@ impl Bind<&pernixc_syntax::expression::unit::FunctionCall> for Binder<'_> {
                 Err(Error::Binding(BindingError(syntax_tree.span())))
             }
 
-            (Kind::Variant, 1) => {
+            (CalleeOrVariant::Variant(var), 1) => {
                 let inner_value = match arguments.len() {
                     0 => {
                         handler.receive(
                             Diagnostic::VariantAssociatedValueExpected(
                                 VariantAssociatedValueExpected {
-                                    variant_id: callable_id,
+                                    variant_id: var.variant_id(),
                                     span: syntax_tree.span(),
                                 },
                             )
@@ -343,7 +314,7 @@ impl Bind<&pernixc_syntax::expression::unit::FunctionCall> for Binder<'_> {
                         handler.receive(
                             Diagnostic::ExtraneousArgumentsToAssociatedValue(
                                 ExtraneousArgumentsToAssociatedValue {
-                                    variant_id: callable_id,
+                                    variant_id: var.variant_id(),
                                     span: syntax_tree.call().map_or_else(
                                         || syntax_tree.span(),
                                         |c| c.span(),
@@ -363,29 +334,23 @@ impl Bind<&pernixc_syntax::expression::unit::FunctionCall> for Binder<'_> {
                     }
                 };
 
-                let enum_id = callable_id.target_id.make_global(
-                    self.engine().get_parent(callable_id).await.unwrap(),
-                );
-                let generic_parameters =
-                    self.engine().get_generic_parameters(enum_id).await;
-
                 let register_id = self.create_register_assignment(
-                    Assignment::Variant(Variant {
-                        variant_id: callable_id,
-                        associated_value: Some(inner_value),
-                        generic_arguments: instantiation
-                            .create_generic_arguments(
-                                enum_id,
-                                &generic_parameters,
-                            ),
-                    }),
+                    Assignment::Variant(Variant::new(var, Some(inner_value))),
                     syntax_tree.span(),
                 );
 
                 Ok(Expression::RValue(Value::Register(register_id)))
             }
 
-            _ => self
+            (CalleeOrVariant::Variant(_), _) => {
+                unreachable!(
+                    "the expected types of a variant can only be 0 or 1, got \
+                     {}",
+                    expected_types.len()
+                );
+            }
+
+            (CalleeOrVariant::Callee(callee), _) => self
                 .bind_function_call_internal(
                     &expected_types,
                     &arguments,
@@ -393,8 +358,7 @@ impl Bind<&pernixc_syntax::expression::unit::FunctionCall> for Binder<'_> {
                         .call()
                         .map_or_else(|| syntax_tree.span(), |c| c.span()),
                     syntax_tree.span(),
-                    callable_id,
-                    instantiation,
+                    callee,
                     None,
                     handler,
                 )
@@ -418,27 +382,31 @@ pub(super) struct MethodReceiver {
 
 impl Binder<'_> {
     #[allow(clippy::too_many_arguments)]
-    pub(super) async fn bind_method_call(
+    pub(super) async fn bind_function_callee(
         &mut self,
-        method_id: Global<pernixc_symbol::ID>,
-        instantiation: Instantiation,
+        callee: Callee,
         receiver: MethodReceiver,
         arguments: &[pernixc_syntax::expression::Expression],
         call_span: RelativeSpan,
         whole_span: RelativeSpan,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
     ) -> Result<pernixc_arena::ID<Register>, Error> {
+        let callee_or_variant = CalleeOrVariant::Callee(callee);
+
         let expected_types =
-            get_callable_expected_types(self, method_id, &instantiation)
+            get_callable_expected_types(self, whole_span, &callee_or_variant)
                 .await?;
+
+        let callee = callee_or_variant
+            .into_callee()
+            .expect("we've just created as callee");
 
         self.bind_function_call_internal(
             &expected_types,
             arguments,
             call_span,
             whole_span,
-            method_id,
-            instantiation,
+            callee,
             Some(receiver),
             handler,
         )
@@ -452,8 +420,7 @@ impl Binder<'_> {
         arguments: &[pernixc_syntax::expression::Expression],
         call_span: RelativeSpan,
         whole_span: RelativeSpan,
-        callable_id: pernixc_target::Global<pernixc_symbol::ID>,
-        mut instantiation: Instantiation,
+        callee: Callee,
         method_receiver: Option<MethodReceiver>,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
     ) -> Result<pernixc_arena::ID<Register>, Error> {
@@ -463,8 +430,8 @@ impl Binder<'_> {
         // elided lifetimes) is mapped, since the function call
         // might be monomorphized and the elided lifetimes are
         // replaced with concrete lifetimes
-        map_elided_lifetimes_to_erased(self, callable_id, &mut instantiation)
-            .await?;
+        let elided_lifetimes_instantiation =
+            map_elided_lifetimes_to_erased(self, callee.get_symbol_id()).await;
 
         // deduct the by one if it's method, receiver is not counted as an
         // argument
@@ -472,10 +439,11 @@ impl Binder<'_> {
             expected_types.len() - usize::from(method_receiver.is_some());
         let supplied = arguments.len();
 
-        let callable_kind = self.engine().get_kind(callable_id).await;
+        let callable_kind =
+            self.engine().get_kind(callee.get_symbol_id()).await;
         let is_vargs = callable_kind == Kind::ExternFunction
             && matches!(
-                self.engine().get_linkage(callable_id).await,
+                self.engine().get_linkage(callee.get_symbol_id()).await,
                 Linkage::C(C { variadic: true })
             );
 
@@ -486,7 +454,7 @@ impl Binder<'_> {
             handler.receive(
                 Diagnostic::MismatchedArgumentsCount(
                     MismatchedArgumentsCount {
-                        function_id: callable_id,
+                        function_id: callee.get_symbol_id(),
                         expected,
                         supplied,
                         span: call_span,
@@ -502,14 +470,15 @@ impl Binder<'_> {
                 | Kind::ImplementationAssociatedFunction
                 | Kind::TraitAssociatedFunction
         ) {
-            let is_unsafe = self.engine().is_function_unsafe(callable_id).await;
+            let is_unsafe =
+                self.engine().is_function_unsafe(callee.get_symbol_id()).await;
 
             if is_unsafe && !self.stack().is_unsafe() {
                 handler.receive(
                     Diagnostic::UnsafeFunctionCallOutsideUnsafeScope(
                         UnsafeFunctionCallOutsideUnsafeScope {
                             call_span: whole_span,
-                            function_id: callable_id,
+                            function_id: callee.get_symbol_id(),
                         },
                     )
                     .into(),
@@ -577,20 +546,20 @@ impl Binder<'_> {
 
         let capability_arguments = self
             .effect_check(
-                callable_id,
-                &instantiation,
+                callee.get_symbol_id(),
+                callee.create_instantiation(self.engine()).await,
                 whole_span,
                 &capabilities,
                 handler,
             )
             .await?;
 
-        let assignment = FunctionCall {
-            callable_id,
-            instantiation,
-            arguments: argument_values,
-            effect_arguments: capability_arguments,
-        };
+        let assignment = FunctionCall::new(
+            callee,
+            argument_values,
+            elided_lifetimes_instantiation,
+            capability_arguments,
+        );
 
         Ok(self.create_register_assignment(
             Assignment::FunctionCall(assignment),
@@ -628,8 +597,8 @@ impl Binder<'_> {
 
     async fn effect_check(
         &mut self,
-        callable_id: Global<pernixc_symbol::ID>,
-        instantiation: &Instantiation,
+        callee_id: Global<pernixc_symbol::ID>,
+        instantiation: Option<Instantiation>,
         span: RelativeSpan,
         available_capabilities: &OrderedArena<effect::Unit>,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
@@ -638,14 +607,24 @@ impl Binder<'_> {
         UnrecoverableError,
     > {
         let required_capabilities =
-            self.engine().get_effect_annotation(callable_id).await;
+            self.engine().get_effect_annotation(callee_id).await;
+
+        let Some(instantiation) = instantiation else {
+            // we couldn't obtain the instantiation because the function
+            // signature is malformed, the best we can do is to return
+            // effect arguments as unhandled
+            return Ok(required_capabilities
+                .ids()
+                .map(|x| (x, EffectHandlerArgument::Unhandled))
+                .collect());
+        };
 
         self.check_effect_units(
             available_capabilities,
             &required_capabilities,
-            instantiation,
+            &instantiation,
             span,
-            callable_id,
+            callee_id,
             handler,
         )
         .await

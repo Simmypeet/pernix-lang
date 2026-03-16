@@ -9,13 +9,8 @@ use pernixc_ir::value::{
 use pernixc_resolution::qualified_identifier::Resolution;
 use pernixc_semantic_element::variant::get_variant_associated_type;
 use pernixc_source_file::SourceElement;
-use pernixc_symbol::parent::get_parent;
 use pernixc_syntax::QualifiedIdentifierRoot;
-use pernixc_target::Global;
-use pernixc_term::{
-    generic_parameters::get_generic_parameters, instantiation::Instantiation,
-    r#type::Qualifier,
-};
+use pernixc_term::r#type::Qualifier;
 
 use crate::{
     bind::{
@@ -55,19 +50,8 @@ impl Bind<&pernixc_syntax::QualifiedIdentifier> for Binder<'_> {
             Resolution::Variant(variant_res) => {
                 let variant = self
                     .engine()
-                    .get_variant_associated_type(variant_res.variant_id)
+                    .get_variant_associated_type(variant_res.variant_id())
                     .await;
-
-                let parent_enum_id = Global::new(
-                    variant_res.variant_id.target_id,
-                    self.engine()
-                        .get_parent(variant_res.variant_id)
-                        .await
-                        .unwrap(),
-                );
-
-                let enum_generic_parameters =
-                    self.engine().get_generic_parameters(parent_enum_id).await;
 
                 // expected a variant type
                 if variant.is_some() {
@@ -75,7 +59,7 @@ impl Bind<&pernixc_syntax::QualifiedIdentifier> for Binder<'_> {
                         Diagnostic::ExpectedAssociatedValue(
                             ExpectedAssociatedValue {
                                 span: syntax_tree.span(),
-                                variant_id: variant_res.variant_id,
+                                variant_id: variant_res.variant_id(),
                             },
                         )
                         .into(),
@@ -84,13 +68,8 @@ impl Bind<&pernixc_syntax::QualifiedIdentifier> for Binder<'_> {
 
                 let associated_value = if let Some(associated_type) = variant {
                     let mut associated_type = associated_type.deref().clone();
-
-                    let instantiation = Instantiation::from_generic_arguments(
-                        variant_res.generic_arguments.clone(),
-                        parent_enum_id,
-                        &enum_generic_parameters,
-                    )
-                    .unwrap();
+                    let instantiation =
+                        variant_res.create_instantiation(self.engine()).await;
 
                     instantiation.instantiate(&mut associated_type);
 
@@ -106,11 +85,10 @@ impl Bind<&pernixc_syntax::QualifiedIdentifier> for Binder<'_> {
                 };
 
                 let register_id = self.create_register_assignment(
-                    Assignment::Variant(Variant {
-                        variant_id: variant_res.variant_id,
+                    Assignment::Variant(Variant::new(
+                        variant_res,
                         associated_value,
-                        generic_arguments: variant_res.generic_arguments,
-                    }),
+                    )),
                     syntax_tree.span(),
                 );
 

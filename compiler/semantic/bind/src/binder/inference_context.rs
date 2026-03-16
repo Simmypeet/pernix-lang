@@ -79,7 +79,7 @@ pub struct InferenceContext {
 
     type_inference_counter: InferenceCounter<Type>,
     constant_inference_counter: InferenceCounter<Constant>,
-    instance_inference_conter: InferenceCounter<Instance>,
+    instance_inference_counter: InferenceCounter<Instance>,
 }
 
 /// A struct that holds the rendering maps for all inference variables, which
@@ -482,22 +482,6 @@ impl InferenceContext {
         self.type_table.restore(checkpoint.type_checkpoint);
         self.const_table.restore(checkpoint.const_checkpoint);
     }
-
-    /// Creates a new type inference variable that's unique in this binder
-    /// context.
-    pub const fn next_type_inference_variable(
-        &mut self,
-    ) -> inference::Variable<Type> {
-        self.type_inference_counter.next()
-    }
-
-    /// Creates a new constant inference variable that's unique in this binder
-    /// context.
-    pub const fn next_constant_inference_variable(
-        &mut self,
-    ) -> inference::Variable<Constant> {
-        self.constant_inference_counter.next()
-    }
 }
 
 impl InferenceContext {
@@ -822,7 +806,7 @@ impl Binder<'_> {
             created_inferences: Vec::new(),
             inference_counter: &mut self
                 .inference_context
-                .instance_inference_conter,
+                .instance_inference_counter,
         };
 
         let resolution_handler =
@@ -909,7 +893,7 @@ impl Binder<'_> {
             created_inferences: Vec::new(),
             inference_counter: &mut self
                 .inference_context
-                .instance_inference_conter,
+                .instance_inference_counter,
         };
 
         let mut lifetime_inference_providers = ErasedLifetimeProvider;
@@ -991,7 +975,7 @@ impl Binder<'_> {
             created_inferences: Vec::new(),
             inference_counter: &mut self
                 .inference_context
-                .instance_inference_conter,
+                .instance_inference_counter,
         };
 
         let mut lifetime_inference_providers = ErasedLifetimeProvider;
@@ -1046,6 +1030,44 @@ impl Binder<'_> {
 }
 
 impl Binder<'_> {
+    /// Creates a new type inference variable and assigns it to the inference
+    /// context with the given constraint.
+    pub fn create_type_inference(
+        &mut self,
+        constraint: constraint::Type,
+    ) -> inference::Variable<Type> {
+        let infer_var = self.inference_context.type_inference_counter.next();
+        assert!(self.inference_context.register(infer_var, constraint));
+
+        infer_var
+    }
+
+    /// Creates a new constant inference variable and assigns it to the
+    /// inference context.
+    pub fn create_constant_inference(
+        &mut self,
+    ) -> inference::Variable<Constant> {
+        let infer_var =
+            self.inference_context.constant_inference_counter.next();
+        assert!(
+            self.inference_context.register(infer_var, constraint::Constant)
+        );
+
+        infer_var
+    }
+
+    #[must_use]
+    pub fn create_instance_inference(
+        &mut self,
+    ) -> inference::Variable<Instance> {
+        let infer_var =
+            self.inference_context.instance_inference_counter.next();
+        assert!(
+            self.inference_context.register(infer_var, constraint::Instance)
+        );
+
+        infer_var
+    }
     /// Gets the inference state of a type inference variable.
     #[must_use]
     pub fn get_type_inference(

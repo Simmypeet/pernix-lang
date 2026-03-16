@@ -6,7 +6,6 @@ use pernixc_semantic_element::return_type::get_return_type;
 use pernixc_source_file::SourceElement;
 use pernixc_term::{
     generic_parameters::{LifetimeParameterID, get_generic_parameters},
-    instantiation::get_instantiation,
     lifetime::Lifetime,
 };
 
@@ -47,14 +46,8 @@ impl Bind<&pernixc_syntax::expression::unit::ResumeCall> for Binder<'_> {
             .target_id
             .make_global(operation_handler_id.operation_id());
 
-        let mut handler_instantiation = self
-            .engine()
-            .get_instantiation(
-                handler_clause.effect_id(),
-                handler_clause.generic_arguments().clone(),
-            )
-            .await
-            .expect("should've been a valid instantiation");
+        let mut handler_instantiation =
+            handler_clause.create_instantiation(self.engine()).await;
 
         // erase the lifetime of the operation generic parameters
         let operation_generic_parameters =

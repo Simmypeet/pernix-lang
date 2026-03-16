@@ -68,7 +68,7 @@ impl Variant {
 
     /// Creates a new [`Variant`]
     #[must_use]
-    pub fn new(
+    pub const fn new(
         variant_id: Global<pernixc_symbol::ID>,
         generic_arguments: GenericArguments,
     ) -> Self {
@@ -108,6 +108,14 @@ impl Variant {
         &mut self,
     ) -> impl Iterator<Item = TermMut<'_>> + '_ {
         self.0.iter_all_term_mut()
+    }
+
+    #[must_use]
+    pub async fn parent_enum_id(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Global<pernixc_symbol::ID> {
+        engine.get_parent_global(self.variant_id()).await.unwrap()
     }
 }
 
@@ -171,6 +179,24 @@ impl IntermediateAdtImplSymbol {
         &self,
     ) -> Global<pernixc_symbol::ID> {
         self.impl_associated_symbol_id
+    }
+
+    #[must_use]
+    pub async fn get_parent_impl_id(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Global<pernixc_symbol::ID> {
+        engine.get_parent_global(self.impl_associated_symbol_id).await.unwrap()
+    }
+
+    #[must_use]
+    pub const fn adt_generic_arguments(&self) -> &GenericArguments {
+        &self.adt_generic_arguments
+    }
+
+    #[must_use]
+    pub fn into_impl_associated_generic_arguments(self) -> GenericArguments {
+        self.impl_associated_generic_arguments
     }
 }
 

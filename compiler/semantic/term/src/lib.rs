@@ -42,6 +42,22 @@ pub enum Term {
     Constant(constant::Constant),
     Lifetime(lifetime::Lifetime),
     Type(r#type::Type),
+    Instance(instance::Instance),
+}
+
+impl display::Display for Term {
+    async fn fmt(
+        &self,
+        engine: &pernixc_qbice::TrackedEngine,
+        formatter: &mut display::Formatter<'_, '_>,
+    ) -> std::fmt::Result {
+        match self {
+            Self::Constant(constant) => constant.fmt(engine, formatter).await,
+            Self::Lifetime(lifetime) => lifetime.fmt(engine, formatter).await,
+            Self::Type(ty) => ty.fmt(engine, formatter).await,
+            Self::Instance(instance) => instance.fmt(engine, formatter).await,
+        }
+    }
 }
 
 /// A reference to a term, which can be either a constant, lifetime, or type.
@@ -76,4 +92,16 @@ pub enum TermMut<'a> {
     Lifetime(&'a mut lifetime::Lifetime),
     Type(&'a mut r#type::Type),
     Instance(&'a mut instance::Instance),
+}
+
+impl TermMut<'_> {
+    #[must_use]
+    pub fn to_owned_term(&self) -> Term {
+        match self {
+            Self::Constant(constant) => Term::Constant((*constant).clone()),
+            Self::Lifetime(lifetime) => Term::Lifetime((*lifetime).clone()),
+            Self::Type(ty) => Term::Type((*ty).clone()),
+            Self::Instance(instance) => Term::Instance((*instance).clone()),
+        }
+    }
 }

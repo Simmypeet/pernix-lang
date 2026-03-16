@@ -320,7 +320,7 @@ impl Type {
     /// Creates a new symbol type with the given symbol ID and generic
     /// arguments.
     #[must_use]
-    pub fn new_symbol(
+    pub const fn new_symbol(
         symbol_id: Global<pernixc_symbol::ID>,
         generic_arguments: GenericArguments,
     ) -> Self {

@@ -11,12 +11,11 @@ use pernixc_ir::{
 use pernixc_symbol::{
     kind::{Kind, get_kind},
     name::get_by_qualified_name,
-    parent::get_parent,
+    parent::get_parent_global,
 };
 use pernixc_target::Global;
 use pernixc_term::{
     generic_arguments::GenericArguments,
-    instantiation::get_instantiation,
     predicate::{PositiveMarker, Predicate},
     r#type::Qualifier,
 };
@@ -38,16 +37,14 @@ async fn check_register_assignment<N: Normalizer>(
 
     match &register.assignment {
         register::Assignment::Struct(st) => {
-            let instantiation = value_environment
-                .tracked_engine()
-                .get_instantiation(st.struct_id, st.generic_arguments.clone())
-                .await
-                .expect("failed to get instantiation");
+            let instantiation = st
+                .create_instantiation(value_environment.tracked_engine())
+                .await;
 
             value_environment
                 .type_environment
                 .wf_check_instantiation(
-                    st.struct_id,
+                    st.struct_id(),
                     &register.span,
                     &instantiation,
                     &handler,
@@ -57,27 +54,20 @@ async fn check_register_assignment<N: Normalizer>(
             Ok(())
         }
         register::Assignment::Variant(variant) => {
-            let enum_id = Global::new(
-                variant.variant_id.target_id,
-                value_environment
-                    .tracked_engine()
-                    .get_parent(variant.variant_id)
-                    .await
-                    .unwrap(),
-            );
+            let enum_id = variant
+                .parent_enum_id(value_environment.tracked_engine())
+                .await;
 
-            let instantiation = value_environment
-                .tracked_engine()
-                .get_instantiation(enum_id, variant.generic_arguments.clone())
-                .await
-                .expect("failed to get instantiation");
+            let inst = variant
+                .create_instantiation(value_environment.tracked_engine())
+                .await;
 
             value_environment
                 .type_environment
                 .wf_check_instantiation(
                     enum_id,
                     &register.span,
-                    &instantiation,
+                    &inst,
                     &handler,
                 )
                 .await?;
@@ -87,30 +77,30 @@ async fn check_register_assignment<N: Normalizer>(
         register::Assignment::FunctionCall(function_call) => {
             let symbol_kind = value_environment
                 .tracked_engine()
-                .get_kind(function_call.callable_id)
+                .get_kind(function_call.callee_symbol_id())
                 .await;
 
-            match symbol_kind {
-                Kind::TraitAssociatedFunction => {
-                    todo!("should no longer exist")
-                }
+            let Some(inst) = function_call
+                .create_instantiation(value_environment.tracked_engine())
+                .await
+            else {
+                return Ok(());
+            };
 
+            match symbol_kind {
                 Kind::ImplementationAssociatedFunction => {
-                    let parent_implementation_id = Global::new(
-                        function_call.callable_id.target_id,
-                        value_environment
-                            .tracked_engine()
-                            .get_parent(function_call.callable_id)
-                            .await
-                            .unwrap(),
-                    );
+                    let parent_implementation_id = value_environment
+                        .tracked_engine()
+                        .get_parent_global(function_call.callee_symbol_id())
+                        .await
+                        .unwrap();
 
                     value_environment
                         .type_environment
                         .wf_check_instantiation(
                             parent_implementation_id,
                             &register.span,
-                            &function_call.instantiation,
+                            &inst,
                             &handler,
                         )
                         .await?;
@@ -118,9 +108,9 @@ async fn check_register_assignment<N: Normalizer>(
                     value_environment
                         .type_environment
                         .wf_check_instantiation(
-                            function_call.callable_id,
+                            parent_implementation_id,
                             &register.span,
-                            &function_call.instantiation,
+                            &inst,
                             &handler,
                         )
                         .await?;
@@ -134,9 +124,9 @@ async fn check_register_assignment<N: Normalizer>(
                     value_environment
                         .type_environment
                         .wf_check_instantiation(
-                            function_call.callable_id,
+                            function_call.callee_symbol_id(),
                             &register.span,
-                            &function_call.instantiation,
+                            &inst,
                             &handler,
                         )
                         .await?;

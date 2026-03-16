@@ -16,9 +16,7 @@ use pernixc_symbol::{
     kind::{Kind, get_kind},
 };
 use pernixc_target::Global;
-use pernixc_term::{
-    generic_parameters::get_generic_parameters, instantiation::Instantiation,
-};
+use pernixc_term::instantiation::Instantiation;
 
 use crate::{
     bind::{
@@ -55,13 +53,13 @@ impl Bind<&pernixc_syntax::expression::unit::Struct>
             .await?;
 
         // must be struct type
-        let (struct_id, generic_arguments) = match resolution {
-            Resolution::Generic(generic)
+        let generic_symbol = match resolution {
+            Resolution::GenericSymbol(generic)
                 if {
-                    self.engine().get_kind(generic.id).await == Kind::Struct
+                    self.engine().get_kind(generic.id()).await == Kind::Struct
                 } =>
             {
-                (generic.id, generic.generic_arguments)
+                generic
             }
 
             found => {
@@ -77,22 +75,13 @@ impl Bind<&pernixc_syntax::expression::unit::Struct>
             }
         };
 
-        let struct_generic_parameters =
-            self.engine().get_generic_parameters(struct_id).await;
-
-        let instantiation = Instantiation::from_generic_arguments(
-            generic_arguments.clone(),
-            struct_id,
-            &struct_generic_parameters,
-        )
-        .unwrap();
-
-        let fields = self.engine().get_fields(struct_id).await;
+        let inst = generic_symbol.create_instantiation(self.engine()).await;
+        let fields = self.engine().get_fields(generic_symbol.id()).await;
 
         let fields_initializers = (collect_fields(
             self,
-            struct_id,
-            &instantiation,
+            generic_symbol.id(),
+            &inst,
             &fields,
             syntax_tree,
             handler,
@@ -109,7 +98,7 @@ impl Bind<&pernixc_syntax::expression::unit::Struct>
         if !uninitialized_fields.is_empty() {
             handler.receive(
                 Diagnostic::UninitializedFields(UninitializedFields {
-                    struct_id,
+                    struct_id: generic_symbol.id(),
                     uninitialized_fields,
                     struct_expression_span: syntax_tree.span(),
                 })
@@ -119,14 +108,13 @@ impl Bind<&pernixc_syntax::expression::unit::Struct>
 
         let value = Value::Register(
             self.create_register_assignment(
-                Assignment::Struct(Struct {
-                    struct_id,
-                    initializers_by_field_id: fields_initializers
+                Assignment::Struct(Struct::new(
+                    generic_symbol,
+                    fields_initializers
                         .into_iter()
                         .map(|(id, (register_id, _))| (id, register_id))
                         .collect(),
-                    generic_arguments,
-                }),
+                )),
                 syntax_tree.span(),
             ),
         );

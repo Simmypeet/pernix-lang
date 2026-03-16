@@ -1,28 +1,29 @@
 use std::borrow::Cow;
 
 use pernixc_handler::Handler;
-use pernixc_ir::transform::{
-    ConstantTermSource, Element, InstanceTermSource, Transformer,
-    TypeTermSource,
-};
+use pernixc_ir::transform::{Element, ResolutionMut, Transformer};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_term::{
+    constant::Constant,
+    instance::Instance,
     lifetime::Lifetime,
     sub_term::TermLocation,
     r#type::Type,
     visitor::{self, MutableRecursive},
 };
-use pernixc_type_system::environment::Environment;
+use pernixc_type_system::{environment::Environment, term::Term};
 
 use crate::{
-    binder::{Binder, inference_context::InferenceContext},
-    diagnostic::{
-        ConstantAnnotationRequired, Diagnostic, InstanceAnnotationRequired,
-        TypeAnnotationRequired,
+    binder::{
+        Binder,
+        inference_context::{InferenceContext, RenderingMap},
     },
+    diagnostic::{Diagnostic, TypeAnnotationRequired},
 };
 
-struct EraseInference;
+struct EraseInference {
+    found_inference: bool,
+}
 
 impl MutableRecursive<Lifetime> for EraseInference {
     fn visit(
@@ -42,95 +43,54 @@ impl MutableRecursive<Type> for EraseInference {
     ) -> bool {
         if term.is_inference() {
             *term = Type::Error(pernixc_term::error::Error);
+            self.found_inference = true;
         }
 
         true
     }
 }
 
-impl MutableRecursive<pernixc_term::constant::Constant> for EraseInference {
+impl MutableRecursive<Constant> for EraseInference {
     fn visit(
         &mut self,
-        term: &mut pernixc_term::constant::Constant,
+        term: &mut Constant,
         _: impl Iterator<Item = TermLocation>,
     ) -> bool {
         if term.is_inference() {
-            *term = pernixc_term::constant::Constant::Error(
-                pernixc_term::error::Error,
-            );
+            *term = Constant::Error(pernixc_term::error::Error);
+            self.found_inference = true;
         }
 
         true
     }
 }
 
-impl MutableRecursive<pernixc_term::instance::Instance> for EraseInference {
+impl MutableRecursive<Instance> for EraseInference {
     fn visit(
         &mut self,
-        instance: &mut pernixc_term::instance::Instance,
+        instance: &mut Instance,
         _: impl Iterator<Item = TermLocation>,
     ) -> bool {
         if instance.is_inference() {
-            *instance = pernixc_term::instance::Instance::Error(
-                pernixc_term::error::Error,
-            );
+            *instance = Instance::Error(pernixc_term::error::Error);
+            self.found_inference = true;
         }
 
         true
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct ReplaceInference<'a> {
     environment: &'a Environment<'a, InferenceContext>,
+    rendering_map: RenderingMap,
     handler: &'a dyn Handler<Diagnostic>,
 }
 
-impl Transformer<Lifetime> for ReplaceInference<'_> {
-    async fn transform(
-        &mut self,
-        _term: &mut Lifetime,
-        _source: <Lifetime as pernixc_ir::transform::Transformable>::Source,
-        _span: RelativeSpan,
-    ) {
-    }
-}
-
-impl Transformer<Type> for ReplaceInference<'_> {
-    async fn transform(
-        &mut self,
-        term: &mut Type,
-        source: TypeTermSource,
-        span: RelativeSpan,
-    ) {
-        match self.environment.simplify(std::mem::take(term)).await {
-            Ok(simplified) => {
-                *term = simplified.result.clone();
-            }
-            Err(overflow) => {
-                overflow
-                    .report_as_type_calculating_overflow(span, &self.handler);
-            }
-        }
-
-        if let (true, TypeTermSource::GenericParameter(generic_parameter)) =
-            (term.is_inference(), source)
-        {
-            self.handler.receive(Diagnostic::TypeAnnotationRequired(
-                TypeAnnotationRequired { span, generic_parameter },
-            ));
-        }
-
-        // Erase any remaining inference variables.
-        visitor::accept_recursive_mut(term, &mut EraseInference);
-    }
-}
-
-impl Transformer<pernixc_term::constant::Constant> for ReplaceInference<'_> {
-    async fn transform(
-        &mut self,
-        term: &mut pernixc_term::constant::Constant,
-        source: <pernixc_term::constant::Constant as pernixc_ir::transform::Transformable>::Source,
+impl ReplaceInference<'_> {
+    async fn simplify_inference<T: Term + Default>(
+        &self,
+        term: &mut T,
         span: RelativeSpan,
     ) {
         match self.environment.simplify(std::mem::take(term)).await {
@@ -143,48 +103,68 @@ impl Transformer<pernixc_term::constant::Constant> for ReplaceInference<'_> {
                     .report_as_type_calculating_overflow(span, &self.handler);
             }
         }
-
-        if let (true, ConstantTermSource::GenericParameter(generic_parameter)) =
-            (term.is_inference(), source)
-        {
-            self.handler.receive(Diagnostic::ConstantAnnotationRequired(
-                ConstantAnnotationRequired { span, generic_parameter },
-            ));
-        }
-
-        // Erase any remaining inference variables.
-        visitor::accept_recursive_mut(term, &mut EraseInference);
     }
 }
 
-impl Transformer<pernixc_term::instance::Instance> for ReplaceInference<'_> {
+impl Transformer for ReplaceInference<'_> {
     async fn transform(
         &mut self,
-        instance: &mut pernixc_term::instance::Instance,
-        source: <pernixc_term::instance::Instance as pernixc_ir::transform::Transformable>::Source,
+        mut resolution: ResolutionMut<'_>,
         span: RelativeSpan,
     ) {
-        match self.environment.simplify(std::mem::take(instance)).await {
-            Ok(simplified) => {
-                *instance = simplified.result.clone();
+        for mut term in resolution.iter_all_term_mut() {
+            match &mut term {
+                pernixc_term::TermMut::Constant(constant) => {
+                    self.simplify_inference(*constant, span).await;
+                }
+
+                pernixc_term::TermMut::Lifetime(_) => continue,
+
+                pernixc_term::TermMut::Type(ty) => {
+                    self.simplify_inference(*ty, span).await;
+                }
+                pernixc_term::TermMut::Instance(instance) => {
+                    self.simplify_inference(*instance, span).await;
+                }
             }
 
-            Err(overflow) => {
-                overflow
-                    .report_as_type_calculating_overflow(span, &self.handler);
+            let mut erase_inference = EraseInference { found_inference: false };
+
+            match &mut term {
+                pernixc_term::TermMut::Constant(constant) => {
+                    visitor::accept_recursive_mut(
+                        *constant,
+                        &mut erase_inference,
+                    );
+                }
+                pernixc_term::TermMut::Lifetime(lifetime) => {
+                    visitor::accept_recursive_mut(
+                        *lifetime,
+                        &mut erase_inference,
+                    );
+                }
+                pernixc_term::TermMut::Type(ty) => {
+                    visitor::accept_recursive_mut(*ty, &mut erase_inference);
+                }
+                pernixc_term::TermMut::Instance(instance) => {
+                    visitor::accept_recursive_mut(
+                        *instance,
+                        &mut erase_inference,
+                    );
+                }
+            }
+
+            if erase_inference.found_inference {
+                self.handler.receive(
+                    TypeAnnotationRequired {
+                        span,
+                        term: term.to_owned_term(),
+                        rendering_map: self.rendering_map.clone(),
+                    }
+                    .into(),
+                );
             }
         }
-
-        if let (true, InstanceTermSource::GenericParameter(generic_parameter)) =
-            (instance.is_inference(), source)
-        {
-            self.handler.receive(Diagnostic::InstanceAnnotationRequired(
-                InstanceAnnotationRequired { span, generic_parameter },
-            ));
-        }
-
-        // Erase any remaining inference variables.
-        visitor::accept_recursive_mut(instance, &mut EraseInference);
     }
 }
 
@@ -194,6 +174,7 @@ impl Binder<'_> {
         handler: &dyn Handler<Diagnostic>,
     ) {
         self.inference_context.fill_default_inferences();
+        let rendering_map = self.get_rendering_map();
 
         let mut transformer = ReplaceInference {
             environment: &Environment::new(
@@ -201,6 +182,7 @@ impl Binder<'_> {
                 Cow::Borrowed(self.engine),
                 &self.inference_context,
             ),
+            rendering_map,
             handler,
         };
 

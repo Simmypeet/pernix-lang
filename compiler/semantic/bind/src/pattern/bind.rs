@@ -24,11 +24,7 @@ use pernixc_symbol::{
     accessibility::{get_accessibility, is_accessible_from_globally},
     member::get_members,
 };
-use pernixc_term::{
-    generic_parameters::get_generic_parameters,
-    instantiation::Instantiation,
-    r#type::{self, Qualifier, Type},
-};
+use pernixc_term::r#type::{self, Qualifier, Type};
 
 use crate::{
     binder::{Binder, UnrecoverableError, type_check::Expected},
@@ -545,16 +541,7 @@ impl Binder<'_> {
             return Ok(None);
         };
 
-        let struct_generic_parameters =
-            self.engine().get_generic_parameters(symbol.id()).await;
-
-        let instantiation = Instantiation::from_generic_arguments(
-            symbol.generic_arguments().clone(),
-            symbol.id(),
-            &struct_generic_parameters,
-        )
-        .unwrap();
-
+        let instantiation = symbol.create_instantiation(self.engine()).await;
         let fields = self.engine().get_fields(symbol.id()).await;
 
         let mut patterns_by_field_id = HashMap::<_, T>::default();
@@ -740,8 +727,6 @@ impl Binder<'_> {
         };
 
         let member = self.engine().get_members(symbol.id()).await;
-        let enum_generic_param =
-            self.engine().get_generic_parameters(symbol.id()).await;
 
         // variant not found
         let Some(variant_id) = member
@@ -795,12 +780,8 @@ impl Binder<'_> {
             syntax_tree.association().and_then(|x| x.pattern()),
         ) {
             (Some(ty), Some(pat)) => {
-                let instantiation = Instantiation::from_generic_arguments(
-                    symbol.generic_arguments().clone(),
-                    symbol.id(),
-                    &enum_generic_param,
-                )
-                .unwrap();
+                let instantiation =
+                    symbol.create_instantiation(self.engine()).await;
 
                 let mut variant_ty = ty.deref().clone();
 

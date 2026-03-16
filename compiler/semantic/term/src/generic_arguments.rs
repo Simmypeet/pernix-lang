@@ -626,7 +626,6 @@ impl Element for Instance {}
     Encode,
     Decode,
     StableHash,
-    new,
 )]
 pub struct Symbol {
     /// The ID of the symbol that is supplied with generic arguments.
@@ -637,6 +636,14 @@ pub struct Symbol {
 }
 
 impl Symbol {
+    #[must_use]
+    pub const fn new(
+        id: Global<pernixc_symbol::ID>,
+        generic_arguments: GenericArguments,
+    ) -> Self {
+        Self { id, generic_arguments }
+    }
+
     /// Returns the ID of the symbol.
     #[must_use]
     pub const fn id(&self) -> Global<pernixc_symbol::ID> { self.id }

@@ -4,8 +4,12 @@ use std::ops::Deref;
 
 use pernixc_arena::ID;
 use pernixc_hash::HashMap;
+use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::fields::Field;
-use pernixc_term::{generic_arguments::Symbol, r#type::Type};
+use pernixc_target::Global;
+use pernixc_term::{
+    generic_arguments::Symbol, instantiation::Instantiation, r#type::Type,
+};
 use pernixc_type_system::OverflowError;
 use qbice::{Decode, Encode, StableHash};
 
@@ -23,6 +27,14 @@ pub struct Struct {
 }
 
 impl Struct {
+    #[must_use]
+    pub const fn new(
+        symbol: Symbol,
+        initializers_by_field_id: HashMap<ID<Field>, Value>,
+    ) -> Self {
+        Self { symbol, initializers_by_field_id }
+    }
+
     /// Returns the list of registers that are used in the struct.
     #[must_use]
     pub fn get_used_registers(&self) -> Vec<ID<Register>> {
@@ -30,6 +42,19 @@ impl Struct {
             .values()
             .filter_map(|x| x.as_register().copied())
             .collect()
+    }
+
+    #[must_use]
+    pub async fn create_instantiation(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Instantiation {
+        self.symbol.create_instantiation(engine).await
+    }
+
+    #[must_use]
+    pub const fn struct_id(&self) -> Global<pernixc_symbol::ID> {
+        self.symbol.id()
     }
 }
 

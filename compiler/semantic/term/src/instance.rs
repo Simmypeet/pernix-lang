@@ -54,7 +54,7 @@ impl TraitRef {
     /// Creates a new `TraitRef` with the given trait symbol ID and generic
     /// arguments.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         id: Global<pernixc_symbol::ID>,
         generic_arguments: GenericArguments,
     ) -> Self {
@@ -784,7 +784,7 @@ impl Instance {
     /// Creates a new [`Instance::Symbol`] with the given symbol ID and generic
     /// arguments.
     #[must_use]
-    pub fn new_symbol(
+    pub const fn new_symbol(
         instance_symbol_id: Global<pernixc_symbol::ID>,
         generic_arguments: GenericArguments,
     ) -> Self {

@@ -11,7 +11,7 @@ use pernixc_semantic_element::{
     fields::{self, get_fields},
     variant::get_variant_associated_type,
 };
-use pernixc_term::{instantiation::get_instantiation, r#type::Type};
+use pernixc_term::r#type::Type;
 
 use crate::binder::{Binder, UnrecoverableError};
 
@@ -252,13 +252,8 @@ impl Binder<'_> {
                     panic!("unexpected type!");
                 };
 
-                let (enum_id, generic_arguments) = symbol.destructure();
-
-                let instantiation = self
-                    .engine()
-                    .get_instantiation(enum_id, generic_arguments)
-                    .await
-                    .expect("failed to get instantiation");
+                let instantiation =
+                    symbol.create_instantiation(self.engine()).await;
 
                 let mut variant_ty = self
                     .engine()
@@ -334,7 +329,8 @@ impl Binder<'_> {
                     panic!("unexpected type!");
                 };
 
-                let (struct_id, generic_arguments) = symbol.destructure();
+                let instantiation =
+                    symbol.create_instantiation(self.engine()).await;
 
                 let field_pat = pattern
                     .as_structural()
@@ -343,16 +339,11 @@ impl Binder<'_> {
                     .get(&path.field_id)
                     .unwrap();
 
-                let fields = self.engine().get_fields(struct_id).await;
-                let instantitation = self
-                    .engine()
-                    .get_instantiation(struct_id, generic_arguments)
-                    .await
-                    .expect("failed to get instantiation");
+                let fields = self.engine().get_fields(symbol.id()).await;
 
                 let mut field_ty = fields.fields[path.field_id].r#type.clone();
 
-                instantitation.instantiate(&mut field_ty);
+                instantiation.instantiate(&mut field_ty);
 
                 let (ty, address) = reduce_reference(
                     field_ty,

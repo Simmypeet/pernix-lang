@@ -15,6 +15,7 @@ use pernixc_term::{
     generic_arguments::{AssociatedSymbol, Symbol},
     instance::InstanceAssociated,
     instantiation::Instantiation,
+    lifetime::{ElidedLifetime, ElidedLifetimeID, Lifetime},
     r#type::Type,
 };
 use pernixc_type_system::{OverflowError, Succeeded};
@@ -60,7 +61,7 @@ pub enum EffectHandlerArgument {
 #[allow(missing_docs)]
 pub enum Callee {
     Function(Symbol),
-    AdtFunction(AssociatedSymbol),
+    AssociatedFunction(AssociatedSymbol),
     InstanceAssociatedFunction(InstanceAssociated),
 }
 
@@ -75,7 +76,7 @@ impl Callee {
                 Some(function_callee.create_instantiation(engine).await)
             }
 
-            Self::AdtFunction(adt_function_callee) => {
+            Self::AssociatedFunction(adt_function_callee) => {
                 Some(adt_function_callee.create_instantiation(engine).await)
             }
 
@@ -94,7 +95,9 @@ impl Callee {
     pub const fn get_symbol_id(&self) -> Global<pernixc_symbol::ID> {
         match self {
             Self::Function(symbol) => symbol.id(),
-            Self::AdtFunction(associated_symbol) => associated_symbol.id(),
+            Self::AssociatedFunction(associated_symbol) => {
+                associated_symbol.id()
+            }
             Self::InstanceAssociatedFunction(instance_associated) => {
                 instance_associated.trait_associated_symbol_id()
             }
@@ -107,14 +110,59 @@ impl Callee {
 pub struct FunctionCall {
     callee: Callee,
     arguments: Vec<Value>,
+    elided_lifetimes_instantiation: HashMap<ID<ElidedLifetime>, Lifetime>,
     effect_arguments: HashMap<ID<effect::Unit>, EffectHandlerArgument>,
 }
 
 impl FunctionCall {
+    #[must_use]
+    pub const fn new(
+        callee: Callee,
+        arguments: Vec<Value>,
+        elided_lifetimes_instantiation: HashMap<ID<ElidedLifetime>, Lifetime>,
+        effect_arguments: HashMap<ID<effect::Unit>, EffectHandlerArgument>,
+    ) -> Self {
+        Self {
+            callee,
+            arguments,
+            elided_lifetimes_instantiation,
+            effect_arguments,
+        }
+    }
+
     /// Returns the list of registers that are used in the function call.
     #[must_use]
     pub fn get_used_registers(&self) -> Vec<ID<Register>> {
         self.arguments.iter().filter_map(|x| x.as_register().copied()).collect()
+    }
+
+    #[must_use]
+    pub const fn callee_symbol_id(&self) -> Global<pernixc_symbol::ID> {
+        self.callee.get_symbol_id()
+    }
+
+    pub async fn create_instantiation(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Option<Instantiation> {
+        let mut instantiation =
+            self.callee.create_instantiation(engine).await?;
+
+        instantiation.extend_lifetimes_mappings(
+            self.elided_lifetimes_instantiation.iter().map(
+                |(elided_lifetime_id, lifetime)| {
+                    (
+                        Lifetime::Elided(ElidedLifetimeID::new(
+                            self.callee.get_symbol_id(),
+                            *elided_lifetime_id,
+                        )),
+                        lifetime.clone(),
+                    )
+                },
+            ),
+        );
+
+        Some(instantiation)
     }
 }
 
@@ -134,7 +182,7 @@ pub(super) async fn transform_function_call<T: Transformer>(
 ) {
     let res = match &mut function_call.callee {
         Callee::Function(symbol) => ResolutionMut::Symbol(symbol),
-        Callee::AdtFunction(associated_symbol) => {
+        Callee::AssociatedFunction(associated_symbol) => {
             ResolutionMut::AssociatedSymbol(associated_symbol)
         }
         Callee::InstanceAssociatedFunction(instance_associated) => {
@@ -149,6 +197,10 @@ pub(super) async fn transform_function_call<T: Transformer>(
             literal.transform(transformer).await;
         }
     }
+
+    for lt in function_call.elided_lifetimes_instantiation.values_mut() {
+        transformer.transform(ResolutionMut::Lifetime(lt), span).await;
+    }
 }
 
 impl TypeOf<&FunctionCall> for Values {
@@ -157,13 +209,27 @@ impl TypeOf<&FunctionCall> for Values {
         value: &FunctionCall,
         environment: &crate::value::Environment<'_, N>,
     ) -> Result<pernixc_type_system::Succeeded<Type>, OverflowError> {
-        let Some(instantiation) = value
+        let Some(mut instantiation) = value
             .callee
             .create_instantiation(environment.tracked_engine())
             .await
         else {
             return Ok(Succeeded::new(Type::new_error()));
         };
+
+        instantiation.extend_lifetimes_mappings(
+            value.elided_lifetimes_instantiation.iter().map(
+                |(elided_lifetime_id, lifetime)| {
+                    (
+                        Lifetime::Elided(ElidedLifetimeID::new(
+                            value.callee.get_symbol_id(),
+                            *elided_lifetime_id,
+                        )),
+                        lifetime.clone(),
+                    )
+                },
+            ),
+        );
 
         let return_type = environment
             .tracked_engine()
