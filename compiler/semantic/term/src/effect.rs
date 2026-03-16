@@ -37,6 +37,10 @@ impl Unit {
         Self(Symbol::new(effect_id, generic_arguments))
     }
 
+    /// Creates a new `Unit` from the given [`Symbol`].
+    #[must_use]
+    pub const fn from_symbol(symbol: Symbol) -> Self { Self(symbol) }
+
     /// Returns the ID of the effect that this `Unit` represents.
     #[must_use]
     pub const fn effect_id(&self) -> Global<pernixc_symbol::ID> { self.0.id() }

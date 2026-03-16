@@ -22,16 +22,13 @@ use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
     effect,
-    generic_arguments::{
-        GenericArguments, Symbol, is_generic_arguments_identity_to,
-    },
+    generic_arguments::{GenericArguments, is_generic_arguments_identity_to},
     generic_parameters::{
         ConstantParameter, GenericKind, GenericParameter, InstanceParameter,
         InstanceParameterID, TypeParameter, TypeParameterID,
         get_generic_parameters,
     },
     instance::{Instance, TraitRef},
-    instantiation::{Instantiation, get_instantiation_for_associated_symbol},
     lifetime::Lifetime,
     tuple,
     r#type::{Array, Phantom, Pointer, Primitive, Qualifier, Reference, Type},
@@ -866,62 +863,57 @@ pub async fn resolution_to_instance(
     resolution: Resolution,
 ) -> Result<Instance, ResolutionToTermError> {
     match resolution {
-        Resolution::Generic(generic)
+        Resolution::GenericSymbol(symbol)
             if {
-                let symbol_kind = self.get_kind(generic.id).await;
+                let symbol_kind = self.get_kind(symbol.id()).await;
 
                 matches!(symbol_kind, Kind::Instance)
             } =>
         {
-            Ok(Instance::Symbol(Symbol::new(
-                generic.id,
-                generic.generic_arguments,
-            )))
+            Ok(Instance::Symbol(symbol))
         }
 
-        Resolution::MemberGeneric(member_generic) => {
-            let kind = self.get_kind(member_generic.id).await;
+        Resolution::GenericAssociatedSymbol(associated_symbol) => {
+            let kind = self.get_kind(associated_symbol.id()).await;
 
             match kind {
                 Kind::TraitAssociatedInstance => {
                     let parent_trait_id = self
-                        .get_parent_global(member_generic.id)
+                        .get_parent_global(associated_symbol.id())
                         .await
                         .unwrap();
 
-                    if !self
-                        .is_generic_arguments_identity_to(
-                            &member_generic.parent_generic_arguments,
-                            parent_trait_id,
-                        )
+                    if !associated_symbol
+                        .parent_generic_arguments()
+                        .is_generic_arguments_identity_to(self, parent_trait_id)
                         .await
                     {
                         return Err(ResolutionToTermError::Failed(
-                            Resolution::MemberGeneric(member_generic),
+                            Resolution::GenericAssociatedSymbol(
+                                associated_symbol,
+                            ),
                         ));
                     }
+
+                    let (symbol_id, member_generic_arguments) =
+                        associated_symbol
+                            .into_id_and_member_generic_arguments();
 
                     Ok(Instance::new_instance_associated(
                         Box::new(Instance::new_anonymous_trait(
                             parent_trait_id,
                         )),
-                        member_generic.id,
-                        member_generic.member_generic_arguments,
+                        symbol_id,
+                        member_generic_arguments,
                     ))
                 }
 
                 Kind::InstanceAssociatedInstance => {
-                    let inst = self
-                        .get_instantiation_for_associated_symbol(
-                            member_generic.id,
-                            member_generic.parent_generic_arguments,
-                            member_generic.member_generic_arguments,
-                        )
-                        .await
-                        .unwrap();
+                    let inst =
+                        associated_symbol.create_instantiation(self).await;
 
                     let mut instance_value = self
-                        .get_instance_associated_value(member_generic.id)
+                        .get_instance_associated_value(associated_symbol.id())
                         .await
                         .deref()
                         .clone();
@@ -932,7 +924,7 @@ pub async fn resolution_to_instance(
                 }
 
                 _ => Err(ResolutionToTermError::Failed(
-                    Resolution::MemberGeneric(member_generic),
+                    Resolution::GenericAssociatedSymbol(associated_symbol),
                 )),
             }
         }
@@ -940,15 +932,12 @@ pub async fn resolution_to_instance(
         Resolution::InstanceAssociatedSymbol(inst)
             if {
                 let symbol_kind =
-                    self.get_kind(inst.trait_associated_symbol_id).await;
+                    self.get_kind(inst.trait_associated_symbol_id()).await;
+
                 matches!(symbol_kind, Kind::TraitAssociatedInstance)
             } =>
         {
-            Ok(Instance::new_instance_associated(
-                Box::new(inst.instance),
-                inst.trait_associated_symbol_id,
-                inst.generic_arguments,
-            ))
+            Ok(Instance::InstanceAssociated(inst))
         }
 
         Resolution::Instance(instance) => Ok(instance),
@@ -964,56 +953,38 @@ pub async fn resolution_to_type(
     resolution: Resolution,
 ) -> Result<Type, ResolutionToTermError> {
     match resolution {
-        Resolution::Generic(symbol) => {
-            let symbol_kind = self.get_kind(symbol.id).await;
+        Resolution::GenericSymbol(symbol) => {
+            let symbol_kind = self.get_kind(symbol.id()).await;
 
             match symbol_kind {
-                Kind::Struct | Kind::Enum => Ok(Type::Symbol(Symbol::new(
-                    symbol.id,
-                    symbol.generic_arguments,
-                ))),
+                Kind::Struct | Kind::Enum => Ok(Type::Symbol(symbol)),
 
-                Kind::ImplementationAssociatedType | Kind::Type => {
-                    let generic_parameters =
-                        self.get_generic_parameters(symbol.id).await;
-
-                    let instantiation = Instantiation::from_generic_arguments(
-                        symbol.generic_arguments,
-                        symbol.id,
-                        &generic_parameters,
-                    )
-                    .unwrap();
+                Kind::Type => {
+                    let inst = symbol.create_instantiation(self).await;
 
                     let mut result_ty =
-                        self.get_type_alias(symbol.id).await.deref().clone();
+                        self.get_type_alias(symbol.id()).await.deref().clone();
 
-                    instantiation.instantiate(&mut result_ty);
+                    inst.instantiate(&mut result_ty);
 
                     Ok(result_ty)
                 }
 
-                _ => Err(ResolutionToTermError::Failed(Resolution::Generic(
-                    symbol,
-                ))),
+                _ => Err(ResolutionToTermError::Failed(
+                    Resolution::GenericSymbol(symbol),
+                )),
             }
         }
 
-        Resolution::MemberGeneric(member_generic) => {
-            let symbol_kind = self.get_kind(member_generic.id).await;
+        Resolution::GenericAssociatedSymbol(member_generic) => {
+            let symbol_kind = self.get_kind(member_generic.id()).await;
 
             match symbol_kind {
                 Kind::InstanceAssociatedType => {
-                    let inst = self
-                        .get_instantiation_for_associated_symbol(
-                            member_generic.id,
-                            member_generic.parent_generic_arguments,
-                            member_generic.member_generic_arguments,
-                        )
-                        .await
-                        .unwrap();
+                    let inst = member_generic.create_instantiation(self).await;
 
                     let mut type_alias = self
-                        .get_type_alias(member_generic.id)
+                        .get_type_alias(member_generic.id())
                         .await
                         .deref()
                         .clone();
@@ -1028,31 +999,32 @@ pub async fn resolution_to_type(
                     // trait, we can make it an instance
                     // associated type and make the instance be anonymous trait
                     let parent_trait = self
-                        .get_parent_global(member_generic.id)
+                        .get_parent_global(member_generic.id())
                         .await
                         .unwrap();
 
-                    if !self
-                        .is_generic_arguments_identity_to(
-                            &member_generic.parent_generic_arguments,
-                            parent_trait,
-                        )
+                    if !member_generic
+                        .parent_generic_arguments()
+                        .is_generic_arguments_identity_to(self, parent_trait)
                         .await
                     {
                         return Err(ResolutionToTermError::Failed(
-                            Resolution::MemberGeneric(member_generic),
+                            Resolution::GenericAssociatedSymbol(member_generic),
                         ));
                     }
 
+                    let (symbol_id, member_generic_arguments) =
+                        member_generic.into_id_and_member_generic_arguments();
+
                     Ok(Type::new_instance_associated(
                         Box::new(Instance::new_anonymous_trait(parent_trait)),
-                        member_generic.id,
-                        member_generic.member_generic_arguments,
+                        symbol_id,
+                        member_generic_arguments,
                     ))
                 }
 
                 _ => Err(ResolutionToTermError::Failed(
-                    Resolution::MemberGeneric(member_generic),
+                    Resolution::GenericAssociatedSymbol(member_generic),
                 )),
             }
         }
@@ -1062,16 +1034,12 @@ pub async fn resolution_to_type(
         Resolution::InstanceAssociatedSymbol(sym)
             if {
                 let symbol_kind =
-                    self.get_kind(sym.trait_associated_symbol_id).await;
+                    self.get_kind(sym.trait_associated_symbol_id()).await;
 
                 matches!(symbol_kind, Kind::TraitAssociatedType)
             } =>
         {
-            Ok(Type::new_instance_associated(
-                Box::new(sym.instance),
-                sym.trait_associated_symbol_id,
-                sym.generic_arguments,
-            ))
+            Ok(Type::InstanceAssociated(sym))
         }
 
         resolution => Err(ResolutionToTermError::Failed(resolution)),
@@ -1085,17 +1053,15 @@ pub async fn resolution_to_trait_ref(
     resolution: Resolution,
 ) -> Result<TraitRef, ResolutionToTermError> {
     match resolution {
-        Resolution::Generic(symbol) => {
-            let symbol_kind = self.get_kind(symbol.id).await;
+        Resolution::GenericSymbol(symbol) => {
+            let symbol_kind = self.get_kind(symbol.id()).await;
 
             match symbol_kind {
-                Kind::Trait => {
-                    Ok(TraitRef::new(symbol.id, symbol.generic_arguments))
-                }
+                Kind::Trait => Ok(TraitRef::from_symbol(symbol)),
 
-                _ => Err(ResolutionToTermError::Failed(Resolution::Generic(
-                    symbol,
-                ))),
+                _ => Err(ResolutionToTermError::Failed(
+                    Resolution::GenericSymbol(symbol),
+                )),
             }
         }
 
@@ -1110,17 +1076,15 @@ pub async fn resolution_to_effect_unit(
     resolution: Resolution,
 ) -> Result<effect::Unit, ResolutionToTermError> {
     match resolution {
-        Resolution::Generic(symbol) => {
-            let symbol_kind = self.get_kind(symbol.id).await;
+        Resolution::GenericSymbol(symbol) => {
+            let symbol_kind = self.get_kind(symbol.id()).await;
 
             match symbol_kind {
-                Kind::Effect => {
-                    Ok(effect::Unit::new(symbol.id, symbol.generic_arguments))
-                }
+                Kind::Effect => Ok(effect::Unit::from_symbol(symbol)),
 
-                _ => Err(ResolutionToTermError::Failed(Resolution::Generic(
-                    symbol,
-                ))),
+                _ => Err(ResolutionToTermError::Failed(
+                    Resolution::GenericSymbol(symbol),
+                )),
             }
         }
 

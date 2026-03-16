@@ -381,13 +381,13 @@ pub async fn create_identity_generic_arguments(
 /// given ID.
 #[extend]
 pub async fn is_generic_arguments_identity_to(
-    self: &TrackedEngine,
-    generic_arguments: &GenericArguments,
+    self: &GenericArguments,
+    engine: &TrackedEngine,
     symbol_id: Global<pernixc_symbol::ID>,
 ) -> bool {
-    let generic_params = self.get_generic_parameters(symbol_id).await;
+    let generic_params = engine.get_generic_parameters(symbol_id).await;
 
-    generic_arguments.is_identity(&generic_params, symbol_id)
+    self.is_identity(&generic_params, symbol_id)
 }
 
 /// Represents a sub-term location where the sub-term is stored as a generic
@@ -733,6 +733,14 @@ impl AssociatedSymbol {
         );
 
         inst
+    }
+
+    /// Destructures the associated symbol into its components.
+    #[must_use]
+    pub fn into_id_and_member_generic_arguments(
+        self,
+    ) -> (Global<pernixc_symbol::ID>, GenericArguments) {
+        (self.id, self.member_generic_arguments)
     }
 }
 

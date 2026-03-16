@@ -60,6 +60,10 @@ impl TraitRef {
         Self(Symbol::new(id, generic_arguments))
     }
 
+    /// Creates a new `TraitRef` from the given [`Symbol`].
+    #[must_use]
+    pub const fn from_symbol(symbol: Symbol) -> Self { Self(symbol) }
+
     /// Retrieves the trait ID of this `TraitRef`.
     #[must_use]
     pub const fn trait_id(&self) -> Global<pernixc_symbol::ID> { self.0.id() }

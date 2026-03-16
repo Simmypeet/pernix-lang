@@ -324,8 +324,8 @@ impl Report for ExpectInstance {
                 match &self.resolved_resolution {
                     Resolution::Module(_)
                     | Resolution::Variant(_)
-                    | Resolution::Generic(_)
-                    | Resolution::MemberGeneric(_)
+                    | Resolution::GenericSymbol(_)
+                    | Resolution::GenericAssociatedSymbol(_)
                     | Resolution::InstanceAssociatedSymbol(_) => {
                         unreachable!("should've gotten a global_id()")
                     }
