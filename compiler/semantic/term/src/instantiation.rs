@@ -6,7 +6,7 @@ use derive_new::new;
 use pernixc_arena::ID;
 use pernixc_extend::extend;
 use pernixc_qbice::TrackedEngine;
-use pernixc_symbol::{MemberID, parent::get_parent};
+use pernixc_symbol::MemberID;
 use pernixc_target::Global;
 use qbice::{Decode, Encode, StableHash};
 
@@ -18,9 +18,8 @@ use crate::{
     constant::Constant,
     generic_arguments::GenericArguments,
     generic_parameters::{
-        ConstantParameterID, GenericKind, GenericParameters,
-        InstanceParameterID, LifetimeParameterID, TypeParameterID,
-        get_generic_parameters,
+        ConstantParameterID, GenericParameters, InstanceParameterID,
+        LifetimeParameterID, TypeParameterID, get_generic_parameters,
     },
     instance::Instance,
     lifetime::Lifetime,
@@ -293,34 +292,6 @@ impl<T: Element + Clone + Ord> MutableRecursive<T> for Instantiater<'_> {
     }
 }
 
-/// Error that occurs when converting a [`GenericArguments`] into a
-/// [`Instantiation`], the number of generic arguments supplied does not
-/// match the number of generic parameters.
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
-)]
-#[error(
-    "the number of generic arguments supplied does not match the number of \
-     generic parameters"
-)]
-pub struct MismatchedGenericArgumentCountError {
-    /// The generic ID that the generic arguments were supplied for.
-    pub generic_id: Global<pernixc_symbol::ID>,
-
-    /// The number of generic parameters expected.
-    pub expected: usize,
-
-    /// The number of generic arguments supplied.
-    pub found: usize,
-
-    /// The kind of the generic parameters that the generic arguments were
-    /// supplied for.
-    pub kind: GenericKind,
-
-    /// The generic arguments passed into the function.
-    pub generic_arguments: GenericArguments,
-}
-
 impl Instantiation {
     fn append_from_arguments<T: Element + Ord, U>(
         &mut self,
@@ -340,101 +311,60 @@ impl Instantiation {
     }
 
     /// Appends the given generic arguments as a substitution.
-    ///
-    /// If there's any collision, the prior value will be preserved and the new
-    /// value will be collected in a list of collisions returned by this
-    /// function.
-    ///
-    /// # Errors
-    ///
-    /// See [`MismatchedGenericArgumentCountError`].
-    ///
-    /// # Returns
-    ///
-    /// A list of collisions that occurred during the substitution.
     #[allow(clippy::result_large_err)]
     pub fn append_from_generic_arguments(
         &mut self,
-        generic_arguments: GenericArguments,
+        generic_arguments: &GenericArguments,
         generic_id: Global<pernixc_symbol::ID>,
         generic_parameters: &GenericParameters,
-    ) -> Result<(), MismatchedGenericArgumentCountError> {
-        if generic_arguments.types().len()
-            != generic_parameters.type_parameter_order().len()
-        {
-            return Err(MismatchedGenericArgumentCountError {
-                generic_id,
-                expected: generic_parameters.type_parameter_order().len(),
-                found: generic_arguments.types().len(),
-                kind: GenericKind::Type,
-                generic_arguments,
-            });
-        }
+    ) {
+        assert_eq!(
+            generic_arguments.types().len(),
+            generic_parameters.type_parameter_order().len(),
+            "Mismatched number of type generic arguments",
+        );
 
-        if generic_arguments.lifetimes().len()
-            != generic_parameters.lifetime_parameter_order().len()
-        {
-            return Err(MismatchedGenericArgumentCountError {
-                generic_id,
-                expected: generic_parameters.lifetime_parameter_order().len(),
-                found: generic_arguments.lifetimes().len(),
-                kind: GenericKind::Lifetime,
-                generic_arguments,
-            });
-        }
+        assert_eq!(
+            generic_arguments.lifetimes().len(),
+            generic_parameters.lifetime_parameter_order().len(),
+            "Mismatched number of lifetime generic arguments",
+        );
 
-        if generic_arguments.constants().len()
-            != generic_parameters.constant_parameter_order().len()
-        {
-            return Err(MismatchedGenericArgumentCountError {
-                generic_id,
-                expected: generic_parameters.constant_parameter_order().len(),
-                found: generic_arguments.constants().len(),
-                kind: GenericKind::Constant,
-                generic_arguments,
-            });
-        }
+        assert_eq!(
+            generic_arguments.constants().len(),
+            generic_parameters.constant_parameter_order().len(),
+            "Mismatched number of constant generic arguments",
+        );
 
-        if generic_arguments.instances().len()
-            != generic_parameters.instance_parameter_order().len()
-        {
-            return Err(MismatchedGenericArgumentCountError {
-                generic_id,
-                expected: generic_parameters.instance_parameter_order().len(),
-                found: generic_arguments.instances().len(),
-                kind: GenericKind::Instance,
-                generic_arguments,
-            });
-        }
-
-        let (lifetimes, types, constants, instances) =
-            generic_arguments.into_arguments();
+        assert_eq!(
+            generic_arguments.instances().len(),
+            generic_parameters.instance_parameter_order().len(),
+            "Mismatched number of instance generic arguments",
+        );
 
         self.append_from_arguments(
-            lifetimes.into_iter(),
+            generic_arguments.lifetimes().iter().cloned(),
             generic_parameters.lifetime_parameter_order(),
             generic_id,
         );
 
         self.append_from_arguments(
-            types.into_iter(),
+            generic_arguments.types().iter().cloned(),
             generic_parameters.type_parameter_order(),
             generic_id,
         );
 
         self.append_from_arguments(
-            constants.into_iter(),
+            generic_arguments.constants().iter().cloned(),
             generic_parameters.constant_parameter_order(),
             generic_id,
         );
 
         self.append_from_arguments(
-            instances.into_iter(),
+            generic_arguments.instances().iter().cloned(),
             generic_parameters.instance_parameter_order(),
             generic_id,
         );
-
-        Ok(())
     }
 
     /// Creates a mapping from one generic parameter to another.
@@ -537,25 +467,21 @@ impl Instantiation {
     }
 
     /// Converts the given generic arguments into a substitution.
-    ///
-    /// # Errors
-    ///
-    /// See [`MismatchedGenericArgumentCountError`].
-    #[allow(clippy::result_large_err)]
+    #[must_use]
     pub fn from_generic_arguments(
-        generic_arguments: GenericArguments,
+        generic_arguments: &GenericArguments,
         global_id: Global<pernixc_symbol::ID>,
         generic_parameters: &GenericParameters,
-    ) -> Result<Self, MismatchedGenericArgumentCountError> {
+    ) -> Self {
         let mut substitution = Self::default();
 
         substitution.append_from_generic_arguments(
             generic_arguments,
             global_id,
             generic_parameters,
-        )?;
+        );
 
-        Ok(substitution)
+        substitution
     }
 
     /// Applies the given substitution to the term.
@@ -577,54 +503,6 @@ impl Instantiation {
         self.instantiate(&mut cloned);
         cloned
     }
-}
-
-/// Retrieves the [`Instantiation`] for the given generic ID with the given
-/// generic arguments.
-#[extend]
-pub async fn get_instantiation(
-    self: &TrackedEngine,
-    id: Global<pernixc_symbol::ID>,
-    generic_arguments: GenericArguments,
-) -> Result<Instantiation, MismatchedGenericArgumentCountError> {
-    let generic_parameters = self.get_generic_parameters(id).await;
-
-    Instantiation::from_generic_arguments(
-        generic_arguments,
-        id,
-        &generic_parameters,
-    )
-}
-
-/// Retrieves the [`Instantiation`] for the given associated symbol ID with the
-/// given generic arguments (both member level and parent level).
-#[extend]
-pub async fn get_instantiation_for_associated_symbol(
-    self: &TrackedEngine,
-    id: Global<pernixc_symbol::ID>,
-    parent_generic_arguments: GenericArguments,
-    member_generic_arguments: GenericArguments,
-) -> Result<Instantiation, MismatchedGenericArgumentCountError> {
-    let member_generic_parameters = self.get_generic_parameters(id).await;
-    let mut instantiation = Instantiation::from_generic_arguments(
-        member_generic_arguments,
-        id,
-        &member_generic_parameters,
-    )?;
-
-    let parent_id =
-        id.target_id.make_global(self.get_parent(id).await.unwrap());
-
-    let parent_generic_parameters =
-        self.get_generic_parameters(parent_id).await;
-
-    instantiation.append_from_generic_arguments(
-        parent_generic_arguments,
-        parent_id,
-        &parent_generic_parameters,
-    )?;
-
-    Ok(instantiation)
 }
 
 /// Retrieves the [`GenericArguments`] for the given generic ID with the given

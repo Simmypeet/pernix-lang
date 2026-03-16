@@ -7,12 +7,13 @@ use pernixc_extend::extend;
 use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::{
     name::{get_name, get_qualified_name},
-    parent::get_parent,
+    parent::{get_parent, get_parent_global},
 };
 use pernixc_target::Global;
 use qbice::{Decode, Encode, Identifiable, StableHash};
 
 use crate::{
+    TermMut,
     constant::Constant,
     generic_parameters::{
         ConstantParameterID, GenericKind, GenericParameters,
@@ -325,6 +326,19 @@ impl GenericArguments {
     pub fn resize<T: Element + Clone>(&mut self, new_len: usize, default: T) {
         T::get_mut(self).resize(new_len, default);
     }
+
+    /// Returns an iterator over mutable references to all sub-terms in the
+    /// generic arguments.
+    pub fn iter_all_term_mut(
+        &mut self,
+    ) -> impl Iterator<Item = TermMut<'_>> + '_ {
+        self.lifetimes
+            .iter_mut()
+            .map(TermMut::Lifetime)
+            .chain(self.types.iter_mut().map(TermMut::Type))
+            .chain(self.constants.iter_mut().map(TermMut::Constant))
+            .chain(self.instancces.iter_mut().map(TermMut::Instance))
+    }
 }
 
 /// Creates an identity generic arguments for the symbol with the given ID.
@@ -608,6 +622,39 @@ impl Symbol {
     pub fn instantiate(&mut self, inst: &Instantiation) {
         self.generic_arguments.instantiate(inst);
     }
+
+    /// Creates an [`Instantiation`] for this symbol by using the generic
+    /// arguments supplied to this symbol and the generic parameters of this
+    /// symbol.
+    pub async fn create_instantiation(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Instantiation {
+        let generic_parameters = engine.get_generic_parameters(self.id).await;
+
+        Instantiation::from_generic_arguments(
+            &self.generic_arguments,
+            self.id,
+            &generic_parameters,
+        )
+    }
+
+    /// Creates an [`Instantiation`] for the parent of this symbol by using the
+    /// generic arguments supplied to this symbol and the generic parameters of
+    /// the parent of this symbol.
+    pub async fn create_instantiation_parent(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Instantiation {
+        let parent_id = engine.get_parent_global(self.id).await.unwrap();
+        let generic_parameters = engine.get_generic_parameters(parent_id).await;
+
+        Instantiation::from_generic_arguments(
+            &self.generic_arguments,
+            parent_id,
+            &generic_parameters,
+        )
+    }
 }
 
 /// Represents a term where the associated symbol is supplied with generic
@@ -655,6 +702,37 @@ impl AssociatedSymbol {
     #[must_use]
     pub const fn member_generic_arguments(&self) -> &GenericArguments {
         &self.member_generic_arguments
+    }
+
+    /// Creates an [`Instantiation`] for this associated symbol by using the
+    /// generic arguments supplied to this associated symbol and the generic
+    /// parameters of this associated symbol and its parent.
+    #[must_use]
+    pub async fn create_instantiation(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Instantiation {
+        let member_generic_parameters =
+            engine.get_generic_parameters(self.id).await;
+
+        let mut inst = Instantiation::from_generic_arguments(
+            &self.member_generic_arguments,
+            self.id,
+            &member_generic_parameters,
+        );
+
+        let parent_id = engine.get_parent_global(self.id).await.unwrap();
+
+        let parent_generic_parameters =
+            engine.get_generic_parameters(parent_id).await;
+
+        inst.append_from_generic_arguments(
+            &self.parent_generic_arguments,
+            parent_id,
+            &parent_generic_parameters,
+        );
+
+        inst
     }
 }
 
