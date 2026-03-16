@@ -20,28 +20,9 @@ use pernixc_ir::{
         },
     },
 };
-use pernixc_semantic_element::{
-    elided_lifetime::get_elided_lifetimes, fields::get_fields,
-};
-use pernixc_symbol::{
-    kind::{Kind, get_kind},
-    member::get_members,
-    name::get_name,
-    parent::get_parent,
-    variant_declaration_order::get_variant_declaration_order,
-};
-use pernixc_target::Global;
-use pernixc_term::{
-    constant::Constant,
-    generic_parameters::{
-        ConstantParameterID, InstanceParameterID, LifetimeParameterID,
-        TypeParameterID, get_generic_parameters,
-    },
-    instance::Instance,
-    lifetime::{ElidedLifetimeID, Lifetime},
-    r#type::{Primitive, Type},
-};
-use pernixc_type_system::resolution;
+use pernixc_semantic_element::fields::get_fields;
+use pernixc_symbol::variant_declaration_order::get_variant_declaration_order;
+use pernixc_term::r#type::{Primitive, Type};
 
 use super::{
     Builder, Call, Error, LlvmAddress, LlvmFunctionSignature, LlvmValue,
@@ -145,13 +126,13 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         reg_id: ID<Register>,
     ) -> Result<Option<LlvmValue<'ctx>>, Error> {
         let fields =
-            self.context.engine().get_fields(struct_lit.struct_id).await;
+            self.context.engine().get_fields(struct_lit.struct_id()).await;
 
         let values = fields
             .field_declaration_order
             .iter()
             .copied()
-            .map(|x| (x, &struct_lit.initializers_by_field_id[&x]))
+            .map(|x| (x, struct_lit.get_initializer_by_field_id(x)))
             .map(|(id, val)| Ok((id, self.get_value(val)?)))
             .collect::<Result<Vec<_>, Error>>()?;
 
@@ -287,217 +268,23 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         function_call: &register::FunctionCall,
         reg_id: ID<Register>,
     ) -> Result<Option<LlvmValue<'ctx>>, Error> {
-        let symbol_kind =
-            self.context.engine().get_kind(function_call.callable_id).await;
+        let mut instantiation =
+            function_call.create_instantiation(self.engine()).await.unwrap();
 
-        match symbol_kind {
-            Kind::ExternFunction => {
-                let llvm_function = self
-                    .context
-                    .get_extern_function(function_call.callable_id)
-                    .await;
+        instantiation.instantiate_values(self.instantiation);
+        self.context.normalize_instantiation(&mut instantiation).await;
 
-                self.create_function_call(
-                    &llvm_function,
-                    &function_call.arguments,
-                    reg_id,
-                )
-            }
-            Kind::Function | Kind::ImplementationAssociatedFunction => {
-                let mut calling_inst = function_call.instantiation.clone();
+        let llvm_function = Box::pin(self.context.get_function(&Call {
+            callable_id: function_call.callee_symbol_id(),
+            instantiation,
+        }))
+        .await;
 
-                calling_inst.instantiate_values(self.instantiation);
-                self.context.normalize_instantiation(&mut calling_inst).await;
-
-                let llvm_function =
-                    Box::pin(self.context.get_function(&Call {
-                        callable_id: function_call.callable_id,
-                        instantiation: calling_inst,
-                    }))
-                    .await;
-
-                self.create_function_call(
-                    &llvm_function,
-                    &function_call.arguments,
-                    reg_id,
-                )
-            }
-
-            Kind::TraitAssociatedFunction => {
-                let mut calling_inst = function_call.instantiation.clone();
-
-                calling_inst.instantiate_values(self.instantiation);
-                self.context.normalize_instantiation(&mut calling_inst).await;
-
-                // get the parent trait to search for the implc
-                let parent_trait_id = Global::new(
-                    function_call.callable_id.target_id,
-                    self.context
-                        .engine()
-                        .get_parent(function_call.callable_id)
-                        .await
-                        .unwrap(),
-                );
-
-                let trait_generic_params = self
-                    .context
-                    .engine()
-                    .get_generic_parameters(parent_trait_id)
-                    .await;
-                let trait_func_generic_params = self
-                    .context
-                    .engine()
-                    .get_generic_parameters(function_call.callable_id)
-                    .await;
-
-                let trait_generic_args = calling_inst.create_generic_arguments(
-                    parent_trait_id,
-                    &trait_generic_params,
-                );
-
-                // resolve for the trait impl
-                let resolution = self
-                    .type_environment()
-                    .query(&resolution::Resolve::new(
-                        parent_trait_id,
-                        trait_generic_args,
-                    ))
-                    .await
-                    .unwrap()
-                    .unwrap();
-
-                let trait_impl_id = resolution.result.id;
-                let mut new_inst = resolution.result.instantiation.clone();
-
-                let trait_function_name = self
-                    .context
-                    .engine()
-                    .get_name(function_call.callable_id)
-                    .await;
-
-                let trait_impl_fun_id = Global::new(
-                    trait_impl_id.target_id,
-                    self.context
-                        .engine()
-                        .get_members(trait_impl_id)
-                        .await
-                        .member_ids_by_name[&trait_function_name],
-                );
-
-                let trait_impl_fun_generic_params = self
-                    .context
-                    .engine()
-                    .get_generic_parameters(trait_impl_fun_id)
-                    .await;
-                let trait_impl_fun_elided_lts = self
-                    .context
-                    .engine()
-                    .get_elided_lifetimes(trait_impl_fun_id)
-                    .await;
-
-                // populate the new_inst will the generic arguments of the trait
-                // func args
-                for lt in trait_impl_fun_generic_params
-                    .lifetime_parameter_order()
-                    .map(|x| {
-                        Lifetime::Parameter(LifetimeParameterID::new(
-                            trait_impl_fun_id,
-                            x,
-                        ))
-                    })
-                    .chain(trait_impl_fun_elided_lts.ids().map(|x| {
-                        Lifetime::Elided(ElidedLifetimeID::new(
-                            trait_impl_fun_id,
-                            x,
-                        ))
-                    }))
-                {
-                    new_inst.insert_lifetime_mapping(lt, Lifetime::Erased);
-                }
-
-                for (trait_fun_ty, trait_impl_fun_ty) in
-                    trait_func_generic_params.type_parameter_order().zip(
-                        trait_impl_fun_generic_params.type_parameter_order(),
-                    )
-                {
-                    new_inst.insert_type_mapping(
-                        Type::Parameter(TypeParameterID::new(
-                            trait_impl_fun_id,
-                            trait_impl_fun_ty,
-                        )),
-                        calling_inst
-                            .remove_type_mapping(&Type::Parameter(
-                                TypeParameterID::new(
-                                    function_call.callable_id,
-                                    trait_fun_ty,
-                                ),
-                            ))
-                            .unwrap(),
-                    );
-                }
-
-                for (trait_fun_const, trait_impl_fun_const) in
-                    trait_func_generic_params.constant_parameter_order().zip(
-                        trait_impl_fun_generic_params
-                            .constant_parameter_order(),
-                    )
-                {
-                    new_inst.insert_constant_mapping(
-                        Constant::Parameter(ConstantParameterID::new(
-                            trait_impl_fun_id,
-                            trait_impl_fun_const,
-                        )),
-                        calling_inst
-                            .remove_constant_mapping(&Constant::Parameter(
-                                ConstantParameterID::new(
-                                    function_call.callable_id,
-                                    trait_fun_const,
-                                ),
-                            ))
-                            .unwrap(),
-                    );
-                }
-
-                for (trait_fun_inst, trait_impl_fun_inst) in
-                    trait_func_generic_params.instance_parameter_order().zip(
-                        trait_impl_fun_generic_params
-                            .instance_parameter_order(),
-                    )
-                {
-                    new_inst.insert_instance_mapping(
-                        Instance::Parameter(InstanceParameterID::new(
-                            trait_impl_fun_id,
-                            trait_impl_fun_inst,
-                        )),
-                        calling_inst
-                            .remove_instance_mapping(&Instance::Parameter(
-                                InstanceParameterID::new(
-                                    function_call.callable_id,
-                                    trait_fun_inst,
-                                ),
-                            ))
-                            .unwrap(),
-                    );
-                }
-
-                self.context.normalize_instantiation(&mut new_inst).await;
-
-                let llvm_function =
-                    Box::pin(self.context.get_function(&Call {
-                        callable_id: trait_impl_fun_id,
-                        instantiation: new_inst,
-                    }))
-                    .await;
-
-                self.create_function_call(
-                    &llvm_function,
-                    &function_call.arguments,
-                    reg_id,
-                )
-            }
-
-            kind => panic!("unexpected symbol kind: {kind:?}"),
-        }
+        self.create_function_call(
+            &llvm_function,
+            function_call.arguments(),
+            reg_id,
+        )
     }
 
     async fn handle_array(
@@ -1220,8 +1007,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         reg_id: ID<Register>,
     ) -> Result<Option<LlvmValue<'ctx>>, Error> {
         let value = variant
-            .associated_value
-            .as_ref()
+            .associated_value()
             .map(|variant| self.get_value(variant))
             .transpose()?;
 
@@ -1235,7 +1021,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     == self
                         .context
                         .engine()
-                        .get_variant_declaration_order(variant.variant_id)
+                        .get_variant_declaration_order(variant.variant_id())
                         .await
                 {
                     Ok(Some(LlvmValue::Scalar(
@@ -1263,7 +1049,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                             self.context
                                 .engine()
                                 .get_variant_declaration_order(
-                                    variant.variant_id,
+                                    variant.variant_id(),
                                 )
                                 .await
                                 .try_into()
@@ -1281,12 +1067,12 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                 );
 
                 let variant_repr =
-                    tagged_union.llvm_variant_types[&variant.variant_id];
+                    tagged_union.llvm_variant_types[&variant.variant_id()];
 
                 let variant_index = self
                     .context
                     .engine()
-                    .get_variant_declaration_order(variant.variant_id)
+                    .get_variant_declaration_order(variant.variant_id())
                     .await;
 
                 let tag_pointer = self

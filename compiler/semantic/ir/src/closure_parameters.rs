@@ -4,13 +4,10 @@ use derive_more::Index;
 use pernixc_arena::{Arena, ID, OrderedArena};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_semantic_element::parameter::Parameters;
-use pernixc_term::{
-    constant::Constant, instance::Instance, instantiation::Instantiation,
-    lifetime::Lifetime, r#type::Type,
-};
+use pernixc_term::{instantiation::Instantiation, r#type::Type};
 use qbice::{Decode, Encode, StableHash};
 
-use crate::transform;
+use crate::transform::{self, ResolutionMut};
 
 /// Represents a parameter taken by a closure.
 #[derive(
@@ -98,11 +95,7 @@ impl ClosureParameters {
 }
 
 impl transform::Element for ClosureParameters {
-    async fn transform<
-        T: transform::Transformer<Lifetime>
-            + transform::Transformer<Type>
-            + transform::Transformer<Constant>,
-    >(
+    async fn transform<T: transform::Transformer>(
         &mut self,
         transformer: &mut T,
         _engine: &pernixc_qbice::TrackedEngine,
@@ -110,8 +103,7 @@ impl transform::Element for ClosureParameters {
         for (_, parameter) in self.0.iter_mut_unordered() {
             transformer
                 .transform(
-                    &mut parameter.r#type,
-                    transform::TypeTermSource::ClosureParameter,
+                    ResolutionMut::Type(&mut parameter.r#type),
                     parameter.span,
                 )
                 .await;
@@ -154,12 +146,7 @@ impl ClosureParametersMap {
 }
 
 impl transform::Element for ClosureParametersMap {
-    async fn transform<
-        T: transform::Transformer<Lifetime>
-            + transform::Transformer<Type>
-            + transform::Transformer<Constant>
-            + transform::Transformer<Instance>,
-    >(
+    async fn transform<T: transform::Transformer>(
         &mut self,
         transformer: &mut T,
         engine: &pernixc_qbice::TrackedEngine,

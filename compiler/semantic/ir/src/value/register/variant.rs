@@ -4,25 +4,15 @@ use std::ops::Deref;
 
 use pernixc_arena::ID;
 use pernixc_qbice::TrackedEngine;
-use pernixc_symbol::parent::get_parent;
 use pernixc_target::Global;
-use pernixc_term::{
-    constant::Constant,
-    generic_arguments::{GenericArguments, Symbol},
-    instance::Instance,
-    lifetime::Lifetime,
-    r#type::Type,
-};
+use pernixc_term::{instantiation::Instantiation, r#type::Type};
 use pernixc_type_system::OverflowError;
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Values,
-    transform::Transformer,
-    value::{
-        TypeOf, Value,
-        register::{Register, transform_generic_arguments},
-    },
+    transform::{ResolutionMut, Transformer},
+    value::{TypeOf, Value, register::Register},
 };
 
 /// Represents a variant value.
@@ -39,14 +29,42 @@ use crate::{
     StableHash,
 )]
 pub struct Variant {
-    /// The variant ID of the variant.
-    pub variant_id: Global<pernixc_symbol::ID>,
+    symbol: pernixc_resolution::qualified_identifier::Variant,
+    associated_value: Option<Value>,
+}
 
-    /// The field initializers of the variant.
-    pub associated_value: Option<Value>,
+impl Variant {
+    #[must_use]
+    pub const fn new(
+        symbol: pernixc_resolution::qualified_identifier::Variant,
+        associated_value: Option<Value>,
+    ) -> Self {
+        Self { symbol, associated_value }
+    }
 
-    /// The generic arguments supplied to the enum.
-    pub generic_arguments: GenericArguments,
+    pub async fn parent_enum_id(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Global<pernixc_symbol::ID> {
+        self.symbol.parent_enum_id(engine).await
+    }
+
+    pub async fn create_instantiation(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Instantiation {
+        self.symbol.create_instantiation(engine).await
+    }
+
+    #[must_use]
+    pub const fn variant_id(&self) -> Global<pernixc_symbol::ID> {
+        self.symbol.variant_id()
+    }
+
+    #[must_use]
+    pub const fn associated_value(&self) -> Option<&Value> {
+        self.associated_value.as_ref()
+    }
 }
 
 impl Variant {
@@ -70,16 +88,10 @@ impl crate::visitor::Element for Variant {
     }
 }
 
-pub(super) async fn transform_variant<
-    T: Transformer<Lifetime>
-        + Transformer<Type>
-        + Transformer<Constant>
-        + Transformer<Instance>,
->(
+pub(super) async fn transform_variant<T: Transformer>(
     variant: &mut Variant,
     transformer: &mut T,
     span: pernixc_lexical::tree::RelativeSpan,
-    engine: &TrackedEngine,
 ) {
     if let Some(value) = variant.associated_value.as_mut()
         && let Some(literal) = value.as_literal_mut()
@@ -87,17 +99,9 @@ pub(super) async fn transform_variant<
         literal.transform(transformer).await;
     }
 
-    transform_generic_arguments(
-        transformer,
-        variant
-            .variant_id
-            .target_id
-            .make_global(engine.get_parent(variant.variant_id).await.unwrap()),
-        span,
-        engine,
-        &mut variant.generic_arguments,
-    )
-    .await;
+    transformer
+        .transform(ResolutionMut::Variant(&mut variant.symbol), span)
+        .await;
 }
 
 impl TypeOf<&Variant> for Values {
@@ -106,18 +110,14 @@ impl TypeOf<&Variant> for Values {
         value: &Variant,
         environment: &crate::value::Environment<'_, N>,
     ) -> Result<pernixc_type_system::Succeeded<Type>, OverflowError> {
-        let enum_id = environment
-            .tracked_engine()
-            .get_parent(value.variant_id)
-            .await
-            .unwrap();
-
         Ok(environment
             .type_environment
-            .simplify(Type::Symbol(Symbol::new(
-                value.variant_id.target_id.make_global(enum_id),
-                value.generic_arguments.clone(),
-            )))
+            .simplify(
+                value
+                    .symbol
+                    .create_enum_type(environment.tracked_engine())
+                    .await,
+            )
             .await?
             .deref()
             .clone())

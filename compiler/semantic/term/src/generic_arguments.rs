@@ -7,12 +7,13 @@ use pernixc_extend::extend;
 use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::{
     name::{get_name, get_qualified_name},
-    parent::get_parent,
+    parent::{get_parent, get_parent_global},
 };
 use pernixc_target::Global;
 use qbice::{Decode, Encode, Identifiable, StableHash};
 
 use crate::{
+    TermMut,
     constant::Constant,
     generic_parameters::{
         ConstantParameterID, GenericKind, GenericParameters,
@@ -56,6 +57,16 @@ pub struct GenericArguments {
     types: Vec<Type>,
     constants: Vec<Constant>,
     instancces: Vec<Instance>,
+}
+
+/// The result from [`GenericArguments::zip_ref`].
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash)]
+#[allow(missing_docs)]
+pub enum ZipRef<'a> {
+    Lifetime(&'a Lifetime, &'a Lifetime),
+    Type(&'a Type, &'a Type),
+    Constant(&'a Constant, &'a Constant),
+    Instance(&'a Instance, &'a Instance),
 }
 
 impl GenericArguments {
@@ -325,6 +336,50 @@ impl GenericArguments {
     pub fn resize<T: Element + Clone>(&mut self, new_len: usize, default: T) {
         T::get_mut(self).resize(new_len, default);
     }
+
+    /// Returns an iterator over mutable references to all sub-terms in the
+    /// generic arguments.
+    pub fn iter_all_term_mut(
+        &mut self,
+    ) -> impl Iterator<Item = TermMut<'_>> + '_ {
+        self.lifetimes
+            .iter_mut()
+            .map(TermMut::Lifetime)
+            .chain(self.types.iter_mut().map(TermMut::Type))
+            .chain(self.constants.iter_mut().map(TermMut::Constant))
+            .chain(self.instancces.iter_mut().map(TermMut::Instance))
+    }
+
+    /// Returns an iterator that matches each argument in `self` to the
+    /// corresponding argument in `other` and yields a reference to the matched
+    /// pair.
+    pub fn zip_ref<'a>(
+        &'a self,
+        other: &'a Self,
+    ) -> impl Iterator<Item = ZipRef<'a>> + 'a {
+        self.lifetimes
+            .iter()
+            .zip(other.lifetimes.iter())
+            .map(|(l1, l2)| ZipRef::Lifetime(l1, l2))
+            .chain(
+                self.types
+                    .iter()
+                    .zip(other.types.iter())
+                    .map(|(t1, t2)| ZipRef::Type(t1, t2)),
+            )
+            .chain(
+                self.constants
+                    .iter()
+                    .zip(other.constants.iter())
+                    .map(|(c1, c2)| ZipRef::Constant(c1, c2)),
+            )
+            .chain(
+                self.instancces
+                    .iter()
+                    .zip(other.instancces.iter())
+                    .map(|(i1, i2)| ZipRef::Instance(i1, i2)),
+            )
+    }
 }
 
 /// Creates an identity generic arguments for the symbol with the given ID.
@@ -333,30 +388,30 @@ impl GenericArguments {
 /// as the generic parameters of the symbol.
 #[extend]
 pub async fn create_identity_generic_arguments(
-    self: &TrackedEngine,
-    symbol_id: Global<pernixc_symbol::ID>,
+    self: Global<pernixc_symbol::ID>,
+    engine: &TrackedEngine,
 ) -> GenericArguments {
-    let generic_params = self.get_generic_parameters(symbol_id).await;
+    let generic_params = engine.get_generic_parameters(self).await;
 
     let mut generic_arguments = GenericArguments::default();
 
     for lifetime_param in generic_params.lifetime_parameter_order() {
-        let lt_param = Lifetime::new_parameter(symbol_id, lifetime_param);
+        let lt_param = Lifetime::new_parameter(self, lifetime_param);
         generic_arguments.push_lifetime(lt_param);
     }
 
     for type_param in generic_params.type_parameter_order() {
-        let ty_param = Type::new_parameter(symbol_id, type_param);
+        let ty_param = Type::new_parameter(self, type_param);
         generic_arguments.push_type(ty_param);
     }
 
     for constant_param in generic_params.constant_parameter_order() {
-        let const_param = Constant::new_parameter(symbol_id, constant_param);
+        let const_param = Constant::new_parameter(self, constant_param);
         generic_arguments.push_constant(const_param);
     }
 
     for instance_param in generic_params.instance_parameter_order() {
-        let instance_param = Instance::new_parameter(symbol_id, instance_param);
+        let instance_param = Instance::new_parameter(self, instance_param);
         generic_arguments.push_instance(instance_param);
     }
 
@@ -367,13 +422,13 @@ pub async fn create_identity_generic_arguments(
 /// given ID.
 #[extend]
 pub async fn is_generic_arguments_identity_to(
-    self: &TrackedEngine,
-    generic_arguments: &GenericArguments,
+    self: &GenericArguments,
+    engine: &TrackedEngine,
     symbol_id: Global<pernixc_symbol::ID>,
 ) -> bool {
-    let generic_params = self.get_generic_parameters(symbol_id).await;
+    let generic_params = engine.get_generic_parameters(symbol_id).await;
 
-    generic_arguments.is_identity(&generic_params, symbol_id)
+    self.is_identity(&generic_params, symbol_id)
 }
 
 /// Represents a sub-term location where the sub-term is stored as a generic
@@ -571,7 +626,6 @@ impl Element for Instance {}
     Encode,
     Decode,
     StableHash,
-    new,
 )]
 pub struct Symbol {
     /// The ID of the symbol that is supplied with generic arguments.
@@ -582,6 +636,14 @@ pub struct Symbol {
 }
 
 impl Symbol {
+    #[must_use]
+    pub const fn new(
+        id: Global<pernixc_symbol::ID>,
+        generic_arguments: GenericArguments,
+    ) -> Self {
+        Self { id, generic_arguments }
+    }
+
     /// Returns the ID of the symbol.
     #[must_use]
     pub const fn id(&self) -> Global<pernixc_symbol::ID> { self.id }
@@ -607,6 +669,59 @@ impl Symbol {
     /// Instantiates this [`Symbol`] with the given instantiation.
     pub fn instantiate(&mut self, inst: &Instantiation) {
         self.generic_arguments.instantiate(inst);
+    }
+
+    /// Creates an [`Instantiation`] for this symbol by using the generic
+    /// arguments supplied to this symbol and the generic parameters of this
+    /// symbol.
+    pub async fn create_instantiation(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Instantiation {
+        let generic_parameters = engine.get_generic_parameters(self.id).await;
+
+        Instantiation::from_generic_arguments(
+            &self.generic_arguments,
+            self.id,
+            &generic_parameters,
+        )
+    }
+
+    /// Creates an [`Instantiation`] for the parent of this symbol by using the
+    /// generic arguments supplied to this symbol and the generic parameters of
+    /// the parent of this symbol.
+    pub async fn create_instantiation_parent(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Instantiation {
+        let parent_id = engine.get_parent_global(self.id).await.unwrap();
+        let generic_parameters = engine.get_generic_parameters(parent_id).await;
+
+        Instantiation::from_generic_arguments(
+            &self.generic_arguments,
+            parent_id,
+            &generic_parameters,
+        )
+    }
+
+    /// Sets the first type argument of this symbol to the given type.
+    #[allow(clippy::result_large_err)]
+    pub fn set_first_type_argument(&mut self, ty: Type) -> Result<(), Type> {
+        if let Some(first) = self.generic_arguments.types_mut().first_mut() {
+            *first = ty;
+
+            Ok(())
+        } else {
+            Err(ty)
+        }
+    }
+
+    /// Returns an iterator yielding mutable references to all terms appeared in
+    /// the generic arguments
+    pub fn iter_all_term_mut(
+        &mut self,
+    ) -> impl Iterator<Item = TermMut<'_>> + '_ {
+        self.generic_arguments.iter_all_term_mut()
     }
 }
 
@@ -655,6 +770,55 @@ impl AssociatedSymbol {
     #[must_use]
     pub const fn member_generic_arguments(&self) -> &GenericArguments {
         &self.member_generic_arguments
+    }
+
+    /// Creates an [`Instantiation`] for this associated symbol by using the
+    /// generic arguments supplied to this associated symbol and the generic
+    /// parameters of this associated symbol and its parent.
+    #[must_use]
+    pub async fn create_instantiation(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Instantiation {
+        let member_generic_parameters =
+            engine.get_generic_parameters(self.id).await;
+
+        let mut inst = Instantiation::from_generic_arguments(
+            &self.member_generic_arguments,
+            self.id,
+            &member_generic_parameters,
+        );
+
+        let parent_id = engine.get_parent_global(self.id).await.unwrap();
+
+        let parent_generic_parameters =
+            engine.get_generic_parameters(parent_id).await;
+
+        inst.append_from_generic_arguments(
+            &self.parent_generic_arguments,
+            parent_id,
+            &parent_generic_parameters,
+        );
+
+        inst
+    }
+
+    /// Destructures the associated symbol into its components.
+    #[must_use]
+    pub fn into_id_and_member_generic_arguments(
+        self,
+    ) -> (Global<pernixc_symbol::ID>, GenericArguments) {
+        (self.id, self.member_generic_arguments)
+    }
+
+    /// Returns an iterator yielding mutable references to all terms appeared in
+    /// the generic arguments
+    pub fn iter_all_term_mut(
+        &mut self,
+    ) -> impl Iterator<Item = TermMut<'_>> + '_ {
+        self.member_generic_arguments
+            .iter_all_term_mut()
+            .chain(self.parent_generic_arguments.iter_all_term_mut())
     }
 }
 

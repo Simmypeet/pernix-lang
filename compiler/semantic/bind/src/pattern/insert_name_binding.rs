@@ -21,8 +21,6 @@ use pernixc_semantic_element::{
 };
 use pernixc_source_file::SourceElement;
 use pernixc_term::{
-    generic_parameters::get_generic_parameters,
-    instantiation::Instantiation,
     lifetime::Lifetime,
     r#type::{Qualifier, Reference, Type},
 };
@@ -294,16 +292,7 @@ impl Binder<'_> {
             panic!("unexpected type!");
         };
 
-        let struct_generic_parameters =
-            self.engine().get_generic_parameters(symbol.id()).await;
-
-        let instantiation = Instantiation::from_generic_arguments(
-            symbol.generic_arguments().clone(),
-            symbol.id(),
-            &struct_generic_parameters,
-        )
-        .unwrap();
-
+        let instantiation = symbol.create_instantiation(self.engine()).await;
         let fields = self.engine().get_fields(symbol.id()).await;
 
         assert_eq!(
@@ -419,16 +408,7 @@ impl Binder<'_> {
             panic!("unexpected type!");
         };
 
-        let enum_generic_parameters =
-            self.engine().get_generic_parameters(symbol.id()).await;
-
-        let instantiation = Instantiation::from_generic_arguments(
-            symbol.generic_arguments().clone(),
-            symbol.id(),
-            &enum_generic_parameters,
-        )
-        .unwrap();
-
+        let instantiation = symbol.create_instantiation(self.engine()).await;
         let mut variant_ty = self
             .engine()
             .get_variant_associated_type(enum_pat.variant_id)

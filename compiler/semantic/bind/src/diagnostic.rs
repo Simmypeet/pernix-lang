@@ -14,14 +14,7 @@ use pernixc_symbol::{
 };
 use pernixc_target::Global;
 use pernixc_term::{
-    display::Display,
-    effect,
-    generic_arguments::GenericArguments,
-    generic_parameters::{
-        ConstantParameterID, GenericParameter, InstanceParameterID,
-        TypeParameterID, get_generic_parameters,
-    },
-    r#type::Type,
+    display::Display, effect, generic_arguments::GenericArguments, r#type::Type,
 };
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
@@ -69,8 +62,6 @@ diagnostic_enum! {
         NotAllFlowPathsReturnAValue(NotAllFlowPathsReturnAValue),
         ReturnIsNotAllowed(ReturnIsNotAllowed),
         TypeAnnotationRequired(TypeAnnotationRequired),
-        ConstantAnnotationRequired(ConstantAnnotationRequired),
-        InstanceAnnotationRequired(InstanceAnnotationRequired),
         NotAllFlowPathsExpressValue(NotAllFlowPathsExpressValue),
         ScopeWithGivenLableNameNotFound(ScopeWithGivenLableNameNotFound),
         ExpressOutsideScope(ExpressOutsideScope),
@@ -371,13 +362,16 @@ impl Report for ReturnIsNotAllowed {
 }
 
 /// A type annotation is required for a generic type parameter.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, StableHash, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct TypeAnnotationRequired {
     /// The span where the type annotation is required.
     pub span: RelativeSpan,
 
     /// The generic parameter that requires a type annotation.
-    pub generic_parameter: TypeParameterID,
+    pub term: pernixc_term::Term,
+
+    /// The rendering map for inference variables.
+    pub rendering_map: RenderingMap,
 }
 
 impl Report for TypeAnnotationRequired {
@@ -385,126 +379,24 @@ impl Report for TypeAnnotationRequired {
         &self,
         engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
-        let qualified_name =
-            engine.get_qualified_name(self.generic_parameter.parent_id()).await;
-
-        let generic_parameters = engine
-            .get_generic_parameters(self.generic_parameter.parent_id())
-            .await;
-
-        let ty_parameter = &generic_parameters[self.generic_parameter.id()];
-
-        let message = format!(
-            "type annotation is required for generic parameter `{}` of `{}`",
-            ty_parameter.name().as_ref(),
-            qualified_name
-        );
+        let term = self
+            .term
+            .write_to_string_with_configuration(
+                engine,
+                &self.rendering_map.configuration(),
+            )
+            .await
+            .unwrap();
 
         pernixc_diagnostic::Rendered::builder()
-            .message(message)
+            .message(format!("type annotation is required for `{term}`"))
             .primary_highlight(
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.span).await)
                     .build(),
             )
-            .severity(pernixc_diagnostic::Severity::Error)
-            .help_message(format!(
-                "consider adding a type annotation using syntax such as \
-                 `{qualified_name}[Type]`"
-            ))
-            .build()
-    }
-}
-
-/// A constant argument annotation is required for a generic constant parameter.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, StableHash, Encode, Decode)]
-pub struct ConstantAnnotationRequired {
-    /// The span where the type annotation is required.
-    pub span: RelativeSpan,
-
-    /// The generic parameter that requires a type annotation.
-    pub generic_parameter: ConstantParameterID,
-}
-
-impl Report for ConstantAnnotationRequired {
-    async fn report(
-        &self,
-        engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
-        let qualified_name =
-            engine.get_qualified_name(self.generic_parameter.parent_id()).await;
-
-        let generic_parameters = engine
-            .get_generic_parameters(self.generic_parameter.parent_id())
-            .await;
-
-        let const_parameter = &generic_parameters[self.generic_parameter.id()];
-
-        let message = format!(
-            "constant annotation is required for generic parameter `{}` of \
-             `{}`",
-            const_parameter.name().as_ref(),
-            qualified_name
-        );
-
-        pernixc_diagnostic::Rendered::builder()
-            .message(message)
-            .primary_highlight(
-                Highlight::builder()
-                    .span(engine.to_absolute_span(&self.span).await)
-                    .build(),
-            )
-            .severity(pernixc_diagnostic::Severity::Error)
-            .help_message(format!(
-                "consider adding a constant annotation using syntax such as \
-                 `{qualified_name}[ {{ EXPR }} ]`"
-            ))
-            .build()
-    }
-}
-
-/// An instance argument annotation is required for a generic instance
-/// parameter.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, StableHash, Encode, Decode)]
-pub struct InstanceAnnotationRequired {
-    /// The span where the type annotation is required.
-    pub span: RelativeSpan,
-
-    /// The generic parameter that requires a type annotation.
-    pub generic_parameter: InstanceParameterID,
-}
-
-impl Report for InstanceAnnotationRequired {
-    async fn report(
-        &self,
-        engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
-        let qualified_name =
-            engine.get_qualified_name(self.generic_parameter.parent_id()).await;
-
-        let generic_parameters = engine
-            .get_generic_parameters(self.generic_parameter.parent_id())
-            .await;
-
-        let instance_parameter =
-            &generic_parameters[self.generic_parameter.id()];
-
-        let message = format!(
-            "explicit instance argument is required for generic parameter \
-             `{}` of `{}`",
-            instance_parameter.name().as_ref(),
-            qualified_name
-        );
-
-        pernixc_diagnostic::Rendered::builder()
-            .message(message)
-            .primary_highlight(
-                Highlight::builder()
-                    .span(engine.to_absolute_span(&self.span).await)
-                    .build(),
-            )
-            .severity(pernixc_diagnostic::Severity::Error)
-            .help_message("consider adding an instance argument")
+            .severity(Severity::Error)
+            .help_message("consider adding a type annotation")
             .build()
     }
 }

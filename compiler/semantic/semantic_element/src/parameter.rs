@@ -50,6 +50,14 @@ pub struct Parameters {
     pub parameter_order: Vec<ID<Parameter>>,
 }
 
+impl Parameters {
+    #[must_use]
+    pub const fn len(&self) -> usize { self.parameter_order.len() }
+
+    #[must_use]
+    pub const fn is_empty(&self) -> bool { self.parameter_order.is_empty() }
+}
+
 /// Query key for retrieving the parameters of a function.
 #[derive(
     Debug,

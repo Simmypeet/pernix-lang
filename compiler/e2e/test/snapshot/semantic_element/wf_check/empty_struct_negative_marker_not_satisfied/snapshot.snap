@@ -3,7 +3,7 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: run
 ---
 stderr:
-[error]: the predicate `marker not main::Marker[main::EmptyStruct]` is not satisfied
+[error]: the predicate `not marker main::Marker[main::EmptyStruct]` is not satisfied
    ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/empty_struct_negative_marker_not_satisfied/main.pnx:21:31
    │
 21 │ public type InstEmptyStruct = WithRequirement[EmptyStruct]
@@ -14,7 +14,7 @@ stderr:
 18 │         T: not Marker
    ╰╴           ━━━━━━━━━━
 
-[error]: the predicate `marker not main::Marker[main::EmptyEnum]` is not satisfied
+[error]: the predicate `not marker main::Marker[main::EmptyEnum]` is not satisfied
    ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/empty_struct_negative_marker_not_satisfied/main.pnx:22:31
    │
 22 │ public type InstEmptyEnum   = WithRequirement[EmptyEnum]

@@ -17,10 +17,7 @@ use pernixc_ir::{
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_target::Global;
-use pernixc_term::{
-    constant::Constant, generic_arguments::GenericArguments,
-    instance::Instance, lifetime::Lifetime, r#type::Type,
-};
+use pernixc_term::{generic_arguments::GenericArguments, r#type::Type};
 use pernixc_type_system::{OverflowError, environment::Premise};
 
 use crate::{
@@ -40,12 +37,7 @@ pub struct Context {
 }
 
 impl transform::Element for Context {
-    async fn transform<
-        T: transform::Transformer<Lifetime>
-            + transform::Transformer<Type>
-            + transform::Transformer<Constant>
-            + transform::Transformer<Instance>,
-    >(
+    async fn transform<T: transform::Transformer>(
         &mut self,
         transformer: &mut T,
         engine: &TrackedEngine,

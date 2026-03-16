@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use pernixc_arena::ID;
-use pernixc_hash::{HashMap, HashSet};
+use pernixc_hash::HashSet;
 use pernixc_ir::value::register::{EffectHandlerArgument, FunctionCall};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_semantic_element::{
@@ -10,7 +10,7 @@ use pernixc_semantic_element::{
 };
 use pernixc_symbol::{
     kind::{Kind, get_kind},
-    parent::get_parent,
+    parent::get_parent_global,
 };
 use pernixc_target::Global;
 use pernixc_term::{effect, instantiation::Instantiation};
@@ -23,9 +23,11 @@ use crate::{Region, context::Context, subset::Changes};
 
 impl<N: Normalizer> Context<'_, N> {
     #[allow(clippy::too_many_lines)]
-    pub(super) async fn get_subset_of_effect_operations(
+    pub(super) async fn get_subset_of_effect_operations<'a>(
         &self,
-        capability_arguments: &HashMap<ID<effect::Unit>, EffectHandlerArgument>,
+        capability_arguments: impl Iterator<
+            Item = (ID<effect::Unit>, &'a EffectHandlerArgument),
+        >,
         instantiation: &Instantiation,
         callled_id: Global<pernixc_symbol::ID>,
         span: &RelativeSpan,
@@ -41,7 +43,7 @@ impl<N: Normalizer> Context<'_, N> {
 
         for (required_id, argument) in capability_arguments {
             let mut required_capability =
-                called_capabilities[*required_id].clone();
+                called_capabilities[required_id].clone();
 
             // instantiate the generic arguments of the required capability
             required_capability.instantiate(instantiation);
@@ -100,9 +102,15 @@ impl<N: Normalizer> Context<'_, N> {
         function_call: &FunctionCall,
         span: &RelativeSpan,
     ) -> Result<Changes, UnrecoverableError> {
+        let Some(inst) =
+            function_call.create_instantiation(self.tracked_engine()).await
+        else {
+            return Ok(Changes::default());
+        };
+
         let function_signature = self
             .tracked_engine()
-            .get_parameters(function_call.callable_id)
+            .get_parameters(function_call.callee_symbol_id())
             .await;
 
         let mut lifetime_constraints = BTreeSet::new();
@@ -112,7 +120,7 @@ impl<N: Normalizer> Context<'_, N> {
             .iter()
             .copied()
             .map(|x| function_signature.parameters.get(x).unwrap())
-            .zip(&function_call.arguments)
+            .zip(function_call.arguments())
         {
             /*
             The c-varargs will break this assertion
@@ -123,7 +131,7 @@ impl<N: Normalizer> Context<'_, N> {
             */
 
             let mut parameter_ty = parameter.r#type.clone();
-            function_call.instantiation.instantiate(&mut parameter_ty);
+            inst.instantiate(&mut parameter_ty);
 
             self.subtypes_value(
                 parameter_ty,
@@ -137,48 +145,35 @@ impl<N: Normalizer> Context<'_, N> {
         lifetime_constraints.extend(
             self.type_environment()
                 .wf_check_instantiation(
-                    function_call.callable_id,
+                    function_call.callee_symbol_id(),
                     span,
-                    &function_call.instantiation,
+                    &inst,
                     &self.handler(),
                 )
                 .await?,
         );
 
-        let kind =
-            self.tracked_engine().get_kind(function_call.callable_id).await;
+        let kind = self
+            .tracked_engine()
+            .get_kind(function_call.callee_symbol_id())
+            .await;
 
         match kind {
             Kind::Function | Kind::ExternFunction => {}
 
-            Kind::ImplementationAssociatedFunction => {
-                let parent_implementation_id = Global::new(
-                    function_call.callable_id.target_id,
-                    self.tracked_engine()
-                        .get_parent(function_call.callable_id)
-                        .await
-                        .unwrap(),
-                );
+            Kind::EffectOperation | Kind::ImplementationAssociatedFunction => {
+                let parent_implementation_id = self
+                    .tracked_engine()
+                    .get_parent_global(function_call.callee_symbol_id())
+                    .await
+                    .unwrap();
 
                 lifetime_constraints.extend(
                     self.type_environment()
                         .wf_check_instantiation(
                             parent_implementation_id,
                             span,
-                            &function_call.instantiation,
-                            &self.handler(),
-                        )
-                        .await?,
-                );
-            }
-
-            Kind::EffectOperation => {
-                lifetime_constraints.extend(
-                    self.type_environment()
-                        .wf_check_instantiation(
-                            function_call.callable_id,
-                            span,
-                            &function_call.instantiation,
+                            &inst,
                             &self.handler(),
                         )
                         .await?,
@@ -188,16 +183,16 @@ impl<N: Normalizer> Context<'_, N> {
             _ => unreachable!(
                 "function call to non-function kind: {}",
                 self.tracked_engine()
-                    .get_kind(function_call.callable_id)
+                    .get_kind(function_call.callee_symbol_id())
                     .await
                     .kind_str()
             ),
         }
 
         self.get_subset_of_effect_operations(
-            &function_call.effect_arguments,
-            &function_call.instantiation,
-            function_call.callable_id,
+            function_call.effect_arguments(),
+            &inst,
+            function_call.callee_symbol_id(),
             span,
             &mut lifetime_constraints,
         )

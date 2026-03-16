@@ -19,10 +19,7 @@ use pernixc_semantic_element::{
 };
 use pernixc_symbol::kind::{Kind, get_kind};
 use pernixc_target::Global;
-use pernixc_term::{
-    instantiation::get_instantiation,
-    r#type::{self, Qualifier, Type},
-};
+use pernixc_term::r#type::{self, Qualifier, Type};
 use pernixc_type_system::{
     UnrecoverableError, environment::Environment, normalizer::Normalizer,
 };
@@ -1282,21 +1279,17 @@ impl Scope {
                     panic!("expected struct type");
                 };
 
-                let (struct_id, generic_arguments) = symbol.destructure();
-
                 assert_eq!(
-                    environment.tracked_engine().get_kind(struct_id).await,
+                    environment.tracked_engine().get_kind(symbol.id()).await,
                     Kind::Struct
                 );
 
                 let fields =
-                    environment.tracked_engine().get_fields(struct_id).await;
+                    environment.tracked_engine().get_fields(symbol.id()).await;
 
-                let instantiation = environment
-                    .tracked_engine()
-                    .get_instantiation(struct_id, generic_arguments)
-                    .await
-                    .map_err(|_| UnrecoverableError::Reported)?;
+                let instantiation = symbol
+                    .create_instantiation(environment.tracked_engine())
+                    .await;
 
                 if let State::Total(current) = state {
                     // already satisfied
@@ -1308,7 +1301,7 @@ impl Scope {
                     }
 
                     *state = State::Projection(Projection::Struct(Struct {
-                        struct_id,
+                        struct_id: symbol.id(),
                         states_by_field_id: fields
                             .field_declaration_order
                             .iter()
@@ -1322,7 +1315,7 @@ impl Scope {
                     state
                         .as_projection_mut()
                         .and_then(|x| x.as_struct_mut())
-                        .filter(|x| x.struct_id == struct_id)
+                        .filter(|x| x.struct_id == symbol.id())
                         .unwrap()
                         .states_by_field_id
                         .get_mut(&field.id)
@@ -1463,10 +1456,8 @@ impl Scope {
                     panic!("expected enum type");
                 };
 
-                let (enum_id, generic_arguments) = symbol.destructure();
-
                 assert_eq!(
-                    environment.tracked_engine().get_kind(enum_id).await,
+                    environment.tracked_engine().get_kind(symbol.id()).await,
                     Kind::Enum
                 );
                 assert_eq!(
@@ -1484,11 +1475,9 @@ impl Scope {
 
                 let assocated_type = assocated_type_interned.deref().clone();
 
-                let instantiation = environment
-                    .tracked_engine()
-                    .get_instantiation(enum_id, generic_arguments)
-                    .await
-                    .map_err(|_| UnrecoverableError::Reported)?;
+                let instantiation = symbol
+                    .create_instantiation(environment.tracked_engine())
+                    .await;
 
                 if let State::Total(current) = state {
                     // already satisfied

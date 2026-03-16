@@ -698,12 +698,8 @@ struct Builder<'rctx, 'ctx, 'i, 'k> {
     register_map: HashMap<ID<Register>, Option<LlvmValue<'ctx>>>,
 }
 
-impl<'k> Builder<'_, '_, '_, 'k> {
-    pub const fn type_environment(
-        &self,
-    ) -> &'k Environment<'k, normalizer::NoOp> {
-        self.value_environment.type_environment
-    }
+impl<'i> Builder<'_, '_, 'i, '_> {
+    pub fn engine(&self) -> &'i TrackedEngine { self.context.engine() }
 }
 
 /// Represents the LLVM's memory address with the underlying type.

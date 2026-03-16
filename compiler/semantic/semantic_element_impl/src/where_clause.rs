@@ -6,7 +6,7 @@ use pernixc_qbice::TrackedEngine;
 use pernixc_resolution::{
     ExtraNamespace, Resolver,
     generic_parameter_namespace::get_generic_parameter_namespace,
-    qualified_identifier::{Generic, Resolution},
+    qualified_identifier::Resolution,
 };
 use pernixc_semantic_element::where_clause;
 use pernixc_source_file::SourceElement;
@@ -224,24 +224,21 @@ async fn create_type_bound_predicates_internal(
                 resolver.pop_higher_ranked_lifetimes();
 
                 let preidcate = match resolution {
-                    Resolution::Generic(Generic { id, generic_arguments })
+                    Resolution::GenericSymbol(symbol)
                         if {
-                            matches!(engine.get_kind(id).await, Kind::Marker)
+                            matches!(
+                                engine.get_kind(symbol.id()).await,
+                                Kind::Marker
+                            )
                         } =>
                     {
                         if qualified_identifier_bound.not_keyword().is_none() {
                             predicate::Predicate::PositiveMarker(
-                                PositiveMarker {
-                                    marker_id: id,
-                                    generic_arguments,
-                                },
+                                PositiveMarker::from_symbol(symbol),
                             )
                         } else {
                             predicate::Predicate::NegativeMarker(
-                                NegativeMarker {
-                                    marker_id: id,
-                                    generic_arguments,
-                                },
+                                NegativeMarker::from_symbol(symbol),
                             )
                         }
                     }

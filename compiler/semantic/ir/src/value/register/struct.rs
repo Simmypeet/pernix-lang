@@ -8,35 +8,33 @@ use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::fields::Field;
 use pernixc_target::Global;
 use pernixc_term::{
-    constant::Constant, generic_arguments::GenericArguments,
-    instance::Instance, lifetime::Lifetime, r#type::Type,
+    generic_arguments::Symbol, instantiation::Instantiation, r#type::Type,
 };
 use pernixc_type_system::OverflowError;
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Values,
-    transform::Transformer,
-    value::{
-        TypeOf, Value,
-        register::{Register, transform_generic_arguments},
-    },
+    transform::{ResolutionMut, Transformer},
+    value::{TypeOf, Value, register::Register},
 };
 
 /// Represents a struct value.
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, StableHash)]
 pub struct Struct {
-    /// The struct ID of the struct.
-    pub struct_id: Global<pernixc_symbol::ID>,
-
-    /// The field initializers of the struct.
-    pub initializers_by_field_id: HashMap<ID<Field>, Value>,
-
-    /// The generic arguments supplied to the struct.
-    pub generic_arguments: GenericArguments,
+    symbol: Symbol,
+    initializers_by_field_id: HashMap<ID<Field>, Value>,
 }
 
 impl Struct {
+    #[must_use]
+    pub const fn new(
+        symbol: Symbol,
+        initializers_by_field_id: HashMap<ID<Field>, Value>,
+    ) -> Self {
+        Self { symbol, initializers_by_field_id }
+    }
+
     /// Returns the list of registers that are used in the struct.
     #[must_use]
     pub fn get_used_registers(&self) -> Vec<ID<Register>> {
@@ -44,6 +42,24 @@ impl Struct {
             .values()
             .filter_map(|x| x.as_register().copied())
             .collect()
+    }
+
+    #[must_use]
+    pub async fn create_instantiation(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Instantiation {
+        self.symbol.create_instantiation(engine).await
+    }
+
+    #[must_use]
+    pub const fn struct_id(&self) -> Global<pernixc_symbol::ID> {
+        self.symbol.id()
+    }
+
+    #[must_use]
+    pub fn get_initializer_by_field_id(&self, field_id: ID<Field>) -> &Value {
+        self.initializers_by_field_id.get(&field_id).unwrap()
     }
 }
 
@@ -55,16 +71,10 @@ impl crate::visitor::Element for Struct {
     }
 }
 
-pub(super) async fn transform_struct<
-    T: Transformer<Lifetime>
-        + Transformer<Type>
-        + Transformer<Constant>
-        + Transformer<Instance>,
->(
+pub(super) async fn transform_struct<T: Transformer>(
     st: &mut Struct,
     transformer: &mut T,
     span: pernixc_lexical::tree::RelativeSpan,
-    engine: &TrackedEngine,
 ) {
     for value in st.initializers_by_field_id.values_mut() {
         if let Some(literal) = value.as_literal_mut() {
@@ -72,14 +82,7 @@ pub(super) async fn transform_struct<
         }
     }
 
-    transform_generic_arguments(
-        transformer,
-        st.struct_id,
-        span,
-        engine,
-        &mut st.generic_arguments,
-    )
-    .await;
+    transformer.transform(ResolutionMut::Symbol(&mut st.symbol), span).await;
 }
 
 impl TypeOf<&Struct> for Values {
@@ -90,10 +93,7 @@ impl TypeOf<&Struct> for Values {
     ) -> Result<pernixc_type_system::Succeeded<Type>, OverflowError> {
         Ok(environment
             .type_environment
-            .simplify(Type::new_symbol(
-                value.struct_id,
-                value.generic_arguments.clone(),
-            ))
+            .simplify(Type::Symbol(value.symbol.clone()))
             .await?
             .deref()
             .clone())

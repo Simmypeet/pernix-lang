@@ -3,6 +3,7 @@
 
 use std::collections::BTreeSet;
 
+use pernixc_qbice::TrackedEngine;
 use pernixc_target::Global;
 use qbice::{Decode, Encode, Identifiable, StableHash};
 
@@ -30,12 +31,16 @@ pub struct Unit(Symbol);
 impl Unit {
     /// Creates a new `Unit` with the given effect ID and generic arguments.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         effect_id: Global<pernixc_symbol::ID>,
         generic_arguments: GenericArguments,
     ) -> Self {
         Self(Symbol::new(effect_id, generic_arguments))
     }
+
+    /// Creates a new `Unit` from the given [`Symbol`].
+    #[must_use]
+    pub const fn from_symbol(symbol: Symbol) -> Self { Self(symbol) }
 
     /// Returns the ID of the effect that this `Unit` represents.
     #[must_use]
@@ -50,6 +55,14 @@ impl Unit {
     /// Instantiates this [`Unit`] with the given instantiation.
     pub fn instantiate(&mut self, inst: &Instantiation) {
         self.0.instantiate(inst);
+    }
+
+    #[must_use]
+    pub async fn create_instantiation(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Instantiation {
+        self.0.create_instantiation(engine).await
     }
 }
 

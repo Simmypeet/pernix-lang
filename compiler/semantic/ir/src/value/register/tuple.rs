@@ -71,15 +71,9 @@ impl crate::visitor::Element for Tuple {
     }
 }
 
-pub(super) async fn transform_tuple<
-    T: Transformer<pernixc_term::lifetime::Lifetime>
-        + Transformer<Type>
-        + Transformer<pernixc_term::constant::Constant>,
->(
+pub(super) async fn transform_tuple<T: Transformer>(
     tuple: &mut Tuple,
     transformer: &mut T,
-    _span: pernixc_lexical::tree::RelativeSpan,
-    _engine: &pernixc_qbice::TrackedEngine,
 ) {
     for element in
         tuple.elements.iter_mut().filter_map(|x| x.value.as_literal_mut())

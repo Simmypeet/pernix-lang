@@ -3,7 +3,7 @@
 use std::ops::Deref;
 
 use getset::{CopyGetters, Getters};
-use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
+use pernixc_term::r#type::Type;
 use pernixc_type_system::OverflowError;
 use qbice::{Decode, Encode, StableHash};
 
@@ -65,9 +65,7 @@ impl ResumeCall {
     }
 }
 
-pub(super) async fn transform_resume_call<
-    T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
->(
+pub(super) async fn transform_resume_call<T: Transformer>(
     resume_call: &mut ResumeCall,
     transformer: &mut T,
 ) {

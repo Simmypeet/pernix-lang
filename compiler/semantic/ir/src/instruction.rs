@@ -6,7 +6,7 @@ use enum_as_inner::EnumAsInner;
 use pernixc_arena::ID;
 use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_term::r#type::{Qualifier, Type};
+use pernixc_term::r#type::Qualifier;
 use qbice::{Decode, Encode, StableHash};
 
 use super::{
@@ -65,7 +65,7 @@ pub struct ConditionalJump {
 }
 
 impl ConditionalJump {
-    async fn transform<T: Transformer<Type>>(&mut self, transformer: &mut T) {
+    async fn transform<T: Transformer>(&mut self, transformer: &mut T) {
         if let Value::Literal(literal) = &mut self.condition {
             literal.transform(transformer).await;
         }
@@ -109,7 +109,7 @@ pub struct SwitchJump {
 }
 
 impl SwitchJump {
-    async fn transform<T: Transformer<Type>>(&mut self, transformer: &mut T) {
+    async fn transform<T: Transformer>(&mut self, transformer: &mut T) {
         if let Value::Literal(literal) = &mut self.integer {
             literal.transform(transformer).await;
         }
@@ -126,7 +126,7 @@ pub enum Jump {
 }
 
 impl Jump {
-    async fn transform<T: Transformer<Type>>(&mut self, transformer: &mut T) {
+    async fn transform<T: Transformer>(&mut self, transformer: &mut T) {
         match self {
             Self::Unconditional(_) => {}
             Self::Conditional(conditional) => {
@@ -179,7 +179,7 @@ pub struct Return {
 
 impl Return {
     /// Transforms the return value using the given transformer.
-    async fn transform<T: Transformer<Type>>(&mut self, transformer: &mut T) {
+    async fn transform<T: Transformer>(&mut self, transformer: &mut T) {
         if let Value::Literal(literal) = &mut self.value {
             literal.transform(transformer).await;
         }
@@ -233,7 +233,7 @@ pub struct Store {
 }
 
 impl Store {
-    async fn transform<T: Transformer<Type>>(&mut self, transformer: &mut T) {
+    async fn transform<T: Transformer>(&mut self, transformer: &mut T) {
         if let Value::Literal(literal) = &mut self.value {
             literal.transform(transformer).await;
         }
@@ -318,7 +318,7 @@ pub struct TuplePack {
 }
 
 impl TuplePack {
-    async fn transform<T: Transformer<Type>>(&mut self, transformer: &mut T) {
+    async fn transform<T: Transformer>(&mut self, transformer: &mut T) {
         self.store_address.transform(transformer).await;
         self.tuple_address.transform(transformer).await;
     }
@@ -375,7 +375,7 @@ pub struct Drop {
 }
 
 impl Drop {
-    async fn transform<T: Transformer<Type>>(&mut self, transformer: &mut T) {
+    async fn transform<T: Transformer>(&mut self, transformer: &mut T) {
         self.address.transform(transformer).await;
     }
 }
@@ -405,7 +405,7 @@ pub struct DropUnpackTuple {
 }
 
 impl DropUnpackTuple {
-    async fn transform<T: Transformer<Type>>(&mut self, transformer: &mut T) {
+    async fn transform<T: Transformer>(&mut self, transformer: &mut T) {
         self.tuple_address.transform(transformer).await;
     }
 }
@@ -462,11 +462,7 @@ pub enum Instruction {
 }
 
 impl transform::Element for Instruction {
-    async fn transform<
-        T: Transformer<pernixc_term::lifetime::Lifetime>
-            + Transformer<Type>
-            + Transformer<pernixc_term::constant::Constant>,
-    >(
+    async fn transform<T: Transformer>(
         &mut self,
         transformer: &mut T,
         _: &pernixc_qbice::TrackedEngine,
@@ -504,11 +500,7 @@ pub enum Terminator {
 }
 
 impl transform::Element for Terminator {
-    async fn transform<
-        T: Transformer<pernixc_term::lifetime::Lifetime>
-            + Transformer<Type>
-            + Transformer<pernixc_term::constant::Constant>,
-    >(
+    async fn transform<T: Transformer>(
         &mut self,
         transformer: &mut T,
         _: &pernixc_qbice::TrackedEngine,

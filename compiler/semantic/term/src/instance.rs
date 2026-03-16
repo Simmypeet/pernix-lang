@@ -9,6 +9,7 @@ use pernixc_target::Global;
 use qbice::{Decode, Encode, Identifiable, StableHash};
 
 use crate::{
+    TermMut,
     constant::Constant,
     error::{Error, contains_error},
     generic_arguments::{
@@ -53,12 +54,16 @@ impl TraitRef {
     /// Creates a new `TraitRef` with the given trait symbol ID and generic
     /// arguments.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         id: Global<pernixc_symbol::ID>,
         generic_arguments: GenericArguments,
     ) -> Self {
         Self(Symbol::new(id, generic_arguments))
     }
+
+    /// Creates a new `TraitRef` from the given [`Symbol`].
+    #[must_use]
+    pub const fn from_symbol(symbol: Symbol) -> Self { Self(symbol) }
 
     /// Retrieves the trait ID of this `TraitRef`.
     #[must_use]
@@ -80,6 +85,14 @@ impl TraitRef {
     #[must_use]
     pub fn into_generic_arguments(self) -> GenericArguments {
         self.0.into_generic_arguments()
+    }
+
+    /// Creates an [`Instantiation`] for this `TraitRef`.
+    pub async fn create_instantiation(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Instantiation {
+        self.0.create_instantiation(engine).await
     }
 }
 
@@ -427,6 +440,16 @@ impl InstanceAssociated {
         self.trait_associated_symbol_generic_arguments.contains_error()
             || contains_error(&*self.instance)
     }
+
+    /// Returns an iterator yielding mutable references to all terms appeared in
+    /// the generic arguments including this inner associated instance.
+    pub fn iter_all_term_mut(
+        &mut self,
+    ) -> impl Iterator<Item = TermMut<'_>> + '_ {
+        std::iter::once(TermMut::Instance(&mut self.instance)).chain(
+            self.trait_associated_symbol_generic_arguments.iter_all_term_mut(),
+        )
+    }
 }
 
 macro_rules! implements_instance_associated {
@@ -761,7 +784,7 @@ impl Instance {
     /// Creates a new [`Instance::Symbol`] with the given symbol ID and generic
     /// arguments.
     #[must_use]
-    pub fn new_symbol(
+    pub const fn new_symbol(
         instance_symbol_id: Global<pernixc_symbol::ID>,
         generic_arguments: GenericArguments,
     ) -> Self {

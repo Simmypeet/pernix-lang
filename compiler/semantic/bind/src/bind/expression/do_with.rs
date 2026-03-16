@@ -24,7 +24,6 @@ use pernixc_syntax::QualifiedIdentifier;
 use pernixc_target::Global;
 use pernixc_term::{
     effect,
-    instantiation::get_instantiation,
     r#type::{Qualifier, Type},
 };
 use pernixc_type_system::UnrecoverableError;
@@ -158,14 +157,8 @@ async fn build_with_blocks(
     let mut with_irs = HashMap::default();
 
     for with_block in with_blocks {
-        let instantiation = binder
-            .engine()
-            .get_instantiation(
-                with_block.unit.effect_id(),
-                with_block.unit.generic_arguments().clone(),
-            )
-            .await
-            .expect("instantiation must be available");
+        let instantiation =
+            with_block.unit.create_instantiation(binder.engine()).await;
 
         for (effect_operation_id, handler_block) in with_block.handlers {
             let statements_span = handler_block.statements.span();

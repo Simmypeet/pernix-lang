@@ -82,9 +82,7 @@ impl crate::visitor::Element for Load {
     }
 }
 
-pub(super) async fn transform_load<
-    T: Transformer<pernixc_term::r#type::Type>,
->(
+pub(super) async fn transform_load<T: Transformer>(
     load: &mut Load,
     transformer: &mut T,
     _span: pernixc_lexical::tree::RelativeSpan,

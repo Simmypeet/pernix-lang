@@ -71,7 +71,7 @@ impl crate::visitor::Element for Prefix {
     }
 }
 
-pub(super) async fn transform_prefix<T: Transformer<Type>>(
+pub(super) async fn transform_prefix<T: Transformer>(
     prefix: &mut Prefix,
     transformer: &mut T,
     _span: pernixc_lexical::tree::RelativeSpan,

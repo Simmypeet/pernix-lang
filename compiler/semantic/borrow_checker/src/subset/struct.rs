@@ -4,7 +4,6 @@ use pernixc_hash::HashSet;
 use pernixc_ir::value::register::Struct;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_semantic_element::{fields::get_fields, variance::Variance};
-use pernixc_term::instantiation::get_instantiation;
 use pernixc_type_system::{UnrecoverableError, normalizer::Normalizer};
 
 use crate::{Region, context::Context, subset::Changes};
@@ -16,17 +15,11 @@ impl<N: Normalizer> Context<'_, N> {
         struct_lit: &Struct,
         span: &RelativeSpan,
     ) -> Result<Changes, UnrecoverableError> {
-        let instantiation = self
-            .tracked_engine()
-            .get_instantiation(
-                struct_lit.struct_id,
-                struct_lit.generic_arguments.clone(),
-            )
-            .await
-            .map_err(|_| UnrecoverableError::Reported)?;
+        let instantiation =
+            struct_lit.create_instantiation(self.tracked_engine()).await;
 
         let fields =
-            self.tracked_engine().get_fields(struct_lit.struct_id).await;
+            self.tracked_engine().get_fields(struct_lit.struct_id()).await;
 
         let mut lifetime_constraints = BTreeSet::new();
 
@@ -39,7 +32,7 @@ impl<N: Normalizer> Context<'_, N> {
 
             self.subtypes_value(
                 field_ty,
-                struct_lit.initializers_by_field_id.get(&field_id).unwrap(),
+                struct_lit.get_initializer_by_field_id(field_id),
                 Variance::Covariant,
                 &mut lifetime_constraints,
             )
@@ -49,7 +42,7 @@ impl<N: Normalizer> Context<'_, N> {
         let well_formed_lifetime_constraints = self
             .type_environment()
             .wf_check_instantiation(
-                struct_lit.struct_id,
+                struct_lit.struct_id(),
                 span,
                 &instantiation,
                 &self.handler(),

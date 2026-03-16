@@ -57,7 +57,7 @@ pub enum Diagnostic {
     ExpectTrait(ExpectTrait),
     ExpectEffect(ExpectEffect),
     NoMemberInType(NoMemberInType),
-    NoMemberInFunction(NoMemberInFunction),
+    NoMemberInFunction(NoMemberInSymbol),
     MismatchedKindInArgument(MismatchedKindInArgument),
     ForallLifetimeRedefinition(ForallLifetimeRedefinition),
 }
@@ -314,38 +314,7 @@ impl Report for ExpectInstance {
         &self,
         table: &TrackedEngine,
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
-        let found =
-            if let Some(global_id) = self.resolved_resolution.global_id() {
-                let qualified_name = table.get_qualified_name(global_id).await;
-                let kind = table.get_kind(global_id).await;
-
-                format!("`{} {qualified_name}`", kind.kind_str())
-            } else {
-                match &self.resolved_resolution {
-                    Resolution::Module(_)
-                    | Resolution::Variant(_)
-                    | Resolution::Generic(_)
-                    | Resolution::MemberGeneric(_)
-                    | Resolution::InstanceAssociatedSymbol(_) => {
-                        unreachable!("should've gotten a global_id()")
-                    }
-
-                    Resolution::Type(ty) => {
-                        let mut string = "`type ".to_string();
-                        ty.write_async(table, &mut string).await.unwrap();
-                        string.push('`');
-
-                        string
-                    }
-
-                    Resolution::Instance(_) => {
-                        unreachable!(
-                            "this is already an instance, should've not \
-                             caused this error"
-                        )
-                    }
-                }
-            };
+        let found = self.resolved_resolution.found_string(table).await;
 
         pernixc_diagnostic::Rendered::builder()
             .primary_highlight(Highlight::new(
@@ -904,7 +873,7 @@ impl Report for NoMemberInType {
     }
 }
 
-/// The function doesn't have a member to be accessed.
+/// The symbol doesn't have a member to be accessed.
 #[derive(
     Debug,
     Clone,
@@ -919,22 +888,22 @@ impl Report for NoMemberInType {
     StableHash,
     Builder,
 )]
-pub struct NoMemberInFunction {
+pub struct NoMemberInSymbol {
     resolution_span: RelativeSpan,
-    function_id: Global<pernixc_symbol::ID>,
+    symbol_id: Global<pernixc_symbol::ID>,
 }
 
-impl Report for NoMemberInFunction {
+impl Report for NoMemberInSymbol {
     async fn report(
         &self,
         parameter: &TrackedEngine,
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let function_qualified_name =
-            parameter.get_qualified_name(self.function_id).await;
+            parameter.get_qualified_name(self.symbol_id).await;
 
         Rendered::builder()
             .message(format!(
-                "cannot access to the member of function \
+                "cannot access to the member of symbol \
                  `{function_qualified_name}`"
             ))
             .primary_highlight(

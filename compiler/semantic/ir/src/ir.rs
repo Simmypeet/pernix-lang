@@ -4,9 +4,6 @@ use getset::{CopyGetters, Getters, MutGetters};
 use pernixc_arena::{Arena, ID};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
-use pernixc_term::{
-    constant::Constant, instance::Instance, lifetime::Lifetime, r#type::Type,
-};
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
@@ -14,7 +11,7 @@ use crate::{
     control_flow_graph::ControlFlowGraph,
     function_ir::IRContext,
     scope,
-    transform::{self, Transformer, TypeTermSource},
+    transform::{self, ResolutionMut, Transformer},
     value::{Value, register::Register},
 };
 
@@ -82,12 +79,7 @@ pub struct IRMap {
 }
 
 impl transform::Element for IRMap {
-    async fn transform<
-        T: Transformer<Lifetime>
-            + Transformer<Type>
-            + Transformer<Constant>
-            + Transformer<Instance>,
-    >(
+    async fn transform<T: Transformer>(
         &mut self,
         transformer: &mut T,
         engine: &TrackedEngine,
@@ -170,12 +162,7 @@ pub struct IR {
 }
 
 impl transform::Element for IR {
-    async fn transform<
-        T: Transformer<Lifetime>
-            + Transformer<Type>
-            + Transformer<Constant>
-            + Transformer<Instance>,
-    >(
+    async fn transform<T: Transformer>(
         &mut self,
         transformer: &mut T,
         engine: &TrackedEngine,
@@ -186,13 +173,9 @@ impl transform::Element for IR {
             register.transform(transformer, engine).await;
         }
 
-        for (&alloca_id, alloca) in &mut self.values.allocas {
+        for alloca in self.values.allocas.items_mut() {
             transformer
-                .transform(
-                    &mut alloca.r#type,
-                    TypeTermSource::Alloca(alloca_id),
-                    alloca.span,
-                )
+                .transform(ResolutionMut::Type(&mut alloca.r#type), alloca.span)
                 .await;
         }
     }

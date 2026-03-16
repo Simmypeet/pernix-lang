@@ -1,7 +1,7 @@
 use pernixc_hash::HashSet;
 use pernixc_ir::{
     address::{Address, Memory},
-    value::Value,
+    value::{Value, register::function_call::Callee},
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_resolution::diagnostic::{
@@ -20,11 +20,9 @@ use pernixc_symbol::{
 };
 use pernixc_target::Global;
 use pernixc_term::{
-    generic_parameters::{
-        ConstantParameterID, GenericParameters, LifetimeParameterID,
-        TypeParameterID, get_generic_parameters,
-    },
-    instantiation::Instantiation,
+    generic_arguments::{AssociatedSymbol, GenericArguments},
+    generic_parameters::{GenericParameters, get_generic_parameters},
+    instance::Instance,
     lifetime::Lifetime,
     r#type::{Qualifier, Type},
 };
@@ -142,46 +140,36 @@ pub(super) async fn bind_method_call(
     }
 }
 
-fn extend_inference_instantiation(
+fn fill_inferences(
     binder: &mut crate::binder::Binder<'_>,
-    inst: &mut Instantiation,
     generic_parameters: &GenericParameters,
-    global_id: Global<pernixc_symbol::ID>,
-) {
-    // TODO: extend instance mapping!
-
-    inst.extend_lifetimes_mappings(
-        generic_parameters.lifetime_parameter_order().map(|id| {
-            (
-                Lifetime::Parameter(LifetimeParameterID::new(global_id, id)),
-                Lifetime::Erased,
-            )
-        }),
-    );
-
-    inst.extend_types_mappings(
-        generic_parameters.type_parameters_as_order().map(|(id, _)| {
-            (
-                Type::Parameter(TypeParameterID::new(global_id, id)),
+) -> GenericArguments {
+    GenericArguments::new(
+        generic_parameters
+            .lifetime_parameter_order()
+            .map(|_| Lifetime::Erased)
+            .collect(),
+        generic_parameters
+            .type_parameter_order()
+            .map(|_| {
                 Type::Inference(
                     binder.create_type_inference(constraint::Type::All(false)),
-                ),
-            )
-        }),
-    );
-
-    inst.extend_constants_mappings(
-        generic_parameters.constant_parameters_as_order().map(|(id, _)| {
-            (
-                pernixc_term::constant::Constant::Parameter(
-                    ConstantParameterID::new(global_id, id),
-                ),
+                )
+            })
+            .collect(),
+        generic_parameters
+            .constant_parameter_order()
+            .map(|_| {
                 pernixc_term::constant::Constant::Inference(
                     binder.create_constant_inference(),
-                ),
-            )
-        }),
-    );
+                )
+            })
+            .collect(),
+        generic_parameters
+            .instance_parameter_order()
+            .map(|_| Instance::Inference(binder.create_instance_inference()))
+            .collect(),
+    )
 }
 
 /*
@@ -746,52 +734,45 @@ async fn attempt_adt_method_call(
         return Ok(Err(lvalue));
     };
 
-    let mut inst =
+    let method_generic_args =
         if let Some(generic_arguments) = method_call.generic_identifier() {
-            let generic_arguments = binder
+            binder
                 .resolve_generic_arguments_with_inference(
                     &generic_arguments,
                     method_id,
                     handler,
                 )
-                .await?;
-
-            Instantiation::from_generic_arguments(
-                generic_arguments,
-                method_id,
+                .await?
+        } else {
+            fill_inferences(
+                binder,
                 &*binder.engine().get_generic_parameters(method_id).await,
             )
-            .expect("generic arguments have been verified")
-        } else {
-            let mut inst = Instantiation::default();
-            extend_inference_instantiation(
-                binder,
-                &mut inst,
-                &*binder.engine().get_generic_parameters(method_id).await,
-                method_id,
-            );
-
-            inst
         };
 
     let parent_impl_id = method_id
         .target_id
         .make_global(binder.engine().get_parent(method_id).await.unwrap());
+
     let parent_impl_generic_parameters =
         binder.engine().get_generic_parameters(parent_impl_id).await;
 
-    extend_inference_instantiation(
-        binder,
-        &mut inst,
-        &parent_impl_generic_parameters,
-        parent_impl_id,
-    );
+    let impl_inferences_generic_arguments =
+        fill_inferences(binder, &parent_impl_generic_parameters);
 
     let parent_impl_generic_arguments =
         binder.engine().get_implements_argument(parent_impl_id).await;
 
+    let assoc_symbol = AssociatedSymbol::new(
+        method_id,
+        impl_inferences_generic_arguments,
+        method_generic_args,
+    );
+
     // type check the receiver
     if let Some(parent_impl_generic_arguments) = parent_impl_generic_arguments {
+        let inst = assoc_symbol.create_instantiation(binder.engine()).await;
+
         let expected_ty = Type::new_symbol(symbol.id(), {
             let mut args = (*parent_impl_generic_arguments).clone();
             args.instantiate(&inst);
@@ -833,9 +814,8 @@ async fn attempt_adt_method_call(
 
     Ok(Ok(Value::Register(
         binder
-            .bind_method_call(
-                method_id,
-                inst,
+            .bind_function_callee(
+                Callee::AssociatedFunction(assoc_symbol),
                 MethodReceiver { kind: receiver_kind, lvalue },
                 &arguments,
                 call.span(),

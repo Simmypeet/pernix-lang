@@ -17,7 +17,7 @@ use pernixc_symbol::{
     kind::{Kind, get_kind},
     member::{get_member_by_name, get_members},
     name::get_qualified_name,
-    parent::{get_closest_module_id, scope_walker},
+    parent::{get_closest_module_id, get_parent_global, scope_walker},
 };
 use pernixc_syntax::{
     Identifier, QualifiedIdentifier, QualifiedIdentifierRoot, SimplePath,
@@ -25,8 +25,15 @@ use pernixc_syntax::{
 };
 use pernixc_target::{Global, TargetID, get_linked_targets, get_target_map};
 use pernixc_term::{
-    display::Display, generic_arguments::GenericArguments,
-    generic_parameters::get_generic_parameters, instance::Instance,
+    TermMut,
+    display::Display,
+    generic_arguments::{
+        AssociatedSymbol, GenericArguments, Symbol,
+        create_identity_generic_arguments,
+    },
+    generic_parameters::get_generic_parameters,
+    instance::{Instance, InstanceAssociated},
+    instantiation::Instantiation,
     r#type::Type,
 };
 use qbice::{Decode, Encode, Identifiable, StableHash};
@@ -34,13 +41,12 @@ use qbice::{Decode, Encode, Identifiable, StableHash};
 use crate::{
     Error, Resolver,
     diagnostic::{
-        Diagnostic, NoGenericArgumentsRequired, NoMemberInFunction,
+        Diagnostic, NoGenericArgumentsRequired, NoMemberInSymbol,
         NoMemberInType, SymbolIsNotAccessible, SymbolNotFound, ThisNotFound,
     },
 };
 
-/// Repersents a resolution to a symbol that can be supplied with generic
-/// arguments such as `SYMBOl['a, T, U, V]`
+/// Represents a resolution to the variant.
 #[derive(
     Debug,
     Clone,
@@ -49,28 +55,90 @@ use crate::{
     PartialOrd,
     Ord,
     Hash,
-    StableHash,
     Encode,
     Decode,
+    StableHash,
 )]
-pub struct Generic {
-    /// The resolved symbbol.
-    ///
-    /// This includes: `struct`, `enum`, `function`, `trait`, `const`,
-    /// `type`, `marker` and trait implementation's `type`, `function`, and
-    /// `const`.
-    ///
-    /// Trait implementation members are included here instead of in the
-    /// `MemberGeneric` because you can never refer to a trait implementation
-    /// member while specifying the trait implementation itself.
-    pub id: Global<pernixc_symbol::ID>,
+pub struct Variant(Symbol);
 
-    /// The generic arguments that are supplied to the resolved symbol.
-    pub generic_arguments: GenericArguments,
+impl Variant {
+    /// Creates a new [`Variant`] from the given [`Symbol`].
+    #[must_use]
+    pub const fn from_symbol(symbol: Symbol) -> Self { Self(symbol) }
+
+    /// Creates a new [`Variant`]
+    #[must_use]
+    pub const fn new(
+        variant_id: Global<pernixc_symbol::ID>,
+        generic_arguments: GenericArguments,
+    ) -> Self {
+        Self(Symbol::new(variant_id, generic_arguments))
+    }
+
+    /// Returns the ID of the resolved variant symbol.
+    #[must_use]
+    pub const fn variant_id(&self) -> Global<pernixc_symbol::ID> { self.0.id() }
+
+    /// Returns the generic arguments supplied to the parent enum of the variant
+    /// symbol.
+    #[must_use]
+    pub const fn enum_generic_arguments(&self) -> &GenericArguments {
+        self.0.generic_arguments()
+    }
+
+    /// Returns the type of the variant.
+    pub async fn create_enum_type(&self, engine: &TrackedEngine) -> Type {
+        let enum_id =
+            engine.get_parent_global(self.variant_id()).await.unwrap();
+
+        Type::new_symbol(enum_id, self.0.generic_arguments().clone())
+    }
+
+    /// Creates [`Instantiation`] for this variant.
+    pub async fn create_instantiation(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Instantiation {
+        self.0.create_instantiation_parent(engine).await
+    }
+
+    /// Returns an iterator yielding mutable references to all terms appeared in
+    /// the generic arguments
+    pub fn iter_all_term_mut(
+        &mut self,
+    ) -> impl Iterator<Item = TermMut<'_>> + '_ {
+        self.0.iter_all_term_mut()
+    }
+
+    #[must_use]
+    pub async fn parent_enum_id(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Global<pernixc_symbol::ID> {
+        engine.get_parent_global(self.variant_id()).await.unwrap()
+    }
 }
 
-/// Represents a resolution to an enum-varaint symbol such as
-/// `Option[int32]::None`.
+/// Represents a resolution to an ADT implements member.
+///
+/// This is the intermediate resolution, which can't be directly used to create
+/// an [`Instantiation`] to the implements associated symbol.
+///
+/// For example,
+///
+/// ```pnx
+/// public struct Test[T, U]:
+///     pass
+///
+///
+/// implements[T] Test[T]:
+///     public function inner()
+/// ```
+///
+/// When will resolve for `Test[int32, bool]::inner`, the resolution would be
+/// valid and produced this struct where [`Self::adt_generic_arguments`] is
+/// `[int32, bool]` and [`Self::impl_associated_generic_arguments`] is `[int32]`
+/// .
 #[derive(
     Debug,
     Clone,
@@ -79,78 +147,62 @@ pub struct Generic {
     PartialOrd,
     Ord,
     Hash,
-    StableHash,
     Encode,
     Decode,
+    StableHash,
 )]
-pub struct Variant {
-    /// The resolved variant symbol.
-    pub variant_id: Global<pernixc_symbol::ID>,
-
-    /// The generic arguments that are supplied to the parent enum.
-    pub generic_arguments: GenericArguments,
+pub struct IntermediateAdtImplSymbol {
+    adt_generic_arguments: GenericArguments,
+    impl_associated_generic_arguments: GenericArguments,
+    impl_associated_symbol_id: Global<pernixc_symbol::ID>,
 }
 
-/// Represents a resolution to a symbol that is a member of an another symbol
-/// such as `Clone[T]::clone['a]`
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    StableHash,
-    Encode,
-    Decode,
-)]
-pub struct MemberGeneric {
-    /// The resolved member symbol.
-    ///
-    /// This includes: trait member's `type`, `function`, and `const`, and
-    /// adt implementation's `function`.
-    pub id: Global<pernixc_symbol::ID>,
+impl IntermediateAdtImplSymbol {
+    /// Creates a new [`IntermediateAdtImplSymbol`] with the given generic
+    /// arguments and the symbol ID of the implements associated symbol.
+    #[must_use]
+    pub const fn new(
+        adt_generic_arguments: GenericArguments,
+        impl_associated_generic_arguments: GenericArguments,
+        impl_associated_symbol_id: Global<pernixc_symbol::ID>,
+    ) -> Self {
+        Self {
+            adt_generic_arguments,
+            impl_associated_generic_arguments,
+            impl_associated_symbol_id,
+        }
+    }
 
-    /// The generic arguments that are supplied to the parent symbol. Suppose
-    /// `Clone[T]::clone['a]`, then `[T]` is the parent generic arguments.
-    pub parent_generic_arguments: GenericArguments,
+    /// Returns the impl associated symbol ID.
+    #[must_use]
+    pub const fn impl_associated_symbol_id(
+        &self,
+    ) -> Global<pernixc_symbol::ID> {
+        self.impl_associated_symbol_id
+    }
 
-    /// The generic arguments that are supplied to the member symbol. Suppose
-    /// `Clone[T]::clone['a]`, then `['a]` is the member generic arguments.
-    pub member_generic_arguments: GenericArguments,
-}
+    #[must_use]
+    pub async fn get_parent_impl_id(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Global<pernixc_symbol::ID> {
+        engine.get_parent_global(self.impl_associated_symbol_id).await.unwrap()
+    }
 
-/// Represents a resolution to a symbol associated to an instance such as
-/// `I::function['a, T]` where `I` is an instance.
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    StableHash,
-    Encode,
-    Decode,
-)]
-pub struct InstanceAssociatedSymbol {
-    /// The instance that the associated symbol is resolved from. Suppose
-    /// `I::func(...)`, then `I` is the instance.
-    pub instance: Instance,
+    #[must_use]
+    pub const fn adt_generic_arguments(&self) -> &GenericArguments {
+        &self.adt_generic_arguments
+    }
 
-    /// The resolved trait associated symbol. Suppose `I::func(...)`, then
-    /// `func` is the trait associated function.
-    ///
-    /// This is **NOT** the instance associated symbol but the trait associated
-    /// symbol that the instance associated symbol. Where that particular trait
-    /// is the trait that the instance implements.
-    pub trait_associated_symbol_id: Global<pernixc_symbol::ID>,
+    #[must_use]
+    pub fn into_impl_associated_generic_arguments(self) -> GenericArguments {
+        self.impl_associated_generic_arguments
+    }
 
-    /// The generic arguments that are supplied to the trait associated
-    /// function.
-    pub generic_arguments: GenericArguments,
+    #[must_use]
+    pub const fn impl_associated_generic_arguments(&self) -> &GenericArguments {
+        &self.impl_associated_generic_arguments
+    }
 }
 
 /// Represents a resolution of a qualified identifier syntax.
@@ -176,11 +228,14 @@ pub enum Resolution {
     Variant(Variant),
 
     /// Resolved to a symbol with generic arguments such as `Symbol['a, T, U]`.
-    Generic(Generic),
+    GenericSymbol(Symbol),
+
+    /// See [`IntermediateAdtImplSymbol`] for more details.
+    IntermediateAdtImplSymbol(IntermediateAdtImplSymbol),
 
     /// Resolved to a member symbol with generic arguments such as
     /// `Symbol[V]::member['a, T, U]`.
-    MemberGeneric(MemberGeneric),
+    GenericAssociatedSymbol(AssociatedSymbol),
 
     /// Resolved to a type, supplied from [`ExtraNamespace`].
     Type(Type),
@@ -190,7 +245,7 @@ pub enum Resolution {
 
     /// Resolved to an instance associated symbol such as `I::function['a, T]`
     /// where `I` is an instance.
-    InstanceAssociatedSymbol(InstanceAssociatedSymbol),
+    InstanceAssociatedSymbol(InstanceAssociated),
 }
 
 impl Resolution {
@@ -199,11 +254,14 @@ impl Resolution {
     pub const fn global_id(&self) -> Option<Global<pernixc_symbol::ID>> {
         match self {
             Self::Module(id) => Some(*id),
-            Self::Variant(variant) => Some(variant.variant_id),
-            Self::Generic(generic) => Some(generic.id),
-            Self::MemberGeneric(member) => Some(member.id),
+            Self::Variant(variant) => Some(variant.variant_id()),
+            Self::GenericSymbol(generic) => Some(generic.id()),
+            Self::GenericAssociatedSymbol(member) => Some(member.id()),
+            Self::IntermediateAdtImplSymbol(impl_symbol) => {
+                Some(impl_symbol.impl_associated_symbol_id)
+            }
             Self::InstanceAssociatedSymbol(func) => {
-                Some(func.trait_associated_symbol_id)
+                Some(func.trait_associated_symbol_id())
             }
 
             Self::Instance(_) | Self::Type(_) => None,
@@ -223,8 +281,9 @@ impl Resolution {
             match self {
                 Self::Module(_)
                 | Self::Variant(_)
-                | Self::Generic(_)
-                | Self::MemberGeneric(_)
+                | Self::GenericSymbol(_)
+                | Self::IntermediateAdtImplSymbol(_)
+                | Self::GenericAssociatedSymbol(_)
                 | Self::InstanceAssociatedSymbol(_) => {
                     unreachable!("should've gotten a global_id()")
                 }
@@ -267,30 +326,30 @@ fn to_resolution(
         | Kind::Marker => {
             assert!(latest_resolution.is_module());
 
-            Resolution::Generic(Generic {
-                id: resolved_id,
-                generic_arguments: generic_arguments.unwrap(),
-            })
+            Resolution::GenericSymbol(Symbol::new(
+                resolved_id,
+                generic_arguments.unwrap(),
+            ))
         }
 
-        Kind::Variant => Resolution::Variant(Variant {
-            variant_id: resolved_id,
-            generic_arguments: latest_resolution
-                .into_generic()
+        Kind::Variant => Resolution::Variant(Variant::new(
+            resolved_id,
+            latest_resolution
+                .into_generic_symbol()
                 .unwrap()
-                .generic_arguments,
-        }),
+                .into_generic_arguments(),
+        )),
 
         trait_associated @ (Kind::TraitAssociatedType
         | Kind::TraitAssociatedFunction
         | Kind::TraitAssociatedConstant
         | Kind::TraitAssociatedInstance) => match latest_resolution {
-            Resolution::Generic(generic) => {
-                Resolution::MemberGeneric(MemberGeneric {
-                    id: resolved_id,
-                    parent_generic_arguments: generic.generic_arguments,
-                    member_generic_arguments: generic_arguments.unwrap(),
-                })
+            Resolution::GenericSymbol(generic) => {
+                Resolution::GenericAssociatedSymbol(AssociatedSymbol::new(
+                    resolved_id,
+                    generic.into_generic_arguments(),
+                    generic_arguments.unwrap(),
+                ))
             }
 
             Resolution::Instance(instance) => match trait_associated {
@@ -299,11 +358,11 @@ fn to_resolution(
                 | Kind::TraitAssociatedType
                 | Kind::TraitAssociatedFunction => {
                     Resolution::InstanceAssociatedSymbol(
-                        InstanceAssociatedSymbol {
-                            instance,
-                            trait_associated_symbol_id: resolved_id,
-                            generic_arguments: generic_arguments.unwrap(),
-                        },
+                        InstanceAssociated::new(
+                            Box::new(instance),
+                            resolved_id,
+                            generic_arguments.unwrap(),
+                        ),
                     )
                 }
 
@@ -313,25 +372,37 @@ fn to_resolution(
             },
 
             Resolution::Type(_)
-            | Resolution::MemberGeneric(_)
+            | Resolution::GenericAssociatedSymbol(_)
             | Resolution::Module(_)
             | Resolution::InstanceAssociatedSymbol(_)
+            | Resolution::IntermediateAdtImplSymbol(_)
             | Resolution::Variant(_) => unreachable!(),
         },
 
-        Kind::ImplementationAssociatedConstant
-        | Kind::ImplementationAssociatedFunction
-        | Kind::EffectOperation
-        | Kind::ImplementationAssociatedType => {
-            Resolution::MemberGeneric(MemberGeneric {
-                id: resolved_id,
-                parent_generic_arguments: latest_resolution
-                    .into_generic()
+        Kind::EffectOperation => {
+            Resolution::GenericAssociatedSymbol(AssociatedSymbol::new(
+                resolved_id,
+                latest_resolution
+                    .into_generic_symbol()
                     .unwrap()
-                    .generic_arguments,
-                member_generic_arguments: generic_arguments.unwrap(),
+                    .into_generic_arguments(),
+                generic_arguments.unwrap(),
+            ))
+        }
+
+        Kind::ImplementationAssociatedConstant
+        | Kind::ImplementationAssociatedType
+        | Kind::ImplementationAssociatedFunction => {
+            Resolution::IntermediateAdtImplSymbol(IntermediateAdtImplSymbol {
+                adt_generic_arguments: latest_resolution
+                    .into_generic_symbol()
+                    .unwrap()
+                    .into_generic_arguments(),
+                impl_associated_generic_arguments: generic_arguments.unwrap(),
+                impl_associated_symbol_id: resolved_id,
             })
         }
+
         Kind::PositiveImplementation | Kind::NegativeImplementation => {
             unreachable!()
         }
@@ -340,21 +411,20 @@ fn to_resolution(
         | Kind::InstanceAssociatedFunction
         | Kind::InstanceAssociatedConstant
         | Kind::InstanceAssociatedInstance => {
-            Resolution::MemberGeneric(MemberGeneric {
-                id: resolved_id,
-                // can either come from directly continue from generic
-                // resolution or from instance's symbol.
-                parent_generic_arguments: match latest_resolution {
-                    Resolution::Generic(generic) => generic.generic_arguments,
+            Resolution::GenericAssociatedSymbol(AssociatedSymbol::new(
+                resolved_id,
+                match latest_resolution {
+                    Resolution::GenericSymbol(generic) => {
+                        generic.into_generic_arguments()
+                    }
                     Resolution::Instance(instance) => {
                         instance.into_symbol().unwrap().into_generic_arguments()
                     }
 
                     _ => unreachable!(),
                 },
-
-                member_generic_arguments: generic_arguments.unwrap(),
-            })
+                generic_arguments.unwrap(),
+            ))
         }
     }
 }
@@ -470,14 +540,14 @@ impl Resolver<'_, '_> {
 
                 match kind {
                     Kind::Trait | Kind::Enum | Kind::Struct => {
-                        Resolution::Generic(Generic {
-                            id: this_symbol,
-                            generic_arguments: self
-                                .tracked_engine()
-                                .get_generic_parameters(this_symbol)
-                                .await
-                                .create_identity_generic_arguments(this_symbol),
-                        })
+                        Resolution::GenericSymbol(Symbol::new(
+                            this_symbol,
+                            this_symbol
+                                .create_identity_generic_arguments(
+                                    self.tracked_engine(),
+                                )
+                                .await,
+                        ))
                     }
 
                     Kind::PositiveImplementation => {
@@ -497,12 +567,10 @@ impl Resolver<'_, '_> {
                             return Err(Error::Abort);
                         };
 
-                        Resolution::Generic(Generic {
-                            id: implemented_id,
-                            generic_arguments: implemented_generic_arguments
-                                .deref()
-                                .clone(),
-                        })
+                        Resolution::GenericSymbol(Symbol::new(
+                            implemented_id,
+                            implemented_generic_arguments.deref().clone(),
+                        ))
                     }
 
                     _ => unreachable!(),
@@ -603,9 +671,9 @@ impl Resolver<'_, '_> {
                 match (symbol_kind, generic_arguments) {
                     (Kind::Module, None) => Resolution::Module(id),
 
-                    (_, Some(generic_arguments)) => {
-                        Resolution::Generic(Generic { id, generic_arguments })
-                    }
+                    (_, Some(generic_arguments)) => Resolution::GenericSymbol(
+                        Symbol::new(id, generic_arguments),
+                    ),
 
                     _ => unreachable!(),
                 }
@@ -643,8 +711,8 @@ impl Resolver<'_, '_> {
         let resolved = match latest_resolution {
             normal @ (Resolution::Module(_)
             | Resolution::Variant(_)
-            | Resolution::Generic(_)
-            | Resolution::MemberGeneric(_)) => {
+            | Resolution::GenericSymbol(_)
+            | Resolution::GenericAssociatedSymbol(_)) => {
                 let global_id = normal
                     .global_id()
                     .expect("these four variants should have global_id");
@@ -791,9 +859,20 @@ impl Resolver<'_, '_> {
 
             Resolution::InstanceAssociatedSymbol(function_id) => {
                 self.receive_diagnostic(Diagnostic::NoMemberInFunction(
-                    NoMemberInFunction::builder()
+                    NoMemberInSymbol::builder()
                         .resolution_span(identifier.span)
-                        .function_id(function_id.trait_associated_symbol_id)
+                        .symbol_id(function_id.trait_associated_symbol_id())
+                        .build(),
+                ));
+
+                return Err(Error::Abort);
+            }
+
+            Resolution::IntermediateAdtImplSymbol(symbol) => {
+                self.receive_diagnostic(Diagnostic::NoMemberInFunction(
+                    NoMemberInSymbol::builder()
+                        .resolution_span(identifier.span)
+                        .symbol_id(symbol.impl_associated_symbol_id())
                         .build(),
                 ));
 

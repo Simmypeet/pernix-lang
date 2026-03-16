@@ -4,15 +4,17 @@ use derive_more::Index;
 use getset::{CopyGetters, Getters};
 use pernixc_arena::{Arena, ID};
 use pernixc_lexical::tree::RelativeSpan;
+use pernixc_qbice::TrackedEngine;
 use pernixc_target::Global;
 use pernixc_term::{
-    constant::Constant, generic_arguments::GenericArguments,
-    instance::Instance, lifetime::Lifetime, r#type::Type,
+    generic_arguments::{GenericArguments, Symbol},
+    instantiation::Instantiation,
+    r#type::Type,
 };
 use pernixc_type_system::OverflowError;
 use qbice::{Decode, Encode, StableHash};
 
-use crate::transform::{self, Transformer, TypeTermSource};
+use crate::transform::{self, ResolutionMut, Transformer};
 
 /// A collection of all the effect handler groups in a function body.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Default)]
@@ -40,12 +42,7 @@ impl std::ops::Index<ID<HandlingScope>> for HandlingScopes {
 }
 
 impl transform::Element for HandlingScopes {
-    async fn transform<
-        T: Transformer<Lifetime>
-            + Transformer<Type>
-            + Transformer<Constant>
-            + Transformer<Instance>,
-    >(
+    async fn transform<T: Transformer>(
         &mut self,
         transformer: &mut T,
         engine: &pernixc_qbice::TrackedEngine,
@@ -126,17 +123,14 @@ pub struct HandlingScope {
 }
 
 impl transform::Element for HandlingScope {
-    async fn transform<
-        T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
-    >(
+    async fn transform<T: Transformer>(
         &mut self,
         transformer: &mut T,
         _engine: &pernixc_qbice::TrackedEngine,
     ) {
         transformer
             .transform(
-                &mut self.return_type,
-                TypeTermSource::DoReturnType,
+                ResolutionMut::Type(&mut self.return_type),
                 self.do_with_span,
             )
             .await;
@@ -181,7 +175,7 @@ impl HandlingScope {
     ) -> Result<Option<pernixc_arena::ID<HandlerClause>>, OverflowError> {
         for (effect_handler_id, effect_handler) in self.handler_clauses.iter() {
             // not the same effect
-            if effect_id != effect_handler.effect_id {
+            if effect_id != effect_handler.effect_id() {
                 continue;
             }
 
@@ -189,7 +183,7 @@ impl HandlingScope {
             if matcher
                 .matches_generic_arguments(
                     generic_arguments,
-                    &effect_handler.generic_arguments,
+                    effect_handler.generic_arguments(),
                 )
                 .await?
             {
@@ -213,18 +207,35 @@ impl HandlingScope {
     StableHash,
     Encode,
     Decode,
-    derive_new::new,
     CopyGetters,
     Getters,
 )]
-pub struct HandlerClause {
-    /// Gets the effect ID that this handler clause handles.
-    #[get_copy = "pub"]
-    effect_id: Global<pernixc_symbol::ID>,
+pub struct HandlerClause(Symbol);
 
-    /// The generic arguments of the effect handler.
-    #[get = "pub"]
-    generic_arguments: GenericArguments,
+impl HandlerClause {
+    #[must_use]
+    pub const fn new(
+        effect_id: Global<pernixc_symbol::ID>,
+        generic_arguments: GenericArguments,
+    ) -> Self {
+        Self(Symbol::new(effect_id, generic_arguments))
+    }
+
+    #[must_use]
+    pub const fn effect_id(&self) -> Global<pernixc_symbol::ID> { self.0.id() }
+
+    #[must_use]
+    pub const fn generic_arguments(&self) -> &GenericArguments {
+        self.0.generic_arguments()
+    }
+
+    #[must_use]
+    pub async fn create_instantiation(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Instantiation {
+        self.0.create_instantiation(engine).await
+    }
 }
 
 /// An ID that uniquely identifies an [`HandlerClause`] within an [`IR`].

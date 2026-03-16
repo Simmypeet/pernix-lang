@@ -46,10 +46,9 @@ impl crate::visitor::Element for VariantNumber {
     }
 }
 
-pub(super) async fn transform_variant_number<T: Transformer<Type>>(
+pub(super) async fn transform_variant_number<T: Transformer>(
     variant_number: &mut VariantNumber,
     transformer: &mut T,
-    _span: pernixc_lexical::tree::RelativeSpan,
 ) {
     variant_number.address.transform(transformer).await;
 }

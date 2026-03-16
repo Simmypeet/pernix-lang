@@ -420,13 +420,13 @@ impl AllLifetimeParameters {
 
             Predicate::PositiveMarker(positive) => {
                 self.exclude_late_bound_in_generic_arguments(
-                    &positive.generic_arguments,
+                    positive.generic_arguments(),
                 );
             }
 
             Predicate::NegativeMarker(negative) => {
                 self.exclude_late_bound_in_generic_arguments(
-                    &negative.generic_arguments,
+                    negative.generic_arguments(),
                 );
             }
         }
