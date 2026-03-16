@@ -14,15 +14,12 @@ implements[T, U] Option[(Option[T], U)]: # all used
     pass
 
 
-public trait Iterator[T]:
-    public type Item
+public trait Iterator:
+    public type Item[T]
 
 
-implements[T: Iterator] Option[Iterator[T]::Item]:  # should error, T used only in associated type
-    pass
-
-
-implements[T: Iterator] Option[(T, Iterator[T]::Item)]:  # T is used outside associated type
+# error T and I is not inferrable
+implements[T, instance I: Iterator] Option[I::Item[T]]:
     pass
 
 

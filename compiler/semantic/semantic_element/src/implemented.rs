@@ -2,10 +2,14 @@
 //! with a given symbol.
 
 use pernixc_hash::HashSet;
-use pernixc_target::Global;
+use pernixc_target::{Global, TargetID};
 use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 
-/// A query for retrieving all the `implements` IDs that implements this symbol.
+/// A query for retrieving all the `implements`/`instance` IDs that implements
+/// this symbol.
+///
+/// This will include all the `implements` IDs that implemented the `symbol_id`
+/// in all the downstream targets.
 #[derive(
     Debug,
     Clone,
@@ -25,6 +29,12 @@ use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 pub struct Key {
     /// The global ID of the symbol to get implementations for.
     pub symbol_id: Global<pernixc_symbol::ID>,
+
+    /// The target ID where the query was made.
+    ///
+    /// This is used to scan for all downstream targets to find all the
+    /// implementations of this symbol.
+    pub target_id: TargetID,
 }
 
 /// A query for retrieving all the `implements` IDs that implements this symbol

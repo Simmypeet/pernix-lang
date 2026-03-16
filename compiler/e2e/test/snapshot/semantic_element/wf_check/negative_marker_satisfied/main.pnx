@@ -10,9 +10,7 @@ public struct MyStruct:
     public b: bool
 
 
-public type WithRequirement[T] = T:
-    where:
-        marker not Marker[T]
+public type WithRequirement[T: not Marker] = T
 
 
 public type InstMyStruct = WithRequirement[MyStruct]

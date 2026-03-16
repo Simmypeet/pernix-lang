@@ -25,7 +25,6 @@ use pernixc_symbol::{
     member::get_members,
 };
 use pernixc_term::{
-    generic_arguments::Symbol,
     generic_parameters::get_generic_parameters,
     instantiation::Instantiation,
     r#type::{self, Qualifier, Type},
@@ -188,9 +187,7 @@ impl Binder<'_> {
                         expected: PatternBindingType::Boolean,
                         found: ty.clone(),
                         span: syntax_tree.span(),
-                        type_inference_map: self.type_inference_rendering_map(),
-                        constant_inference_map: self
-                            .constant_inference_rendering_map(),
+                        rendering_map: self.get_rendering_map(),
                     },
                 )
                 .into(),
@@ -274,9 +271,7 @@ impl Binder<'_> {
                         expected: PatternBindingType::Tuple,
                         found: ty.clone(),
                         span: syntax_tree.span(),
-                        type_inference_map: self.type_inference_rendering_map(),
-                        constant_inference_map: self
-                            .constant_inference_rendering_map(),
+                        rendering_map: self.get_rendering_map(),
                     },
                 )
                 .into(),
@@ -287,15 +282,15 @@ impl Binder<'_> {
         // find the position of the unpacked element in type
         let unpacked_position_in_type = {
             let unpacked_count =
-                tuple_ty.elements.iter().filter(|x| x.is_unpacked).count();
+                tuple_ty.elements().iter().filter(|x| x.is_unpacked()).count();
 
             match unpacked_count {
                 0 => None,
                 1 => Some(
                     tuple_ty
-                        .elements
+                        .elements()
                         .iter()
-                        .position(|x| x.is_unpacked)
+                        .position(pernixc_term::tuple::Element::is_unpacked)
                         .unwrap(),
                 ),
 
@@ -345,13 +340,13 @@ impl Binder<'_> {
 
         if let Some(packed_position_in_pattern) = packed_position_in_pattern {
             // check length
-            if tuple_element_patterns.len() > tuple_ty.elements.len() + 1 {
+            if tuple_element_patterns.len() > tuple_ty.elements().len() + 1 {
                 handler.receive(
                     Diagnostic::MismatchedTuplePatternLength(
                         MismatchedTuplePatternLength {
                             pattern_span: syntax_tree.span(),
                             pattern_element_count: tuple_element_patterns.len(),
-                            type_element_count: tuple_ty.elements.len(),
+                            type_element_count: tuple_ty.elements().len(),
                         },
                     )
                     .into(),
@@ -362,9 +357,9 @@ impl Binder<'_> {
             let start_range = 0..packed_position_in_pattern;
             let tuple_end_range =
                 packed_position_in_pattern + 1..tuple_element_patterns.len();
-            let type_end_range = (tuple_ty.elements.len()
+            let type_end_range = (tuple_ty.elements().len()
                 - tuple_end_range.len())
-                ..tuple_ty.elements.len();
+                ..tuple_ty.elements().len();
             let type_pack_range =
                 packed_position_in_pattern..type_end_range.start;
 
@@ -407,13 +402,15 @@ impl Binder<'_> {
             // match start
             let mut elements = Vec::new();
 
-            for (tuple_ty, tuple_pat) in tuple_ty.elements[start_range.clone()]
-                .iter()
-                .zip(&tuple_element_patterns[start_range])
+            for (tuple_ty, tuple_pat) in tuple_ty.elements()
+                [start_range.clone()]
+            .iter()
+            .zip(&tuple_element_patterns[start_range])
             {
-                assert!(!tuple_ty.is_unpacked);
+                assert!(!tuple_ty.is_unpacked());
+
                 let pattern = if let Some(pattern) = tuple_pat.pattern() {
-                    T::bind(self, &tuple_ty.term, &pattern, handler)
+                    T::bind(self, tuple_ty.term(), &pattern, handler)
                         .await?
                         .unwrap_or_else(|| {
                             Wildcard { span: pattern.span() }.into()
@@ -425,9 +422,8 @@ impl Binder<'_> {
                 elements.push(TupleElement::new_non_packed(pattern));
             }
 
-            let packed_type = Type::Tuple(pernixc_term::tuple::Tuple {
-                elements: tuple_ty.elements[type_pack_range].to_vec(),
-            });
+            let packed_type =
+                Type::new_tuple(tuple_ty.elements()[type_pack_range].to_vec());
 
             elements.push(TupleElement::new_packed(
                 if let Some(pattern) =
@@ -448,15 +444,15 @@ impl Binder<'_> {
                 },
             ));
 
-            for (ty_elem, pat_elem) in tuple_ty.elements[type_end_range]
+            for (ty_elem, pat_elem) in tuple_ty.elements()[type_end_range]
                 .iter()
                 .zip(&tuple_element_patterns[tuple_end_range])
             {
-                assert!(!ty_elem.is_unpacked);
+                assert!(!ty_elem.is_unpacked());
 
                 elements.push(TupleElement::new_non_packed(
                     if let Some(pattern) = pat_elem.pattern() {
-                        T::bind(self, &ty_elem.term, &pattern, handler)
+                        T::bind(self, ty_elem.term(), &pattern, handler)
                             .await?
                             .unwrap_or_else(|| {
                                 Wildcard { span: pattern.span() }.into()
@@ -470,13 +466,13 @@ impl Binder<'_> {
             Ok(Some(Tuple { elements, span: syntax_tree.span() }))
         } else {
             // count must exactly match
-            if tuple_element_patterns.len() != tuple_ty.elements.len() {
+            if tuple_element_patterns.len() != tuple_ty.elements().len() {
                 handler.receive(
                     Diagnostic::MismatchedTuplePatternLength(
                         MismatchedTuplePatternLength {
                             pattern_span: syntax_tree.span(),
                             pattern_element_count: tuple_element_patterns.len(),
-                            type_element_count: tuple_ty.elements.len(),
+                            type_element_count: tuple_ty.elements().len(),
                         },
                     )
                     .into(),
@@ -502,9 +498,9 @@ impl Binder<'_> {
             let mut elements = Vec::new();
 
             for (tuple_ty, tuple_pat) in tuple_ty
-                .elements
+                .elements()
                 .iter()
-                .map(|x| &x.term)
+                .map(pernixc_term::tuple::Element::term)
                 .zip(tuple_element_patterns.iter())
             {
                 elements.push(TupleElement::new_non_packed(
@@ -534,17 +530,14 @@ impl Binder<'_> {
         ty = ty.reduce_reference();
 
         // must be a struct type
-        let Type::Symbol(Symbol { id: struct_id, generic_arguments }) = ty
-        else {
+        let Type::Symbol(symbol) = ty else {
             handler.receive(
                 Diagnostic::MismatchedPatternBindingType(
                     MismatchedPatternBindingType {
                         expected: PatternBindingType::Struct,
                         found: ty.clone(),
                         span: syntax_tree.span(),
-                        type_inference_map: self.type_inference_rendering_map(),
-                        constant_inference_map: self
-                            .constant_inference_rendering_map(),
+                        rendering_map: self.get_rendering_map(),
                     },
                 )
                 .into(),
@@ -552,19 +545,17 @@ impl Binder<'_> {
             return Ok(None);
         };
 
-        let struct_id = *struct_id;
-
         let struct_generic_parameters =
-            self.engine().get_generic_parameters(struct_id).await;
+            self.engine().get_generic_parameters(symbol.id()).await;
 
         let instantiation = Instantiation::from_generic_arguments(
-            generic_arguments.clone(),
-            struct_id,
+            symbol.generic_arguments().clone(),
+            symbol.id(),
             &struct_generic_parameters,
         )
         .unwrap();
 
-        let fields = self.engine().get_fields(struct_id).await;
+        let fields = self.engine().get_fields(symbol.id()).await;
 
         let mut patterns_by_field_id = HashMap::<_, T>::default();
 
@@ -596,7 +587,7 @@ impl Binder<'_> {
                 // field not found error
                 handler.receive(
                     Diagnostic::FieldNotFound(FieldNotFound {
-                        struct_id,
+                        struct_id: symbol.id(),
                         identifier_span: field_name.span,
                         field_name: field_name.kind.0,
                     })
@@ -613,7 +604,7 @@ impl Binder<'_> {
                             AlreadyBoundFieldPattern {
                                 rebound_span: field.span(),
                                 first_bound_span: entry.get().span(),
-                                struct_id,
+                                struct_id: symbol.id(),
                                 field_id,
                             },
                         )
@@ -668,7 +659,7 @@ impl Binder<'_> {
                 .engine()
                 .is_accessible_from_globally(
                     self.current_site(),
-                    field_sym.accessibility.into_global(struct_id.target_id),
+                    field_sym.accessibility.into_global(symbol.id().target_id),
                 )
                 .await
             {
@@ -676,7 +667,7 @@ impl Binder<'_> {
                 handler.receive(
                     Diagnostic::FieldIsNotAccessible(FieldIsNotAccessible {
                         field_id,
-                        struct_id,
+                        struct_id: symbol.id(),
                         referring_site: self.current_site(),
                         referring_identifier_span: field_name.span,
                     })
@@ -705,7 +696,7 @@ impl Binder<'_> {
             handler.receive(
                 Diagnostic::UnboundFields(UnboundFields {
                     field_ids: unbound_fields,
-                    struct_id,
+                    struct_id: symbol.id(),
                     pattern_span: syntax_tree.span(),
                 })
                 .into(),
@@ -713,7 +704,7 @@ impl Binder<'_> {
         }
 
         Ok(Some(Structural {
-            struct_id,
+            struct_id: symbol.id(),
             patterns_by_field_id,
             span: syntax_tree.span(),
         }))
@@ -733,16 +724,14 @@ impl Binder<'_> {
         ty = ty.reduce_reference();
 
         // must be an enum type
-        let Type::Symbol(Symbol { id: enum_id, generic_arguments }) = ty else {
+        let Type::Symbol(symbol) = ty else {
             handler.receive(
                 Diagnostic::MismatchedPatternBindingType(
                     MismatchedPatternBindingType {
                         expected: PatternBindingType::Enum,
                         found: ty.clone(),
                         span: syntax_tree.span(),
-                        type_inference_map: self.type_inference_rendering_map(),
-                        constant_inference_map: self
-                            .constant_inference_rendering_map(),
+                        rendering_map: self.get_rendering_map(),
                     },
                 )
                 .into(),
@@ -750,23 +739,21 @@ impl Binder<'_> {
             return Ok(None);
         };
 
-        let enum_id = *enum_id;
-
-        let member = self.engine().get_members(enum_id).await;
+        let member = self.engine().get_members(symbol.id()).await;
         let enum_generic_param =
-            self.engine().get_generic_parameters(enum_id).await;
+            self.engine().get_generic_parameters(symbol.id()).await;
 
         // variant not found
         let Some(variant_id) = member
             .member_ids_by_name
             .get(identifier.kind.0.as_ref())
             .copied()
-            .map(|x| enum_id.target_id.make_global(x))
+            .map(|x| symbol.id().target_id.make_global(x))
         else {
             handler.receive(
                 ResolutionDiagnostic::SymbolNotFound(SymbolNotFound {
                     name: identifier.kind.0,
-                    searched_item_id: Some(enum_id),
+                    searched_item_id: Some(symbol.id()),
                     resolution_span: identifier.span,
                 })
                 .into(),
@@ -783,7 +770,7 @@ impl Binder<'_> {
                 self.engine()
                     .get_accessibility(variant_id)
                     .await
-                    .into_global(enum_id.target_id),
+                    .into_global(symbol.id().target_id),
             )
             .await
         {
@@ -809,8 +796,8 @@ impl Binder<'_> {
         ) {
             (Some(ty), Some(pat)) => {
                 let instantiation = Instantiation::from_generic_arguments(
-                    generic_arguments.clone(),
-                    enum_id,
+                    symbol.generic_arguments().clone(),
+                    symbol.id(),
                     &enum_generic_param,
                 )
                 .unwrap();

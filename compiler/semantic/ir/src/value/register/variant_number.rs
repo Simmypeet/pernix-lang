@@ -3,7 +3,7 @@
 use pernixc_symbol::member::get_members;
 use pernixc_target::Global;
 use pernixc_term::r#type::{Primitive, Type};
-use pernixc_type_system::{Succeeded, normalizer::Normalizer};
+use pernixc_type_system::{OverflowError, Succeeded, normalizer::Normalizer};
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
@@ -59,7 +59,7 @@ impl TypeOf<&VariantNumber> for Values {
         &self,
         variant_number: &VariantNumber,
         environment: &Environment<'_, N>,
-    ) -> Result<Succeeded<Type>, pernixc_type_system::Error> {
+    ) -> Result<Succeeded<Type>, OverflowError> {
         let mut answer = Primitive::Bool;
         let members = environment
             .tracked_engine()

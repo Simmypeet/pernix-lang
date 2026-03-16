@@ -3,14 +3,10 @@ use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_source_file::ByteIndex;
 use pernixc_symbol::source_map::to_absolute_span;
-use pernixc_term::{
-    constant::Constant,
-    display::{Display, InferenceRenderingMap},
-    r#type::Type,
-};
+use pernixc_term::{display::Display, r#type::Type};
 use qbice::{Decode, Encode, StableHash};
 
-use crate::diagnostic_enum;
+use crate::{binder::inference_context::RenderingMap, diagnostic_enum};
 
 diagnostic_enum! {
     #[derive(
@@ -38,11 +34,8 @@ pub struct MoreThanOneUnpackedInTupleExpression {
     /// The type of the tuple expression.
     pub r#type: Type,
 
-    /// The inference rendering map for constants.
-    pub constant_inference_map: InferenceRenderingMap<Constant>,
-
-    /// The inference rendering map for types.
-    pub type_inference_map: InferenceRenderingMap<Type>,
+    /// The rendering map for inference variables.
+    pub rendering_map: RenderingMap,
 }
 
 impl Report for MoreThanOneUnpackedInTupleExpression {
@@ -56,12 +49,10 @@ impl Report for MoreThanOneUnpackedInTupleExpression {
         let mut type_str = String::new();
         let _ = self
             .r#type
-            .write_async_with_mapping(
+            .write_async_with_configuration(
                 engine,
                 &mut type_str,
-                None,
-                Some(&self.type_inference_map),
-                Some(&self.constant_inference_map),
+                &self.rendering_map.configuration(),
             )
             .await;
 

@@ -11,8 +11,12 @@ use qbice::{Decode, Encode, StableHash};
 use crate::{
     Never,
     error::Error,
-    generic_parameters::{ConstantParameterID, get_generic_parameters},
+    generic_parameters::{
+        ConstantParameter, ConstantParameterID, GenericParameter,
+        get_generic_parameters,
+    },
     inference,
+    instance::Instance,
     lifetime::Lifetime,
     matching::{Match, Matching, Substructural},
     sub_term::{self, Location, SubTerm, TermLocation},
@@ -165,8 +169,21 @@ pub enum Constant {
     Error(Error),
 }
 
+impl Constant {
+    /// Creates a constant parameter with the given symbol ID where the constant
+    /// parameter is declared and the ID of the constant parameter in the
+    /// generic parameters arena.
+    #[must_use]
+    pub fn new_parameter(
+        parent_global_id: Global<pernixc_symbol::ID>,
+        ty_id: pernixc_arena::ID<ConstantParameter>,
+    ) -> Self {
+        Self::Parameter(ConstantParameterID::new(parent_global_id, ty_id))
+    }
+}
+
 impl Default for Constant {
-    fn default() -> Self { Self::Tuple(Tuple { elements: Vec::new() }) }
+    fn default() -> Self { Self::Tuple(Tuple::unit()) }
 }
 
 impl From<Never> for Constant {
@@ -247,15 +264,9 @@ impl Location<Constant, Constant> for SubConstantLocation {
 
     fn get_sub_term(self, term: &Constant) -> Option<Constant> {
         match (self, term) {
-            (Self::Tuple(location), Constant::Tuple(tuple)) => match location {
-                SubTupleLocation::Single(single) => {
-                    tuple.elements.get(single).map(|x| x.term.clone())
-                }
-                SubTupleLocation::Range(range) => tuple
-                    .elements
-                    .get(range.to_std_range())
-                    .map(|x| Constant::Tuple(Tuple { elements: x.to_vec() })),
-            },
+            (Self::Tuple(location), Constant::Tuple(tuple)) => {
+                tuple.get_term(&location)
+            }
 
             (Self::Struct(location), Constant::Struct(constant)) => {
                 constant.fields.get(location).cloned()
@@ -278,12 +289,9 @@ impl Location<Constant, Constant> for SubConstantLocation {
 
     fn get_sub_term_ref(self, term: &Constant) -> Option<&Constant> {
         match (self, term) {
-            (Self::Tuple(location), Constant::Tuple(tuple)) => match location {
-                SubTupleLocation::Single(single) => {
-                    tuple.elements.get(single).map(|x| &x.term)
-                }
-                SubTupleLocation::Range { .. } => None,
-            },
+            (Self::Tuple(location), Constant::Tuple(tuple)) => {
+                tuple.get_term_ref(&location)
+            }
 
             (Self::Struct(location), Constant::Struct(constant)) => {
                 constant.fields.get(location)
@@ -306,12 +314,9 @@ impl Location<Constant, Constant> for SubConstantLocation {
 
     fn get_sub_term_mut(self, term: &mut Constant) -> Option<&mut Constant> {
         match (self, term) {
-            (Self::Tuple(location), Constant::Tuple(tuple)) => match location {
-                SubTupleLocation::Single(single) => {
-                    tuple.elements.get_mut(single).map(|x| &mut x.term)
-                }
-                SubTupleLocation::Range { .. } => None,
-            },
+            (Self::Tuple(location), Constant::Tuple(tuple)) => {
+                tuple.get_term_mut(&location)
+            }
 
             (Self::Struct(location), Constant::Struct(constant)) => {
                 constant.fields.get_mut(location)
@@ -359,6 +364,20 @@ impl Location<Constant, Lifetime> for Never {
     }
 }
 
+impl Location<Constant, Instance> for Never {
+    fn assign_sub_term(self, _: &mut Constant, _: Instance) { match self {} }
+
+    fn get_sub_term(self, _: &Constant) -> Option<Instance> { match self {} }
+
+    fn get_sub_term_ref(self, _: &Constant) -> Option<&Instance> {
+        match self {}
+    }
+
+    fn get_sub_term_mut(self, _: &mut Constant) -> Option<&mut Instance> {
+        match self {}
+    }
+}
+
 impl From<Never> for TermLocation {
     fn from(never: Never) -> Self { match never {} }
 }
@@ -367,6 +386,7 @@ impl SubTerm for Constant {
     type SubTypeLocation = Never;
     type SubConstantLocation = SubConstantLocation;
     type SubLifetimeLocation = Never;
+    type SubInstanceLocation = Never;
     type ThisSubTermLocation = SubConstantLocation;
 }
 
@@ -380,44 +400,48 @@ impl Match for Constant {
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
+            Self::SubInstanceLocation,
         >,
     > {
         match (self, other) {
             (Self::Struct(lhs), Self::Struct(rhs))
                 if lhs.id == rhs.id && lhs.fields.len() == rhs.fields.len() =>
             {
-                Some(Substructural {
-                    lifetimes: Vec::new(),
-                    types: Vec::new(),
-                    constants: lhs
-                        .fields
+                Some(Substructural::new(
+                    Vec::new(),
+                    Vec::new(),
+                    lhs.fields
                         .iter()
                         .zip(rhs.fields.iter())
                         .enumerate()
-                        .map(|(idx, (lhs, rhs))| Matching {
-                            lhs: lhs.clone(),
-                            rhs: rhs.clone(),
-                            lhs_location: SubConstantLocation::Struct(idx),
-                            rhs_location: SubConstantLocation::Struct(idx),
+                        .map(|(idx, (lhs, rhs))| {
+                            Matching::new(
+                                lhs.clone(),
+                                rhs.clone(),
+                                SubConstantLocation::Struct(idx),
+                                SubConstantLocation::Struct(idx),
+                            )
                         })
                         .collect(),
-                })
+                    Vec::new(),
+                ))
             }
 
             (Self::Enum(lhs), Self::Enum(rhs))
                 if lhs.variant_id == rhs.variant_id =>
             {
                 match (&lhs.associated_value, &rhs.associated_value) {
-                    (Some(lhs), Some(rhs)) => Some(Substructural {
-                        lifetimes: Vec::new(),
-                        types: Vec::new(),
-                        constants: vec![Matching {
-                            lhs: lhs.deref().clone(),
-                            rhs: rhs.deref().clone(),
-                            lhs_location: SubConstantLocation::Enum,
-                            rhs_location: SubConstantLocation::Enum,
-                        }],
-                    }),
+                    (Some(lhs), Some(rhs)) => Some(Substructural::new(
+                        Vec::new(),
+                        Vec::new(),
+                        vec![Matching::new(
+                            lhs.deref().clone(),
+                            rhs.deref().clone(),
+                            SubConstantLocation::Enum,
+                            SubConstantLocation::Enum,
+                        )],
+                        Vec::new(),
+                    )),
                     (None, None) => Some(Substructural::default()),
                     _ => None,
                 }
@@ -426,23 +450,25 @@ impl Match for Constant {
             (Self::Array(lhs), Self::Array(rhs))
                 if lhs.elements.len() == rhs.elements.len() =>
             {
-                Some(Substructural {
-                    lifetimes: Vec::new(),
-                    types: Vec::new(),
-                    constants: lhs
-                        .elements
+                Some(Substructural::new(
+                    Vec::new(),
+                    Vec::new(),
+                    lhs.elements
                         .iter()
                         .cloned()
                         .zip(rhs.elements.iter().cloned())
                         .enumerate()
-                        .map(|(idx, (lhs, rhs))| Matching {
-                            lhs,
-                            rhs,
-                            lhs_location: SubConstantLocation::Array(idx),
-                            rhs_location: SubConstantLocation::Array(idx),
+                        .map(|(idx, (lhs, rhs))| {
+                            Matching::new(
+                                lhs,
+                                rhs,
+                                SubConstantLocation::Array(idx),
+                                SubConstantLocation::Array(idx),
+                            )
                         })
                         .collect(),
-                })
+                    Vec::new(),
+                ))
             }
 
             (Self::Tuple(lhs), Self::Tuple(rhs)) => {
@@ -458,9 +484,10 @@ impl Match for Constant {
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
+            Self::SubInstanceLocation,
         >,
     ) -> &Vec<Matching<Self, Self::ThisSubTermLocation>> {
-        &substructural.constants
+        substructural.constants()
     }
 
     fn get_substructural_mut(
@@ -468,9 +495,10 @@ impl Match for Constant {
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
+            Self::SubInstanceLocation,
         >,
     ) -> &mut Vec<Matching<Self, Self::ThisSubTermLocation>> {
-        &mut substructural.constants
+        substructural.constants_mut()
     }
 }
 
@@ -504,12 +532,14 @@ impl crate::display::Display for Constant {
 
             Self::Parameter(member_id) => {
                 let generic_parameters =
-                    engine.get_generic_parameters(member_id.parent_id).await;
+                    engine.get_generic_parameters(member_id.parent_id()).await;
 
                 write!(
                     formatter,
                     "{}",
-                    &*generic_parameters.constants()[member_id.id].name
+                    &**generic_parameters
+                        .get_constant_parameter(member_id.id())
+                        .name()
                 )
             }
 

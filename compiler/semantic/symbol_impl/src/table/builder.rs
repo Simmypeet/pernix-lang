@@ -69,6 +69,7 @@ pub struct Builder {
         DashMap<ID, pernixc_syntax::QualifiedIdentifier>,
     final_keywords: DashMap<ID, Option<pernixc_syntax::Keyword>>,
 
+    instance_trait_ref_syntaxes: DashMap<ID, Option<pernixc_syntax::TraitRef>>,
     function_body_syntaxes: DashMap<
         ID,
         Option<
@@ -79,9 +80,13 @@ pub struct Builder {
     function_effect_annotation_syntaxes:
         DashMap<ID, Option<pernixc_syntax::item::function::EffectAnnotation>>,
 
+    instance_associated_value_syntaxes:
+        DashMap<ID, Option<pernixc_syntax::InstanceValue>>,
+
     function_unsafe_keywords: DashMap<ID, Option<pernixc_syntax::Keyword>>,
 
     scope_spans: DashMap<ID, Option<RelativeSpan>>,
+    external_instances: DashMap<ID, bool>,
 
     token_tree: Option<Interned<pernixc_lexical::tree::Tree>>,
     source_file: Option<SourceFile>,
@@ -125,7 +130,10 @@ impl Builder {
             final_keywords: DashMap::default(),
             function_body_syntaxes: DashMap::default(),
             function_effect_annotation_syntaxes: DashMap::default(),
+            instance_associated_value_syntaxes: DashMap::default(),
+            external_instances: DashMap::default(),
             scope_spans: DashMap::default(),
+            instance_trait_ref_syntaxes: DashMap::default(),
             function_unsafe_keywords: DashMap::default(),
             token_tree,
             source_file,
@@ -204,12 +212,21 @@ impl Builder {
             function_effect_annotation_syntaxes: self.engine.intern(
                 self.function_effect_annotation_syntaxes.into_iter().collect(),
             ),
+            instance_associated_value_syntaxes: self.engine.intern(
+                self.instance_associated_value_syntaxes.into_iter().collect(),
+            ),
+            instance_trait_ref_syntaxes: self
+                .engine
+                .intern(self.instance_trait_ref_syntaxes.into_iter().collect()),
             function_unsafe_keywords: self
                 .engine
                 .intern(self.function_unsafe_keywords.into_iter().collect()),
             scope_spans: self
                 .engine
                 .intern(self.scope_spans.into_iter().collect()),
+            external_instances: self
+                .engine
+                .intern(self.external_instances.into_iter().collect()),
 
             external_submodules: self
                 .engine
@@ -342,6 +359,38 @@ impl Builder {
         accessibility: Accessibility<pernixc_symbol::ID>,
     ) {
         assert!(self.accessibilities.insert(id, accessibility).is_none());
+    }
+
+    pub fn insert_instance_associated_value(
+        &self,
+        id: pernixc_symbol::ID,
+        qualified_identifier: Option<pernixc_syntax::InstanceValue>,
+    ) {
+        assert!(
+            self.instance_associated_value_syntaxes
+                .insert(id, qualified_identifier)
+                .is_none()
+        );
+    }
+
+    pub fn insert_instance_trait_ref(
+        &self,
+        id: pernixc_symbol::ID,
+        qualified_identifier: Option<pernixc_syntax::TraitRef>,
+    ) {
+        assert!(
+            self.instance_trait_ref_syntaxes
+                .insert(id, qualified_identifier)
+                .is_none()
+        );
+    }
+
+    pub fn insert_external_instance(
+        &self,
+        id: pernixc_symbol::ID,
+        is_external: bool,
+    ) {
+        assert!(self.external_instances.insert(id, is_external).is_none());
     }
 
     /// Inserts an accessibility into the builder from an access modifier.

@@ -9,6 +9,7 @@ use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_term::{
     constant::Constant,
+    instance::Instance,
     lifetime::Lifetime,
     r#type::Type,
     visitor::{self, MutableRecursive},
@@ -46,6 +47,16 @@ impl MutableRecursive<Constant> for ToBorrowTransformer {
     fn visit(
         &mut self,
         _: &mut Constant,
+        _: impl Iterator<Item = pernixc_term::sub_term::TermLocation>,
+    ) -> bool {
+        true
+    }
+}
+
+impl MutableRecursive<Instance> for ToBorrowTransformer {
+    fn visit(
+        &mut self,
+        _: &mut Instance,
         _: impl Iterator<Item = pernixc_term::sub_term::TermLocation>,
     ) -> bool {
         true
@@ -98,6 +109,17 @@ impl Transformer<Constant> for ToBorrowTransformer {
         &mut self,
         term: &mut Constant,
         _: <Constant as Transformable>::Source,
+        _: RelativeSpan,
+    ) {
+        visitor::accept_recursive_mut(term, self);
+    }
+}
+
+impl Transformer<Instance> for ToBorrowTransformer {
+    async fn transform(
+        &mut self,
+        term: &mut Instance,
+        _: <Instance as Transformable>::Source,
         _: RelativeSpan,
     ) {
         visitor::accept_recursive_mut(term, self);

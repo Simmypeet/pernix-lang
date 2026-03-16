@@ -1,36 +1,59 @@
 //! Contains the well-formedness check implementation.
 
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, ops::Deref};
 
 use pernixc_handler::Handler;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::{
-    implied_predicate::get_implied_predicates, variance::Variance,
+    implements_arguments::get_implements_argument,
+    implied_predicate::get_implied_predicates,
+    trait_ref::get_trait_ref_of_instance, variance::Variance,
     where_clause::get_where_clause,
 };
 use pernixc_symbol::kind::get_kind;
 use pernixc_target::Global;
 use pernixc_term::{
     generic_arguments::GenericArguments,
+    generic_parameters::get_generic_parameters,
+    instance::{Instance, TraitRef},
     instantiation::{self, Instantiation},
-    lifetime::Lifetime,
     predicate::{Outlives, Predicate},
     r#type::Type,
     visitor::RecursiveIterator,
 };
 
 use crate::{
-    Succeeded, UnrecoverableError,
+    UnrecoverableError,
+    deduction::Deduction,
     diagnostic::{
-        Diagnostic, ImplementationIsNotGeneralEnough,
-        PredicateSatisfiabilityOverflow, UnsatisfiedPredicate,
+        AdtImplementationIsNotGeneralEnough, Diagnostic,
+        FoundNegativeImplementation, ImplementationIsNotGeneralEnough,
+        MismatchedImplementationArguments, MismatchedTraitRef,
+        PredicateSatisfiabilityOverflow, RequiredBy, RequiredByImplements,
+        UnsatisfiedPredicate,
     },
     environment::Environment,
     lifetime_constraint::LifetimeConstraint,
     normalizer::Normalizer,
-    predicate::{marker, r#trait},
+    predicate::marker::PositiveError,
+    resolution::{UnsatisfiedCause, UnsatisfiedPredicates},
 };
+
+/// The result of [`Environment::wf_check_implementation`]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImplementsCheckResult {
+    deduction: Deduction,
+    constraints: BTreeSet<LifetimeConstraint>,
+}
+
+impl ImplementsCheckResult {
+    /// Retrieves the instantiation retrieved from the deduction.
+    #[must_use]
+    pub fn into_instantiation(self) -> instantiation::Instantiation {
+        self.deduction.instantiation
+    }
+}
 
 impl<N: Normalizer> Environment<'_, N> {
     /// Checks if the given `predicate` is satisfied in the given `environment`.
@@ -43,9 +66,8 @@ impl<N: Normalizer> Environment<'_, N> {
     pub async fn predicate_satisfied(
         &self,
         predicate: Predicate,
-        instantiation_span: RelativeSpan,
-        predicate_declaration_span: Option<RelativeSpan>,
-        do_outlives_check: bool,
+        instantiation_span: &RelativeSpan,
+        predicate_declaration_span: Option<&RelativeSpan>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError> {
         let mut diagnostics = Vec::new();
@@ -55,7 +77,6 @@ impl<N: Normalizer> Environment<'_, N> {
                 predicate,
                 instantiation_span,
                 predicate_declaration_span,
-                do_outlives_check,
                 &mut diagnostics,
                 handler,
             )
@@ -75,9 +96,8 @@ impl<N: Normalizer> Environment<'_, N> {
     pub async fn predicate_satisfied_as_diagnostics(
         &self,
         predicate: Predicate,
-        instantiation_span: RelativeSpan,
-        predicate_declaration_span: Option<RelativeSpan>,
-        do_outlives_check: bool,
+        instantiation_span: &RelativeSpan,
+        predicate_declaration_span: Option<&RelativeSpan>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<
         (Vec<Diagnostic>, BTreeSet<LifetimeConstraint>),
@@ -90,7 +110,6 @@ impl<N: Normalizer> Environment<'_, N> {
                 predicate,
                 instantiation_span,
                 predicate_declaration_span,
-                do_outlives_check,
                 &mut diagnostics,
                 handler,
             )
@@ -103,17 +122,16 @@ impl<N: Normalizer> Environment<'_, N> {
     async fn predicate_satisfied_internal(
         &self,
         predicate: Predicate,
-        instantiation_span: RelativeSpan,
-        predicate_declaration_span: Option<RelativeSpan>,
-        do_outlives_check: bool,
+        instantiation_span: &RelativeSpan,
+        predicate_declaration_span: Option<&RelativeSpan>,
         diagnostics: &mut Vec<Diagnostic>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError> {
         let result = match &predicate {
-            Predicate::TraitTypeCompatible(equality) => {
+            Predicate::InstanceAssociatedTypeEquality(equality) => {
                 let result = self
                     .subtypes(
-                        Type::TraitMember(equality.lhs.clone()),
+                        Type::InstanceAssociated(equality.lhs.clone()),
                         equality.rhs.clone(),
                         Variance::Covariant,
                     )
@@ -122,9 +140,7 @@ impl<N: Normalizer> Environment<'_, N> {
                 match result {
                     Ok(Some(result)) => {
                         if result.result.forall_lifetime_errors.is_empty() {
-                            Ok(Some(Succeeded::satisfied_with(
-                                result.constraints.clone(),
-                            )))
+                            Ok(Some(result.constraints.clone()))
                         } else {
                             Ok(None)
                         }
@@ -135,32 +151,38 @@ impl<N: Normalizer> Environment<'_, N> {
                     Err(error) => Err(error),
                 }
             }
-            Predicate::ConstantType(constant_type) => {
-                self.query(constant_type).await.map(|x| x.as_deref().cloned())
-            }
-            Predicate::LifetimeOutlives(outlives) => {
-                if do_outlives_check {
-                    match self.query(outlives).await {
-                        Ok(Some(_)) => return Ok(BTreeSet::new()),
 
-                        Ok(None) => {
+            Predicate::ConstantType(constant_type) => self
+                .query(constant_type)
+                .await
+                .map(|x| x.map(|x| x.constraints.clone())),
+
+            Predicate::LifetimeOutlives(outlives) => {
+                if self.do_outlives_check() {
+                    match self.query(outlives).await {
+                        Ok(true) => return Ok(BTreeSet::new()),
+
+                        Ok(false) => {
                             diagnostics.push(Diagnostic::UnsatisfiedPredicate(
-                                UnsatisfiedPredicate {
-                                    predicate,
-                                    instantiation_span,
-                                    predicate_declaration_span,
-                                },
+                                UnsatisfiedPredicate::builder()
+                                    .predicate(predicate)
+                                    .instantiation_span(*instantiation_span)
+                                    .maybe_predicate_declaration_span(
+                                        predicate_declaration_span.copied(),
+                                    )
+                                    .build(),
                             ));
 
                             return Ok(BTreeSet::new());
                         }
-                        Err(crate::Error::Overflow(overflow_error)) => {
+                        Err(overflow_error) => {
                             handler.receive(
                                 Diagnostic::PredicateSatisfiabilityOverflow(
                                     PredicateSatisfiabilityOverflow {
                                         predicate,
-                                        predicate_declaration_span,
-                                        instantiation_span,
+                                        instantiation_span: *instantiation_span,
+                                        predicate_declaration_span:
+                                            predicate_declaration_span.copied(),
                                         overflow_error,
                                     },
                                 ),
@@ -171,36 +193,41 @@ impl<N: Normalizer> Environment<'_, N> {
                     }
                 }
 
-                Ok(Some(Succeeded::satisfied_with(
+                Ok(Some(
                     std::iter::once(LifetimeConstraint::LifetimeOutlives(
                         outlives.clone(),
                     ))
                     .collect(),
-                )))
+                ))
             }
-            Predicate::TypeOutlives(outlives) => {
-                if do_outlives_check {
-                    match self.query(outlives).await {
-                        Ok(Some(_)) => return Ok(BTreeSet::new()),
 
-                        Ok(None) => {
+            Predicate::TypeOutlives(outlives) => {
+                if self.do_outlives_check() {
+                    match self.query(outlives).await {
+                        Ok(true) => return Ok(BTreeSet::new()),
+
+                        Ok(false) => {
                             diagnostics.push(Diagnostic::UnsatisfiedPredicate(
-                                UnsatisfiedPredicate {
-                                    predicate,
-                                    instantiation_span,
-                                    predicate_declaration_span,
-                                },
+                                UnsatisfiedPredicate::builder()
+                                    .predicate(predicate)
+                                    .instantiation_span(*instantiation_span)
+                                    .maybe_predicate_declaration_span(
+                                        predicate_declaration_span.copied(),
+                                    )
+                                    .build(),
                             ));
 
                             return Ok(BTreeSet::new());
                         }
-                        Err(crate::Error::Overflow(overflow_error)) => {
+
+                        Err(overflow_error) => {
                             handler.receive(
                                 Diagnostic::PredicateSatisfiabilityOverflow(
                                     PredicateSatisfiabilityOverflow {
                                         predicate,
-                                        predicate_declaration_span,
-                                        instantiation_span,
+                                        predicate_declaration_span:
+                                            predicate_declaration_span.copied(),
+                                        instantiation_span: *instantiation_span,
                                         overflow_error,
                                     },
                                 ),
@@ -211,7 +238,7 @@ impl<N: Normalizer> Environment<'_, N> {
                     }
                 }
 
-                Ok(Some(Succeeded::satisfied_with(
+                Ok(Some(
                     RecursiveIterator::new(&outlives.bound)
                         .filter_map(|x| x.0.into_lifetime().ok())
                         .map(|x| {
@@ -221,161 +248,57 @@ impl<N: Normalizer> Environment<'_, N> {
                             ))
                         })
                         .collect(),
-                )))
+                ))
             }
 
-            Predicate::TupleType(tuple) => {
-                self.query(tuple).await.map(|x| x.as_deref().cloned())
-            }
+            Predicate::TupleType(tuple) => self
+                .query(tuple)
+                .await
+                .map(|x| x.map(|x| x.constraints.clone())),
 
-            Predicate::PositiveTrait(positive) => {
-                match self.query(positive).await {
-                    Ok(None) => Ok(None),
-                    Ok(Some(result)) => match &result.result {
-                        r#trait::PositiveSatisfied::Premise
-                        | r#trait::PositiveSatisfied::Environment
-                        | r#trait::PositiveSatisfied::Cyclic => {
-                            Ok(Some(Succeeded::satisfied_with(
-                                result.constraints.clone(),
-                            )))
-                        }
+            Predicate::PositiveMarker(marker) => {
+                match self.query(marker).await {
+                    Ok(Ok(succeeded)) => {
+                        Ok(Some(succeeded.constraints.clone()))
+                    }
 
-                        r#trait::PositiveSatisfied::Implementation(
-                            implementation,
-                        ) => {
-                            let mut lt_constraints =
-                                Box::pin(self.check_implementation_satisfied(
-                                    implementation.id,
-                                    &implementation.instantiation,
-                                    &positive.generic_arguments,
-                                    instantiation_span,
-                                    predicate_declaration_span,
-                                    do_outlives_check,
-                                    implementation.is_not_general_enough,
-                                    diagnostics,
-                                    handler,
-                                ))
-                                .await?;
+                    Ok(Err(error)) => {
+                        self.generate_marker_error(
+                            marker,
+                            instantiation_span,
+                            &error,
+                            diagnostics,
+                            vec![
+                                RequiredBy::builder()
+                                    .maybe_predicate_declaration_span(
+                                        predicate_declaration_span.copied(),
+                                    )
+                                    .build(),
+                            ],
+                        );
 
-                            lt_constraints
-                                .extend(result.constraints.iter().cloned());
+                        return Ok(BTreeSet::new());
+                    }
 
-                            Ok(Some(Succeeded::satisfied_with(lt_constraints)))
-                        }
-                    },
-                    Err(error) => Err(error),
+                    Err(overflow_error) => Err(overflow_error),
                 }
             }
 
-            Predicate::NegativeTrait(negative) => match self
-                .query(negative)
-                .await
-            {
-                Ok(None) => Ok(None),
+            Predicate::NegativeMarker(marker) => {
+                match self.query(marker).await {
+                    Ok(test) => Ok(test.map(|x| x.constraints.clone())),
 
-                Ok(Some(result)) => match &result.result {
-                    r#trait::NegativeSatisfied::UnsatisfiedPositive
-                    | r#trait::NegativeSatisfied::Premise => Ok(Some(
-                        Succeeded::satisfied_with(result.constraints.clone()),
-                    )),
-                    r#trait::NegativeSatisfied::Implementation(
-                        implementation,
-                    ) => {
-                        let mut lt_constraints =
-                            Box::pin(self.check_implementation_satisfied(
-                                implementation.id,
-                                &implementation.instantiation,
-                                &negative.generic_arguments,
-                                instantiation_span,
-                                predicate_declaration_span,
-                                do_outlives_check,
-                                implementation.is_not_general_enough,
-                                diagnostics,
-                                handler,
-                            ))
-                            .await?;
-                        lt_constraints
-                            .extend(result.constraints.iter().cloned());
-
-                        Ok(Some(Succeeded::satisfied_with(lt_constraints)))
-                    }
-                },
-
-                Err(overflow) => Err(overflow),
-            },
-
-            Predicate::PositiveMarker(positive) => {
-                match self.query(positive).await {
-                    Ok(None) => Ok(None),
-
-                    Ok(Some(result)) => {
-                        let mut new_constraints =
-                            Box::pin(self.handle_positive_marker_satisfied(
-                                &result.result,
-                                &positive.generic_arguments,
-                                instantiation_span,
-                                predicate_declaration_span,
-                                do_outlives_check,
-                                diagnostics,
-                                handler,
-                            ))
-                            .await?;
-
-                        new_constraints
-                            .extend(result.constraints.iter().cloned());
-
-                        Ok(Some(Succeeded::satisfied_with(new_constraints)))
-                    }
-
-                    Err(error) => Err(error),
+                    Err(overflow_error) => Err(overflow_error),
                 }
             }
-
-            Predicate::NegativeMarker(negative) => match self
-                .query(negative)
-                .await
-            {
-                Ok(Some(result)) => match &result.result {
-                    marker::NegativeSatisfied::UnsatisfiedPositive
-                    | marker::NegativeSatisfied::Premise => Ok(Some(
-                        Succeeded::satisfied_with(result.constraints.clone()),
-                    )),
-
-                    marker::NegativeSatisfied::Implementation(
-                        implementation,
-                    ) => {
-                        let mut lt_constraints =
-                            Box::pin(self.check_implementation_satisfied(
-                                implementation.id,
-                                &implementation.instantiation,
-                                &negative.generic_arguments,
-                                instantiation_span,
-                                predicate_declaration_span,
-                                do_outlives_check,
-                                implementation.is_not_general_enough,
-                                diagnostics,
-                                handler,
-                            ))
-                            .await?;
-
-                        lt_constraints
-                            .extend(result.constraints.iter().cloned());
-
-                        Ok(Some(Succeeded::satisfied_with(lt_constraints)))
-                    }
-                },
-                Ok(None) => Ok(None),
-                Err(error) => Err(error),
-            },
         };
 
         match result {
-            Ok(Some(Succeeded { constraints, .. })) => {
+            Ok(Some(constraints)) => {
                 self.handle_satisfy(
                     constraints,
                     instantiation_span,
                     predicate_declaration_span,
-                    do_outlives_check,
                     diagnostics,
                     handler,
                 )
@@ -384,22 +307,25 @@ impl<N: Normalizer> Environment<'_, N> {
 
             Ok(None) => {
                 diagnostics.push(Diagnostic::UnsatisfiedPredicate(
-                    UnsatisfiedPredicate {
-                        predicate,
-                        instantiation_span,
-                        predicate_declaration_span,
-                    },
+                    UnsatisfiedPredicate::builder()
+                        .predicate(predicate)
+                        .instantiation_span(*instantiation_span)
+                        .maybe_predicate_declaration_span(
+                            predicate_declaration_span.copied(),
+                        )
+                        .build(),
                 ));
 
                 Ok(BTreeSet::new())
             }
 
-            Err(crate::Error::Overflow(overflow_error)) => {
+            Err(overflow_error) => {
                 handler.receive(Diagnostic::PredicateSatisfiabilityOverflow(
                     PredicateSatisfiabilityOverflow {
                         predicate,
-                        predicate_declaration_span,
-                        instantiation_span,
+                        predicate_declaration_span: predicate_declaration_span
+                            .copied(),
+                        instantiation_span: *instantiation_span,
                         overflow_error,
                     },
                 ));
@@ -412,114 +338,46 @@ impl<N: Normalizer> Environment<'_, N> {
     async fn handle_satisfy(
         &self,
         constraints: BTreeSet<LifetimeConstraint>,
-        instantiation_span: RelativeSpan,
-        predicate_declaration_span: Option<RelativeSpan>,
-        do_outlives_check: bool,
+        instantiation_span: &RelativeSpan,
+        predicate_declaration_span: Option<&RelativeSpan>,
         diagnostics: &mut Vec<Diagnostic>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError> {
         // if do_outlives_check is false, then we don't need to check
-        if !do_outlives_check {
+        if !self.do_outlives_check() {
             return Ok(constraints);
         }
 
         for constraint in constraints {
-            match constraint {
-                LifetimeConstraint::LifetimeOutlives(pred) => {
-                    match self.query(&pred).await {
-                        Ok(None) => {
-                            diagnostics.push(Diagnostic::UnsatisfiedPredicate(
-                                UnsatisfiedPredicate {
-                                    predicate: Predicate::LifetimeOutlives(
-                                        pred,
-                                    ),
-                                    instantiation_span,
-                                    predicate_declaration_span,
-                                },
-                            ));
-                        }
+            match constraint.satisfies(self).await {
+                Ok(true) => {}
 
-                        Err(crate::Error::Overflow(overflow_error)) => {
-                            handler.receive(
-                                Diagnostic::PredicateSatisfiabilityOverflow(
-                                    PredicateSatisfiabilityOverflow {
-                                        predicate: Predicate::LifetimeOutlives(
-                                            pred,
-                                        ),
-                                        instantiation_span,
-                                        predicate_declaration_span,
-                                        overflow_error,
-                                    },
-                                ),
-                            );
+                Ok(false) => {
+                    diagnostics.push(Diagnostic::UnsatisfiedPredicate(
+                        UnsatisfiedPredicate::builder()
+                            .predicate(constraint.into_predicate())
+                            .instantiation_span(*instantiation_span)
+                            .maybe_predicate_declaration_span(
+                                predicate_declaration_span.copied(),
+                            )
+                            .build(),
+                    ));
+                }
 
-                            return Err(UnrecoverableError::Reported);
-                        }
+                Err(e) => {
+                    e.report_as_undecidable_predicate(
+                        constraint.into_predicate(),
+                        None,
+                        *instantiation_span,
+                        handler,
+                    );
 
-                        Ok(Some(_)) => {}
-                    }
+                    return Err(UnrecoverableError::Reported);
                 }
             }
         }
 
         Ok(BTreeSet::new())
-    }
-
-    #[allow(clippy::type_complexity, clippy::too_many_arguments)]
-    async fn handle_positive_marker_satisfied(
-        &self,
-        result: &marker::PositiveSatisfied,
-        pred_generic_arguments: &GenericArguments,
-        instantiation_span: RelativeSpan,
-        predicate_declaration_span: Option<RelativeSpan>,
-        do_outlives_check: bool,
-        diagnostics: &mut Vec<Diagnostic>,
-        handler: &dyn Handler<Diagnostic>,
-    ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError> {
-        match result {
-            marker::PositiveSatisfied::Premise
-            | marker::PositiveSatisfied::Environment
-            | marker::PositiveSatisfied::Cyclic => Ok(BTreeSet::new()),
-
-            marker::PositiveSatisfied::Implementation(implementation) => {
-                self.check_implementation_satisfied(
-                    implementation.id,
-                    &implementation.instantiation,
-                    pred_generic_arguments,
-                    instantiation_span,
-                    predicate_declaration_span,
-                    do_outlives_check,
-                    implementation.is_not_general_enough,
-                    diagnostics,
-                    handler,
-                )
-                .await
-            }
-
-            marker::PositiveSatisfied::Congruence(btree_map) => {
-                let mut constraints = BTreeSet::new();
-
-                for result in btree_map.values() {
-                    constraints.extend(result.constraints.iter().cloned());
-
-                    let new_constraints =
-                        Box::pin(self.handle_positive_marker_satisfied(
-                            &result.result,
-                            pred_generic_arguments,
-                            instantiation_span,
-                            predicate_declaration_span,
-                            do_outlives_check,
-                            diagnostics,
-                            handler,
-                        ))
-                        .await?;
-
-                    constraints.extend(new_constraints);
-                }
-
-                Ok(constraints)
-            }
-        }
     }
 
     #[allow(clippy::type_complexity)]
@@ -558,6 +416,261 @@ impl<N: Normalizer> Environment<'_, N> {
         predicates
     }
 
+    /// Checks the well-formedness of the implementation with the given
+    /// `impl_id` and returns the lifetime constraints that need to be
+    /// satisfied for the implementation to be well-formed.
+    ///
+    /// If `do_outlives_check` is true, then the outlives constraints/predicates
+    /// will be checked using symbolic evaluation. Otherwise, the outlives
+    /// constraints/predicates will be assumed to be satisfied and returned as
+    /// lifetime constraints in the Ok result.
+    pub async fn wf_check_implementation(
+        &self,
+        impl_id: Global<pernixc_symbol::ID>,
+        instantiation_span: &RelativeSpan,
+        generic_arguments: &GenericArguments,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<Option<ImplementsCheckResult>, UnrecoverableError> {
+        // deduce the generic arguments
+        let Some(impl_arguments) =
+            self.tracked_engine().get_implements_argument(impl_id).await
+        else {
+            return Ok(None); // can't continue
+        };
+
+        let result = match self.deduce(&impl_arguments, generic_arguments).await
+        {
+            Ok(Some(deduced)) => deduced,
+
+            Ok(None) => {
+                handler.receive(Diagnostic::MismatchedImplementationArguments(
+                    MismatchedImplementationArguments {
+                        adt_implementation_id: impl_id,
+                        found_generic_arguments: generic_arguments.clone(),
+                        instantiation_span: *instantiation_span,
+                    },
+                ));
+
+                return Ok(None); // can't continue
+            }
+
+            Err(error) => {
+                return Err(error.report_as_type_calculating_overflow(
+                    *instantiation_span,
+                    handler,
+                ));
+            }
+        };
+
+        // check if the deduced generic arguments are correct
+        let mut wf_lifetime_constraints = self
+            .wf_check_instantiation(
+                impl_id,
+                instantiation_span,
+                &result.result.instantiation,
+                handler,
+            )
+            .await?;
+
+        // the implementation is not general enough
+        if result.result.is_not_general_enough {
+            handler.receive(Diagnostic::AdtImplementationIsNotGeneralEnough(
+                AdtImplementationIsNotGeneralEnough {
+                    adt_implementation_id: impl_id,
+                    generic_arguments: generic_arguments.clone(),
+                    instantiation_span: *instantiation_span,
+                },
+            ));
+        }
+
+        if self.do_outlives_check() {
+            for constraint in result.constraints {
+                match constraint.satisfies(self).await {
+                    Ok(true) => {}
+
+                    Ok(false) => {
+                        handler.receive(Diagnostic::UnsatisfiedPredicate(
+                            UnsatisfiedPredicate::builder()
+                                .predicate(constraint.into_predicate())
+                                .instantiation_span(*instantiation_span)
+                                .build(),
+                        ));
+                    }
+
+                    Err(e) => {
+                        e.report_as_undecidable_predicate(
+                            constraint.into_predicate(),
+                            None,
+                            *instantiation_span,
+                            handler,
+                        );
+
+                        return Err(UnrecoverableError::Reported);
+                    }
+                }
+            }
+        } else {
+            wf_lifetime_constraints.extend(result.constraints);
+        }
+
+        Ok(Some(ImplementsCheckResult {
+            deduction: result.result,
+            constraints: wf_lifetime_constraints,
+        }))
+    }
+
+    async fn check_instance_trait_ref_internal(
+        &self,
+        instance: &Instance,
+        instance_trait_ref: &TraitRef,
+        expected_trait_ref: &TraitRef,
+        instantiation_span: &RelativeSpan,
+        lifetime_constraints: &mut BTreeSet<LifetimeConstraint>,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<(), UnrecoverableError> {
+        if instance_trait_ref.trait_id() != expected_trait_ref.trait_id() {
+            handler.receive(Diagnostic::MismatchedTraitRef(
+                MismatchedTraitRef::builder()
+                    .expected_trait_ref(expected_trait_ref.clone())
+                    .found_trait_ref(instance_trait_ref.clone())
+                    .instance(instance.clone())
+                    .span(*instantiation_span)
+                    .build(),
+            ));
+
+            return Ok(());
+        }
+
+        let ok = match self
+            .subtypes_generic_arguments(
+                expected_trait_ref.generic_arguments(),
+                instance_trait_ref.generic_arguments(),
+            )
+            .await
+        {
+            Ok(Some(res)) => {
+                if res.result.forall_lifetime_errors.is_empty() {
+                    if self.do_outlives_check() {
+                        self.check_lifetime_constraints(
+                            res.constraints.iter(),
+                            instantiation_span,
+                            handler,
+                        )
+                        .await;
+                    } else {
+                        lifetime_constraints
+                            .extend(res.constraints.iter().cloned());
+                    }
+
+                    true
+                } else {
+                    false
+                }
+            }
+
+            Ok(None) => false,
+
+            Err(overflow_error) => {
+                return Err(overflow_error.report_as_type_check_overflow(
+                    *instantiation_span,
+                    handler,
+                ));
+            }
+        };
+
+        if !ok {
+            handler.receive(Diagnostic::MismatchedTraitRef(
+                MismatchedTraitRef::builder()
+                    .expected_trait_ref(expected_trait_ref.clone())
+                    .found_trait_ref(instance_trait_ref.clone())
+                    .span(*instantiation_span)
+                    .instance(instance.clone())
+                    .build(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Checks if the given `instance`'s trait-ref matches the
+    /// `expected_trait_ref` and returns the lifetime constraints that need to
+    /// be satisfied for the instance to be well-formed.
+    pub async fn check_instance_trait_ref(
+        &self,
+        instance: &Instance,
+        expected_trait_ref: &TraitRef,
+        instantiation_span: &RelativeSpan,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError> {
+        let Some(instance_trait_ref) =
+            self.tracked_engine().get_trait_ref_of_instance(instance).await
+        else {
+            return Ok(BTreeSet::new()); // can't continue
+        };
+
+        let mut lifetime_constraints = BTreeSet::new();
+        self.check_instance_trait_ref_internal(
+            instance,
+            &instance_trait_ref,
+            expected_trait_ref,
+            instantiation_span,
+            &mut lifetime_constraints,
+            handler,
+        )
+        .await?;
+
+        Ok(lifetime_constraints)
+    }
+
+    /// Type-checks the trait-ref of the instance arguments supplied to the
+    /// generic with the given `generic_id`.
+    pub async fn check_instantiated_instance_arguments(
+        &self,
+        generic_id: Global<pernixc_symbol::ID>,
+        instance_arguments: &[Instance],
+        instantiation_span: &RelativeSpan,
+        instantiation: &Instantiation,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError> {
+        let generic_parameters =
+            self.tracked_engine().get_generic_parameters(generic_id).await;
+
+        let mut lifetime_constraints = BTreeSet::new();
+
+        for ((_, instance_parameter), instance_arg) in generic_parameters
+            .instance_parameters_as_order()
+            .zip(instance_arguments)
+        {
+            let Some(instance_trait_ref) = self
+                .tracked_engine()
+                .get_trait_ref_of_instance(instance_arg)
+                .await
+            else {
+                continue;
+            };
+
+            let Some(mut expected_trait_ref) =
+                instance_parameter.trait_ref().map(|x| x.deref().clone())
+            else {
+                continue;
+            };
+
+            expected_trait_ref.instantiate(instantiation);
+
+            self.check_instance_trait_ref_internal(
+                instance_arg,
+                &instance_trait_ref,
+                &expected_trait_ref,
+                instantiation_span,
+                &mut lifetime_constraints,
+                handler,
+            )
+            .await?;
+        }
+
+        Ok(lifetime_constraints)
+    }
+
     /// Checks the where clause predicate requirements declared in the given
     /// `generic_id`
     ///
@@ -568,12 +681,11 @@ impl<N: Normalizer> Environment<'_, N> {
     /// should be checked using symbolic evaluation or just assumed to be
     /// satisfied. If false, then the outlives predicates will be returned
     /// as lifetime constraints in the Ok result.
-    pub async fn wf_check(
+    pub async fn wf_check_instantiation(
         &self,
         generic_id: Global<pernixc_symbol::ID>,
-        instantiation_span: RelativeSpan,
+        instantiation_span: &RelativeSpan,
         instantiation: &instantiation::Instantiation,
-        do_outlives_check: bool,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError> {
         let predicates = Self::get_all_predicates(
@@ -591,8 +703,7 @@ impl<N: Normalizer> Environment<'_, N> {
                 .predicate_satisfied_internal(
                     predicate,
                     instantiation_span,
-                    span,
-                    do_outlives_check,
+                    span.as_ref(),
                     &mut diagnostics,
                     handler,
                 )
@@ -606,88 +717,191 @@ impl<N: Normalizer> Environment<'_, N> {
         Ok(lifetime_constraints)
     }
 
-    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-    async fn check_implementation_satisfied(
+    fn handle_unsatisfied_predicate_in_marker(
         &self,
-        id: Global<pernixc_symbol::ID>,
-        instantiation: &Instantiation,
-        generic_arguments: &GenericArguments,
-        instantiation_span: RelativeSpan,
-        predicate_declaration_span: Option<RelativeSpan>,
-        do_outlives_check: bool,
-        mut is_not_general_enough: bool,
+        predicate: &pernixc_term::predicate::PositiveMarker,
+        instantiation_span: &RelativeSpan,
+        unsatisfied_predicates: &UnsatisfiedPredicates,
         diagnostics: &mut Vec<Diagnostic>,
-        handler: &dyn Handler<Diagnostic>,
-    ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError> {
-        let mut lifetime_constraints = BTreeSet::new();
-
-        // check for each predicate in the implementation
-        for (mut predicate, span) in Self::get_all_predicates(
-            self.tracked_engine(),
-            id,
-            Some(instantiation),
-        )
-        .await
+        requirement_stack: &[RequiredBy],
+    ) {
+        for unsatisfied_predicate in
+            unsatisfied_predicates.unsatisfied_predicates()
         {
-            match &predicate {
-                Predicate::LifetimeOutlives(outlives) => {
-                    if outlives.operand.is_forall() {
-                        is_not_general_enough = true;
-                        continue;
-                    }
+            match unsatisfied_predicate.cause() {
+                UnsatisfiedCause::NoInformation => {
+                    let mut requirement_stack = requirement_stack.to_vec();
+
+                    requirement_stack.push(
+                        RequiredBy::builder()
+                            .by_implements(
+                                RequiredByImplements::builder()
+                                    .resolved_implements_id(
+                                        unsatisfied_predicates
+                                            .implementation()
+                                            .id,
+                                    )
+                                    .predicate(predicate.clone())
+                                    .build(),
+                            )
+                            .maybe_predicate_declaration_span(
+                                unsatisfied_predicate
+                                    .predicate_declaration_span()
+                                    .copied(),
+                            )
+                            .build(),
+                    );
+
+                    diagnostics.push(
+                        UnsatisfiedPredicate::builder_with_required_by_stack()
+                            .predicate(
+                                unsatisfied_predicate.predicate().clone(),
+                            )
+                            .instantiation_span(*instantiation_span)
+                            .requirement_stack(requirement_stack)
+                            .build()
+                            .into(),
+                    );
                 }
-                Predicate::TypeOutlives(outlives) => {
-                    if RecursiveIterator::new(&outlives.operand).any(|x| {
-                        x.0.as_lifetime().is_some_and(|x| x.is_forall())
-                    }) {
-                        is_not_general_enough = true;
-                        continue;
-                    }
+                UnsatisfiedCause::PositiveMarker(positive_error) => {
+                    let mut requirement_stack = requirement_stack.to_vec();
+
+                    requirement_stack.push(
+                        RequiredBy::builder()
+                            .by_implements(
+                                RequiredByImplements::builder()
+                                    .resolved_implements_id(
+                                        unsatisfied_predicates
+                                            .implementation()
+                                            .id,
+                                    )
+                                    .predicate(predicate.clone())
+                                    .build(),
+                            )
+                            .maybe_predicate_declaration_span(
+                                unsatisfied_predicate
+                                    .predicate_declaration_span()
+                                    .copied(),
+                            )
+                            .build(),
+                    );
+
+                    self.generate_marker_error(
+                        unsatisfied_predicate
+                            .predicate()
+                            .as_positive_marker()
+                            .unwrap(),
+                        instantiation_span,
+                        positive_error,
+                        diagnostics,
+                        requirement_stack,
+                    );
                 }
-                _ => {}
+            }
+        }
+    }
+
+    fn handle_resolution_error_in_marker(
+        &self,
+        predicate: &pernixc_term::predicate::PositiveMarker,
+        instantiation_span: &RelativeSpan,
+        error: &crate::resolution::Error,
+        diagnostics: &mut Vec<Diagnostic>,
+        requirement_stack: Vec<RequiredBy>,
+    ) {
+        match error {
+            crate::resolution::Error::IsNotGeneralEnough(implementation) => {
+                diagnostics.push(Diagnostic::ImplementationIsNotGeneralEnough(
+                    ImplementationIsNotGeneralEnough::builder()
+                        .resolvable_implementation_id(implementation.id)
+                        .generic_arguments(predicate.generic_arguments.clone())
+                        .instantiation_span(*instantiation_span)
+                        .required_by_stack(requirement_stack)
+                        .build(),
+                ));
             }
 
-            match &mut predicate {
-                Predicate::LifetimeOutlives(outlives)
-                    if outlives.bound.is_forall() =>
-                {
-                    outlives.bound = Lifetime::Static;
-                }
+            crate::resolution::Error::UnsatisfiedPredicates(
+                unsatisfied_predicates,
+            ) => self.handle_unsatisfied_predicate_in_marker(
+                predicate,
+                instantiation_span,
+                unsatisfied_predicates,
+                diagnostics,
+                &requirement_stack,
+            ),
 
-                Predicate::TypeOutlives(outlives)
-                    if outlives.bound.is_forall() =>
-                {
-                    outlives.bound = Lifetime::Static;
-                }
-
-                _ => {}
+            crate::resolution::Error::Ambiguous => {
+                // NOTE: wf_check isn't responsible for reporting ambiguous
+                // marker implements. It should've been reported by the
+                // `implements` overlapping check.
             }
 
-            let new_lifetime_constraints = self
-                .predicate_satisfied_internal(
+            crate::resolution::Error::NotFound
+            | crate::resolution::Error::Cyclic => {
+                diagnostics.push(Diagnostic::UnsatisfiedPredicate(
+                    UnsatisfiedPredicate::builder_with_required_by_stack()
+                        .predicate(predicate.clone().into())
+                        .instantiation_span(*instantiation_span)
+                        .requirement_stack(requirement_stack)
+                        .build(),
+                ));
+            }
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn generate_marker_error(
+        &self,
+        predicate: &pernixc_term::predicate::PositiveMarker,
+        instantiation_span: &RelativeSpan,
+        error: &PositiveError,
+        diagnostics: &mut Vec<Diagnostic>,
+        requirement_stack: Vec<RequiredBy>,
+    ) {
+        match error {
+            PositiveError::ImplementationResolution(error) => {
+                self.handle_resolution_error_in_marker(
                     predicate,
                     instantiation_span,
-                    span,
-                    do_outlives_check,
+                    error,
                     diagnostics,
-                    handler,
-                )
-                .await?;
+                    requirement_stack,
+                );
+            }
 
-            lifetime_constraints.extend(new_lifetime_constraints);
+            PositiveError::Structural(structural_errors) => {
+                for a in structural_errors.iter() {
+                    self.generate_marker_error(
+                        a.sub_predicate(),
+                        instantiation_span,
+                        a.error(),
+                        diagnostics,
+                        requirement_stack.clone(),
+                    );
+                }
+            }
+
+            PositiveError::NegativeMarkerImplementation(succeeded) => {
+                diagnostics.push(Diagnostic::FoundNegativeImplementation(
+                    FoundNegativeImplementation::builder()
+                        .predicate(predicate.clone())
+                        .instantiation_span(*instantiation_span)
+                        .requirement_stack(requirement_stack)
+                        .negative_implementation_id(succeeded.result.id)
+                        .build(),
+                ));
+            }
+
+            PositiveError::Cyclic => {
+                diagnostics.push(Diagnostic::UnsatisfiedPredicate(
+                    UnsatisfiedPredicate::builder_with_required_by_stack()
+                        .predicate(predicate.clone().into())
+                        .instantiation_span(*instantiation_span)
+                        .requirement_stack(requirement_stack)
+                        .build(),
+                ));
+            }
         }
-
-        if is_not_general_enough {
-            handler.receive(Diagnostic::ImplementationIsNotGeneralEnough(
-                ImplementationIsNotGeneralEnough {
-                    resolvable_implementation_id: id,
-                    generic_arguments: generic_arguments.clone(),
-                    predicate_declaration_span,
-                    instantiation_span,
-                },
-            ));
-        }
-
-        Ok(lifetime_constraints)
     }
 }

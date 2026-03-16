@@ -1,5 +1,4 @@
 use enum_as_inner::EnumAsInner;
-use pernixc_lexical::tree::DelimiterKind;
 use pernixc_parser::{
     abstract_tree::{self, First, Second, Tag},
     expect,
@@ -7,29 +6,12 @@ use pernixc_parser::{
 };
 
 use crate::{
-    Keyword, Lifetime, LifetimeParameter, Punctuation, QualifiedIdentifier,
-    r#type,
+    HigherRankedLifetimes, Keyword, Lifetime, LifetimeParameter, Punctuation,
+    QualifiedIdentifier, r#type,
 };
 
 #[cfg(any(test, feature = "arbitrary"))]
 pub mod arbitrary;
-
-abstract_tree::abstract_tree! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    pub struct HigherRankedLifetimes {
-        pub for_keyword: Keyword = expect::Keyword::For,
-        pub lifetimes: LifetimeParameters = ast::<LifetimeParameters>(),
-    }
-}
-
-abstract_tree::abstract_tree! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    #{fragment = expect::Fragment::Delimited(DelimiterKind::Bracket)}
-    pub struct LifetimeParameters {
-        pub lifetimes: #[multi] LifetimeParameter
-            = ast::<LifetimeParameter>().repeat_all_with_separator(','),
-    }
-}
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -137,12 +119,6 @@ abstract_tree::abstract_tree! {
         ),
         Type(
             Type = ast::<Type>()
-        ),
-        Trait(
-            Trait = ast::<Trait>()
-        ),
-        Marker(
-            Marker = ast::<Marker>()
         ),
         LifetimeOutlives(
             LifetimeOutlives = ast::<LifetimeOutlives>()

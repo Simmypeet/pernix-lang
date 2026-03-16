@@ -8,11 +8,10 @@ use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::fields::Field;
 use pernixc_target::Global;
 use pernixc_term::{
-    constant::Constant,
-    generic_arguments::{GenericArguments, Symbol},
-    lifetime::Lifetime,
-    r#type::Type,
+    constant::Constant, generic_arguments::GenericArguments,
+    instance::Instance, lifetime::Lifetime, r#type::Type,
 };
+use pernixc_type_system::OverflowError;
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
@@ -57,7 +56,10 @@ impl crate::visitor::Element for Struct {
 }
 
 pub(super) async fn transform_struct<
-    T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
+    T: Transformer<Lifetime>
+        + Transformer<Type>
+        + Transformer<Constant>
+        + Transformer<Instance>,
 >(
     st: &mut Struct,
     transformer: &mut T,
@@ -85,14 +87,13 @@ impl TypeOf<&Struct> for Values {
         &self,
         value: &Struct,
         environment: &crate::value::Environment<'_, N>,
-    ) -> Result<pernixc_type_system::Succeeded<Type>, pernixc_type_system::Error>
-    {
+    ) -> Result<pernixc_type_system::Succeeded<Type>, OverflowError> {
         Ok(environment
             .type_environment
-            .simplify(Type::Symbol(Symbol {
-                id: value.struct_id,
-                generic_arguments: value.generic_arguments.clone(),
-            }))
+            .simplify(Type::new_symbol(
+                value.struct_id,
+                value.generic_arguments.clone(),
+            ))
             .await?
             .deref()
             .clone())

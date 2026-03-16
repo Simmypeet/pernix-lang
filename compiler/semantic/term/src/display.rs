@@ -11,6 +11,7 @@ use crate::{
     constant::Constant,
     generic_arguments::GenericArguments,
     inference,
+    instance::Instance,
     lifetime::{ElidedLifetimeID, Forall, Lifetime},
     r#type::Type,
 };
@@ -53,6 +54,10 @@ pub struct Configuration<'y> {
     /// Mapping for constant inference variables.
     #[get_copy = "pub"]
     constant_inferences: Option<&'y InferenceRenderingMap<Constant>>,
+    /// Mapping for instance inference variables.
+    #[get_copy = "pub"]
+    instance_infernces: Option<&'y InferenceRenderingMap<Instance>>,
+
     /// Mapping for elided lifetime IDs to their names.
     #[get_copy = "pub"]
     edlided_lifetimes: Option<&'y HashMap<ElidedLifetimeID, Interned<str>>>,
@@ -92,11 +97,12 @@ impl Configuration<'_> {
         generic_arguments: &GenericArguments,
     ) -> bool {
         generic_arguments
-            .lifetimes
+            .lifetimes()
             .iter()
             .any(|x| self.lifetime_will_be_displayed(x))
-            || !generic_arguments.types.is_empty()
-            || !generic_arguments.constants.is_empty()
+            || !generic_arguments.types().is_empty()
+            || !generic_arguments.constants().is_empty()
+            || !generic_arguments.instances().is_empty()
     }
 }
 
@@ -176,33 +182,6 @@ pub trait Display: Send + Sync {
                 buffer,
                 forall_lifetime_names: HashMap::default(),
                 configuration,
-            };
-
-            self.fmt(engine, &mut formatter).await
-        }
-    }
-
-    /// Writes the value asynchronously into the given buffer, using the given
-    /// inference variable mappings.
-    fn write_async_with_mapping<W: std::fmt::Write + Send>(
-        &self,
-        engine: &TrackedEngine,
-        buffer: &mut W,
-        lifetime_inference_map: Option<&InferenceRenderingMap<Lifetime>>,
-        type_inference_map: Option<&InferenceRenderingMap<Type>>,
-        constant_inference_map: Option<&InferenceRenderingMap<Constant>>,
-    ) -> impl std::future::Future<Output = std::fmt::Result> {
-        async move {
-            let configuration = Configuration::builder()
-                .maybe_lifetime_inferences(lifetime_inference_map)
-                .maybe_type_inferences(type_inference_map)
-                .maybe_constant_inferences(constant_inference_map)
-                .build();
-
-            let mut formatter = Formatter {
-                buffer,
-                forall_lifetime_names: HashMap::default(),
-                configuration: &configuration,
             };
 
             self.fmt(engine, &mut formatter).await

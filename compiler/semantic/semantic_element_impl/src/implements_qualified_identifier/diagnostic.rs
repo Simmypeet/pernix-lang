@@ -2,6 +2,7 @@ use derive_more::From;
 use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
+use pernixc_resolution::qualified_identifier::Resolution;
 use pernixc_source_file::{ByteIndex, SourceElement};
 use pernixc_symbol::{
     kind::get_kind, name::get_qualified_name, parent::get_parent_global,
@@ -95,7 +96,6 @@ impl Report for Diagnostic {
 #[derive(
     Debug,
     Clone,
-    Copy,
     PartialEq,
     Eq,
     PartialOrd,
@@ -110,7 +110,7 @@ pub struct InvalidSymbolForImplements {
     pub qualified_identifier_span: RelativeSpan,
 
     /// The resolved symbol ID that's not valid for implements.
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub found: Resolution,
 }
 
 impl Report for InvalidSymbolForImplements {
@@ -118,9 +118,7 @@ impl Report for InvalidSymbolForImplements {
         &self,
         engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
-        let qualified_name = engine.get_qualified_name(self.symbol_id).await;
-        let kind = engine.get_kind(self.symbol_id).await;
-
+        let found_string = self.found.found_string(engine).await;
         let span =
             engine.to_absolute_span(&self.qualified_identifier_span).await;
 
@@ -129,17 +127,12 @@ impl Report for InvalidSymbolForImplements {
             .message("the symbol cannot be implemented")
             .primary_highlight(
                 Highlight::builder()
-                    .message(format!(
-                        "the symbol `{} {qualified_name}` cannot be \
-                         implemented",
-                        kind.kind_str()
-                    ))
+                    .message(format!("`{found_string}` cannot be implemented",))
                     .span(span)
                     .build(),
             )
             .help_message(
-                "only `trait`, `marker`, `enum`, or `struct` can be \
-                 implemented"
+                "only `marker`, `enum`, or `struct` can be implemented"
                     .to_string(),
             )
             .build()

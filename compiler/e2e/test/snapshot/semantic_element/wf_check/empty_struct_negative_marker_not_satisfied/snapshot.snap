@@ -3,23 +3,27 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: run
 ---
 stderr:
-[error]: unsatisfied predicate
+[error]: the predicate `marker not main::Marker[main::EmptyStruct]` is not satisfied
    ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/empty_struct_negative_marker_not_satisfied/main.pnx:21:31
    │
-18 │         marker not Marker[T]
-   │                ───────────── the required predicate was declared here
-   ‡
 21 │ public type InstEmptyStruct = WithRequirement[EmptyStruct]
-   ╰╴                              ━━━━━━━━━━━━━━━━━━━━━━━━━━━━ the predicate `marker not main::Marker[main::EmptyStruct]` is not satisfied
+   ╰╴                              ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[note]: the required predicate is declared here
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/empty_struct_negative_marker_not_satisfied/main.pnx:18:12
+   │
+18 │         T: not Marker
+   ╰╴           ━━━━━━━━━━
 
-[error]: unsatisfied predicate
+[error]: the predicate `marker not main::Marker[main::EmptyEnum]` is not satisfied
    ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/empty_struct_negative_marker_not_satisfied/main.pnx:22:31
    │
-18 │         marker not Marker[T]
-   │                ───────────── the required predicate was declared here
-   ‡
 22 │ public type InstEmptyEnum   = WithRequirement[EmptyEnum]
-   ╰╴                              ━━━━━━━━━━━━━━━━━━━━━━━━━━ the predicate `marker not main::Marker[main::EmptyEnum]` is not satisfied
+   ╰╴                              ━━━━━━━━━━━━━━━━━━━━━━━━━━
+[note]: the required predicate is declared here
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/empty_struct_negative_marker_not_satisfied/main.pnx:18:12
+   │
+18 │         T: not Marker
+   ╰╴           ━━━━━━━━━━
 
 [error]: Compilation aborted due to 2 error(s)
 

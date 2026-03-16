@@ -2,7 +2,8 @@ use std::borrow::Cow;
 
 use pernixc_handler::Handler;
 use pernixc_ir::transform::{
-    ConstantTermSource, Element, Transformer, TypeTermSource,
+    ConstantTermSource, Element, InstanceTermSource, Transformer,
+    TypeTermSource,
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_term::{
@@ -16,7 +17,8 @@ use pernixc_type_system::environment::Environment;
 use crate::{
     binder::{Binder, inference_context::InferenceContext},
     diagnostic::{
-        ConstantAnnotationRequired, Diagnostic, TypeAnnotationRequired,
+        ConstantAnnotationRequired, Diagnostic, InstanceAnnotationRequired,
+        TypeAnnotationRequired,
     },
 };
 
@@ -62,6 +64,22 @@ impl MutableRecursive<pernixc_term::constant::Constant> for EraseInference {
     }
 }
 
+impl MutableRecursive<pernixc_term::instance::Instance> for EraseInference {
+    fn visit(
+        &mut self,
+        instance: &mut pernixc_term::instance::Instance,
+        _: impl Iterator<Item = TermLocation>,
+    ) -> bool {
+        if instance.is_inference() {
+            *instance = pernixc_term::instance::Instance::Error(
+                pernixc_term::error::Error,
+            );
+        }
+
+        true
+    }
+}
+
 #[derive(Clone, Copy)]
 struct ReplaceInference<'a> {
     environment: &'a Environment<'a, InferenceContext>,
@@ -89,7 +107,7 @@ impl Transformer<Type> for ReplaceInference<'_> {
             Ok(simplified) => {
                 *term = simplified.result.clone();
             }
-            Err(pernixc_type_system::Error::Overflow(overflow)) => {
+            Err(overflow) => {
                 overflow
                     .report_as_type_calculating_overflow(span, &self.handler);
             }
@@ -119,7 +137,8 @@ impl Transformer<pernixc_term::constant::Constant> for ReplaceInference<'_> {
             Ok(simplified) => {
                 *term = simplified.result.clone();
             }
-            Err(pernixc_type_system::Error::Overflow(overflow)) => {
+
+            Err(overflow) => {
                 overflow
                     .report_as_type_calculating_overflow(span, &self.handler);
             }
@@ -135,6 +154,37 @@ impl Transformer<pernixc_term::constant::Constant> for ReplaceInference<'_> {
 
         // Erase any remaining inference variables.
         visitor::accept_recursive_mut(term, &mut EraseInference);
+    }
+}
+
+impl Transformer<pernixc_term::instance::Instance> for ReplaceInference<'_> {
+    async fn transform(
+        &mut self,
+        instance: &mut pernixc_term::instance::Instance,
+        source: <pernixc_term::instance::Instance as pernixc_ir::transform::Transformable>::Source,
+        span: RelativeSpan,
+    ) {
+        match self.environment.simplify(std::mem::take(instance)).await {
+            Ok(simplified) => {
+                *instance = simplified.result.clone();
+            }
+
+            Err(overflow) => {
+                overflow
+                    .report_as_type_calculating_overflow(span, &self.handler);
+            }
+        }
+
+        if let (true, InstanceTermSource::GenericParameter(generic_parameter)) =
+            (instance.is_inference(), source)
+        {
+            self.handler.receive(Diagnostic::InstanceAnnotationRequired(
+                InstanceAnnotationRequired { span, generic_parameter },
+            ));
+        }
+
+        // Erase any remaining inference variables.
+        visitor::accept_recursive_mut(instance, &mut EraseInference);
     }
 }
 

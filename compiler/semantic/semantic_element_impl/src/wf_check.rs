@@ -1,45 +1,39 @@
 //! Performs the well-formedness checking for every symbol
 //! resolutions/occurrences in a symbol.
 
-use std::{borrow::Cow, collections::BTreeSet};
+use std::borrow::Cow;
 
 use diagnostic::Diagnostic;
-use enum_as_inner::EnumAsInner;
 use linkme::distributed_slice;
 use pernixc_handler::{Handler, Storage};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
-use pernixc_resolution::qualified_identifier::Resolution;
+use pernixc_resolution::qualified_identifier::{
+    InstanceAssociatedSymbol, Resolution,
+};
 use pernixc_semantic_element::{
-    implements_arguments::get_implements_argument, variance::Variance,
-    where_clause::get_where_clause,
+    instance_associated_value,
+    trait_ref::{self, get_trait_ref_of_instance},
 };
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
     kind::{Kind, get_kind},
-    parent::get_parent,
+    parent::get_parent_global,
 };
 use pernixc_target::Global;
 use pernixc_term::{
     generic_arguments::GenericArguments,
     generic_parameters::get_generic_parameters,
-    instantiation::Instantiation,
-    lifetime::Lifetime,
-    predicate::{self, Outlives, PositiveTrait, Predicate},
+    instantiation::{
+        get_instantiation, get_instantiation_for_associated_symbol,
+    },
+    predicate::{self, Outlives, Predicate},
     r#type::Type,
-    visitor::RecursiveIterator,
 };
 use pernixc_type_system::{
-    OverflowError, Succeeded, deduction,
-    diagnostic::{
-        ImplementationIsNotGeneralEnough as ImplementationIsNotGeneralEnoughDiag,
-        UnsatisfiedPredicate,
-    },
+    diagnostic::UnsatisfiedPredicate,
     environment::{Environment, get_active_premise},
-    lifetime_constraint::LifetimeConstraint,
     normalizer,
-    predicate::{marker, r#trait},
-    resolution,
 };
 use qbice::{
     Decode, Encode, Query, StableHash, executor, program::Registration,
@@ -49,103 +43,9 @@ use qbice::{
 use crate::{
     build, function_signature, implements_qualified_identifier,
     occurrences::Occurrences,
-    wf_check::diagnostic::{
-        AdtImplementationIsNotGeneralEnough, MismatchedImplementationArguments,
-    },
 };
 
 pub mod diagnostic;
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(super) struct UnsatisfiedError {
-    pub(super) predicate: Predicate,
-    pub(super) predicate_declaration_span: Option<RelativeSpan>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(super) struct UndecidableError {
-    pub(super) predicate: Predicate,
-    pub(super) predicate_declaration_span: Option<RelativeSpan>,
-    pub(super) overflow_error: OverflowError,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(super) struct ImplementationIsNotGeneralEnough {
-    pub(super) resolved_implementation: resolution::Implementation,
-    pub(super) generic_arguments: GenericArguments,
-    pub(super) predicate_declaration_span: Option<RelativeSpan>,
-}
-
-/// An enumeration of ways the predicate can be erroneous.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub(super) enum PredicateError {
-    /// The predicate isn't satisfied.
-    Unsatisfied(UnsatisfiedError),
-
-    /// The type system can't determine if the predicate is satisfiable or not.
-    Undecidable(UndecidableError),
-
-    /// The solved trait/marker implementation is not general enough for the
-    /// forall lifetime requirements.
-    ImplementationIsNotGeneralEnough(ImplementationIsNotGeneralEnough),
-}
-
-impl PredicateError {
-    pub(super) fn report(
-        self,
-        instantiation_span: RelativeSpan,
-        handler: &Storage<Diagnostic>,
-    ) {
-        match self {
-            Self::Unsatisfied(UnsatisfiedError {
-                predicate,
-                predicate_declaration_span,
-            }) => {
-                handler.receive(UnsatisfiedPredicate {
-                    predicate,
-                    instantiation_span,
-                    predicate_declaration_span,
-                });
-            }
-
-            Self::Undecidable(UndecidableError {
-                predicate,
-                predicate_declaration_span,
-                overflow_error,
-            }) => {
-                if predicate.contains_error() {
-                    return;
-                }
-
-                overflow_error.report_as_undecidable_predicate(
-                    predicate,
-                    predicate_declaration_span,
-                    instantiation_span,
-                    handler,
-                );
-            }
-
-            Self::ImplementationIsNotGeneralEnough(
-                ImplementationIsNotGeneralEnough {
-                    resolved_implementation,
-                    predicate_declaration_span,
-                    generic_arguments,
-                },
-            ) => {
-                if generic_arguments.contains_error() {
-                    return;
-                }
-
-                handler.receive(ImplementationIsNotGeneralEnoughDiag {
-                    resolvable_implementation_id: resolved_implementation.id,
-                    instantiation_span,
-                    predicate_declaration_span,
-                    generic_arguments,
-                });
-            }
-        }
-    }
-}
 
 /// Checker for the well-formedness of the instantiations.
 pub(super) struct Checker<'a> {
@@ -154,99 +54,6 @@ pub(super) struct Checker<'a> {
 }
 
 impl Checker<'_> {
-    async fn create_instantiation_for_adt(
-        &self,
-        adt_implementation_id: Global<pernixc_symbol::ID>,
-        parent_generic_arguments: &GenericArguments,
-        resolution_span: &RelativeSpan,
-    ) -> Option<Instantiation> {
-        // deduce the generic arguments
-        let arguments = self
-            .environment
-            .tracked_engine()
-            .get_implements_argument(adt_implementation_id)
-            .await?;
-
-        let result = match self
-            .environment
-            .deduce(&arguments, parent_generic_arguments)
-            .await
-        {
-            Ok(deduced) => deduced,
-
-            Err(deduction::Error::MismatchedGenericArgumentCount(_)) => {
-                unreachable!()
-            }
-
-            Err(deduction::Error::UnificationFailure(_)) => {
-                self.handler.receive(MismatchedImplementationArguments {
-                    adt_implementation_id,
-                    found_generic_arguments: parent_generic_arguments.clone(),
-                    instantiation_span: *resolution_span,
-                });
-
-                return None; // can't continue
-            }
-
-            Err(deduction::Error::Overflow(error)) => {
-                error.report_as_type_calculating_overflow(
-                    *resolution_span,
-                    self.handler,
-                );
-
-                return None;
-            }
-        };
-
-        self.environment
-            .check_lifetime_constraints(
-                result.constraints.iter(),
-                resolution_span,
-                self.handler,
-            )
-            .await;
-
-        // check if the deduced generic arguments are correct
-        self.check_instantiation_predicates(
-            adt_implementation_id,
-            &result.result.instantiation,
-            resolution_span,
-        )
-        .await;
-
-        // the implementation is not general enough
-        if result.result.is_not_general_enough {
-            self.handler.receive(AdtImplementationIsNotGeneralEnough {
-                adt_implementation_id,
-                generic_arguments: parent_generic_arguments.clone(),
-                instantiation_span: *resolution_span,
-            });
-        }
-
-        Some(result.result.instantiation)
-    }
-
-    async fn check_trait_instantiation(
-        &self,
-        trait_id: Global<pernixc_symbol::ID>,
-        generic_arguments: GenericArguments,
-        instantiation_span: &RelativeSpan,
-    ) {
-        for error in self
-            .predicate_satisfied(
-                Predicate::PositiveTrait(PositiveTrait {
-                    trait_id,
-                    is_const: false,
-                    generic_arguments,
-                }),
-                None,
-            )
-            .await
-        {
-            error.report(*instantiation_span, self.handler);
-        }
-    }
-
     /// Checks if the given `resolution` is well-formed. The errors are reported
     /// to the `handler`.
     #[allow(clippy::too_many_lines, unused)]
@@ -256,7 +63,18 @@ impl Checker<'_> {
         resolution_span: &RelativeSpan,
     ) {
         match resolution {
-            Resolution::Module(_) | Resolution::Variant(_) => {}
+            Resolution::Type(_)
+            | Resolution::Instance(_)
+            | Resolution::Module(_)
+            | Resolution::Variant(_) => {}
+
+            Resolution::InstanceAssociatedSymbol(inst_assoc) => {
+                self.check_instantiation_predicates_of_instance_associated(
+                    inst_assoc,
+                    resolution_span,
+                )
+                .await;
+            }
 
             Resolution::Generic(generic) => {
                 self.check_instantiation_predicates_by_generic_arguments(
@@ -278,92 +96,51 @@ impl Checker<'_> {
                     .get_kind(member_generic.id)
                     .await;
 
-                let adt_implementation_check = match symbol_kind {
-                    Kind::ImplementationConstant
-                    | Kind::ImplementationFunction
-                    | Kind::ImplementationType => {
-                        let parent = member_generic.id.target_id.make_global(
-                            self.environment
-                                .tracked_engine()
-                                .get_parent(member_generic.id)
-                                .await
-                                .unwrap(),
-                        );
-
-                        let parent_kind = self
+                let mut base_instantiation = match symbol_kind {
+                    Kind::ImplementationAssociatedConstant
+                    | Kind::ImplementationAssociatedFunction
+                    | Kind::ImplementationAssociatedType => {
+                        let impl_id = self
                             .environment
                             .tracked_engine()
-                            .get_kind(parent)
-                            .await;
+                            .get_parent_global(member_generic.id)
+                            .await
+                            .unwrap();
 
-                        if parent_kind.is_adt() { Some(parent) } else { None }
-                    }
-
-                    Kind::TraitConstant
-                    | Kind::TraitFunction
-                    | Kind::TraitType => {
-                        let trait_id = Global::new(
-                            member_generic.id.target_id,
-                            self.environment
-                                .tracked_engine()
-                                .get_parent(member_generic.id)
-                                .await
-                                .unwrap(),
-                        );
-
-                        self.check_trait_instantiation(
-                            trait_id,
-                            member_generic.parent_generic_arguments.clone(),
-                            resolution_span,
-                        )
-                        .await;
-
-                        None
-                    }
-
-                    _ => None,
-                };
-
-                // extract the instantiation for the parent
-                let mut parent_instantiation =
-                    if let Some(adt_implementation_id) =
-                        adt_implementation_check
-                    {
-                        let Some(instantiation) = self
-                            .create_instantiation_for_adt(
-                                adt_implementation_id,
-                                &member_generic.parent_generic_arguments,
+                        let Ok(Some(implementation_check)) = self
+                            .environment
+                            .wf_check_implementation(
+                                impl_id,
                                 resolution_span,
+                                &member_generic.parent_generic_arguments,
+                                self.handler,
                             )
                             .await
                         else {
                             return;
                         };
 
-                        instantiation
-                    } else {
-                        let parent_id = Global::new(
-                            member_generic.id.target_id,
-                            self.environment
-                                .tracked_engine()
-                                .get_parent(member_generic.id)
-                                .await
-                                .unwrap(),
-                        );
+                        implementation_check.into_instantiation()
+                    }
 
-                        let parent_generic_params = self
+                    _ => {
+                        let parent = self
                             .environment
                             .tracked_engine()
-                            .get_generic_parameters(parent_id)
-                            .await;
+                            .get_parent_global(member_generic.id)
+                            .await
+                            .unwrap();
 
-                        Instantiation::from_generic_arguments(
-                            member_generic.parent_generic_arguments.clone(),
-                            parent_id,
-                            &parent_generic_params,
-                        )
-                        .expect("should have no mismatched")
-                    };
+                        self.environment
+                            .tracked_engine()
+                            .get_instantiation(
+                                parent,
+                                member_generic.parent_generic_arguments.clone(),
+                            )
+                            .await
+                            .unwrap()
+                    }
+                };
 
                 let generic_parameters = self
                     .environment
@@ -371,7 +148,7 @@ impl Checker<'_> {
                     .get_generic_parameters(member_generic.id)
                     .await;
 
-                parent_instantiation
+                base_instantiation
                     .append_from_generic_arguments(
                         member_generic.member_generic_arguments.clone(),
                         member_generic.id,
@@ -379,14 +156,83 @@ impl Checker<'_> {
                     )
                     .unwrap();
 
-                self.check_instantiation_predicates(
-                    member_generic.id,
-                    &parent_instantiation,
-                    resolution_span,
-                )
-                .await;
+                let instances = member_generic
+                    .member_generic_arguments
+                    .instances()
+                    .to_vec();
+
+                self.environment
+                    .wf_check_instantiation(
+                        member_generic.id,
+                        resolution_span,
+                        &base_instantiation,
+                        self.handler,
+                    )
+                    .await;
+
+                self.environment
+                    .check_instantiated_instance_arguments(
+                        member_generic.id,
+                        &instances,
+                        resolution_span,
+                        &base_instantiation,
+                        self.handler,
+                    )
+                    .await;
             }
         }
+    }
+
+    /// Do where clause predicates check for the given instantiation. The errors
+    /// are reported to the `handler`.
+    pub(super) async fn check_instantiation_predicates_of_instance_associated(
+        &self,
+        instance_associated: &InstanceAssociatedSymbol,
+        instantiation_span: &RelativeSpan,
+    ) {
+        let instances =
+            instance_associated.generic_arguments.instances().to_vec();
+
+        let Some(trait_ref) = self
+            .environment
+            .tracked_engine()
+            .get_trait_ref_of_instance(&instance_associated.instance)
+            .await
+        else {
+            return;
+        };
+
+        let inst = self
+            .environment
+            .tracked_engine()
+            .get_instantiation_for_associated_symbol(
+                instance_associated.trait_associated_symbol_id,
+                trait_ref.into_generic_arguments(),
+                instance_associated.generic_arguments.clone(),
+            )
+            .await
+            .unwrap();
+
+        let _ = self
+            .environment
+            .wf_check_instantiation(
+                instance_associated.trait_associated_symbol_id,
+                instantiation_span,
+                &inst,
+                self.handler,
+            )
+            .await;
+
+        let _ = self
+            .environment
+            .check_instantiated_instance_arguments(
+                instance_associated.trait_associated_symbol_id,
+                &instances,
+                instantiation_span,
+                &inst,
+                self.handler,
+            )
+            .await;
     }
 
     /// Do where clause predicates check for the given instantiation. The errors
@@ -397,490 +243,35 @@ impl Checker<'_> {
         generic_arguments: GenericArguments,
         instantiation_span: &RelativeSpan,
     ) {
-        // convert the generic arguments to an instantiation and delegate the
-        // check to the `check_instantiation_predicates` method
-        let generic_parameters = self
+        let instances = generic_arguments.instances().to_vec();
+
+        let inst = self
             .environment
             .tracked_engine()
-            .get_generic_parameters(instantiated)
-            .await;
+            .get_instantiation(instantiated, generic_arguments)
+            .await
+            .unwrap();
 
-        let instantiation = Instantiation::from_generic_arguments(
-            generic_arguments,
-            instantiated,
-            &generic_parameters,
-        )
-        .unwrap();
-
-        self.check_instantiation_predicates(
-            instantiated,
-            &instantiation,
-            instantiation_span,
-        )
-        .await;
-    }
-
-    /// Do where clause predicates check for the given instantiation. The errors
-    /// are reported to the `handler`.
-    pub(super) async fn check_instantiation_predicates(
-        &self,
-        instantiated: Global<pernixc_symbol::ID>,
-        instantiation: &Instantiation,
-        instantiation_span: &RelativeSpan,
-    ) {
-        let where_clause = self
+        let _ = self
             .environment
-            .tracked_engine()
-            .get_where_clause(instantiated)
+            .wf_check_instantiation(
+                instantiated,
+                instantiation_span,
+                &inst,
+                self.handler,
+            )
             .await;
 
-        #[allow(clippy::significant_drop_in_scrutinee)]
-        for predicate_info in where_clause.iter() {
-            let mut predicate = predicate_info.predicate.clone();
-
-            predicate.instantiate(instantiation);
-
-            let errors =
-                self.predicate_satisfied(predicate, predicate_info.span).await;
-
-            for error in errors {
-                error.report(*instantiation_span, self.handler);
-            }
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    async fn check_implementation_satisfied(
-        &self,
-        implementation_id: Global<pernixc_symbol::ID>,
-        instantiation: &Instantiation,
-        generic_arguments: &GenericArguments,
-        predicate_declaration_span: Option<RelativeSpan>,
-        mut is_not_general_enough: bool,
-    ) -> Vec<PredicateError> {
-        let mut errors = Vec::new();
-        let where_clause = self
+        let _ = self
             .environment
-            .tracked_engine()
-            .get_where_clause(implementation_id)
+            .check_instantiated_instance_arguments(
+                instantiated,
+                &instances,
+                instantiation_span,
+                &inst,
+                self.handler,
+            )
             .await;
-
-        // check for each predicate in the implementation
-        for predicate in where_clause.iter() {
-            let mut predicate_instantiated = predicate.predicate.clone();
-
-            predicate_instantiated.instantiate(instantiation);
-
-            // if found an outlives predicate where the bound (rhs) is a forall
-            // lifetime, then replace it with the static lifetime; since static
-            // lifetime outlives all lifetimes. However, if found on the operand
-            // (lhs), then report it as `non-general-enough`.
-
-            // check for all lifetime on the operand
-            match &predicate_instantiated {
-                Predicate::LifetimeOutlives(outlives) => {
-                    if outlives.operand.is_forall() {
-                        is_not_general_enough = true;
-                        continue;
-                    }
-                }
-
-                Predicate::TypeOutlives(outlives) => {
-                    if RecursiveIterator::new(&outlives.operand).any(|x| {
-                        x.0.as_lifetime().is_some_and(|x| x.is_forall())
-                    }) {
-                        is_not_general_enough = true;
-                        continue;
-                    }
-                }
-
-                _ => {}
-            }
-
-            // check for all lifetime on the bound and replace it with static
-            match &mut predicate_instantiated {
-                Predicate::LifetimeOutlives(outlives)
-                    if outlives.bound.is_forall() =>
-                {
-                    outlives.bound = Lifetime::Static;
-                }
-
-                Predicate::TypeOutlives(outlives)
-                    if outlives.bound.is_forall() =>
-                {
-                    outlives.bound = Lifetime::Static;
-                }
-
-                _ => {}
-            }
-
-            errors.extend(
-                self.predicate_satisfied(
-                    predicate_instantiated,
-                    predicate.span,
-                )
-                .await,
-            );
-        }
-
-        if is_not_general_enough {
-            errors.push(PredicateError::ImplementationIsNotGeneralEnough(
-                ImplementationIsNotGeneralEnough {
-                    resolved_implementation: resolution::Implementation {
-                        instantiation: instantiation.clone(),
-                        id: implementation_id,
-                        is_not_general_enough,
-                    },
-                    generic_arguments: generic_arguments.clone(),
-                    predicate_declaration_span,
-                },
-            ));
-        }
-
-        errors
-    }
-
-    async fn handle_positive_marker_satisfied(
-        &self,
-        result: marker::PositiveSatisfied,
-        pred_generic_arguments: &GenericArguments,
-        predicate_declaration_span: Option<RelativeSpan>,
-    ) -> (BTreeSet<LifetimeConstraint>, Vec<PredicateError>) {
-        match result {
-            marker::PositiveSatisfied::Premise
-            | marker::PositiveSatisfied::Environment
-            | marker::PositiveSatisfied::Cyclic => {
-                (BTreeSet::new(), Vec::new())
-            }
-
-            marker::PositiveSatisfied::Implementation(implementation) => (
-                BTreeSet::new(),
-                self.check_implementation_satisfied(
-                    implementation.id,
-                    &implementation.instantiation,
-                    pred_generic_arguments,
-                    predicate_declaration_span,
-                    implementation.is_not_general_enough,
-                )
-                .await,
-            ),
-
-            marker::PositiveSatisfied::Congruence(btree_map) => {
-                let mut constraints = BTreeSet::new();
-                let mut pred_errors = Vec::new();
-
-                for (_, result) in btree_map {
-                    constraints.extend(result.constraints.iter().cloned());
-
-                    let (new_constraints, new_pred_errors) =
-                        Box::pin(self.handle_positive_marker_satisfied(
-                            result.result.clone(),
-                            pred_generic_arguments,
-                            predicate_declaration_span,
-                        ))
-                        .await;
-
-                    constraints.extend(new_constraints);
-                    pred_errors.extend(new_pred_errors);
-                }
-
-                (constraints, pred_errors)
-            }
-        }
-    }
-
-    #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
-    pub(super) async fn predicate_satisfied(
-        &self,
-        predicate: Predicate,
-        predicate_declaration_span: Option<RelativeSpan>,
-    ) -> Vec<PredicateError> {
-        let (result, mut extra_predicate_error) = match &predicate {
-            Predicate::TraitTypeCompatible(eq) => {
-                let result = self
-                    .environment
-                    .subtypes(
-                        Type::TraitMember(eq.lhs.clone()),
-                        eq.rhs.clone(),
-                        Variance::Covariant,
-                    )
-                    .await;
-
-                (
-                    match result {
-                        Ok(Some(result)) => {
-                            if result.result.forall_lifetime_errors.is_empty() {
-                                Ok(Some(Succeeded::satisfied_with(
-                                    result.constraints.clone(),
-                                )))
-                            } else {
-                                Ok(None)
-                            }
-                        }
-
-                        Ok(None) => Ok(None),
-
-                        Err(error) => Err(error),
-                    },
-                    Vec::new(),
-                )
-            }
-
-            Predicate::ConstantType(pred) => (
-                self.environment
-                    .query(pred)
-                    .await
-                    .map(|x| x.as_deref().cloned()),
-                Vec::new(),
-            ),
-
-            Predicate::LifetimeOutlives(pred) => {
-                return match self.environment.query(pred).await {
-                    Ok(Some(_)) => vec![],
-
-                    Ok(None) => {
-                        vec![PredicateError::Unsatisfied(UnsatisfiedError {
-                            predicate,
-                            predicate_declaration_span,
-                        })]
-                    }
-
-                    Err(pernixc_type_system::Error::Overflow(
-                        overflow_error,
-                    )) => vec![PredicateError::Undecidable(UndecidableError {
-                        predicate,
-                        predicate_declaration_span,
-                        overflow_error,
-                    })],
-                };
-            }
-
-            Predicate::TypeOutlives(pred) => {
-                return match self.environment.query(pred).await {
-                    Ok(Some(_)) => vec![],
-
-                    Ok(None) => {
-                        vec![PredicateError::Unsatisfied(UnsatisfiedError {
-                            predicate,
-                            predicate_declaration_span,
-                        })]
-                    }
-
-                    Err(pernixc_type_system::Error::Overflow(
-                        overflow_error,
-                    )) => vec![PredicateError::Undecidable(UndecidableError {
-                        predicate,
-                        predicate_declaration_span,
-                        overflow_error,
-                    })],
-                };
-            }
-
-            Predicate::TupleType(pred) => (
-                self.environment
-                    .query(pred)
-                    .await
-                    .map(|x| x.as_deref().cloned()),
-                Vec::new(),
-            ),
-
-            Predicate::PositiveMarker(pred) => {
-                match self.environment.query(pred).await {
-                    Ok(None) => (Ok(None), Vec::new()),
-
-                    Ok(Some(result)) => {
-                        let (new_constraints, pred_errors) =
-                            Box::pin(self.handle_positive_marker_satisfied(
-                                result.result.clone(),
-                                &pred.generic_arguments,
-                                predicate_declaration_span,
-                            ))
-                            .await;
-
-                        let mut constraints = result.constraints.clone();
-                        constraints.extend(new_constraints);
-
-                        (
-                            Ok(Some(Succeeded::satisfied_with(constraints))),
-                            pred_errors,
-                        )
-                    }
-
-                    Err(error) => (Err(error), Vec::new()),
-                }
-            }
-
-            Predicate::PositiveTrait(pred) => {
-                match self.environment.query(pred).await {
-                    Ok(None) => (Ok(None), Vec::new()),
-                    Ok(Some(result)) => match result.result.clone() {
-                        r#trait::PositiveSatisfied::Cyclic
-                        | r#trait::PositiveSatisfied::Premise
-                        | r#trait::PositiveSatisfied::Environment => (
-                            Ok(Some(Succeeded::satisfied_with(
-                                result.constraints.clone(),
-                            ))),
-                            Vec::new(),
-                        ),
-
-                        r#trait::PositiveSatisfied::Implementation(
-                            implementation,
-                        ) => (
-                            Ok(Some(Succeeded::satisfied_with(
-                                result.constraints.clone(),
-                            ))),
-                            Box::pin(self.check_implementation_satisfied(
-                                implementation.id,
-                                &implementation.instantiation,
-                                &pred.generic_arguments,
-                                predicate_declaration_span,
-                                implementation.is_not_general_enough,
-                            ))
-                            .await,
-                        ),
-                    },
-                    Err(error) => (Err(error), Vec::new()),
-                }
-            }
-
-            Predicate::NegativeTrait(pred) => {
-                match self.environment.query(pred).await {
-                    Ok(None) => (Ok(None), Vec::new()),
-
-                    Ok(Some(result)) => match result.result.clone() {
-                        r#trait::NegativeSatisfied::Premise
-                        | r#trait::NegativeSatisfied::UnsatisfiedPositive => (
-                            Ok(Some(Succeeded::satisfied_with(
-                                result.constraints.clone(),
-                            ))),
-                            Vec::new(),
-                        ),
-
-                        r#trait::NegativeSatisfied::Implementation(
-                            implementation,
-                        ) => (
-                            Ok(Some(Succeeded::satisfied_with(
-                                result.constraints.clone(),
-                            ))),
-                            Box::pin(self.check_implementation_satisfied(
-                                implementation.id,
-                                &implementation.instantiation,
-                                &pred.generic_arguments,
-                                predicate_declaration_span,
-                                implementation.is_not_general_enough,
-                            ))
-                            .await,
-                        ),
-                    },
-
-                    Err(error) => (Err(error), Vec::new()),
-                }
-            }
-            Predicate::NegativeMarker(negative) => {
-                match self.environment.query(negative).await {
-                    Ok(Some(result)) => match result.result.clone() {
-                        marker::NegativeSatisfied::UnsatisfiedPositive
-                        | marker::NegativeSatisfied::Premise => (
-                            Ok(Some(Succeeded::satisfied_with(
-                                result.constraints.clone(),
-                            ))),
-                            Vec::new(),
-                        ),
-
-                        marker::NegativeSatisfied::Implementation(
-                            implementation,
-                        ) => (
-                            Ok(Some(Succeeded::satisfied_with(
-                                result.constraints.clone(),
-                            ))),
-                            Box::pin(self.check_implementation_satisfied(
-                                implementation.id,
-                                &implementation.instantiation,
-                                &negative.generic_arguments,
-                                predicate_declaration_span,
-                                implementation.is_not_general_enough,
-                            ))
-                            .await,
-                        ),
-                    },
-                    Ok(None) => (Ok(None), Vec::new()),
-
-                    Err(error) => (Err(error), Vec::new()),
-                }
-            }
-        };
-
-        match result {
-            Ok(Some(Succeeded { constraints, .. })) => {
-                // if do_outlives_check is false, then we don't need to check
-
-                for constraint in constraints {
-                    match constraint {
-                        LifetimeConstraint::LifetimeOutlives(pred) => {
-                            match self.environment.query(&pred).await {
-                                Ok(None) => {
-                                    extra_predicate_error.push(
-                                        PredicateError::Unsatisfied(
-                                            UnsatisfiedError {
-                                                predicate:
-                                                    Predicate::LifetimeOutlives(
-                                                        pred,
-                                                    ),
-
-                                                predicate_declaration_span:
-                                                    None,
-                                            },
-                                        ),
-                                    );
-                                }
-                                Err(pernixc_type_system::Error::Overflow(
-                                    overflow_error,
-                                )) => {
-                                    extra_predicate_error.push(
-                                        PredicateError::Undecidable(
-                                            UndecidableError {
-                                                predicate:
-                                                    Predicate::LifetimeOutlives(
-                                                        pred,
-                                                    ),
-
-                                                predicate_declaration_span:
-                                                    None,
-                                                overflow_error,
-                                            },
-                                        ),
-                                    );
-                                }
-
-                                Ok(Some(_)) => {}
-                            }
-                        }
-                    }
-                }
-
-                extra_predicate_error
-            }
-
-            Ok(None) => {
-                extra_predicate_error.push(PredicateError::Unsatisfied(
-                    UnsatisfiedError { predicate, predicate_declaration_span },
-                ));
-
-                extra_predicate_error
-            }
-
-            Err(pernixc_type_system::Error::Overflow(overflow_error)) => {
-                extra_predicate_error.push(PredicateError::Undecidable(
-                    UndecidableError {
-                        predicate,
-                        predicate_declaration_span,
-                        overflow_error,
-                    },
-                ));
-
-                extra_predicate_error
-            }
-        }
     }
 
     /// Do predicates check for the given type occurrences.
@@ -898,13 +289,12 @@ impl Checker<'_> {
             | Type::Primitive(_)
             | Type::Parameter(_)
             | Type::Symbol(_)
-            | Type::TraitMember(_)
-            | Type::MemberSymbol(_)
+            | Type::AssociatedSymbol(_)
             | Type::FunctionSignature(_)
+            | Type::InstanceAssociated(_)
             | Type::Inference(_) => {
                 // no additional check
             }
-
             Type::Reference(reference) => {
                 let outlives = Outlives::new(
                     (*reference.pointee).clone(),
@@ -912,19 +302,18 @@ impl Checker<'_> {
                 );
 
                 match self.environment.query(&outlives).await {
-                    Ok(Some(_)) => {}
+                    Ok(true) => {}
 
-                    Ok(None) => {
-                        self.handler.receive(UnsatisfiedPredicate {
-                            predicate: Predicate::TypeOutlives(outlives),
-                            instantiation_span: *instantiation_span,
-                            predicate_declaration_span: None,
-                        });
+                    Ok(false) => {
+                        self.handler.receive(
+                            UnsatisfiedPredicate::builder()
+                                .predicate(Predicate::TypeOutlives(outlives))
+                                .instantiation_span(*instantiation_span)
+                                .build(),
+                        );
                     }
 
-                    Err(pernixc_type_system::Error::Overflow(
-                        overflow_error,
-                    )) => {
+                    Err(overflow_error) => {
                         overflow_error.report_as_undecidable_predicate(
                             Predicate::TypeOutlives(outlives),
                             None,
@@ -934,7 +323,6 @@ impl Checker<'_> {
                     }
                 }
             }
-
             Type::Array(_) => {
                 todo!("implements type check of the array length with usize")
                 /*
@@ -1011,12 +399,14 @@ impl Checker<'_> {
     ) {
         let tuple_predicate = predicate::Tuple(unpacked_term);
 
-        let errors =
-            self.predicate_satisfied(tuple_predicate.into(), None).await;
-
-        for error in errors {
-            error.report(*instantiation_span, self.handler);
-        }
+        self.environment
+            .predicate_satisfied(
+                Predicate::TupleType(tuple_predicate),
+                instantiation_span,
+                None,
+                self.handler,
+            )
+            .await;
     }
 }
 
@@ -1149,8 +539,28 @@ pub async fn wf_check_executor(
         );
     }
 
+    if kind.has_trait_ref() {
+        occurrences.push(
+            tracked_engine
+                .query(&build::OccurrencesKey::new(trait_ref::Key {
+                    symbol_id,
+                }))
+                .await,
+        );
+    }
+
+    if kind.has_instance_associated_value() {
+        occurrences.push(
+            tracked_engine
+                .query(&build::OccurrencesKey::new(
+                    instance_associated_value::Key { symbol_id },
+                ))
+                .await,
+        );
+    }
+
     let active_premise = tracked_engine.get_active_premise(symbol_id).await;
-    let environment = Environment::new(
+    let environment = Environment::new_do_outlives_check(
         Cow::Borrowed(&active_premise),
         Cow::Borrowed(tracked_engine),
         normalizer::NO_OP,

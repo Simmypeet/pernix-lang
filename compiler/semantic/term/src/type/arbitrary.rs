@@ -12,8 +12,9 @@ use super::{
 use crate::{
     constant::Constant,
     error::Error,
-    generic_arguments::{MemberSymbol, Symbol, TraitMember},
+    generic_arguments::{AssociatedSymbol, Symbol},
     generic_parameters::TypeParameterID,
+    instance::Instance,
     lifetime::Lifetime,
     tuple::Tuple,
 };
@@ -103,8 +104,11 @@ impl Arbitrary for Array {
 }
 
 impl Arbitrary for Type {
-    type Parameters =
-        (Option<BoxedStrategy<Lifetime>>, Option<BoxedStrategy<Constant>>);
+    type Parameters = (
+        Option<BoxedStrategy<Lifetime>>,
+        Option<BoxedStrategy<Constant>>,
+        Option<BoxedStrategy<Instance>>,
+    );
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(param: Self::Parameters) -> Self::Strategy {
@@ -118,22 +122,27 @@ impl Arbitrary for Type {
             let lt_strat =
                 param.0.clone().unwrap_or_else(Lifetime::arbitrary);
             let const_strat = param.1.clone().unwrap_or_else(Constant::arbitrary);
+            let inst_strat = param.2.clone().unwrap_or_else(
+                || Instance::arbitrary_with(
+                    (param.0.clone(), Some(inner.clone()), param.1.clone()),
+                )
+            );
 
             prop_oneof![
-                6 => MemberSymbol::arbitrary_with((
+                6 => AssociatedSymbol::arbitrary_with((
                     Some(lt_strat.clone()),
                     Some(inner.clone()),
-                    Some(const_strat.clone())
+                    Some(const_strat.clone()),
+                    Some(inst_strat.clone()),
                 ))
-                .prop_map(|x| Self::TraitMember(TraitMember(x))),
-                6 => MemberSymbol::arbitrary_with((
+                .prop_map(Self::AssociatedSymbol),
+                6 => Symbol::arbitrary_with((
                     Some(lt_strat.clone()),
                     Some(inner.clone()),
-                    Some(const_strat.clone())
+                    Some(const_strat.clone()),
+                    Some(inst_strat)
                 ))
-                .prop_map(Self::MemberSymbol),
-                6 => Symbol::arbitrary_with((Some(lt_strat.clone()), Some(inner.clone()), Some(const_strat.clone())))
-                    .prop_map(Self::Symbol),
+                .prop_map(Self::Symbol),
                 1 => Pointer::arbitrary_with(Some(inner.clone())).prop_map(Self::Pointer),
                 2 => Reference::arbitrary_with((Some(lt_strat), Some(inner.clone()))).prop_map(Self::Reference),
                 2 => Tuple::arbitrary_with(Some(inner.clone())).prop_map(Self::Tuple),

@@ -192,10 +192,10 @@ impl Constraints {
 
             Lifetime::Parameter(member_id) => {
                 // add the constraint to the context
-                if member_id.parent_id.target_id == target_id {
+                if member_id.parent_id().target_id == target_id {
                     self.lifetime_parameter_constraints.push((
-                        member_id.id,
-                        member_id.parent_id.id,
+                        member_id.id(),
+                        member_id.parent_id().id,
                         current_variance,
                     ));
                 }
@@ -223,10 +223,10 @@ impl Constraints {
 
             Type::Parameter(member_id) => {
                 // add the constraint to the context
-                if member_id.parent_id.target_id == target_id {
+                if member_id.parent_id().target_id == target_id {
                     self.type_parameter_constraints.push((
-                        member_id.id,
-                        member_id.parent_id.id,
+                        member_id.id(),
+                        member_id.parent_id().id,
                         current_variance,
                     ));
                 }
@@ -267,34 +267,34 @@ impl Constraints {
             }
 
             Type::Symbol(symbol) => {
-                let symbol_kind = engine.get_kind(symbol.id).await;
+                let symbol_kind = engine.get_kind(symbol.id()).await;
 
                 assert!(symbol_kind.is_adt(), "expected ADT kind");
 
                 // if the symbol is in the other linked target, then
                 // the variance information is already present;
                 // otherwise,  we'll use the inference variable.
-                let variance_map = if symbol.id.target_id == target_id {
+                let variance_map = if symbol.id().target_id == target_id {
                     None
                 } else {
-                    Some(engine.get_variances(symbol.id).await)
+                    Some(engine.get_variances(symbol.id()).await)
                 };
 
                 let generic_parameters =
-                    engine.get_generic_parameters(symbol.id).await;
+                    engine.get_generic_parameters(symbol.id()).await;
 
                 for (lifetime, id) in symbol
-                    .generic_arguments
-                    .lifetimes
+                    .generic_arguments()
+                    .lifetimes()
                     .iter()
-                    .zip(generic_parameters.lifetime_order().iter())
+                    .zip(generic_parameters.lifetime_parameter_order())
                 {
                     let other_variance = variance_map.as_ref().map_or(
-                        VarianceVariable::InferringLifetime(*id, symbol.id.id),
+                        VarianceVariable::InferringLifetime(id, symbol.id().id),
                         |x| {
                             VarianceVariable::Constant(
                                 x.variances_by_lifetime_ids
-                                    .get(id)
+                                    .get(&id)
                                     .copied()
                                     .unwrap(),
                             )
@@ -311,17 +311,17 @@ impl Constraints {
                 }
 
                 for (ty, id) in symbol
-                    .generic_arguments
-                    .types
+                    .generic_arguments()
+                    .types()
                     .iter()
-                    .zip(generic_parameters.type_order().iter())
+                    .zip(generic_parameters.type_parameter_order())
                 {
                     let other_variance = variance_map.as_ref().map_or(
-                        VarianceVariable::InferringType(*id, symbol.id.id),
+                        VarianceVariable::InferringType(id, symbol.id().id),
                         |x| {
                             VarianceVariable::Constant(
                                 x.variances_by_type_ids
-                                    .get(id)
+                                    .get(&id)
                                     .copied()
                                     .unwrap(),
                             )
@@ -389,10 +389,10 @@ impl Constraints {
 
             Type::Tuple(tuple) => {
                 Box::pin(async move {
-                    for ty in &tuple.elements {
+                    for ty in tuple.elements() {
                         self.collect_constraints_from_type(
                             target_id,
-                            &ty.term,
+                            ty.term(),
                             current_variance.clone(),
                             engine,
                         )
@@ -412,64 +412,67 @@ impl Constraints {
                 .await;
             }
 
-            Type::MemberSymbol(_) => {
+            Type::AssociatedSymbol(_) => {
                 unreachable!("member symbol should've been resolved");
             }
 
-            Type::TraitMember(trait_member) => {
-                for lifetime in trait_member
-                    .0
-                    .member_generic_arguments
-                    .lifetimes
-                    .iter()
-                    .chain(
-                        trait_member
-                            .0
-                            .parent_generic_arguments
-                            .lifetimes
-                            .iter(),
-                    )
-                {
-                    let new_variance = current_variance
-                        .clone()
-                        .xform(VarianceVariable::Constant(Variance::Invariant));
+            Type::InstanceAssociated(_) => todo!(),
+            /* Type::TraitMember(trait_member) => {
+             *     for lifetime in trait_member
+             *         .0
+             *         .member_generic_arguments
+             *         .lifetimes
+             *         .iter()
+             *         .chain(
+             *             trait_member
+             *                 .0
+             *                 .parent_generic_arguments
+             *                 .lifetimes
+             *                 .iter(),
+             *         )
+             *     {
+             *         let new_variance = current_variance
+             *             .clone()
+             *
+             * .xform(VarianceVariable::Constant(Variance::Invariant)); */
 
-                    self.collect_constraints_from_lifetime(
-                        target_id,
-                        lifetime,
-                        new_variance,
-                    );
-                }
+            /*         self.collect_constraints_from_lifetime(
+             *             target_id,
+             *             lifetime,
+             *             new_variance,
+             *         );
+             *     } */
 
-                Box::pin(async move {
-                    for ty in trait_member
-                        .0
-                        .member_generic_arguments
-                        .types
-                        .iter()
-                        .chain(
-                            trait_member
-                                .0
-                                .parent_generic_arguments
-                                .types
-                                .iter(),
-                        )
-                    {
-                        let new_variance = current_variance.clone().xform(
-                            VarianceVariable::Constant(Variance::Invariant),
-                        );
+            /*     Box::pin(async move {
+             *         for ty in trait_member
+             *             .0
+             *             .member_generic_arguments
+             *             .types
+             *             .iter()
+             *             .chain(
+             *                 trait_member
+             *                     .0
+             *                     .parent_generic_arguments
+             *                     .types
+             *                     .iter(),
+             *             )
+             *         {
+             *             let new_variance =
+             * current_variance.clone().xform(
+             * VarianceVariable::Constant(Variance::Invariant),
+             *             ); */
 
-                        self.collect_constraints_from_type(
-                            target_id,
-                            ty,
-                            new_variance,
-                            engine,
-                        )
-                        .await;
-                    }
-                })
-                .await;
-            }
+            /*             self.collect_constraints_from_type(
+             *                 target_id,
+             *                 ty,
+             *                 new_variance,
+             *                 engine,
+             *             )
+             *             .await;
+             *         }
+             *     })
+             *     .await;
+             * } */
         }
     }
 }
@@ -635,15 +638,15 @@ pub async fn map_executor(
 
         let map = variances_map.entry(adt_id.id).or_default();
 
-        for lt_param in generic_parameters.lifetime_order() {
+        for lt_param in generic_parameters.lifetime_parameter_order() {
             map.variances_by_lifetime_ids
-                .entry(*lt_param)
+                .entry(lt_param)
                 .or_insert(Variance::Bivariant);
         }
 
-        for ty_param in generic_parameters.type_order() {
+        for ty_param in generic_parameters.type_parameter_order() {
             map.variances_by_type_ids
-                .entry(*ty_param)
+                .entry(ty_param)
                 .or_insert(Variance::Bivariant);
         }
     }

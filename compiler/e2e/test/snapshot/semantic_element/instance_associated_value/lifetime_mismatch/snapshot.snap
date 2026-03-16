@@ -1,0 +1,22 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: run
+---
+stderr:
+[error]: the predicate `'a: 'b` is not satisfied
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/instance_associated_value/lifetime_mismatch/main.pnx:15:28
+   │
+15 │     instance I: Test['a] = MyTest['b] 
+   ╰╴                           ━━━━━━━━━━
+
+[error]: the predicate `'b: 'a` is not satisfied
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/instance_associated_value/lifetime_mismatch/main.pnx:15:28
+   │
+15 │     instance I: Test['a] = MyTest['b] 
+   ╰╴                           ━━━━━━━━━━
+
+[error]: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

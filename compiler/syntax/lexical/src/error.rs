@@ -3,7 +3,7 @@
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
-use pernixc_diagnostic::{ByteIndex, Highlight, Rendered, Report, Severity};
+use pernixc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
 use pernixc_qbice::TrackedEngine;
 use pernixc_source_file::AbsoluteSpan;
 use qbice::{Decode, Encode, Identifiable, StableHash};
@@ -34,8 +34,8 @@ pub struct UndelimitedDelimiter {
 
 impl Report for UndelimitedDelimiter {
     async fn report(&self, _: &TrackedEngine) -> Rendered<ByteIndex> {
-        Rendered {
-            primary_highlight: Some(Highlight::new(
+        Rendered::builder()
+            .primary_highlight(Highlight::new(
                 self.opening_span,
                 Some(format!("need to be cloesd with `{}` pair", match self
                     .delimiter
@@ -44,16 +44,13 @@ impl Report for UndelimitedDelimiter {
                     DelimiterKind::Brace => '}',
                     DelimiterKind::Bracket => ']',
                 })),
-            )),
-            message: "found an undelimited delimiter".to_string(),
-            severity: Severity::Error,
-            help_message: Some(
+            ))
+            .message("found an undelimited delimiter")
+            .help_message(
                 "this delimiter is not closed by its corresponding closing \
-                 pair"
-                    .to_string(),
-            ),
-            related: Vec::new(),
-        }
+                 pair",
+            )
+            .build()
     }
 }
 
@@ -78,16 +75,13 @@ pub struct UnterminatedStringLiteral {
 
 impl Report for UnterminatedStringLiteral {
     async fn report(&self, _: &TrackedEngine) -> Rendered<ByteIndex> {
-        Rendered {
-            primary_highlight: Some(Highlight::new(
+        Rendered::builder()
+            .primary_highlight(Highlight::new(
                 self.span,
                 Some("need to be closed with a double quote".to_string()),
-            )),
-            message: "found an unterminated string literal".to_string(),
-            severity: Severity::Error,
-            help_message: None,
-            related: Vec::new(),
-        }
+            ))
+            .message("found an unterminated string literal")
+            .build()
     }
 }
 
@@ -112,13 +106,10 @@ pub struct InvalidEscapeSequence {
 
 impl Report for InvalidEscapeSequence {
     async fn report(&self, _: &TrackedEngine) -> Rendered<ByteIndex> {
-        Rendered {
-            primary_highlight: Some(Highlight::new(self.span, None)),
-            message: "found an invalid escape sequence".to_string(),
-            severity: Severity::Error,
-            help_message: None,
-            related: Vec::new(),
-        }
+        Rendered::builder()
+            .primary_highlight(Highlight::new(self.span, None))
+            .message("found an invalid escape sequence")
+            .build()
     }
 }
 
@@ -170,28 +161,27 @@ pub struct InvalidIndentation {
 
 impl Report for InvalidIndentation {
     async fn report(&self, _: &TrackedEngine) -> Rendered<ByteIndex> {
-        Rendered {
-            primary_highlight: Some(Highlight::new(
+        Rendered::builder()
+            .primary_highlight(Highlight::new(
                 self.span,
                 Some(format!("found {} space(s)", self.found_indentation)),
-            )),
-            message: "the token is in an invalid indentation level".to_string(),
-            severity: Severity::Error,
-            help_message: None,
-            related: self
-                .available_indentations
-                .iter()
-                .map(|span| {
-                    Highlight::new(
-                        span.colon_span,
-                        Some(format!(
-                            "previous indentation level is {} space(s)",
-                            span.indentation_size
-                        )),
-                    )
-                })
-                .collect(),
-        }
+            ))
+            .message("the token is in an invalid indentation level")
+            .related(
+                self.available_indentations
+                    .iter()
+                    .map(|span| {
+                        Highlight::new(
+                            span.colon_span,
+                            Some(format!(
+                                "previous indentation level is {} space(s)",
+                                span.indentation_size
+                            )),
+                        )
+                    })
+                    .collect(),
+            )
+            .build()
     }
 }
 
@@ -219,19 +209,18 @@ pub struct ExpectIndentation {
 
 impl Report for ExpectIndentation {
     async fn report(&self, _: &TrackedEngine) -> Rendered<ByteIndex> {
-        Rendered {
-            primary_highlight: Some(Highlight::new(
+        Rendered::builder()
+            .primary_highlight(Highlight::new(
                 self.span,
                 Some("this is not indented".to_string()),
-            )),
-            message: "expect an indentation".to_string(),
-            severity: Severity::Error,
-            help_message: Some("add spaces before this to indent".to_string()),
-            related: vec![Highlight::new(
+            ))
+            .message("expect an indentation")
+            .help_message("add spaces before this to indent")
+            .related(vec![Highlight::new(
                 self.indentation_start,
                 Some("this colon starts the indentation level".to_string()),
-            )],
-        }
+            )])
+            .build()
     }
 }
 
@@ -265,29 +254,25 @@ pub struct InvalidNewIndentationLevel {
 
 impl Report for InvalidNewIndentationLevel {
     async fn report(&self, _: &TrackedEngine) -> Rendered<ByteIndex> {
-        Rendered {
-            primary_highlight: Some(Highlight::new(
+        Rendered::builder()
+            .primary_highlight(Highlight::new(
                 self.span,
                 Some(format!(
                     "found {} space(s), but the previous indentation level is \
                      {} space(s)",
                     self.found_indentation, self.latest_indentation
                 )),
-            )),
-            message: "found an invalid new indentation level".to_string(),
-            severity: Severity::Error,
-            help_message: Some(
-                "must be deeper than the previous indentation level"
-                    .to_string(),
-            ),
-            related: vec![Highlight::new(
+            ))
+            .message("found an invalid new indentation level")
+            .help_message("must be deeper than the previous indentation level")
+            .related(vec![Highlight::new(
                 self.previous_indentation_span,
                 Some(format!(
                     "previous indentation level is {} space(s)",
                     self.latest_indentation
                 )),
-            )],
-        }
+            )])
+            .build()
     }
 }
 
@@ -316,20 +301,17 @@ pub struct UnexpectedClosingDelimiter {
 
 impl Report for UnexpectedClosingDelimiter {
     async fn report(&self, _: &TrackedEngine) -> Rendered<ByteIndex> {
-        Rendered {
-            primary_highlight: Some(Highlight::new(
+        Rendered::builder()
+            .primary_highlight(Highlight::new(
                 self.span,
                 Some(format!(
                     "this closing delimiter `{}` does not have a \
                      corresponding opening delimiter",
                     self.closing_delimiter.closing_character()
                 )),
-            )),
-            message: "found an unexpected closing delimiter".to_string(),
-            severity: Severity::Error,
-            help_message: None,
-            related: Vec::new(),
-        }
+            ))
+            .message("found an unexpected closing delimiter")
+            .build()
     }
 }
 
@@ -365,27 +347,26 @@ impl Report for MismatchedClosingDelimiter {
     async fn report(&self, _: &TrackedEngine) -> Rendered<ByteIndex> {
         let opening_delimiter_p = self.opening_delimiter.opening_character();
         let closing_delimiter_p = self.closing_delimiter.closing_character();
-        Rendered {
-            primary_highlight: Some(Highlight::new(
+        Rendered::builder()
+            .primary_highlight(Highlight::new(
                 self.span,
                 Some(format!(
                     "this closing delimiter `{closing_delimiter_p}` does not \
                      match the opening delimiter `{opening_delimiter_p}`",
                 )),
-            )),
-            message: "found a mismatched closing delimiter".to_string(),
-            severity: Severity::Error,
-            help_message: Some(format!(
+            ))
+            .message("found a mismatched closing delimiter")
+            .help_message(format!(
                 "replace with `{}` instead",
                 self.opening_delimiter.closing_character()
-            )),
-            related: vec![Highlight::new(
+            ))
+            .related(vec![Highlight::new(
                 self.opening_span,
                 Some(format!(
                     "has an opening delimiter `{opening_delimiter_p}`",
                 )),
-            )],
-        }
+            )])
+            .build()
     }
 }
 

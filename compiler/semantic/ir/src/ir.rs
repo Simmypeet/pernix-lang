@@ -4,7 +4,9 @@ use getset::{CopyGetters, Getters, MutGetters};
 use pernixc_arena::{Arena, ID};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
-use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
+use pernixc_term::{
+    constant::Constant, instance::Instance, lifetime::Lifetime, r#type::Type,
+};
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
@@ -81,7 +83,10 @@ pub struct IRMap {
 
 impl transform::Element for IRMap {
     async fn transform<
-        T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
+        T: Transformer<Lifetime>
+            + Transformer<Type>
+            + Transformer<Constant>
+            + Transformer<Instance>,
     >(
         &mut self,
         transformer: &mut T,
@@ -166,7 +171,10 @@ pub struct IR {
 
 impl transform::Element for IR {
     async fn transform<
-        T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
+        T: Transformer<Lifetime>
+            + Transformer<Type>
+            + Transformer<Constant>
+            + Transformer<Instance>,
     >(
         &mut self,
         transformer: &mut T,

@@ -2,11 +2,9 @@
 
 use std::sync::Arc;
 
-use pernixc_term::matching::Matching;
-
 use crate::{
-    Error, Satisfied, Succeeded,
-    environment::{BoxedFuture, Environment, Query},
+    Satisfied, Succeeded,
+    environment::{BoxedFuture, Environment, Query, QueryResult},
     normalizer::Normalizer,
     term::Term,
 };
@@ -16,24 +14,20 @@ use crate::{
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, derive_new::new,
 )]
 #[allow(missing_docs)]
-pub struct Equality<T, U = T> {
+struct Equality<T, U = T> {
     pub lhs: T,
     pub rhs: U,
 }
 
 #[allow(clippy::mismatching_type_param_order)]
 impl<T: Term> Query for Equality<T, T> {
-    type Parameter = ();
     type InProgress = ();
-    type Result = Succeeded<Satisfied>;
-    type Error = Error;
+    type Result = Option<Arc<Succeeded<Satisfied>>>;
 
     fn query<'x, N: Normalizer>(
         &'x self,
         environment: &'x Environment<'x, N>,
-        (): Self::Parameter,
-        (): Self::InProgress,
-    ) -> BoxedFuture<'x, Self::Result, Self::Error> {
+    ) -> BoxedFuture<'x, Self::Result> {
         Box::pin(async move {
             if let Some(result) =
                 equals_without_mapping(&self.lhs, &self.rhs, environment)
@@ -44,7 +38,7 @@ impl<T: Term> Query for Equality<T, T> {
 
             for predicate in &environment.premise().predicates {
                 let Some(equality_predicate) =
-                    T::as_trait_member_compatible_predicate(predicate)
+                    T::as_instance_associated_equality_predicate(predicate)
                 else {
                     continue;
                 };
@@ -52,7 +46,7 @@ impl<T: Term> Query for Equality<T, T> {
                 let trait_member_term: T =
                     equality_predicate.lhs.clone().into();
 
-                if self.lhs.as_trait_member().is_some()
+                if self.lhs.as_instance_associated().is_some()
                     && let Some(mut result) = equals_without_mapping(
                         &self.lhs,
                         &trait_member_term,
@@ -72,7 +66,7 @@ impl<T: Term> Query for Equality<T, T> {
                     return Ok(Some(Arc::new(result)));
                 }
 
-                if self.rhs.as_trait_member().is_some()
+                if self.rhs.as_instance_associated().is_some()
                     && let Some(mut result) = equals_without_mapping(
                         &trait_member_term,
                         &self.rhs,
@@ -97,20 +91,35 @@ impl<T: Term> Query for Equality<T, T> {
             Ok(None)
         })
     }
+
+    fn on_cyclic(
+        &self,
+        (): Self::InProgress,
+        (): Self::InProgress,
+        _: &[crate::environment::Call<
+            crate::environment::DynArc,
+            crate::environment::DynArc,
+        >],
+    ) -> Self::Result {
+        None
+    }
 }
 
 async fn equals_by_unification<T: Term>(
     lhs: &T,
     rhs: &T,
     environment: &Environment<'_, impl Normalizer>,
-) -> Result<Option<Succeeded<Satisfied>>, super::Error> {
+) -> QueryResult<Option<Succeeded<Satisfied>>> {
     let Some(matching) = lhs.substructural_match(rhs) else {
         return Ok(None);
     };
 
     let mut satisfied = Succeeded::default();
+    let (lifetimes, types, constants, instances) = matching.destructure();
 
-    for Matching { lhs, rhs, .. } in matching.lifetimes {
+    for matching in lifetimes {
+        let (lhs, rhs, _, _) = matching.destructure();
+
         let Some(result) = environment.query(&Equality::new(lhs, rhs)).await?
         else {
             return Ok(None);
@@ -119,7 +128,9 @@ async fn equals_by_unification<T: Term>(
         satisfied.constraints.extend(result.constraints.iter().cloned());
     }
 
-    for Matching { lhs, rhs, .. } in matching.types {
+    for matching in types {
+        let (lhs, rhs, _, _) = matching.destructure();
+
         let Some(result) = environment.query(&Equality::new(lhs, rhs)).await?
         else {
             return Ok(None);
@@ -128,7 +139,20 @@ async fn equals_by_unification<T: Term>(
         satisfied.constraints.extend(result.constraints.iter().cloned());
     }
 
-    for Matching { lhs, rhs, .. } in matching.constants {
+    for matching in constants {
+        let (lhs, rhs, _, _) = matching.destructure();
+
+        let Some(result) = environment.query(&Equality::new(lhs, rhs)).await?
+        else {
+            return Ok(None);
+        };
+
+        satisfied.constraints.extend(result.constraints.iter().cloned());
+    }
+
+    for matching in instances {
+        let (lhs, rhs, _, _) = matching.destructure();
+
         let Some(result) = environment.query(&Equality::new(lhs, rhs)).await?
         else {
             return Ok(None);
@@ -144,7 +168,7 @@ async fn equals_by_normalization<T: Term>(
     lhs: &T,
     rhs: &T,
     environment: &Environment<'_, impl Normalizer>,
-) -> Result<Option<Succeeded<Satisfied>>, super::Error> {
+) -> QueryResult<Option<Succeeded<Satisfied>>> {
     if let Some(Succeeded { result: eq, mut constraints }) =
         lhs.normalize(environment).await?
         && let Some(result) =
@@ -170,7 +194,7 @@ async fn equals_without_mapping<T: Term>(
     lhs: &T,
     rhs: &T,
     environment: &Environment<'_, impl Normalizer>,
-) -> Result<Option<Succeeded<Satisfied>>, super::Error> {
+) -> QueryResult<Option<Succeeded<Satisfied>>> {
     // trivially satisfied
     if lhs == rhs {
         return Ok(Some(Succeeded::satisfied()));
@@ -194,7 +218,7 @@ impl<N: Normalizer> Environment<'_, N> {
         &self,
         lhs: T,
         rhs: T,
-    ) -> crate::ResultArc<Satisfied> {
+    ) -> QueryResult<Option<Arc<Succeeded<Satisfied>>>> {
         self.query(&Equality::new(lhs, rhs)).await
     }
 }

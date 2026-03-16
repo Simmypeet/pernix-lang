@@ -12,13 +12,12 @@ use pernixc_semantic_element::{
 };
 use pernixc_target::Global;
 use pernixc_term::{
-    generic_arguments::Symbol,
     generic_parameters::get_generic_parameters,
     instantiation::Instantiation,
     tuple,
     r#type::{self, Qualifier, Type},
 };
-use pernixc_type_system::{Error, Succeeded, normalizer::Normalizer};
+use pernixc_type_system::{OverflowError, Succeeded, normalizer::Normalizer};
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
@@ -118,14 +117,14 @@ impl Offset {
         tuple: &'s pernixc_term::tuple::Tuple<T>,
     ) -> Option<&'s pernixc_term::tuple::Element<T>> {
         match self {
-            Self::FromStart(id) => tuple.elements.get(*id),
+            Self::FromStart(id) => tuple.elements().get(*id),
             Self::FromEnd(id) => tuple
-                .elements
+                .elements()
                 .len()
                 .checked_sub(1)
                 .and_then(|x| x.checked_sub(*id))
-                .and_then(|id| tuple.elements.get(id)),
-            Self::Unpacked => tuple.elements.iter().find(|x| x.is_unpacked),
+                .and_then(|id| tuple.elements().get(id)),
+            Self::Unpacked => tuple.elements().iter().find(|x| x.is_unpacked()),
         }
     }
 }
@@ -474,7 +473,7 @@ impl TypeOf<&Address> for Values {
         &self,
         address: &Address,
         environment: &Environment<'_, N>,
-    ) -> Result<Succeeded<Type>, Error> {
+    ) -> Result<Succeeded<Type>, OverflowError> {
         match address {
             Address::Memory(Memory::Parameter(parameter)) => {
                 let function_signature = environment
@@ -548,11 +547,11 @@ impl TypeOf<&Address> for Values {
                     self.type_of(&*field_address.struct_address, environment),
                 )
                 .await?;
-                let Type::Symbol(Symbol { id: struct_id, generic_arguments }) =
-                    result
-                else {
+                let Type::Symbol(symbol) = result else {
                     panic!("expected struct type");
                 };
+
+                let (struct_id, generic_arguments) = symbol.destructure();
 
                 let generic_parameters = environment
                     .tracked_engine()
@@ -595,14 +594,14 @@ impl TypeOf<&Address> for Values {
                         match match tuple.offset {
                             Offset::FromStart(id) => Some(id),
                             Offset::FromEnd(id) => tuple_ty
-                                .elements
+                                .elements()
                                 .len()
                                 .checked_sub(1)
                                 .and_then(|x| x.checked_sub(id)),
                             Offset::Unpacked => {
                                 let Some(unpacked_ty) =
-                                    tuple_ty.elements.iter().find_map(|x| {
-                                        x.is_unpacked.then_some(&x.term)
+                                    tuple_ty.elements().iter().find_map(|x| {
+                                        x.is_unpacked().then_some(x.term())
                                     })
                                 else {
                                     panic!("expected unpacked tuple element");
@@ -611,18 +610,18 @@ impl TypeOf<&Address> for Values {
                                 return unpacked_ty.clone();
                             }
                         } {
-                            Some(id) if id < tuple_ty.elements.len() => {
-                                let element_ty = tuple_ty.elements.remove(id);
+                            Some(id) if id < tuple_ty.elements().len() => {
+                                let element_ty = tuple_ty.remove_at(id);
 
-                                if element_ty.is_unpacked {
-                                    Type::Tuple(tuple::Tuple {
-                                        elements: vec![tuple::Element {
-                                            term: element_ty.term,
-                                            is_unpacked: true,
-                                        }],
-                                    })
+                                if element_ty.is_unpacked() {
+                                    Type::Tuple(tuple::Tuple::new(vec![
+                                        tuple::Element::new(
+                                            element_ty.into_term(),
+                                            true,
+                                        ),
+                                    ]))
                                 } else {
-                                    element_ty.term
+                                    element_ty.into_term()
                                 }
                             }
 
@@ -642,11 +641,11 @@ impl TypeOf<&Address> for Values {
                     Box::pin(self.type_of(&*variant.enum_address, environment))
                         .await?;
 
-                let Type::Symbol(Symbol { id: enum_id, generic_arguments }) =
-                    result
-                else {
+                let Type::Symbol(symbol) = result else {
                     panic!("expected enum type");
                 };
+
+                let (enum_id, generic_arguments) = symbol.destructure();
 
                 let enum_generic_params = environment
                     .tracked_engine()
@@ -664,9 +663,7 @@ impl TypeOf<&Address> for Values {
                     .tracked_engine()
                     .get_variant_associated_type(variant.id)
                     .await
-                    .ok_or(pernixc_type_system::Error::Overflow(
-                        pernixc_type_system::OverflowError,
-                    ))?;
+                    .unwrap();
 
                 let mut variant_ty = variant.as_ref().clone();
 

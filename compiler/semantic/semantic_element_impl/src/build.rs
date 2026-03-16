@@ -1,4 +1,6 @@
-use std::{fmt::Debug, hash::Hash, marker::PhantomData};
+use std::{
+    borrow::Borrow, fmt::Debug, hash::Hash, marker::PhantomData, sync::Arc,
+};
 
 use pernixc_qbice::{Config, TrackedEngine};
 use qbice::{
@@ -135,6 +137,37 @@ pub struct Output<T: Build> {
     ///
     /// This will be later used for well-formedness checking.
     pub occurrences: Interned<Occurrences>,
+}
+
+impl<T: Build> Output<T> {
+    /// Creates a new output with the given item and empty diagnostics and
+    /// occurrences.
+    #[must_use]
+    pub fn new(item: T::Value, engine: &TrackedEngine) -> Self {
+        Self {
+            item,
+            diagnostics: engine.intern_unsized([]),
+            occurrences: engine.intern(Occurrences::default()),
+        }
+    }
+
+    /// Creates a new output with the given item, diagnostics and occurrences.
+    #[must_use]
+    pub fn new_with<Q: Borrow<[T::Diagnostic]> + Send + Sync + 'static>(
+        item: T::Value,
+        diagnostics: Q,
+        occurrences: Occurrences,
+        engine: &TrackedEngine,
+    ) -> Self
+    where
+        Arc<[T::Diagnostic]>: From<Q>,
+    {
+        Self {
+            item,
+            diagnostics: engine.intern_unsized(diagnostics),
+            occurrences: engine.intern(occurrences),
+        }
+    }
 }
 
 impl<T: Encode + Build> Encode for Output<T> {

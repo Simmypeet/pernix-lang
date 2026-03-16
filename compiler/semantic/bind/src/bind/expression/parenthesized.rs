@@ -63,14 +63,12 @@ impl Bind<&pernixc_syntax::expression::unit::Parenthesized>
             });
         }
 
-        let mut tuple_type = tuple::Tuple { elements: Vec::new() };
+        let mut tuple_type = tuple::Tuple::default();
 
         for element in &elements {
             let ty = self.type_of_value(&element.value, handler).await?;
-            tuple_type.elements.push(tuple::Element {
-                term: ty,
-                is_unpacked: element.is_unpacked,
-            });
+
+            tuple_type.push(tuple::Element::new(ty, element.is_unpacked));
         }
 
         let tuple_type = self
@@ -79,16 +77,14 @@ impl Bind<&pernixc_syntax::expression::unit::Parenthesized>
 
         // more than one unpacked elements
         if tuple_type.result.as_tuple().is_some_and(|x| {
-            x.elements.iter().filter(|x| x.is_unpacked).count() > 1
+            x.elements().iter().filter(|x| x.is_unpacked()).count() > 1
         }) {
             handler.receive(
                 Diagnostic::MoreThanOneUnpackedInTupleExpression(
                     MoreThanOneUnpackedInTupleExpression {
                         span: syntax_tree.span(),
                         r#type: tuple_type.result.clone(),
-                        constant_inference_map: self
-                            .constant_inference_rendering_map(),
-                        type_inference_map: self.type_inference_rendering_map(),
+                        rendering_map: self.get_rendering_map(),
                     },
                 )
                 .into(),

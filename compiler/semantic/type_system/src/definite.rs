@@ -5,15 +5,15 @@ use std::{collections::BTreeSet, sync::Arc};
 use pernixc_term::{generic_arguments::GenericArguments, visitor};
 
 use crate::{
-    Error, Satisfiability, Satisfied, Succeeded,
-    environment::{BoxedFuture, Environment, Query},
+    OverflowError, Satisfiability, Satisfied, Succeeded,
+    environment::{BoxedFuture, Environment, Query, QueryResult},
     normalizer::Normalizer,
     term::Term,
 };
 
 #[derive(Debug)]
 struct Visitor<'a, N: Normalizer> {
-    definite: Result<Option<Succeeded<Satisfied>>, Error>,
+    definite: Result<Option<Succeeded<Satisfied>>, OverflowError>,
 
     environment: &'a Environment<'a, N>,
 }
@@ -54,7 +54,7 @@ impl<U: Term, N: Normalizer> visitor::AsyncVisitor<U> for Visitor<'_, N> {
 ///
 /// A term is definite if the term doesn't contain any generic parameters.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Definite<T>(pub T);
+struct Definite<T>(pub T);
 
 impl<T> Definite<T> {
     /// Creates a new `Definite` query.
@@ -63,17 +63,13 @@ impl<T> Definite<T> {
 }
 
 impl<T: Term> Query for Definite<T> {
-    type Parameter = ();
     type InProgress = ();
-    type Result = Succeeded<Satisfied>;
-    type Error = super::Error;
+    type Result = Option<Arc<Succeeded<Satisfied>>>;
 
     fn query<'x, N: Normalizer>(
         &'x self,
         environment: &'x Environment<'x, N>,
-        (): Self::Parameter,
-        (): Self::InProgress,
-    ) -> BoxedFuture<'x, Self::Result, Self::Error> {
+    ) -> BoxedFuture<'x, Self::Result> {
         Box::pin(async move {
             let satisfiability = self.0.definite_satisfiability();
 
@@ -118,6 +114,18 @@ impl<T: Term> Query for Definite<T> {
             Ok(None)
         })
     }
+
+    fn on_cyclic(
+        &self,
+        (): Self::InProgress,
+        (): Self::InProgress,
+        _: &[crate::environment::Call<
+            crate::environment::DynArc,
+            crate::environment::DynArc,
+        >],
+    ) -> Self::Result {
+        None
+    }
 }
 
 impl<N: Normalizer> Environment<'_, N> {
@@ -128,10 +136,10 @@ impl<N: Normalizer> Environment<'_, N> {
     pub async fn generic_arguments_definite(
         &self,
         generic_arguments: &GenericArguments,
-    ) -> crate::Result<Satisfied> {
+    ) -> QueryResult<Option<Succeeded<Satisfied>>> {
         let mut constraints = BTreeSet::new();
 
-        for lifetime in &generic_arguments.lifetimes {
+        for lifetime in generic_arguments.lifetimes() {
             let Some(result) =
                 self.query(&Definite::new(lifetime.clone())).await?
             else {
@@ -141,7 +149,7 @@ impl<N: Normalizer> Environment<'_, N> {
             constraints.extend(result.constraints.iter().cloned());
         }
 
-        for r#type in &generic_arguments.types {
+        for r#type in generic_arguments.types() {
             let Some(result) =
                 self.query(&Definite::new(r#type.clone())).await?
             else {
@@ -151,9 +159,19 @@ impl<N: Normalizer> Environment<'_, N> {
             constraints.extend(result.constraints.iter().cloned());
         }
 
-        for constant in &generic_arguments.constants {
+        for constant in generic_arguments.constants() {
             let Some(result) =
                 self.query(&Definite::new(constant.clone())).await?
+            else {
+                return Ok(None);
+            };
+
+            constraints.extend(result.constraints.iter().cloned());
+        }
+
+        for instance in generic_arguments.instances() {
+            let Some(result) =
+                self.query(&Definite::new(instance.clone())).await?
             else {
                 return Ok(None);
             };
@@ -174,7 +192,7 @@ impl<N: Normalizer> Environment<'_, N> {
     pub async fn definite<T: Term>(
         &self,
         term: T,
-    ) -> crate::ResultArc<Satisfied> {
+    ) -> QueryResult<Option<Arc<Succeeded<Satisfied>>>> {
         self.query(&Definite::new(term)).await
     }
 }

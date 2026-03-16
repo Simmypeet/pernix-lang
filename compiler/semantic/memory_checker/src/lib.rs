@@ -154,15 +154,15 @@ async fn handle_load<N: Normalizer>(
                 .predicate_satisfied(
                     Predicate::PositiveMarker(PositiveMarker::new(
                         copy_marker,
-                        GenericArguments {
-                            lifetimes: Vec::new(),
-                            types: vec![ty.result],
-                            constants: Vec::new(),
-                        },
+                        GenericArguments::new(
+                            Vec::new(),
+                            vec![ty.result],
+                            Vec::new(),
+                            Vec::new(),
+                        ),
                     )),
-                    register_span,
+                    &register_span,
                     None,
-                    false,
                     &storage,
                 )
                 .await?;

@@ -9,14 +9,17 @@
 pub mod effect_annotation;
 pub mod elided_lifetime;
 pub mod fields;
+pub mod global_instances;
 pub mod implemented;
 pub mod implements;
 pub mod implements_arguments;
 pub mod implied_predicate;
 pub mod import;
+pub mod instance_associated_value;
 pub mod late_bound_lifetime;
 pub mod parameter;
 pub mod return_type;
+pub mod trait_ref;
 pub mod type_alias;
 pub mod variance;
 pub mod variant;

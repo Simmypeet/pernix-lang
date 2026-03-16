@@ -2,14 +2,10 @@ use pernixc_diagnostic::{ByteIndex, Highlight, Rendered, Report, Severity};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::source_map::to_absolute_span;
-use pernixc_term::{
-    constant::Constant,
-    display::{Display, InferenceRenderingMap},
-    r#type::Type,
-};
+use pernixc_term::{display::Display, r#type::Type};
 use qbice::{Decode, Encode, StableHash};
 
-use crate::diagnostic_enum;
+use crate::{binder::inference_context::RenderingMap, diagnostic_enum};
 
 diagnostic_enum! {
     #[derive(
@@ -35,11 +31,8 @@ pub struct CannotDereference {
     /// The span of the expression with dereference operator.
     pub span: RelativeSpan,
 
-    /// A map for rendering type inference variables.
-    pub type_inference_map: InferenceRenderingMap<Type>,
-
-    /// A map for rendering constant inference variables.
-    pub constant_inference_map: InferenceRenderingMap<Constant>,
+    /// The rendering map for inference variables.
+    pub rendering_map: RenderingMap,
 }
 
 impl Report for CannotDereference {
@@ -47,12 +40,10 @@ impl Report for CannotDereference {
         let mut message = "cannot dereference expression of type `".to_string();
 
         self.found_type
-            .write_async_with_mapping(
+            .write_async_with_configuration(
                 parameter,
                 &mut message,
-                None,
-                Some(&self.type_inference_map),
-                Some(&self.constant_inference_map),
+                &self.rendering_map.configuration(),
             )
             .await
             .unwrap();

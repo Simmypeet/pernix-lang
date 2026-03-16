@@ -5,7 +5,7 @@ use std::io::Write;
 use annotate_snippets::{
     AnnotationKind, Group, Level, Renderer, Snippet, renderer::DecorStyle,
 };
-use pernixc_diagnostic::{ByteIndex, Rendered};
+use pernixc_diagnostic::{ByteIndex, Rendered, Severity};
 use pernixc_source_file::SourceFile;
 use pernixc_symbol_impl::source_map::SourceMap;
 
@@ -171,13 +171,37 @@ fn compute_context_range(
 #[allow(clippy::doc_markdown)]
 type HighlightEntry<'a> = (ByteIndex, ByteIndex, Option<&'a str>, bool);
 
-/// Renders a pernixc diagnostic to a string using annotate-snippets.
 fn render_diagnostic(
     diagnostic: &Rendered<ByteIndex>,
     source_map: &SourceMap,
     renderer: &Renderer,
 ) -> String {
-    let level = match diagnostic.severity {
+    let mut group = render_group(
+        diagnostic.severity(),
+        diagnostic.group(),
+        source_map,
+        renderer,
+    );
+
+    for note in diagnostic.notes() {
+        let note_group =
+            render_group(Severity::Info, note.group(), source_map, renderer);
+
+        group.push('\n');
+        group.push_str(&note_group);
+    }
+
+    group
+}
+
+/// Renders a pernixc diagnostic to a string using annotate-snippets.
+fn render_group(
+    severity: Severity,
+    diagnostic: &pernixc_diagnostic::Group<ByteIndex>,
+    source_map: &SourceMap,
+    renderer: &Renderer,
+) -> String {
+    let level = match severity {
         pernixc_diagnostic::Severity::Error => {
             Level::ERROR.with_name("[error]")
         }
@@ -194,21 +218,21 @@ fn render_diagnostic(
     > = pernixc_hash::HashMap::default();
 
     // Add primary highlight
-    if let Some(primary) = &diagnostic.primary_highlight {
-        highlights_by_file.entry(primary.span.source_id).or_default().push((
-            primary.span.start,
-            primary.span.end,
-            primary.message.as_deref(),
+    if let Some(primary) = diagnostic.primary_highlight() {
+        highlights_by_file.entry(primary.span().source_id).or_default().push((
+            primary.span().start,
+            primary.span().end,
+            primary.message(),
             true,
         ));
     }
 
     // Add related highlights
-    for related in &diagnostic.related {
-        highlights_by_file.entry(related.span.source_id).or_default().push((
-            related.span.start,
-            related.span.end,
-            related.message.as_deref(),
+    for related in diagnostic.related() {
+        highlights_by_file.entry(related.span().source_id).or_default().push((
+            related.span().start,
+            related.span().end,
+            related.message(),
             false,
         ));
     }
@@ -217,10 +241,12 @@ fn render_diagnostic(
     // simple message
     if highlights_by_file.is_empty() {
         let mut group =
-            Group::with_title(level.primary_title(&diagnostic.message));
-        if let Some(help) = &diagnostic.help_message {
-            group = group.element(Level::HELP.message(help.as_str()));
+            Group::with_title(level.primary_title(diagnostic.message()));
+
+        if let Some(help) = diagnostic.help_message() {
+            group = group.element(Level::HELP.message(help));
         }
+
         return renderer.render(&[group]);
     }
 
@@ -272,16 +298,16 @@ fn render_diagnostic(
     // If all source contexts failed to load, render without source
     if source_contexts.is_empty() {
         let mut group =
-            Group::with_title(level.primary_title(&diagnostic.message));
-        if let Some(help) = &diagnostic.help_message {
-            group = group.element(Level::HELP.message(help.as_str()));
+            Group::with_title(level.primary_title(diagnostic.message()));
+        if let Some(help) = diagnostic.help_message() {
+            group = group.element(Level::HELP.message(help));
         }
         return renderer.render(&[group]);
     }
 
     // Build a single group with all snippets
     let mut group =
-        Group::with_title(level.primary_title(diagnostic.message.clone()));
+        Group::with_title(level.primary_title(diagnostic.message()));
 
     for ctx in &source_contexts {
         let mut snippet = Snippet::source(ctx.content.clone())
@@ -302,8 +328,8 @@ fn render_diagnostic(
     }
 
     // Add help message if present
-    if let Some(help) = &diagnostic.help_message {
-        group = group.element(Level::HELP.message(help.as_str()));
+    if let Some(help) = diagnostic.help_message() {
+        group = group.element(Level::HELP.message(help));
     }
 
     renderer.render(&[group])

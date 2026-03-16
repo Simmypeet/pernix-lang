@@ -6,10 +6,9 @@ use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_resolution::{
-    Config, ExtraNamespace,
-    forall_lifetimes::create_forall_lifetimes,
+    ExtraNamespace, Resolver,
     generic_parameter_namespace::get_generic_parameter_namespace,
-    qualified_identifier::{Resolution, resolve_qualified_identifier},
+    qualified_identifier::Resolution,
 };
 use pernixc_semantic_element::effect_annotation;
 use pernixc_source_file::SourceElement;
@@ -23,16 +22,16 @@ use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
     effect,
-    generic_arguments::Symbol,
     generic_parameters::get_generic_parameters,
+    instance::Instance,
     lifetime::{Forall, FromSemanticElement, GeneratedForall, Lifetime},
     r#type::Type,
 };
 use pernixc_type_system::{
-    Satisfied, Succeeded, UnrecoverableError,
+    OverflowError, Satisfied, Succeeded, UnrecoverableError,
     environment::{Environment, get_active_premise},
     normalizer,
-    unification::{self, Log, Unification},
+    unification::{self, Unification},
 };
 
 use crate::{
@@ -45,17 +44,18 @@ pub mod diagnostic;
 async fn to_effect(
     engine: &TrackedEngine,
     resolution: Resolution,
-) -> Option<effect::Unit> {
+) -> Result<effect::Unit, Resolution> {
     let Resolution::Generic(symbol) = resolution else {
-        return None;
+        return Err(resolution);
     };
 
     let kind = engine.get_kind(symbol.id).await;
 
-    (kind == Kind::Effect).then_some(effect::Unit(Symbol {
-        id: symbol.id,
-        generic_arguments: symbol.generic_arguments,
-    }))
+    if kind != Kind::Effect {
+        return Err(Resolution::Generic(symbol));
+    }
+
+    Ok(effect::Unit::new(symbol.id, symbol.generic_arguments))
 }
 
 struct ElidedForallLifetimeProvider {
@@ -88,48 +88,40 @@ async fn build_effect_annotation(
 ) -> Option<(effect::Unit, RelativeSpan)> {
     let q_ident = effect_unit_syntax.qualified_identifier()?;
 
-    let with_forall_lifetime =
-        effect_unit_syntax.higher_ranked_lifetimes().map(|x| {
-            let mut extra_namespace = extra_namespace.clone();
-
-            create_forall_lifetimes(
-                &mut extra_namespace.lifetimes,
-                &x,
-                handler,
-            );
-
-            extra_namespace
-        });
-
-    let extra_namespace =
-        with_forall_lifetime.as_ref().unwrap_or(extra_namespace);
-
     let mut elided_lifetime_provider =
         ElidedForallLifetimeProvider { count: 0, current_site };
 
-    let config = Config::builder()
+    let mut resolver = Resolver::builder()
+        .tracked_engine(engine)
+        .handler(handler)
         .observer(observer)
         .referring_site(current_site)
         .extra_namespace(extra_namespace)
         .elided_lifetime_provider(&mut elided_lifetime_provider)
         .build();
 
-    let resolution = match engine
-        .resolve_qualified_identifier(&q_ident, config, handler)
-        .await
+    resolver.push_higher_ranked_lifetimes(
+        effect_unit_syntax.higher_ranked_lifetimes().as_ref(),
+    );
+
+    let resolution = match resolver.resolve_qualified_identifier(&q_ident).await
     {
         Ok(resolution) => resolution,
         Err(er) => match er {
-            pernixc_resolution::Error::Abort => return None,
+            pernixc_resolution::Error::Abort => {
+                resolver.pop_higher_ranked_lifetimes();
+                return None;
+            }
         },
     };
-    let id = resolution.global_id();
+
+    resolver.pop_higher_ranked_lifetimes();
 
     to_effect(engine, resolution).await.map_or_else(
-        || {
+        |resolution| {
             handler.receive(diagnostic::Diagnostic::EffectExpected(
                 diagnostic::EffectExpected {
-                    found: id,
+                    found: resolution,
                     found_span: q_ident.span(),
                 },
             ));
@@ -148,9 +140,7 @@ impl unification::Predicate<Lifetime> for LifetimeUnifyingPredicate {
         &self,
         _: &Lifetime,
         _: &Lifetime,
-        _: &[Log],
-        _: &[Log],
-    ) -> pernixc_type_system::Result<Satisfied> {
+    ) -> Result<Option<Succeeded<Satisfied>>, OverflowError> {
         Ok(Some(Succeeded::satisfied()))
     }
 }
@@ -160,9 +150,7 @@ impl unification::Predicate<Type> for LifetimeUnifyingPredicate {
         &self,
         _: &Type,
         _: &Type,
-        _: &[Log],
-        _: &[Log],
-    ) -> pernixc_type_system::Result<Satisfied> {
+    ) -> Result<Option<Succeeded<Satisfied>>, OverflowError> {
         Ok(None)
     }
 }
@@ -172,9 +160,17 @@ impl unification::Predicate<Constant> for LifetimeUnifyingPredicate {
         &self,
         _: &Constant,
         _: &Constant,
-        _: &[Log],
-        _: &[Log],
-    ) -> pernixc_type_system::Result<Satisfied> {
+    ) -> Result<Option<Succeeded<Satisfied>>, OverflowError> {
+        Ok(None)
+    }
+}
+
+impl unification::Predicate<Instance> for LifetimeUnifyingPredicate {
+    fn unifiable(
+        &self,
+        _: &Instance,
+        _: &Instance,
+    ) -> Result<Option<Succeeded<Satisfied>>, OverflowError> {
         Ok(None)
     }
 }
@@ -187,19 +183,22 @@ async fn effect_equivalent(
     handler: &Storage<diagnostic::Diagnostic>,
 ) -> Result<bool, UnrecoverableError> {
     // compare the effects by their resolved symbols
-    if a.id != b.id {
+    if a.effect_id() != b.effect_id() {
         return Ok(false);
     }
 
     // check if all the generic arguments are compatible
-    if !a.generic_arguments.has_same_arguments_count(&b.generic_arguments) {
+    if !a.generic_arguments().arity_matches(b.generic_arguments()) {
         return Ok(false);
     }
 
     // lifetimes are always compatible with each other
 
-    for (ty_a, ty_b) in
-        a.generic_arguments.types.iter().zip(b.generic_arguments.types.iter())
+    for (ty_a, ty_b) in a
+        .generic_arguments()
+        .types()
+        .iter()
+        .zip(b.generic_arguments().types().iter())
     {
         let found_diff = env
             .query(&Unification::new(
@@ -217,10 +216,10 @@ async fn effect_equivalent(
     }
 
     for (const_a, const_b) in a
-        .generic_arguments
-        .constants
+        .generic_arguments()
+        .constants()
         .iter()
-        .zip(b.generic_arguments.constants.iter())
+        .zip(b.generic_arguments().constants().iter())
     {
         let found_diff = env
             .query(&Unification::new(
@@ -319,10 +318,7 @@ impl Build for effect_annotation::Key {
                 .create_identity_generic_arguments(parent_effect_id);
 
             let mut arena = OrderedArena::new();
-            arena.insert(effect::Unit(Symbol {
-                id: parent_effect_id,
-                generic_arguments: arguments,
-            }));
+            arena.insert(effect::Unit::new(parent_effect_id, arguments));
 
             return Output {
                 item: engine.intern(arena),
@@ -336,6 +332,7 @@ impl Build for effect_annotation::Key {
 
         let generic_namespace =
             engine.get_generic_parameter_namespace(key.symbol_id).await;
+
         let mut observer = Occurrences::default();
         let mut effect_annotations = HashMap::default();
         let storage = Storage::<diagnostic::Diagnostic>::default();

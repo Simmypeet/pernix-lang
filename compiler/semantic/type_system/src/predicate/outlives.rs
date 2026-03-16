@@ -1,10 +1,11 @@
 //! Implements the [`Query`] for the [`Outlives`]
 
-use std::{future::Future, sync::Arc};
+use std::future::Future;
 
 use pernixc_semantic_element::variance::Variance;
 use pernixc_term::{
     constant::Constant,
+    instance::Instance,
     lifetime::Lifetime,
     predicate::Outlives,
     r#type::Type,
@@ -12,7 +13,7 @@ use pernixc_term::{
 };
 
 use crate::{
-    Error, Satisfiability, Satisfied, Succeeded,
+    OverflowError, Satisfiability, Succeeded,
     environment::{BoxedFuture, Environment, Query},
     lifetime_constraint::LifetimeConstraint,
     normalizer::Normalizer,
@@ -20,7 +21,7 @@ use crate::{
 };
 
 struct Visitor<'a, 'e, N: Normalizer> {
-    outlives: Result<Option<Satisfied>, Error>,
+    outlives: Result<bool, OverflowError>,
     bound: &'a Lifetime,
     environment: &'e Environment<'e, N>,
 }
@@ -37,12 +38,12 @@ impl<U: Term, N: Normalizer> visitor::AsyncVisitor<U> for Visitor<'_, '_, N> {
                 false
             }
 
-            Ok(None) => {
-                self.outlives = Ok(None);
+            Ok(false) => {
+                self.outlives = Ok(false);
                 false
             }
 
-            Ok(Some(_)) => true,
+            Ok(true) => true,
         }
     }
 }
@@ -52,30 +53,39 @@ impl LifetimeConstraint {
     pub async fn satisfies(
         &self,
         environment: &Environment<'_, impl Normalizer>,
-    ) -> Result<Option<Arc<Satisfied>>, Error> {
+    ) -> Result<bool, OverflowError> {
         match self {
             Self::LifetimeOutlives(outlives) => {
                 environment.query(outlives).await
             }
+            Self::TypeOutlives(outlives) => environment.query(outlives).await,
         }
     }
 }
 
 // TODO: optimize this query to use transitive closure
 impl<T: Term> Query for Outlives<T> {
-    type Parameter = ();
     type InProgress = ();
-    type Result = Satisfied;
-    type Error = Error;
+    type Result = bool;
 
     #[allow(clippy::too_many_lines)]
     fn query<'x, N: Normalizer>(
         &'x self,
         environment: &'x Environment<'x, N>,
-        (): Self::Parameter,
-        (): Self::InProgress,
-    ) -> BoxedFuture<'x, Self::Result, Self::Error> {
+    ) -> BoxedFuture<'x, Self::Result> {
         Box::pin(Impl::outlives(self, environment))
+    }
+
+    fn on_cyclic(
+        &self,
+        (): Self::InProgress,
+        (): Self::InProgress,
+        _: &[crate::environment::Call<
+            crate::environment::DynArc,
+            crate::environment::DynArc,
+        >],
+    ) -> Self::Result {
+        false
     }
 }
 
@@ -84,19 +94,19 @@ pub trait Impl: Sized {
     fn outlives(
         query: &Outlives<Self>,
         environment: &Environment<impl Normalizer>,
-    ) -> impl Future<Output = Result<Option<Arc<Satisfied>>, Error>> + Send;
+    ) -> impl Future<Output = Result<bool, OverflowError>> + Send;
 }
 
 impl Impl for Lifetime {
     async fn outlives(
         query: &Outlives<Self>,
         environment: &Environment<'_, impl Normalizer>,
-    ) -> Result<Option<Arc<Satisfied>>, Error> {
+    ) -> Result<bool, OverflowError> {
         let satisfiability =
             query.operand.outlives_satisfiability(&query.bound);
 
         if satisfiability == Satisfiability::Satisfied {
-            return Ok(Some(Arc::new(Satisfied)));
+            return Ok(true);
         }
 
         for Outlives { operand: next_operand, bound: next_bound } in environment
@@ -109,15 +119,15 @@ impl Impl for Lifetime {
                 continue;
             }
 
-            if let Some(result) = environment
+            if environment
                 .query(&Outlives::new(next_bound.clone(), query.bound.clone()))
                 .await?
             {
-                return Ok(Some(result));
+                return Ok(true);
             }
         }
 
-        Ok(None)
+        Ok(false)
     }
 }
 
@@ -126,18 +136,18 @@ impl Impl for Type {
     async fn outlives(
         query: &Outlives<Self>,
         environment: &Environment<'_, impl Normalizer>,
-    ) -> Result<Option<Arc<Satisfied>>, Error> {
+    ) -> Result<bool, OverflowError> {
         let satisfiability =
             query.operand.outlives_satisfiability(&query.bound);
 
         if satisfiability == Satisfiability::Satisfied {
-            return Ok(Some(Arc::new(Satisfied)));
+            return Ok(true);
         }
 
         // check if all sub-terms are satisfiable
         if satisfiability == Satisfiability::Congruent {
             let mut visitor = Visitor {
-                outlives: Ok(Some(Satisfied)),
+                outlives: Ok(true),
                 bound: &query.bound,
                 environment,
             };
@@ -150,8 +160,8 @@ impl Impl for Type {
                     .is_ok()
             );
 
-            if visitor.outlives? == Some(Satisfied) {
-                return Ok(Some(Arc::new(Satisfied)));
+            if visitor.outlives? {
+                return Ok(true);
             }
         }
 
@@ -178,9 +188,9 @@ impl Impl for Type {
             }
 
             for constraint in &result.constraints {
-                let Some(_) = constraint.satisfies(environment).await? else {
+                if !constraint.satisfies(environment).await? {
                     continue 'outer;
-                };
+                }
             }
 
             let mut next_bound = next_bound.clone();
@@ -192,9 +202,8 @@ impl Impl for Type {
             if environment
                 .query(&Outlives::new(next_bound, query.bound.clone()))
                 .await?
-                .is_some()
             {
-                return Ok(Some(Arc::new(Satisfied)));
+                return Ok(true);
             }
         }
 
@@ -207,17 +216,16 @@ impl Impl for Type {
         {
             // additional constraints must be satisifed
             for constraint in additional_outlives {
-                let Some(_) = constraint.satisfies(environment).await? else {
+                if !constraint.satisfies(environment).await? {
                     continue 'out;
-                };
+                }
             }
 
             if environment
                 .query(&Outlives::new(operand_eq.clone(), query.bound.clone()))
                 .await?
-                .is_some()
             {
-                return Ok(Some(Arc::new(Satisfied)));
+                return Ok(true);
             }
         }
 
@@ -229,21 +237,20 @@ impl Impl for Type {
         {
             // additional constraints must be satisified
             for constraint in additional_outlives {
-                let Some(_) = constraint.satisfies(environment).await? else {
+                if !constraint.satisfies(environment).await? {
                     continue 'out;
-                };
+                }
             }
 
             if environment
                 .query(&Outlives::new(query.operand.clone(), bound_eq.clone()))
                 .await?
-                .is_some()
             {
-                return Ok(Some(Arc::new(Satisfied)));
+                return Ok(true);
             }
         }
 
-        Ok(None)
+        Ok(false)
     }
 }
 
@@ -251,8 +258,17 @@ impl Impl for Constant {
     async fn outlives(
         _: &Outlives<Self>,
         _: &Environment<'_, impl Normalizer>,
-    ) -> Result<Option<Arc<Satisfied>>, Error> {
-        Ok(Some(Arc::new(Satisfied)))
+    ) -> Result<bool, OverflowError> {
+        Ok(true)
+    }
+}
+
+impl Impl for Instance {
+    async fn outlives(
+        _: &Outlives<Self>,
+        _: &Environment<'_, impl Normalizer>,
+    ) -> Result<bool, OverflowError> {
+        Ok(true)
     }
 }
 

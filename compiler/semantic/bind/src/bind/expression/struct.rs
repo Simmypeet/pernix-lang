@@ -8,7 +8,7 @@ use pernixc_ir::value::{
     register::{Assignment, Struct},
 };
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_resolution::qualified_identifier::{Generic, Resolution};
+use pernixc_resolution::qualified_identifier::Resolution;
 use pernixc_semantic_element::fields::{Field, Fields, get_fields};
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
@@ -55,30 +55,27 @@ impl Bind<&pernixc_syntax::expression::unit::Struct>
             .await?;
 
         // must be struct type
-        let Resolution::Generic(Generic { id: struct_id, generic_arguments }) =
-            resolution
-        else {
-            handler.receive(
-                Diagnostic::ExpectedStructSymbol(ExpectedStructSymbol {
-                    span: qualified_identifier.span(),
-                    id: resolution.global_id(),
-                })
-                .into(),
-            );
-            return Err(Error::Binding(BindingError(syntax_tree.span())));
-        };
+        let (struct_id, generic_arguments) = match resolution {
+            Resolution::Generic(generic)
+                if {
+                    self.engine().get_kind(generic.id).await == Kind::Struct
+                } =>
+            {
+                (generic.id, generic.generic_arguments)
+            }
 
-        let symbol_kind = self.engine().get_kind(struct_id).await;
-        if symbol_kind != Kind::Struct {
-            handler.receive(
-                Diagnostic::ExpectedStructSymbol(ExpectedStructSymbol {
-                    span: syntax_tree.span(),
-                    id: struct_id,
-                })
-                .into(),
-            );
-            return Err(Error::Binding(BindingError(syntax_tree.span())));
-        }
+            found => {
+                handler.receive(
+                    Diagnostic::ExpectedStructSymbol(ExpectedStructSymbol {
+                        span: qualified_identifier.span(),
+                        found,
+                    })
+                    .into(),
+                );
+
+                return Err(Error::Binding(BindingError(syntax_tree.span())));
+            }
+        };
 
         let struct_generic_parameters =
             self.engine().get_generic_parameters(struct_id).await;

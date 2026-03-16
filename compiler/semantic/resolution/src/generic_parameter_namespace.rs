@@ -10,9 +10,10 @@ use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
     generic_parameters::{
-        ConstantParameterID, LifetimeParameterID, TypeParameterID,
-        get_generic_parameters,
+        ConstantParameterID, InstanceParameterID, LifetimeParameterID,
+        TypeParameterID, get_generic_parameters,
     },
+    instance::Instance,
     lifetime::Lifetime,
     r#type::Type,
 };
@@ -69,10 +70,9 @@ async fn get_generic_parameter_namespace_executor(
             if let Entry::Vacant(entry) =
                 extra_namespace.lifetimes.entry(name.clone())
             {
-                entry.insert(Lifetime::Parameter(LifetimeParameterID {
-                    parent_id: scope,
-                    id: *lt,
-                }));
+                entry.insert(Lifetime::Parameter(LifetimeParameterID::new(
+                    scope, lt,
+                )));
             }
         }
 
@@ -80,10 +80,7 @@ async fn get_generic_parameter_namespace_executor(
             if let Entry::Vacant(entry) =
                 extra_namespace.types.entry(name.clone())
             {
-                entry.insert(Type::Parameter(TypeParameterID {
-                    parent_id: scope,
-                    id: *ty,
-                }));
+                entry.insert(Type::Parameter(TypeParameterID::new(scope, ty)));
             }
         }
 
@@ -93,10 +90,21 @@ async fn get_generic_parameter_namespace_executor(
             if let Entry::Vacant(entry) =
                 extra_namespace.constants.entry(name.clone())
             {
-                entry.insert(Constant::Parameter(ConstantParameterID {
-                    parent_id: scope,
-                    id: *constant,
-                }));
+                entry.insert(Constant::Parameter(ConstantParameterID::new(
+                    scope, constant,
+                )));
+            }
+        }
+
+        for (name, instance) in
+            generic_parameter.instance_parameter_ids_by_name()
+        {
+            if let Entry::Vacant(entry) =
+                extra_namespace.instances.entry(name.clone())
+            {
+                entry.insert(Instance::Parameter(InstanceParameterID::new(
+                    scope, instance,
+                )));
             }
         }
     }

@@ -1,436 +1,960 @@
 //! Contains the logic for solving terms (types, lifetimes, and constants) in
 //! the resolution process.
 
-use std::{fmt::Debug, ops::Deref};
+use std::{fmt::Debug, future::Future, ops::Deref, pin::Pin};
 
 use pernixc_extend::extend;
-use pernixc_handler::Handler;
-use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
-use pernixc_semantic_element::type_alias::get_type_alias;
+use pernixc_semantic_element::{
+    instance_associated_value::get_instance_associated_value,
+    type_alias::get_type_alias,
+};
 use pernixc_source_file::SourceElement;
-use pernixc_symbol::kind::{Kind, get_kind};
-use pernixc_syntax::{GenericIdentifier, LifetimeIdentifier};
+use pernixc_symbol::{
+    kind::{Kind, get_kind},
+    parent::get_parent_global,
+};
+use pernixc_syntax::{
+    GenericArgument as GenericArgumentSyn, GenericIdentifier,
+    LifetimeIdentifier,
+};
 use pernixc_target::Global;
 use pernixc_term::{
-    generic_arguments::{GenericArguments, MemberSymbol, Symbol, TraitMember},
-    generic_parameters::{GenericKind, get_generic_parameters},
-    instantiation::Instantiation,
+    constant::Constant,
+    effect,
+    generic_arguments::{
+        GenericArguments, Symbol, is_generic_arguments_identity_to,
+    },
+    generic_parameters::{
+        ConstantParameter, GenericKind, GenericParameter, InstanceParameter,
+        InstanceParameterID, TypeParameter, TypeParameterID,
+        get_generic_parameters,
+    },
+    instance::{Instance, TraitRef},
+    instantiation::{Instantiation, get_instantiation_for_associated_symbol},
     lifetime::Lifetime,
     tuple,
     r#type::{Array, Phantom, Pointer, Primitive, Qualifier, Reference, Type},
 };
 
 use crate::{
-    Config, ElidedTermProvider, Error,
+    Error, Resolver,
     diagnostic::{
-        Diagnostic, ExpectType, LifetimeParameterNotFound,
-        MismatchedGenericArgumentCount, MisorderedGenericArgument,
+        Diagnostic, ExpectEffect, ExpectInstance, ExpectTrait, ExpectType,
+        LifetimeParameterNotFound, MismatchedGenericArgumentCount,
+        MismatchedKindInArgument, MisorderedGenericArgument,
         MoreThanOneUnpackedInTupleType, UnexpectedInference,
     },
-    qualified_identifier::{Resolution, resolve_qualified_identifier},
+    qualified_identifier::Resolution,
 };
 
-/// Resolves the generic arguments resides within the given
-/// [`generic_identifier`] for the given symbol.
-///
-/// This function ensure that the generic arguments returned has a matching
-/// generic arguments count with the generic parameters of the given symbol.
-#[extend]
-pub async fn resolve_generic_arguments_for(
-    self: &TrackedEngine,
-    symbol_id: Global<pernixc_symbol::ID>,
-    generic_identifier: &GenericIdentifier,
-    mut config: Config<'_, '_, '_, '_, '_>,
-    handler: &dyn Handler<Diagnostic>,
-) -> GenericArguments {
-    self.resolve_generic_arguments_for_internal(
-        symbol_id,
-        None,
-        generic_identifier,
-        config.reborrow(),
-        handler,
-    )
-    .await
-}
-
-#[extend]
-pub(crate) async fn resolve_generic_arguments_for_internal(
-    self: &TrackedEngine,
-    symbol_id: Global<pernixc_symbol::ID>,
-    bound_type: Option<&Type>,
-    generic_identifier: &GenericIdentifier,
-    mut config: Config<'_, '_, '_, '_, '_>,
-    handler: &dyn Handler<Diagnostic>,
-) -> GenericArguments {
-    let mut generic_arguments = if let Some(generic_arguments) =
-        generic_identifier.generic_arguments()
+impl<'i, 'm> Resolver<'i, 'm> {
+    #[allow(clippy::too_many_arguments)]
+    async fn resolve_generic_argument_kind<
+        Param,
+        Term: pernixc_term::error::MakeError
+            + pernixc_term::generic_arguments::Element
+            + Clone,
+    >(
+        &mut self,
+        generic_parameters: &pernixc_term::generic_parameters::GenericParameters,
+        generic_identifier: &GenericIdentifier,
+        generic_arguments_syn: &mut Option<Vec<GenericArgumentSyn>>,
+        args: &mut GenericArguments,
+        mut create_elided: impl FnMut(&mut Self) -> Option<Term>,
+        mut resolve: impl for<'a> FnMut(
+            &'a mut Self,
+            GenericArgumentSyn,
+            pernixc_arena::ID<Param>,
+        ) -> Pin<
+            Box<dyn Future<Output = Term> + Send + 'a>,
+        >,
+    ) where
+        Param: GenericParameter,
     {
-        self.resolve_generic_arguments(
-            &generic_arguments,
-            config.reborrow(),
-            handler,
-        )
-        .await
-    } else {
-        GenericArguments::default()
-    };
+        let expected_count = generic_parameters.parameter_len::<Param>();
 
-    // add the bound type as the first type argument
-    if let Some(bound_type) = bound_type {
-        generic_arguments.types.insert(0, bound_type.clone());
+        if let Some(generic_arguments_syn) = generic_arguments_syn.as_mut() {
+            let parameter_order = generic_parameters.parameter_order::<Param>();
+
+            for param_id in parameter_order {
+                let Some(syn) = (!generic_arguments_syn.is_empty())
+                    .then(|| generic_arguments_syn.remove(0))
+                else {
+                    break;
+                };
+
+                args.push(resolve(self, syn, param_id).await);
+            }
+
+            if args.len_of::<Term>() != expected_count {
+                self.receive_diagnostic(
+                    Diagnostic::MismatchedGenericArgumentCount(
+                        MismatchedGenericArgumentCount {
+                            generic_kind: Param::kind(),
+                            generic_identifier_span: generic_identifier.span(),
+                            expected_count,
+                            supplied_count: args.len_of::<Term>(),
+                        },
+                    ),
+                );
+            }
+
+            args.resize(expected_count, Term::new_error());
+            return;
+        }
+
+        if expected_count > 0 {
+            let missing_count =
+                expected_count.saturating_sub(args.len_of::<Term>());
+
+            if missing_count == 0 {
+                return;
+            }
+
+            let order = generic_parameters
+                .parameter_order::<Param>()
+                .skip(args.len_of::<Term>());
+
+            for _ in order {
+                let Some(term) = create_elided(self) else {
+                    break;
+                };
+
+                args.push(term);
+            }
+        }
+
+        if args.len_of::<Term>() != expected_count {
+            self.receive_diagnostic(
+                Diagnostic::MismatchedGenericArgumentCount(
+                    MismatchedGenericArgumentCount {
+                        generic_kind: Param::kind(),
+                        generic_identifier_span: generic_identifier.span(),
+                        expected_count,
+                        supplied_count: args.len_of::<Term>(),
+                    },
+                ),
+            );
+        }
+
+        args.resize(expected_count, Term::new_error());
     }
 
-    let (generic_arguments, diagnostics) = self
-        .verify_generic_arguments_for(
-            generic_arguments,
+    #[allow(clippy::manual_async_fn)]
+    fn resolve_type_argument<'s, 'g>(
+        &'s mut self,
+        syn: &'g pernixc_syntax::GenericArgument,
+        symbol_id: Global<pernixc_symbol::ID>,
+        param_id: pernixc_arena::ID<TypeParameter>,
+    ) -> impl Future<Output = Type> + use<'s, 'g, 'i, 'm> + Send {
+        async move {
+            match syn {
+                GenericArgumentSyn::Lifetime(lifetime) => {
+                    self.receive_diagnostic(
+                        Diagnostic::MismatchedKindInArgument(
+                            MismatchedKindInArgument::builder()
+                                .argument_span(lifetime.span())
+                                .found_kind(GenericKind::Lifetime)
+                                .found_parameter(
+                                    TypeParameterID::new(symbol_id, param_id)
+                                        .into(),
+                                )
+                                .build(),
+                        ),
+                    );
+
+                    Type::Error(pernixc_term::error::Error)
+                }
+
+                GenericArgumentSyn::InstanceValue(qualified_identifier) => {
+                    Box::pin(async move {
+                        let Some(q) =
+                            qualified_identifier.qualified_identifier()
+                        else {
+                            return Type::Error(pernixc_term::error::Error);
+                        };
+
+                        self.push_higher_ranked_lifetimes(
+                            qualified_identifier
+                                .higher_ranked_lifetimes()
+                                .as_ref(),
+                        );
+
+                        let res =
+                            self.resolve_qualified_identifier_type(&q).await;
+
+                        self.pop_higher_ranked_lifetimes();
+
+                        res
+                    })
+                    .await
+                }
+
+                GenericArgumentSyn::Type(ty) => {
+                    Box::pin(async move { self.resolve_type(ty).await }).await
+                }
+
+                GenericArgumentSyn::Constant(constant_argument) => {
+                    self.receive_diagnostic(
+                        Diagnostic::MismatchedKindInArgument(
+                            MismatchedKindInArgument::builder()
+                                .argument_span(constant_argument.span())
+                                .found_kind(GenericKind::Constant)
+                                .found_parameter(
+                                    TypeParameterID::new(symbol_id, param_id)
+                                        .into(),
+                                )
+                                .build(),
+                        ),
+                    );
+
+                    Type::Error(pernixc_term::error::Error)
+                }
+            }
+        }
+    }
+
+    #[allow(clippy::manual_async_fn)]
+    fn resolve_instance_argument<'s, 'g>(
+        &'s mut self,
+        syn: &'g pernixc_syntax::GenericArgument,
+        symbol_id: Global<pernixc_symbol::ID>,
+        param_id: pernixc_arena::ID<InstanceParameter>,
+    ) -> impl Future<Output = Instance> + use<'s, 'g, 'i, 'm> + Send {
+        async move {
+            use GenericArgumentSyn::InstanceValue;
+
+            match syn {
+                GenericArgumentSyn::InstanceValue(qualified_identifier) => {
+                    Box::pin(async move {
+                        let Some(q) =
+                            qualified_identifier.qualified_identifier()
+                        else {
+                            return Instance::Error(pernixc_term::error::Error);
+                        };
+
+                        self.push_higher_ranked_lifetimes(
+                            qualified_identifier
+                                .higher_ranked_lifetimes()
+                                .as_ref(),
+                        );
+
+                        let res = self
+                            .resolve_qualified_identifier_instance(&q)
+                            .await;
+
+                        self.pop_higher_ranked_lifetimes();
+
+                        res
+                    })
+                    .await
+                }
+
+                syn => {
+                    self.receive_diagnostic(
+                        Diagnostic::MismatchedKindInArgument(
+                            MismatchedKindInArgument::builder()
+                                .argument_span(syn.span())
+                                .found_parameter(
+                                    InstanceParameterID::new(
+                                        symbol_id, param_id,
+                                    )
+                                    .into(),
+                                )
+                                .found_kind(match syn {
+                                    GenericArgumentSyn::Lifetime(_) => {
+                                        GenericKind::Lifetime
+                                    }
+                                    GenericArgumentSyn::Type(_) => {
+                                        GenericKind::Type
+                                    }
+                                    GenericArgumentSyn::Constant(_) => {
+                                        GenericKind::Constant
+                                    }
+
+                                    InstanceValue(_) => unreachable!(),
+                                })
+                                .build(),
+                        ),
+                    );
+
+                    Instance::Error(pernixc_term::error::Error)
+                }
+            }
+        }
+    }
+
+    /// Resolves the generic arguments resides within the given
+    /// [`generic_identifier`] for the given symbol.
+    ///
+    /// This function ensure that the generic arguments returned has a matching
+    /// generic arguments count with the generic parameters of the given symbol.
+    pub async fn resolve_generic_arguments_for(
+        &mut self,
+        symbol_id: Global<pernixc_symbol::ID>,
+        generic_identifier: &GenericIdentifier,
+    ) -> GenericArguments {
+        self.resolve_generic_arguments_for_internal(
             symbol_id,
-            generic_identifier.span(),
-            config,
+            None,
+            generic_identifier,
+        )
+        .await
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        clippy::cognitive_complexity,
+        clippy::diverging_sub_expression,
+        unreachable_code
+    )]
+    pub(crate) async fn resolve_generic_arguments_for_internal(
+        &mut self,
+        symbol_id: Global<pernixc_symbol::ID>,
+        bound_type: Option<&Type>,
+        generic_identifier: &GenericIdentifier,
+    ) -> GenericArguments {
+        let mut generic_arguments_syn = generic_identifier
+            .generic_arguments()
+            .map(|x| x.arguments().collect::<Vec<_>>());
+
+        let mut generic_arguments = GenericArguments::default();
+
+        let generic_parameters =
+            self.tracked_engine().get_generic_parameters(symbol_id).await;
+
+        'lifetime: {
+            let lifetime_syn = {
+                generic_arguments_syn.as_mut().map_or_else(
+                    Vec::new,
+                    |generic_arguments_syn| {
+                        let last_lifetime_pos = generic_arguments_syn
+                            .iter()
+                            .position(|x| !x.is_lifetime())
+                            .unwrap_or(generic_arguments_syn.len());
+
+                        let lifetime_syn = generic_arguments_syn
+                            .drain(..last_lifetime_pos)
+                            .collect();
+
+                        // scan for lifetimes appearing after non-lifetime
+                        // generic arguments
+                        for syn in generic_arguments_syn
+                            .extract_if(.., |x| x.is_lifetime())
+                            .map(|x| x.into_lifetime().unwrap())
+                        {
+                            self.receive_diagnostic(
+                                Diagnostic::MisorderedGenericArgument(
+                                    MisorderedGenericArgument {
+                                        generic_kind: GenericKind::Lifetime,
+                                        generic_argument: syn.span(),
+                                    },
+                                ),
+                            );
+                        }
+
+                        lifetime_syn
+                    },
+                )
+            };
+
+            // if there is no lifetime found but they are required, use the
+            // elided lifetime provider (if any) to fill the lifetime arguments
+            if lifetime_syn.is_empty()
+                && generic_parameters.lifetime_parameters_len() > 0
+                && let Some(lt) = self.create_elided_lifetime()
+            {
+                generic_arguments.push_lifetime(lt);
+
+                // if can create elided lifetime, then it should able to create
+                // the rest too
+                for _ in 1..generic_parameters.lifetime_parameters_len() {
+                    generic_arguments
+                        .push_lifetime(self.create_elided_lifetime().unwrap());
+                }
+
+                break 'lifetime;
+            }
+
+            for lifetime_syn in lifetime_syn {
+                generic_arguments.push_lifetime(
+                    self.resolve_lifetime(
+                        &lifetime_syn.into_lifetime().unwrap(),
+                    ),
+                );
+            }
+
+            if generic_arguments.lifetimes().len()
+                != generic_parameters.lifetime_parameter_order().len()
+            {
+                self.receive_diagnostic(
+                    Diagnostic::MismatchedGenericArgumentCount(
+                        MismatchedGenericArgumentCount {
+                            generic_kind: GenericKind::Lifetime,
+                            generic_identifier_span: generic_identifier.span(),
+                            expected_count: generic_parameters
+                                .lifetime_parameter_order()
+                                .len(),
+                            supplied_count: generic_arguments.lifetimes().len(),
+                        },
+                    ),
+                );
+            }
+
+            generic_arguments.resize(
+                generic_parameters.lifetime_parameters_len(),
+                Lifetime::Error(pernixc_term::error::Error),
+            );
+        };
+
+        // NOTE: This is such a mess. Was separating each kind of generic
+        // argument into different types a bad idea 😭🙏
+
+        if let Some(bound_type) = bound_type {
+            generic_arguments.push(bound_type.clone());
+        }
+
+        self.resolve_generic_argument_kind::<TypeParameter, Type>(
+            &generic_parameters,
+            generic_identifier,
+            &mut generic_arguments_syn,
+            &mut generic_arguments,
+            super::resolver::Resolver::create_elided_type,
+            |resolver, syn, param_id| {
+                Box::pin(async move {
+                    resolver
+                        .resolve_type_argument(&syn, symbol_id, param_id)
+                        .await
+                })
+            },
         )
         .await;
 
-    for diagnostic in diagnostics {
-        handler.receive(diagnostic);
-    }
-
-    generic_arguments
-}
-
-/// Resolves the [`pernixc_syntax::GenericArguments`] as a [`GenericArguments`]
-/// term.
-#[extend]
-pub async fn resolve_generic_arguments(
-    self: &TrackedEngine,
-    generic_arguments: &pernixc_syntax::GenericArguments,
-    mut config: Config<'_, '_, '_, '_, '_>,
-    handler: &dyn Handler<Diagnostic>,
-) -> GenericArguments {
-    let mut lifetime_argument_syns = Vec::new();
-    let mut type_argument_syns = Vec::new();
-    let mut constant_argument_syns = Vec::new();
-
-    // extracts the generic arguments from the syntax tree to the list of
-    // syntax trees
-    for generic_argument in generic_arguments.arguments() {
-        let misordered = match generic_argument.clone() {
-            pernixc_syntax::GenericArgument::Constant(arg) => {
-                constant_argument_syns.push(arg);
-
-                false
-            }
-            pernixc_syntax::GenericArgument::Type(arg) => {
-                type_argument_syns.push(arg);
-
-                !constant_argument_syns.is_empty()
-            }
-            pernixc_syntax::GenericArgument::Lifetime(arg) => {
-                lifetime_argument_syns.push(arg);
-
-                !constant_argument_syns.is_empty()
-                    || !type_argument_syns.is_empty()
-            }
-        };
-
-        if misordered {
-            handler.receive(Diagnostic::MisorderedGenericArgument(
-                MisorderedGenericArgument {
-                    generic_kind: match generic_argument {
-                        pernixc_syntax::GenericArgument::Type(_) => {
-                            GenericKind::Type
-                        }
-                        pernixc_syntax::GenericArgument::Constant(_) => {
-                            GenericKind::Constant
-                        }
-                        pernixc_syntax::GenericArgument::Lifetime(_) => {
-                            GenericKind::Lifetime
-                        }
-                    },
-                    generic_argument: generic_argument.span(),
-                },
-            ));
-        }
-    }
-
-    let mut lifetimes = Vec::with_capacity(lifetime_argument_syns.len());
-    let mut types = Vec::with_capacity(type_argument_syns.len());
-    let constants = Vec::with_capacity(constant_argument_syns.len());
-
-    for lt in lifetime_argument_syns {
-        lifetimes
-            .push(self.resolve_lifetime(&lt, config.reborrow(), handler).await);
-    }
-
-    for ty in type_argument_syns {
-        types.push(self.resolve_type(&ty, config.reborrow(), handler).await);
-    }
-
-    for _con in constant_argument_syns {
-        todo!("implements const eval")
-    }
-
-    GenericArguments { lifetimes, types, constants }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn resolve_generic_arguments_kinds<
-    'a,
-    T: From<pernixc_term::error::Error> + Clone + Debug + 'a,
-    P: 'a + Debug,
->(
-    generic_arguments: impl ExactSizeIterator<Item = T>,
-    parameters: impl ExactSizeIterator<Item = &'a P>,
-    defaults: Option<impl ExactSizeIterator<Item = &'a T>>,
-    generic_identifier_span: RelativeSpan,
-    mut config: Config<'_, '_, '_, '_, '_>,
-    generic_kind: GenericKind,
-    get_provider: impl for<'x> Fn(
-        &'x mut Config<'_, '_, '_, '_, '_>,
-    ) -> Option<&'x mut dyn ElidedTermProvider<T>>,
-    diagnostics: &mut Vec<Diagnostic>,
-) -> Vec<T> {
-    if generic_arguments.len() == 0 {
-        if parameters.len() == 0 {
-            return Vec::new();
-        }
-
-        let Some(provider) = get_provider(&mut config) else {
-            diagnostics.push(Diagnostic::MismatchedGenericArgumentCount(
-                MismatchedGenericArgumentCount {
-                    generic_kind,
-                    generic_identifier_span,
-                    expected_count: parameters.len(),
-                    supplied_count: generic_arguments.len(),
-                },
-            ));
-
-            // return the error terms
-            return parameters
-                .map(|_| pernixc_term::error::Error.into())
-                .collect();
-        };
-
-        parameters.map(|_| provider.create()).collect()
-    } else {
-        let valid_count = defaults.as_ref().map_or_else(
-            || parameters.len() == generic_arguments.len(),
-            |defaults| {
-                let expected_range =
-                    (parameters.len() - defaults.len())..=parameters.len();
-
-                expected_range.contains(&generic_arguments.len())
+        #[allow(unused_variables)]
+        self.resolve_generic_argument_kind::<ConstantParameter, Constant>(
+            &generic_parameters,
+            generic_identifier,
+            &mut generic_arguments_syn,
+            &mut generic_arguments,
+            super::resolver::Resolver::create_elided_constant,
+            |_, _, _| {
+                Box::pin(async {
+                    todo!("constant evaluation is not implemented yet")
+                })
             },
-        );
-
-        // check if the number of supplied generic arugmnets is valid
-        if !valid_count {
-            diagnostics.push(Diagnostic::MismatchedGenericArgumentCount(
-                MismatchedGenericArgumentCount {
-                    generic_identifier_span,
-                    generic_kind,
-                    expected_count: parameters.len(),
-                    supplied_count: generic_arguments.len(),
-                },
-            ));
-        }
-
-        let mut arguments =
-            generic_arguments.take(parameters.len()).collect::<Vec<_>>();
-
-        if valid_count {
-            if let Some(defaults) = defaults {
-                let leftovers = parameters.len() - arguments.len();
-                let default_fill_count = leftovers.min(defaults.len());
-                let default_len = defaults.len();
-
-                arguments.extend(
-                    defaults.skip(default_len - default_fill_count).cloned(),
-                );
-            }
-        } else {
-            // extend the arguments with error term
-            let extra_term_count = parameters.len() - arguments.len();
-
-            arguments.extend(std::iter::repeat_n(
-                pernixc_term::error::Error.into(),
-                extra_term_count,
-            ));
-        }
-
-        assert!(
-            arguments.len() == parameters.len(),
-            "{:#?} {:#?} {:#?}",
-            arguments,
-            parameters.into_iter().collect::<Vec<_>>(),
-            valid_count
-        );
-
-        arguments
-    }
-}
-
-/// Verifies whether the given [`generic_arguments`] are a valid generic
-/// arguments for the generic parameters of the given [`global_id`] symbol. The
-/// function will attempt to fill the missing generic arguments with default
-/// value (if any) or error term.
-#[allow(clippy::option_if_let_else, clippy::type_complexity)]
-#[extend]
-pub async fn verify_generic_arguments_for(
-    self: &TrackedEngine,
-    generic_arguments: GenericArguments,
-    generic_id: Global<pernixc_symbol::ID>,
-    generic_identifier_span: RelativeSpan,
-    mut config: Config<'_, '_, '_, '_, '_>,
-) -> (GenericArguments, Vec<Diagnostic>) {
-    let generic_parameters = self.get_generic_parameters(generic_id).await;
-
-    let (
-        lifetime_parameter_orders,
-        type_parameter_orders,
-        constant_parameter_ords,
-        default_type_arguments,
-        default_constant_arguments,
-    ) = {
-        (
-            generic_parameters
-                .lifetime_parameters_as_order()
-                .map(|(_, x)| x)
-                .collect::<Vec<_>>(),
-            generic_parameters
-                .type_parameters_as_order()
-                .map(|(_, x)| x)
-                .collect::<Vec<_>>(),
-            generic_parameters
-                .constant_parameters_as_order()
-                .map(|(_, x)| x)
-                .collect::<Vec<_>>(),
-            generic_arguments
-                .constants
-                .is_empty()
-                .then(|| generic_parameters.default_type_parameters()),
-            generic_parameters.default_constant_parameters(),
         )
-    };
+        .await;
 
-    let mut diagnostics = Vec::new();
-    let generic_args = GenericArguments {
-        lifetimes: resolve_generic_arguments_kinds(
-            generic_arguments.lifetimes.into_iter(),
-            lifetime_parameter_orders.iter(),
-            Option::<std::iter::Empty<_>>::None,
-            generic_identifier_span,
-            config.reborrow(),
-            GenericKind::Lifetime,
-            |x| match &mut x.elided_lifetime_provider {
-                Some(provider) => Some(&mut **provider),
-                None => None,
+        self.resolve_generic_argument_kind::<InstanceParameter, Instance>(
+            &generic_parameters,
+            generic_identifier,
+            &mut generic_arguments_syn,
+            &mut generic_arguments,
+            super::resolver::Resolver::create_elided_instance,
+            |resolver, syn, param_id| {
+                Box::pin(async move {
+                    resolver
+                        .resolve_instance_argument(&syn, symbol_id, param_id)
+                        .await
+                })
             },
-            &mut diagnostics,
-        ),
-        types: resolve_generic_arguments_kinds(
-            generic_arguments.types.into_iter(),
-            type_parameter_orders.iter(),
-            default_type_arguments.as_ref().map(|x| x.iter()),
-            generic_identifier_span,
-            config.reborrow(),
-            GenericKind::Type,
-            |x| match &mut x.elided_type_provider {
-                Some(provider) => Some(&mut **provider),
-                None => None,
-            },
-            &mut diagnostics,
-        ),
-        constants: resolve_generic_arguments_kinds(
-            generic_arguments.constants.into_iter(),
-            constant_parameter_ords.iter(),
-            Some(default_constant_arguments.iter()),
-            generic_identifier_span,
-            config,
-            GenericKind::Constant,
-            |x| match &mut x.elided_constant_provider {
-                Some(provider) => Some(&mut **provider),
-                None => None,
-            },
-            &mut diagnostics,
-        ),
-    };
+        )
+        .await;
 
-    (generic_args, diagnostics)
-}
+        generic_arguments
+    }
 
-/// Resolves a [`pernixc_syntax::Lifetime`] as a [`Lifetime`] term.
-#[extend]
-pub async fn resolve_lifetime(
-    self: &TrackedEngine,
-    lifetime_argument: &pernixc_syntax::Lifetime,
-    config: Config<'_, '_, '_, '_, '_>,
-    handler: &dyn Handler<Diagnostic>,
-) -> Lifetime {
-    let lifetime = match lifetime_argument.identifier() {
-        Some(LifetimeIdentifier::Static(..)) => Lifetime::Static,
-        Some(LifetimeIdentifier::Identifier(ident)) => {
-            resolve_lifetime_parameter(&ident, &config, handler)
-        }
-        Some(LifetimeIdentifier::Elided(elided)) => {
-            config.elided_lifetime_provider.map_or_else(
-                || {
-                    handler.receive(Diagnostic::UnexpectedInference(
+    /// Resolves a [`pernixc_syntax::Lifetime`] as a [`Lifetime`] term.
+    pub fn resolve_lifetime(
+        &mut self,
+        lifetime_argument: &pernixc_syntax::Lifetime,
+    ) -> Lifetime {
+        let lifetime = match lifetime_argument.identifier() {
+            Some(LifetimeIdentifier::Static(..)) => Lifetime::Static,
+            Some(LifetimeIdentifier::Identifier(ident)) => {
+                self.resolve_lifetime_parameter(&ident)
+            }
+            Some(LifetimeIdentifier::Elided(elided)) => {
+                self.create_elided_lifetime().unwrap_or_else(|| {
+                    self.receive_diagnostic(Diagnostic::UnexpectedInference(
                         UnexpectedInference {
                             unexpected_span: elided.span(),
                             generic_kind: GenericKind::Lifetime,
                         },
                     ));
                     Lifetime::Error(pernixc_term::error::Error)
-                },
-                ElidedTermProvider::create,
-            )
+                })
+            }
+
+            None => Lifetime::Error(pernixc_term::error::Error),
+        };
+
+        self.notify_lifetime_resolved(&lifetime, lifetime_argument);
+
+        lifetime
+    }
+
+    /// Resolves a [`Lifetime`] from an identifier.
+    #[must_use]
+    pub fn resolve_lifetime_parameter(
+        &self,
+        identifier: &pernixc_syntax::Identifier,
+    ) -> Lifetime {
+        // reach to the extra namespace first
+        if let Some(extra_lifetime) =
+            self.lookup_extra_lifetime(&identifier.kind.0)
+        {
+            return extra_lifetime;
         }
 
-        None => Lifetime::Error(pernixc_term::error::Error),
-    };
+        self.receive_diagnostic(Diagnostic::LifetimeParameterNotFound(
+            LifetimeParameterNotFound {
+                referred_span: identifier.span(),
+                referring_site: self.referring_site(),
+                name: identifier.kind.0.clone(),
+            },
+        ));
+        Lifetime::Error(pernixc_term::error::Error)
+    }
 
-    if let Some(observer) = config.observer {
-        observer.on_lifetime_resolved(
-            self,
-            config.referring_site,
-            &lifetime,
-            lifetime_argument,
-            handler,
+    /// Resolves a [`pernixc_syntax::QualifiedIdentifier`] as an [`Instance`].
+    pub async fn resolve_instance_value(
+        &mut self,
+        syntax_tree: &pernixc_syntax::InstanceValue,
+    ) -> Instance {
+        let Some(qual) = syntax_tree.qualified_identifier() else {
+            return Instance::Error(pernixc_term::error::Error);
+        };
+
+        self.push_higher_ranked_lifetimes(
+            syntax_tree.higher_ranked_lifetimes().as_ref(),
         );
+
+        let instance = self.resolve_qualified_identifier_instance(&qual).await;
+
+        self.pop_higher_ranked_lifetimes();
+
+        instance
     }
 
-    lifetime
-}
+    /// Resolves a [`pernixc_syntax::QualifiedIdentifier`] as an [`Instance`].
+    pub async fn resolve_qualified_identifier_instance(
+        &mut self,
+        syntax_tree: &pernixc_syntax::QualifiedIdentifier,
+    ) -> Instance {
+        let resolution =
+            match self.resolve_qualified_identifier(syntax_tree).await {
+                Ok(resolution) => resolution,
 
-/// Resolves a [`Lifetime`] from an identifier.
-pub fn resolve_lifetime_parameter(
-    identifier: &pernixc_syntax::Identifier,
-    config: &Config<'_, '_, '_, '_, '_>,
-    handler: &dyn Handler<Diagnostic>,
-) -> Lifetime {
-    // reach to the extra namespace first
-    if let Some(extra_lifeime) = config
-        .extra_namespace
-        .and_then(|x| x.lifetimes.get(&*identifier.kind.0).cloned())
-    {
-        return extra_lifeime;
+                Err(Error::Abort) => {
+                    return Instance::Error(pernixc_term::error::Error);
+                }
+            };
+
+        match self.tracked_engine().resolution_to_instance(resolution).await {
+            Ok(instance) => instance,
+            Err(ResolutionToTermError::Failed(resolution)) => {
+                self.receive_diagnostic(Diagnostic::ExpectInstance(
+                    ExpectInstance::builder()
+                        .non_instance_symbol_span(syntax_tree.span())
+                        .resolved_resolution(resolution)
+                        .build(),
+                ));
+
+                Instance::Error(pernixc_term::error::Error)
+            }
+        }
     }
 
-    handler.receive(Diagnostic::LifetimeParameterNotFound(
-        LifetimeParameterNotFound {
-            referred_span: identifier.span(),
-            referring_site: config.referring_site,
-            name: identifier.kind.0.clone(),
-        },
-    ));
-    Lifetime::Error(pernixc_term::error::Error)
+    /// Resolves a [`pernixc_syntax::QualifiedIdentifier`] as a [`Type`] term.
+    pub async fn resolve_qualified_identifier_type(
+        &mut self,
+        syntax_tree: &pernixc_syntax::QualifiedIdentifier,
+    ) -> Type {
+        let resolution =
+            match self.resolve_qualified_identifier(syntax_tree).await {
+                Ok(resolution) => resolution,
+
+                Err(Error::Abort) => {
+                    return Type::Error(pernixc_term::error::Error);
+                }
+            };
+
+        match self.tracked_engine().resolution_to_type(resolution).await {
+            Ok(ty) => ty,
+            Err(ResolutionToTermError::Failed(resolution)) => {
+                self.receive_diagnostic(Diagnostic::ExpectType(
+                    ExpectType::builder()
+                        .non_type_symbol_span(syntax_tree.span())
+                        .resolved_resolution(resolution)
+                        .build(),
+                ));
+
+                Type::Error(pernixc_term::error::Error)
+            }
+        }
+    }
+
+    /// Resolves a [`pernixc_syntax::QualifiedIdentifier`] as a [`TraitRef`].
+    pub async fn resolve_qualified_identifier_trait_ref(
+        &mut self,
+        syntax_tree: &pernixc_syntax::QualifiedIdentifier,
+    ) -> Option<TraitRef> {
+        let resolution =
+            match self.resolve_qualified_identifier(syntax_tree).await {
+                Ok(resolution) => resolution,
+
+                Err(Error::Abort) => {
+                    return None;
+                }
+            };
+
+        match self.tracked_engine().resolution_to_trait_ref(resolution).await {
+            Ok(trait_ref) => Some(trait_ref),
+            Err(ResolutionToTermError::Failed(resolution)) => {
+                self.receive_diagnostic(Diagnostic::ExpectTrait(
+                    ExpectTrait::builder()
+                        .non_trait_symbol_span(syntax_tree.span())
+                        .resolved_resolution(resolution)
+                        .build(),
+                ));
+
+                None
+            }
+        }
+    }
+
+    /// Resolves a [`pernixc_syntax::QualifiedIdentifier`] as an effect unit.
+    pub async fn resolve_qualified_identifier_effect_unit(
+        &mut self,
+        syntax_tree: &pernixc_syntax::QualifiedIdentifier,
+    ) -> Option<effect::Unit> {
+        let resolution =
+            match self.resolve_qualified_identifier(syntax_tree).await {
+                Ok(resolution) => resolution,
+
+                Err(Error::Abort) => {
+                    return None;
+                }
+            };
+
+        match self.tracked_engine().resolution_to_effect_unit(resolution).await
+        {
+            Ok(effect_unit) => Some(effect_unit),
+            Err(ResolutionToTermError::Failed(resolution)) => {
+                self.receive_diagnostic(Diagnostic::ExpectEffect(
+                    ExpectEffect::builder()
+                        .non_effect_symbol_span(syntax_tree.span())
+                        .resolved_resolution(resolution)
+                        .build(),
+                ));
+
+                None
+            }
+        }
+    }
+
+    /// Resolves the type syntax tree to a [`Type`] term.
+    #[allow(clippy::too_many_lines, clippy::diverging_sub_expression)]
+    pub async fn resolve_type(
+        &mut self,
+        syntax_tree: &pernixc_syntax::r#type::Type,
+    ) -> Type {
+        let ty = match syntax_tree {
+            pernixc_syntax::r#type::Type::Primitive(primitive) => {
+                Type::Primitive(match primitive {
+                    pernixc_syntax::r#type::Primitive::Bool(_) => {
+                        Primitive::Bool
+                    }
+                    pernixc_syntax::r#type::Primitive::Float32(_) => {
+                        Primitive::Float32
+                    }
+                    pernixc_syntax::r#type::Primitive::Float64(_) => {
+                        Primitive::Float64
+                    }
+                    pernixc_syntax::r#type::Primitive::Int8(_) => {
+                        Primitive::Int8
+                    }
+                    pernixc_syntax::r#type::Primitive::Int16(_) => {
+                        Primitive::Int16
+                    }
+                    pernixc_syntax::r#type::Primitive::Int32(_) => {
+                        Primitive::Int32
+                    }
+                    pernixc_syntax::r#type::Primitive::Int64(_) => {
+                        Primitive::Int64
+                    }
+                    pernixc_syntax::r#type::Primitive::Uint8(_) => {
+                        Primitive::Uint8
+                    }
+                    pernixc_syntax::r#type::Primitive::Uint16(_) => {
+                        Primitive::Uint16
+                    }
+                    pernixc_syntax::r#type::Primitive::Uint32(_) => {
+                        Primitive::Uint32
+                    }
+                    pernixc_syntax::r#type::Primitive::Uint64(_) => {
+                        Primitive::Uint64
+                    }
+                    pernixc_syntax::r#type::Primitive::Usize(_) => {
+                        Primitive::Usize
+                    }
+                    pernixc_syntax::r#type::Primitive::Isize(_) => {
+                        Primitive::Isize
+                    }
+                })
+            }
+
+            pernixc_syntax::r#type::Type::QualifiedIdentifier(
+                qualified_identifier,
+            ) => {
+                Box::pin(
+                    self.resolve_qualified_identifier_type(
+                        qualified_identifier,
+                    ),
+                )
+                .await
+            }
+
+            pernixc_syntax::r#type::Type::Reference(reference) => {
+                let lifetime = reference
+                    .lifetime()
+                    .as_ref()
+                    .map(|lifetime| self.resolve_lifetime(lifetime));
+
+                let lifetime = lifetime.unwrap_or_else(|| {
+                    self.create_elided_lifetime().unwrap_or_else(|| {
+                        self.receive_diagnostic(
+                            Diagnostic::UnexpectedInference(
+                                UnexpectedInference {
+                                    unexpected_span: reference
+                                        .ampersand()
+                                        .map_or_else(
+                                            || reference.span(),
+                                            |x| x.span,
+                                        ),
+                                    generic_kind: GenericKind::Lifetime,
+                                },
+                            ),
+                        );
+                        Lifetime::Error(pernixc_term::error::Error)
+                    })
+                });
+
+                let qualifier = if reference.mut_keyword().is_some() {
+                    Qualifier::Mutable
+                } else {
+                    Qualifier::Immutable
+                };
+
+                let pointee =
+                    Box::new(if let Some(pointee) = reference.r#type() {
+                        Box::pin(self.resolve_type(&pointee)).await
+                    } else {
+                        Type::Error(pernixc_term::error::Error)
+                    });
+
+                Type::Reference(Reference { qualifier, lifetime, pointee })
+            }
+            pernixc_syntax::r#type::Type::Pointer(pointer_ty) => {
+                let pointee =
+                    Box::new(if let Some(pointee) = pointer_ty.r#type() {
+                        Box::pin(self.resolve_type(&pointee)).await
+                    } else {
+                        Type::Error(pernixc_term::error::Error)
+                    });
+
+                Type::Pointer(Pointer {
+                    mutable: pointer_ty.mut_keyword().is_some(),
+                    pointee,
+                })
+            }
+            pernixc_syntax::r#type::Type::Tuple(syntax_tree) => {
+                let mut elements = Vec::new();
+
+                for element in syntax_tree.types() {
+                    let ty = if let Some(ty) = element.r#type() {
+                        Box::pin(self.resolve_type(&ty)).await
+                    } else {
+                        Type::Error(pernixc_term::error::Error)
+                    };
+
+                    if element.ellipsis().is_some() {
+                        match ty {
+                            Type::Tuple(tuple) => {
+                                elements.extend(tuple.into_elements());
+                            }
+                            ty => {
+                                self.notify_unpacked_type_resolved(
+                                    &ty, &element,
+                                );
+
+                                elements.push(tuple::Element::new(ty, true));
+                            }
+                        }
+                    } else {
+                        elements.push(tuple::Element::new(ty, false));
+                    }
+                }
+
+                // check if there is more than one unpacked type
+                if elements.iter().filter(|x| x.is_unpacked()).count() > 1 {
+                    self.receive_diagnostic(
+                        Diagnostic::MoreThanOneUnpackedInTupleType(
+                            MoreThanOneUnpackedInTupleType {
+                                illegal_tuple_type_span: syntax_tree.span(),
+                            },
+                        ),
+                    );
+
+                    Type::Error(pernixc_term::error::Error)
+                } else {
+                    Type::Tuple(tuple::Tuple::new(elements))
+                }
+            }
+
+            #[allow(unreachable_code, unused_variables)]
+            pernixc_syntax::r#type::Type::Array(array) => Type::Array(Array {
+                length: todo!("implements a constant eval"),
+                r#type: Box::new(if let Some(ty) = array.r#type() {
+                    self.resolve_type(&ty).await
+                } else {
+                    Type::Error(pernixc_term::error::Error)
+                }),
+            }),
+
+            pernixc_syntax::r#type::Type::Phantom(phantom) => {
+                let ty = if let Some(ty) = phantom.r#type() {
+                    Box::pin(self.resolve_type(&ty)).await
+                } else {
+                    Type::Error(pernixc_term::error::Error)
+                };
+
+                Type::Phantom(Phantom(Box::new(ty)))
+            }
+            pernixc_syntax::r#type::Type::Elided(elided) => {
+                self.create_elided_type().unwrap_or_else(|| {
+                    self.receive_diagnostic(Diagnostic::UnexpectedInference(
+                        UnexpectedInference {
+                            unexpected_span: elided.span(),
+                            generic_kind: GenericKind::Type,
+                        },
+                    ));
+                    Type::Error(pernixc_term::error::Error)
+                })
+            }
+        };
+
+        self.notify_type_resolved(&ty, syntax_tree);
+
+        ty
+    }
 }
 
 /// Enumeration of trying to interpreting [`Resolution`] as a type.
 #[derive(Debug, derive_more::From)]
 #[allow(missing_docs)]
-pub enum ResolutionToTypeError {
+pub enum ResolutionToTermError {
     Failed(Resolution),
+}
+
+/// Interprets the [`Resolution`] as a [`Type`].
+#[extend]
+pub async fn resolution_to_instance(
+    self: &TrackedEngine,
+    resolution: Resolution,
+) -> Result<Instance, ResolutionToTermError> {
+    match resolution {
+        Resolution::Generic(generic)
+            if {
+                let symbol_kind = self.get_kind(generic.id).await;
+
+                matches!(symbol_kind, Kind::Instance)
+            } =>
+        {
+            Ok(Instance::Symbol(Symbol::new(
+                generic.id,
+                generic.generic_arguments,
+            )))
+        }
+
+        Resolution::MemberGeneric(member_generic) => {
+            let kind = self.get_kind(member_generic.id).await;
+
+            match kind {
+                Kind::TraitAssociatedInstance => {
+                    let parent_trait_id = self
+                        .get_parent_global(member_generic.id)
+                        .await
+                        .unwrap();
+
+                    if !self
+                        .is_generic_arguments_identity_to(
+                            &member_generic.parent_generic_arguments,
+                            parent_trait_id,
+                        )
+                        .await
+                    {
+                        return Err(ResolutionToTermError::Failed(
+                            Resolution::MemberGeneric(member_generic),
+                        ));
+                    }
+
+                    Ok(Instance::new_instance_associated(
+                        Box::new(Instance::new_anonymous_trait(
+                            parent_trait_id,
+                        )),
+                        member_generic.id,
+                        member_generic.member_generic_arguments,
+                    ))
+                }
+
+                Kind::InstanceAssociatedInstance => {
+                    let inst = self
+                        .get_instantiation_for_associated_symbol(
+                            member_generic.id,
+                            member_generic.parent_generic_arguments,
+                            member_generic.member_generic_arguments,
+                        )
+                        .await
+                        .unwrap();
+
+                    let mut instance_value = self
+                        .get_instance_associated_value(member_generic.id)
+                        .await
+                        .deref()
+                        .clone();
+
+                    inst.instantiate(&mut instance_value);
+
+                    Ok(instance_value)
+                }
+
+                _ => Err(ResolutionToTermError::Failed(
+                    Resolution::MemberGeneric(member_generic),
+                )),
+            }
+        }
+
+        Resolution::InstanceAssociatedSymbol(inst)
+            if {
+                let symbol_kind =
+                    self.get_kind(inst.trait_associated_symbol_id).await;
+                matches!(symbol_kind, Kind::TraitAssociatedInstance)
+            } =>
+        {
+            Ok(Instance::new_instance_associated(
+                Box::new(inst.instance),
+                inst.trait_associated_symbol_id,
+                inst.generic_arguments,
+            ))
+        }
+
+        Resolution::Instance(instance) => Ok(instance),
+
+        resolution => Err(ResolutionToTermError::Failed(resolution)),
+    }
 }
 
 /// Interprets the [`Resolution`] as a [`Type`].
@@ -438,18 +962,18 @@ pub enum ResolutionToTypeError {
 pub async fn resolution_to_type(
     self: &TrackedEngine,
     resolution: Resolution,
-) -> Result<Type, ResolutionToTypeError> {
+) -> Result<Type, ResolutionToTermError> {
     match resolution {
         Resolution::Generic(symbol) => {
             let symbol_kind = self.get_kind(symbol.id).await;
 
             match symbol_kind {
-                Kind::Struct | Kind::Enum => Ok(Type::Symbol(Symbol {
-                    id: symbol.id,
-                    generic_arguments: symbol.generic_arguments,
-                })),
+                Kind::Struct | Kind::Enum => Ok(Type::Symbol(Symbol::new(
+                    symbol.id,
+                    symbol.generic_arguments,
+                ))),
 
-                Kind::ImplementationType | Kind::Type => {
+                Kind::ImplementationAssociatedType | Kind::Type => {
                     let generic_parameters =
                         self.get_generic_parameters(symbol.id).await;
 
@@ -468,305 +992,138 @@ pub async fn resolution_to_type(
                     Ok(result_ty)
                 }
 
-                _ => Err(ResolutionToTypeError::Failed(Resolution::Generic(
+                _ => Err(ResolutionToTermError::Failed(Resolution::Generic(
                     symbol,
                 ))),
             }
         }
 
-        Resolution::MemberGeneric(symbol) => {
-            let symbol_kind = self.get_kind(symbol.id).await;
+        Resolution::MemberGeneric(member_generic) => {
+            let symbol_kind = self.get_kind(member_generic.id).await;
 
             match symbol_kind {
-                Kind::TraitType => {
-                    Ok(Type::TraitMember(TraitMember(MemberSymbol {
-                        id: symbol.id,
-                        member_generic_arguments: symbol
-                            .member_generic_arguments,
-                        parent_generic_arguments: symbol
-                            .parent_generic_arguments,
-                    })))
+                Kind::InstanceAssociatedType => {
+                    let inst = self
+                        .get_instantiation_for_associated_symbol(
+                            member_generic.id,
+                            member_generic.parent_generic_arguments,
+                            member_generic.member_generic_arguments,
+                        )
+                        .await
+                        .unwrap();
+
+                    let mut type_alias = self
+                        .get_type_alias(member_generic.id)
+                        .await
+                        .deref()
+                        .clone();
+
+                    inst.instantiate(&mut type_alias);
+
+                    Ok(type_alias)
                 }
 
-                _ => Err(ResolutionToTypeError::Failed(
-                    Resolution::MemberGeneric(symbol),
+                Kind::TraitAssociatedType => {
+                    // if the parent generic arugments is identical to the
+                    // trait, we can make it an instance
+                    // associated type and make the instance be anonymous trait
+                    let parent_trait = self
+                        .get_parent_global(member_generic.id)
+                        .await
+                        .unwrap();
+
+                    if !self
+                        .is_generic_arguments_identity_to(
+                            &member_generic.parent_generic_arguments,
+                            parent_trait,
+                        )
+                        .await
+                    {
+                        return Err(ResolutionToTermError::Failed(
+                            Resolution::MemberGeneric(member_generic),
+                        ));
+                    }
+
+                    Ok(Type::new_instance_associated(
+                        Box::new(Instance::new_anonymous_trait(parent_trait)),
+                        member_generic.id,
+                        member_generic.member_generic_arguments,
+                    ))
+                }
+
+                _ => Err(ResolutionToTermError::Failed(
+                    Resolution::MemberGeneric(member_generic),
                 )),
             }
         }
 
-        resolution => Err(ResolutionToTypeError::Failed(resolution)),
-    }
-}
+        Resolution::Type(ty) => Ok(ty),
 
-/// Resolves a [`pernixc_syntax::QualifiedIdentifier`] as a [`Type`] term.
-#[extend]
-pub async fn resolve_qualified_identifier_type(
-    self: &TrackedEngine,
-    syntax_tree: &pernixc_syntax::QualifiedIdentifier,
-    config: Config<'_, '_, '_, '_, '_>,
-    handler: &dyn Handler<Diagnostic>,
-) -> Type {
-    let rest_count = syntax_tree.subsequences().count();
-    let is_simple_identifier = rest_count == 0
-        && syntax_tree
-            .root()
-            .and_then(|x| x.into_generic_identifier().ok())
-            .is_some_and(|x| {
-                x.identifier().is_some() && x.generic_arguments().is_none()
-            });
+        Resolution::InstanceAssociatedSymbol(sym)
+            if {
+                let symbol_kind =
+                    self.get_kind(sym.trait_associated_symbol_id).await;
 
-    // try to resolve the simple identifier in the extra namespace
-    if is_simple_identifier
-        && let Some(extra_type) = config.extra_namespace.and_then(|x| {
-            x.types
-                .get(
-                    &*syntax_tree
-                        .root()
-                        .unwrap()
-                        .as_generic_identifier()
-                        .unwrap()
-                        .identifier()
-                        .unwrap()
-                        .kind
-                        .0,
-                )
-                .cloned()
-        })
-    {
-        return extra_type;
-    }
-
-    let resolution = match self
-        .resolve_qualified_identifier(syntax_tree, config, handler)
-        .await
-    {
-        Ok(resolution) => resolution,
-
-        Err(Error::Abort) => {
-            return Type::Error(pernixc_term::error::Error);
-        }
-    };
-
-    match self.resolution_to_type(resolution).await {
-        Ok(ty) => ty,
-        Err(ResolutionToTypeError::Failed(resolution)) => {
-            handler.receive(Diagnostic::ExpectType(ExpectType {
-                non_type_symbol_span: syntax_tree.span(),
-                resolved_global_id: resolution.global_id(),
-            }));
-
-            Type::Error(pernixc_term::error::Error)
-        }
-    }
-}
-
-/// Resolves the type syntax tree to a [`Type`] term.
-#[extend]
-#[allow(clippy::too_many_lines, clippy::diverging_sub_expression)]
-pub async fn resolve_type(
-    self: &TrackedEngine,
-    syntax_tree: &pernixc_syntax::r#type::Type,
-    mut config: Config<'_, '_, '_, '_, '_>,
-    handler: &dyn Handler<Diagnostic>,
-) -> Type {
-    let ty = match syntax_tree {
-        pernixc_syntax::r#type::Type::Primitive(primitive) => {
-            Type::Primitive(match primitive {
-                pernixc_syntax::r#type::Primitive::Bool(_) => Primitive::Bool,
-                pernixc_syntax::r#type::Primitive::Float32(_) => {
-                    Primitive::Float32
-                }
-                pernixc_syntax::r#type::Primitive::Float64(_) => {
-                    Primitive::Float64
-                }
-                pernixc_syntax::r#type::Primitive::Int8(_) => Primitive::Int8,
-                pernixc_syntax::r#type::Primitive::Int16(_) => Primitive::Int16,
-                pernixc_syntax::r#type::Primitive::Int32(_) => Primitive::Int32,
-                pernixc_syntax::r#type::Primitive::Int64(_) => Primitive::Int64,
-                pernixc_syntax::r#type::Primitive::Uint8(_) => Primitive::Uint8,
-                pernixc_syntax::r#type::Primitive::Uint16(_) => {
-                    Primitive::Uint16
-                }
-                pernixc_syntax::r#type::Primitive::Uint32(_) => {
-                    Primitive::Uint32
-                }
-                pernixc_syntax::r#type::Primitive::Uint64(_) => {
-                    Primitive::Uint64
-                }
-                pernixc_syntax::r#type::Primitive::Usize(_) => Primitive::Usize,
-                pernixc_syntax::r#type::Primitive::Isize(_) => Primitive::Isize,
-            })
-        }
-        pernixc_syntax::r#type::Type::QualifiedIdentifier(
-            qualified_identifier,
-        ) => {
-            Box::pin(self.resolve_qualified_identifier_type(
-                qualified_identifier,
-                config.reborrow(),
-                handler,
+                matches!(symbol_kind, Kind::TraitAssociatedType)
+            } =>
+        {
+            Ok(Type::new_instance_associated(
+                Box::new(sym.instance),
+                sym.trait_associated_symbol_id,
+                sym.generic_arguments,
             ))
-            .await
-        }
-        pernixc_syntax::r#type::Type::Reference(reference) => {
-            let lifetime = if let Some(lifetime) = reference.lifetime().as_ref()
-            {
-                Some(
-                    self.resolve_lifetime(lifetime, config.reborrow(), handler)
-                        .await,
-                )
-            } else {
-                None
-            };
-
-            let lifetime = if let Some(lifetime) = lifetime {
-                lifetime
-            } else if let Some(provider) =
-                config.elided_lifetime_provider.as_mut()
-            {
-                provider.create()
-            } else {
-                handler.receive(Diagnostic::UnexpectedInference(
-                    UnexpectedInference {
-                        unexpected_span: reference
-                            .ampersand()
-                            .map_or_else(|| reference.span(), |x| x.span),
-                        generic_kind: GenericKind::Lifetime,
-                    },
-                ));
-                Lifetime::Error(pernixc_term::error::Error)
-            };
-
-            let qualifier = if reference.mut_keyword().is_some() {
-                Qualifier::Mutable
-            } else {
-                Qualifier::Immutable
-            };
-
-            let pointee = Box::new(if let Some(pointee) = reference.r#type() {
-                Box::pin(self.resolve_type(
-                    &pointee,
-                    config.reborrow(),
-                    handler,
-                ))
-                .await
-            } else {
-                Type::Error(pernixc_term::error::Error)
-            });
-
-            Type::Reference(Reference { qualifier, lifetime, pointee })
-        }
-        pernixc_syntax::r#type::Type::Pointer(pointer_ty) => {
-            let pointee =
-                Box::new(if let Some(pointee) = pointer_ty.r#type() {
-                    Box::pin(self.resolve_type(
-                        &pointee,
-                        config.reborrow(),
-                        handler,
-                    ))
-                    .await
-                } else {
-                    Type::Error(pernixc_term::error::Error)
-                });
-
-            Type::Pointer(Pointer {
-                mutable: pointer_ty.mut_keyword().is_some(),
-                pointee,
-            })
-        }
-        pernixc_syntax::r#type::Type::Tuple(syntax_tree) => {
-            let mut elements = Vec::new();
-
-            for element in syntax_tree.types() {
-                let ty = if let Some(ty) = element.r#type() {
-                    Box::pin(self.resolve_type(&ty, config.reborrow(), handler))
-                        .await
-                } else {
-                    Type::Error(pernixc_term::error::Error)
-                };
-
-                if element.ellipsis().is_some() {
-                    match ty {
-                        Type::Tuple(tuple) => {
-                            elements.extend(tuple.elements.into_iter());
-                        }
-                        ty => {
-                            if let Some(observer) = config.observer.as_mut() {
-                                observer.on_unpacked_type_resolved(
-                                    self,
-                                    config.referring_site,
-                                    &ty,
-                                    &element,
-                                    handler,
-                                );
-                            }
-
-                            elements.push(tuple::Element::new(ty, true));
-                        }
-                    }
-                } else {
-                    elements.push(tuple::Element::new(ty, false));
-                }
-            }
-
-            // check if there is more than one unpacked type
-            if elements.iter().filter(|x| x.is_unpacked).count() > 1 {
-                handler.receive(Diagnostic::MoreThanOneUnpackedInTupleType(
-                    MoreThanOneUnpackedInTupleType {
-                        illegal_tuple_type_span: syntax_tree.span(),
-                    },
-                ));
-
-                Type::Error(pernixc_term::error::Error)
-            } else {
-                Type::Tuple(tuple::Tuple { elements })
-            }
         }
 
-        #[allow(unreachable_code, unused_variables)]
-        pernixc_syntax::r#type::Type::Array(array) => Type::Array(Array {
-            length: todo!("implements a constant eval"),
-            r#type: Box::new(if let Some(ty) = array.r#type() {
-                self.resolve_type(&ty, config.reborrow(), handler).await
-            } else {
-                Type::Error(pernixc_term::error::Error)
-            }),
-        }),
-
-        pernixc_syntax::r#type::Type::Phantom(phantom) => {
-            let ty = if let Some(ty) = phantom.r#type() {
-                Box::pin(self.resolve_type(&ty, config.reborrow(), handler))
-                    .await
-            } else {
-                Type::Error(pernixc_term::error::Error)
-            };
-
-            Type::Phantom(Phantom(Box::new(ty)))
-        }
-        pernixc_syntax::r#type::Type::Elided(elided) => {
-            config.elided_type_provider.as_mut().map_or_else(
-                || {
-                    handler.receive(Diagnostic::UnexpectedInference(
-                        UnexpectedInference {
-                            unexpected_span: elided.span(),
-                            generic_kind: GenericKind::Type,
-                        },
-                    ));
-                    Type::Error(pernixc_term::error::Error)
-                },
-                |provider| provider.create(),
-            )
-        }
-    };
-
-    if let Some(observer) = config.observer.as_mut() {
-        observer.on_type_resolved(
-            self,
-            config.referring_site,
-            &ty,
-            syntax_tree,
-            handler,
-        );
+        resolution => Err(ResolutionToTermError::Failed(resolution)),
     }
+}
 
-    ty
+/// Interprets the [`Resolution`] as a [`TraitRef`].
+#[extend]
+pub async fn resolution_to_trait_ref(
+    self: &TrackedEngine,
+    resolution: Resolution,
+) -> Result<TraitRef, ResolutionToTermError> {
+    match resolution {
+        Resolution::Generic(symbol) => {
+            let symbol_kind = self.get_kind(symbol.id).await;
+
+            match symbol_kind {
+                Kind::Trait => {
+                    Ok(TraitRef::new(symbol.id, symbol.generic_arguments))
+                }
+
+                _ => Err(ResolutionToTermError::Failed(Resolution::Generic(
+                    symbol,
+                ))),
+            }
+        }
+
+        resolution => Err(ResolutionToTermError::Failed(resolution)),
+    }
+}
+
+/// Interprets the [`Resolution`] as a [`effect::Unit`].
+#[extend]
+pub async fn resolution_to_effect_unit(
+    self: &TrackedEngine,
+    resolution: Resolution,
+) -> Result<effect::Unit, ResolutionToTermError> {
+    match resolution {
+        Resolution::Generic(symbol) => {
+            let symbol_kind = self.get_kind(symbol.id).await;
+
+            match symbol_kind {
+                Kind::Effect => {
+                    Ok(effect::Unit::new(symbol.id, symbol.generic_arguments))
+                }
+
+                _ => Err(ResolutionToTermError::Failed(Resolution::Generic(
+                    symbol,
+                ))),
+            }
+        }
+
+        resolution => Err(ResolutionToTermError::Failed(resolution)),
+    }
 }

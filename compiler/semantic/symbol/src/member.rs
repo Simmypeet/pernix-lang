@@ -35,6 +35,35 @@ pub struct Member {
     pub unnameds: HashSet<ID>,
 }
 
+impl Member {
+    /// Retrieves the member ID by its name.
+    ///
+    /// Returns `None` if there is no member with the given name.   
+    #[must_use]
+    pub fn get_by_name(&self, name: &str) -> Option<ID> {
+        self.member_ids_by_name.get(name).copied()
+    }
+
+    /// Retrieves all the member IDs of the symbol.
+    pub fn all_ids(&self) -> impl Iterator<Item = ID> + '_ {
+        self.member_ids_by_name
+            .values()
+            .copied()
+            .chain(self.unnameds.iter().copied())
+    }
+}
+
+/// Retrieves the member ID of the given name in the symbol with the given ID.
+#[extend]
+pub async fn get_member_by_name(
+    self: &TrackedEngine,
+    symbol_id: Global<ID>,
+    name: &str,
+) -> Option<Global<ID>> {
+    let members = self.get_members(symbol_id).await;
+    members.get_by_name(name).map(|id| symbol_id.target_id.make_global(id))
+}
+
 /// The key type used with [`TrackedEngine`] to access the members of a symbol.
 #[derive(
     Debug,

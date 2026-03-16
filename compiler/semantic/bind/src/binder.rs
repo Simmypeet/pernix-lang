@@ -4,7 +4,6 @@ use std::{borrow::Cow, num::NonZeroUsize, sync::Arc};
 
 use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
-use pernixc_extend::extend;
 use pernixc_handler::Handler;
 use pernixc_ir::{
     address::{Address, Memory},
@@ -34,7 +33,6 @@ use pernixc_symbol::syntax::get_function_signature_syntax;
 use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
-    display::InferenceRenderingMap,
     inference,
     r#type::{Qualifier, Type},
 };
@@ -127,7 +125,6 @@ pub struct Binder<'t> {
     stack: stack::Stack,
 
     /// The inference context used for managing type and constant inferences.
-    #[get = "pub"]
     inference_context: InferenceContext,
 
     unreachable_register_ids: Vec<ID<Register>>,
@@ -304,41 +301,6 @@ pub enum Error {
     Unrecoverable(#[from] UnrecoverableError),
 }
 
-/// In case of the Overflow error from type system, reports it as a type
-/// calculating overflow
-#[extend]
-pub fn report_as_type_calculating_overflow(
-    self: pernixc_type_system::Error,
-    overflow_span: RelativeSpan,
-    handler: &dyn Handler<Diagnostic>,
-) -> UnrecoverableError {
-    match self {
-        pernixc_type_system::Error::Overflow(overflow) => {
-            overflow
-                .report_as_type_calculating_overflow(overflow_span, &handler);
-
-            UnrecoverableError::Reported
-        }
-    }
-}
-
-/// In case of the Overflow error from type system, reports it as a type
-/// checking overflow
-#[extend]
-pub fn report_as_type_check_overflow(
-    self: pernixc_type_system::Error,
-    overflow_span: RelativeSpan,
-    handler: &dyn Handler<Diagnostic>,
-) -> UnrecoverableError {
-    match self {
-        pernixc_type_system::Error::Overflow(overflow) => {
-            overflow.report_as_type_check_overflow(overflow_span, &handler);
-
-            UnrecoverableError::Reported
-        }
-    }
-}
-
 impl Binder<'_> {
     /// Creates a new error literal with an inferred type.
     pub fn create_error(&mut self, span: RelativeSpan) -> Literal {
@@ -356,20 +318,6 @@ impl Binder<'_> {
             },
             span,
         })
-    }
-
-    /// Returns the inference rendering map for types.
-    #[must_use]
-    pub fn type_inference_rendering_map(&self) -> InferenceRenderingMap<Type> {
-        self.inference_context.type_table().get_inference_rendering_map()
-    }
-
-    /// Returns the inference rendering map for constants.
-    #[must_use]
-    pub fn constant_inference_rendering_map(
-        &self,
-    ) -> InferenceRenderingMap<Constant> {
-        self.inference_context.const_table().get_inference_rendering_map()
     }
 
     /// Creates a new unreachable literal with an inferred type.

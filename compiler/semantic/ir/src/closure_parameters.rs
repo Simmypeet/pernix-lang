@@ -4,7 +4,10 @@ use derive_more::Index;
 use pernixc_arena::{Arena, ID, OrderedArena};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_semantic_element::parameter::Parameters;
-use pernixc_term::{instantiation::Instantiation, r#type::Type};
+use pernixc_term::{
+    constant::Constant, instance::Instance, instantiation::Instantiation,
+    lifetime::Lifetime, r#type::Type,
+};
 use qbice::{Decode, Encode, StableHash};
 
 use crate::transform;
@@ -96,9 +99,9 @@ impl ClosureParameters {
 
 impl transform::Element for ClosureParameters {
     async fn transform<
-        T: transform::Transformer<pernixc_term::lifetime::Lifetime>
+        T: transform::Transformer<Lifetime>
             + transform::Transformer<Type>
-            + transform::Transformer<pernixc_term::constant::Constant>,
+            + transform::Transformer<Constant>,
     >(
         &mut self,
         transformer: &mut T,
@@ -152,9 +155,10 @@ impl ClosureParametersMap {
 
 impl transform::Element for ClosureParametersMap {
     async fn transform<
-        T: transform::Transformer<pernixc_term::lifetime::Lifetime>
+        T: transform::Transformer<Lifetime>
             + transform::Transformer<Type>
-            + transform::Transformer<pernixc_term::constant::Constant>,
+            + transform::Transformer<Constant>
+            + transform::Transformer<Instance>,
     >(
         &mut self,
         transformer: &mut T,

@@ -2,7 +2,7 @@
 
 use pernixc_arena::ID;
 use pernixc_term::r#type::Type;
-use pernixc_type_system::{Error, Succeeded, normalizer::Normalizer};
+use pernixc_type_system::{OverflowError, Succeeded, normalizer::Normalizer};
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
@@ -205,7 +205,7 @@ impl TypeOf<&Binary> for Values {
         &self,
         binary: &Binary,
         environment: &Environment<'_, N>,
-    ) -> Result<Succeeded<Type>, Error> {
+    ) -> Result<Succeeded<Type>, OverflowError> {
         // the return type always based on the lhs field
         if let BinaryOperator::Relational(_) = binary.operator {
             Ok(Succeeded::new(Type::Primitive(

@@ -1,0 +1,14 @@
+public trait Test[T]:
+    pass
+
+
+public instance MyTest[T]: Test[T]:
+    pass
+
+
+public trait ExpectInstance[T]:
+    public instance I: Test[T]
+
+
+public instance MyExpectInstance: ExpectInstance[int32]:
+    instance I: Test[int32] = MyTest[int32]

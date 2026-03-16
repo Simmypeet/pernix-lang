@@ -1,0 +1,24 @@
+public trait First:
+    pass
+
+
+public instance MyFirst: First:
+    pass
+
+
+public trait Second:
+    pass
+
+
+public instance MySecond: Second:
+    pass
+
+
+public trait ExpectInstance:
+    public instance I: First
+
+
+public instance MyExpectInstance: ExpectInstance:
+    instance I: First = MySecond # error: should've been MyFirst
+
+

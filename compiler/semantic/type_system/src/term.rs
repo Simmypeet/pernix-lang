@@ -2,29 +2,32 @@
 
 use std::{fmt::Debug, hash::Hash};
 
-use pernixc_semantic_element::type_alias::get_type_alias;
+use pernixc_semantic_element::{
+    instance_associated_value::get_instance_associated_value,
+    type_alias::get_type_alias,
+};
 use pernixc_symbol::{
-    kind::{Kind, get_kind},
-    member::get_members,
-    name::get_name,
-    parent::get_parent,
+    ID,
+    instance_associated::{AssociatedKind, get_instance_associated_equivalent},
 };
 use pernixc_target::Global;
 use pernixc_term::{
     Never,
     constant::Constant,
-    generic_arguments::TraitMember,
-    generic_parameters::{GenericParameter, get_generic_parameters},
+    generic_parameters::{
+        GenericParameter, InstanceParameter, get_generic_parameters,
+    },
     inference,
+    instance::{Instance, InstanceAssociated},
+    instantiation::{Instantiation, get_instantiation},
     lifetime::Lifetime,
     predicate::{Compatible, Outlives, Predicate},
-    tuple::{Element, Tuple},
     r#type::Type,
 };
 
 use crate::{
-    Error, Satisfiability, Succeeded, environment::Environment,
-    normalizer::Normalizer, resolution,
+    OverflowError, Satisfiability, Succeeded, environment::Environment,
+    normalizer::Normalizer,
 };
 
 /// A trait implemented by all three fundamental terms of the language:
@@ -33,10 +36,13 @@ use crate::{
 /// This trait provides a common interface for all terms to be used in the
 /// type system. Since most of the queries and operations in the type system are
 /// generic over the kind of term.
+#[allow(private_bounds)]
 pub trait Term:
     pernixc_term::visitor::Element
     + pernixc_term::matching::Match
     + pernixc_term::instantiation::Element
+    + pernixc_term::generic_arguments::Element
+    + pernixc_term::error::MakeError
     + crate::equivalence::Impl
     + crate::unification::Element
     + crate::subtype::Impl
@@ -54,8 +60,8 @@ pub trait Term:
     /// The type of generic parameters of this term kind.
     type GenericParameter: GenericParameter + 'static;
 
-    /// The type of trait member symbol that stores this term kind.
-    type TraitMember: Into<Self>
+    /// The type of instance associated with this term kind.
+    type InstanceAssociated: Into<Self>
         + Debug
         + Eq
         + Hash
@@ -81,21 +87,21 @@ pub trait Term:
         &self,
         environment: &Environment<impl Normalizer>,
     ) -> impl std::future::Future<
-        Output = Result<Option<Succeeded<Self>>, Error>,
+        Output = Result<Option<Succeeded<Self>>, OverflowError>,
     > + Send;
 
     #[doc(hidden)]
-    fn as_trait_member(&self) -> Option<&Self::TraitMember>;
+    fn as_instance_associated(&self) -> Option<&Self::InstanceAssociated>;
 
     #[doc(hidden)]
-    fn as_trait_member_compatible_predicate(
+    fn as_instance_associated_equality_predicate(
         predicate: &Predicate,
-    ) -> Option<&Compatible<Self::TraitMember, Self>>;
+    ) -> Option<&Compatible<Self::InstanceAssociated, Self>>;
 
     #[doc(hidden)]
-    fn as_trait_member_compatible_predicate_mut(
+    fn as_instance_associated_equality_predicate_mut(
         predicate: &mut Predicate,
-    ) -> Option<&mut Compatible<Self::TraitMember, Self>>;
+    ) -> Option<&mut Compatible<Self::InstanceAssociated, Self>>;
 
     #[doc(hidden)]
     fn definite_satisfiability(&self) -> Satisfiability;
@@ -110,26 +116,28 @@ pub trait Term:
 impl Term for Lifetime {
     type GenericParameter = pernixc_term::generic_parameters::LifetimeParameter;
 
-    type TraitMember = Never;
+    type InstanceAssociated = Never;
 
     async fn normalize(
         &self,
         _: &Environment<'_, impl Normalizer>,
-    ) -> Result<Option<Succeeded<Self>>, Error> {
+    ) -> Result<Option<Succeeded<Self>>, OverflowError> {
         Ok(None)
     }
 
-    fn as_trait_member(&self) -> Option<&Self::TraitMember> { None }
-
-    fn as_trait_member_compatible_predicate(
-        _: &Predicate,
-    ) -> Option<&Compatible<Self::TraitMember, Self>> {
+    fn as_instance_associated(&self) -> Option<&Self::InstanceAssociated> {
         None
     }
 
-    fn as_trait_member_compatible_predicate_mut(
+    fn as_instance_associated_equality_predicate(
+        _: &Predicate,
+    ) -> Option<&Compatible<Self::InstanceAssociated, Self>> {
+        None
+    }
+
+    fn as_instance_associated_equality_predicate_mut(
         _: &mut Predicate,
-    ) -> Option<&mut Compatible<Self::TraitMember, Self>> {
+    ) -> Option<&mut Compatible<Self::InstanceAssociated, Self>> {
         None
     }
 
@@ -157,33 +165,31 @@ impl Term for Lifetime {
 impl Term for Type {
     type GenericParameter = pernixc_term::generic_parameters::TypeParameter;
 
-    type TraitMember = pernixc_term::generic_arguments::TraitMember;
+    type InstanceAssociated = InstanceAssociated;
 
     async fn normalize(
         &self,
         environment: &Environment<'_, impl Normalizer>,
-    ) -> Result<Option<Succeeded<Self>>, Error> {
+    ) -> Result<Option<Succeeded<Self>>, OverflowError> {
         let normalized = match self {
-            Self::TraitMember(trait_member) => {
-                normalize_trait_member(trait_member, environment).await?
+            Self::InstanceAssociated(trait_member) => {
+                normalize_instance_associated_type(trait_member, environment)
+                    .await
             }
 
             // unpack the tuple
-            Self::Tuple(tuple) => unpack_tuple(tuple),
+            Self::Tuple(tuple) => tuple.unpack_one_level(),
 
             _ => None,
         };
 
-        if let Some(mut normalized) = normalized {
-            if let Some(x) =
-                Normalizer::normalize_type(&normalized.result, environment)
-                    .await?
-            {
-                normalized.result = x.result;
-                normalized.constraints.extend(x.constraints);
-            }
-
-            Ok(Some(normalized))
+        if let Some(normalized) = normalized {
+            Normalizer::normalize_type(&normalized, environment)
+                .await?
+                .map_or_else(
+                    || Ok(Some(Succeeded::new(normalized))),
+                    |x| Ok(Some(x)),
+                )
         } else {
             Normalizer::normalize_type(self, environment)
                 .await?
@@ -191,27 +197,33 @@ impl Term for Type {
         }
     }
 
-    fn as_trait_member(&self) -> Option<&<Self as Term>::TraitMember> {
+    fn as_instance_associated(
+        &self,
+    ) -> Option<&<Self as Term>::InstanceAssociated> {
         match self {
-            Self::TraitMember(trait_member) => Some(trait_member),
+            Self::InstanceAssociated(trait_member) => Some(trait_member),
             _ => None,
         }
     }
 
-    fn as_trait_member_compatible_predicate(
+    fn as_instance_associated_equality_predicate(
         predicate: &Predicate,
-    ) -> Option<&Compatible<<Self as Term>::TraitMember, Self>> {
+    ) -> Option<&Compatible<<Self as Term>::InstanceAssociated, Self>> {
         match predicate {
-            Predicate::TraitTypeCompatible(compatible) => Some(compatible),
+            Predicate::InstanceAssociatedTypeEquality(compatible) => {
+                Some(compatible)
+            }
             _ => None,
         }
     }
 
-    fn as_trait_member_compatible_predicate_mut(
+    fn as_instance_associated_equality_predicate_mut(
         predicate: &mut Predicate,
-    ) -> Option<&mut Compatible<<Self as Term>::TraitMember, Self>> {
+    ) -> Option<&mut Compatible<<Self as Term>::InstanceAssociated, Self>> {
         match predicate {
-            Predicate::TraitTypeCompatible(compatible) => Some(compatible),
+            Predicate::InstanceAssociatedTypeEquality(compatible) => {
+                Some(compatible)
+            }
             _ => None,
         }
     }
@@ -224,14 +236,14 @@ impl Term for Type {
 
             Self::Primitive(_) => Satisfiability::Satisfied,
 
-            Self::MemberSymbol(_)
+            Self::AssociatedSymbol(_)
             | Self::FunctionSignature(_)
             | Self::Pointer(_)
             | Self::Symbol(_)
             | Self::Reference(_)
             | Self::Array(_)
             | Self::Phantom(_)
-            | Self::TraitMember(_)
+            | Self::InstanceAssociated(_)
             | Self::Tuple(_) => Satisfiability::Congruent,
         }
     }
@@ -244,14 +256,14 @@ impl Term for Type {
                 Satisfiability::Unsatisfied
             }
 
-            Self::MemberSymbol(_)
+            Self::AssociatedSymbol(_)
             | Self::FunctionSignature(_)
             | Self::Symbol(_)
             | Self::Pointer(_)
             | Self::Reference(_)
             | Self::Array(_)
             | Self::Tuple(_)
-            | Self::TraitMember(_)
+            | Self::InstanceAssociated(_)
             | Self::Phantom(_) => Satisfiability::Congruent,
         }
     }
@@ -264,15 +276,15 @@ impl Term for Type {
 impl Term for Constant {
     type GenericParameter = pernixc_term::generic_parameters::ConstantParameter;
 
-    type TraitMember = Never;
+    type InstanceAssociated = Never;
 
     async fn normalize(
         &self,
         environment: &Environment<'_, impl Normalizer>,
-    ) -> Result<Option<Succeeded<Self>>, Error> {
+    ) -> Result<Option<Succeeded<Self>>, OverflowError> {
         let normalized = match self {
             // unpack the tuple
-            Self::Tuple(tuple) => unpack_tuple(tuple),
+            Self::Tuple(tuple) => tuple.unpack_one_level().map(Succeeded::new),
 
             _ => None,
         };
@@ -294,17 +306,19 @@ impl Term for Constant {
         }
     }
 
-    fn as_trait_member(&self) -> Option<&Self::TraitMember> { None }
-
-    fn as_trait_member_compatible_predicate(
-        _: &Predicate,
-    ) -> Option<&Compatible<Self::TraitMember, Self>> {
+    fn as_instance_associated(&self) -> Option<&Self::InstanceAssociated> {
         None
     }
 
-    fn as_trait_member_compatible_predicate_mut(
+    fn as_instance_associated_equality_predicate(
+        _: &Predicate,
+    ) -> Option<&Compatible<Self::InstanceAssociated, Self>> {
+        None
+    }
+
+    fn as_instance_associated_equality_predicate_mut(
         _: &mut Predicate,
-    ) -> Option<&mut Compatible<Self::TraitMember, Self>> {
+    ) -> Option<&mut Compatible<Self::InstanceAssociated, Self>> {
         None
     }
 
@@ -331,118 +345,208 @@ impl Term for Constant {
     fn as_outlives_predicate(_: &Predicate) -> Option<&Outlives<Self>> { None }
 }
 
-fn unpack_tuple<T: Term + From<Tuple<T>> + TryInto<Tuple<T>, Error = T>>(
-    tuple: &Tuple<T>,
-) -> Option<Succeeded<T>> {
-    let contain_upacked = tuple.elements.iter().any(|x| x.is_unpacked);
-
-    if !contain_upacked {
-        return None;
+async fn normalize_instance_associated_type(
+    instance_associated: &InstanceAssociated,
+    environment: &Environment<'_, impl Normalizer>,
+) -> Option<Type> {
+    if let Some(normalized) = normalize_instance_associated_type_inner(
+        instance_associated,
+        environment,
+    )
+    .await
+    {
+        return Some(normalized);
     }
 
-    if tuple.elements.len() == 1 {
-        return Some(Succeeded::new(tuple.elements[0].term.clone()));
-    }
+    // normalize the inner instance
+    let inner_instance_associated_instance =
+        instance_associated.instance_as_associated_instance()?;
 
-    let mut result = Vec::new();
+    let normalized_instance_associated_instance =
+        normalize_instance_associated_instance(
+            inner_instance_associated_instance,
+            environment,
+        )
+        .await?;
 
-    for element in tuple.elements.iter().cloned() {
-        if element.is_unpacked {
-            match element.term.try_into() {
-                Ok(inner) => {
-                    result.extend(inner.elements);
-                }
-                Err(term) => {
-                    result.push(Element { term, is_unpacked: true });
-                }
+    Some(Type::InstanceAssociated(InstanceAssociated::new(
+        Box::new(normalized_instance_associated_instance),
+        instance_associated.trait_associated_symbol_id(),
+        instance_associated.associated_instance_generic_arguments().clone(),
+    )))
+}
+
+async fn normalize_instance_associated_type_inner(
+    instance_associated: &InstanceAssociated,
+    environment: &Environment<'_, impl Normalizer>,
+) -> Option<Type> {
+    let (instantiation, equiv_instance_associated) =
+        try_normalize_instance_associated(
+            instance_associated,
+            environment,
+            AssociatedKind::Type,
+        )
+        .await?;
+
+    let mut instance_associated_type = (*environment
+        .tracked_engine()
+        .get_type_alias(equiv_instance_associated)
+        .await)
+        .clone();
+
+    instantiation.instantiate(&mut instance_associated_type);
+
+    Some(instance_associated_type)
+}
+
+impl Term for Instance {
+    type GenericParameter = InstanceParameter;
+
+    type InstanceAssociated = InstanceAssociated;
+
+    async fn normalize(
+        &self,
+        environment: &Environment<'_, impl Normalizer>,
+    ) -> Result<Option<Succeeded<Self>>, OverflowError> {
+        let normalized = match self {
+            Self::InstanceAssociated(trait_member) => {
+                normalize_instance_associated_instance(
+                    trait_member,
+                    environment,
+                )
+                .await
             }
+
+            _ => None,
+        };
+
+        if let Some(normalized) = normalized {
+            Normalizer::normalize_instance(&normalized, environment)
+                .await?
+                .map_or_else(
+                    || Ok(Some(Succeeded::new(normalized))),
+                    |x| Ok(Some(x)),
+                )
         } else {
-            result.push(element);
+            Normalizer::normalize_instance(self, environment)
+                .await?
+                .map_or_else(|| Ok(None), |x| Ok(Some(x)))
         }
     }
 
-    Some(Succeeded::new(Tuple { elements: result }.into()))
+    fn as_instance_associated(
+        &self,
+    ) -> Option<&<Self as Term>::InstanceAssociated> {
+        match self {
+            Self::InstanceAssociated(instance_associated) => {
+                Some(instance_associated)
+            }
+            _ => None,
+        }
+    }
+
+    fn as_instance_associated_equality_predicate(
+        _predicate: &Predicate,
+    ) -> Option<&Compatible<<Self as Term>::InstanceAssociated, Self>> {
+        None
+    }
+
+    fn as_instance_associated_equality_predicate_mut(
+        _predicate: &mut Predicate,
+    ) -> Option<&mut Compatible<<Self as Term>::InstanceAssociated, Self>> {
+        None
+    }
+
+    fn definite_satisfiability(&self) -> Satisfiability {
+        match self {
+            Self::AnonymousTrait(_)
+            | Self::Error(_)
+            | Self::Inference(_)
+            | Self::Parameter(_) => Satisfiability::Unsatisfied,
+
+            Self::Symbol(_) | Self::InstanceAssociated(_) => {
+                Satisfiability::Congruent
+            }
+        }
+    }
+
+    fn outlives_satisfiability(&self, _: &Lifetime) -> Satisfiability {
+        // NOTE: we never test for outlives satisfiability of instances, so we
+        // can just return satisfied here.
+        Satisfiability::Satisfied
+    }
+
+    fn as_outlives_predicate(_: &Predicate) -> Option<&Outlives<Self>> { None }
 }
 
-async fn normalize_trait_member(
-    trait_member: &TraitMember,
+async fn try_normalize_instance_associated(
+    instance_associated: &InstanceAssociated,
     environment: &Environment<'_, impl Normalizer>,
-) -> Result<Option<Succeeded<Type>>, Error> {
-    let trait_id = environment
+    associated_kind: AssociatedKind,
+) -> Option<(Instantiation, Global<ID>)> {
+    // the instance itself must be resolved to symbol in order to normalize
+    // further.
+    let instance_symbol = instance_associated.instance_as_symbol()?;
+
+    let equiv_instance_associated = environment
         .tracked_engine()
-        .get_parent(trait_member.id)
-        .await
-        .expect("should have a trait parent");
+        .get_instance_associated_equivalent(
+            instance_symbol.id(),
+            instance_associated.trait_associated_symbol_id(),
+            associated_kind,
+        )
+        .await?;
 
-    // resolve the trait implementation
-    let Some(resolution) = environment
-        .query(&resolution::Resolve::new(
-            Global::new(trait_member.id.target_id, trait_id),
-            trait_member.parent_generic_arguments.clone(),
-        ))
-        .await?
-    else {
-        return Ok(None);
-    };
-
-    let trait_member_name =
-        environment.tracked_engine().get_name(trait_member.id).await;
-
-    // not a trait implementation
-    if environment.tracked_engine().get_kind(resolution.result.id).await
-        != Kind::PositiveImplementation
-    {
-        return Ok(None);
-    }
-
-    let Some(implementation_member_id) = environment
+    // create instantiation from the "instance symbol"
+    let mut instantiation = environment
         .tracked_engine()
-        .get_members(resolution.result.id)
+        .get_instantiation(
+            instance_symbol.id(),
+            instance_symbol.generic_arguments().clone(),
+        )
         .await
-        .member_ids_by_name
-        .get(&trait_member_name)
-        .copied()
-        .map(|x| Global::new(resolution.result.id.target_id, x))
-    else {
-        return Ok(None);
-    };
+        .unwrap();
 
-    // check if is the type
-    if environment.tracked_engine().get_kind(implementation_member_id).await
-        != Kind::ImplementationType
+    // append instantiation from the "instance associated instance symbol"
     {
-        return Ok(None);
-    }
-
-    let mut final_instantiation = resolution.result.instantiation.clone();
-
-    // should have no collision and no mismatched generic arguments
-    // count
-    {
-        let generic_parameter = environment
+        let instance_associated_instance_generic_parameters = environment
             .tracked_engine()
-            .get_generic_parameters(implementation_member_id)
+            .get_generic_parameters(equiv_instance_associated)
             .await;
 
-        final_instantiation
+        instantiation
             .append_from_generic_arguments(
-                trait_member.member_generic_arguments.clone(),
-                implementation_member_id,
-                &generic_parameter,
+                instance_associated
+                    .associated_instance_generic_arguments()
+                    .clone(),
+                equiv_instance_associated,
+                &instance_associated_instance_generic_parameters,
             )
             .unwrap();
     }
 
-    let mut new_term = (*environment
+    Some((instantiation, equiv_instance_associated))
+}
+
+async fn normalize_instance_associated_instance(
+    instance_associated: &InstanceAssociated,
+    environment: &Environment<'_, impl Normalizer>,
+) -> Option<Instance> {
+    let (instantiation, equiv_instance_associated) =
+        try_normalize_instance_associated(
+            instance_associated,
+            environment,
+            AssociatedKind::Instance,
+        )
+        .await?;
+
+    let instance_associated_instance = environment
         .tracked_engine()
-        .get_type_alias(implementation_member_id)
-        .await)
-        .clone();
+        .get_instance_associated_value(equiv_instance_associated)
+        .await;
 
-    final_instantiation.instantiate(&mut new_term);
+    let mut new_instance_value = (*instance_associated_instance).clone();
+    instantiation.instantiate(&mut new_instance_value);
 
-    Ok(Some(Succeeded::with_constraints(
-        new_term,
-        resolution.constraints.clone(),
-    )))
+    Some(new_instance_value)
 }

@@ -31,6 +31,7 @@ mod effect;
 mod r#enum;
 mod r#extern;
 mod implements;
+mod instance;
 mod module;
 mod r#trait;
 
@@ -252,6 +253,17 @@ pub struct Table {
     pub function_effect_annotation_syntaxes:
         ReadOnlyMap<Option<pernixc_syntax::item::function::EffectAnnotation>>,
 
+    /// Maps the instance associated instance ID to its associated value
+    /// syntax, which represents the `= QualifiedIdentifier` part of an
+    /// associated instance declaration.
+    pub instance_associated_value_syntaxes:
+        ReadOnlyMap<Option<pernixc_syntax::InstanceValue>>,
+
+    /// Maps the instance ID to its trait ref syntax. This represents the trait
+    /// that the instance implements.
+    pub instance_trait_ref_syntaxes:
+        ReadOnlyMap<Option<pernixc_syntax::TraitRef>>,
+
     /// Maps the function ID to its `unsafe` keyword if it has one.
     pub function_unsafe_keywords: ReadOnlyMap<Option<pernixc_syntax::Keyword>>,
 
@@ -268,6 +280,9 @@ pub struct Table {
     /// The content of the submodule is not defined in the current [`Table`],
     /// this is simply a reference to where the submodule is defined in
     pub external_submodules: ReadOnlyMap<Interned<ExternalSubmodule>>,
+
+    /// Maps the `instance` ID to whether it is an external instance or not.
+    pub external_instances: ReadOnlyMap<bool>,
 
     /// The ID of the module that this table represents.
     pub module_id: pernixc_symbol::ID,

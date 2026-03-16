@@ -1,10 +1,9 @@
 use pernixc_diagnostic::{Highlight, Report};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
+use pernixc_resolution::qualified_identifier::Resolution;
 use pernixc_source_file::ByteIndex;
-use pernixc_symbol::{
-    kind::get_kind, name::get_qualified_name, source_map::to_absolute_span,
-};
+use pernixc_symbol::{name::get_qualified_name, source_map::to_absolute_span};
 use pernixc_target::Global;
 use qbice::{Decode, Encode, StableHash};
 
@@ -14,7 +13,6 @@ diagnostic_enum! {
     #[derive(
         Debug,
         Clone,
-        Copy,
         PartialEq,
         Eq,
         PartialOrd,
@@ -24,6 +22,7 @@ diagnostic_enum! {
         Encode,
         Decode,
     )]
+    #[allow(clippy::large_enum_variant)]
     pub enum Diagnostic {
         ExpectedAssociatedValue(ExpectedAssociatedValue),
         SymbolCannotBeUsedAsAnExpression(SymbolCannotBeUsedAsAnExpression)
@@ -86,7 +85,6 @@ impl Report for ExpectedAssociatedValue {
 #[derive(
     Debug,
     Clone,
-    Copy,
     PartialEq,
     Eq,
     PartialOrd,
@@ -101,7 +99,7 @@ pub struct SymbolCannotBeUsedAsAnExpression {
     pub span: RelativeSpan,
 
     /// The ID of the symbol that cannot be used as an expression.
-    pub symbol: Global<pernixc_symbol::ID>,
+    pub found: Resolution,
 }
 
 impl Report for SymbolCannotBeUsedAsAnExpression {
@@ -109,15 +107,12 @@ impl Report for SymbolCannotBeUsedAsAnExpression {
         &self,
         parameter: &TrackedEngine,
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
-        let qualified_name = parameter.get_qualified_name(self.symbol).await;
+        let found_string = self.found.found_string(parameter).await;
         let abs_span = parameter.to_absolute_span(&self.span).await;
-        let kind = parameter.get_kind(self.symbol).await;
 
         pernixc_diagnostic::Rendered::builder()
             .message(format!(
-                "the symbol `{} {qualified_name}` cannot be used as an \
-                 expression",
-                kind.kind_str()
+                "`{found_string}` cannot be used as an expression",
             ))
             .primary_highlight(
                 Highlight::builder()

@@ -10,23 +10,25 @@ use std::{
 
 use linkme::distributed_slice;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
-use pernixc_semantic_element::implements_arguments::get_implements_argument;
+use pernixc_semantic_element::{
+    implements_arguments::get_implements_argument, trait_ref::get_trait_ref,
+};
 use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant, generic_arguments::GenericArguments,
-    lifetime::Lifetime, r#type::Type,
+    instance::Instance, lifetime::Lifetime, r#type::Type,
 };
 use qbice::{
     Decode, Encode, Query, StableHash, executor, program::Registration,
 };
 
 use crate::{
-    Error, OverflowError, Satisfied, Succeeded,
+    OverflowError, Satisfied, Succeeded,
     environment::{Environment, Premise},
     mapping::Mapping,
     normalizer::{self, Normalizer},
     term::Term,
-    unification::{self, Log, Unification},
+    unification::{self, Unification},
 };
 
 /// The order in terms of specificity of the generic arguments.
@@ -52,7 +54,11 @@ pub enum Order {
 }
 
 fn type_predicate(x: &Type) -> bool {
-    x.is_parameter() || matches!(x, Type::TraitMember(_))
+    x.is_parameter() || matches!(x, Type::InstanceAssociated(_))
+}
+
+fn instance_predicate(x: &Instance) -> bool {
+    x.is_parameter() || matches!(x, Instance::InstanceAssociated(_))
 }
 
 fn constant_predicate(x: &Constant) -> bool { x.is_parameter() }
@@ -65,9 +71,7 @@ impl unification::Predicate<Lifetime> for CompatiblePredicate {
         &self,
         _: &Lifetime,
         _: &Lifetime,
-        _: &[Log],
-        _: &[Log],
-    ) -> Result<Option<Succeeded<Satisfied>>, Error> {
+    ) -> Result<Option<Succeeded<Satisfied>>, OverflowError> {
         Ok(Some(Succeeded::satisfied()))
     }
 }
@@ -77,9 +81,7 @@ impl unification::Predicate<Type> for CompatiblePredicate {
         &self,
         from: &Type,
         to: &Type,
-        _: &[Log],
-        _: &[Log],
-    ) -> Result<Option<Succeeded<Satisfied>>, Error> {
+    ) -> Result<Option<Succeeded<Satisfied>>, OverflowError> {
         Ok((type_predicate(from) || type_predicate(to))
             .then_some(Succeeded::satisfied()))
     }
@@ -90,10 +92,19 @@ impl unification::Predicate<Constant> for CompatiblePredicate {
         &self,
         from: &Constant,
         to: &Constant,
-        _: &[Log],
-        _: &[Log],
-    ) -> Result<Option<Succeeded<Satisfied>>, Error> {
+    ) -> Result<Option<Succeeded<Satisfied>>, OverflowError> {
         Ok((constant_predicate(from) || constant_predicate(to))
+            .then_some(Succeeded::satisfied()))
+    }
+}
+
+impl unification::Predicate<Instance> for CompatiblePredicate {
+    fn unifiable(
+        &self,
+        from: &Instance,
+        to: &Instance,
+    ) -> Result<Option<Succeeded<Satisfied>>, OverflowError> {
+        Ok((instance_predicate(from) || instance_predicate(to))
             .then_some(Succeeded::satisfied()))
     }
 }
@@ -103,7 +114,7 @@ async fn append_mapping<T: Term>(
     this: &[T],
     other: &[T],
     environment: &Environment<'_, impl Normalizer>,
-) -> Result<bool, Error> {
+) -> Result<bool, OverflowError> {
     for (this_term, other_term) in this.iter().zip(other.iter()) {
         let Some(unifier) = environment
             .query(&Unification::new(
@@ -126,7 +137,7 @@ async fn matching_copmatible<T: Term>(
     matching: BTreeMap<T, BTreeSet<T>>,
     filter: impl Fn(&T) -> bool,
     environment: &Environment<'_, impl Normalizer>,
-) -> Result<bool, Error> {
+) -> Result<bool, OverflowError> {
     for (key, matching) in matching {
         if !filter(&key) {
             continue;
@@ -158,15 +169,22 @@ async fn get_generic_arguments_matching_count(
     this: &GenericArguments,
     other: &GenericArguments,
     environment: &Environment<'_, impl Normalizer>,
-) -> Result<Option<usize>, Error> {
+) -> Result<Option<usize>, OverflowError> {
     let mut mapping = Mapping::default();
 
-    if !append_mapping(&mut mapping, &this.types, &other.types, environment)
+    if !append_mapping(&mut mapping, this.types(), other.types(), environment)
         .await?
         || !append_mapping(
             &mut mapping,
-            &this.constants,
-            &other.constants,
+            this.constants(),
+            other.constants(),
+            environment,
+        )
+        .await?
+        || !append_mapping(
+            &mut mapping,
+            this.instances(),
+            other.instances(),
             environment,
         )
         .await?
@@ -175,12 +193,19 @@ async fn get_generic_arguments_matching_count(
     }
 
     let count = mapping.types.keys().filter(|x| type_predicate(x)).count()
-        + mapping.constants.keys().filter(|x| constant_predicate(x)).count();
+        + mapping.constants.keys().filter(|x| constant_predicate(x)).count()
+        + mapping.instances.keys().filter(|x| instance_predicate(x)).count();
 
     if !matching_copmatible(mapping.types, type_predicate, environment).await?
         || !matching_copmatible(
             mapping.constants,
             constant_predicate,
+            environment,
+        )
+        .await?
+        || !matching_copmatible(
+            mapping.instances,
+            instance_predicate,
             environment,
         )
         .await?
@@ -197,11 +222,8 @@ impl<N: Normalizer> Environment<'_, N> {
         &self,
         this: &GenericArguments,
         other: &GenericArguments,
-    ) -> Result<Order, Error> {
-        if this.lifetimes.len() != other.lifetimes.len()
-            || this.types.len() != other.types.len()
-            || this.constants.len() != other.constants.len()
-        {
+    ) -> Result<Order, OverflowError> {
+        if !this.arity_matches(other) {
             return Ok(Order::Incompatible);
         }
 
@@ -243,7 +265,8 @@ impl<N: Normalizer> Environment<'_, N> {
     derive_new::new,
 )]
 #[value(Result<Option<Order>, OverflowError>)]
-pub struct Key {
+#[extend(name = get_implements_order, by_val)]
+pub struct ImplementsOrderKey {
     /// The `this` in the [`Environment::order`]
     pub this: Global<pernixc_symbol::ID>,
     /// The `other` in the [`Environment::order`]
@@ -253,7 +276,7 @@ pub struct Key {
 /// The executor for the [`ImplementsOrderExecutor`] query.
 #[executor(config = Config)]
 pub async fn implements_order_executor(
-    Key { this, other }: &Key,
+    ImplementsOrderKey { this, other }: &ImplementsOrderKey,
     tracked_engine: &TrackedEngine,
 ) -> Result<Option<Order>, OverflowError> {
     let (Some(lhs_generic_arguments), Some(rhs_generic_arguments)) = (
@@ -274,13 +297,78 @@ pub async fn implements_order_executor(
         .await
     {
         Ok(order) => Ok(Some(order)),
-        Err(Error::Overflow(overflow)) => Err(overflow),
+        Err(overflow) => Err(overflow),
     }
 }
 
 #[distributed_slice(PERNIX_PROGRAM)]
 static IMPLEMENTS_ORDER_EXECUTOR: Registration<Config> =
-    Registration::new::<Key, ImplementsOrderExecutor>();
+    Registration::new::<ImplementsOrderKey, ImplementsOrderExecutor>();
+
+/// A query for retrieving the order (level of specificity) between two
+/// `instance`'s trait ref arguments.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Query,
+    derive_new::new,
+)]
+#[value(Result<Option<Order>, OverflowError>)]
+#[extend(name = get_instance_order, by_val)]
+pub struct InstanceOrderKey {
+    /// The `this` in the [`Environment::order`]
+    pub this: Global<pernixc_symbol::ID>,
+    /// The `other` in the [`Environment::order`]
+    pub other: Global<pernixc_symbol::ID>,
+}
+
+/// The executor for the [`InstanceOrderExecutor`] query.
+#[executor(config = Config)]
+pub async fn instance_order_executor(
+    InstanceOrderKey { this, other }: &InstanceOrderKey,
+    tracked_engine: &TrackedEngine,
+) -> Result<Option<Order>, OverflowError> {
+    let (Some(lhs_generic_arguments), Some(rhs_generic_arguments)) = (
+        tracked_engine.get_trait_ref(*this).await,
+        tracked_engine.get_trait_ref(*other).await,
+    ) else {
+        return Ok(None);
+    };
+
+    if lhs_generic_arguments.trait_id() != rhs_generic_arguments.trait_id() {
+        return Ok(None);
+    }
+
+    let default_environment = Environment::new(
+        Cow::Owned(Premise::default()),
+        Cow::Borrowed(tracked_engine),
+        normalizer::NO_OP,
+    );
+
+    match default_environment
+        .order(
+            lhs_generic_arguments.generic_arguments(),
+            rhs_generic_arguments.generic_arguments(),
+        )
+        .await
+    {
+        Ok(order) => Ok(Some(order)),
+        Err(overflow) => Err(overflow),
+    }
+}
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static INSTANCE_ORDER_EXECUTOR: Registration<Config> =
+    Registration::new::<InstanceOrderKey, InstanceOrderExecutor>();
 
 #[cfg(test)]
 mod test;

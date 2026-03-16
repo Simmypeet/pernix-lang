@@ -43,25 +43,24 @@ public marker Fifth
 
 public marker Fifth
 
-public trait Sixth:
-    public function inner()
+public enum Sixth:
+    Inner
 
-public trait Sixth:
-    public function inner()
+public enum Sixth:
+    Inner
 
-public trait Test[T]:
-    public function test()
+public enum Test[T]:
+    Test
 
 implements Test[int32]:
-    function test():
+    public function test():
         pass
 
-    function test():
+    public function test():
         pass
 
 implements Test[float32]:
-    function test():
-        pass
+    pass
 
 public function main():
     pass

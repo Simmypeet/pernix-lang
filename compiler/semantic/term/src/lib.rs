@@ -10,6 +10,7 @@ pub mod error;
 pub mod generic_arguments;
 pub mod generic_parameters;
 pub mod inference;
+pub mod instance;
 pub mod instantiation;
 pub mod lifetime;
 pub mod matching;
@@ -61,6 +62,7 @@ pub enum TermRef<'a> {
     Constant(&'a constant::Constant),
     Lifetime(&'a lifetime::Lifetime),
     Type(&'a r#type::Type),
+    Instance(&'a instance::Instance),
 }
 
 /// A mutable reference to a term, which can be either a constant, lifetime, or
@@ -73,4 +75,5 @@ pub enum TermMut<'a> {
     Constant(&'a mut constant::Constant),
     Lifetime(&'a mut lifetime::Lifetime),
     Type(&'a mut r#type::Type),
+    Instance(&'a mut instance::Instance),
 }

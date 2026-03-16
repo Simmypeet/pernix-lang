@@ -1,16 +1,15 @@
 use std::{borrow::Cow, fmt::Debug, future::Future, pin::Pin, sync::Arc};
 
-use pernixc_hash::HashSet;
 use pernixc_qbice::Engine;
 use pernixc_semantic_element::variance::{Variance, Variances};
 use pernixc_symbol::kind::Kind;
 use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
-    generic_arguments::{GenericArguments, MemberSymbol, Symbol, TraitMember},
+    generic_arguments::{GenericArguments, Symbol},
     generic_parameters::{GenericParameters, LifetimeParameter},
     lifetime::Lifetime,
-    predicate::{Compatible, Outlives, Predicate},
+    predicate::{Outlives, Predicate},
     r#type::Type,
 };
 use proptest::{
@@ -21,11 +20,11 @@ use proptest::{
 };
 
 use crate::{
-    Error,
+    OverflowError,
     environment::{Environment, Premise},
     equality, normalizer,
     term::Term,
-    test::{create_test_engine, purge_trait_associated_type},
+    test::{create_test_engine, purge_instance_associated},
 };
 
 #[derive(
@@ -33,7 +32,7 @@ use crate::{
 )]
 pub enum AbortError {
     #[error(transparent)]
-    Abrupt(#[from] Error),
+    Abrupt(#[from] OverflowError),
 
     #[error("collision to the ID generated on the table")]
     IDCollision,
@@ -56,8 +55,6 @@ pub trait Property<T>: 'static + Debug {
 
 #[derive(Debug)]
 pub struct ByEquality {
-    pub equality: TraitMember,
-    pub trait_id: pernixc_symbol::ID,
     pub property: Box<dyn Property<Type>>,
 }
 
@@ -68,69 +65,9 @@ impl Property<Type> for ByEquality {
         premise: &'x mut Premise,
     ) -> BoxedFuture<'x, Type> {
         Box::pin(async move {
-            {
-                let mut input_session = engine.input_session().await;
-                input_session
-                    .set_input(
-                        pernixc_symbol::parent::Key {
-                            symbol_id: self.equality.id,
-                        },
-                        Some(self.trait_id),
-                    )
-                    .await;
+            let (lhs, rhs) = self.property.generate(engine, premise).await?;
 
-                input_session
-                    .set_input(
-                        pernixc_symbol::kind::Key {
-                            symbol_id: self
-                                .equality
-                                .id
-                                .target_id
-                                .make_global(self.trait_id),
-                        },
-                        Kind::Trait,
-                    )
-                    .await;
-
-                input_session
-                    .set_input(
-                        pernixc_semantic_element::implemented::Key {
-                            symbol_id: self
-                                .equality
-                                .id
-                                .target_id
-                                .make_global(self.trait_id),
-                        },
-                        engine.intern(HashSet::default()),
-                    )
-                    .await;
-            }
-
-            let (inner_operand, inner_bound) =
-                self.property.generate(engine, premise).await?;
-
-            let outlives = Outlives::new(
-                Type::TraitMember(self.equality.clone()),
-                inner_bound.clone(),
-            );
-
-            let environment = Environment::new(
-                Cow::Borrowed(premise),
-                Cow::Owned(engine.clone().tracked().await),
-                normalizer::NO_OP,
-            );
-
-            if environment.query(&outlives).await?.is_none() {
-                premise.predicates.insert(
-                    Compatible {
-                        lhs: self.equality.clone(),
-                        rhs: inner_operand,
-                    }
-                    .into(),
-                );
-            }
-
-            Ok((Type::TraitMember(self.equality.clone()), inner_bound))
+            Ok((lhs, rhs))
         })
     }
 
@@ -144,61 +81,7 @@ impl Arbitrary for ByEquality {
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         let args = args.unwrap_or_else(Box::<dyn Property<Type>>::arbitrary);
 
-        (TraitMember::arbitrary(), pernixc_symbol::ID::arbitrary(), args)
-            .prop_map(|(equality, trait_id, property)| Self {
-                equality: TraitMember(MemberSymbol {
-                    id: equality.0.id,
-                    member_generic_arguments: GenericArguments {
-                        lifetimes: equality
-                            .0
-                            .member_generic_arguments
-                            .lifetimes
-                            .into_iter()
-                            .map(purge_trait_associated_type)
-                            .collect(),
-                        types: equality
-                            .0
-                            .member_generic_arguments
-                            .types
-                            .into_iter()
-                            .map(purge_trait_associated_type)
-                            .collect(),
-                        constants: equality
-                            .0
-                            .member_generic_arguments
-                            .constants
-                            .into_iter()
-                            .map(purge_trait_associated_type)
-                            .collect(),
-                    },
-                    parent_generic_arguments: GenericArguments {
-                        lifetimes: equality
-                            .0
-                            .parent_generic_arguments
-                            .lifetimes
-                            .into_iter()
-                            .map(purge_trait_associated_type)
-                            .collect(),
-                        types: equality
-                            .0
-                            .parent_generic_arguments
-                            .types
-                            .into_iter()
-                            .map(purge_trait_associated_type)
-                            .collect(),
-                        constants: equality
-                            .0
-                            .parent_generic_arguments
-                            .constants
-                            .into_iter()
-                            .map(purge_trait_associated_type)
-                            .collect(),
-                    },
-                }),
-                trait_id,
-                property,
-            })
-            .boxed()
+        args.prop_map(|property| Self { property }).boxed()
     }
 }
 
@@ -233,10 +116,10 @@ impl Property<Type> for LifetimeMatching {
             {
                 for i in 0..self.lifetime_properties.len() {
                     let lifetime_param = generic_parameter
-                        .add_lifetime_parameter(LifetimeParameter {
-                            name: engine.intern_unsized(format!("_{i}")),
-                            span: None,
-                        })
+                        .add_lifetime_parameter(LifetimeParameter::new(
+                            engine.intern_unsized(format!("_{i}")),
+                            None,
+                        ))
                         .unwrap();
 
                     variance_map
@@ -273,14 +156,15 @@ impl Property<Type> for LifetimeMatching {
                     .await;
             }
 
-            let ty_operand = Type::Symbol(Symbol {
-                id: self.struct_id,
-                generic_arguments: GenericArguments {
-                    lifetimes: operand_lifetimes,
-                    types: Vec::new(),
-                    constants: Vec::new(),
-                },
-            });
+            let ty_operand = Type::Symbol(Symbol::new(
+                self.struct_id,
+                GenericArguments::new(
+                    operand_lifetimes,
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                ),
+            ));
 
             let environment = Environment::new(
                 Cow::Borrowed(premise),
@@ -288,20 +172,20 @@ impl Property<Type> for LifetimeMatching {
                 normalizer::NO_OP,
             );
 
-            if environment
+            if !environment
                 .query(&Outlives::new(ty_operand.clone(), self.bound.clone()))
                 .await?
-                .is_none()
             {
                 premise.predicates.insert(Predicate::TypeOutlives(Outlives {
-                    operand: Type::Symbol(Symbol {
-                        id: self.struct_id,
-                        generic_arguments: GenericArguments {
-                            lifetimes: bound_lifetimes,
-                            types: Vec::new(),
-                            constants: Vec::new(),
-                        },
-                    }),
+                    operand: Type::Symbol(Symbol::new(
+                        self.struct_id,
+                        GenericArguments::new(
+                            bound_lifetimes,
+                            Vec::new(),
+                            Vec::new(),
+                            Vec::new(),
+                        ),
+                    )),
                     bound: self.bound.clone(),
                 }));
             }
@@ -397,7 +281,7 @@ impl<T: Arbitrary<Strategy = BoxedStrategy<T>> + Term + 'static> Arbitrary
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
-            T::arbitrary().prop_map(purge_trait_associated_type),
+            T::arbitrary().prop_map(purge_instance_associated),
             Lifetime::arbitrary(),
         )
             .prop_map(|(term, bound)| Self { term, bound })
@@ -421,10 +305,9 @@ where
                 normalizer::NO_OP,
             );
 
-            if environment
+            if !environment
                 .query(&Outlives::new(self.term.clone(), self.bound.clone()))
                 .await?
-                .is_none()
             {
                 premise.predicates.insert(
                     Outlives {
@@ -464,13 +347,12 @@ impl<T: Term> Property<T> for Transitive<T> {
                 normalizer::NO_OP,
             );
 
-            if environment
+            if !environment
                 .query(&Outlives::new(
                     inner_operand.clone(),
                     self.final_bound.clone(),
                 ))
                 .await?
-                .is_none()
             {
                 premise.predicates.insert(Predicate::LifetimeOutlives(
                     Outlives {
@@ -538,7 +420,7 @@ impl Arbitrary for Box<dyn Property<Lifetime>> {
             ByPremise::arbitrary().prop_map(|x| Box::new(x) as _),
         ];
 
-        leaf.prop_recursive(20, 20, 1, |inner| {
+        leaf.prop_recursive(50, 50, 1, |inner| {
             Transitive::arbitrary_with(Some(inner.clone()))
                 .prop_map(|x| Box::new(x) as _)
         })
@@ -552,15 +434,10 @@ async fn property_based_testing<T: Term + 'static>(
     let mut premise = Premise::default();
     let (engine, _dir) = create_test_engine().await;
 
-    println!("node count: {}", property.node_count());
-
-    let (term1, term2) =
-        property.generate(&engine, &mut premise).await.map_err(|x| {
-            println!("premise count: {}", premise.predicates.len());
-            TestCaseError::reject(format!("{x}"))
-        })?;
-
-    println!("premise count: {}", premise.predicates.len());
+    let (term1, term2) = property
+        .generate(&engine, &mut premise)
+        .await
+        .map_err(|x| TestCaseError::reject(format!("{x}")))?;
 
     let environment = Environment::new(
         Cow::Borrowed(&premise),
@@ -572,7 +449,7 @@ async fn property_based_testing<T: Term + 'static>(
         .await
         .map_err(|x| TestCaseError::fail(format!("{x}")))?;
 
-    prop_assert!(result.is_some());
+    prop_assert!(result);
 
     Ok(())
 }
@@ -592,7 +469,7 @@ proptest! {
             .unwrap()
             .block_on(property_based_testing(&*property));
 
-        println!("{result:?}");
+        println!("ran property with {} nodes, got {:?}", property.node_count(), result);
 
         result?;
     }
@@ -605,7 +482,7 @@ proptest! {
             .unwrap()
             .block_on(property_based_testing(&*property));
 
-        println!("{result:?}");
+        println!("ran property with {} nodes, got {:?}", property.node_count(), result);
 
         result?;
     }
@@ -626,7 +503,7 @@ proptest! {
             );
 
             prop_assert!(
-                environment.query(&Outlives::new(constant, lifetime)).await?.is_some()
+                environment.query(&Outlives::new(constant, lifetime)).await?
             );
 
             Ok(())

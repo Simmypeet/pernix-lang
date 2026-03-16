@@ -389,10 +389,7 @@ impl Binder<'_> {
                                 lhs_span: syntax_tree.left.span(),
                                 operator_kind: BinaryOperatorKind::Arithmetic,
                                 lhs_type: lhs_register_ty.clone(),
-                                type_inference_map: self
-                                    .type_inference_rendering_map(),
-                                constant_inference_map: self
-                                    .constant_inference_rendering_map(),
+                                rendering_map: self.get_rendering_map(),
                             }
                             .into(),
                         );
@@ -423,18 +420,13 @@ impl Binder<'_> {
 
                     Type::Inference(inference) => {
                         let constraint_id = *self
-                            .inference_context()
-                            .type_table()
-                            .get_inference(inference)
+                            .get_type_inference(inference)
                             .unwrap()
                             .as_inferring()
                             .unwrap();
 
-                        let constraint = *self
-                            .inference_context()
-                            .type_table()
-                            .get_constraint(constraint_id)
-                            .unwrap();
+                        let constraint =
+                            *self.get_type_constraint(constraint_id).unwrap();
 
                         match constraint {
                             constraint::Type::Number
@@ -456,10 +448,7 @@ impl Binder<'_> {
                             lhs_span: syntax_tree.left.span(),
                             operator_kind: BinaryOperatorKind::Relational,
                             lhs_type: lhs_register_ty.clone(),
-                            type_inference_map: self
-                                .type_inference_rendering_map(),
-                            constant_inference_map: self
-                                .constant_inference_rendering_map(),
+                            rendering_map: self.get_rendering_map(),
                         }
                         .into(),
                     );
@@ -494,10 +483,7 @@ impl Binder<'_> {
                                 lhs_span: syntax_tree.left.span(),
                                 operator_kind: BinaryOperatorKind::Relational,
                                 lhs_type: lhs_register_ty.clone(),
-                                type_inference_map: self
-                                    .type_inference_rendering_map(),
-                                constant_inference_map: self
-                                    .constant_inference_rendering_map(),
+                                rendering_map: self.get_rendering_map(),
                             }
                             .into(),
                         );

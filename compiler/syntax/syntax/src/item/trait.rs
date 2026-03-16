@@ -8,7 +8,7 @@ use crate::{
     AccessModifier, Identifier, Keyword,
     item::{
         Body, TrailingWhereClause, constant, function,
-        generic_parameters::GenericParameters, r#type,
+        generic_parameters::GenericParameters, instance, r#type,
     },
 };
 
@@ -50,6 +50,10 @@ abstract_tree::abstract_tree! {
             MemberTemplate<constant::Signature>
                 = ast::<MemberTemplate<constant::Signature>>()
         ),
+        Instance(
+            MemberTemplate<instance::Signature>
+                = ast::<MemberTemplate<instance::Signature>>()
+        )
     }
 }
 

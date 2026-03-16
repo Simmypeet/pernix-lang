@@ -16,32 +16,28 @@ use crate::{
 
 #[tokio::test]
 async fn ambiguous() {
-    let t_parameter = Type::Parameter(TypeParameterID {
-        parent_id: Global::new(
-            TargetID::TEST,
-            pernixc_symbol::ID::from_u128(1),
-        ),
-        id: pernixc_arena::ID::new(0),
-    });
-    let u_parameter = Type::Parameter(TypeParameterID {
-        parent_id: Global::new(
-            TargetID::TEST,
-            pernixc_symbol::ID::from_u128(2),
-        ),
-        id: pernixc_arena::ID::new(0),
-    });
+    let t_parameter = Type::Parameter(TypeParameterID::new(
+        Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(1)),
+        pernixc_arena::ID::new(0),
+    ));
+    let u_parameter = Type::Parameter(TypeParameterID::new(
+        Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(2)),
+        pernixc_arena::ID::new(0),
+    ));
 
-    let lhs = GenericArguments {
-        lifetimes: Vec::new(),
-        types: vec![Type::Primitive(Primitive::Int32), t_parameter],
-        constants: Vec::new(),
-    };
+    let lhs = GenericArguments::new(
+        Vec::new(),
+        vec![Type::Primitive(Primitive::Int32), t_parameter],
+        Vec::new(),
+        Vec::new(),
+    );
 
-    let rhs = GenericArguments {
-        lifetimes: Vec::new(),
-        types: vec![u_parameter, Type::Primitive(Primitive::Int32)],
-        constants: Vec::new(),
-    };
+    let rhs = GenericArguments::new(
+        Vec::new(),
+        vec![u_parameter, Type::Primitive(Primitive::Int32)],
+        Vec::new(),
+        Vec::new(),
+    );
 
     let (engine, _dir) = create_test_engine().await;
     let premise = Premise::default();
@@ -57,28 +53,27 @@ async fn ambiguous() {
 
 #[tokio::test]
 async fn more_general() {
-    let t_parameter = Type::Parameter(TypeParameterID {
-        parent_id: Global::new(
-            TargetID::TEST,
-            pernixc_symbol::ID::from_u128(1),
-        ),
-        id: pernixc_arena::ID::new(0),
-    });
+    let t_parameter = Type::Parameter(TypeParameterID::new(
+        Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(1)),
+        pernixc_arena::ID::new(0),
+    ));
 
-    let lhs = GenericArguments {
-        lifetimes: Vec::new(),
-        types: vec![Type::Primitive(Primitive::Int32), t_parameter],
-        constants: Vec::new(),
-    };
+    let lhs = GenericArguments::new(
+        Vec::new(),
+        vec![Type::Primitive(Primitive::Int32), t_parameter],
+        Vec::new(),
+        Vec::new(),
+    );
 
-    let rhs = GenericArguments {
-        lifetimes: Vec::new(),
-        types: vec![
+    let rhs = GenericArguments::new(
+        Vec::new(),
+        vec![
             Type::Primitive(Primitive::Int32),
             Type::Primitive(Primitive::Int32),
         ],
-        constants: Vec::new(),
-    };
+        Vec::new(),
+        Vec::new(),
+    );
 
     let (engine, _dir) = create_test_engine().await;
     let premise = Premise::default();
@@ -97,28 +92,27 @@ async fn more_general() {
 
 #[tokio::test]
 async fn incompatible() {
-    let t_parameter = Type::Parameter(TypeParameterID {
-        parent_id: Global::new(
-            TargetID::TEST,
-            pernixc_symbol::ID::from_u128(1),
-        ),
-        id: pernixc_arena::ID::new(0),
-    });
+    let t_parameter = Type::Parameter(TypeParameterID::new(
+        Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(1)),
+        pernixc_arena::ID::new(0),
+    ));
 
-    let lhs = GenericArguments {
-        lifetimes: Vec::new(),
-        types: vec![Type::Primitive(Primitive::Int32), t_parameter],
-        constants: Vec::new(),
-    };
+    let lhs = GenericArguments::new(
+        Vec::new(),
+        vec![Type::Primitive(Primitive::Int32), t_parameter],
+        Vec::new(),
+        Vec::new(),
+    );
 
-    let rhs = GenericArguments {
-        lifetimes: Vec::new(),
-        types: vec![
+    let rhs = GenericArguments::new(
+        Vec::new(),
+        vec![
             Type::Primitive(Primitive::Bool),
             Type::Primitive(Primitive::Int32),
         ],
-        constants: Vec::new(),
-    };
+        Vec::new(),
+        Vec::new(),
+    );
 
     let (engine, _dir) = create_test_engine().await;
     let premise = Premise::default();

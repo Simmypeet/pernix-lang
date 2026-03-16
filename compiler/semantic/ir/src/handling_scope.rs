@@ -5,10 +5,14 @@ use getset::{CopyGetters, Getters};
 use pernixc_arena::{Arena, ID};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_target::Global;
-use pernixc_term::{generic_arguments::GenericArguments, r#type::Type};
+use pernixc_term::{
+    constant::Constant, generic_arguments::GenericArguments,
+    instance::Instance, lifetime::Lifetime, r#type::Type,
+};
+use pernixc_type_system::OverflowError;
 use qbice::{Decode, Encode, StableHash};
 
-use crate::transform::{self, TypeTermSource};
+use crate::transform::{self, Transformer, TypeTermSource};
 
 /// A collection of all the effect handler groups in a function body.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Default)]
@@ -37,9 +41,10 @@ impl std::ops::Index<ID<HandlingScope>> for HandlingScopes {
 
 impl transform::Element for HandlingScopes {
     async fn transform<
-        T: transform::Transformer<pernixc_term::lifetime::Lifetime>
-            + transform::Transformer<Type>
-            + transform::Transformer<pernixc_term::constant::Constant>,
+        T: Transformer<Lifetime>
+            + Transformer<Type>
+            + Transformer<Constant>
+            + Transformer<Instance>,
     >(
         &mut self,
         transformer: &mut T,
@@ -122,9 +127,7 @@ pub struct HandlingScope {
 
 impl transform::Element for HandlingScope {
     async fn transform<
-        T: transform::Transformer<pernixc_term::lifetime::Lifetime>
-            + transform::Transformer<Type>
-            + transform::Transformer<pernixc_term::constant::Constant>,
+        T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
     >(
         &mut self,
         transformer: &mut T,
@@ -149,7 +152,7 @@ pub trait HandlerClauseMatcher {
         &mut self,
         searching_generic_arguments: &GenericArguments,
         stack_generic_arguments: &GenericArguments,
-    ) -> Result<bool, pernixc_type_system::Error>;
+    ) -> Result<bool, OverflowError>;
 }
 
 impl HandlingScope {
@@ -175,10 +178,7 @@ impl HandlingScope {
         effect_id: Global<pernixc_symbol::ID>,
         generic_arguments: &GenericArguments,
         matcher: &mut impl HandlerClauseMatcher,
-    ) -> Result<
-        Option<pernixc_arena::ID<HandlerClause>>,
-        pernixc_type_system::Error,
-    > {
+    ) -> Result<Option<pernixc_arena::ID<HandlerClause>>, OverflowError> {
         for (effect_handler_id, effect_handler) in self.handler_clauses.iter() {
             // not the same effect
             if effect_id != effect_handler.effect_id {

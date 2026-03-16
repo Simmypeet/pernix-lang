@@ -1,0 +1,13 @@
+public trait TraitA:
+    pass
+
+
+public trait TraitB:
+    pass
+
+
+public type Require[instance I: TraitA, instance J: TraitB] = int32
+
+
+# should error with two instances that are not the same
+public type Use[instance I: TraitB, instance J: TraitA] = Require[I, J]

@@ -1,22 +1,17 @@
 use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
+use pernixc_resolution::qualified_identifier::Resolution;
 use pernixc_semantic_element::implements_arguments::get_implements_argument;
 use pernixc_source_file::ByteIndex;
 use pernixc_symbol::{
-    kind::get_kind, name::get_qualified_name, source_map::to_absolute_span,
-    span::get_span,
+    name::get_qualified_name, source_map::to_absolute_span, span::get_span,
 };
 use pernixc_target::Global;
-use pernixc_term::{
-    constant::Constant,
-    display::{Display, InferenceRenderingMap},
-    generic_arguments::GenericArguments,
-    r#type::Type,
-};
+use pernixc_term::{display::Display, generic_arguments::GenericArguments};
 use qbice::{Decode, Encode, StableHash};
 
-use crate::diagnostic_enum;
+use crate::{binder::inference_context::RenderingMap, diagnostic_enum};
 
 diagnostic_enum! {
     #[derive(
@@ -49,7 +44,6 @@ diagnostic_enum! {
 #[derive(
     Debug,
     Clone,
-    Copy,
     PartialEq,
     Eq,
     PartialOrd,
@@ -61,7 +55,7 @@ diagnostic_enum! {
 )]
 pub struct SymbolIsNotCallable {
     /// The ID of the symbol that cannot be called.
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub found: Resolution,
 
     /// The span of the call.
     pub span: RelativeSpan,
@@ -73,14 +67,10 @@ impl Report for SymbolIsNotCallable {
         engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let span = engine.to_absolute_span(&self.span).await;
-        let kind = engine.get_kind(self.symbol_id).await;
-        let qualified_name = engine.get_qualified_name(self.symbol_id).await;
+        let found_string = self.found.found_string(engine).await;
 
         pernixc_diagnostic::Rendered::builder()
-            .message(format!(
-                "the symbol `{} {qualified_name}` cannot be called",
-                kind.kind_str()
-            ))
+            .message(format!("`{found_string}` cannot be called",))
             .primary_highlight(
                 Highlight::builder().span(span).message("not callable").build(),
             )
@@ -325,11 +315,8 @@ pub struct MismatchedImplementationArguments {
     /// The span of the instantiation that causes the mismatch.
     pub instantiation_span: RelativeSpan,
 
-    /// The inference rendering map for constants.
-    pub constant_inference_map: InferenceRenderingMap<Constant>,
-
-    /// The inference rendering map for types.
-    pub type_inference_map: InferenceRenderingMap<Type>,
+    /// The rendering map for inference variables.
+    pub rendering_map: RenderingMap,
 }
 
 impl Report for MismatchedImplementationArguments {
@@ -365,12 +352,10 @@ impl Report for MismatchedImplementationArguments {
                         string.push_str("the generic arguments supplied was `");
 
                         self.found_generic_arguments
-                            .write_async_with_mapping(
+                            .write_async_with_configuration(
                                 engine,
                                 &mut string,
-                                None,
-                                Some(&self.type_inference_map),
-                                Some(&self.constant_inference_map),
+                                &self.rendering_map.configuration(),
                             )
                             .await
                             .unwrap();

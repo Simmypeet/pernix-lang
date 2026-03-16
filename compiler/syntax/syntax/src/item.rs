@@ -18,6 +18,7 @@ pub mod r#extern;
 pub mod function;
 pub mod generic_parameters;
 pub mod implements;
+pub mod instance;
 pub mod marker;
 pub mod module;
 pub mod r#struct;

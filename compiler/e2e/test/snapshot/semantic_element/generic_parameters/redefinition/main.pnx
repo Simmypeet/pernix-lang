@@ -11,3 +11,10 @@ public type Fourth[
 ] = &'a T:
     where:
         T: 'a
+
+
+public trait Test[T]:
+    pass
+
+
+public type Fifth[T, instance I: Test[T], instance I: Test[int32]] = int32

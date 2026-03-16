@@ -2,6 +2,7 @@
 
 use std::{collections::BTreeMap, hash::Hash};
 
+use derive_new::new;
 use pernixc_arena::ID;
 use pernixc_extend::extend;
 use pernixc_qbice::TrackedEngine;
@@ -18,8 +19,10 @@ use crate::{
     generic_arguments::GenericArguments,
     generic_parameters::{
         ConstantParameterID, GenericKind, GenericParameters,
-        LifetimeParameterID, TypeParameterID, get_generic_parameters,
+        InstanceParameterID, LifetimeParameterID, TypeParameterID,
+        get_generic_parameters,
     },
+    instance::Instance,
     lifetime::Lifetime,
     r#type::Type,
 };
@@ -37,12 +40,239 @@ use crate::{
     StableHash,
     Encode,
     Decode,
+    new,
 )]
 #[allow(missing_docs)]
 pub struct Instantiation {
-    pub lifetimes: BTreeMap<Lifetime, Lifetime>,
-    pub types: BTreeMap<Type, Type>,
-    pub constants: BTreeMap<Constant, Constant>,
+    lifetimes: BTreeMap<Lifetime, Lifetime>,
+    types: BTreeMap<Type, Type>,
+    constants: BTreeMap<Constant, Constant>,
+    instances: BTreeMap<Instance, Instance>,
+}
+
+impl Instantiation {
+    /// Retrieves the mapping for the given lifetime if it exists.
+    #[must_use]
+    pub fn get_lifetime_mapping(
+        &self,
+        lifetime: &Lifetime,
+    ) -> Option<&Lifetime> {
+        self.lifetimes.get(lifetime)
+    }
+
+    /// Retrieves the mapping for the given type if it exists.
+    #[must_use]
+    pub fn get_type_mapping(&self, r#type: &Type) -> Option<&Type> {
+        self.types.get(r#type)
+    }
+
+    /// Retrieves the mapping for the given constant if it exists.
+    #[must_use]
+    pub fn get_constant_mapping(
+        &self,
+        constant: &Constant,
+    ) -> Option<&Constant> {
+        self.constants.get(constant)
+    }
+
+    /// Retrieves the mapping for the given instance if it exists.
+    #[must_use]
+    pub fn get_instance_mapping(
+        &self,
+        instance: &Instance,
+    ) -> Option<&Instance> {
+        self.instances.get(instance)
+    }
+
+    /// Returns an iterator over the mutable lifetime mappings.
+    pub fn lifetime_mappings_mut(
+        &mut self,
+    ) -> impl ExactSizeIterator<Item = (&Lifetime, &mut Lifetime)> {
+        self.lifetimes.iter_mut()
+    }
+
+    /// Returns an iterator over the mutable type mappings.
+    pub fn type_mappings_mut(
+        &mut self,
+    ) -> impl ExactSizeIterator<Item = (&Type, &mut Type)> {
+        self.types.iter_mut()
+    }
+
+    /// Returns an iterator over the mutable constant mappings.
+    pub fn constant_mappings_mut(
+        &mut self,
+    ) -> impl ExactSizeIterator<Item = (&Constant, &mut Constant)> {
+        self.constants.iter_mut()
+    }
+
+    /// Returns an iterator over the mutable instance mappings.
+    pub fn instance_mappings_mut(
+        &mut self,
+    ) -> impl ExactSizeIterator<Item = (&Instance, &mut Instance)> {
+        self.instances.iter_mut()
+    }
+
+    /// Returns an iterator over the mutable lifetime values.
+    #[must_use]
+    pub fn lifetime_values_mut(
+        &mut self,
+    ) -> impl ExactSizeIterator<Item = &mut Lifetime> {
+        self.lifetimes.values_mut()
+    }
+
+    /// Returns an iterator over the mutable type values.
+    #[must_use]
+    pub fn type_values_mut(
+        &mut self,
+    ) -> impl ExactSizeIterator<Item = &mut Type> {
+        self.types.values_mut()
+    }
+
+    /// Returns an iterator over the mutable constant values.
+    #[must_use]
+    pub fn constant_values_mut(
+        &mut self,
+    ) -> impl ExactSizeIterator<Item = &mut Constant> {
+        self.constants.values_mut()
+    }
+
+    /// Returns an iterator over the mutable instance values.
+    #[must_use]
+    pub fn instance_values_mut(
+        &mut self,
+    ) -> impl ExactSizeIterator<Item = &mut Instance> {
+        self.instances.values_mut()
+    }
+
+    /// Returns an iterator over the lifetime mappings.
+    #[must_use]
+    pub fn lifetime_mappings(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&Lifetime, &Lifetime)> {
+        self.lifetimes.iter()
+    }
+
+    /// Returns an iterator over the type mappings.
+    #[must_use]
+    pub fn type_mappings(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&Type, &Type)> {
+        self.types.iter()
+    }
+
+    /// Returns an iterator over the constant mappings.
+    #[must_use]
+    pub fn constant_mappings(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&Constant, &Constant)> {
+        self.constants.iter()
+    }
+
+    /// Returns an iterator over the instance mappings.
+    #[must_use]
+    pub fn instance_mappings(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&Instance, &Instance)> {
+        self.instances.iter()
+    }
+
+    /// Extends the lifetime mappings with the given mappings.
+    pub fn extend_lifetimes_mappings(
+        &mut self,
+        mappings: impl IntoIterator<Item = (Lifetime, Lifetime)>,
+    ) {
+        self.lifetimes.extend(mappings);
+    }
+
+    /// Extends the type mappings with the given mappings.
+    pub fn extend_types_mappings(
+        &mut self,
+        mappings: impl IntoIterator<Item = (Type, Type)>,
+    ) {
+        self.types.extend(mappings);
+    }
+
+    /// Extends the constant mappings with the given mappings.
+    pub fn extend_constants_mappings(
+        &mut self,
+        mappings: impl IntoIterator<Item = (Constant, Constant)>,
+    ) {
+        self.constants.extend(mappings);
+    }
+
+    /// Extends the instance mappings with the given mappings.
+    pub fn extend_instances_mappings(
+        &mut self,
+        mappings: impl IntoIterator<Item = (Instance, Instance)>,
+    ) {
+        self.instances.extend(mappings);
+    }
+
+    /// Instantiates the term values in this instantiation with the given
+    /// instantiation.
+    pub fn instantiate_values(&mut self, inst: &Self) {
+        self.lifetime_values_mut().for_each(|term| {
+            inst.instantiate(term);
+        });
+        self.type_values_mut().for_each(|term| {
+            inst.instantiate(term);
+        });
+        self.constant_values_mut().for_each(|term| {
+            inst.instantiate(term);
+        });
+        self.instance_values_mut().for_each(|term| {
+            inst.instantiate(term);
+        });
+    }
+
+    /// Inserts a mapping from one lifetime to another.
+    pub fn insert_lifetime_mapping(&mut self, from: Lifetime, to: Lifetime) {
+        self.lifetimes.insert(from, to);
+    }
+
+    /// Inserts a mapping from one type to another.
+    pub fn insert_type_mapping(&mut self, from: Type, to: Type) {
+        self.types.insert(from, to);
+    }
+
+    /// Inserts a mapping from one constant to another.
+    pub fn insert_constant_mapping(&mut self, from: Constant, to: Constant) {
+        self.constants.insert(from, to);
+    }
+
+    /// Inserts a mapping from one instance to another.
+    pub fn insert_instance_mapping(&mut self, from: Instance, to: Instance) {
+        self.instances.insert(from, to);
+    }
+
+    /// Removes the mapping for the given lifetime if it exists.
+    pub fn remove_lifetime_mapping(
+        &mut self,
+        from: &Lifetime,
+    ) -> Option<Lifetime> {
+        self.lifetimes.remove(from)
+    }
+
+    /// Removes the mapping for the given type if it exists.
+    pub fn remove_type_mapping(&mut self, from: &Type) -> Option<Type> {
+        self.types.remove(from)
+    }
+
+    /// Removes the mapping for the given constant if it exists.
+    pub fn remove_constant_mapping(
+        &mut self,
+        from: &Constant,
+    ) -> Option<Constant> {
+        self.constants.remove(from)
+    }
+
+    /// Removes the mapping for the given instance if it exists.
+    pub fn remove_instance_mapping(
+        &mut self,
+        from: &Instance,
+    ) -> Option<Instance> {
+        self.instances.remove(from)
+    }
 }
 
 struct Instantiater<'a> {
@@ -109,51 +339,6 @@ impl Instantiation {
         }
     }
 
-    /// Converts the instantiation into a [`GenericArguments`] by extracting
-    /// the generic arguments in the order of the given generic parameters.
-    ///
-    /// Return `None` if any generic parameter does not have a corresponding
-    /// instantiation.
-    #[must_use]
-    pub fn convert_to_generic_arguments(
-        mut self,
-        generic_parameters: &GenericParameters,
-        global_id: Global<pernixc_symbol::ID>,
-    ) -> Option<GenericArguments> {
-        let mut generic_arguments = GenericArguments::default();
-
-        for lifetime_id in generic_parameters.lifetime_order() {
-            let lifetime_parameter = Lifetime::Parameter(
-                LifetimeParameterID::new(global_id, *lifetime_id),
-            );
-
-            let lifetime = self.lifetimes.remove(&lifetime_parameter)?;
-
-            generic_arguments.lifetimes.push(lifetime);
-        }
-
-        for type_id in generic_parameters.type_order() {
-            let type_parameter =
-                Type::Parameter(TypeParameterID::new(global_id, *type_id));
-
-            let r#type = self.types.remove(&type_parameter)?;
-
-            generic_arguments.types.push(r#type);
-        }
-
-        for constant_id in generic_parameters.constant_order() {
-            let constant_parameter = Constant::Parameter(
-                ConstantParameterID::new(global_id, *constant_id),
-            );
-
-            let constant = self.constants.remove(&constant_parameter)?;
-
-            generic_arguments.constants.push(constant);
-        }
-
-        Some(generic_arguments)
-    }
-
     /// Appends the given generic arguments as a substitution.
     ///
     /// If there's any collision, the prior value will be preserved and the new
@@ -174,57 +359,78 @@ impl Instantiation {
         generic_id: Global<pernixc_symbol::ID>,
         generic_parameters: &GenericParameters,
     ) -> Result<(), MismatchedGenericArgumentCountError> {
-        if generic_arguments.types.len()
-            != generic_parameters.type_order().len()
+        if generic_arguments.types().len()
+            != generic_parameters.type_parameter_order().len()
         {
             return Err(MismatchedGenericArgumentCountError {
                 generic_id,
-                expected: generic_parameters.type_order().len(),
-                found: generic_arguments.types.len(),
+                expected: generic_parameters.type_parameter_order().len(),
+                found: generic_arguments.types().len(),
                 kind: GenericKind::Type,
                 generic_arguments,
             });
         }
 
-        if generic_arguments.lifetimes.len()
-            != generic_parameters.lifetime_order().len()
+        if generic_arguments.lifetimes().len()
+            != generic_parameters.lifetime_parameter_order().len()
         {
             return Err(MismatchedGenericArgumentCountError {
                 generic_id,
-                expected: generic_parameters.lifetime_order().len(),
-                found: generic_arguments.lifetimes.len(),
+                expected: generic_parameters.lifetime_parameter_order().len(),
+                found: generic_arguments.lifetimes().len(),
                 kind: GenericKind::Lifetime,
                 generic_arguments,
             });
         }
 
-        if generic_arguments.constants.len()
-            != generic_parameters.constant_order().len()
+        if generic_arguments.constants().len()
+            != generic_parameters.constant_parameter_order().len()
         {
             return Err(MismatchedGenericArgumentCountError {
                 generic_id,
-                expected: generic_parameters.constant_order().len(),
-                found: generic_arguments.constants.len(),
+                expected: generic_parameters.constant_parameter_order().len(),
+                found: generic_arguments.constants().len(),
                 kind: GenericKind::Constant,
                 generic_arguments,
             });
         }
 
+        if generic_arguments.instances().len()
+            != generic_parameters.instance_parameter_order().len()
+        {
+            return Err(MismatchedGenericArgumentCountError {
+                generic_id,
+                expected: generic_parameters.instance_parameter_order().len(),
+                found: generic_arguments.instances().len(),
+                kind: GenericKind::Instance,
+                generic_arguments,
+            });
+        }
+
+        let (lifetimes, types, constants, instances) =
+            generic_arguments.into_arguments();
+
         self.append_from_arguments(
-            generic_arguments.lifetimes.into_iter(),
-            generic_parameters.lifetime_order().iter().copied(),
+            lifetimes.into_iter(),
+            generic_parameters.lifetime_parameter_order(),
             generic_id,
         );
 
         self.append_from_arguments(
-            generic_arguments.types.into_iter(),
-            generic_parameters.type_order().iter().copied(),
+            types.into_iter(),
+            generic_parameters.type_parameter_order(),
             generic_id,
         );
 
         self.append_from_arguments(
-            generic_arguments.constants.into_iter(),
-            generic_parameters.constant_order().iter().copied(),
+            constants.into_iter(),
+            generic_parameters.constant_parameter_order(),
+            generic_id,
+        );
+
+        self.append_from_arguments(
+            instances.into_iter(),
+            generic_parameters.instance_parameter_order(),
             generic_id,
         );
 
@@ -245,28 +451,34 @@ impl Instantiation {
         to_parameters: &GenericParameters,
     ) {
         self.append_from_arguments(
-            from_parameters.lifetime_order().iter().copied().map(|x| {
+            from_parameters.lifetime_parameter_order().map(|x| {
                 Lifetime::Parameter(LifetimeParameterID::new(from_id, x))
             }),
-            to_parameters.lifetime_order().iter().copied(),
+            to_parameters.lifetime_parameter_order(),
             to_id,
         );
 
         self.append_from_arguments(
             from_parameters
-                .type_order()
-                .iter()
-                .copied()
+                .type_parameter_order()
                 .map(|x| Type::Parameter(TypeParameterID::new(from_id, x))),
-            to_parameters.type_order().iter().copied(),
+            to_parameters.type_parameter_order(),
             to_id,
         );
 
         self.append_from_arguments(
-            from_parameters.constant_order().iter().copied().map(|x| {
+            from_parameters.constant_parameter_order().map(|x| {
                 Constant::Parameter(ConstantParameterID::new(from_id, x))
             }),
-            to_parameters.constant_order().iter().copied(),
+            to_parameters.constant_parameter_order(),
+            to_id,
+        );
+
+        self.append_from_arguments(
+            from_parameters.instance_parameter_order().map(|x| {
+                Instance::Parameter(InstanceParameterID::new(from_id, x))
+            }),
+            to_parameters.instance_parameter_order(),
             to_id,
         );
     }
@@ -281,11 +493,9 @@ impl Instantiation {
         global_id: Global<pernixc_symbol::ID>,
         parameters: &GenericParameters,
     ) -> GenericArguments {
-        GenericArguments {
-            lifetimes: parameters
-                .lifetime_order()
-                .iter()
-                .copied()
+        GenericArguments::new(
+            parameters
+                .lifetime_parameter_order()
                 .map(|x| {
                     let lifetime_parameter = Lifetime::Parameter(
                         LifetimeParameterID::new(global_id, x),
@@ -294,10 +504,8 @@ impl Instantiation {
                     self.lifetimes.get(&lifetime_parameter).cloned().unwrap()
                 })
                 .collect(),
-            types: parameters
-                .type_order()
-                .iter()
-                .copied()
+            parameters
+                .type_parameter_order()
                 .map(|x| {
                     let type_parameter =
                         Type::Parameter(TypeParameterID::new(global_id, x));
@@ -305,10 +513,8 @@ impl Instantiation {
                     self.types.get(&type_parameter).cloned().unwrap()
                 })
                 .collect(),
-            constants: parameters
-                .constant_order()
-                .iter()
-                .copied()
+            parameters
+                .constant_parameter_order()
                 .map(|x| {
                     let constant_parameter = Constant::Parameter(
                         ConstantParameterID::new(global_id, x),
@@ -317,7 +523,17 @@ impl Instantiation {
                     self.constants.get(&constant_parameter).cloned().unwrap()
                 })
                 .collect(),
-        }
+            parameters
+                .instance_parameter_order()
+                .map(|x| {
+                    let instance_parameter = Instance::Parameter(
+                        InstanceParameterID::new(global_id, x),
+                    );
+
+                    self.instances.get(&instance_parameter).cloned().unwrap()
+                })
+                .collect(),
+        )
     }
 
     /// Converts the given generic arguments into a substitution.
@@ -411,6 +627,19 @@ pub async fn get_instantiation_for_associated_symbol(
     Ok(instantiation)
 }
 
+/// Retrieves the [`GenericArguments`] for the given generic ID with the given
+/// instantiation.
+#[extend]
+pub async fn create_generic_arguments_from_instantiation(
+    self: &TrackedEngine,
+    id: Global<pernixc_symbol::ID>,
+    instantiation: Instantiation,
+) -> GenericArguments {
+    let generic_parameters = self.get_generic_parameters(id).await;
+
+    instantiation.create_generic_arguments(id, &generic_parameters)
+}
+
 /// A trait for retrieving the instantiation map from the [`Instantiation`]
 /// struct.
 #[allow(missing_docs)]
@@ -454,19 +683,12 @@ impl Element for Constant {
     }
 }
 
-impl GenericArguments {
-    /// Applies the instantiation to all the generic arguments.
-    pub fn instantiate(&mut self, instantiation: &Instantiation) {
-        for lifetime in &mut self.lifetimes {
-            instantiation.instantiate(lifetime);
-        }
+impl Element for Instance {
+    fn get(instantiation: &Instantiation) -> &BTreeMap<Self, Self> {
+        &instantiation.instances
+    }
 
-        for r#type in &mut self.types {
-            instantiation.instantiate(r#type);
-        }
-
-        for constant in &mut self.constants {
-            instantiation.instantiate(constant);
-        }
+    fn get_mut(instantiation: &mut Instantiation) -> &mut BTreeMap<Self, Self> {
+        &mut instantiation.instances
     }
 }

@@ -4,6 +4,7 @@ use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     constant::Constant,
+    instance::Instance,
     lifetime::Lifetime,
     sub_term::TermLocation,
     r#type::Type,
@@ -77,6 +78,21 @@ impl Recursive<'_, Constant> for ContainsErrorVisitor {
     }
 }
 
+impl Recursive<'_, Instance> for ContainsErrorVisitor {
+    fn visit(
+        &mut self,
+        term: &Instance,
+        _: impl Iterator<Item = TermLocation>,
+    ) -> bool {
+        if term.is_error() {
+            self.contains_error = true;
+            false
+        } else {
+            true
+        }
+    }
+}
+
 /// Checks if the term contains an error.
 pub fn contains_error<T: visitor::Element>(term: &T) -> bool {
     let mut visitor = ContainsErrorVisitor { contains_error: false };
@@ -84,4 +100,26 @@ pub fn contains_error<T: visitor::Element>(term: &T) -> bool {
     visitor::accept_recursive(term, &mut visitor);
 
     visitor.contains_error
+}
+
+/// A trait for creating an error term.
+pub trait MakeError {
+    /// Creates an error term.
+    fn new_error() -> Self;
+}
+
+impl MakeError for Lifetime {
+    fn new_error() -> Self { Self::Error(Error) }
+}
+
+impl MakeError for Type {
+    fn new_error() -> Self { Self::Error(Error) }
+}
+
+impl MakeError for Constant {
+    fn new_error() -> Self { Self::Error(Error) }
+}
+
+impl MakeError for Instance {
+    fn new_error() -> Self { Self::Error(Error) }
 }

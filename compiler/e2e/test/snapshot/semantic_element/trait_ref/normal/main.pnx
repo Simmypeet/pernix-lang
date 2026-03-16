@@ -1,0 +1,14 @@
+public trait Inner: 
+    pass
+
+
+public trait Outer:
+    public instance I: Inner
+
+
+private instance MyInnerI: Inner:
+    pass
+
+
+private instance MyInstance: Outer:
+    instance I: Inner = MyInnerI

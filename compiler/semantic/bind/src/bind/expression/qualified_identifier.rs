@@ -9,10 +9,7 @@ use pernixc_ir::value::{
 use pernixc_resolution::qualified_identifier::Resolution;
 use pernixc_semantic_element::variant::get_variant_associated_type;
 use pernixc_source_file::SourceElement;
-use pernixc_symbol::{
-    kind::{Kind, get_kind},
-    parent::get_parent,
-};
+use pernixc_symbol::parent::get_parent;
 use pernixc_syntax::QualifiedIdentifierRoot;
 use pernixc_target::Global;
 use pernixc_term::{
@@ -54,7 +51,7 @@ impl Bind<&pernixc_syntax::QualifiedIdentifier> for Binder<'_> {
             return Err(Error::Binding(BindingError(syntax_tree.span())));
         };
 
-        let id = match resolution {
+        match resolution {
             Resolution::Variant(variant_res) => {
                 let variant = self
                     .engine()
@@ -117,44 +114,23 @@ impl Bind<&pernixc_syntax::QualifiedIdentifier> for Binder<'_> {
                     syntax_tree.span(),
                 );
 
-                return Ok(Expression::RValue(Value::Register(register_id)));
+                Ok(Expression::RValue(Value::Register(register_id)))
             }
 
-            Resolution::Generic(generic) => {
-                let symbol_kind = self.engine().get_kind(generic.id).await;
+            resolution => {
+                handler.receive(
+                    Diagnostic::SymbolCannotBeUsedAsAnExpression(
+                        SymbolCannotBeUsedAsAnExpression {
+                            span: syntax_tree.span(),
+                            found: resolution,
+                        },
+                    )
+                    .into(),
+                );
 
-                if symbol_kind == Kind::Constant {
-                    todo!("handle constant evaluation");
-                }
-
-                generic.id
+                Err(Error::Binding(BindingError(syntax_tree.span())))
             }
-
-            Resolution::MemberGeneric(member_generic) => {
-                let symbol_kind =
-                    self.engine().get_kind(member_generic.id).await;
-
-                if symbol_kind == Kind::ImplementationConstant {
-                    todo!("handle constant evaluation");
-                }
-
-                member_generic.id
-            }
-
-            resolution @ Resolution::Module(_) => resolution.global_id(),
-        };
-
-        handler.receive(
-            Diagnostic::SymbolCannotBeUsedAsAnExpression(
-                SymbolCannotBeUsedAsAnExpression {
-                    span: syntax_tree.span(),
-                    symbol: id,
-                },
-            )
-            .into(),
-        );
-
-        Err(Error::Binding(BindingError(syntax_tree.span())))
+        }
     }
 }
 

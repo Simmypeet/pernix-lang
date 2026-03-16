@@ -1,6 +1,7 @@
 //! Contains the definition of [`GenericParameters`] component.
-use std::collections::hash_map::Entry;
+use std::{collections::hash_map::Entry, ops::Index};
 
+use derive_new::new;
 use getset::Getters;
 use paste::paste;
 use pernixc_arena::Arena;
@@ -13,8 +14,11 @@ use qbice::{
 };
 
 use crate::{
-    constant::Constant, generic_arguments::GenericArguments,
-    lifetime::Lifetime, r#type::Type,
+    constant::Constant,
+    generic_arguments::GenericArguments,
+    instance::{Instance, TraitRef},
+    lifetime::Lifetime,
+    r#type::Type,
 };
 
 /// Key for querying generic parameters for a given global symbol ID.
@@ -56,59 +60,60 @@ pub struct Key {
     Identifiable,
 )]
 pub struct GenericParameters {
-    /// List of defined lifetime parameters.
-    #[get = "pub"]
     lifetimes: Arena<LifetimeParameter>,
-
-    /// List of defined type parameters.
-    #[get = "pub"]
     types: Arena<TypeParameter>,
-
-    /// List of defined constant parameters.
-    #[get = "pub"]
     constants: Arena<ConstantParameter>,
+    instances: Arena<InstanceParameter>,
 
-    /// The order of the declaration of lifetime parameters.
-    #[get = "pub"]
     lifetime_order: Vec<pernixc_arena::ID<LifetimeParameter>>,
-
-    /// The order of the declaration of type parameters.
-    #[get = "pub"]
     type_order: Vec<pernixc_arena::ID<TypeParameter>>,
-
-    /// The order of the declaration of constant parameters.
-    #[get = "pub"]
     constant_order: Vec<pernixc_arena::ID<ConstantParameter>>,
+    instance_order: Vec<pernixc_arena::ID<InstanceParameter>>,
 
-    /// Maps the name of the lifetime parameter to its ID.
-    #[get = "pub"]
     lifetime_parameter_ids_by_name:
         HashMap<Interned<str>, pernixc_arena::ID<LifetimeParameter>>,
-
-    /// Maps the name of the type parameter to its ID.
-    #[get = "pub"]
     type_parameter_ids_by_name:
         HashMap<Interned<str>, pernixc_arena::ID<TypeParameter>>,
-
-    /// Maps the name of the constant parameter to its ID.
-    #[get = "pub"]
     constant_parameter_ids_by_name:
         HashMap<Interned<str>, pernixc_arena::ID<ConstantParameter>>,
+    instance_parameter_ids_by_name:
+        HashMap<Interned<str>, pernixc_arena::ID<InstanceParameter>>,
 
-    /// List of default type parameters to be used when the generic parameters
-    /// are not specified.
-    #[get = "pub"]
     default_type_parameters: Vec<Type>,
-
-    /// List of default constant parameters to be used when the generic
-    /// parameters are not
-    #[get = "pub"]
     default_constant_parameters: Vec<Constant>,
 }
 
+mod sealed {
+    use pernixc_arena::Arena;
+    use pernixc_hash::HashMap;
+    use qbice::storage::intern::Interned;
+
+    pub trait Sealed {
+        fn get_generic_parameters_arena(
+            generic_parameters: &super::GenericParameters,
+        ) -> &Arena<Self>
+        where
+            Self: Sized;
+
+        fn get_parameter_ids_by_name(
+            generic_parameters: &super::GenericParameters,
+        ) -> &HashMap<Interned<str>, pernixc_arena::ID<Self>>
+        where
+            Self: Sized;
+
+        fn get_parameter_order(
+            generic_parameters: &super::GenericParameters,
+        ) -> &Vec<pernixc_arena::ID<Self>>
+        where
+            Self: Sized;
+    }
+}
+
 /// Implemented by all generic parameters [`LifetimeParameter`],
-/// [`TypeParameter`], and [`ConstantParameter`].
-pub trait GenericParameter: Sized + Send + Sync + 'static {
+/// [`TypeParameter`], [`ConstantParameter`], and [`InstanceParameter`].
+pub trait GenericParameter:
+    sealed::Sealed + Sized + Send + Sync + 'static
+{
     /// Gets the name of the generic parameter.
     ///
     /// If the generic parameter is anonymous, (i.e. elided lifetime parameter),
@@ -120,23 +125,6 @@ pub trait GenericParameter: Sized + Send + Sync + 'static {
 
     /// Gets the kind of the generic parameter.
     fn kind() -> GenericKind;
-
-    /// Gets the [`Arena`] of generic parameters of this type from
-    /// [`GenericParameters`].
-    fn get_generic_parameters_arena(
-        generic_parameters: &GenericParameters,
-    ) -> &Arena<Self>;
-
-    /// Gets the list of generic parameter id stored in order.
-    fn get_generic_parameters_order(
-        generic_parameters: &GenericParameters,
-    ) -> &[pernixc_arena::ID<Self>];
-
-    /// Gets the map that maps between the name of the generic parameters to its
-    /// id.
-    fn get_generic_parameters_ids_by_name_map(
-        generic_parameters: &GenericParameters,
-    ) -> &HashMap<Interned<str>, pernixc_arena::ID<Self>>;
 
     /// Adds a new generic parameter to the list of generic parameters.
     ///
@@ -163,14 +151,34 @@ pub trait GenericParameter: Sized + Send + Sync + 'static {
     Encode,
     Decode,
     Identifiable,
+    new,
 )]
 pub struct LifetimeParameter {
-    /// The name of the lifetime parameter (if none, then it is anonymous
-    /// lifetime parameter )
-    pub name: Interned<str>,
+    name: Interned<str>,
+    span: Option<RelativeSpan>,
+}
 
-    /// Location of where the lifetime parameter is declared.
-    pub span: Option<RelativeSpan>,
+impl sealed::Sealed for LifetimeParameter {
+    fn get_generic_parameters_arena(
+        generic_parameters: &GenericParameters,
+    ) -> &Arena<Self> {
+        &generic_parameters.lifetimes
+    }
+
+    fn get_parameter_ids_by_name(
+        generic_parameters: &self::GenericParameters,
+    ) -> &HashMap<Interned<str>, pernixc_arena::ID<Self>>
+    where
+        Self: Sized,
+    {
+        &generic_parameters.lifetime_parameter_ids_by_name
+    }
+
+    fn get_parameter_order(
+        generic_parameters: &GenericParameters,
+    ) -> &Vec<pernixc_arena::ID<Self>> {
+        &generic_parameters.lifetime_order
+    }
 }
 
 impl GenericParameter for LifetimeParameter {
@@ -179,24 +187,6 @@ impl GenericParameter for LifetimeParameter {
     fn span(&self) -> Option<&RelativeSpan> { self.span.as_ref() }
 
     fn kind() -> GenericKind { GenericKind::Lifetime }
-
-    fn get_generic_parameters_arena(
-        generic_parameters: &GenericParameters,
-    ) -> &Arena<Self> {
-        &generic_parameters.lifetimes
-    }
-
-    fn get_generic_parameters_order(
-        generic_parameters: &GenericParameters,
-    ) -> &[pernixc_arena::ID<Self>] {
-        &generic_parameters.lifetime_order
-    }
-
-    fn get_generic_parameters_ids_by_name_map(
-        generic_parameters: &GenericParameters,
-    ) -> &HashMap<Interned<str>, pernixc_arena::ID<Self>> {
-        &generic_parameters.lifetime_parameter_ids_by_name
-    }
 
     fn add_generic_parameter(
         generic_parameters: &mut GenericParameters,
@@ -218,13 +208,34 @@ impl GenericParameter for LifetimeParameter {
     StableHash,
     Encode,
     Decode,
+    new,
 )]
 pub struct TypeParameter {
-    /// The name of the type parameter.
-    pub name: Interned<str>,
+    name: Interned<str>,
+    span: Option<RelativeSpan>,
+}
 
-    /// The kind of the type parameter.
-    pub span: Option<RelativeSpan>,
+impl sealed::Sealed for TypeParameter {
+    fn get_generic_parameters_arena(
+        generic_parameters: &GenericParameters,
+    ) -> &Arena<Self> {
+        &generic_parameters.types
+    }
+
+    fn get_parameter_ids_by_name(
+        generic_parameters: &self::GenericParameters,
+    ) -> &HashMap<Interned<str>, pernixc_arena::ID<Self>>
+    where
+        Self: Sized,
+    {
+        &generic_parameters.type_parameter_ids_by_name
+    }
+
+    fn get_parameter_order(
+        generic_parameters: &GenericParameters,
+    ) -> &Vec<pernixc_arena::ID<Self>> {
+        &generic_parameters.type_order
+    }
 }
 
 impl GenericParameter for TypeParameter {
@@ -233,24 +244,6 @@ impl GenericParameter for TypeParameter {
     fn span(&self) -> Option<&RelativeSpan> { self.span.as_ref() }
 
     fn kind() -> GenericKind { GenericKind::Type }
-
-    fn get_generic_parameters_arena(
-        generic_parameters: &GenericParameters,
-    ) -> &Arena<Self> {
-        &generic_parameters.types
-    }
-
-    fn get_generic_parameters_order(
-        generic_parameters: &GenericParameters,
-    ) -> &[pernixc_arena::ID<Self>] {
-        &generic_parameters.type_order
-    }
-
-    fn get_generic_parameters_ids_by_name_map(
-        generic_parameters: &GenericParameters,
-    ) -> &HashMap<Interned<str>, pernixc_arena::ID<Self>> {
-        &generic_parameters.type_parameter_ids_by_name
-    }
 
     fn add_generic_parameter(
         generic_parameters: &mut GenericParameters,
@@ -272,17 +265,37 @@ impl GenericParameter for TypeParameter {
     StableHash,
     Encode,
     Decode,
+    new,
 )]
 pub struct ConstantParameter {
-    /// The name of the constant parameter.
-    pub name: Interned<str>,
-
-    /// The type of the constant parameter.
-    pub r#type: Type,
-
-    /// The type of the constant parameter.
-    pub span: Option<RelativeSpan>,
+    name: Interned<str>,
+    r#type: Type,
+    span: Option<RelativeSpan>,
 }
+
+impl sealed::Sealed for ConstantParameter {
+    fn get_generic_parameters_arena(
+        generic_parameters: &GenericParameters,
+    ) -> &Arena<Self> {
+        &generic_parameters.constants
+    }
+
+    fn get_parameter_ids_by_name(
+        generic_parameters: &self::GenericParameters,
+    ) -> &HashMap<Interned<str>, pernixc_arena::ID<Self>>
+    where
+        Self: Sized,
+    {
+        &generic_parameters.constant_parameter_ids_by_name
+    }
+
+    fn get_parameter_order(
+        generic_parameters: &GenericParameters,
+    ) -> &Vec<pernixc_arena::ID<Self>> {
+        &generic_parameters.constant_order
+    }
+}
+
 impl GenericParameter for ConstantParameter {
     fn name(&self) -> &Interned<str> { &self.name }
 
@@ -290,29 +303,85 @@ impl GenericParameter for ConstantParameter {
 
     fn kind() -> GenericKind { GenericKind::Constant }
 
-    fn get_generic_parameters_arena(
-        generic_parameters: &GenericParameters,
-    ) -> &Arena<Self> {
-        &generic_parameters.constants
-    }
-
-    fn get_generic_parameters_order(
-        generic_parameters: &GenericParameters,
-    ) -> &[pernixc_arena::ID<Self>] {
-        &generic_parameters.constant_order
-    }
-
-    fn get_generic_parameters_ids_by_name_map(
-        generic_parameters: &GenericParameters,
-    ) -> &HashMap<Interned<str>, pernixc_arena::ID<Self>> {
-        &generic_parameters.constant_parameter_ids_by_name
-    }
-
     fn add_generic_parameter(
         generic_parameters: &mut GenericParameters,
         parameter: Self,
     ) -> Result<pernixc_arena::ID<Self>, pernixc_arena::ID<Self>> {
         generic_parameters.add_constant_parameter(parameter)
+    }
+}
+
+/// Represents the instance parameter, denoted by `instance T: Trait` syntax.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    new,
+)]
+pub struct InstanceParameter {
+    name: Interned<str>,
+    trait_ref: Option<Interned<TraitRef>>,
+    span: Option<RelativeSpan>,
+}
+
+impl InstanceParameter {
+    /// Gets the name of the instance parameter.
+    #[must_use]
+    pub const fn name(&self) -> &Interned<str> { &self.name }
+
+    /// Gets the trait reference that this instance parameter implements.
+    #[must_use]
+    pub const fn trait_ref(&self) -> Option<&Interned<TraitRef>> {
+        self.trait_ref.as_ref()
+    }
+
+    /// Gets the span where the instance parameter is declared.
+    #[must_use]
+    pub const fn span(&self) -> Option<&RelativeSpan> { self.span.as_ref() }
+}
+
+impl sealed::Sealed for InstanceParameter {
+    fn get_generic_parameters_arena(
+        generic_parameters: &GenericParameters,
+    ) -> &Arena<Self> {
+        &generic_parameters.instances
+    }
+
+    fn get_parameter_ids_by_name(
+        generic_parameters: &self::GenericParameters,
+    ) -> &HashMap<Interned<str>, pernixc_arena::ID<Self>>
+    where
+        Self: Sized,
+    {
+        &generic_parameters.instance_parameter_ids_by_name
+    }
+
+    fn get_parameter_order(
+        generic_parameters: &GenericParameters,
+    ) -> &Vec<pernixc_arena::ID<Self>> {
+        &generic_parameters.instance_order
+    }
+}
+
+impl GenericParameter for InstanceParameter {
+    fn name(&self) -> &Interned<str> { &self.name }
+
+    fn span(&self) -> Option<&RelativeSpan> { self.span.as_ref() }
+
+    fn kind() -> GenericKind { GenericKind::Instance }
+
+    fn add_generic_parameter(
+        generic_parameters: &mut GenericParameters,
+        parameter: Self,
+    ) -> Result<pernixc_arena::ID<Self>, pernixc_arena::ID<Self>> {
+        generic_parameters.add_instance_parameter(parameter)
     }
 }
 
@@ -335,6 +404,26 @@ pub enum GenericKind {
     Type,
     Lifetime,
     Constant,
+    Instance,
+}
+
+macro_rules! implements_get_parameter {
+    ($self:ident, $kind:ident) => {
+        paste! {
+            /// Gets the generic parameter with the given ID.
+            ///
+            /// # Panics
+            ///
+            /// Panics if the generic parameter with the given ID does not exist.
+            #[must_use]
+            pub fn [<get_ $kind:snake _parameter>](
+                &self,
+                id: pernixc_arena::ID<[< $kind Parameter >]>,
+            ) -> & [< $kind Parameter >] {
+                self.[< $kind:snake s>].get(id).unwrap()
+            }
+        }
+    };
 }
 
 macro_rules! implements_add_parameter {
@@ -380,6 +469,100 @@ macro_rules! implements_add_parameter {
 }
 
 impl GenericParameters {
+    /// Returns an iterator of all lifetime parameter IDs that iterates in order
+    /// as they are declared.
+    #[must_use]
+    pub fn lifetime_parameter_order(
+        &self,
+    ) -> impl ExactSizeIterator<Item = pernixc_arena::ID<LifetimeParameter>>
+    {
+        self.lifetime_order.iter().copied()
+    }
+
+    /// Returns the number of lifetime parameters.
+    #[must_use]
+    pub const fn lifetime_parameters_len(&self) -> usize {
+        self.lifetime_order.len()
+    }
+
+    /// Returns the number of type parameters.
+    #[must_use]
+    pub const fn type_parameters_len(&self) -> usize { self.type_order.len() }
+
+    /// Returns the number of constant parameters.
+    #[must_use]
+    pub const fn constant_parameters_len(&self) -> usize {
+        self.constant_order.len()
+    }
+
+    /// Returns the number of instance parameters.
+    #[must_use]
+    pub const fn instance_parameters_len(&self) -> usize {
+        self.instance_order.len()
+    }
+
+    /// Returns an iterator of all type parameter IDs that iterates in order
+    /// as they are declared.
+    #[must_use]
+    pub fn type_parameter_order(
+        &self,
+    ) -> impl ExactSizeIterator<Item = pernixc_arena::ID<TypeParameter>> {
+        self.type_order.iter().copied()
+    }
+
+    /// Returns an iterator of all constant parameter IDs that iterates in order
+    /// as they are declared.
+    #[must_use]
+    pub fn constant_parameter_order(
+        &self,
+    ) -> impl ExactSizeIterator<Item = pernixc_arena::ID<ConstantParameter>>
+    {
+        self.constant_order.iter().copied()
+    }
+
+    /// Returns an iterator of all instance parameter IDs that iterates in order
+    /// as they are declared.
+    #[must_use]
+    pub fn instance_parameter_order(
+        &self,
+    ) -> impl ExactSizeIterator<Item = pernixc_arena::ID<InstanceParameter>>
+    {
+        self.instance_order.iter().copied()
+    }
+
+    /// Retrieves the parameter ID with the given name.
+    #[must_use]
+    pub fn get_parameter_id_by_name<T: GenericParameter>(
+        &self,
+        name: &str,
+    ) -> Option<pernixc_arena::ID<T>> {
+        T::get_parameter_ids_by_name(self).get(name).copied()
+    }
+
+    /// Returns the iterator over the parameter IDs of the generic parameters of
+    /// the given kind.
+    #[must_use]
+    pub fn parameter_ids<T: GenericParameter>(
+        &self,
+    ) -> impl ExactSizeIterator<Item = pernixc_arena::ID<T>> {
+        T::get_generic_parameters_arena(self).ids()
+    }
+
+    /// Returns the number of generic parameters of the given kind.
+    #[must_use]
+    pub fn parameter_len<T: GenericParameter>(&self) -> usize {
+        T::get_parameter_order(self).len()
+    }
+
+    /// Returns an iterator of all parameter IDs of the given kind that iterates
+    /// in order as they are declared.
+    #[must_use]
+    pub fn parameter_order<T: GenericParameter>(
+        &self,
+    ) -> impl ExactSizeIterator<Item = pernixc_arena::ID<T>> {
+        T::get_parameter_order(self).iter().copied()
+    }
+
     /// Returns an iterator of all type parameters that iterates in order as
     /// they are declared.
     #[must_use]
@@ -419,11 +602,35 @@ impl GenericParameters {
             .map(|x| (x, self.constants.get(x).unwrap()))
     }
 
+    /// Returns an iterator of all instance parameters that iterates in order as
+    /// they are declared.
+    #[must_use]
+    pub fn instance_parameters_as_order(
+        &self,
+    ) -> impl ExactSizeIterator<
+        Item = (pernixc_arena::ID<InstanceParameter>, &InstanceParameter),
+    > {
+        self.instance_order
+            .iter()
+            .copied()
+            .map(|x| (x, self.instances.get(x).unwrap()))
+    }
+
     implements_add_parameter!(self, Lifetime);
 
     implements_add_parameter!(self, Type);
 
     implements_add_parameter!(self, Constant);
+
+    implements_add_parameter!(self, Instance);
+
+    implements_get_parameter!(self, Lifetime);
+
+    implements_get_parameter!(self, Type);
+
+    implements_get_parameter!(self, Constant);
+
+    implements_get_parameter!(self, Instance);
 
     /// Creates a [`GenericArguments`] that all of its parameters are the
     /// generic parameters of this [`GenericParameters`].
@@ -432,26 +639,28 @@ impl GenericParameters {
         &self,
         global_id: Global<pernixc_symbol::ID>,
     ) -> GenericArguments {
-        GenericArguments {
-            lifetimes: self
-                .lifetime_order
+        GenericArguments::new(
+            self.lifetime_order
                 .iter()
                 .copied()
                 .map(|id| Lifetime::Parameter(MemberID::new(global_id, id)))
                 .collect(),
-            types: self
-                .type_order
+            self.type_order
                 .iter()
                 .copied()
                 .map(|id| Type::Parameter(MemberID::new(global_id, id)))
                 .collect(),
-            constants: self
-                .constant_order
+            self.constant_order
                 .iter()
                 .copied()
                 .map(|id| Constant::Parameter(MemberID::new(global_id, id)))
                 .collect(),
-        }
+            self.instance_order
+                .iter()
+                .copied()
+                .map(|id| Instance::Parameter(MemberID::new(global_id, id)))
+                .collect(),
+        )
     }
 
     /// Checks whether there are no generic parameters defined.
@@ -460,6 +669,101 @@ impl GenericParameters {
         self.lifetimes.is_empty()
             && self.types.is_empty()
             && self.constants.is_empty()
+    }
+
+    /// Gets the lifetime parameter ID at the given index in the order of
+    /// declaration.
+    #[must_use]
+    pub fn get_lifetime_parameter_at_index(
+        &self,
+        index: usize,
+    ) -> pernixc_arena::ID<LifetimeParameter> {
+        *self.lifetime_order.get(index).unwrap()
+    }
+
+    /// Gets the type parameter ID at the given index in the order of
+    /// declaration.
+    #[must_use]
+    pub fn get_type_parameter_at_index(
+        &self,
+        index: usize,
+    ) -> pernixc_arena::ID<TypeParameter> {
+        *self.type_order.get(index).unwrap()
+    }
+
+    /// Gets the constant parameter ID at the given index in the order of
+    /// declaration.
+    #[must_use]
+    pub fn get_constant_parameter_at_index(
+        &self,
+        index: usize,
+    ) -> pernixc_arena::ID<ConstantParameter> {
+        *self.constant_order.get(index).unwrap()
+    }
+
+    /// Gets the instance parameter ID at the given index in the order of
+    /// declaration.
+    #[must_use]
+    pub fn get_instance_parameter_at_index(
+        &self,
+        index: usize,
+    ) -> pernixc_arena::ID<InstanceParameter> {
+        *self.instance_order.get(index).unwrap()
+    }
+
+    /// Gets the lifetime parameter ID with the given name.
+    #[must_use]
+    pub fn lifetime_parameter_ids_by_name(
+        &self,
+    ) -> impl ExactSizeIterator<
+        Item = (&Interned<str>, pernixc_arena::ID<LifetimeParameter>),
+    > {
+        self.lifetime_parameter_ids_by_name.iter().map(|(name, id)| (name, *id))
+    }
+
+    /// Gets the type parameter ID with the given name.
+    #[must_use]
+    pub fn type_parameter_ids_by_name(
+        &self,
+    ) -> impl ExactSizeIterator<
+        Item = (&Interned<str>, pernixc_arena::ID<TypeParameter>),
+    > {
+        self.type_parameter_ids_by_name.iter().map(|(name, id)| (name, *id))
+    }
+
+    /// Gets the constant parameter ID with the given name.
+    #[must_use]
+    pub fn constant_parameter_ids_by_name(
+        &self,
+    ) -> impl ExactSizeIterator<
+        Item = (&Interned<str>, pernixc_arena::ID<ConstantParameter>),
+    > {
+        self.constant_parameter_ids_by_name.iter().map(|(name, id)| (name, *id))
+    }
+
+    /// Gets the instance parameter ID with the given name.
+    #[must_use]
+    pub fn instance_parameter_ids_by_name(
+        &self,
+    ) -> impl ExactSizeIterator<
+        Item = (&Interned<str>, pernixc_arena::ID<InstanceParameter>),
+    > {
+        self.instance_parameter_ids_by_name.iter().map(|(name, id)| (name, *id))
+    }
+
+    /// The default values for type parameters, which will be used when the
+    /// caller does not provide type arguments for those type parameters.
+    #[must_use]
+    pub fn default_type_parameters(&self) -> &[Type] {
+        &self.default_type_parameters
+    }
+
+    /// The default values for constant parameters, which will be used when the
+    /// caller does not provide constant arguments for those constant
+    /// parameters.
+    #[must_use]
+    pub fn default_constant_parameters(&self) -> &[Constant] {
+        &self.default_constant_parameters
     }
 }
 
@@ -471,3 +775,14 @@ pub type ConstantParameterID = MemberID<pernixc_arena::ID<ConstantParameter>>;
 
 /// An ID to a lifetime parameter.
 pub type LifetimeParameterID = MemberID<pernixc_arena::ID<LifetimeParameter>>;
+
+/// An ID to a instance parameter.
+pub type InstanceParameterID = MemberID<pernixc_arena::ID<InstanceParameter>>;
+
+impl<T: GenericParameter> Index<pernixc_arena::ID<T>> for GenericParameters {
+    type Output = T;
+
+    fn index(&self, index: pernixc_arena::ID<T>) -> &Self::Output {
+        T::get_generic_parameters_arena(self).get(index).unwrap()
+    }
+}

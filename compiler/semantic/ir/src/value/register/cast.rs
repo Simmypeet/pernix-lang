@@ -4,7 +4,7 @@ use std::ops::Deref;
 
 use pernixc_arena::ID;
 use pernixc_term::r#type::Type;
-use pernixc_type_system::{Error, Succeeded, normalizer::Normalizer};
+use pernixc_type_system::{OverflowError, Succeeded, normalizer::Normalizer};
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
@@ -65,7 +65,7 @@ impl TypeOf<&Cast> for Values {
         &self,
         cast: &Cast,
         environment: &Environment<'_, N>,
-    ) -> Result<Succeeded<Type>, Error> {
+    ) -> Result<Succeeded<Type>, OverflowError> {
         Ok(environment
             .type_environment
             .simplify(cast.r#type.clone())

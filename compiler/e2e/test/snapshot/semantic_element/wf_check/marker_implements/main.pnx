@@ -1,0 +1,14 @@
+public marker Fizz[T]
+
+
+final implements[T] Fizz[T]:
+    where:
+        T: 'static
+
+
+public struct RequiresFizz[T]:
+    where:
+        T: Fizz
+
+
+public type UseFizz[T] = RequiresFizz[T]

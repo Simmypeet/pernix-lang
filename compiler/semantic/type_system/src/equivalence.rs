@@ -5,14 +5,14 @@ use std::{future::Future, sync::Arc};
 
 use pernixc_semantic_element::variance::Variance;
 use pernixc_term::{
-    constant::Constant, lifetime::Lifetime, predicate::Predicate, r#type::Type,
+    constant::Constant, instance::Instance, lifetime::Lifetime,
+    predicate::Predicate, r#type::Type,
 };
 
 use crate::{
-    Error, Succeeded,
-    environment::{BoxedFuture, Environment, Query},
+    Succeeded,
+    environment::{BoxedFuture, Environment, Query, QueryResult},
     normalizer::Normalizer,
-    subtype::Subtype,
     term::Term,
 };
 
@@ -23,21 +23,21 @@ pub trait Impl: Sized {
     fn get_equivalences_internal(
         &self,
         environment: &Environment<'_, impl Normalizer>,
-    ) -> impl Future<Output = Result<Vec<Succeeded<Self>>, Error>> + Send;
+    ) -> impl Future<Output = QueryResult<Arc<[Succeeded<Self>]>>> + Send;
 }
 
 impl Impl for Lifetime {
     async fn get_equivalences_internal(
         &self,
         environment: &Environment<'_, impl Normalizer>,
-    ) -> Result<Vec<Succeeded<Self>>, Error> {
+    ) -> QueryResult<Arc<[Succeeded<Self>]>> {
         let mut equivalences = Vec::new();
 
         if let Some(normalization) = self.normalize(environment).await? {
             equivalences.push(normalization);
         }
 
-        Ok(equivalences)
+        Ok(equivalences.into())
     }
 }
 
@@ -45,25 +45,21 @@ impl Impl for Type {
     async fn get_equivalences_internal(
         &self,
         environment: &Environment<'_, impl Normalizer>,
-    ) -> Result<Vec<Succeeded<Self>>, Error> {
+    ) -> QueryResult<Arc<[Succeeded<Self>]>> {
         let mut equivalences = Vec::new();
 
-        if self.is_trait_member() {
+        if self.is_instance_associated() {
             for equivalence in environment
                 .premise()
                 .predicates
                 .iter()
-                .filter_map(Predicate::as_trait_type_compatible)
+                .filter_map(Predicate::as_instance_associated_type_equality)
             {
-                let lhs = Self::TraitMember(equivalence.lhs.clone());
+                let lhs = Self::InstanceAssociated(equivalence.lhs.clone());
                 let rhs = &equivalence.rhs;
 
                 if let Some(result) = environment
-                    .query(&Subtype::new(
-                        self.clone(),
-                        lhs,
-                        Variance::Invariant,
-                    ))
+                    .subtypes(self.clone(), lhs, Variance::Invariant)
                     .await?
                 {
                     if !result.result.forall_lifetime_errors.is_empty() {
@@ -90,7 +86,7 @@ impl Impl for Type {
             equivalences.push(normalization);
         }
 
-        Ok(equivalences)
+        Ok(equivalences.into())
     }
 }
 
@@ -98,14 +94,29 @@ impl Impl for Constant {
     async fn get_equivalences_internal(
         &self,
         environment: &Environment<'_, impl Normalizer>,
-    ) -> Result<Vec<Succeeded<Self>>, Error> {
+    ) -> QueryResult<Arc<[Succeeded<Self>]>> {
         let mut equivalences = Vec::new();
 
         if let Some(normalization) = self.normalize(environment).await? {
             equivalences.push(normalization);
         }
 
-        Ok(equivalences)
+        Ok(equivalences.into())
+    }
+}
+
+impl Impl for Instance {
+    async fn get_equivalences_internal(
+        &self,
+        environment: &Environment<'_, impl Normalizer>,
+    ) -> QueryResult<Arc<[Succeeded<Self>]>> {
+        let mut equivalences = Vec::new();
+
+        if let Some(normalization) = self.normalize(environment).await? {
+            equivalences.push(normalization);
+        }
+
+        Ok(equivalences.into())
     }
 }
 
@@ -115,41 +126,43 @@ impl Impl for Constant {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, derive_new::new,
 )]
-pub struct Equivalences<T>(pub T);
+struct Equivalences<T>(pub T);
 
 impl<T: Term> Query for Equivalences<T> {
-    type Parameter = ();
     type InProgress = ();
-    type Result = Vec<Succeeded<T>>;
-    type Error = Error;
+    type Result = Arc<[Succeeded<T>]>;
 
     fn query<'x, N: Normalizer>(
         &'x self,
         environment: &'x Environment<'x, N>,
-        (): Self::Parameter,
-        (): Self::InProgress,
-    ) -> BoxedFuture<'x, Self::Result, Self::Error> {
+    ) -> BoxedFuture<'x, Self::Result> {
         Box::pin(async move {
-            Impl::get_equivalences_internal(&self.0, environment)
-                .await
-                .map(|x| Some(Arc::new(x)))
+            Impl::get_equivalences_internal(&self.0, environment).await
         })
+    }
+
+    fn on_cyclic(
+        &self,
+        (): Self::InProgress,
+        (): Self::InProgress,
+        _: &[crate::environment::Call<
+            crate::environment::DynArc,
+            crate::environment::DynArc,
+        >],
+    ) -> Self::Result {
+        Arc::from([])
     }
 }
 
 impl<N: Normalizer> Environment<'_, N> {
     /// Retrieves the equivalences of the given term based on the equality
     /// premises and normalization.
-    ///
-    /// # Errors
-    ///
-    /// See [`Error`] for more information.
     pub async fn get_equivalences<T: Term>(
         &self,
         term: &T,
-    ) -> Result<Arc<Vec<Succeeded<T>>>, Error> {
+    ) -> QueryResult<Arc<[Succeeded<T>]>> {
         // it should always return `Some` even in the cases of there's no more
         // equivalent rewrites.
-        Ok(self.query(&Equivalences(term.clone())).await?.unwrap_or_default())
+        self.query(&Equivalences(term.clone())).await
     }
 }

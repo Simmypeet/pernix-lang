@@ -39,9 +39,7 @@ impl Binder<'_> {
                     Diagnostic::CannotDereference(CannotDereference {
                         found_type,
                         span: final_span,
-                        type_inference_map: self.type_inference_rendering_map(),
-                        constant_inference_map: self
-                            .constant_inference_rendering_map(),
+                        rendering_map: self.get_rendering_map(),
                     })
                     .into(),
                 );

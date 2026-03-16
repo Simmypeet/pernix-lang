@@ -1,6 +1,3 @@
-public trait SomeTrait['a, T]:
-    pass
+public marker SomeTrait['a, T]
 
-public type Test[T] = T:
-    where:
-        trait for['x, 'x] SomeTrait['x, T]
+public type Test[T: for['x, 'x] SomeTrait['x]] = T

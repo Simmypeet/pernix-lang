@@ -1,0 +1,14 @@
+public trait Another:
+    pass
+
+
+public trait Test:
+    public type AssocType[instance I: Another]
+
+
+    public instance AssocInst: Another
+
+
+    public function test(a: this::AssocType[this::AssocInst])
+
+

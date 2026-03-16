@@ -1,19 +1,23 @@
 //! Defines the diagnostic related to the type system checking
 
-use bon::Builder;
-use pernixc_diagnostic::{Highlight, Report};
+use bon::{Builder, bon};
+use pernixc_diagnostic::{Highlight, Note, Report};
 use pernixc_handler::Handler;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
+use pernixc_semantic_element::implements_arguments::get_implements_argument;
 use pernixc_source_file::ByteIndex;
 use pernixc_symbol::{source_map::to_absolute_span, span::get_span};
 use pernixc_target::Global;
 use pernixc_term::{
-    display::Display, generic_arguments::GenericArguments, predicate::Predicate,
+    display::Display,
+    generic_arguments::GenericArguments,
+    instance::{Instance, TraitRef},
+    predicate::Predicate,
 };
 use qbice::{Decode, Encode, StableHash};
 
-use crate::OverflowError;
+use crate::{OverflowError, UnrecoverableError};
 
 /// Diagnostic messages for the type system.
 #[derive(
@@ -36,6 +40,10 @@ pub enum Diagnostic {
     UnsatisfiedPredicate(UnsatisfiedPredicate),
     PredicateSatisfiabilityOverflow(PredicateSatisfiabilityOverflow),
     ImplementationIsNotGeneralEnough(ImplementationIsNotGeneralEnough),
+    MismatchedImplementationArguments(MismatchedImplementationArguments),
+    AdtImplementationIsNotGeneralEnough(AdtImplementationIsNotGeneralEnough),
+    FoundNegativeImplementation(FoundNegativeImplementation),
+    MismatchedTraitRef(MismatchedTraitRef),
 }
 
 impl Report for Diagnostic {
@@ -57,6 +65,18 @@ impl Report for Diagnostic {
                 diagnostic.report(parameter).await
             }
             Self::ImplementationIsNotGeneralEnough(diagnostic) => {
+                diagnostic.report(parameter).await
+            }
+            Self::MismatchedImplementationArguments(diagnostic) => {
+                diagnostic.report(parameter).await
+            }
+            Self::AdtImplementationIsNotGeneralEnough(diagnostic) => {
+                diagnostic.report(parameter).await
+            }
+            Self::FoundNegativeImplementation(diagnostic) => {
+                diagnostic.report(parameter).await
+            }
+            Self::MismatchedTraitRef(diagnostic) => {
                 diagnostic.report(parameter).await
             }
         }
@@ -236,7 +256,8 @@ impl Report for PredicateSatisfiabilityOverflow {
     }
 }
 
-/// The bound is not satisfied upon instantiation.
+/// Used to attach to the [`RequiredBy`] to indicate that the required predicate
+/// is required by an implementation.
 #[derive(
     Debug,
     Clone,
@@ -250,15 +271,171 @@ impl Report for PredicateSatisfiabilityOverflow {
     Decode,
     Builder,
 )]
+pub struct RequiredByImplements {
+    resolved_implements_id: Global<pernixc_symbol::ID>,
+    predicate: pernixc_term::predicate::PositiveMarker,
+}
+
+/// Used to attach to [`UnsatisfiedPredicate`] to indicate where the unsatisfied
+/// predicate is required by an implementation.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Builder,
+)]
+pub struct RequiredBy {
+    predicate_declaration_span: Option<RelativeSpan>,
+    by_implements: Option<RequiredByImplements>,
+}
+
+impl RequiredBy {
+    async fn generate_note(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Option<pernixc_diagnostic::Note<ByteIndex>> {
+        if let Some(by_implements) = &self.by_implements {
+            let mut message = "required for predicate ".to_string();
+            by_implements
+                .predicate
+                .write_async(engine, &mut message)
+                .await
+                .unwrap();
+            message.push_str(" to be implemented");
+
+            let implements_span = if let Some(implements_span) =
+                engine.get_span(by_implements.resolved_implements_id).await
+            {
+                Some(engine.to_absolute_span(&implements_span).await)
+            } else {
+                None
+            };
+
+            let primary_highlight =
+                if let Some(span) = self.predicate_declaration_span.as_ref() {
+                    Some(
+                        Highlight::builder()
+                            .span(engine.to_absolute_span(span).await)
+                            .message("the required predicate is declared here")
+                            .build(),
+                    )
+                } else {
+                    None
+                };
+
+            Some(
+                Note::builder()
+                    .message(message)
+                    .maybe_primary_highlight(primary_highlight)
+                    .related(
+                        implements_span
+                            .map(|span| Highlight::builder().span(span).build())
+                            .into_iter()
+                            .collect(),
+                    )
+                    .build(),
+            )
+        } else {
+            let primary_highlight = self.predicate_declaration_span.as_ref()?;
+
+            Some(
+                Note::builder()
+                    .message("the required predicate is declared here")
+                    .primary_highlight(
+                        Highlight::builder()
+                            .span(
+                                engine
+                                    .to_absolute_span(primary_highlight)
+                                    .await,
+                            )
+                            .build(),
+                    )
+                    .build(),
+            )
+        }
+    }
+}
+
+/// The bound is not satisfied upon instantiation.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+)]
 pub struct UnsatisfiedPredicate {
     /// The unsatisfied bound.
-    pub predicate: Predicate,
+    predicate: Predicate,
 
     /// The span of the instantiation that causes the bound check.
-    pub instantiation_span: RelativeSpan,
+    instantiation_span: RelativeSpan,
 
-    /// The span of the predicate declaration.
-    pub predicate_declaration_span: Option<RelativeSpan>,
+    /// The stack of requirements that lead to the unsatisfied predicate, used
+    /// to provide more context to the user about why the predicate is not
+    /// satisfied.
+    requirement_stack: Vec<RequiredBy>,
+}
+
+#[bon]
+impl UnsatisfiedPredicate {
+    /// Returns a builder for creating [`UnsatisfiedPredicate`].
+    #[builder(finish_fn = build)]
+    pub fn builder(
+        predicate: Predicate,
+        instantiation_span: RelativeSpan,
+        predicate_declaration_span: Option<RelativeSpan>,
+    ) -> Self {
+        Self {
+            predicate,
+            instantiation_span,
+            requirement_stack: predicate_declaration_span
+                .map(|span| RequiredBy {
+                    by_implements: None,
+                    predicate_declaration_span: Some(span),
+                })
+                .into_iter()
+                .collect(),
+        }
+    }
+
+    /// Returns a builder for creating [`UnsatisfiedPredicate`] with explicitly
+    /// given requirement stack.
+    #[builder(finish_fn = build)]
+    pub const fn builder_with_required_by_stack(
+        predicate: Predicate,
+        instantiation_span: RelativeSpan,
+        requirement_stack: Vec<RequiredBy>,
+    ) -> Self {
+        Self { predicate, instantiation_span, requirement_stack }
+    }
+}
+
+async fn generate_notes(
+    requirement_stack: &[RequiredBy],
+    engine: &TrackedEngine,
+) -> Vec<pernixc_diagnostic::Note<ByteIndex>> {
+    let mut notes = Vec::new();
+
+    for requirement in requirement_stack {
+        if let Some(note) = requirement.generate_note(engine).await {
+            notes.push(note);
+        }
+    }
+
+    notes
 }
 
 impl Report for UnsatisfiedPredicate {
@@ -272,32 +449,18 @@ impl Report for UnsatisfiedPredicate {
                     .span(
                         engine.to_absolute_span(&self.instantiation_span).await,
                     )
-                    .message({
-                        let mut message = String::new();
-                        message.push_str("the predicate `");
-                        self.predicate
-                            .write_async(engine, &mut message)
-                            .await
-                            .unwrap();
-                        message.push_str("` is not satisfied");
-                        message
-                    })
                     .build(),
             )
-            .message("unsatisfied predicate")
-            .related(match &self.predicate_declaration_span {
-                Some(span) => {
-                    let declaration_span = engine.to_absolute_span(span).await;
+            .message({
+                let mut message = String::new();
 
-                    vec![
-                        Highlight::builder()
-                            .span(declaration_span)
-                            .message("the required predicate was declared here")
-                            .build(),
-                    ]
-                }
-                None => Vec::new(),
+                message.push_str("the predicate `");
+                self.predicate.write_async(engine, &mut message).await.unwrap();
+                message.push_str("` is not satisfied");
+
+                message
             })
+            .notes(generate_notes(&self.requirement_stack, engine).await)
             .build()
     }
 }
@@ -319,16 +482,17 @@ impl Report for UnsatisfiedPredicate {
 )]
 pub struct ImplementationIsNotGeneralEnough {
     /// The ID of the implementation where the predicate is not satisfied.
-    pub resolvable_implementation_id: Global<pernixc_symbol::ID>,
+    resolvable_implementation_id: Global<pernixc_symbol::ID>,
 
     /// The generic arguments required by the trait predicate.
-    pub generic_arguments: GenericArguments,
-
-    /// The span where the trait predicate was declared.
-    pub predicate_declaration_span: Option<RelativeSpan>,
+    generic_arguments: GenericArguments,
 
     /// The span of the instantiation that causes the error
-    pub instantiation_span: RelativeSpan,
+    instantiation_span: RelativeSpan,
+
+    /// The stack of requirements that lead to the error, used to provide more
+    /// context to the user about why the implementation is not general enough.
+    required_by_stack: Vec<RequiredBy>,
 }
 
 impl Report for ImplementationIsNotGeneralEnough {
@@ -370,15 +534,6 @@ impl Report for ImplementationIsNotGeneralEnough {
             .related({
                 let mut related = Vec::new();
 
-                if let Some(span) = self.predicate_declaration_span.as_ref() {
-                    related.push(
-                        Highlight::builder()
-                            .span(engine.to_absolute_span(span).await)
-                            .message("the predicate is declared here")
-                            .build(),
-                    );
-                }
-
                 if let Some(span) = implementation_span.as_ref() {
                     related.push(
                         Highlight::builder()
@@ -393,6 +548,7 @@ impl Report for ImplementationIsNotGeneralEnough {
 
                 related
             })
+            .notes(generate_notes(&self.required_by_stack, engine).await)
             .build()
     }
 }
@@ -414,9 +570,11 @@ impl OverflowError {
         self,
         overflow_span: RelativeSpan,
         handler: &dyn Handler<Diagnostic>,
-    ) {
+    ) -> UnrecoverableError {
         handler
             .receive(TypeCalculatingOverflow::new(overflow_span, self).into());
+
+        UnrecoverableError::Reported
     }
 
     /// Reports the [`OverflowError`] as a [`TypeCheckOverflow`] to
@@ -425,8 +583,10 @@ impl OverflowError {
         self,
         overflow_span: RelativeSpan,
         handler: &dyn Handler<Diagnostic>,
-    ) {
+    ) -> UnrecoverableError {
         handler.receive(TypeCheckOverflow::new(overflow_span, self).into());
+
+        UnrecoverableError::Reported
     }
 
     /// Reports the [`OverflowError`] as a [`PredicateSatisfiabilityOverflow`]
@@ -437,7 +597,7 @@ impl OverflowError {
         predicate_declaration_span: Option<RelativeSpan>,
         instantiation_span: RelativeSpan,
         handler: &dyn Handler<Diagnostic>,
-    ) {
+    ) -> UnrecoverableError {
         handler.receive(
             PredicateSatisfiabilityOverflow::new(
                 predicate,
@@ -447,5 +607,314 @@ impl OverflowError {
             )
             .into(),
         );
+
+        UnrecoverableError::Reported
+    }
+}
+
+/// The generic arguments are not compatible with the generic arguments defined
+/// in the implementation.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+)]
+pub struct MismatchedImplementationArguments {
+    /// The ID of the ADT implementation where the generic arguments are
+    /// mismatched.
+    pub adt_implementation_id: Global<pernixc_symbol::ID>,
+
+    /// The generic arguments found in the implementation.
+    pub found_generic_arguments: GenericArguments,
+
+    /// The span of the instantiation that causes the mismatch.
+    pub instantiation_span: RelativeSpan,
+}
+
+impl Report for MismatchedImplementationArguments {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        let impl_span = if let Some(span) =
+            engine.get_span(self.adt_implementation_id).await
+        {
+            Some(engine.to_absolute_span(&span).await)
+        } else {
+            None
+        };
+
+        let impl_arguments = engine
+            .get_implements_argument(self.adt_implementation_id)
+            .await
+            .unwrap();
+
+        pernixc_diagnostic::Rendered::builder()
+            .message(
+                "the generic arguments are not compatible with the generic \
+                 arguments defined in the implementation",
+            )
+            .primary_highlight(
+                Highlight::builder()
+                    .span(
+                        engine.to_absolute_span(&self.instantiation_span).await,
+                    )
+                    .message({
+                        let mut string = String::new();
+
+                        string.push_str("the generic arguments supplied was `");
+                        self.found_generic_arguments
+                            .write_async(engine, &mut string)
+                            .await
+                            .unwrap();
+                        string.push_str("` aren't compatible with `");
+                        impl_arguments
+                            .write_async(engine, &mut string)
+                            .await
+                            .unwrap();
+                        string.push('`');
+
+                        string
+                    })
+                    .build(),
+            )
+            .related(
+                impl_span
+                    .as_ref()
+                    .map(|span| {
+                        Highlight::new(
+                            *span,
+                            Some(
+                                "the implementation is defined here"
+                                    .to_string(),
+                            ),
+                        )
+                    })
+                    .into_iter()
+                    .collect(),
+            )
+            .build()
+    }
+}
+
+/// The ADT implementation is not general enough to satisfy the required forall
+/// lifetimes in the generic arguments
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+)]
+pub struct AdtImplementationIsNotGeneralEnough {
+    /// The ADT implementation ID where the generic arguments are not general
+    /// enough.
+    pub adt_implementation_id: Global<pernixc_symbol::ID>,
+
+    /// The generic arguments supplied to the ADT.
+    pub generic_arguments: GenericArguments,
+
+    /// The span location of where the ADT is instantiated.
+    pub instantiation_span: RelativeSpan,
+}
+
+impl Report for AdtImplementationIsNotGeneralEnough {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        let span = engine.to_absolute_span(&self.instantiation_span).await;
+        let impl_span = if let Some(span) =
+            engine.get_span(self.adt_implementation_id).await
+        {
+            Some(engine.to_absolute_span(&span).await)
+        } else {
+            None
+        };
+
+        pernixc_diagnostic::Rendered::builder()
+            .message(
+                "the struct/enum implementation is not general enough to \
+                 satisfy the required forall lifetimes in the generic \
+                 arguments",
+            )
+            .primary_highlight(Highlight::new(
+                span,
+                Some({
+                    let mut string = String::new();
+
+                    string.push_str("the generic arguments supplied was `");
+                    self.generic_arguments
+                        .write_async(engine, &mut string)
+                        .await
+                        .unwrap();
+                    string.push('`');
+
+                    string
+                }),
+            ))
+            .related(
+                impl_span
+                    .map(|span| {
+                        Highlight::new(
+                            span,
+                            Some(
+                                "the implementation is defined here"
+                                    .to_string(),
+                            ),
+                        )
+                    })
+                    .into_iter()
+                    .collect(),
+            )
+            .build()
+    }
+}
+
+/// A negative implementation was found that explicitly marks the predicate as
+/// unsatisfiable.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Builder,
+)]
+pub struct FoundNegativeImplementation {
+    /// The predicate that was found to be explicitly unsatisfiable.
+    predicate: pernixc_term::predicate::PositiveMarker,
+
+    /// The ID of the negative implementation.
+    negative_implementation_id: Global<pernixc_symbol::ID>,
+
+    /// The span of the instantiation that causes the check.
+    instantiation_span: RelativeSpan,
+
+    /// The stack of requirements that lead to the negative implementation
+    /// being checked, used to provide more context to the user.
+    requirement_stack: Vec<RequiredBy>,
+}
+
+impl Report for FoundNegativeImplementation {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        let negative_impl_span = if let Some(span) =
+            engine.get_span(self.negative_implementation_id).await
+        {
+            Some(engine.to_absolute_span(&span).await)
+        } else {
+            None
+        };
+
+        pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(
+                Highlight::builder()
+                    .span(
+                        engine.to_absolute_span(&self.instantiation_span).await,
+                    )
+                    .message({
+                        let mut message = String::new();
+                        message.push_str("the predicate `");
+                        self.predicate
+                            .write_async(engine, &mut message)
+                            .await
+                            .unwrap();
+                        message.push_str(
+                            "` is explicitly marked as unsatisfiable by a \
+                             negative implementation",
+                        );
+                        message
+                    })
+                    .build(),
+            )
+            .message("found negative implementation")
+            .related({
+                let mut related = Vec::new();
+
+                if let Some(span) = negative_impl_span.as_ref() {
+                    related.push(
+                        Highlight::builder()
+                            .span(*span)
+                            .message(
+                                "this negative implementation explicitly \
+                                 marks the predicate as unsatisfiable",
+                            )
+                            .build(),
+                    );
+                }
+
+                related
+            })
+            .notes(generate_notes(&self.requirement_stack, engine).await)
+            .build()
+    }
+}
+
+/// A diagnostic generated by instance argument being supplied with a mismatched
+/// trait reference.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    Builder,
+)]
+pub struct MismatchedTraitRef {
+    found_trait_ref: TraitRef,
+    expected_trait_ref: TraitRef,
+    instance: Instance,
+    span: RelativeSpan,
+}
+
+impl Report for MismatchedTraitRef {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        let found_string =
+            self.found_trait_ref.write_to_string(engine).await.unwrap();
+        let expected_string =
+            self.expected_trait_ref.write_to_string(engine).await.unwrap();
+        let instance_string =
+            self.instance.write_to_string(engine).await.unwrap();
+
+        pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .message(format!(
+                        "instance `{instance_string}` implements \
+                         `{found_string}` but `{expected_string}` was expected"
+                    ))
+                    .build(),
+            )
+            .message("mismatched trait reference")
+            .build()
     }
 }

@@ -71,7 +71,7 @@ impl Builder {
                             .add_member(identifier.clone(), builder.engine())
                             .await;
 
-                        builder.insert_kind(id, Kind::TraitType);
+                        builder.insert_kind(id, Kind::TraitAssociatedType);
                         builder.insert_scope_span(id, member.span());
                         builder.insert_name_identifier(id, &identifier);
                         builder
@@ -107,7 +107,7 @@ impl Builder {
                             .add_member(identifier.clone(), builder.engine())
                             .await;
 
-                        builder.insert_kind(id, Kind::TraitFunction);
+                        builder.insert_kind(id, Kind::TraitAssociatedFunction);
                         builder.insert_scope_span(id, member.span());
                         builder.insert_name_identifier(id, &identifier);
                         builder
@@ -158,7 +158,7 @@ impl Builder {
                             .add_member(identifier.clone(), builder.engine())
                             .await;
 
-                        builder.insert_kind(id, Kind::TraitConstant);
+                        builder.insert_kind(id, Kind::TraitAssociatedConstant);
                         builder.insert_scope_span(id, member.span());
                         builder.insert_name_identifier(id, &identifier);
                         builder
@@ -184,6 +184,44 @@ impl Builder {
                         builder.insert_constant_type_annotation_syntax(
                             id,
                             member.signature().and_then(|x| x.r#type()),
+                        );
+                    }
+
+                    TraitMemberSyn::Instance(inst) => {
+                        let Some(identifier) =
+                            inst.signature().and_then(|x| x.identifier())
+                        else {
+                            continue;
+                        };
+
+                        let id = trait_member_builder
+                            .add_member(identifier.clone(), builder.engine())
+                            .await;
+
+                        builder.insert_kind(id, Kind::TraitAssociatedInstance);
+                        builder.insert_scope_span(id, inst.span());
+                        builder.insert_name_identifier(id, &identifier);
+                        builder
+                            .insert_accessibility_by_access_modifier(
+                                id,
+                                parent_module_id,
+                                inst.access_modifier().as_ref(),
+                            )
+                            .await;
+                        builder.insert_generic_parameters_syntax(
+                            id,
+                            inst.signature()
+                                .and_then(|x| x.generic_parameters()),
+                        );
+                        builder.insert_where_clause_syntax(
+                            id,
+                            inst.trailing_where_clause()
+                                .and_then(|x| x.where_clause())
+                                .and_then(|x| x.predicates()),
+                        );
+                        builder.insert_instance_trait_ref(
+                            id,
+                            inst.signature().and_then(|x| x.trait_ref()),
                         );
                     }
                 }

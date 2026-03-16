@@ -1,11 +1,8 @@
 use pernixc_diagnostic::{ByteIndex, Highlight, Report};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
-use pernixc_resolution::diagnostic::ForallLifetimeRedefinition;
-use pernixc_symbol::{
-    kind::get_kind, name::get_qualified_name, source_map::to_absolute_span,
-};
-use pernixc_target::Global;
+use pernixc_resolution::qualified_identifier::Resolution;
+use pernixc_symbol::source_map::to_absolute_span;
 use pernixc_term::{display::Display, effect};
 use qbice::{Decode, Encode, Identifiable, StableHash};
 
@@ -27,7 +24,6 @@ use qbice::{Decode, Encode, Identifiable, StableHash};
 pub enum Diagnostic {
     Resolution(pernixc_resolution::diagnostic::Diagnostic),
     TypeSystem(pernixc_type_system::diagnostic::Diagnostic),
-    ForallLifetimeRedefinition(ForallLifetimeRedefinition),
     AmbiguousEffectDefinition(AmbiguousEffectDefinition),
     EffectExpected(EffectExpected),
 }
@@ -40,7 +36,6 @@ impl Report for Diagnostic {
         match self {
             Self::Resolution(d) => d.report(engine).await,
             Self::TypeSystem(d) => d.report(engine).await,
-            Self::ForallLifetimeRedefinition(d) => d.report(engine).await,
             Self::AmbiguousEffectDefinition(d) => d.report(engine).await,
             Self::EffectExpected(d) => d.report(engine).await,
         }
@@ -51,7 +46,6 @@ impl Report for Diagnostic {
 #[derive(
     Debug,
     Clone,
-    Copy,
     PartialEq,
     Eq,
     PartialOrd,
@@ -63,7 +57,7 @@ impl Report for Diagnostic {
 )]
 pub struct EffectExpected {
     /// The span of the unexpected symbol.
-    pub found: Global<pernixc_symbol::ID>,
+    pub found: Resolution,
 
     /// The span where the unexpected symbol was found.
     pub found_span: RelativeSpan,
@@ -74,24 +68,13 @@ impl Report for EffectExpected {
         &self,
         engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
-        let q_name = engine.get_qualified_name(self.found).await;
-        let kind = engine.get_kind(self.found).await;
-
+        let found_string = self.found.found_string(engine).await;
+        let message = format!("expected an effect, found `{found_string}`");
         let span = engine.to_absolute_span(&self.found_span).await;
-
-        let message = format!(
-            "expected an effect, found a `{} {q_name}`",
-            kind.kind_str(),
-        );
 
         pernixc_diagnostic::Rendered::builder()
             .message(message)
-            .primary_highlight(
-                Highlight::builder()
-                    .span(span)
-                    .message(format!("`{q_name}` is a {}`", kind.kind_str()))
-                    .build(),
-            )
+            .primary_highlight(Highlight::builder().span(span).build())
             .severity(pernixc_diagnostic::Severity::Error)
             .build()
     }

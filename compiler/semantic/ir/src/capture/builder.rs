@@ -418,7 +418,6 @@ impl DropOrder {
 
                 Ok((Self { root: root_order, projections: Vec::new() }, true))
             }
-
             Address::Field(field) => {
                 let (mut drop_order, should_continue) =
                     Box::pin(Self::get_drop_order(
@@ -437,7 +436,7 @@ impl DropOrder {
 
                 // should've been a struct type
                 let struct_ty = ty.as_symbol().unwrap();
-                let struct_id = struct_ty.id;
+                let struct_id = struct_ty.id();
 
                 let fields = env.tracked_engine().get_fields(struct_id).await;
 
@@ -476,12 +475,14 @@ impl DropOrder {
                         field_index: match tuple.offset {
                             address::Offset::FromStart(st) => st,
                             address::Offset::FromEnd(st) => {
-                                tuple_ty.elements.len() - 1 - st
+                                tuple_ty.elements().len() - 1 - st
                             }
                             address::Offset::Unpacked => tuple_ty
-                                .elements
+                                .elements()
                                 .iter()
-                                .position(|x| x.is_unpacked)
+                                .position(
+                                    pernixc_term::tuple::Element::is_unpacked,
+                                )
                                 .unwrap(),
                         },
                     },

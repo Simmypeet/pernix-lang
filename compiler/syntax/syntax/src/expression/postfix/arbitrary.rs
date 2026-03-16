@@ -271,7 +271,7 @@ impl Arbitrary for MethodCall {
 
     fn arbitrary_with((expression, ty): Self::Parameters) -> Self::Strategy {
         (
-            GenericIdentifier::arbitrary_with((ty, expression.clone())),
+            GenericIdentifier::arbitrary_with((ty, None, expression.clone())),
             Call::arbitrary_with(expression),
         )
             .prop_map(|(generic_identifier, call)| Self {

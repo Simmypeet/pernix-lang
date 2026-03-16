@@ -1,0 +1,9 @@
+public trait Test[T]:
+    public type Output
+
+
+public type First[T, instance I: Test[T], instance J: Test[I::Output]] = T
+
+
+public trait Test2[instance I: Test[int32]]:
+    public type Test[instance J: Test[I::Output]]

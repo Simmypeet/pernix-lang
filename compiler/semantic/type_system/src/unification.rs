@@ -10,16 +10,15 @@ use derive_new::new;
 use enum_as_inner::EnumAsInner;
 use pernixc_term::{
     constant::Constant,
+    instance::Instance,
     lifetime::Lifetime,
-    matching,
     sub_term::{SubTerm, TermLocation},
     r#type::Type,
 };
 
 use crate::{
-    Error, Satisfied, Succeeded,
-    environment::{BoxedFuture, Environment, Query},
-    equality::Equality,
+    Satisfied, Succeeded,
+    environment::{BoxedFuture, Environment, Query, QueryResult},
     normalizer::Normalizer,
     term::Term,
 };
@@ -44,9 +43,7 @@ pub trait Predicate<T> {
         &self,
         from: &T,
         to: &T,
-        from_logs: &[Log],
-        to_logs: &[Log],
-    ) -> Result<Option<Succeeded<Satisfied>>, Error>;
+    ) -> QueryResult<Option<Succeeded<Satisfied>>>;
 }
 
 /// A trait implemented by terms that can be unified.
@@ -59,68 +56,99 @@ pub trait Element {
     fn unifiable(
         from: &Self,
         to: &Self,
-        from_logs: &[Log],
-        to_logs: &[Log],
         predicate: &(
-             impl Predicate<Lifetime> + Predicate<Type> + Predicate<Constant>
+             impl Predicate<Lifetime>
+             + Predicate<Type>
+             + Predicate<Constant>
+             + Predicate<Instance>
          ),
-    ) -> Result<Option<Succeeded<Satisfied>>, Error>;
-
-    /// Converts the term into a [`Log`] record as a rewitten term.
-    fn into_rewritten(self) -> Log;
+    ) -> QueryResult<Option<Succeeded<Satisfied>>>;
 }
 
 impl Element for Lifetime {
     fn unifiable(
         from: &Self,
         to: &Self,
-        from_logs: &[Log],
-        to_logs: &[Log],
-        predicate: &(impl Predicate<Self> + Predicate<Type> + Predicate<Constant>),
-    ) -> Result<Option<Succeeded<Satisfied>>, Error> {
-        predicate.unifiable(from, to, from_logs, to_logs)
+        predicate: &(
+             impl Predicate<Self>
+             + Predicate<Type>
+             + Predicate<Constant>
+             + Predicate<Instance>
+         ),
+    ) -> QueryResult<Option<Succeeded<Satisfied>>> {
+        predicate.unifiable(from, to)
     }
-
-    fn into_rewritten(self) -> Log { Log::RewrittenLifetime(self) }
 }
 
 impl Element for Type {
     fn unifiable(
         from: &Self,
         to: &Self,
-        from_logs: &[Log],
-        to_logs: &[Log],
         predicate: &(
-             impl Predicate<Lifetime> + Predicate<Self> + Predicate<Constant>
+             impl Predicate<Lifetime>
+             + Predicate<Self>
+             + Predicate<Constant>
+             + Predicate<Instance>
          ),
-    ) -> Result<Option<Succeeded<Satisfied>>, Error> {
-        predicate.unifiable(from, to, from_logs, to_logs)
+    ) -> QueryResult<Option<Succeeded<Satisfied>>> {
+        predicate.unifiable(from, to)
     }
-
-    fn into_rewritten(self) -> Log { Log::RewrittenType(self) }
 }
 
 impl Element for Constant {
     fn unifiable(
         from: &Self,
         to: &Self,
-        from_logs: &[Log],
-        to_logs: &[Log],
-        predicate: &(impl Predicate<Lifetime> + Predicate<Type> + Predicate<Self>),
-    ) -> Result<Option<Succeeded<Satisfied>>, Error> {
-        predicate.unifiable(from, to, from_logs, to_logs)
+        predicate: &(
+             impl Predicate<Lifetime>
+             + Predicate<Type>
+             + Predicate<Self>
+             + Predicate<Instance>
+         ),
+    ) -> QueryResult<Option<Succeeded<Satisfied>>> {
+        predicate.unifiable(from, to)
     }
+}
 
-    fn into_rewritten(self) -> Log { Log::RewrittenConstant(self) }
+impl Element for Instance {
+    fn unifiable(
+        from: &Self,
+        to: &Self,
+        predicate: &(
+             impl Predicate<Lifetime>
+             + Predicate<Type>
+             + Predicate<Constant>
+             + Predicate<Self>
+         ),
+    ) -> QueryResult<Option<Succeeded<Satisfied>>> {
+        predicate.unifiable(from, to)
+    }
 }
 
 /// Contains all the unification of substructural components.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, new)]
 #[allow(missing_docs)]
 pub struct Substructural<T: SubTerm> {
-    pub lifetimes: BTreeMap<T::SubLifetimeLocation, Unifier<Lifetime>>,
-    pub types: BTreeMap<T::SubTypeLocation, Unifier<Type>>,
-    pub constants: BTreeMap<T::SubConstantLocation, Unifier<Constant>>,
+    lifetimes: BTreeMap<T::SubLifetimeLocation, Unifier<Lifetime>>,
+    types: BTreeMap<T::SubTypeLocation, Unifier<Type>>,
+    constants: BTreeMap<T::SubConstantLocation, Unifier<Constant>>,
+    instances: BTreeMap<T::SubInstanceLocation, Unifier<Instance>>,
+}
+
+impl<T: SubTerm> Substructural<T> {
+    /// Destructures the substructural unification into its components.
+    #[must_use]
+    #[allow(clippy::type_complexity)]
+    pub fn destructure(
+        self,
+    ) -> (
+        BTreeMap<T::SubLifetimeLocation, Unifier<Lifetime>>,
+        BTreeMap<T::SubTypeLocation, Unifier<Type>>,
+        BTreeMap<T::SubConstantLocation, Unifier<Constant>>,
+        BTreeMap<T::SubInstanceLocation, Unifier<Instance>>,
+    ) {
+        (self.lifetimes, self.types, self.constants, self.instances)
+    }
 }
 
 impl<T: SubTerm> Default for Substructural<T> {
@@ -129,6 +157,7 @@ impl<T: SubTerm> Default for Substructural<T> {
             lifetimes: BTreeMap::new(),
             types: BTreeMap::new(),
             constants: BTreeMap::new(),
+            instances: BTreeMap::new(),
         }
     }
 }
@@ -162,19 +191,11 @@ pub enum Matching<T: SubTerm> {
 /// Represents a unification between two terms.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Unifier<T: SubTerm> {
-    /// If the `lhs` has been rewritten into another form, this field will be
-    /// `Some` of the rewritten term.
-    ///
-    /// The rewritten term can occur from normalizing the term or using trait
-    /// member equivalences.
+    /// The rewritten left-hand side term after unification.
     pub rewritten_from: Option<T>,
 
-    /// If the `rhs` has been rewritten into another form, this field will be
-    /// `Some` of the rewritten term.
-    ///
-    /// The rewritten term can occur from normalizing the term or using trait
-    /// member equivalences.
-    pub rewritten_right: Option<T>,
+    /// The rewritten right-hand side term after unification.
+    pub rewritten_to: Option<T>,
 
     /// The unification of the `lhs` and `rhs` terms.
     pub matching: Matching<T>,
@@ -186,6 +207,7 @@ pub trait PredicateA:
     Predicate<Lifetime>
     + Predicate<Type>
     + Predicate<Constant>
+    + Predicate<Instance>
     + Hash
     + Ord
     + Clone
@@ -199,6 +221,7 @@ impl<
     T: Predicate<Lifetime>
         + Predicate<Type>
         + Predicate<Constant>
+        + Predicate<Instance>
         + Hash
         + Ord
         + Clone
@@ -210,40 +233,37 @@ impl<
 }
 
 impl<T: Term, P: PredicateA> Query for Unification<T, P> {
-    type Parameter =
-        (Vec<Log> /* from logs */, Vec<Log> /* to logs */);
     type InProgress = ();
-    type Result = Succeeded<Unifier<T>>;
-    type Error = Error;
+    type Result = Option<Arc<Succeeded<Unifier<T>>>>;
 
     fn query<'x, N: Normalizer>(
         &'x self,
         environment: &'x Environment<'x, N>,
-        (from_logs, to_logs): Self::Parameter,
-        (): Self::InProgress,
-    ) -> BoxedFuture<'x, Self::Result, Self::Error> {
+    ) -> BoxedFuture<'x, Self::Result> {
         Box::pin(async move {
-            unify(
-                &self.from,
-                &self.to,
-                &from_logs,
-                &to_logs,
-                &self.predicate,
-                environment,
-            )
-            .await
+            unify(&self.from, &self.to, &self.predicate, environment).await
         })
+    }
+
+    fn on_cyclic(
+        &self,
+        (): Self::InProgress,
+        (): Self::InProgress,
+        _: &[crate::environment::Call<
+            crate::environment::DynArc,
+            crate::environment::DynArc,
+        >],
+    ) -> Self::Result {
+        None
     }
 }
 
 async fn substructural_unify<T: Term>(
     from: &T,
     to: &T,
-    from_logs: &[Log],
-    to_logs: &[Log],
     predicate: &impl PredicateA,
     environment: &Environment<'_, impl Normalizer>,
-) -> crate::Result<Unifier<T>> {
+) -> QueryResult<Option<Succeeded<Unifier<T>>>> {
     let Some(substructural) = from.substructural_match(to) else {
         return Ok(None);
     };
@@ -251,31 +271,20 @@ async fn substructural_unify<T: Term>(
     let mut result = Substructural::default();
     let mut constraints = BTreeSet::new();
 
-    for matching::Matching {
-        lhs: from,
-        rhs: to,
-        lhs_location: from_location,
-        rhs_location: to_location,
-    } in substructural.lifetimes
-    {
-        let mut from_logs = from_logs.to_vec();
-        from_logs.push(Log::Substructural(from_location.into()));
+    let (lifetimes, types, constants, instances) = substructural.destructure();
 
-        let mut to_logs = to_logs.to_vec();
-        to_logs.push(Log::Substructural(to_location.into()));
+    for matching in lifetimes {
+        let (from, to, from_location, _) = matching.destructure();
 
         let Some(new) = environment
-            .query_with(
-                &Unification::new(from, to, predicate.clone()),
-                (from_logs, to_logs),
-                (),
-            )
+            .query_with(&Unification::new(from, to, predicate.clone()), ())
             .await?
         else {
             return Ok(None);
         };
 
         constraints.extend(new.constraints.iter().cloned());
+
         assert!(
             result
                 .lifetimes
@@ -284,25 +293,11 @@ async fn substructural_unify<T: Term>(
         );
     }
 
-    for matching::Matching {
-        lhs: from,
-        rhs: to,
-        lhs_location: from_location,
-        rhs_location: to_location,
-    } in substructural.types
-    {
-        let mut from_logs = from_logs.to_vec();
-        from_logs.push(Log::Substructural(from_location.into()));
-
-        let mut to_logs = to_logs.to_vec();
-        to_logs.push(Log::Substructural(to_location.into()));
+    for matching in types {
+        let (from, to, from_location, _) = matching.destructure();
 
         let Some(new) = environment
-            .query_with(
-                &Unification::new(from.clone(), to.clone(), predicate.clone()),
-                (from_logs, to_logs),
-                (),
-            )
+            .query_with(&Unification::new(from, to, predicate.clone()), ())
             .await?
         else {
             return Ok(None);
@@ -314,25 +309,11 @@ async fn substructural_unify<T: Term>(
         );
     }
 
-    for matching::Matching {
-        lhs: from,
-        rhs: to,
-        lhs_location: from_location,
-        rhs_location: to_location,
-    } in substructural.constants
-    {
-        let mut from_logs = from_logs.to_vec();
-        from_logs.push(Log::Substructural(from_location.into()));
-
-        let mut to_logs = to_logs.to_vec();
-        to_logs.push(Log::Substructural(to_location.into()));
+    for matching in constants {
+        let (from, to, from_location, _) = matching.destructure();
 
         let Some(new) = environment
-            .query_with(
-                &Unification::new(from.clone(), to.clone(), predicate.clone()),
-                (from_logs, to_logs),
-                (),
-            )
+            .query_with(&Unification::new(from, to, predicate.clone()), ())
             .await?
         else {
             return Ok(None);
@@ -347,11 +328,30 @@ async fn substructural_unify<T: Term>(
         );
     }
 
+    for matching in instances {
+        let (from, to, from_location, _) = matching.destructure();
+
+        let Some(new) = environment
+            .query_with(&Unification::new(from, to, predicate.clone()), ())
+            .await?
+        else {
+            return Ok(None);
+        };
+
+        constraints.extend(new.constraints.iter().cloned());
+        assert!(
+            result
+                .instances
+                .insert(from_location, new.result.clone())
+                .is_none()
+        );
+    }
+
     Ok(Some(Succeeded::with_constraints(
         Unifier {
-            rewritten_from: None,
-            rewritten_right: None,
             matching: Matching::Substructural(result),
+            rewritten_from: None,
+            rewritten_to: None,
         },
         constraints,
     )))
@@ -360,47 +360,34 @@ async fn substructural_unify<T: Term>(
 pub(super) async fn unify<T: Term>(
     from: &T,
     to: &T,
-    from_logs: &[Log],
-    to_logs: &[Log],
     predicate: &impl PredicateA,
     environment: &Environment<'_, impl Normalizer>,
-) -> crate::ResultArc<Unifier<T>> {
-    if let Some(result) =
-        environment.query(&Equality::new(from.clone(), to.clone())).await?
-    {
+) -> QueryResult<Option<Arc<Succeeded<Unifier<T>>>>> {
+    if let Some(result) = environment.equals(from.clone(), to.clone()).await? {
         return Ok(Some(Arc::new(Succeeded::with_constraints(
             Unifier {
-                rewritten_from: None,
-                rewritten_right: None,
                 matching: Matching::Equality,
+                rewritten_from: None,
+                rewritten_to: None,
             },
             result.constraints.clone(),
         ))));
     }
 
     // check if the predicate can unify the two terms
-    if let Some(constraint) =
-        T::unifiable(from, to, from_logs, to_logs, predicate)?
-    {
+    if let Some(constraint) = T::unifiable(from, to, predicate)? {
         return Ok(Some(Arc::new(Succeeded::with_constraints(
             Unifier {
-                rewritten_from: None,
-                rewritten_right: None,
                 matching: Matching::Unifiable(from.clone(), to.clone()),
+                rewritten_from: None,
+                rewritten_to: None,
             },
             constraint.constraints,
         ))));
     }
 
-    if let Some(unification) = substructural_unify(
-        from,
-        to,
-        from_logs,
-        to_logs,
-        predicate,
-        environment,
-    )
-    .await?
+    if let Some(unification) =
+        substructural_unify(from, to, predicate, environment).await?
     {
         return Ok(Some(Arc::new(unification)));
     }
@@ -409,9 +396,6 @@ pub(super) async fn unify<T: Term>(
     for Succeeded { result: eq_from, constraints } in
         environment.get_equivalences(from).await?.iter()
     {
-        let mut from_logs = from_logs.to_vec();
-        from_logs.push(eq_from.clone().into_rewritten());
-
         if let Some(unifier_result) = environment
             .query_with(
                 &Unification::new(
@@ -419,14 +403,13 @@ pub(super) async fn unify<T: Term>(
                     to.clone(),
                     predicate.clone(),
                 ),
-                (from_logs, to_logs.to_vec()),
                 (),
             )
             .await?
         {
             let mut unifier = unifier_result.result.clone();
             unifier.rewritten_from =
-                unifier.rewritten_from.or(Some(eq_from.clone()));
+                unifier.rewritten_from.or_else(|| Some(eq_from.clone()));
 
             return Ok(Some(Arc::new(Succeeded::with_constraints(
                 unifier,
@@ -441,9 +424,6 @@ pub(super) async fn unify<T: Term>(
     for Succeeded { result: eq_to, constraints } in
         environment.get_equivalences(to).await?.iter()
     {
-        let mut to_logs = to_logs.to_vec();
-        to_logs.push(eq_to.clone().into_rewritten());
-
         if let Some(unifier_result) = environment
             .query_with(
                 &Unification::new(
@@ -451,14 +431,13 @@ pub(super) async fn unify<T: Term>(
                     eq_to.clone(),
                     predicate.clone(),
                 ),
-                (from_logs.to_vec(), to_logs),
                 (),
             )
             .await?
         {
             let mut unifier = unifier_result.result.clone();
-            unifier.rewritten_right =
-                unifier.rewritten_right.or(Some(eq_to.clone()));
+            unifier.rewritten_to =
+                unifier.rewritten_to.or_else(|| Some(eq_to.clone()));
 
             return Ok(Some(Arc::new(Succeeded::with_constraints(
                 unifier,

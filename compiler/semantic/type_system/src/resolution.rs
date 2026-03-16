@@ -2,6 +2,8 @@
 
 use std::{collections::BTreeSet, ops::Deref, sync::Arc};
 
+use enum_as_inner::EnumAsInner;
+use pernixc_lexical::tree::RelativeSpan;
 use pernixc_semantic_element::{
     implemented::get_implemented,
     implements::get_implements,
@@ -10,25 +12,134 @@ use pernixc_semantic_element::{
     where_clause::{self, get_where_clause},
 };
 use pernixc_symbol::{
-    final_implements::get_is_implements_final,
     kind::{Kind, get_kind},
     parent::scope_walker,
 };
 use pernixc_target::Global;
 use pernixc_term::{
     generic_arguments::GenericArguments, instantiation::Instantiation,
-    predicate::Predicate, r#type::Type,
+    lifetime::Lifetime, predicate::Predicate, r#type::Type,
+    visitor::RecursiveIterator,
 };
 use qbice::storage::intern::Interned;
 
 use crate::{
-    Error, Succeeded,
-    deduction::{self, Deduction},
+    OverflowError, Succeeded,
+    deduction::Deduction,
     environment::{BoxedFuture, Environment, Query},
     lifetime_constraint::LifetimeConstraint,
     normalizer::Normalizer,
     order::{self, Order},
+    predicate::marker,
 };
+
+/// The cause of an unsatisfied predicate.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+pub enum UnsatisfiedCause {
+    /// No additional information to elaborate further.
+    NoInformation,
+
+    /// The predicate was a "positive marker" and it was not satisfied. The
+    /// contained error can be used to elaborate further on the cause of the
+    /// unsatisfaction.
+    PositiveMarker(marker::PositiveError),
+}
+
+/// Failed to satisfy a predicate define in the `implements` where clause.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UnsatisfiedPredicate {
+    predicate: Predicate,
+    predicate_declaration_span: Option<RelativeSpan>,
+    cause: UnsatisfiedCause,
+}
+
+impl UnsatisfiedPredicate {
+    #[must_use]
+    pub(crate) fn heuristic(&self) -> usize {
+        match &self.cause {
+            UnsatisfiedCause::NoInformation => 1,
+            UnsatisfiedCause::PositiveMarker(positive_error) => {
+                positive_error.heuristic()
+            }
+        }
+    }
+
+    /// Retrieves the predicate that is unsatisfied.
+    #[must_use]
+    pub const fn predicate(&self) -> &Predicate { &self.predicate }
+
+    /// Retrieves the cause of the unsatisfaction.
+    #[must_use]
+    pub const fn cause(&self) -> &UnsatisfiedCause { &self.cause }
+
+    /// Retrieves the span where the predicate was declared, if any.
+    #[must_use]
+    pub const fn predicate_declaration_span(&self) -> Option<&RelativeSpan> {
+        self.predicate_declaration_span.as_ref()
+    }
+}
+
+/// Failed to satisfy one or more predicates defined in the `implements` where
+/// clause.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UnsatisfiedPredicates {
+    implementation: Arc<Implementation>,
+    unsatisfied_predicate: Arc<[UnsatisfiedPredicate]>,
+}
+
+impl UnsatisfiedPredicates {
+    /// Iterates over the unsatisfied predicates.
+    pub fn unsatisfied_predicates(
+        &self,
+    ) -> impl Iterator<Item = &UnsatisfiedPredicate> {
+        self.unsatisfied_predicate.iter()
+    }
+
+    /// Retrieves the implementation that contains the unsatisfied predicates.
+    #[must_use]
+    pub fn implementation(&self) -> &Implementation { &self.implementation }
+}
+
+/// An error that can occur during implementation resolution.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+pub enum Error {
+    /// Found no implementation for the given symbol and generic arguments.
+    NotFound,
+
+    //// Found an implementation, but its signature is not general enough for
+    /// the for-all lifetimes.
+    IsNotGeneralEnough(Arc<Implementation>),
+
+    /// An implementation was found, but one or more predicates in the
+    /// `implements` where clause were not satisfied.
+    UnsatisfiedPredicates(UnsatisfiedPredicates),
+
+    /// Found ambiguous `implements` candidates.
+    Ambiguous,
+
+    /// An error for cyclic query.
+    Cyclic,
+}
+
+impl Error {
+    #[must_use]
+    pub(crate) fn heuristic(&self) -> usize {
+        match self {
+            Self::IsNotGeneralEnough(_) => 2,
+
+            Self::UnsatisfiedPredicates(predicates) => {
+                predicates
+                    .unsatisfied_predicate
+                    .iter()
+                    .map(UnsatisfiedPredicate::heuristic)
+                    .sum::<usize>()
+                    + 1
+            }
+
+            Self::NotFound | Self::Ambiguous | Self::Cyclic => 1,
+        }
+    }
+}
 
 /// A result of a implementation resolution query.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -39,10 +150,6 @@ pub struct Implementation {
 
     /// The ID of the resolved implementation.
     pub id: Global<pernixc_symbol::ID>,
-
-    /// If `true`, the implementation is not general enough to accomodate the
-    /// forall lifetime requirements.
-    pub is_not_general_enough: bool,
 }
 
 /// A query for resolving a matching `implements`.
@@ -57,19 +164,17 @@ pub struct Resolve {
     pub generic_arguments: GenericArguments,
 }
 
+type ResolveResult = Result<Arc<Succeeded<Implementation>>, Error>;
+
 impl Query for Resolve {
-    type Parameter = ();
     type InProgress = ();
-    type Result = Succeeded<Implementation>;
-    type Error = Error;
+    type Result = ResolveResult;
 
     #[allow(clippy::too_many_lines)]
     fn query<'x, N: Normalizer>(
         &'x self,
         environment: &'x Environment<'x, N>,
-        (): Self::Parameter,
-        (): Self::InProgress,
-    ) -> BoxedFuture<'x, Self::Result, Self::Error> {
+    ) -> BoxedFuture<'x, Self::Result> {
         Box::pin(async move {
             let symbol_kind = environment
                 .tracked_engine()
@@ -77,7 +182,7 @@ impl Query for Resolve {
                 .await;
 
             // check that it must be trait or marker
-            assert!(matches!(symbol_kind, Kind::Trait | Kind::Marker));
+            assert!(matches!(symbol_kind, Kind::Marker));
 
             // we might be in the implementation site already
             if let Some(result) = is_in_active_implementation(
@@ -87,12 +192,8 @@ impl Query for Resolve {
             )
             .await?
             {
-                return Ok(Some(Arc::new(result)));
+                return Ok(result);
             }
-
-            let definite = environment
-                .generic_arguments_definite(&self.generic_arguments)
-                .await?;
 
             // the current candidate
             #[allow(clippy::type_complexity)]
@@ -105,7 +206,10 @@ impl Query for Resolve {
 
             let implementations = environment
                 .tracked_engine()
-                .get_implemented(self.implemented_id)
+                .get_implemented(
+                    self.implemented_id,
+                    environment.premise().query_site.target_id,
+                )
                 .await
                 .iter()
                 .copied()
@@ -131,55 +235,14 @@ impl Query for Resolve {
                     )
                     .await
                 {
-                    Ok(unification) => unification,
+                    Ok(Some(unification)) => unification,
 
-                    Err(deduction::Error::Overflow(error)) => {
-                        return Err(error.into());
+                    Err(error) => {
+                        return Err(error);
                     }
 
-                    Err(
-                        deduction::Error::MismatchedGenericArgumentCount(_)
-                        | deduction::Error::UnificationFailure(_),
-                    ) => continue,
+                    Ok(None) => continue,
                 };
-
-                let is_final = match symbol_kind {
-                    Kind::Trait => {
-                        environment
-                            .tracked_engine()
-                            .get_is_implements_final(current_impl_id)
-                            .await
-                    }
-
-                    // every marker's implementaions are final
-                    Kind::Marker => true,
-
-                    _ => unreachable!(),
-                };
-
-                if !is_final {
-                    // the implementation is not final, therefore, it requires
-                    // generic arguments to be definite
-                    if definite.is_none() {
-                        continue;
-                    }
-
-                    // all predicates must satisfy to continue
-                    let where_clause = environment
-                        .tracked_engine()
-                        .get_where_clause(current_impl_id)
-                        .await;
-
-                    if !predicate_satisfies(
-                        where_clause,
-                        &deduction.instantiation,
-                        environment,
-                    )
-                    .await?
-                    {
-                        continue;
-                    }
-                }
 
                 // compare with the current candidate
                 match &mut candidate {
@@ -192,21 +255,19 @@ impl Query for Resolve {
                         // check which one is more specific
                         match environment
                             .tracked_engine()
-                            .query(&order::Key::new(
+                            .query(&order::ImplementsOrderKey::new(
                                 current_impl_id,
                                 *candidate_id,
                             ))
-                            .await
+                            .await?
                         {
-                            Ok(Some(
-                                Order::Ambiguous | Order::Incompatible,
-                            )) => {
-                                return Ok(None);
+                            Some(Order::Ambiguous | Order::Incompatible) => {
+                                return Ok(Err(Error::Ambiguous));
                             }
 
-                            Ok(Some(Order::MoreGeneral) | None) => {}
+                            Some(Order::MoreGeneral) | None => {}
 
-                            Ok(Some(Order::MoreSpecific)) => {
+                            Some(Order::MoreSpecific) => {
                                 *candidate_id = current_impl_id;
                                 *candidate_instantiation = deduction;
                                 *candidate_lifetime_constraints =
@@ -215,10 +276,6 @@ impl Query for Resolve {
                                     implementation_generic_arguments
                                         .deref()
                                         .clone();
-                            }
-
-                            Err(error) => {
-                                return Err(Error::Overflow(error));
                             }
                         }
                     }
@@ -234,28 +291,90 @@ impl Query for Resolve {
                 }
             }
 
-            match candidate {
-                Some((
-                    implementation_id,
-                    deduction,
-                    mut lifetime_constraints,
-                    _,
-                )) => Ok(Some(Arc::new(Succeeded {
-                    result: Implementation {
+            finialize_candidate(candidate, environment).await
+        })
+    }
+
+    fn on_cyclic(
+        &self,
+        (): Self::InProgress,
+        (): Self::InProgress,
+        _: &[crate::environment::Call<
+            crate::environment::DynArc,
+            crate::environment::DynArc,
+        >],
+    ) -> Self::Result {
+        Err(Error::Cyclic)
+    }
+}
+
+async fn finialize_candidate(
+    candidate: Option<(
+        Global<pernixc_symbol::ID>,
+        Deduction,
+        BTreeSet<LifetimeConstraint>,
+        GenericArguments,
+    )>,
+    environment: &Environment<'_, impl Normalizer>,
+) -> Result<Result<Arc<Succeeded<Implementation>>, Error>, OverflowError> {
+    match candidate {
+        Some((implementation_id, deduction, mut lifetime_constraints, _)) => {
+            // if not general enough, return error
+            if deduction.is_not_general_enough {
+                return Ok(Err(Error::IsNotGeneralEnough(Arc::new(
+                    Implementation {
                         instantiation: deduction.instantiation,
                         id: implementation_id,
-                        is_not_general_enough: deduction.is_not_general_enough,
                     },
-                    constraints: {
-                        lifetime_constraints.extend(
-                            definite.into_iter().flat_map(|x| x.constraints),
-                        );
-                        lifetime_constraints
-                    },
-                }))),
-                None => Ok(None),
+                ))));
             }
-        })
+
+            let where_clause_predicates = environment
+                .tracked_engine()
+                .get_where_clause(implementation_id)
+                .await;
+
+            // check if satisfies the predicates
+            match predicate_satisfies(
+                where_clause_predicates,
+                &deduction.instantiation,
+                environment,
+            )
+            .await?
+            {
+                Ok(new_constraints) => {
+                    lifetime_constraints.extend(new_constraints);
+
+                    Ok(Ok(Arc::new(Succeeded {
+                        result: Implementation {
+                            instantiation: deduction.instantiation,
+                            id: implementation_id,
+                        },
+                        constraints: lifetime_constraints,
+                    })))
+                }
+
+                Err(err) => Ok(Err(match err {
+                    PredicateSatisfyError::UnsatisfiedPredicates(
+                        unsatisfied_predicates,
+                    ) => Error::UnsatisfiedPredicates(UnsatisfiedPredicates {
+                        implementation: Arc::new(Implementation {
+                            instantiation: deduction.instantiation,
+                            id: implementation_id,
+                        }),
+                        unsatisfied_predicate: unsatisfied_predicates,
+                    }),
+                    PredicateSatisfyError::ImplementationIsNotGeneralEnough => {
+                        Error::IsNotGeneralEnough(Arc::new(Implementation {
+                            instantiation: deduction.instantiation,
+                            id: implementation_id,
+                        }))
+                    }
+                })),
+            }
+        }
+
+        None => Ok(Err(Error::NotFound)),
     }
 }
 
@@ -264,10 +383,8 @@ async fn is_in_active_implementation(
     implemented_id: Global<pernixc_symbol::ID>,
     generic_arguments: &GenericArguments,
     environment: &Environment<'_, impl Normalizer>,
-) -> Result<Option<Succeeded<Implementation>>, Error> {
-    let Some(query_site) = environment.premise().query_site else {
-        return Ok(None);
-    };
+) -> Result<Option<ResolveResult>, OverflowError> {
+    let query_site = environment.premise().query_site;
 
     let mut scope_walker =
         environment.tracked_engine().scope_walker(query_site);
@@ -310,82 +427,270 @@ async fn is_in_active_implementation(
             continue;
         };
 
-        match environment
+        if let Some(result) = environment
             .deduce(generic_arguments, &implementation_arguments)
-            .await
+            .await?
         {
-            Ok(result) => {
-                return Ok(Some(Succeeded {
-                    result: Implementation {
+            if result.result.is_not_general_enough {
+                return Ok(Some(Err(Error::IsNotGeneralEnough(Arc::new(
+                    Implementation {
                         instantiation: result.result.instantiation,
                         id: current_id,
-                        is_not_general_enough: result
-                            .result
-                            .is_not_general_enough,
                     },
-                    constraints: result.constraints,
-                }));
+                )))));
             }
 
-            Err(deduction::Error::Overflow(err)) => {
-                return Err(Error::Overflow(err));
-            }
-
-            _ => {}
+            return Ok(Some(Ok(Arc::new(Succeeded {
+                result: Implementation {
+                    instantiation: result.result.instantiation,
+                    id: current_id,
+                },
+                constraints: result.constraints,
+            }))));
         }
     }
 
     Ok(None)
 }
 
+enum PredicateSatisfyError {
+    UnsatisfiedPredicates(Arc<[UnsatisfiedPredicate]>),
+    ImplementationIsNotGeneralEnough,
+}
+
+// check for any forall lifetimes in the predicates.
+fn extend_constraints(
+    constraints: &mut BTreeSet<LifetimeConstraint>,
+    new_constraints: impl IntoIterator<Item = LifetimeConstraint>,
+) -> Result<(), PredicateSatisfyError> {
+    for constraint in new_constraints {
+        match constraint {
+            LifetimeConstraint::LifetimeOutlives(mut outlives) => {
+                if outlives.bound.is_forall() {
+                    outlives.bound = Lifetime::Static;
+                }
+
+                if outlives.operand.is_forall() {
+                    return Err(
+                        PredicateSatisfyError::ImplementationIsNotGeneralEnough,
+                    );
+                }
+
+                constraints
+                    .insert(LifetimeConstraint::LifetimeOutlives(outlives));
+            }
+            LifetimeConstraint::TypeOutlives(mut outlives) => {
+                if outlives.bound.is_forall() {
+                    outlives.bound = Lifetime::Static;
+                }
+
+                if RecursiveIterator::new(&outlives.operand)
+                    .any(|x| x.0.as_lifetime().is_some_and(|x| x.is_forall()))
+                {
+                    return Err(
+                        PredicateSatisfyError::ImplementationIsNotGeneralEnough,
+                    );
+                }
+
+                constraints.insert(LifetimeConstraint::TypeOutlives(outlives));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[allow(clippy::too_many_lines)]
 async fn predicate_satisfies(
     predicates: Interned<[where_clause::Predicate]>,
     substitution: &Instantiation,
     environment: &Environment<'_, impl Normalizer>,
-) -> Result<bool, Error> {
+) -> Result<
+    Result<BTreeSet<LifetimeConstraint>, PredicateSatisfyError>,
+    OverflowError,
+> {
+    macro_rules! extend_constraints {
+        ($constraints:expr, $constraints_to_extend:expr) => {
+            if let Err(err) =
+                extend_constraints($constraints, $constraints_to_extend)
+            {
+                return Ok(Err(err));
+            }
+        };
+    }
     // check if satisfies all the predicate
-    for mut predicate in predicates.iter().map(|x| x.predicate.clone()) {
+    let mut unsatisfied_predicates = Vec::new();
+    let mut constraints = BTreeSet::new();
+
+    for (mut predicate, span) in
+        predicates.iter().map(|x| (x.predicate.clone(), x.span))
+    {
         predicate.instantiate(substitution);
 
-        if !match predicate {
-            Predicate::TraitTypeCompatible(equality) => environment
-                .subtypes(
-                    Type::TraitMember(equality.lhs),
-                    equality.rhs.clone(),
-                    Variance::Covariant,
-                )
-                .await?
-                .is_some(),
+        match predicate {
+            Predicate::InstanceAssociatedTypeEquality(ref equality) => {
+                match environment
+                    .subtypes(
+                        Type::InstanceAssociated(equality.lhs.clone()),
+                        equality.rhs.clone(),
+                        Variance::Covariant,
+                    )
+                    .await?
+                {
+                    Some(subtypable)
+                        if subtypable
+                            .result
+                            .forall_lifetime_errors
+                            .is_empty() =>
+                    {
+                        extend_constraints!(
+                            &mut constraints,
+                            subtypable.constraints.iter().cloned()
+                        );
+                    }
 
-            Predicate::ConstantType(constant_type) => {
-                environment.query(&constant_type).await?.is_some()
+                    _ => {
+                        unsatisfied_predicates.push(UnsatisfiedPredicate {
+                            predicate,
+                            predicate_declaration_span: span,
+                            cause: UnsatisfiedCause::NoInformation,
+                        });
+                    }
+                }
             }
 
-            Predicate::TupleType(tuple_type) => {
-                environment.query(&tuple_type).await?.is_some()
+            Predicate::ConstantType(ref constant_type) => {
+                match environment.query(constant_type).await? {
+                    Some(satisfied) => {
+                        extend_constraints!(
+                            &mut constraints,
+                            satisfied.constraints.iter().cloned()
+                        );
+                    }
+                    None => {
+                        unsatisfied_predicates.push(UnsatisfiedPredicate {
+                            predicate,
+                            predicate_declaration_span: span,
+                            cause: UnsatisfiedCause::NoInformation,
+                        });
+                    }
+                }
             }
 
-            Predicate::PositiveMarker(tr) => {
-                environment.query(&tr).await?.is_some()
+            Predicate::TupleType(ref tuple_type) => {
+                match environment.query(tuple_type).await? {
+                    Some(satisfied) => {
+                        extend_constraints!(
+                            &mut constraints,
+                            satisfied.constraints.iter().cloned()
+                        );
+                    }
+                    None => {
+                        unsatisfied_predicates.push(UnsatisfiedPredicate {
+                            predicate,
+                            predicate_declaration_span: span,
+                            cause: UnsatisfiedCause::NoInformation,
+                        });
+                    }
+                }
             }
 
-            Predicate::NegativeMarker(tr) => {
-                environment.query(&tr).await?.is_none()
+            Predicate::PositiveMarker(ref tr) => {
+                match environment.query(tr).await? {
+                    Ok(result) => {
+                        extend_constraints!(
+                            &mut constraints,
+                            result.constraints.iter().cloned()
+                        );
+                    }
+
+                    Err(err) => {
+                        unsatisfied_predicates.push(UnsatisfiedPredicate {
+                            predicate,
+                            predicate_declaration_span: span,
+                            cause: UnsatisfiedCause::PositiveMarker(err),
+                        });
+                    }
+                }
             }
 
-            Predicate::PositiveTrait(tr) => {
-                environment.query(&tr).await?.is_some()
+            Predicate::NegativeMarker(ref tr) => {
+                match environment.query(tr).await? {
+                    Some(result) => {
+                        extend_constraints!(
+                            &mut constraints,
+                            result.constraints.iter().cloned()
+                        );
+                    }
+
+                    None => {
+                        unsatisfied_predicates.push(UnsatisfiedPredicate {
+                            predicate,
+                            predicate_declaration_span: span,
+                            cause: UnsatisfiedCause::NoInformation,
+                        });
+                    }
+                }
             }
 
-            Predicate::NegativeTrait(tr) => {
-                environment.query(&tr).await?.is_some()
+            Predicate::TypeOutlives(mut pred) => {
+                if pred.bound.is_forall() {
+                    pred.bound = Lifetime::Static;
+                }
+
+                if RecursiveIterator::new(&pred.operand)
+                    .any(|x| x.0.as_lifetime().is_some_and(|x| x.is_forall()))
+                {
+                    return Ok(Err(
+                        PredicateSatisfyError::ImplementationIsNotGeneralEnough,
+                    ));
+                }
+
+                if environment.do_outlives_check() {
+                    if !environment.query(&pred).await? {
+                        unsatisfied_predicates.push(UnsatisfiedPredicate {
+                            predicate: Predicate::TypeOutlives(pred),
+                            predicate_declaration_span: span,
+                            cause: UnsatisfiedCause::NoInformation,
+                        });
+                    }
+                } else {
+                    constraints.insert(LifetimeConstraint::TypeOutlives(pred));
+                }
             }
 
-            Predicate::TypeOutlives(_) | Predicate::LifetimeOutlives(_) => true,
-        } {
-            return Ok(false);
+            Predicate::LifetimeOutlives(mut pred) => {
+                if pred.bound.is_forall() {
+                    pred.bound = Lifetime::Static;
+                }
+
+                if pred.operand.is_forall() {
+                    return Ok(Err(
+                        PredicateSatisfyError::ImplementationIsNotGeneralEnough,
+                    ));
+                }
+
+                if environment.do_outlives_check() {
+                    if !environment.query(&pred).await? {
+                        unsatisfied_predicates.push(UnsatisfiedPredicate {
+                            predicate: Predicate::LifetimeOutlives(pred),
+                            predicate_declaration_span: span,
+                            cause: UnsatisfiedCause::NoInformation,
+                        });
+                    }
+                } else {
+                    constraints
+                        .insert(LifetimeConstraint::LifetimeOutlives(pred));
+                }
+            }
         }
     }
 
-    Ok(true)
+    Ok(if unsatisfied_predicates.is_empty() {
+        Ok(constraints)
+    } else {
+        Err(PredicateSatisfyError::UnsatisfiedPredicates(Arc::from(
+            unsatisfied_predicates,
+        )))
+    })
 }

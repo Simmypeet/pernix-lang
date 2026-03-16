@@ -1,0 +1,29 @@
+public marker ForAllFail[T, U]
+
+
+final implements[T] ForAllFail[T, T]
+
+
+public function requireForallFail[T: 'static]():
+    where:
+        for['x, 'y] &'x T: ForAllFail[&'y T]
+    
+
+public function useForallFail():
+    requireForallFail[int32]()
+
+
+public marker ForAllPass[T, U]
+
+
+final implements[T, U] ForAllPass[T, U]
+
+
+public function requireForallPass[T: 'static]():
+    where:
+        for['x] &'x T: ForAllPass[&'x T]
+    
+
+public function useForallPass():
+    requireForallPass[int32]()
+    

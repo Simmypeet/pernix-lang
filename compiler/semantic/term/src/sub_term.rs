@@ -8,6 +8,7 @@ use enum_as_inner::EnumAsInner;
 
 use crate::{
     constant::{self, Constant},
+    instance::{self, Instance},
     lifetime::Lifetime,
     r#type::{self, Type},
 };
@@ -22,6 +23,9 @@ pub trait SubTerm: Sized {
 
     /// The type that represents the location of a sub-lifetime in the term.
     type SubLifetimeLocation: Location<Self, Lifetime>;
+
+    /// The type that represents the location of a sub-instance in the term.
+    type SubInstanceLocation: Location<Self, Instance>;
 
     /// The type that represents the location of a sub-term of this kind of
     /// term.
@@ -80,6 +84,9 @@ pub trait Location<Term, SubTerm>:
 pub enum SubLifetimeLocation {
     /// The location points to a lifetime that is a part of a type.
     FromType(r#type::SubLifetimeLocation),
+
+    /// The location points to a lifetime that is a part of an instance.
+    FromInstance(instance::SubLifetimeLocation),
 }
 
 /// An enumeration of locations where a type can be located.
@@ -98,6 +105,9 @@ pub enum SubLifetimeLocation {
 pub enum SubTypeLocation {
     /// The location points to a type that is a part of a type.
     FromType(r#type::SubTypeLocation),
+
+    /// The location points to a type that is a part of an instance.
+    FromInstance(instance::SubTypeLocation),
 }
 
 /// An enumeration of locations where a constant can be located.
@@ -119,6 +129,30 @@ pub enum SubConstantLocation {
 
     /// The location points to a constant that is a part of a constant.
     FromConstant(constant::SubConstantLocation),
+
+    /// The location points to a constant that is a part of an instance.
+    FromInstance(instance::SubConstantLocation),
+}
+
+/// An enumeration of locations where an instance can be located.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    derive_more::From,
+)]
+pub enum SubInstanceLocation {
+    /// The location points to an instance that is a part of a type.
+    FromType(r#type::SubInstanceLocation),
+
+    /// The location points to an instance that is a part of an instance.
+    FromInstance(instance::SubInstanceLocation),
 }
 
 /// Enumeration of all sub-location of all kinds of terms.
@@ -143,4 +177,7 @@ pub enum TermLocation {
 
     /// The location points to a constant.
     Constant(SubConstantLocation),
+
+    /// The location points to an instance.
+    Instance(SubInstanceLocation),
 }

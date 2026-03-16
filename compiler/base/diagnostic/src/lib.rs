@@ -2,7 +2,7 @@
 
 use std::future::Future;
 
-use bon::Builder;
+use bon::{Builder, bon};
 use pernixc_qbice::TrackedEngine;
 // re-export
 pub use pernixc_source_file::ByteIndex;
@@ -73,11 +73,21 @@ pub enum Severity {
 pub struct Highlight<L> {
     /// Represents a region in the source code involved in the diagnostic
     /// displaying
-    pub span: Span<L>,
+    span: Span<L>,
 
     /// The additional message to display at the highlighted region.
     #[builder(into)]
-    pub message: Option<String>,
+    message: Option<String>,
+}
+
+impl<L> Highlight<L> {
+    /// Retrieves the span of the highlight.
+    #[must_use]
+    pub const fn span(&self) -> &Span<L> { &self.span }
+
+    /// Retrieves the message of the highlight, if any.
+    #[must_use]
+    pub fn message(&self) -> Option<&str> { self.message.as_deref() }
 }
 
 /// A strucut representing a diagnostic message ready to be displayed to the
@@ -93,30 +103,189 @@ pub struct Highlight<L> {
     Encode,
     Decode,
     StableHash,
-    Builder,
     Identifiable,
 )]
 pub struct Rendered<L> {
     /// The severity of the diagnostic.
-    #[builder(default = Severity::Error)]
-    pub severity: Severity,
+    severity: Severity,
 
+    /// The primary highlight of the diagnostic, which is the most important
+    /// region to be highlighted to the user.
+    group: Group<L>,
+
+    /// List of related notes to display to the user.
+    ///
+    /// Each of these notes will be rendered as a separate diagnostic, but
+    /// they are still related to the main diagnostic.
+    notes: Vec<Note<L>>,
+}
+
+#[bon]
+impl<L> Rendered<L> {
+    /// Creates a builder for constructing a [`Rendered`] diagnostic.
+    #[builder(finish_fn = build)]
+    pub const fn builder(
+        #[builder(default = Severity::Error)] severity: Severity,
+        primary_highlight: Option<Highlight<L>>,
+        #[builder(into)] message: String,
+        #[builder(into)] help_message: Option<String>,
+        #[builder(default = Vec::new())] related: Vec<Highlight<L>>,
+        #[builder(default = Vec::new())] notes: Vec<Note<L>>,
+    ) -> Self {
+        Self {
+            severity,
+            group: Group { primary_highlight, message, help_message, related },
+            notes,
+        }
+    }
+}
+
+impl<L> Rendered<L> {
+    /// Retrieves the severity of the diagnostic.
+    #[must_use]
+    pub const fn severity(&self) -> Severity { self.severity }
+
+    /// Retrieves the primary highlight of the diagnostic, if any.
+    #[must_use]
+    pub const fn primary_highlight(&self) -> Option<&Highlight<L>> {
+        self.group.primary_highlight.as_ref()
+    }
+
+    /// Retrieves the message of the diagnostic.
+    #[must_use]
+    pub fn message(&self) -> &str { &self.group.message }
+
+    /// Retrieves the help message of the diagnostic, if any.
+    #[must_use]
+    pub fn help_message(&self) -> Option<&str> {
+        self.group.help_message.as_deref()
+    }
+
+    /// Retrieves the related highlights of the diagnostic.
+    #[must_use]
+    pub fn related(&self) -> &[Highlight<L>] { &self.group.related }
+
+    /// Retrieves the related notes of the diagnostic.
+    #[must_use]
+    pub fn notes(&self) -> &[Note<L>] { &self.notes }
+
+    /// Retrieves the group of the diagnostic, which contains the primary
+    /// highlight, the message, the help message, and the related
+    /// highlights.
+    #[must_use]
+    pub const fn group(&self) -> &Group<L> { &self.group }
+}
+
+/// A struct used to attaching additional information to the main [`Rendered`]
+/// diagnostic.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    Identifiable,
+)]
+pub struct Note<L> {
+    group: Group<L>,
+}
+
+#[bon]
+impl<L> Note<L> {
+    /// Creates a builder for constructing a [`Rendered`] diagnostic.
+    #[builder(finish_fn = build)]
+    pub const fn builder(
+        primary_highlight: Option<Highlight<L>>,
+        #[builder(into)] message: String,
+        #[builder(into)] help_message: Option<String>,
+        #[builder(default = Vec::new())] related: Vec<Highlight<L>>,
+    ) -> Self {
+        Self {
+            group: Group { primary_highlight, message, help_message, related },
+        }
+    }
+}
+
+impl<L> Note<L> {
+    /// Retrieves the primary highlight of the note, if any.
+    #[must_use]
+    pub const fn primary_highlight(&self) -> Option<&Highlight<L>> {
+        self.group.primary_highlight.as_ref()
+    }
+
+    /// Retrieves the message of the note.
+    #[must_use]
+    pub fn message(&self) -> &str { &self.group.message }
+
+    /// Retrieves the help message of the note, if any.
+    #[must_use]
+    pub fn help_message(&self) -> Option<&str> {
+        self.group.help_message.as_deref()
+    }
+
+    /// Retrieves the related highlights of the note.
+    #[must_use]
+    pub fn related(&self) -> &[Highlight<L>] { &self.group.related }
+
+    /// Retrieves the group of the note, which contains the primary highlight,
+    /// the message, the help message, and the related highlights.
+    #[must_use]
+    pub const fn group(&self) -> &Group<L> { &self.group }
+}
+
+/// Represents a group of diagnostics that are related to each other and should
+/// be displayed together.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+)]
+pub struct Group<L> {
     /// The span location where the diagnostic occurred.
-    pub primary_highlight: Option<Highlight<L>>,
+    primary_highlight: Option<Highlight<L>>,
 
     /// The message to display to the user.
-    #[builder(into)]
-    pub message: String,
+    message: String,
 
     /// The optional help message to display to the user. This will be
     /// displayed alongside the main message.
-    #[builder(into)]
-    pub help_message: Option<String>,
+    help_message: Option<String>,
 
     /// List of related useful information to display to the user.
     ///
     /// For example, for unimplemented methods, this could be a list of
     /// methods that need to be implemented.
-    #[builder(default = Vec::new())]
-    pub related: Vec<Highlight<L>>,
+    related: Vec<Highlight<L>>,
+}
+
+impl<L> Group<L> {
+    /// Retrieves the primary highlight of the group, if any.
+    #[must_use]
+    pub const fn primary_highlight(&self) -> Option<&Highlight<L>> {
+        self.primary_highlight.as_ref()
+    }
+
+    /// Retrieves the message of the group.
+    #[must_use]
+    pub fn message(&self) -> &str { &self.message }
+
+    /// Retrieves the help message of the group, if any.
+    #[must_use]
+    pub fn help_message(&self) -> Option<&str> { self.help_message.as_deref() }
+
+    /// Retrieves the related highlights of the group.
+    #[must_use]
+    pub fn related(&self) -> &[Highlight<L>] { &self.related }
 }

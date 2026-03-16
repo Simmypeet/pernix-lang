@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: run
+---
+stderr:
+[error]: mismatched trait reference
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/instance_associated_value/trait_mismatch/main.pnx:22:25
+   │
+22 │     instance I: First = MySecond # error: should've been MyFirst
+   ╰╴                        ━━━━━━━━ instance `main::MySecond` implements `main::Second` but `main::First` was expected
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

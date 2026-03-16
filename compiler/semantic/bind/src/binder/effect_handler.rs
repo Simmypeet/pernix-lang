@@ -17,8 +17,11 @@ use pernixc_ir::{
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_target::Global;
-use pernixc_term::{generic_arguments::GenericArguments, r#type::Type};
-use pernixc_type_system::environment::Premise;
+use pernixc_term::{
+    constant::Constant, generic_arguments::GenericArguments,
+    instance::Instance, lifetime::Lifetime, r#type::Type,
+};
+use pernixc_type_system::{OverflowError, environment::Premise};
 
 use crate::{
     binder::{
@@ -38,9 +41,10 @@ pub struct Context {
 
 impl transform::Element for Context {
     async fn transform<
-        T: transform::Transformer<pernixc_term::lifetime::Lifetime>
+        T: transform::Transformer<Lifetime>
             + transform::Transformer<Type>
-            + transform::Transformer<pernixc_term::constant::Constant>,
+            + transform::Transformer<Constant>
+            + transform::Transformer<Instance>,
     >(
         &mut self,
         transformer: &mut T,
@@ -61,23 +65,17 @@ impl handling_scope::HandlerClauseMatcher for HandlerClauseMatcher<'_, '_> {
         &mut self,
         target_generic_arguments: &GenericArguments,
         handler_generic_arguments: &GenericArguments,
-    ) -> Result<bool, pernixc_type_system::Error> {
-        if handler_generic_arguments.lifetimes.len()
-            != target_generic_arguments.lifetimes.len()
-            || handler_generic_arguments.types.len()
-                != target_generic_arguments.types.len()
-            || handler_generic_arguments.constants.len()
-                != target_generic_arguments.constants.len()
-        {
+    ) -> Result<bool, OverflowError> {
+        if !handler_generic_arguments.arity_matches(target_generic_arguments) {
             return Ok(false);
         }
 
         let cp = self.infer_ctx.start_checkpoint();
 
         for (a, b) in target_generic_arguments
-            .types
+            .types()
             .iter()
-            .zip(&handler_generic_arguments.types)
+            .zip(handler_generic_arguments.types())
         {
             if !self.unify_term(a, b).await? {
                 self.infer_ctx.restore(cp);
@@ -86,14 +84,22 @@ impl handling_scope::HandlerClauseMatcher for HandlerClauseMatcher<'_, '_> {
         }
 
         for (a, b) in target_generic_arguments
-            .constants
+            .constants()
             .iter()
-            .zip(&handler_generic_arguments.constants)
+            .zip(handler_generic_arguments.constants())
         {
             if !self.unify_term(a, b).await? {
                 self.infer_ctx.restore(cp);
                 return Ok(false);
             }
+        }
+
+        for (_, _) in target_generic_arguments
+            .instances()
+            .iter()
+            .zip(handler_generic_arguments.instances())
+        {
+            todo!()
         }
 
         // commit the checkpoint if all unifications succeeded
@@ -108,19 +114,21 @@ impl HandlerClauseMatcher<'_, '_> {
         &mut self,
         a: &T,
         b: &T,
-    ) -> Result<bool, pernixc_type_system::Error> {
+    ) -> Result<bool, OverflowError> {
         match self.infer_ctx.unify(a, b, self.premise, self.engine).await {
             Ok(()) => Ok(true),
             Err(
                 UnifyError::CyclicTypeInference(_)
                 | UnifyError::CyclicConstantInference(_)
+                | UnifyError::CyclicInstanceInference(_)
                 | UnifyError::IncompatibleTypes { .. }
                 | UnifyError::IncompatibleConstants { .. }
+                | UnifyError::IncompatibleInstances { .. }
                 | UnifyError::UnsatisfiedConstraint(_)
                 | UnifyError::CombineConstraint(_),
             ) => Ok(false),
 
-            Err(UnifyError::TypeSystem(e)) => Err(e),
+            Err(UnifyError::OverflowError(e)) => Err(e),
         }
     }
 }
@@ -259,7 +267,7 @@ impl Binder<'_> {
         &mut self,
         effect_id: Global<pernixc_symbol::ID>,
         generic_arguments: &GenericArguments,
-    ) -> Result<Option<HandlerClauseID>, pernixc_type_system::Error> {
+    ) -> Result<Option<HandlerClauseID>, OverflowError> {
         for (handler_id, handler_group) in self
             .effect_handler_context
             .handler_gruop_stack

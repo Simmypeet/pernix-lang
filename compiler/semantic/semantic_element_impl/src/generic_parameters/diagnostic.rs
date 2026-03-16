@@ -1,4 +1,4 @@
-use pernixc_diagnostic::{Highlight, Report, Severity};
+use pernixc_diagnostic::{Highlight, Report};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_source_file::ByteIndex;
@@ -8,8 +8,8 @@ use pernixc_symbol::{
 };
 use pernixc_target::Global;
 use pernixc_term::generic_parameters::{
-    ConstantParameter, GenericKind, GenericParameter, LifetimeParameter,
-    TypeParameter, get_generic_parameters,
+    ConstantParameter, GenericKind, GenericParameter, InstanceParameter,
+    LifetimeParameter, TypeParameter, get_generic_parameters,
 };
 use qbice::{Decode, Encode, Identifiable, StableHash};
 
@@ -27,6 +27,7 @@ use qbice::{Decode, Encode, Identifiable, StableHash};
     Decode,
     derive_more::From,
 )]
+#[allow(clippy::large_enum_variant)]
 pub enum Diagnostic {
     Resolution(pernixc_resolution::diagnostic::Diagnostic),
     MisorderedGenericParameter(MisorderedGenericParameter),
@@ -39,6 +40,9 @@ pub enum Diagnostic {
     TypeParameterRedefinition(GenericParameterRedefinition<TypeParameter>),
     ConstantParameterRedefinition(
         GenericParameterRedefinition<ConstantParameter>,
+    ),
+    InstanceParameterRedefinition(
+        GenericParameterRedefinition<InstanceParameter>,
     ),
     EffectOperationCanNotHaveTypeOrConstantParameters(
         EffectOperationCanNotHaveTypeOrConstantParameters,
@@ -70,6 +74,9 @@ impl Report for Diagnostic {
             Self::EffectOperationCanNotHaveTypeOrConstantParameters(
                 diagnostic,
             ) => diagnostic.report(engine).await,
+            Self::InstanceParameterRedefinition(diagnostic) => {
+                diagnostic.report(engine).await
+            }
         }
     }
 }
@@ -100,27 +107,29 @@ impl Report for MisorderedGenericParameter {
         &self,
         engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
-        pernixc_diagnostic::Rendered {
-            primary_highlight: Some(Highlight::new(
+        pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(Highlight::new(
                 engine.to_absolute_span(&self.generic_parameter_span).await,
                 match self.generic_kind {
                     GenericKind::Type => Some(
-                        "can't be declared after constant parameters"
+                        "can't be declared after constant or instance \
+                         parameters"
                             .to_string(),
                     ),
                     GenericKind::Lifetime => Some(
-                        "can't be declared after type or constant parameters"
+                        "can't be declared after type, constant, or instance \
+                         parameters"
                             .to_string(),
                     ),
-                    GenericKind::Constant => None,
+                    GenericKind::Constant => Some(
+                        "can't be declared after instance parameters"
+                            .to_string(),
+                    ),
+                    GenericKind::Instance => None,
                 },
-            )),
-            message: "the generic parameter was declared in the wrong order"
-                .to_string(),
-            severity: Severity::Error,
-            help_message: None,
-            related: Vec::new(),
-        }
+            ))
+            .message("the generic parameter was declared in the wrong order")
+            .build()
     }
 }
 
@@ -147,21 +156,17 @@ impl Report for DefaultGenericParameterMustBeTrailing {
         &self,
         engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
-        pernixc_diagnostic::Rendered {
-            primary_highlight: Some(Highlight::new(
+        pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(Highlight::new(
                 engine
                     .to_absolute_span(
                         &self.invalid_generic_default_parameter_span,
                     )
                     .await,
                 None,
-            )),
-            message: "the default generic parameter must be trailing"
-                .to_string(),
-            severity: Severity::Error,
-            help_message: None,
-            related: Vec::new(),
-        }
+            ))
+            .message("the default generic parameter must be trailing")
+            .build()
     }
 }
 
@@ -192,42 +197,40 @@ impl<T: GenericParameter> Report for GenericParameterRedefinition<T> {
         engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let qualified_name = engine
-            .get_qualified_name(self.existing_generic_parameter_id.parent_id)
+            .get_qualified_name(self.existing_generic_parameter_id.parent_id())
             .await;
         let generic_parameters = engine
             .get_generic_parameters(
-                self.existing_generic_parameter_id.parent_id,
+                self.existing_generic_parameter_id.parent_id(),
             )
             .await;
 
         let generic_parameter =
-            T::get_generic_parameters_arena(&generic_parameters)
-                .get(self.existing_generic_parameter_id.id)
-                .unwrap();
+            &generic_parameters[self.existing_generic_parameter_id.id()];
 
-        pernixc_diagnostic::Rendered {
-            primary_highlight: Some(Highlight::new(
+        let related = if let Some(span) = generic_parameter.span() {
+            Some(vec![Highlight::new(
+                engine.to_absolute_span(span).await,
+                Some("previously defined here".to_string()),
+            )])
+        } else {
+            None
+        };
+
+        pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(Highlight::new(
                 engine
                     .to_absolute_span(&self.duplicating_generic_parameter_span)
                     .await,
                 Some("redefinition here".to_string()),
-            )),
-            message: format!(
+            ))
+            .message(format!(
                 "generic parameter `{}` is already defined in the `{}`",
                 generic_parameter.name().as_ref(),
                 qualified_name
-            ),
-            severity: Severity::Error,
-            help_message: None,
-            related: if let Some(span) = generic_parameter.span() {
-                vec![Highlight::new(
-                    engine.to_absolute_span(span).await,
-                    Some("previously defined here".to_string()),
-                )]
-            } else {
-                Vec::new()
-            },
-        }
+            ))
+            .maybe_related(related)
+            .build()
     }
 }
 

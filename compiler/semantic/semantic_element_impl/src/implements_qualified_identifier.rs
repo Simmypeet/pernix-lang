@@ -5,12 +5,10 @@ use pernixc_hash::{HashMap, HashSet};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::{PERNIX_PROGRAM, TrackedEngine};
 use pernixc_resolution::{
-    Config,
+    Resolver,
     generic_parameter_namespace::get_generic_parameter_namespace,
-    qualified_identifier::{
-        MemberGeneric, Resolution, resolve_qualified_identifier,
-    },
-    term::{ResolutionToTypeError, resolution_to_type},
+    qualified_identifier::Resolution,
+    term::{ResolutionToTermError, resolution_to_type},
 };
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
@@ -29,9 +27,10 @@ use pernixc_term::{
     constant::Constant,
     generic_arguments::{GenericArguments, Symbol},
     generic_parameters::{
-        ConstantParameter, LifetimeParameter, TypeParameter,
-        get_generic_parameters,
+        ConstantParameter, GenericParameter, InstanceParameter,
+        LifetimeParameter, TypeParameter, get_generic_parameters,
     },
+    instance::Instance,
     lifetime::Lifetime,
     r#type::Type,
     visitor::{self, Element},
@@ -85,17 +84,15 @@ impl crate::build::Build for Key {
         let generic_parameter_namespace =
             engine.get_generic_parameter_namespace(key.symbol_id).await;
 
-        let resolution = match engine
-            .resolve_qualified_identifier(
-                &qualified_identifier,
-                Config::builder()
-                    .consider_adt_implements(false)
-                    .observer(&mut occurrences)
-                    .referring_site(key.symbol_id)
-                    .extra_namespace(&generic_parameter_namespace)
-                    .build(),
-                &storage,
-            )
+        let resolution = match Resolver::builder()
+            .tracked_engine(engine)
+            .handler(&storage)
+            .consider_adt_implements(false)
+            .observer(&mut occurrences)
+            .referring_site(key.symbol_id)
+            .extra_namespace(&generic_parameter_namespace)
+            .build()
+            .resolve_qualified_identifier(&qualified_identifier)
             .await
         {
             Ok(resolution) => resolution,
@@ -171,33 +168,11 @@ async fn check_valid_resolution(
     storage: &Storage<diagnostic::Diagnostic>,
 ) {
     match resolution {
-        Resolution::Module(global) => {
-            storage.receive(
-                diagnostic::Diagnostic::InvalidSymbolForImplements(
-                    InvalidSymbolForImplements {
-                        qualified_identifier_span: qualified_identifier,
-                        symbol_id: global,
-                    },
-                ),
-            );
-        }
-
-        Resolution::Variant(variant) => {
-            storage.receive(
-                diagnostic::Diagnostic::InvalidSymbolForImplements(
-                    InvalidSymbolForImplements {
-                        qualified_identifier_span: qualified_identifier,
-                        symbol_id: variant.variant_id,
-                    },
-                ),
-            );
-        }
-
         Resolution::Generic(generic) => {
             let kind = tracked_engine.get_kind(generic.id).await;
 
             match kind {
-                Kind::Trait | Kind::Marker | Kind::Struct | Kind::Enum => {
+                Kind::Marker | Kind::Struct | Kind::Enum => {
                     // valid implements symbol
                 }
 
@@ -208,7 +183,7 @@ async fn check_valid_resolution(
                         .await
                     {
                         Ok(ty) => ty,
-                        Err(ResolutionToTypeError::Failed(_)) => unreachable!(),
+                        Err(ResolutionToTermError::Failed(_)) => unreachable!(),
                     };
 
                     if !matches!(
@@ -233,7 +208,7 @@ async fn check_valid_resolution(
                         diagnostic::Diagnostic::InvalidSymbolForImplements(
                             InvalidSymbolForImplements {
                                 qualified_identifier_span: qualified_identifier,
-                                symbol_id: generic.id,
+                                found: Resolution::Generic(generic),
                             },
                         ),
                     );
@@ -241,12 +216,12 @@ async fn check_valid_resolution(
             }
         }
 
-        Resolution::MemberGeneric(MemberGeneric { id: global_id, .. }) => {
+        resolution => {
             storage.receive(
                 diagnostic::Diagnostic::InvalidSymbolForImplements(
                     InvalidSymbolForImplements {
                         qualified_identifier_span: qualified_identifier,
-                        symbol_id: global_id,
+                        found: resolution,
                     },
                 ),
             );
@@ -255,7 +230,7 @@ async fn check_valid_resolution(
 }
 
 async fn is_adt_type(engine: &TrackedEngine, sym_ty: &Symbol) -> bool {
-    let kind = engine.get_kind(sym_ty.id).await;
+    let kind = engine.get_kind(sym_ty.id()).await;
     matches!(kind, Kind::Struct | Kind::Enum)
 }
 
@@ -353,9 +328,16 @@ async fn check_trait(
 
             let kinds_match = matches!(
                 (trait_kind, impl_kind),
-                (Kind::TraitFunction, Kind::ImplementationFunction)
-                    | (Kind::TraitType, Kind::ImplementationType)
-                    | (Kind::TraitConstant, Kind::ImplementationConstant)
+                (
+                    Kind::TraitAssociatedFunction,
+                    Kind::ImplementationAssociatedFunction
+                ) | (
+                    Kind::TraitAssociatedType,
+                    Kind::ImplementationAssociatedType
+                ) | (
+                    Kind::TraitAssociatedConstant,
+                    Kind::ImplementationAssociatedConstant
+                )
             );
 
             if !kinds_match {
@@ -502,28 +484,29 @@ struct UsedParameterCollector {
     used_lifetime_ids: HashSet<ID<LifetimeParameter>>,
     used_type_ids: HashSet<ID<TypeParameter>>,
     used_constant_ids: HashSet<ID<ConstantParameter>>,
+    used_instance_ids: HashSet<ID<InstanceParameter>>,
     current_symbol_id: Global<pernixc_symbol::ID>,
 }
 
 impl UsedParameterCollector {
     fn handle_lifetime(&mut self, lifetime: &Lifetime) {
         if let Lifetime::Parameter(param) = lifetime
-            && param.parent_id == self.current_symbol_id
+            && param.parent_id() == self.current_symbol_id
         {
-            self.used_lifetime_ids.insert(param.id);
+            self.used_lifetime_ids.insert(param.id());
         }
     }
 
     fn handle_type(&mut self, ty: &Type) {
         // if it's a trait associated type, we don't go deeper
-        if ty.is_trait_member() {
+        if ty.is_instance_associated() {
             return;
         }
 
         // found a type parameter, try to collect it
         if let Some(ty) = ty.as_parameter() {
-            if ty.parent_id == self.current_symbol_id {
-                self.used_type_ids.insert(ty.id);
+            if ty.parent_id() == self.current_symbol_id {
+                self.used_type_ids.insert(ty.id());
             }
 
             return;
@@ -536,8 +519,8 @@ impl UsedParameterCollector {
     fn handle_constant(&mut self, constant: &Constant) {
         // found a constant parameter, try to collect it
         if let Some(constant) = constant.as_parameter() {
-            if constant.parent_id == self.current_symbol_id {
-                self.used_constant_ids.insert(constant.id);
+            if constant.parent_id() == self.current_symbol_id {
+                self.used_constant_ids.insert(constant.id());
             }
 
             return;
@@ -545,6 +528,25 @@ impl UsedParameterCollector {
 
         // go deeper
         let _ = constant.accept_one_level(self);
+    }
+
+    fn handle_instance(&mut self, instance: &Instance) {
+        // if it's a trait associated type, we don't go deeper
+        if instance.is_instance_associated() {
+            return;
+        }
+
+        // found an instance parameter, try to collect it
+        if let Some(instance) = instance.as_parameter() {
+            if instance.parent_id() == self.current_symbol_id {
+                self.used_instance_ids.insert(instance.id());
+            }
+
+            return;
+        }
+
+        // go deeper
+        let _ = instance.accept_one_level(self);
     }
 }
 
@@ -581,6 +583,17 @@ impl visitor::Visitor<'_, Constant> for UsedParameterCollector {
     }
 }
 
+impl visitor::Visitor<'_, Instance> for UsedParameterCollector {
+    fn visit(
+        &mut self,
+        term: &'_ Instance,
+        _: <Instance as visitor::Element>::Location,
+    ) -> bool {
+        self.handle_instance(term);
+        true
+    }
+}
+
 /// Check for unused generic parameters in the implements declaration.
 async fn check_unused_generic_parameters(
     engine: &TrackedEngine,
@@ -598,30 +611,35 @@ async fn check_unused_generic_parameters(
     };
 
     // Visit all lifetimes
-    for lifetime in &generic_arguments.lifetimes {
+    for lifetime in generic_arguments.lifetimes() {
         collector.handle_lifetime(lifetime);
     }
 
     // Visit all types
-    for ty in &generic_arguments.types {
+    for ty in generic_arguments.types() {
         collector.handle_type(ty);
     }
 
     // Visit all constants
-    for constant in &generic_arguments.constants {
+    for constant in generic_arguments.constants() {
         collector.handle_constant(constant);
+    }
+
+    // Visit all instances
+    for instance in generic_arguments.instances() {
+        collector.handle_instance(instance);
     }
 
     // Check for unused lifetime parameters
     for (param_id, param) in generic_parameters.lifetime_parameters_as_order() {
         if !collector.used_lifetime_ids.contains(&param_id)
-            && let Some(span) = param.span
+            && let Some(span) = param.span().copied()
         {
             storage.receive(diagnostic::Diagnostic::UnusedGenericParameter(
                 diagnostic::UnusedGenericParameter {
                     implementation_id: implements_id,
                     unused_parameter_span: span,
-                    parameter_name: param.name.clone(),
+                    parameter_name: param.name().clone(),
                 },
             ));
         }
@@ -630,13 +648,13 @@ async fn check_unused_generic_parameters(
     // Check for unused type parameters
     for (param_id, param) in generic_parameters.type_parameters_as_order() {
         if !collector.used_type_ids.contains(&param_id)
-            && let Some(span) = param.span
+            && let Some(span) = param.span().copied()
         {
             storage.receive(diagnostic::Diagnostic::UnusedGenericParameter(
                 diagnostic::UnusedGenericParameter {
                     implementation_id: implements_id,
                     unused_parameter_span: span,
-                    parameter_name: param.name.clone(),
+                    parameter_name: param.name().clone(),
                 },
             ));
         }
@@ -645,13 +663,28 @@ async fn check_unused_generic_parameters(
     // Check for unused constant parameters
     for (param_id, param) in generic_parameters.constant_parameters_as_order() {
         if !collector.used_constant_ids.contains(&param_id)
-            && let Some(span) = param.span
+            && let Some(span) = param.span().copied()
         {
             storage.receive(diagnostic::Diagnostic::UnusedGenericParameter(
                 diagnostic::UnusedGenericParameter {
                     implementation_id: implements_id,
                     unused_parameter_span: span,
-                    parameter_name: param.name.clone(),
+                    parameter_name: param.name().clone(),
+                },
+            ));
+        }
+    }
+
+    // Check for unused instance parameters
+    for (param_id, param) in generic_parameters.instance_parameters_as_order() {
+        if !collector.used_instance_ids.contains(&param_id)
+            && let Some(span) = param.span().copied()
+        {
+            storage.receive(diagnostic::Diagnostic::UnusedGenericParameter(
+                diagnostic::UnusedGenericParameter {
+                    implementation_id: implements_id,
+                    unused_parameter_span: span,
+                    parameter_name: param.name().clone(),
                 },
             ));
         }
@@ -672,7 +705,7 @@ impl Executor<pernixc_semantic_element::implements::Key, pernixc_qbice::Config>
         let resolution =
             engine.query(&Key { symbol_id: key.symbol_id }).await?;
 
-        Some(resolution.global_id())
+        resolution.global_id()
     }
 }
 

@@ -34,9 +34,10 @@ use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
     generic_parameters::{
-        ConstantParameterID, LifetimeParameterID, TypeParameterID,
-        get_generic_parameters,
+        ConstantParameterID, InstanceParameterID, LifetimeParameterID,
+        TypeParameterID, get_generic_parameters,
     },
+    instance::Instance,
     lifetime::{ElidedLifetimeID, Lifetime},
     r#type::{Primitive, Type},
 };
@@ -302,19 +303,10 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     reg_id,
                 )
             }
-            Kind::Function | Kind::ImplementationFunction => {
+            Kind::Function | Kind::ImplementationAssociatedFunction => {
                 let mut calling_inst = function_call.instantiation.clone();
 
-                calling_inst.lifetimes.values_mut().for_each(|term| {
-                    self.instantiation.instantiate(term);
-                });
-                calling_inst.types.values_mut().for_each(|term| {
-                    self.instantiation.instantiate(term);
-                });
-                calling_inst.constants.values_mut().for_each(|term| {
-                    self.instantiation.instantiate(term);
-                });
-
+                calling_inst.instantiate_values(self.instantiation);
                 self.context.normalize_instantiation(&mut calling_inst).await;
 
                 let llvm_function =
@@ -331,19 +323,10 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                 )
             }
 
-            Kind::TraitFunction => {
+            Kind::TraitAssociatedFunction => {
                 let mut calling_inst = function_call.instantiation.clone();
 
-                calling_inst.lifetimes.values_mut().for_each(|term| {
-                    self.instantiation.instantiate(term);
-                });
-                calling_inst.types.values_mut().for_each(|term| {
-                    self.instantiation.instantiate(term);
-                });
-                calling_inst.constants.values_mut().for_each(|term| {
-                    self.instantiation.instantiate(term);
-                });
-
+                calling_inst.instantiate_values(self.instantiation);
                 self.context.normalize_instantiation(&mut calling_inst).await;
 
                 // get the parent trait to search for the implc
@@ -415,9 +398,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                 // populate the new_inst will the generic arguments of the trait
                 // func args
                 for lt in trait_impl_fun_generic_params
-                    .lifetime_order()
-                    .iter()
-                    .copied()
+                    .lifetime_parameter_order()
                     .map(|x| {
                         Lifetime::Parameter(LifetimeParameterID::new(
                             trait_impl_fun_id,
@@ -431,55 +412,68 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                         ))
                     }))
                 {
-                    new_inst.lifetimes.insert(lt, Lifetime::Erased);
+                    new_inst.insert_lifetime_mapping(lt, Lifetime::Erased);
                 }
 
                 for (trait_fun_ty, trait_impl_fun_ty) in
-                    trait_func_generic_params.type_order().iter().copied().zip(
-                        trait_impl_fun_generic_params
-                            .type_order()
-                            .iter()
-                            .copied(),
+                    trait_func_generic_params.type_parameter_order().zip(
+                        trait_impl_fun_generic_params.type_parameter_order(),
                     )
                 {
-                    new_inst.types.insert(
+                    new_inst.insert_type_mapping(
                         Type::Parameter(TypeParameterID::new(
                             trait_impl_fun_id,
                             trait_impl_fun_ty,
                         )),
                         calling_inst
-                            .types
-                            .remove(&Type::Parameter(TypeParameterID::new(
-                                function_call.callable_id,
-                                trait_fun_ty,
-                            )))
+                            .remove_type_mapping(&Type::Parameter(
+                                TypeParameterID::new(
+                                    function_call.callable_id,
+                                    trait_fun_ty,
+                                ),
+                            ))
                             .unwrap(),
                     );
                 }
 
                 for (trait_fun_const, trait_impl_fun_const) in
-                    trait_func_generic_params
-                        .constant_order()
-                        .iter()
-                        .copied()
-                        .zip(
-                            trait_impl_fun_generic_params
-                                .constant_order()
-                                .iter()
-                                .copied(),
-                        )
+                    trait_func_generic_params.constant_parameter_order().zip(
+                        trait_impl_fun_generic_params
+                            .constant_parameter_order(),
+                    )
                 {
-                    new_inst.constants.insert(
+                    new_inst.insert_constant_mapping(
                         Constant::Parameter(ConstantParameterID::new(
                             trait_impl_fun_id,
                             trait_impl_fun_const,
                         )),
                         calling_inst
-                            .constants
-                            .remove(&Constant::Parameter(
+                            .remove_constant_mapping(&Constant::Parameter(
                                 ConstantParameterID::new(
                                     function_call.callable_id,
                                     trait_fun_const,
+                                ),
+                            ))
+                            .unwrap(),
+                    );
+                }
+
+                for (trait_fun_inst, trait_impl_fun_inst) in
+                    trait_func_generic_params.instance_parameter_order().zip(
+                        trait_impl_fun_generic_params
+                            .instance_parameter_order(),
+                    )
+                {
+                    new_inst.insert_instance_mapping(
+                        Instance::Parameter(InstanceParameterID::new(
+                            trait_impl_fun_id,
+                            trait_impl_fun_inst,
+                        )),
+                        calling_inst
+                            .remove_instance_mapping(&Instance::Parameter(
+                                InstanceParameterID::new(
+                                    function_call.callable_id,
+                                    trait_fun_inst,
                                 ),
                             ))
                             .unwrap(),
@@ -1877,9 +1871,11 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             .into_tuple()
             .unwrap();
 
-        assert!(source_address_type.elements.iter().all(|x| !x.is_unpacked));
+        assert!(
+            source_address_type.elements().iter().all(|x| !x.is_unpacked())
+        );
 
-        let pack_element_count = source_address_type.elements.len()
+        let pack_element_count = source_address_type.elements().len()
             - tuple_pack.after_packed_element_count
             - tuple_pack.before_packed_element_count;
 
@@ -1998,14 +1994,16 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     self.build_tuple_pack(tuple_pack).await
                 }
 
-                Instruction::DropUnpackTuple(drop_unpack_tuple) => 'ext: {
+                Instruction::DropUnpackTuple(_) => {
+                    // TODO: restore this
+                    /*
                     let tuple_ty_pnx = self
                         .type_of_address_pnx(&drop_unpack_tuple.tuple_address)
                         .await
                         .into_tuple()
                         .unwrap();
 
-                    let drop_element_count = tuple_ty_pnx.elements.len()
+                    let drop_element_count = tuple_ty_pnx.elements().len()
                         - drop_unpack_tuple.before_unpacked_element_count
                         - drop_unpack_tuple.after_unpacked_element_count;
 
@@ -2026,7 +2024,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
 
                     let non_null_dangling = self.build_non_null_dangling();
 
-                    for (i, eleme) in tuple_ty_pnx.elements[drop_unpack_tuple
+                    for (i, eleme) in tuple_ty_pnx.elements()[drop_unpack_tuple
                         .before_unpacked_element_count
                         ..(drop_unpack_tuple.before_unpacked_element_count
                             + drop_element_count)]
@@ -2062,13 +2060,16 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                                 },
                             );
 
-                        self.build_drop(ptr, eleme.term.clone()).await;
+                        self.build_drop(ptr, eleme.term().clone()).await;
                     }
 
                     Ok(())
+                    */
+                    Ok(())
                 }
 
-                Instruction::Drop(drop) => 'ext: {
+                Instruction::Drop(_) => {
+                    /*
                     let address = match self.get_address(&drop.address).await {
                         Ok(address) => address,
                         Err(error) => break 'ext Err(error),
@@ -2083,32 +2084,37 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
 
                     self.build_drop(pointer, adress_pnx_type).await;
 
+                    */
+                    // TODO: restore this
                     Ok(())
                 }
 
-                Instruction::RegisterDiscard(reg_dis) => {
-                    let value = self.register_map[&reg_dis.id];
+                Instruction::RegisterDiscard(_) => {
+                    // let value = self.register_map[&reg_dis.id];
 
-                    match value {
-                        // scalar values (primitives) never need to be dropped
-                        Some(LlvmValue::Scalar(_)) => {}
+                    // match value {
+                    //     // scalar values (primitives) never need to be
+                    // dropped
+                    //     Some(LlvmValue::Scalar(_)) => {}
 
-                        Some(LlvmValue::TmpAggregate(_)) | None => {
-                            let pnx_type =
-                                self.type_of_register_pnx(reg_dis.id).await;
+                    //     Some(LlvmValue::TmpAggregate(_)) | None => {
+                    //         let pnx_type =
+                    //             self.type_of_register_pnx(reg_dis.id).await;
 
-                            let ptr_value = value.map_or_else(
-                                || self.build_non_null_dangling(),
-                                |x| {
-                                    x.into_tmp_aggregate()
-                                        .map(|x| x.address)
-                                        .unwrap()
-                                },
-                            );
+                    //         let ptr_value = value.map_or_else(
+                    //             || self.build_non_null_dangling(),
+                    //             |x| {
+                    //                 x.into_tmp_aggregate()
+                    //                     .map(|x| x.address)
+                    //                     .unwrap()
+                    //             },
+                    //         );
 
-                            self.build_drop(ptr_value, pnx_type).await;
-                        }
-                    }
+                    //         self.build_drop(ptr_value, pnx_type).await;
+                    //     }
+                    // }
+
+                    // TODO: restore this
 
                     Ok(())
                 }

@@ -5,7 +5,7 @@ use pernixc_term::{
     lifetime::Lifetime,
     r#type::{Qualifier, Type},
 };
-use pernixc_type_system::{Error, Succeeded, normalizer::Normalizer};
+use pernixc_type_system::{OverflowError, Succeeded, normalizer::Normalizer};
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
@@ -64,7 +64,7 @@ impl TypeOf<&Borrow> for Values {
         &self,
         reference_of: &Borrow,
         environment: &Environment<'_, N>,
-    ) -> Result<Succeeded<Type>, Error> {
+    ) -> Result<Succeeded<Type>, OverflowError> {
         self.type_of(&reference_of.address, environment).await.map(|x| {
             x.map(|x| {
                 Type::Reference(pernixc_term::r#type::Reference {

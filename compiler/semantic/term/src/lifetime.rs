@@ -15,8 +15,12 @@ use crate::{
     Never,
     constant::Constant,
     error::Error,
-    generic_parameters::{LifetimeParameterID, get_generic_parameters},
+    generic_parameters::{
+        GenericParameter, LifetimeParameter, LifetimeParameterID,
+        get_generic_parameters,
+    },
     inference,
+    instance::Instance,
     matching::{Match, Matching, Substructural},
     sub_term::{Location, SubTerm},
     r#type::Type,
@@ -169,6 +173,19 @@ pub enum Lifetime {
     Error(Error),
 }
 
+impl Lifetime {
+    /// Creates a lifetime parameter with the given symbol ID where the lifetime
+    /// parameter is declared and the ID of the lifetime parameter in the
+    /// generic parameters arena.
+    #[must_use]
+    pub fn new_parameter(
+        parent_global_id: Global<pernixc_symbol::ID>,
+        lt_id: pernixc_arena::ID<LifetimeParameter>,
+    ) -> Self {
+        Self::Parameter(LifetimeParameterID::new(parent_global_id, lt_id))
+    }
+}
+
 impl From<Never> for Lifetime {
     fn from(never: Never) -> Self { match never {} }
 }
@@ -213,10 +230,25 @@ impl Location<Lifetime, Constant> for Never {
     }
 }
 
+impl Location<Lifetime, Instance> for Never {
+    fn assign_sub_term(self, _: &mut Lifetime, _: Instance) { match self {} }
+
+    fn get_sub_term(self, _: &Lifetime) -> Option<Instance> { match self {} }
+
+    fn get_sub_term_ref(self, _: &Lifetime) -> Option<&Instance> {
+        match self {}
+    }
+
+    fn get_sub_term_mut(self, _: &mut Lifetime) -> Option<&mut Instance> {
+        match self {}
+    }
+}
+
 impl SubTerm for Lifetime {
     type SubTypeLocation = Never;
     type SubConstantLocation = Never;
     type SubLifetimeLocation = Never;
+    type SubInstanceLocation = Never;
     type ThisSubTermLocation = Never;
 }
 
@@ -229,6 +261,7 @@ impl Match for Lifetime {
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
+            Self::SubInstanceLocation,
         >,
     > {
         None
@@ -239,9 +272,10 @@ impl Match for Lifetime {
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
+            Self::SubInstanceLocation,
         >,
     ) -> &Vec<Matching<Self, Self::ThisSubTermLocation>> {
-        &substructural.lifetimes
+        substructural.lifetimes()
     }
 
     fn get_substructural_mut(
@@ -249,9 +283,10 @@ impl Match for Lifetime {
             Self::SubLifetimeLocation,
             Self::SubTypeLocation,
             Self::SubConstantLocation,
+            Self::SubInstanceLocation,
         >,
     ) -> &mut Vec<Matching<Self, Self::ThisSubTermLocation>> {
-        &mut substructural.lifetimes
+        substructural.lifetimes_mut()
     }
 }
 
@@ -262,9 +297,13 @@ impl crate::display::Display for LifetimeParameterID {
         formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
         let generic_parameters =
-            engine.get_generic_parameters(self.parent_id).await;
+            engine.get_generic_parameters(self.parent_id()).await;
 
-        write!(formatter, "'{}", &*generic_parameters.lifetimes()[self.id].name)
+        write!(
+            formatter,
+            "'{}",
+            &**generic_parameters.get_lifetime_parameter(self.id()).name()
+        )
     }
 }
 

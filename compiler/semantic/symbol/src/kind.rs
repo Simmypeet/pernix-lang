@@ -37,17 +37,23 @@ pub enum Kind {
     Function,
     ExternFunction,
     Variant,
-    TraitType,
-    TraitFunction,
-    TraitConstant,
+    TraitAssociatedType,
+    TraitAssociatedFunction,
+    TraitAssociatedConstant,
+    TraitAssociatedInstance,
     Effect,
     EffectOperation,
     Marker,
     PositiveImplementation,
     NegativeImplementation,
-    ImplementationType,
-    ImplementationFunction,
-    ImplementationConstant,
+    ImplementationAssociatedType,
+    ImplementationAssociatedFunction,
+    ImplementationAssociatedConstant,
+    Instance,
+    InstanceAssociatedType,
+    InstanceAssociatedFunction,
+    InstanceAssociatedConstant,
+    InstanceAssociatedInstance,
 }
 
 /// The key type used with [`TrackedEngine`] to access the kind of a symbol.
@@ -83,6 +89,7 @@ impl Kind {
                 | Self::Trait
                 | Self::PositiveImplementation
                 | Self::Effect
+                | Self::Instance
         )
     }
 
@@ -99,13 +106,14 @@ impl Kind {
                 | Self::Effect
                 | Self::Trait
                 | Self::Marker
+                | Self::Instance
         )
     }
 
     /// Checks if this kind of symbol has a [`Implemented`] component.
     #[must_use]
     pub const fn has_implemented(&self) -> bool {
-        matches!(self, Self::Trait | Self::Enum | Self::Struct | Self::Marker)
+        matches!(self, Self::Enum | Self::Struct | Self::Marker)
     }
 
     /// Checks if the symbol is either a struct or an enum.
@@ -126,18 +134,30 @@ impl Kind {
             Self::Constant => "constant",
             Self::Function => "function",
             Self::Variant => "variant",
-            Self::TraitType => "trait type",
-            Self::TraitFunction => "trait function",
-            Self::TraitConstant => "trait constant",
+            Self::TraitAssociatedType => "trait associated type",
+            Self::TraitAssociatedFunction => "trait associated function",
+            Self::TraitAssociatedConstant => "trait associated constant",
+            Self::TraitAssociatedInstance => "trait associated instance",
             Self::ExternFunction => "extern function",
             Self::PositiveImplementation => "implementation",
             Self::NegativeImplementation => "negative implementation",
-            Self::ImplementationFunction => "implementation function",
-            Self::ImplementationType => "implementation type",
-            Self::ImplementationConstant => "implementation constant",
+            Self::ImplementationAssociatedFunction => {
+                "implementation associated function"
+            }
+            Self::ImplementationAssociatedType => {
+                "implementation associated type"
+            }
+            Self::ImplementationAssociatedConstant => {
+                "implementation associated constant"
+            }
             Self::Marker => "marker",
             Self::Effect => "effect",
             Self::EffectOperation => "effect operation",
+            Self::Instance => "instance",
+            Self::InstanceAssociatedType => "instance associated type",
+            Self::InstanceAssociatedFunction => "instance associated function",
+            Self::InstanceAssociatedConstant => "instance associated constant",
+            Self::InstanceAssociatedInstance => "instance associated instance",
         }
     }
 
@@ -152,19 +172,31 @@ impl Kind {
                 | Self::Type
                 | Self::Constant
                 | Self::Function
-                | Self::TraitType
-                | Self::TraitFunction
-                | Self::TraitConstant
+                | Self::TraitAssociatedType
+                | Self::TraitAssociatedFunction
+                | Self::TraitAssociatedConstant
+                | Self::TraitAssociatedInstance
                 | Self::Marker
                 | Self::ExternFunction
                 | Self::PositiveImplementation
                 | Self::NegativeImplementation
-                | Self::ImplementationType
-                | Self::ImplementationFunction
-                | Self::ImplementationConstant
+                | Self::ImplementationAssociatedType
+                | Self::ImplementationAssociatedFunction
+                | Self::ImplementationAssociatedConstant
                 | Self::Effect
                 | Self::EffectOperation
+                | Self::Instance
+                | Self::InstanceAssociatedType
+                | Self::InstanceAssociatedFunction
+                | Self::InstanceAssociatedConstant
+                | Self::InstanceAssociatedInstance
         )
+    }
+
+    /// Checks if the symbol kind has an instance associated value.
+    #[must_use]
+    pub const fn has_instance_associated_value(&self) -> bool {
+        matches!(self, Self::InstanceAssociatedInstance)
     }
 
     /// Checks if the symbol kind has a where clause.
@@ -178,18 +210,24 @@ impl Kind {
                 | Self::Type
                 | Self::Constant
                 | Self::Function
-                | Self::TraitType
-                | Self::TraitFunction
-                | Self::TraitConstant
+                | Self::TraitAssociatedType
+                | Self::TraitAssociatedFunction
+                | Self::TraitAssociatedConstant
+                | Self::TraitAssociatedInstance
                 | Self::Marker
                 | Self::ExternFunction
                 | Self::PositiveImplementation
                 | Self::NegativeImplementation
-                | Self::ImplementationType
-                | Self::ImplementationFunction
-                | Self::ImplementationConstant
+                | Self::ImplementationAssociatedType
+                | Self::ImplementationAssociatedFunction
+                | Self::ImplementationAssociatedConstant
                 | Self::Effect
                 | Self::EffectOperation
+                | Self::Instance
+                | Self::InstanceAssociatedType
+                | Self::InstanceAssociatedFunction
+                | Self::InstanceAssociatedConstant
+                | Self::InstanceAssociatedInstance
         )
     }
 
@@ -209,7 +247,12 @@ impl Kind {
     /// of the type alias such as `trait T { type U; }`
     #[must_use]
     pub const fn has_type_alias(&self) -> bool {
-        matches!(self, Self::Type | Self::ImplementationType)
+        matches!(
+            self,
+            Self::Type
+                | Self::ImplementationAssociatedType
+                | Self::InstanceAssociatedType
+        )
     }
 
     /// Checks if the symbol has a function signature.
@@ -218,10 +261,21 @@ impl Kind {
         matches!(
             self,
             Self::Function
-                | Self::TraitFunction
-                | Self::ImplementationFunction
+                | Self::TraitAssociatedFunction
+                | Self::ImplementationAssociatedFunction
                 | Self::ExternFunction
                 | Self::EffectOperation
+        )
+    }
+
+    /// Checks if the symbol has a trait reference.
+    #[must_use]
+    pub const fn has_trait_ref(&self) -> bool {
+        matches!(
+            self,
+            Self::Instance
+                | Self::TraitAssociatedInstance
+                | Self::InstanceAssociatedInstance
         )
     }
 
@@ -231,8 +285,8 @@ impl Kind {
         matches!(
             self,
             Self::Function
-                | Self::TraitFunction
-                | Self::ImplementationFunction
+                | Self::TraitAssociatedFunction
+                | Self::ImplementationAssociatedFunction
                 | Self::ExternFunction
                 | Self::EffectOperation
         )
@@ -244,8 +298,8 @@ impl Kind {
         matches!(
             self,
             Self::Function
-                | Self::TraitFunction
-                | Self::ImplementationFunction
+                | Self::TraitAssociatedFunction
+                | Self::ImplementationAssociatedFunction
                 | Self::ExternFunction
                 | Self::EffectOperation
         )
@@ -257,8 +311,8 @@ impl Kind {
         matches!(
             self,
             Self::Function
-                | Self::TraitFunction
-                | Self::ImplementationFunction
+                | Self::TraitAssociatedFunction
+                | Self::ImplementationAssociatedFunction
                 | Self::ExternFunction
                 | Self::EffectOperation
         )
@@ -273,7 +327,7 @@ impl Kind {
     /// Checks if the symbol has a function body
     #[must_use]
     pub const fn has_function_body(&self) -> bool {
-        matches!(self, Self::Function | Self::ImplementationFunction)
+        matches!(self, Self::Function | Self::ImplementationAssociatedFunction)
     }
 
     /// Checks if the symbol has a variant associated type

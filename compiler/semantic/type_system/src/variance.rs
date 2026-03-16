@@ -15,11 +15,6 @@ use pernixc_term::{
 /// This function early returns the `parent_variance` if the variance is
 /// [`Variance::Invariant`] or if the location is empty.
 ///
-/// # Returns
-///
-/// [`None`] if encounters a cyclic dependency when querying the variance
-/// map from the table.
-///
 /// # Errors
 ///
 /// [`Abort`] errors mostly from the query functions.
@@ -42,7 +37,13 @@ pub async fn get_variance_of(
 
     match location {
         TermLocation::Lifetime(location) => {
-            let SubLifetimeLocation::FromType(location) = location;
+            let location = match location {
+                SubLifetimeLocation::FromType(location) => location,
+                SubLifetimeLocation::FromInstance(_) => {
+                    // lifetime under instance is always invariant
+                    return parent_variance.xfrom(Variance::Invariant);
+                }
+            };
 
             match (location, ty) {
                 // lifetime in the adt
@@ -53,18 +54,16 @@ pub async fn get_variance_of(
                     // there's no sub-term in the lifetime
                     assert!(locations.next().is_none());
 
-                    let kind = self.get_kind(symbol.id).await;
+                    let kind = self.get_kind(symbol.id()).await;
 
                     if kind.is_adt() {
-                        let id = *self
-                            .get_generic_parameters(symbol.id)
+                        let id = self
+                            .get_generic_parameters(symbol.id())
                             .await
-                            .lifetime_order()
-                            .get(location.0)
-                            .unwrap();
+                            .get_lifetime_parameter_at_index(location.index());
 
                         parent_variance.xfrom(
-                            self.get_variances(symbol.id)
+                            self.get_variances(symbol.id())
                                 .await
                                 .variances_by_lifetime_ids
                                 .get(&id)
@@ -78,12 +77,12 @@ pub async fn get_variance_of(
 
                 // lifetime in the member function and trait member
                 (
-                    r#type::SubLifetimeLocation::MemberSymbol(_),
-                    Type::MemberSymbol(_),
+                    r#type::SubLifetimeLocation::AssociatedSymbol(_),
+                    Type::AssociatedSymbol(_),
                 )
                 | (
-                    r#type::SubLifetimeLocation::TraitMember(_),
-                    Type::TraitMember(_),
+                    r#type::SubLifetimeLocation::InstanceAssociated(_),
+                    Type::InstanceAssociated(_),
                 ) => {
                     // there's no sub-term in the lifetime
                     assert!(locations.next().is_none());
@@ -107,25 +106,29 @@ pub async fn get_variance_of(
         }
 
         TermLocation::Type(location) => {
-            let SubTypeLocation::FromType(location) = location;
+            let location = match location {
+                SubTypeLocation::FromType(location) => location,
+                SubTypeLocation::FromInstance(_) => {
+                    // type under instance is always invariant
+                    return parent_variance.xfrom(Variance::Invariant);
+                }
+            };
 
             match (location, ty) {
                 (
                     r#type::SubTypeLocation::Symbol(location),
                     Type::Symbol(symbol),
                 ) => {
-                    let kind = self.get_kind(symbol.id).await;
+                    let kind = self.get_kind(symbol.id()).await;
 
                     if kind.is_adt() {
-                        let id = *self
-                            .get_generic_parameters(symbol.id)
+                        let id = self
+                            .get_generic_parameters(symbol.id())
                             .await
-                            .type_order()
-                            .get(location.0)
-                            .unwrap();
+                            .get_type_parameter_at_index(location.index());
 
                         let next_variance = parent_variance.xfrom(
-                            self.get_variances(symbol.id)
+                            self.get_variances(symbol.id())
                                 .await
                                 .variances_by_type_ids
                                 .get(&id)
@@ -133,11 +136,7 @@ pub async fn get_variance_of(
                                 .unwrap(),
                         );
 
-                        let inner_term = symbol
-                            .generic_arguments
-                            .types
-                            .get(location.0)
-                            .unwrap();
+                        let inner_term = symbol.get_term(location).unwrap();
 
                         Box::pin(self.get_variance_of(
                             inner_term,
@@ -255,21 +254,10 @@ pub async fn get_variance_of(
                 }
 
                 (
-                    r#type::SubTypeLocation::MemberSymbol(location),
-                    Type::MemberSymbol(symbol),
+                    r#type::SubTypeLocation::AssociatedSymbol(location),
+                    Type::AssociatedSymbol(symbol),
                 ) => {
-                    let inner_term = if location.from_parent {
-                        symbol
-                            .parent_generic_arguments
-                            .types
-                            .get(location.index)
-                    } else {
-                        symbol
-                            .member_generic_arguments
-                            .types
-                            .get(location.index)
-                    }
-                    .unwrap();
+                    let inner_term = symbol.get_term(location).unwrap();
 
                     let current_variance =
                         parent_variance.xfrom(Variance::Invariant);
@@ -283,23 +271,11 @@ pub async fn get_variance_of(
                 }
 
                 (
-                    r#type::SubTypeLocation::TraitMember(location),
-                    Type::TraitMember(trait_member),
+                    r#type::SubTypeLocation::InstanceAssociated(location),
+                    Type::InstanceAssociated(instance_associated),
                 ) => {
-                    let inner_term = if location.0.from_parent {
-                        trait_member
-                            .0
-                            .parent_generic_arguments
-                            .types
-                            .get(location.0.index)
-                    } else {
-                        trait_member
-                            .0
-                            .member_generic_arguments
-                            .types
-                            .get(location.0.index)
-                    }
-                    .unwrap();
+                    let inner_term =
+                        instance_associated.get_type(location).unwrap();
 
                     let current_variance =
                         parent_variance.xfrom(Variance::Invariant);
@@ -317,5 +293,8 @@ pub async fn get_variance_of(
         }
 
         TermLocation::Constant(_) => panic!("no variance for constant"),
+
+        // instance associated type is always invariant
+        TermLocation::Instance(_) => parent_variance.xfrom(Variance::Invariant),
     }
 }

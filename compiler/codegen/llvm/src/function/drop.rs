@@ -44,6 +44,7 @@ enum AdtDropKind {
     DropImplementation(Global<pernixc_symbol::ID>),
 }
 
+/*
 impl<'ctx> Context<'_, 'ctx> {
     /// Gets the drop function for the given type.
     pub async fn get_drop(&mut self, ty: Type) -> Option<FunctionValue<'ctx>> {
@@ -63,7 +64,7 @@ impl<'ctx> Context<'_, 'ctx> {
             | Type::Primitive(_)
             | Type::Phantom(_) => None,
 
-            Type::MemberSymbol(_) | Type::TraitMember(_) => {
+            Type::AssociatedSymbol(_) | Type::InstanceAssociated(_) => {
                 panic!("unsupported type {ty:?}")
             }
 
@@ -973,7 +974,7 @@ impl<'ctx> Context<'_, 'ctx> {
             | Type::Primitive(_)
             | Type::Phantom(_) => false,
 
-            Type::MemberSymbol(_) | Type::TraitMember(_) => {
+            Type::AssociatedSymbol(_) | Type::TraitMember(_) => {
                 panic!("unsupported type {ty:?}")
             }
 
@@ -1002,4 +1003,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             .build_call(drop, &[address.into()], "call_drop")
             .unwrap();
     }
+
 }
+
+*/

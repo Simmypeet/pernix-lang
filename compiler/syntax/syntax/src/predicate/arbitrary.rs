@@ -8,56 +8,11 @@ use proptest::{
 
 use crate::{
     arbitrary::{
-        IndentDisplay, IntoSeparated, Lifetime, LifetimeParameter,
-        QualifiedIdentifier,
+        HigherRankedLifetimes, IndentDisplay, IntoSeparated, Lifetime,
+        LifetimeParameter, QualifiedIdentifier,
     },
     reference, r#type,
 };
-
-reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
-    #[display(
-        "[{}]",
-        self.lifetimes
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(", ")
-    )]
-    pub struct LifetimeParameters for super::LifetimeParameters {
-        pub lifetimes (Vec<LifetimeParameter>)
-    }
-}
-
-impl Arbitrary for LifetimeParameters {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        proptest::collection::vec(LifetimeParameter::arbitrary(), 1..10)
-            .prop_map(|lifetimes| Self { lifetimes })
-            .boxed()
-    }
-}
-
-reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
-    #[display("for{lifetimes}")]
-    pub struct HigherRankedLifetimes for super::HigherRankedLifetimes {
-        pub lifetimes (LifetimeParameters)
-    }
-}
-
-impl Arbitrary for HigherRankedLifetimes {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        LifetimeParameters::arbitrary()
-            .prop_map(|lifetimes| Self { lifetimes })
-            .boxed()
-    }
-}
 
 reference! {
     #[derive(Debug, Clone)]
@@ -472,8 +427,7 @@ reference! {
     #[derive(Debug, Clone)]
     pub enum Predicate for super::Predicate {
         LifetimeOutlives(LifetimeOutlives),
-        Trait(Trait),
-        Marker(Marker),
+        Type(Type),
         TraitTypeEquality(TraitTypeEquality),
     }
 }
@@ -488,8 +442,9 @@ impl IndentDisplay for Predicate {
             Self::LifetimeOutlives(lifetime_outlives) => {
                 write!(f, "{lifetime_outlives}")
             }
-            Self::Trait(trait_) => trait_.indent_fmt(f, indent),
-            Self::Marker(marker) => marker.indent_fmt(f, indent),
+
+            Self::Type(ty) => ty.indent_fmt(f, indent),
+
             Self::TraitTypeEquality(trait_type_equality) => {
                 trait_type_equality.indent_fmt(f, indent)
             }
@@ -504,8 +459,7 @@ impl Arbitrary for Predicate {
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
         prop_oneof![
             LifetimeOutlives::arbitrary().prop_map(Self::LifetimeOutlives),
-            Trait::arbitrary().prop_map(Self::Trait),
-            Marker::arbitrary().prop_map(Self::Marker),
+            Type::arbitrary().prop_map(Self::Type),
             TraitTypeEquality::arbitrary().prop_map(Self::TraitTypeEquality),
         ]
         .boxed()

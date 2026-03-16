@@ -1,6 +1,6 @@
 //! Contains the diagnostics related to accessibility of symbols.
 
-use pernixc_diagnostic::{Highlight, Report, Severity};
+use pernixc_diagnostic::{Highlight, Report};
 use pernixc_qbice::TrackedEngine;
 use pernixc_source_file::ByteIndex;
 use pernixc_symbol::{
@@ -109,8 +109,8 @@ impl Report for SymbolIsMoreAccessibleThanParent {
             )
             .await;
 
-        pernixc_diagnostic::Rendered {
-            primary_highlight: symbol_span.map(|span| {
+        pernixc_diagnostic::Rendered::builder()
+            .maybe_primary_highlight(symbol_span.map(|span| {
                 Highlight::new(
                     span,
                     Some(format!(
@@ -119,29 +119,22 @@ impl Report for SymbolIsMoreAccessibleThanParent {
                         symbol_name.as_ref(),
                     )),
                 )
-            }),
-
-            message: "the symbol is more accessible than the parent symbol"
-                .to_owned(),
-
-            severity: Severity::Error,
-            help_message: Some(format!(
+            }))
+            .message("the symbol is more accessible than the parent symbol")
+            .help_message(format!(
                 "the symbol `{}` is {symbol_accessibility_description} while \
                  the parent symbol is {parent_accessibility_description}",
                 symbol_name.as_ref(),
-            )),
-            related: parent_span
-                .map(|x| {
-                    Highlight::new(
-                        x,
-                        Some(format!(
-                            "the parent symbol is \
-                             {parent_accessibility_description}",
-                        )),
-                    )
-                })
-                .into_iter()
-                .collect(),
-        }
+            ))
+            .maybe_related(parent_span.map(|x| {
+                vec![Highlight::new(
+                    x,
+                    Some(format!(
+                        "the parent symbol is \
+                         {parent_accessibility_description}",
+                    )),
+                )]
+            }))
+            .build()
     }
 }

@@ -78,43 +78,40 @@ impl pernixc_diagnostic::Report for FieldRedefinition {
         &self,
         engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
-        use pernixc_diagnostic::{Highlight, Severity};
+        use pernixc_diagnostic::Highlight;
         use pernixc_symbol::{
             name::get_qualified_name, source_map::to_absolute_span,
         };
 
         let struct_name = engine.get_qualified_name(self.struct_id).await;
 
-        let primary_highlight = Some(Highlight::new(
+        let primary_highlight = Highlight::new(
             engine.to_absolute_span(&self.redefinition_span).await,
             Some(format!(
                 "field `{}` redefined here",
                 self.field_name.as_ref()
             )),
-        ));
+        );
 
         let related = if let Some(original_span) = &self.original_span {
-            vec![Highlight::new(
+            Some(vec![Highlight::new(
                 engine.to_absolute_span(original_span).await,
                 Some("previous definition here".to_string()),
-            )]
+            )])
         } else {
-            Vec::new()
+            None
         };
 
-        pernixc_diagnostic::Rendered {
-            primary_highlight,
-            message: format!(
+        pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(primary_highlight)
+            .message(format!(
                 "field `{}` is already defined in struct `{}`",
                 self.field_name.as_ref(),
                 struct_name
-            ),
-            severity: Severity::Error,
-            help_message: Some(
-                "consider using a different field name".to_string(),
-            ),
-            related,
-        }
+            ))
+            .help_message("consider using a different field name")
+            .maybe_related(related)
+            .build()
     }
 }
 
@@ -153,7 +150,7 @@ impl pernixc_diagnostic::Report for FieldMoreAccessibleThanStruct {
         &self,
         engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
-        use pernixc_diagnostic::{Highlight, Severity};
+        use pernixc_diagnostic::Highlight;
         use pernixc_symbol::{
             accessibility::accessibility_description, name::get_qualified_name,
             source_map::to_absolute_span,
@@ -173,31 +170,27 @@ impl pernixc_diagnostic::Report for FieldMoreAccessibleThanStruct {
             )
             .await;
 
-        let primary_highlight = {
-            Some(Highlight::new(
-                engine.to_absolute_span(&self.field_span).await,
-                Some(format!(
-                    "field `{}` is {} but struct is {}",
-                    self.field_name.as_ref(),
-                    field_accessibility_description,
-                    struct_accessibility_description
-                )),
-            ))
-        };
+        let primary_highlight = Highlight::new(
+            engine.to_absolute_span(&self.field_span).await,
+            Some(format!(
+                "field `{}` is {} but struct is {}",
+                self.field_name.as_ref(),
+                field_accessibility_description,
+                struct_accessibility_description
+            )),
+        );
 
-        pernixc_diagnostic::Rendered {
-            primary_highlight,
-            message: format!(
+        pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(primary_highlight)
+            .message(format!(
                 "field `{}` is more accessible than struct `{}`",
                 self.field_name.as_ref(),
                 struct_name
-            ),
-            severity: Severity::Error,
-            help_message: Some(format!(
+            ))
+            .help_message(format!(
                 "consider making the field {struct_accessibility_description} \
                  or making the struct {field_accessibility_description}"
-            )),
-            related: Vec::new(),
-        }
+            ))
+            .build()
     }
 }

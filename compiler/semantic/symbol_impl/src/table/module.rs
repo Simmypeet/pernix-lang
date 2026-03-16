@@ -184,6 +184,15 @@ impl Builder {
                 .await;
             }
 
+            ModuleMemberSyn::Instance(instance) => {
+                self.handle_instance_member(
+                    &instance,
+                    module_member_builder,
+                    join_set,
+                )
+                .await;
+            }
+
             ModuleMemberSyn::Function(function_syntax) => {
                 let Some(identifier) =
                     function_syntax.signature().and_then(|x| x.identifier())

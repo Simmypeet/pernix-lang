@@ -6,10 +6,9 @@ use enum_as_inner::EnumAsInner;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_term::{
     lifetime::Lifetime,
-    tuple,
     r#type::{Array, Primitive, Qualifier, Reference, Type},
 };
-use pernixc_type_system::normalizer::Normalizer;
+use pernixc_type_system::{OverflowError, normalizer::Normalizer};
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
 use crate::{
@@ -243,7 +242,7 @@ impl Literal {
             Self::Numeric(n) => n.r#type.clone(),
             Self::Boolean(_) => Type::Primitive(Primitive::Bool),
             Self::Error(e) => e.r#type.clone(),
-            Self::Unit(_) => Type::Tuple(tuple::Tuple { elements: Vec::new() }),
+            Self::Unit(_) => Type::unit(),
             // &'static [uint8: len]
             Self::String(string) => Type::Reference(Reference {
                 qualifier: Qualifier::Immutable,
@@ -284,8 +283,7 @@ impl TypeOf<&Literal> for Values {
         &self,
         literal: &Literal,
         environment: &Environment<'_, N>,
-    ) -> Result<pernixc_type_system::Succeeded<Type>, pernixc_type_system::Error>
-    {
+    ) -> Result<pernixc_type_system::Succeeded<Type>, OverflowError> {
         environment
             .type_environment
             .simplify(literal.r#type())

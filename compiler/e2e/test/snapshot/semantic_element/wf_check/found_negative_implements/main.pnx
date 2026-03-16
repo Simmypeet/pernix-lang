@@ -1,0 +1,22 @@
+public marker Marker[T]
+
+
+final implements Marker[int32] delete
+
+
+public marker Outer[T]
+
+
+public marker Inner[T]
+
+
+final implements[T: Marker] Inner[T]
+
+
+final implements[T: Inner] Outer[T]
+
+
+public type RequireOuter[T: Outer] = T
+
+
+public type Failed = RequireOuter[int32]

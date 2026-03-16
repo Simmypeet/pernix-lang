@@ -101,10 +101,7 @@ pub(super) async fn bind_cast(
                         span: current_span,
                         r#type: type_of_value,
                         casted_pointer_kind: PointerKind::RawPointer,
-                        type_inference_map: binder
-                            .type_inference_rendering_map(),
-                        constant_inference_map: binder
-                            .constant_inference_rendering_map(),
+                        rendering_map: binder.get_rendering_map(),
                     },
                 )
                 .into(),
@@ -124,10 +121,7 @@ pub(super) async fn bind_cast(
                         span: current_span,
                         r#type: type_of_value,
                         casted_pointer_kind: PointerKind::RawPointer,
-                        type_inference_map: binder
-                            .type_inference_rendering_map(),
-                        constant_inference_map: binder
-                            .constant_inference_rendering_map(),
+                        rendering_map: binder.get_rendering_map(),
                     },
                 )
                 .into(),
@@ -153,9 +147,7 @@ pub(super) async fn bind_cast(
             Diagnostic::InvalidCastType(InvalidCastType {
                 span: ty.span(),
                 r#type: cast_type.result.clone(),
-                type_inference_map: binder.type_inference_rendering_map(),
-                constant_inference_map: binder
-                    .constant_inference_rendering_map(),
+                rendering_map: binder.get_rendering_map(),
             })
             .into(),
         );
@@ -186,11 +178,7 @@ async fn type_can_pointer_cast(
         | Type::Primitive(Primitive::Usize) => true,
 
         Type::Inference(inference) => {
-            let inference = binder
-                .inference_context()
-                .type_table()
-                .get_inference(*inference)
-                .unwrap();
+            let inference = binder.get_type_inference(*inference).unwrap();
 
             match inference {
                 infer::table::Inference::Known(known) => {
@@ -202,12 +190,9 @@ async fn type_can_pointer_cast(
                     ))
                     .await
                 }
+
                 infer::table::Inference::Inferring(id) => {
-                    let constraint = binder
-                        .inference_context()
-                        .type_table()
-                        .get_constraint(*id)
-                        .unwrap();
+                    let constraint = binder.get_type_constraint(*id).unwrap();
 
                     match constraint {
                         constraint::Type::All(_)

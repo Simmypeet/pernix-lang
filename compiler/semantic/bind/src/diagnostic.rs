@@ -14,18 +14,21 @@ use pernixc_symbol::{
 };
 use pernixc_target::Global;
 use pernixc_term::{
-    constant::Constant,
-    display::{Configuration, Display, InferenceRenderingMap},
+    display::Display,
     effect,
     generic_arguments::GenericArguments,
     generic_parameters::{
-        ConstantParameterID, TypeParameterID, get_generic_parameters,
+        ConstantParameterID, GenericParameter, InstanceParameterID,
+        TypeParameterID, get_generic_parameters,
     },
     r#type::Type,
 };
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
-use crate::{binder, pattern};
+use crate::{
+    binder::{self, inference_context::RenderingMap},
+    pattern,
+};
 
 diagnostic_enum! {
     /// An enumeration of all diagnostics that can occur during binding the
@@ -67,6 +70,7 @@ diagnostic_enum! {
         ReturnIsNotAllowed(ReturnIsNotAllowed),
         TypeAnnotationRequired(TypeAnnotationRequired),
         ConstantAnnotationRequired(ConstantAnnotationRequired),
+        InstanceAnnotationRequired(InstanceAnnotationRequired),
         NotAllFlowPathsExpressValue(NotAllFlowPathsExpressValue),
         ScopeWithGivenLableNameNotFound(ScopeWithGivenLableNameNotFound),
         ExpressOutsideScope(ExpressOutsideScope),
@@ -248,11 +252,8 @@ pub struct InvalidTypeInBinaryOperator {
     /// The type of the left-hand side expression.
     pub lhs_type: Type,
 
-    /// Mapping for rendering type inferences
-    pub type_inference_map: InferenceRenderingMap<Type>,
-
-    /// Mapping for rendering constant inferences
-    pub constant_inference_map: InferenceRenderingMap<Constant>,
+    /// The rendering map for inference variables.
+    pub rendering_map: RenderingMap,
 }
 
 impl Report for InvalidTypeInBinaryOperator {
@@ -277,12 +278,10 @@ impl Report for InvalidTypeInBinaryOperator {
         };
 
         self.lhs_type
-            .write_async_with_mapping(
+            .write_async_with_configuration(
                 parameter,
                 &mut message,
-                None,
-                Some(&self.type_inference_map),
-                Some(&self.constant_inference_map),
+                &self.rendering_map.configuration(),
             )
             .await
             .unwrap();
@@ -387,18 +386,17 @@ impl Report for TypeAnnotationRequired {
         engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let qualified_name =
-            engine.get_qualified_name(self.generic_parameter.parent_id).await;
+            engine.get_qualified_name(self.generic_parameter.parent_id()).await;
 
         let generic_parameters = engine
-            .get_generic_parameters(self.generic_parameter.parent_id)
+            .get_generic_parameters(self.generic_parameter.parent_id())
             .await;
 
-        let ty_parameter =
-            &generic_parameters.types()[self.generic_parameter.id];
+        let ty_parameter = &generic_parameters[self.generic_parameter.id()];
 
         let message = format!(
             "type annotation is required for generic parameter `{}` of `{}`",
-            ty_parameter.name.as_ref(),
+            ty_parameter.name().as_ref(),
             qualified_name
         );
 
@@ -434,19 +432,18 @@ impl Report for ConstantAnnotationRequired {
         engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Rendered<ByteIndex> {
         let qualified_name =
-            engine.get_qualified_name(self.generic_parameter.parent_id).await;
+            engine.get_qualified_name(self.generic_parameter.parent_id()).await;
 
         let generic_parameters = engine
-            .get_generic_parameters(self.generic_parameter.parent_id)
+            .get_generic_parameters(self.generic_parameter.parent_id())
             .await;
 
-        let const_parameter =
-            &generic_parameters.constants()[self.generic_parameter.id];
+        let const_parameter = &generic_parameters[self.generic_parameter.id()];
 
         let message = format!(
             "constant annotation is required for generic parameter `{}` of \
              `{}`",
-            const_parameter.name.as_ref(),
+            const_parameter.name().as_ref(),
             qualified_name
         );
 
@@ -462,6 +459,52 @@ impl Report for ConstantAnnotationRequired {
                 "consider adding a constant annotation using syntax such as \
                  `{qualified_name}[ {{ EXPR }} ]`"
             ))
+            .build()
+    }
+}
+
+/// An instance argument annotation is required for a generic instance
+/// parameter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, StableHash, Encode, Decode)]
+pub struct InstanceAnnotationRequired {
+    /// The span where the type annotation is required.
+    pub span: RelativeSpan,
+
+    /// The generic parameter that requires a type annotation.
+    pub generic_parameter: InstanceParameterID,
+}
+
+impl Report for InstanceAnnotationRequired {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
+        let qualified_name =
+            engine.get_qualified_name(self.generic_parameter.parent_id()).await;
+
+        let generic_parameters = engine
+            .get_generic_parameters(self.generic_parameter.parent_id())
+            .await;
+
+        let instance_parameter =
+            &generic_parameters[self.generic_parameter.id()];
+
+        let message = format!(
+            "explicit instance argument is required for generic parameter \
+             `{}` of `{}`",
+            instance_parameter.name().as_ref(),
+            qualified_name
+        );
+
+        pernixc_diagnostic::Rendered::builder()
+            .message(message)
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .build(),
+            )
+            .severity(pernixc_diagnostic::Severity::Error)
+            .help_message("consider adding an instance argument")
             .build()
     }
 }
@@ -883,11 +926,8 @@ pub struct UnhandledEffects {
     /// The span of the function call expression.
     pub span: RelativeSpan,
 
-    /// Mapping for rendering type inferences
-    pub type_inference_map: InferenceRenderingMap<Type>,
-
-    /// Mapping for rendering constant inferences
-    pub constant_inference_map: InferenceRenderingMap<Constant>,
+    /// The rendering map for inference variables.
+    pub rendering_map: RenderingMap,
 }
 
 impl Report for UnhandledEffects {
@@ -904,13 +944,10 @@ impl Report for UnhandledEffects {
             }
 
             effect_unit
-                .0
-                .write_async_with_mapping(
+                .write_async_with_configuration(
                     engine,
                     &mut message,
-                    None,
-                    Some(&self.type_inference_map),
-                    Some(&self.constant_inference_map),
+                    &self.rendering_map.configuration(),
                 )
                 .await
                 .unwrap();
@@ -993,11 +1030,8 @@ pub struct DuplicatedEffectHandler {
     /// The generic arguments used in the first handler.
     pub generic_arguments: GenericArguments,
 
-    /// Mapping for rendering type inferences
-    pub type_inference_map: InferenceRenderingMap<Type>,
-
-    /// Mapping for rendering constant inferences
-    pub constant_inference_map: InferenceRenderingMap<Constant>,
+    /// The rendering map for inference variables.
+    pub rendering_map: RenderingMap,
 
     /// The span of the first handler.
     pub first_span: RelativeSpan,
@@ -1016,10 +1050,7 @@ impl Report for DuplicatedEffectHandler {
             .generic_arguments
             .write_to_string_with_configuration(
                 engine,
-                &Configuration::builder()
-                    .type_inferences(&self.type_inference_map)
-                    .constant_inferences(&self.constant_inference_map)
-                    .build(),
+                &self.rendering_map.configuration(),
             )
             .await
             .unwrap();
@@ -1282,11 +1313,8 @@ pub struct MismatchedClosureReturnType {
     /// The span of the closure expression
     pub closure_span: RelativeSpan,
 
-    /// The inference mapping for rendering types
-    pub type_inference_map: InferenceRenderingMap<Type>,
-
-    /// The inference mapping for rendering constants
-    pub constant_inference_map: InferenceRenderingMap<Constant>,
+    /// The rendering map for inference variables.
+    pub rendering_map: RenderingMap,
 }
 
 impl Report for MismatchedClosureReturnType {
@@ -1298,10 +1326,7 @@ impl Report for MismatchedClosureReturnType {
             .expected
             .write_to_string_with_configuration(
                 engine,
-                &Configuration::builder()
-                    .type_inferences(&self.type_inference_map)
-                    .constant_inferences(&self.constant_inference_map)
-                    .build(),
+                &self.rendering_map.configuration(),
             )
             .await
             .unwrap();
@@ -1310,10 +1335,7 @@ impl Report for MismatchedClosureReturnType {
             .found
             .write_to_string_with_configuration(
                 engine,
-                &Configuration::builder()
-                    .type_inferences(&self.type_inference_map)
-                    .constant_inferences(&self.constant_inference_map)
-                    .build(),
+                &self.rendering_map.configuration(),
             )
             .await
             .unwrap();
@@ -1356,11 +1378,8 @@ pub struct NotAllFlowPathsReturnAValueInClosure {
     /// The expected return type of the closure.
     pub return_type: Type,
 
-    /// The inference mapping for rendering types
-    pub type_inference_map: InferenceRenderingMap<Type>,
-
-    /// The inference mapping for rendering constants
-    pub constant_inference_map: InferenceRenderingMap<Constant>,
+    /// The rendering map for inference variables.
+    pub rendering_map: RenderingMap,
 }
 
 impl Report for NotAllFlowPathsReturnAValueInClosure {
@@ -1372,10 +1391,7 @@ impl Report for NotAllFlowPathsReturnAValueInClosure {
             .return_type
             .write_to_string_with_configuration(
                 engine,
-                &Configuration::builder()
-                    .type_inferences(&self.type_inference_map)
-                    .constant_inferences(&self.constant_inference_map)
-                    .build(),
+                &self.rendering_map.configuration(),
             )
             .await
             .unwrap();

@@ -8,7 +8,7 @@ use pernixc_qbice::TrackedEngine;
 use pernixc_target::Global;
 use pernixc_term::r#type::Type;
 use pernixc_type_system::{
-    Error, Succeeded, environment::Environment as TyEnvironment,
+    OverflowError, Succeeded, environment::Environment as TyEnvironment,
     normalizer::Normalizer,
 };
 use qbice::{Decode, Encode, StableHash};
@@ -103,8 +103,9 @@ pub trait TypeOf<V> {
         &'s self,
         value: V,
         environment: &'e Environment<'n, N>,
-    ) -> impl std::future::Future<Output = Result<Succeeded<Type>, Error>>
-    + use<'s, 'e, 'n, Self, V, N>;
+    ) -> impl std::future::Future<
+        Output = Result<Succeeded<Type>, OverflowError>,
+    > + use<'s, 'e, 'n, Self, V, N>;
 }
 
 impl TypeOf<&Value> for Values {
@@ -112,7 +113,7 @@ impl TypeOf<&Value> for Values {
         &self,
         value: &Value,
         environment: &Environment<'_, N>,
-    ) -> Result<Succeeded<Type>, Error> {
+    ) -> Result<Succeeded<Type>, OverflowError> {
         match value {
             Value::Register(id) => self.type_of(*id, environment).await,
             Value::Literal(literal) => self.type_of(literal, environment).await,

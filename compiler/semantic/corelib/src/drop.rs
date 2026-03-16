@@ -77,10 +77,10 @@ impl CoreLibInitializer<'_> {
         let t_ty = Type::Parameter(TypeParameterID::new(
             drop_trait_id,
             trait_generic_params
-                .add_type_parameter(TypeParameter {
-                    name: self.input_session.intern_unsized("T".to_owned()),
-                    span: None,
-                })
+                .add_type_parameter(TypeParameter::new(
+                    self.input_session.intern_unsized("T".to_owned()),
+                    None,
+                ))
                 .unwrap(),
         ));
 
@@ -117,11 +117,12 @@ impl CoreLibInitializer<'_> {
                         NegativeMarker {
                             marker_id: TargetID::CORE
                                 .make_global(copy_marker_id),
-                            generic_arguments: GenericArguments {
-                                lifetimes: Vec::new(),
-                                types: vec![t_ty.clone()],
-                                constants: Vec::new(),
-                            },
+                            generic_arguments: GenericArguments::new(
+                                Vec::new(),
+                                vec![t_ty.clone()],
+                                Vec::new(),
+                                Vec::new(),
+                            ),
                         },
                     ),
                     span: None,
@@ -147,19 +148,13 @@ impl CoreLibInitializer<'_> {
                 Accessibility::Public,
             )
             .await;
-        self.input_session
-            .set_input(
-                implemented::Key { symbol_id: drop_function_id },
-                self.input_session.intern(HashSet::default()),
-            )
-            .await;
 
         // add drop method
         {
             self.input_session
                 .set_input(
                     kind::Key { symbol_id: drop_function_id },
-                    kind::Kind::TraitFunction,
+                    kind::Kind::TraitAssociatedFunction,
                 )
                 .await;
             self.input_session
@@ -198,10 +193,10 @@ impl CoreLibInitializer<'_> {
             let mut inner_generic_params = GenericParameters::default();
 
             let a_lt = inner_generic_params
-                .add_lifetime_parameter(LifetimeParameter {
-                    name: self.input_session.intern_unsized("a".to_owned()),
-                    span: None,
-                })
+                .add_lifetime_parameter(LifetimeParameter::new(
+                    self.input_session.intern_unsized("a".to_owned()),
+                    None,
+                ))
                 .unwrap();
             let a_lt = Lifetime::Parameter(LifetimeParameterID::new(
                 drop_function_id,

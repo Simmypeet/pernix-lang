@@ -1,0 +1,29 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: run
+---
+stderr:
+[error]: the predicate `T: 'static` is not satisfied
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/marker_implements/main.pnx:14:26
+   │
+14 │ public type UseFizz[T] = RequiresFizz[T]
+   ╰╴                         ━━━━━━━━━━━━━━━
+[note]: the required predicate is declared here
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/marker_implements/main.pnx:11:12
+   │
+11 │         T: Fizz
+   ╰╴           ━━━━
+[note]: required for predicate marker main::Fizz[T] to be implemented
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/marker_implements/main.pnx:6:12
+  │
+4 │ final implements[T] Fizz[T]:
+  │                     ───────
+5 │     where:
+6 │         T: 'static
+  ╰╴           ━━━━━━━ the required predicate is declared here
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

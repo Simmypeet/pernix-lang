@@ -113,10 +113,10 @@ impl CoreLibInitializer<'_> {
 
         let mut generic_params = GenericParameters::default();
         let t_param_idx = generic_params
-            .add_type_parameter(TypeParameter {
-                name: self.input_session.intern_unsized("T".to_owned()),
-                span: None,
-            })
+            .add_type_parameter(TypeParameter::new(
+                self.input_session.intern_unsized("T".to_owned()),
+                None,
+            ))
             .unwrap();
         let t_ty =
             Type::Parameter(TypeParameterID::new(function_id, t_param_idx));
@@ -297,10 +297,10 @@ impl CoreLibInitializer<'_> {
         let t_ty = Type::Parameter(TypeParameterID::new(
             no_drop_id,
             generic_params
-                .add_type_parameter(TypeParameter {
-                    name: self.input_session.intern_unsized("T".to_owned()),
-                    span: None,
-                })
+                .add_type_parameter(TypeParameter::new(
+                    self.input_session.intern_unsized("T".to_owned()),
+                    None,
+                ))
                 .unwrap(),
         ));
 

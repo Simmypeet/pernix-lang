@@ -14,8 +14,9 @@ use crate::{
         constant::arbitrary::Constant, effect::arbitrary::Effect,
         r#enum::arbitrary::Enum, r#extern::arbitrary::Extern,
         function::arbitrary::Function, implements::arbitrary::Implements,
-        marker::arbitrary::Marker, r#struct::arbitrary::Struct,
-        r#trait::arbitrary::Trait, r#type::arbitrary::Type,
+        instance::arbitrary::Instance, marker::arbitrary::Marker,
+        r#struct::arbitrary::Struct, r#trait::arbitrary::Trait,
+        r#type::arbitrary::Type,
     },
     reference,
 };
@@ -333,6 +334,7 @@ reference! {
         Marker(Marker),
         Extern(Extern),
         Effect(Effect),
+        Instance(Instance),
     }
 }
 
@@ -354,6 +356,7 @@ impl Arbitrary for Member {
             Marker::arbitrary().prop_map(Member::Marker),
             Extern::arbitrary().prop_map(Member::Extern),
             Effect::arbitrary().prop_map(Member::Effect),
+            Instance::arbitrary().prop_map(Member::Instance),
         ]
         .boxed()
     }
@@ -378,6 +381,7 @@ impl IndentDisplay for Member {
             Self::Marker(marker) => marker.indent_fmt(f, indent),
             Self::Extern(extern_) => extern_.indent_fmt(f, indent),
             Self::Effect(effect) => effect.indent_fmt(f, indent),
+            Self::Instance(instance) => instance.indent_fmt(f, indent),
         }
     }
 }

@@ -2,12 +2,18 @@
 
 use std::fmt::Write;
 
+use derive_new::new;
 use enum_as_inner::EnumAsInner;
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
+    constant::Constant,
+    instance::Instance,
+    lifetime::Lifetime,
     matching::{Match, Matching, Substructural},
     sub_term::SubTerm,
+    r#type::Type,
+    visitor::{self, AsyncMutable, AsyncVisitor, Mutable, Visitor},
 };
 
 #[cfg(any(test, feature = "arbitrary"))]
@@ -29,10 +35,10 @@ pub mod arbitrary;
 )]
 pub struct Element<Term> {
     /// The term stored in this element.
-    pub term: Term,
+    term: Term,
 
     /// Whether the term is unpacked.
-    pub is_unpacked: bool,
+    is_unpacked: bool,
 }
 
 impl<Term> Element<Term> {
@@ -41,6 +47,24 @@ impl<Term> Element<Term> {
     pub const fn new_regular(term: Term) -> Self {
         Self { term, is_unpacked: false }
     }
+
+    /// Creates a new unpacked element.
+    #[must_use]
+    pub const fn new_unpacked(term: Term) -> Self {
+        Self { term, is_unpacked: true }
+    }
+
+    /// Creates a new unpacked element.
+    #[must_use]
+    pub const fn is_unpacked(&self) -> bool { self.is_unpacked }
+
+    /// Returns a reference to the term stored in this element.
+    #[must_use]
+    pub const fn term(&self) -> &Term { &self.term }
+
+    /// Returns the inner term of this tuple element.
+    #[must_use]
+    pub fn into_term(self) -> Term { self.term }
 }
 
 /// Represents a tuple of terms.
@@ -55,10 +79,72 @@ impl<Term> Element<Term> {
     StableHash,
     Encode,
     Decode,
+    new,
 )]
 pub struct Tuple<Term> {
     /// The elements of the tuple.
-    pub elements: Vec<Element<Term>>,
+    elements: Vec<Element<Term>>,
+}
+
+impl<Term> Tuple<Term> {
+    /// Creates a unit tuple.
+    #[must_use]
+    pub const fn unit() -> Self { Self { elements: Vec::new() } }
+
+    /// Returns a reference to the elements of the tuple.
+    #[must_use]
+    pub fn elements(&self) -> &[Element<Term>] { &self.elements }
+
+    /// Unpacks the tuple if it contains unpacked elements and returns the
+    /// result of flattening the tuple.
+    #[must_use]
+    pub fn unpack_one_level(&self) -> Option<Term>
+    where
+        Term: Clone + TryInto<Self, Error = Term> + From<Self>,
+    {
+        let contain_upacked = self.elements.iter().any(|x| x.is_unpacked);
+
+        if !contain_upacked {
+            return None;
+        }
+
+        if self.elements.len() == 1 {
+            return Some(self.elements()[0].term().clone());
+        }
+
+        let mut result = Vec::new();
+
+        for element in self.elements().iter().cloned() {
+            if element.is_unpacked() {
+                match element.term.try_into() {
+                    Ok(inner) => {
+                        result.extend(inner.elements);
+                    }
+                    Err(term) => {
+                        result.push(Element { term, is_unpacked: true });
+                    }
+                }
+            } else {
+                result.push(element);
+            }
+        }
+
+        Some(Self { elements: result }.into())
+    }
+
+    /// Converts the tuple into a vector of elements.
+    #[must_use]
+    pub fn into_elements(self) -> Vec<Element<Term>> { self.elements }
+
+    /// Removes the element at the given index and returns it.
+    pub fn remove_at(&mut self, idx: usize) -> Element<Term> {
+        self.elements.remove(idx)
+    }
+
+    /// Pushes the given element to the end of the tuple.
+    pub fn push(&mut self, element: Element<Term>) {
+        self.elements.push(element);
+    }
 }
 
 impl<Term> Default for Tuple<Term> {
@@ -104,10 +190,10 @@ impl<T: crate::display::Display> crate::display::Display for Tuple<T> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TupleRange {
     /// The begin index of the range.
-    pub begin: usize,
+    begin: usize,
 
     /// The end index of the range.
-    pub end: usize,
+    end: usize,
 }
 
 impl TupleRange {
@@ -148,6 +234,8 @@ pub enum SubTupleLocation {
     /// The sub-term ranges into multiple elements of the tuple.
     Range(TupleRange),
 }
+
+impl SubTupleLocation {}
 
 impl<T> Tuple<T>
 where
@@ -191,6 +279,52 @@ where
     }
 }
 
+impl<T> Tuple<T> {
+    /// Retrieves the sub-term from the given tuple at this location.
+    #[must_use]
+    pub fn get_term(&self, location: &SubTupleLocation) -> Option<T>
+    where
+        T: Clone,
+        Self: Into<T>,
+    {
+        match location {
+            SubTupleLocation::Single(idx) => {
+                self.elements.get(*idx).map(|x| x.term.clone())
+            }
+            SubTupleLocation::Range(range) => self
+                .elements
+                .get(range.to_std_range())
+                .map(|x| Self::new(x.to_vec()).into()),
+        }
+    }
+
+    /// Retrieves a reference to the sub-term from the given tuple at this
+    /// location.
+    #[must_use]
+    pub fn get_term_ref(&self, location: &SubTupleLocation) -> Option<&T> {
+        match location {
+            SubTupleLocation::Single(idx) => {
+                self.elements.get(*idx).map(|x| &x.term)
+            }
+            SubTupleLocation::Range(_) => None,
+        }
+    }
+
+    /// Retrieves a mutable reference to the sub-term from the given tuple at
+    /// this location.
+    pub fn get_term_mut(
+        &mut self,
+        location: &SubTupleLocation,
+    ) -> Option<&mut T> {
+        match location {
+            SubTupleLocation::Single(idx) => {
+                self.elements.get_mut(*idx).map(|x| &mut x.term)
+            }
+            SubTupleLocation::Range(_) => None,
+        }
+    }
+}
+
 impl<T: SubTerm + Match + Clone> Tuple<T>
 where
     Self: TryFrom<T, Error = T> + Into<T>,
@@ -205,6 +339,7 @@ where
             T::SubLifetimeLocation,
             T::SubTypeLocation,
             T::SubConstantLocation,
+            T::SubInstanceLocation,
         >,
     >
     where
@@ -219,25 +354,26 @@ where
                 T::SubLifetimeLocation,
                 T::SubTypeLocation,
                 T::SubConstantLocation,
+                T::SubInstanceLocation,
             >,
             swap: bool,
         ) where
             T::ThisSubTermLocation: From<SubTupleLocation>,
         {
             if swap {
-                T::get_substructural_mut(existing).push(Matching {
-                    lhs: rhs,
-                    rhs: lhs,
-                    lhs_location: rhs_location.into(),
-                    rhs_location: lhs_location.into(),
-                });
+                T::get_substructural_mut(existing).push(Matching::new(
+                    rhs,
+                    lhs,
+                    rhs_location.into(),
+                    lhs_location.into(),
+                ));
             } else {
-                T::get_substructural_mut(existing).push(Matching {
+                T::get_substructural_mut(existing).push(Matching::new(
                     lhs,
                     rhs,
-                    lhs_location: lhs_location.into(),
-                    rhs_location: rhs_location.into(),
-                });
+                    lhs_location.into(),
+                    rhs_location.into(),
+                ));
             }
         }
 
@@ -397,6 +533,7 @@ where
             T::SubLifetimeLocation,
             T::SubTypeLocation,
             T::SubConstantLocation,
+            T::SubInstanceLocation,
         >,
     >
     where
@@ -404,5 +541,81 @@ where
     {
         Self::substructural_match_internal(self, to, false)
             .or_else(|| Self::substructural_match_internal(to, self, true))
+    }
+}
+
+macro_rules! implements_tuple {
+    ($self:ident, $visitor:ident, $accept_single:ident, $iter:ident $(,$await:ident)?) => {{
+        for (idx, element) in $self.elements.$iter().enumerate() {
+            if !element.term.$accept_single(
+                $visitor,
+                T::Location::from(SubTupleLocation::Single(idx).into()),
+            )$(.$await)? {
+                return false;
+            }
+        }
+
+        true
+    }};
+}
+
+impl<T: visitor::Element + Clone> Tuple<T>
+where
+    Self: TryFrom<T, Error = T> + Into<T>,
+    SubTupleLocation: Into<T::ThisSubTermLocation>,
+{
+    pub(crate) fn accept_one_level<
+        'a,
+        V: Visitor<'a, Lifetime>
+            + Visitor<'a, Type>
+            + Visitor<'a, Constant>
+            + Visitor<'a, Instance>,
+    >(
+        &'a self,
+        visitor: &mut V,
+    ) -> bool {
+        implements_tuple!(self, visitor, accept_single, iter)
+    }
+
+    pub(crate) async fn accept_one_level_async<
+        V: AsyncVisitor<Lifetime>
+            + AsyncVisitor<Type>
+            + AsyncVisitor<Constant>
+            + AsyncVisitor<Instance>,
+    >(
+        &self,
+        visitor: &mut V,
+    ) -> bool {
+        implements_tuple!(self, visitor, accept_single_async, iter, await)
+    }
+
+    pub(crate) fn accept_one_level_mut<
+        V: Mutable<Lifetime>
+            + Mutable<Type>
+            + Mutable<Constant>
+            + Mutable<Instance>,
+    >(
+        &mut self,
+        visitor: &mut V,
+    ) -> bool {
+        implements_tuple!(self, visitor, accept_single_mut, iter_mut)
+    }
+
+    pub(crate) async fn accept_one_level_async_mut<
+        V: AsyncMutable<Lifetime>
+            + AsyncMutable<Type>
+            + AsyncMutable<Constant>
+            + AsyncMutable<Instance>,
+    >(
+        &mut self,
+        visitor: &mut V,
+    ) -> bool {
+        implements_tuple!(
+            self,
+            visitor,
+            accept_single_async_mut,
+            iter_mut,
+            await
+        )
     }
 }

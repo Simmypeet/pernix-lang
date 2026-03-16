@@ -31,13 +31,10 @@ fn basic_subtyping(#[case] variance: Variance) {
     let test = async move {
         // Variance::Covariant: &'a bool :> &'static bool then 'a: 'static
 
-        let a_lt = Lifetime::Parameter(LifetimeParameterID {
-            parent_id: Global::new(
-                TargetID::TEST,
-                pernixc_symbol::ID::from_u128(1),
-            ),
-            id: pernixc_arena::ID::new(0),
-        });
+        let a_lt = Lifetime::Parameter(LifetimeParameterID::new(
+            Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(1)),
+            pernixc_arena::ID::new(0),
+        ));
         let static_lt = Lifetime::Static;
 
         let a_t = Type::Reference(Reference {
@@ -126,24 +123,24 @@ fn subtyping_with_adt(#[case] variance: Variance) {
         let adt_id =
             Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(2));
 
-        let a_lt = Lifetime::Parameter(LifetimeParameterID {
-            parent_id: global_id,
-            id: pernixc_arena::ID::new(0),
-        });
+        let a_lt = Lifetime::Parameter(LifetimeParameterID::new(
+            global_id,
+            pernixc_arena::ID::new(0),
+        ));
 
-        let b_lt = Lifetime::Parameter(LifetimeParameterID {
-            parent_id: global_id,
-            id: pernixc_arena::ID::new(1),
-        });
+        let b_lt = Lifetime::Parameter(LifetimeParameterID::new(
+            global_id,
+            pernixc_arena::ID::new(1),
+        ));
 
         let (engine, _dir) = create_test_engine().await;
 
         let mut generic_parameter = GenericParameters::default();
         let lifetime_id = generic_parameter
-            .add_lifetime_parameter(LifetimeParameter {
-                name: engine.intern_unsized("a".to_owned()),
-                span: None,
-            })
+            .add_lifetime_parameter(LifetimeParameter::new(
+                engine.intern_unsized("a".to_owned()),
+                None,
+            ))
             .unwrap();
 
         let mut variance_map = Variances::default();
@@ -176,24 +173,26 @@ fn subtyping_with_adt(#[case] variance: Variance) {
         }
 
         // Adt['a]
-        let a_t = Type::Symbol(Symbol {
-            id: adt_id,
-            generic_arguments: GenericArguments {
-                lifetimes: vec![a_lt.clone()],
-                types: Vec::new(),
-                constants: Vec::new(),
-            },
-        });
+        let a_t = Type::Symbol(Symbol::new(
+            adt_id,
+            GenericArguments::new(
+                vec![a_lt.clone()],
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+            ),
+        ));
 
         // Adt['b]
-        let b_t = Type::Symbol(Symbol {
-            id: adt_id,
-            generic_arguments: GenericArguments {
-                lifetimes: vec![b_lt.clone()],
-                types: Vec::new(),
-                constants: Vec::new(),
-            },
-        });
+        let b_t = Type::Symbol(Symbol::new(
+            adt_id,
+            GenericArguments::new(
+                vec![b_lt.clone()],
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+            ),
+        ));
 
         let premise = Premise::default();
         let environment = Environment::new(
@@ -255,25 +254,21 @@ async fn subtyping_with_inner_tuple() {
 
     let global_id =
         Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(1));
-    let a_lt = Lifetime::Parameter(LifetimeParameterID {
-        parent_id: global_id,
-        id: pernixc_arena::ID::new(0),
-    });
-    let b_lt = Lifetime::Parameter(LifetimeParameterID {
-        parent_id: global_id,
-        id: pernixc_arena::ID::new(1),
-    });
+    let a_lt = Lifetime::Parameter(LifetimeParameterID::new(
+        global_id,
+        pernixc_arena::ID::new(0),
+    ));
+    let b_lt = Lifetime::Parameter(LifetimeParameterID::new(
+        global_id,
+        pernixc_arena::ID::new(1),
+    ));
 
-    let lhs = Type::Tuple(Tuple {
-        elements: vec![Element::new_regular(
-            Type::bool().to_immutable_reference(a_lt.clone()),
-        )],
-    });
-    let rhs = Type::Tuple(Tuple {
-        elements: vec![Element::new_regular(
-            Type::bool().to_immutable_reference(b_lt.clone()),
-        )],
-    });
+    let lhs = Type::Tuple(Tuple::new(vec![Element::new_regular(
+        Type::bool().to_immutable_reference(a_lt.clone()),
+    )]));
+    let rhs = Type::Tuple(Tuple::new(vec![Element::new_regular(
+        Type::bool().to_immutable_reference(b_lt.clone()),
+    )]));
 
     let (engine, _dir) = create_test_engine().await;
     let premise = Premise::default();
@@ -306,22 +301,18 @@ async fn subtyping_with_mutable_reference() {
 
     let global_id =
         Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(1));
-    let a_lt = Lifetime::Parameter(LifetimeParameterID {
-        parent_id: global_id,
-        id: pernixc_arena::ID::new(0),
-    });
-    let b_lt = Lifetime::Parameter(LifetimeParameterID {
-        parent_id: global_id,
-        id: pernixc_arena::ID::new(1),
-    });
-    let c_lt = Lifetime::Parameter(LifetimeParameterID {
-        parent_id: global_id,
-        id: pernixc_arena::ID::new(2),
-    });
-    let d_lt = Lifetime::Parameter(LifetimeParameterID {
-        parent_id: global_id,
-        id: pernixc_arena::ID::new(3),
-    });
+
+    let lt_constructor = |id| {
+        Lifetime::Parameter(LifetimeParameterID::new(
+            global_id,
+            pernixc_arena::ID::new(id),
+        ))
+    };
+
+    let a_lt = lt_constructor(0);
+    let b_lt = lt_constructor(1);
+    let c_lt = lt_constructor(2);
+    let d_lt = lt_constructor(3);
 
     let lhs = Type::Reference(Reference {
         qualifier: Qualifier::Mutable,

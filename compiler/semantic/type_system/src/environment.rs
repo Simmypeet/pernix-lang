@@ -23,11 +23,7 @@ use pernixc_semantic_element::{
 };
 use pernixc_symbol::{kind::get_kind, parent::scope_walker};
 use pernixc_target::Global;
-use pernixc_term::{
-    generic_arguments::{GenericArguments, TraitMember},
-    predicate::{Compatible, Predicate},
-    r#type::Type,
-};
+use pernixc_term::predicate::Predicate;
 use qbice::{
     Decode, Encode, Identifiable, StableHash, executor, program::Registration,
     storage::intern::Interned,
@@ -56,7 +52,7 @@ pub struct Premise {
     ///
     /// This can influence the result of resoliving the trait/marker
     /// implementations.
-    pub query_site: Option<Global<pernixc_symbol::ID>>,
+    pub query_site: Global<pernixc_symbol::ID>,
 }
 
 /// Retrieves the active premise at the given symbol site.
@@ -90,7 +86,8 @@ async fn active_premise_executor(
     engine: &TrackedEngine,
 ) -> Interned<Premise> {
     let mut premise =
-        Premise { predicates: BTreeSet::new(), query_site: Some(symbol_id) };
+        Premise { predicates: BTreeSet::new(), query_site: symbol_id };
+
     let mut scope_walker = engine.scope_walker(symbol_id);
     while let Some(id) = scope_walker.next().await {
         let current_id = symbol_id.target_id.make_global(id);
@@ -180,6 +177,8 @@ pub struct Environment<'a, N> {
     normalizer: &'a N,
 
     context: RwLock<Context>,
+
+    do_outlives_check: bool,
 }
 
 impl<N> Environment<'_, N> {
@@ -210,6 +209,7 @@ impl<N> Clone for Environment<'_, N> {
             tracked_engine: self.tracked_engine.clone(),
             normalizer: self.normalizer,
             context: RwLock::new(self.context.read().clone()),
+            do_outlives_check: self.do_outlives_check,
         }
     }
 }
@@ -267,46 +267,36 @@ impl Ord for dyn DynIdent {
     fn cmp(&self, other: &Self) -> Ordering { self.dyn_ord(other) }
 }
 
+/// A type alias for the result type returned by query interface. It's a nested
+/// result type where the outer `Result` is for the overflow error and the inner
+/// `Result` is for the query's specific error.
+pub type QueryResult<T> = Result<T, OverflowError>;
+
 /// A type alias wrapping a boxed future.
-pub type BoxedFuture<'x, T, E> = Pin<
-    Box<
-        dyn std::future::Future<Output = Result<Option<Arc<T>>, E>> + Send + 'x,
-    >,
->;
+pub type BoxedFuture<'x, T> =
+    Pin<Box<dyn std::future::Future<Output = QueryResult<T>> + Send + 'x>>;
 
 /// The trait implemented by all the query types.
 pub trait Query: Clone + Eq + Ord + Hash + DynIdent {
-    /// The optional parameter provided to the query
-    type Parameter: Default;
-
     /// The additional in-progress state of the query.
     type InProgress: Clone + DynIdent + Default;
 
     /// The result of the query.
-    type Result: Any + Send + Sync;
-
-    /// The error type of the query.
-    type Error: From<OverflowError>;
+    type Result: Any + Send + Sync + Clone;
 
     /// The function that computes the query.
     fn query<'x, N: Normalizer>(
         &'x self,
         environment: &'x Environment<'x, N>,
-        parameter: Self::Parameter,
-        in_progress: Self::InProgress,
-    ) -> BoxedFuture<'x, Self::Result, Self::Error>;
+    ) -> BoxedFuture<'x, Self::Result>;
 
     /// The result to return of the query when the query is cyclic.
-    #[allow(clippy::missing_errors_doc)]
     fn on_cyclic(
         &self,
-        _: Self::Parameter,
         _: Self::InProgress,
         _: Self::InProgress,
         _: &[Call<DynArc, DynArc>],
-    ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
-        Ok(None) /* the default implementation is to make the query fails */
-    }
+    ) -> Self::Result;
 }
 
 /// The result of a query.
@@ -316,7 +306,7 @@ pub enum Cached<I, T> {
     InProgress(I),
 
     /// The query is done and the result is stored.
-    Done(Option<T>),
+    Done(T),
 }
 
 /// A struct storing the call to compute a query and the in progress state.
@@ -327,6 +317,7 @@ pub struct Call<Q, I> {
     pub in_progress: I,
     pub in_scc: RwLock<bool>,
 }
+
 impl<Q: Clone, I: Clone> Clone for Call<Q, I> {
     fn clone(&self) -> Self {
         Self {
@@ -382,7 +373,7 @@ impl Context {
     /// Returns `None` if this query hasn't been stored before, otherwise
     /// returns the [`Cached`] value of the query.
     #[allow(clippy::type_complexity)]
-    pub fn mark_as_in_progress<Q: Query>(
+    fn mark_as_in_progress<Q: Query>(
         &mut self,
         query: Q,
         in_progress: Q::InProgress,
@@ -413,9 +404,9 @@ impl Context {
                 Cached::InProgress(in_progress_rc) => Cached::InProgress(
                     in_progress_rc.downcast::<Q::InProgress>().unwrap(),
                 ),
-                Cached::Done(result_rc) => Cached::Done(
-                    result_rc.map(|x| x.downcast::<Q::Result>().unwrap()),
-                ),
+                Cached::Done(result_rc) => {
+                    Cached::Done(result_rc.downcast::<Q::Result>().unwrap())
+                }
             })),
         }
     }
@@ -431,7 +422,7 @@ impl Context {
     pub fn mark_as_done<Q: Query>(
         &mut self,
         query: &Q,
-        result: Option<Arc<Q::Result>>,
+        result: Arc<Q::Result>,
     ) -> bool {
         let Some(last) = self.call_stack.last() else {
             return false;
@@ -445,7 +436,7 @@ impl Context {
             if *last.in_scc.read() {
                 self.map.remove(query as &dyn DynIdent);
             } else {
-                *x = Cached::Done(result.map(|x| x as _));
+                *x = Cached::Done(result);
             }
         } else {
             return false;
@@ -491,7 +482,7 @@ impl Context {
                 Cached::InProgress(rc.downcast::<Q::InProgress>().unwrap())
             }
             Cached::Done(rc) => {
-                Cached::Done(rc.map(|x| x.downcast::<Q::Result>().unwrap()))
+                Cached::Done(rc.downcast::<Q::Result>().unwrap())
             }
         })
     }
@@ -503,16 +494,8 @@ impl<N: Normalizer> Environment<'_, N> {
     /// # Errors
     ///
     /// Returns the error of the query.
-    pub async fn query<Q: Query>(
-        &self,
-        query: &Q,
-    ) -> Result<Option<Arc<Q::Result>>, Q::Error> {
-        self.query_with(
-            query,
-            Q::Parameter::default(),
-            Q::InProgress::default(),
-        )
-        .await
+    pub async fn query<Q: Query>(&self, query: &Q) -> QueryResult<Q::Result> {
+        self.query_with(query, Q::InProgress::default()).await
     }
 
     /// Performs the query with the given parameter and in-progress state.
@@ -523,16 +506,25 @@ impl<N: Normalizer> Environment<'_, N> {
     pub async fn query_with<Q: Query>(
         &self,
         query: &Q,
-        parameter: Q::Parameter,
         in_progress: Q::InProgress,
-    ) -> Result<Option<Arc<Q::Result>>, Q::Error> {
-        let in_progress_result = self
+    ) -> QueryResult<Q::Result> {
+        let in_progress_result = match self
             .context
             .write()
-            .mark_as_in_progress(query.clone(), in_progress.clone())?;
+            .mark_as_in_progress(query.clone(), in_progress.clone())
+        {
+            Ok(result) => result,
+
+            Err(overflow_error) => {
+                return Err(overflow_error);
+            }
+        };
 
         match in_progress_result {
-            Some(Cached::Done(result)) => return Ok(result),
+            Some(Cached::Done(result)) => {
+                return Ok(result.as_ref().clone());
+            }
+
             Some(Cached::InProgress(new_in_progress)) => {
                 let context = self.context.read();
 
@@ -544,11 +536,10 @@ impl<N: Normalizer> Environment<'_, N> {
 
                 // circular dependency
                 let result = query.on_cyclic(
-                    parameter,
                     in_progress,
                     (*new_in_progress).clone(),
                     &context.call_stack[position..],
-                )?;
+                );
 
                 // mark the query as in progress
                 for call in &context.call_stack[(position + 1)..] {
@@ -557,28 +548,33 @@ impl<N: Normalizer> Environment<'_, N> {
 
                 return Ok(result);
             }
+
             None => { /*no circular dependency, continue...*/ }
         }
 
-        match query.query(self, parameter, in_progress).await {
+        match query.query(self).await {
             Ok(result) => {
                 // remember the result
                 assert!(
-                    self.context.write().mark_as_done(query, result.clone())
+                    self.context
+                        .write()
+                        .mark_as_done(query, Arc::new(result.clone()))
                 );
 
                 Ok(result)
             }
 
-            result @ Err(_) => {
+            Err(overflow_error) => {
                 // reset the query
                 assert!(self.context.write().clear_query(query).is_some());
 
-                result
+                Err(overflow_error)
             }
         }
     }
 }
+
+/*
 
 /// An enumeration of all errors encountered while creating a new environment.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -595,7 +591,7 @@ pub enum Error {
     DefinintePremise(Predicate),
 
     /// The [`Equality::lhs`] occurs in the [`Compatible::rhs`].
-    RecursiveTraitTypeEqualityPredicate(Compatible<TraitMember, Type>),
+    RecursiveTraitTypeEqualityPredicate(Compatible<InstanceAssociated, Type>),
 
     /// Encounters the [`super::Error`] while calculating the requirements for
     /// the given [`Predicate`].
@@ -1336,6 +1332,7 @@ impl<'a, N: Normalizer> Environment<'a, N> {
         todo!()
     }
 }
+*/
 
 impl<'a, N: Normalizer> Environment<'a, N> {
     /// Creates a new [`Environment`].
@@ -1349,6 +1346,33 @@ impl<'a, N: Normalizer> Environment<'a, N> {
             tracked_engine,
             normalizer,
             context: RwLock::new(Context::default()),
+            do_outlives_check: false,
         }
     }
+
+    /// Creates a new [`Environment`] with "outlives check" enabled.
+    ///
+    /// When outlives check is enabled, if the implementation or instance is
+    /// resolved, the outlives predicates (including lifetime and type outlives)
+    /// will be immediately checked for satisfiability instead of deferring it
+    /// to the lifetime constraints set. This improves the error message during
+    /// the WF check.
+    pub fn new_do_outlives_check(
+        premise: Cow<'a, Premise>,
+        tracked_engine: Cow<'a, TrackedEngine>,
+        normalizer: &'a N,
+    ) -> Self {
+        Self {
+            premise,
+            tracked_engine,
+            normalizer,
+            context: RwLock::new(Context::default()),
+            do_outlives_check: true,
+        }
+    }
+
+    /// Determines whether the environment is configured to perform outlives
+    /// check.
+    #[must_use]
+    pub const fn do_outlives_check(&self) -> bool { self.do_outlives_check }
 }

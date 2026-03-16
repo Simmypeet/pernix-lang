@@ -7,17 +7,17 @@ stderr:
    ╭▸ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/invalid_symbol/main.pnx:16:12
    │
 16 │ implements Direction::North:
-   │            ━━━━━━━━━━━━━━━━ the symbol `variant main::Direction::North` cannot be implemented
+   │            ━━━━━━━━━━━━━━━━ `variant main::Direction::North` cannot be implemented
    │
-   ╰ help: only `trait`, `marker`, `enum`, or `struct` can be implemented
+   ╰ help: only `marker`, `enum`, or `struct` can be implemented
 
 [error]: the symbol cannot be implemented
    ╭▸ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/invalid_symbol/main.pnx:20:12
    │
 20 │ implements math:
-   │            ━━━━ the symbol `module main::math` cannot be implemented
+   │            ━━━━ `module main::math` cannot be implemented
    │
-   ╰ help: only `trait`, `marker`, `enum`, or `struct` can be implemented
+   ╰ help: only `marker`, `enum`, or `struct` can be implemented
 
 [error]: the type cannot be implemented
    ╭▸ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/invalid_symbol/main.pnx:35:19

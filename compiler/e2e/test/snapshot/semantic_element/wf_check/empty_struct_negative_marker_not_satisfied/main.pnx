@@ -15,7 +15,7 @@ public enum EmptyEnum:
 
 public type WithRequirement[T] = T:
     where:
-        marker not Marker[T]
+        T: not Marker
 
 
 public type InstEmptyStruct = WithRequirement[EmptyStruct]

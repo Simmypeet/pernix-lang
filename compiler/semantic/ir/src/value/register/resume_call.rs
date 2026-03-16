@@ -4,7 +4,7 @@ use std::ops::Deref;
 
 use getset::{CopyGetters, Getters};
 use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
-use pernixc_type_system::Error;
+use pernixc_type_system::OverflowError;
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
@@ -87,7 +87,7 @@ impl TypeOf<&ResumeCall> for Values {
         &self,
         value: &ResumeCall,
         environment: &crate::value::Environment<'_, N>,
-    ) -> Result<pernixc_type_system::Succeeded<Type>, Error> {
+    ) -> Result<pernixc_type_system::Succeeded<Type>, OverflowError> {
         let handling_scope =
             &environment.handling_scopes[value.handling_scope_id()];
 

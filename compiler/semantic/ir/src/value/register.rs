@@ -13,10 +13,10 @@ use pernixc_symbol::MemberID;
 use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant, generic_arguments::GenericArguments,
-    generic_parameters::get_generic_parameters, lifetime::Lifetime,
-    r#type::Type,
+    generic_parameters::get_generic_parameters, instance::Instance,
+    lifetime::Lifetime, r#type::Type,
 };
-use pernixc_type_system::{Error, Succeeded, normalizer::Normalizer};
+use pernixc_type_system::{OverflowError, Succeeded, normalizer::Normalizer};
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
@@ -135,7 +135,7 @@ impl TypeOf<ID<Register>> for Values {
         &self,
         id: ID<Register>,
         environment: &Environment<'_, N>,
-    ) -> Result<Succeeded<Type>, Error> {
+    ) -> Result<Succeeded<Type>, OverflowError> {
         let register = &self.registers[id];
 
         match &register.assignment {
@@ -185,7 +185,10 @@ impl TypeOf<ID<Register>> for Values {
 
 impl transform::Element for Register {
     async fn transform<
-        T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
+        T: Transformer<Lifetime>
+            + Transformer<Type>
+            + Transformer<Constant>
+            + Transformer<Instance>,
     >(
         &mut self,
         transformer: &mut T,
@@ -257,7 +260,10 @@ impl transform::Element for Register {
 }
 
 pub(super) async fn transform_generic_arguments<
-    T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
+    T: Transformer<Lifetime>
+        + Transformer<Type>
+        + Transformer<Constant>
+        + Transformer<Instance>,
 >(
     transformer: &mut T,
     symbol_id: Global<pernixc_symbol::ID>,
@@ -268,10 +274,8 @@ pub(super) async fn transform_generic_arguments<
     let generic_params = engine.get_generic_parameters(symbol_id).await;
 
     for (lt_id, lt) in generic_params
-        .lifetime_order()
-        .iter()
-        .copied()
-        .zip(generic_arg.lifetimes.iter_mut())
+        .lifetime_parameter_order()
+        .zip(generic_arg.lifetimes_mut())
     {
         transformer
             .transform(
@@ -284,11 +288,8 @@ pub(super) async fn transform_generic_arguments<
             .await;
     }
 
-    for (ty_id, ty) in generic_params
-        .type_order()
-        .iter()
-        .copied()
-        .zip(generic_arg.types.iter_mut())
+    for (ty_id, ty) in
+        generic_params.type_parameter_order().zip(generic_arg.types_mut())
     {
         transformer
             .transform(
@@ -302,16 +303,30 @@ pub(super) async fn transform_generic_arguments<
     }
 
     for (ct_id, ct) in generic_params
-        .constant_order()
-        .iter()
-        .copied()
-        .zip(generic_arg.constants.iter_mut())
+        .constant_parameter_order()
+        .zip(generic_arg.constants_mut())
     {
         transformer
             .transform(
                 ct,
                 ConstantTermSource::GenericParameter(MemberID::new(
                     symbol_id, ct_id,
+                )),
+                span,
+            )
+            .await;
+    }
+
+    for (instance_id, instance) in generic_params
+        .instance_parameter_order()
+        .zip(generic_arg.instances_mut())
+    {
+        transformer
+            .transform(
+                instance,
+                transform::InstanceTermSource::GenericParameter(MemberID::new(
+                    symbol_id,
+                    instance_id,
                 )),
                 span,
             )

@@ -4,7 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use getset::Getters;
 use pernixc_term::{
-    constant::Constant, lifetime::Lifetime, sub_term::SubTerm, r#type::Type,
+    constant::Constant, instance::Instance, lifetime::Lifetime,
+    sub_term::SubTerm, r#type::Type,
 };
 
 use super::unification::{self, Unifier};
@@ -16,6 +17,7 @@ pub struct Mapping {
     pub lifetimes: BTreeMap<Lifetime, BTreeSet<Lifetime>>,
     pub types: BTreeMap<Type, BTreeSet<Type>>,
     pub constants: BTreeMap<Constant, BTreeSet<Constant>>,
+    pub instances: BTreeMap<Instance, BTreeSet<Instance>>,
 }
 
 impl Mapping {
@@ -24,6 +26,7 @@ impl Mapping {
         lifetimes: impl IntoIterator<Item = (Lifetime, Lifetime)>,
         types: impl IntoIterator<Item = (Type, Type)>,
         constants: impl IntoIterator<Item = (Constant, Constant)>,
+        instances: impl IntoIterator<Item = (Instance, Instance)>,
     ) -> Self {
         let mut mappings = Self::default();
 
@@ -34,6 +37,9 @@ impl Mapping {
             mappings.insert(first, second);
         }
         for (first, second) in constants {
+            mappings.insert(first, second);
+        }
+        for (first, second) in instances {
             mappings.insert(first, second);
         }
 
@@ -108,15 +114,22 @@ impl Mapping {
                 T::get_mut(self).entry(lhs).or_default().insert(rhs);
             }
             unification::Matching::Substructural(substructural) => {
-                for (_, unification) in substructural.lifetimes {
+                let (lifetimes, types, constants, instances) =
+                    substructural.destructure();
+
+                for (_, unification) in lifetimes {
                     self.append_from_unifier(unification);
                 }
 
-                for (_, unification) in substructural.types {
+                for (_, unification) in types {
                     self.append_from_unifier(unification);
                 }
 
-                for (_, unification) in substructural.constants {
+                for (_, unification) in constants {
+                    self.append_from_unifier(unification);
+                }
+
+                for (_, unification) in instances {
                     self.append_from_unifier(unification);
                 }
             }
@@ -177,5 +190,15 @@ impl Element for Constant {
 
     fn get_mut(mapping: &mut Mapping) -> &mut BTreeMap<Self, BTreeSet<Self>> {
         &mut mapping.constants
+    }
+}
+
+impl Element for Instance {
+    fn get(mapping: &Mapping) -> &BTreeMap<Self, BTreeSet<Self>> {
+        &mapping.instances
+    }
+
+    fn get_mut(mapping: &mut Mapping) -> &mut BTreeMap<Self, BTreeSet<Self>> {
+        &mut mapping.instances
     }
 }

@@ -3,11 +3,11 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: run
 ---
 stderr:
-[error]: expected an effect, found a `struct main::TotallyNotAnEffect`
+[error]: expected an effect, found `struct main::TotallyNotAnEffect`
   ╭▸ compiler/e2e/test/snapshot/semantic_element/effect_annotation/not_an_effect/main.pnx:5:27
   │
 5 │ public function test() do TotallyNotAnEffect:
-  ╰╴                          ━━━━━━━━━━━━━━━━━━ `main::TotallyNotAnEffect` is a struct`
+  ╰╴                          ━━━━━━━━━━━━━━━━━━
 
 [error]: Compilation aborted due to 1 error(s)
 

@@ -373,12 +373,9 @@ impl Report for Error {
         let message =
             format!("unexpected {found_string}, expected {expected_string}");
 
-        Rendered {
-            primary_highlight: Some(Highlight::new(found_span, None)),
-            message,
-            severity: pernixc_diagnostic::Severity::Error,
-            help_message: None,
-            related: Vec::default(),
-        }
+        Rendered::builder()
+            .primary_highlight(Highlight::new(found_span, None))
+            .message(message)
+            .build()
     }
 }

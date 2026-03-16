@@ -40,7 +40,7 @@ jobs:
               uses: Swatinem/rust-cache@v2
 
             - name: Install Cargo Nextest
-              run: cargo install cargo-nextest --locked
+              run: cargo install cargo-nextest --locked --version 0.9.127
 
             - name: Build LLVM on Unix-like
               if: runner.os != 'Windows'

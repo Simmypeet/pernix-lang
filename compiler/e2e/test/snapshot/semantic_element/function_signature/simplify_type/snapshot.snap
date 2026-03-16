@@ -3,49 +3,49 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: run
 ---
 stderr:
-[error]: unsatisfied predicate
-  ╭▸ compiler/e2e/test/snapshot/semantic_element/function_signature/simplify_type/main.pnx:6:36
+[error]: the predicate `'x: 'y` is not satisfied
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/function_signature/simplify_type/main.pnx:6:26
   │
-6 │       first: Identity[T]::Output['x],
-  │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-7 │ ┃     second: Identity[T]::Output['y],
-  ╰╴┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ the predicate `'x: 'y` is not satisfied
+6 │       first: I::Output['x],
+  │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+7 │ ┃     second: I::Output['y],
+  ╰╴┗━━━━━━━━━━━━━━━━━━━━━━━━━┛
 
-[error]: unsatisfied predicate
-  ╭▸ compiler/e2e/test/snapshot/semantic_element/function_signature/simplify_type/main.pnx:6:36
+[error]: the predicate `'y: 'x` is not satisfied
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/function_signature/simplify_type/main.pnx:6:26
   │
-6 │       first: Identity[T]::Output['x],
-  │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-7 │ ┃     second: Identity[T]::Output['y],
-  ╰╴┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ the predicate `'y: 'x` is not satisfied
+6 │       first: I::Output['x],
+  │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+7 │ ┃     second: I::Output['y],
+  ╰╴┗━━━━━━━━━━━━━━━━━━━━━━━━━┛
 
-[error]: unsatisfied predicate
-  ╭▸ compiler/e2e/test/snapshot/semantic_element/function_signature/simplify_type/main.pnx:7:37
+[error]: the predicate `'x: 'z` is not satisfied
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/function_signature/simplify_type/main.pnx:7:27
   │
-7 │       second: Identity[T]::Output['y],
-  │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-8 │ ┃     third: Identity[T]::Output['z],
-  ╰╴┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ the predicate `'x: 'z` is not satisfied
+7 │       second: I::Output['y],
+  │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+8 │ ┃     third: I::Output['z],
+  ╰╴┗━━━━━━━━━━━━━━━━━━━━━━━━┛
 
-[error]: unsatisfied predicate
-  ╭▸ compiler/e2e/test/snapshot/semantic_element/function_signature/simplify_type/main.pnx:7:37
+[error]: the predicate `'z: 'x` is not satisfied
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/function_signature/simplify_type/main.pnx:7:27
   │
-7 │       second: Identity[T]::Output['y],
-  │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-8 │ ┃     third: Identity[T]::Output['z],
-  ╰╴┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ the predicate `'z: 'x` is not satisfied
+7 │       second: I::Output['y],
+  │ ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+8 │ ┃     third: I::Output['z],
+  ╰╴┗━━━━━━━━━━━━━━━━━━━━━━━━┛
 
-[error]: unsatisfied predicate
+[error]: the predicate `'x: 'z` is not satisfied
   ╭▸ compiler/e2e/test/snapshot/semantic_element/function_signature/simplify_type/main.pnx:9:6
   │
-9 │ ) -> Identity[T]::Output['z]:
-  ╰╴     ━━━━━━━━━━━━━━━━━━━━━━━ the predicate `'x: 'z` is not satisfied
+9 │ ) -> I::Output['z]:
+  ╰╴     ━━━━━━━━━━━━━
 
-[error]: unsatisfied predicate
+[error]: the predicate `'z: 'x` is not satisfied
   ╭▸ compiler/e2e/test/snapshot/semantic_element/function_signature/simplify_type/main.pnx:9:6
   │
-9 │ ) -> Identity[T]::Output['z]:
-  ╰╴     ━━━━━━━━━━━━━━━━━━━━━━━ the predicate `'z: 'x` is not satisfied
+9 │ ) -> I::Output['z]:
+  ╰╴     ━━━━━━━━━━━━━
 
 [error]: Compilation aborted due to 6 error(s)
 

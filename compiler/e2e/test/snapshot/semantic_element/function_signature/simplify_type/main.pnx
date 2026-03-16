@@ -1,14 +1,13 @@
-public trait Identity[T]:
+public trait Identity:
     public type Output['x]
 
 
-public function simplifyType['x, 'y, 'z, T](
-    first: Identity[T]::Output['x],
-    second: Identity[T]::Output['y],
-    third: Identity[T]::Output['z],
-) -> Identity[T]::Output['z]:
+public function simplifyType['x, 'y, 'z, instance I: Identity](
+    first: I::Output['x],
+    second: I::Output['y],
+    third: I::Output['z],
+) -> I::Output['z]:
     where:
-        Identity[T]::Output['x] = int32
-        trait Identity[T]
+        I::Output['x] = int32
         
     return first
