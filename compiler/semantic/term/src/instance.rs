@@ -81,6 +81,14 @@ impl TraitRef {
     pub fn into_generic_arguments(self) -> GenericArguments {
         self.0.into_generic_arguments()
     }
+
+    /// Creates an [`Instantiation`] for this `TraitRef`.
+    pub async fn create_instantiation(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Instantiation {
+        self.0.create_instantiation(engine).await
+    }
 }
 
 /// Refers to a terrm that is associated with an instance.

@@ -347,30 +347,30 @@ impl GenericArguments {
 /// as the generic parameters of the symbol.
 #[extend]
 pub async fn create_identity_generic_arguments(
-    self: &TrackedEngine,
-    symbol_id: Global<pernixc_symbol::ID>,
+    self: Global<pernixc_symbol::ID>,
+    engine: &TrackedEngine,
 ) -> GenericArguments {
-    let generic_params = self.get_generic_parameters(symbol_id).await;
+    let generic_params = engine.get_generic_parameters(self).await;
 
     let mut generic_arguments = GenericArguments::default();
 
     for lifetime_param in generic_params.lifetime_parameter_order() {
-        let lt_param = Lifetime::new_parameter(symbol_id, lifetime_param);
+        let lt_param = Lifetime::new_parameter(self, lifetime_param);
         generic_arguments.push_lifetime(lt_param);
     }
 
     for type_param in generic_params.type_parameter_order() {
-        let ty_param = Type::new_parameter(symbol_id, type_param);
+        let ty_param = Type::new_parameter(self, type_param);
         generic_arguments.push_type(ty_param);
     }
 
     for constant_param in generic_params.constant_parameter_order() {
-        let const_param = Constant::new_parameter(symbol_id, constant_param);
+        let const_param = Constant::new_parameter(self, constant_param);
         generic_arguments.push_constant(const_param);
     }
 
     for instance_param in generic_params.instance_parameter_order() {
-        let instance_param = Instance::new_parameter(symbol_id, instance_param);
+        let instance_param = Instance::new_parameter(self, instance_param);
         generic_arguments.push_instance(instance_param);
     }
 
