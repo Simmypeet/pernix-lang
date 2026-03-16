@@ -85,7 +85,7 @@ impl Checker<'_> {
                 let impl_id = self
                     .environment
                     .tracked_engine()
-                    .get_parent_global(assoc_symbol.id())
+                    .get_parent_global(assoc_symbol.impl_associated_symbol_id())
                     .await
                     .unwrap();
 
@@ -94,7 +94,7 @@ impl Checker<'_> {
                     .wf_check_implementation(
                         impl_id,
                         resolution_span,
-                        assoc_symbol.parent_generic_arguments(),
+                        assoc_symbol.adt_generic_arguments(),
                         self.handler,
                     )
                     .await
@@ -105,22 +105,24 @@ impl Checker<'_> {
                 let mut inst = implementation_check.into_instantiation();
 
                 inst.append_from_generic_arguments(
-                    assoc_symbol.member_generic_arguments(),
-                    assoc_symbol.id(),
+                    assoc_symbol.impl_associated_generic_arguments(),
+                    assoc_symbol.impl_associated_symbol_id(),
                     &*self
                         .tracked_engine()
-                        .get_generic_parameters(assoc_symbol.id())
+                        .get_generic_parameters(
+                            assoc_symbol.impl_associated_symbol_id(),
+                        )
                         .await,
                 );
 
                 let instances = assoc_symbol
-                    .member_generic_arguments()
+                    .impl_associated_generic_arguments()
                     .instances()
                     .to_vec();
 
                 self.environment
                     .wf_check_instantiation(
-                        assoc_symbol.id(),
+                        assoc_symbol.impl_associated_symbol_id(),
                         resolution_span,
                         &inst,
                         self.handler,
@@ -129,7 +131,7 @@ impl Checker<'_> {
 
                 self.environment
                     .check_instantiated_instance_arguments(
-                        assoc_symbol.id(),
+                        assoc_symbol.impl_associated_symbol_id(),
                         &instances,
                         resolution_span,
                         &inst,

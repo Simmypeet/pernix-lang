@@ -198,6 +198,11 @@ impl IntermediateAdtImplSymbol {
     pub fn into_impl_associated_generic_arguments(self) -> GenericArguments {
         self.impl_associated_generic_arguments
     }
+
+    #[must_use]
+    pub const fn impl_associated_generic_arguments(&self) -> &GenericArguments {
+        &self.impl_associated_generic_arguments
+    }
 }
 
 /// Represents a resolution of a qualified identifier syntax.
