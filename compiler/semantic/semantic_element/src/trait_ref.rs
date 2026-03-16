@@ -109,11 +109,9 @@ pub async fn get_trait_ref(
                 .deref()
                 .clone();
 
-            let instantiation = Box::pin(
-                instance_associated
-                    .create_instance_associated_instantiation(engine),
-            )
-            .await?;
+            let instantiation =
+                Box::pin(instance_associated.create_instantiation(engine))
+                    .await?;
 
             trait_ref.instantiate(&instantiation);
 
@@ -128,7 +126,7 @@ pub async fn get_trait_ref(
 /// `InstanceAssociated` and the generic arguments supplied to this
 /// `InstanceAssociated`.
 #[extend]
-pub async fn create_instance_associated_instantiation(
+pub async fn create_instantiation(
     self: &InstanceAssociated,
     engine: &TrackedEngine,
 ) -> Option<Instantiation> {

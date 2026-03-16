@@ -5,7 +5,7 @@ use pernixc_resolution::{
     Resolver, generic_parameter_namespace::get_generic_parameter_namespace,
 };
 use pernixc_semantic_element::{
-    instance_associated_value, trait_ref::get_trait_ref,
+    instance_associated_value, trait_ref::get_trait_ref_of_instance_symbol,
 };
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::syntax::get_instance_associated_value_syntax;
@@ -52,7 +52,7 @@ impl build::Build for instance_associated_value::Key {
 
         // checks the the instance's trait_ref matches the expected
         let Some(expected_trait_ref) =
-            engine.get_trait_ref(key.symbol_id).await
+            engine.get_trait_ref_of_instance_symbol(key.symbol_id).await
         else {
             // the trait_ref of this symbol is malformed, so we can't do
             // any more checks, but we can still return the instance value

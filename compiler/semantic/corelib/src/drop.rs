@@ -114,16 +114,15 @@ impl CoreLibInitializer<'_> {
                 where_clause::Key { symbol_id: drop_trait_id },
                 self.input_session.intern_unsized([where_clause::Predicate {
                     predicate: predicate::Predicate::NegativeMarker(
-                        NegativeMarker {
-                            marker_id: TargetID::CORE
-                                .make_global(copy_marker_id),
-                            generic_arguments: GenericArguments::new(
+                        NegativeMarker::new(
+                            TargetID::CORE.make_global(copy_marker_id),
+                            GenericArguments::new(
                                 Vec::new(),
                                 vec![t_ty.clone()],
                                 Vec::new(),
                                 Vec::new(),
                             ),
-                        },
+                        ),
                     ),
                     span: None,
                 }]),

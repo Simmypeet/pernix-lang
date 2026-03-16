@@ -22,6 +22,7 @@ use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
     effect,
+    generic_arguments::ZipRef,
     generic_parameters::get_generic_parameters,
     instance::Instance,
     lifetime::{Forall, FromSemanticElement, GeneratedForall, Lifetime},
@@ -45,17 +46,17 @@ async fn to_effect(
     engine: &TrackedEngine,
     resolution: Resolution,
 ) -> Result<effect::Unit, Resolution> {
-    let Resolution::Generic(symbol) = resolution else {
+    let Resolution::GenericSymbol(symbol) = resolution else {
         return Err(resolution);
     };
 
-    let kind = engine.get_kind(symbol.id).await;
+    let kind = engine.get_kind(symbol.id()).await;
 
     if kind != Kind::Effect {
-        return Err(Resolution::Generic(symbol));
+        return Err(Resolution::GenericSymbol(symbol));
     }
 
-    Ok(effect::Unit::new(symbol.id, symbol.generic_arguments))
+    Ok(effect::Unit::from_symbol(symbol))
 }
 
 struct ElidedForallLifetimeProvider {
@@ -194,42 +195,56 @@ async fn effect_equivalent(
 
     // lifetimes are always compatible with each other
 
-    for (ty_a, ty_b) in a
-        .generic_arguments()
-        .types()
-        .iter()
-        .zip(b.generic_arguments().types().iter())
-    {
-        let found_diff = env
-            .query(&Unification::new(
-                ty_a.clone(),
-                ty_b.clone(),
-                LifetimeUnifyingPredicate,
-            ))
-            .await
-            .map_err(|e| e.report_as_type_calculating_overflow(span, handler))?
-            .is_none();
+    for zip in a.generic_arguments().zip_ref(b.generic_arguments()) {
+        let found_diff = match zip {
+            ZipRef::Lifetime(a, b) => env
+                .query(&Unification::new(
+                    a.clone(),
+                    b.clone(),
+                    LifetimeUnifyingPredicate,
+                ))
+                .await
+                .map_err(|e| {
+                    e.report_as_type_calculating_overflow(span, handler)
+                })?
+                .is_none(),
 
-        if found_diff {
-            return Ok(false);
-        }
-    }
+            ZipRef::Type(a, b) => env
+                .query(&Unification::new(
+                    a.clone(),
+                    b.clone(),
+                    LifetimeUnifyingPredicate,
+                ))
+                .await
+                .map_err(|e| {
+                    e.report_as_type_calculating_overflow(span, handler)
+                })?
+                .is_none(),
 
-    for (const_a, const_b) in a
-        .generic_arguments()
-        .constants()
-        .iter()
-        .zip(b.generic_arguments().constants().iter())
-    {
-        let found_diff = env
-            .query(&Unification::new(
-                const_a.clone(),
-                const_b.clone(),
-                LifetimeUnifyingPredicate,
-            ))
-            .await
-            .map_err(|e| e.report_as_type_calculating_overflow(span, handler))?
-            .is_none();
+            ZipRef::Constant(a, b) => env
+                .query(&Unification::new(
+                    a.clone(),
+                    b.clone(),
+                    LifetimeUnifyingPredicate,
+                ))
+                .await
+                .map_err(|e| {
+                    e.report_as_type_calculating_overflow(span, handler)
+                })?
+                .is_none(),
+
+            ZipRef::Instance(a, b) => env
+                .query(&Unification::new(
+                    a.clone(),
+                    b.clone(),
+                    LifetimeUnifyingPredicate,
+                ))
+                .await
+                .map_err(|e| {
+                    e.report_as_type_calculating_overflow(span, handler)
+                })?
+                .is_none(),
+        };
 
         if found_diff {
             return Ok(false);

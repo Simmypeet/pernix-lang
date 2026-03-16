@@ -1,7 +1,7 @@
 use linkme::distributed_slice;
 use pernixc_arena::ID;
 use pernixc_handler::{Handler, Storage};
-use pernixc_hash::{HashMap, HashSet};
+use pernixc_hash::HashSet;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::{PERNIX_PROGRAM, TrackedEngine};
 use pernixc_resolution::{
@@ -12,11 +12,9 @@ use pernixc_resolution::{
 };
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
-    accessibility::symbol_accessible,
     final_implements::get_is_implements_final,
     kind::{Kind, get_kind},
     member::get_members,
-    name::get_name,
     syntax::{
         get_implements_member_access_modifier,
         get_implements_qualified_identifier,
@@ -116,8 +114,8 @@ impl crate::build::Build for Key {
         .await;
 
         // performs extra necessary check
-        if let Resolution::Generic(generic) = &resolution {
-            let kind = engine.get_kind(generic.id).await;
+        if let Resolution::GenericSymbol(symbol) = &resolution {
+            let kind = engine.get_kind(symbol.id()).await;
 
             #[allow(clippy::match_same_arms)]
             match kind {
@@ -131,11 +129,6 @@ impl crate::build::Build for Key {
                     .await;
                 }
 
-                Kind::Trait => {
-                    check_trait(engine, key.symbol_id, generic.id, &storage)
-                        .await;
-                }
-
                 Kind::Struct | Kind::Enum => {
                     check_adt(engine, key.symbol_id, &storage).await;
                 }
@@ -147,7 +140,7 @@ impl crate::build::Build for Key {
             check_unused_generic_parameters(
                 engine,
                 key.symbol_id,
-                &generic.generic_arguments,
+                symbol.generic_arguments(),
                 &storage,
             )
             .await;
@@ -168,8 +161,8 @@ async fn check_valid_resolution(
     storage: &Storage<diagnostic::Diagnostic>,
 ) {
     match resolution {
-        Resolution::Generic(generic) => {
-            let kind = tracked_engine.get_kind(generic.id).await;
+        Resolution::GenericSymbol(symbol) => {
+            let kind = tracked_engine.get_kind(symbol.id()).await;
 
             match kind {
                 Kind::Marker | Kind::Struct | Kind::Enum => {
@@ -179,7 +172,7 @@ async fn check_valid_resolution(
                 Kind::Type => {
                     // if it's a type, it must be a struct/enum
                     let ty = match tracked_engine
-                        .resolution_to_type(Resolution::Generic(generic))
+                        .resolution_to_type(Resolution::GenericSymbol(symbol))
                         .await
                     {
                         Ok(ty) => ty,
@@ -208,7 +201,7 @@ async fn check_valid_resolution(
                         diagnostic::Diagnostic::InvalidSymbolForImplements(
                             InvalidSymbolForImplements {
                                 qualified_identifier_span: qualified_identifier,
-                                found: Resolution::Generic(generic),
+                                found: Resolution::GenericSymbol(symbol),
                             },
                         ),
                     );
@@ -272,147 +265,6 @@ async fn check_marker(
                 },
             ),
         );
-    }
-}
-
-#[allow(clippy::too_many_lines)]
-async fn check_trait(
-    engine: &TrackedEngine,
-    implements: Global<pernixc_symbol::ID>,
-    trait_id: Global<pernixc_symbol::ID>,
-    storage: &Storage<diagnostic::Diagnostic>,
-) {
-    // no need to check the member
-    if engine.get_kind(implements).await != Kind::PositiveImplementation {
-        return;
-    }
-
-    let implements_members = engine.get_members(implements).await;
-    let trait_members = engine.get_members(trait_id).await;
-
-    // Maps member name to (implementation_member_id, trait_member_id)
-    let mut implemented_member_by_name = HashMap::default();
-
-    // Check each implementation member
-    for implements_member_id in implements_members
-        .member_ids_by_name
-        .values()
-        .copied()
-        .map(|x| implements.target_id.make_global(x))
-    {
-        let member_name = engine.get_name(implements_member_id).await;
-        let trait_equivalent_id = trait_members
-            .member_ids_by_name
-            .get(&member_name)
-            .map(|&id| trait_id.target_id.make_global(id));
-
-        // Check if trait implementation members have access modifiers (they
-        // shouldn't)
-        let access_modifier = engine
-            .get_implements_member_access_modifier(implements_member_id)
-            .await;
-        if access_modifier.is_some() {
-            storage.receive(
-                diagnostic::Diagnostic::TraitMemberCannotHaveAccessModifier(
-                    diagnostic::TraitMemberCannotHaveAccessModifier {
-                        implementation_member_id: implements_member_id,
-                    },
-                ),
-            );
-        }
-
-        if let Some(trait_member_id) = trait_equivalent_id {
-            // Check if the kinds match
-            let impl_kind = engine.get_kind(implements_member_id).await;
-            let trait_kind = engine.get_kind(trait_member_id).await;
-
-            let kinds_match = matches!(
-                (trait_kind, impl_kind),
-                (
-                    Kind::TraitAssociatedFunction,
-                    Kind::ImplementationAssociatedFunction
-                ) | (
-                    Kind::TraitAssociatedType,
-                    Kind::ImplementationAssociatedType
-                ) | (
-                    Kind::TraitAssociatedConstant,
-                    Kind::ImplementationAssociatedConstant
-                )
-            );
-
-            if !kinds_match {
-                storage.receive(
-                    diagnostic::Diagnostic::TraitMemberKindMismatch(
-                        diagnostic::TraitMemberKindMismatch {
-                            trait_member_id,
-                            implementation_member_id: implements_member_id,
-                        },
-                    ),
-                );
-            }
-
-            // Check if the trait member is accessible from the implementation
-            // site
-            let is_accessible =
-                engine.symbol_accessible(implements, trait_member_id).await;
-
-            if !is_accessible {
-                storage.receive(
-                    diagnostic::Diagnostic::InaccessibleTraitMember(
-                        diagnostic::InaccessibleTraitMember {
-                            trait_member_id,
-                            implementation_member_id: implements_member_id,
-                        },
-                    ),
-                );
-            }
-
-            assert!(
-                implemented_member_by_name
-                    .insert(
-                        member_name.clone(),
-                        (implements_member_id, Some(trait_member_id)),
-                    )
-                    .is_none(),
-                "should've no duplication"
-            );
-        } else {
-            // Implementation member doesn't correspond to any trait member
-            storage.receive(
-                diagnostic::Diagnostic::ExtraneousImplementationMember(
-                    diagnostic::ExtraneousImplementationMember {
-                        implementation_member_id: implements_member_id,
-                    },
-                ),
-            );
-
-            implemented_member_by_name
-                .insert(member_name.clone(), (implements_member_id, None));
-        }
-    }
-
-    // Check for missing trait members
-    let mut unimplemented_trait_members = Vec::new();
-
-    for (trait_member_name, &trait_member_id) in
-        &trait_members.member_ids_by_name
-    {
-        let trait_member_global_id =
-            trait_id.target_id.make_global(trait_member_id);
-
-        if !implemented_member_by_name.contains_key(trait_member_name) {
-            unimplemented_trait_members.push(trait_member_global_id);
-        }
-    }
-
-    // Emit a single diagnostic for all unimplemented members if any
-    if !unimplemented_trait_members.is_empty() {
-        storage.receive(diagnostic::Diagnostic::TraitMemberNotImplemented(
-            diagnostic::TraitMemberNotImplemented {
-                unimplemented_trait_member_ids: unimplemented_trait_members,
-                implementation_id: implements,
-            },
-        ));
     }
 }
 
@@ -734,8 +586,8 @@ impl
             engine.query(&Key { symbol_id: key.symbol_id }).await?;
 
         resolution
-            .as_generic()
-            .map(|x| engine.intern(x.generic_arguments.clone()))
+            .as_generic_symbol()
+            .map(|x| engine.intern(x.generic_arguments().clone()))
     }
 }
 

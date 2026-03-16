@@ -1,6 +1,5 @@
 use std::fmt::Write;
 
-use derive_new::new;
 use pernixc_target::Global;
 use qbice::{Decode, Encode, StableHash};
 
@@ -22,11 +21,23 @@ use crate::{
     StableHash,
     Encode,
     Decode,
-    new,
 )]
 pub struct Positive(Symbol);
 
 impl Positive {
+    /// Creates a new [`Positive`] predicate from the [`Symbol`].
+    #[must_use]
+    pub const fn from_symbol(symbol: Symbol) -> Self { Self(symbol) }
+
+    /// Creates a new [`Positive`] predicate
+    #[must_use]
+    pub fn new(
+        marker_id: Global<pernixc_symbol::ID>,
+        generic_arguments: GenericArguments,
+    ) -> Self {
+        Self(Symbol::new(marker_id, generic_arguments))
+    }
+
     /// Checks if there's an error in the generic arguments.
     #[must_use]
     pub fn contains_error(&self) -> bool {
@@ -88,11 +99,23 @@ impl crate::display::Display for Positive {
     StableHash,
     Encode,
     Decode,
-    new,
 )]
 pub struct Negative(Symbol);
 
 impl Negative {
+    /// Creates a new [`Negative`] predicate from the [`Symbol`].
+    #[must_use]
+    pub const fn from_symbol(symbol: Symbol) -> Self { Self(symbol) }
+
+    /// Creates a new [`Negative`] predicate
+    #[must_use]
+    pub fn new(
+        marker_id: Global<pernixc_symbol::ID>,
+        generic_arguments: GenericArguments,
+    ) -> Self {
+        Self(Symbol::new(marker_id, generic_arguments))
+    }
+
     /// Checks if there's an error in the generic arguments.
     #[must_use]
     pub fn contains_error(&self) -> bool {

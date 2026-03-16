@@ -8,12 +8,10 @@ use linkme::distributed_slice;
 use pernixc_handler::{Handler, Storage};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
-use pernixc_resolution::qualified_identifier::{
-    InstanceAssociatedSymbol, Resolution,
-};
+use pernixc_resolution::qualified_identifier::Resolution;
 use pernixc_semantic_element::{
     instance_associated_value,
-    trait_ref::{self, get_trait_ref_of_instance},
+    trait_ref::{self, create_instantiation},
 };
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
@@ -22,11 +20,10 @@ use pernixc_symbol::{
 };
 use pernixc_target::Global;
 use pernixc_term::{
-    generic_arguments::GenericArguments,
+    self,
+    generic_arguments::Symbol,
     generic_parameters::get_generic_parameters,
-    instantiation::{
-        get_instantiation, get_instantiation_for_associated_symbol,
-    },
+    instance::InstanceAssociated,
     predicate::{self, Outlives, Predicate},
     r#type::Type,
 };
@@ -76,16 +73,15 @@ impl Checker<'_> {
                 .await;
             }
 
-            Resolution::Generic(generic) => {
+            Resolution::GenericSymbol(generic) => {
                 self.check_instantiation_predicates_by_generic_arguments(
-                    generic.id,
-                    generic.generic_arguments.clone(),
+                    generic,
                     resolution_span,
                 )
                 .await;
             }
 
-            Resolution::MemberGeneric(member_generic) => {
+            Resolution::GenericAssociatedSymbol(assoc_symbol) => {
                 // additional adt implementation check
 
                 // the trait implementation doesn't need to be checked here
@@ -93,17 +89,17 @@ impl Checker<'_> {
                 let symbol_kind = self
                     .environment
                     .tracked_engine()
-                    .get_kind(member_generic.id)
+                    .get_kind(assoc_symbol.id())
                     .await;
 
-                let mut base_instantiation = match symbol_kind {
+                let inst = match symbol_kind {
                     Kind::ImplementationAssociatedConstant
                     | Kind::ImplementationAssociatedFunction
                     | Kind::ImplementationAssociatedType => {
                         let impl_id = self
                             .environment
                             .tracked_engine()
-                            .get_parent_global(member_generic.id)
+                            .get_parent_global(assoc_symbol.id())
                             .await
                             .unwrap();
 
@@ -112,7 +108,7 @@ impl Checker<'_> {
                             .wf_check_implementation(
                                 impl_id,
                                 resolution_span,
-                                &member_generic.parent_generic_arguments,
+                                assoc_symbol.parent_generic_arguments(),
                                 self.handler,
                             )
                             .await
@@ -120,62 +116,48 @@ impl Checker<'_> {
                             return;
                         };
 
-                        implementation_check.into_instantiation()
+                        let mut inst =
+                            implementation_check.into_instantiation();
+
+                        inst.append_from_generic_arguments(
+                            assoc_symbol.member_generic_arguments(),
+                            assoc_symbol.id(),
+                            &*self
+                                .tracked_engine()
+                                .get_generic_parameters(assoc_symbol.id())
+                                .await,
+                        );
+
+                        inst
                     }
 
                     _ => {
-                        let parent = self
-                            .environment
-                            .tracked_engine()
-                            .get_parent_global(member_generic.id)
+                        assoc_symbol
+                            .create_instantiation(self.tracked_engine())
                             .await
-                            .unwrap();
-
-                        self.environment
-                            .tracked_engine()
-                            .get_instantiation(
-                                parent,
-                                member_generic.parent_generic_arguments.clone(),
-                            )
-                            .await
-                            .unwrap()
                     }
                 };
 
-                let generic_parameters = self
-                    .environment
-                    .tracked_engine()
-                    .get_generic_parameters(member_generic.id)
-                    .await;
-
-                base_instantiation
-                    .append_from_generic_arguments(
-                        member_generic.member_generic_arguments.clone(),
-                        member_generic.id,
-                        &generic_parameters,
-                    )
-                    .unwrap();
-
-                let instances = member_generic
-                    .member_generic_arguments
+                let instances = assoc_symbol
+                    .member_generic_arguments()
                     .instances()
                     .to_vec();
 
                 self.environment
                     .wf_check_instantiation(
-                        member_generic.id,
+                        assoc_symbol.id(),
                         resolution_span,
-                        &base_instantiation,
+                        &inst,
                         self.handler,
                     )
                     .await;
 
                 self.environment
                     .check_instantiated_instance_arguments(
-                        member_generic.id,
+                        assoc_symbol.id(),
                         &instances,
                         resolution_span,
-                        &base_instantiation,
+                        &inst,
                         self.handler,
                     )
                     .await;
@@ -187,36 +169,25 @@ impl Checker<'_> {
     /// are reported to the `handler`.
     pub(super) async fn check_instantiation_predicates_of_instance_associated(
         &self,
-        instance_associated: &InstanceAssociatedSymbol,
+        instance_associated: &InstanceAssociated,
         instantiation_span: &RelativeSpan,
     ) {
-        let instances =
-            instance_associated.generic_arguments.instances().to_vec();
+        let instances = instance_associated
+            .associated_instance_generic_arguments()
+            .instances()
+            .to_vec();
 
-        let Some(trait_ref) = self
-            .environment
-            .tracked_engine()
-            .get_trait_ref_of_instance(&instance_associated.instance)
+        let Some(inst) = instance_associated
+            .create_instantiation(self.tracked_engine())
             .await
         else {
             return;
         };
 
-        let inst = self
-            .environment
-            .tracked_engine()
-            .get_instantiation_for_associated_symbol(
-                instance_associated.trait_associated_symbol_id,
-                trait_ref.into_generic_arguments(),
-                instance_associated.generic_arguments.clone(),
-            )
-            .await
-            .unwrap();
-
         let _ = self
             .environment
             .wf_check_instantiation(
-                instance_associated.trait_associated_symbol_id,
+                instance_associated.trait_associated_symbol_id(),
                 instantiation_span,
                 &inst,
                 self.handler,
@@ -226,7 +197,7 @@ impl Checker<'_> {
         let _ = self
             .environment
             .check_instantiated_instance_arguments(
-                instance_associated.trait_associated_symbol_id,
+                instance_associated.trait_associated_symbol_id(),
                 &instances,
                 instantiation_span,
                 &inst,
@@ -239,23 +210,19 @@ impl Checker<'_> {
     /// are reported to the `handler`.
     pub(super) async fn check_instantiation_predicates_by_generic_arguments(
         &self,
-        instantiated: Global<pernixc_symbol::ID>,
-        generic_arguments: GenericArguments,
+        symbol: &Symbol,
         instantiation_span: &RelativeSpan,
     ) {
-        let instances = generic_arguments.instances().to_vec();
+        let instances = symbol.generic_arguments().instances().to_vec();
 
-        let inst = self
-            .environment
-            .tracked_engine()
-            .get_instantiation(instantiated, generic_arguments)
-            .await
-            .unwrap();
+        let inst = symbol
+            .create_instantiation(self.environment.tracked_engine())
+            .await;
 
         let _ = self
             .environment
             .wf_check_instantiation(
-                instantiated,
+                symbol.id(),
                 instantiation_span,
                 &inst,
                 self.handler,
@@ -265,13 +232,17 @@ impl Checker<'_> {
         let _ = self
             .environment
             .check_instantiated_instance_arguments(
-                instantiated,
+                symbol.id(),
                 &instances,
                 instantiation_span,
                 &inst,
                 self.handler,
             )
             .await;
+    }
+
+    pub(super) fn tracked_engine(&self) -> &TrackedEngine {
+        self.environment.tracked_engine()
     }
 
     /// Do predicates check for the given type occurrences.
