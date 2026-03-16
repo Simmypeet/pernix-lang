@@ -15,7 +15,7 @@ use pernixc_semantic_element::{
 };
 use pernixc_symbol::kind::{Kind, get_kind};
 use pernixc_target::Global;
-use pernixc_term::{instantiation::get_instantiation, r#type::Type};
+use pernixc_term::r#type::Type;
 use pernixc_type_system::{
     UnrecoverableError, environment::Environment, normalizer::Normalizer,
 };
@@ -254,8 +254,8 @@ impl Assigned {
                     ) => (projection, ty),
                 };
 
-                let (struct_id, generic_arguments) = match ty {
-                    Type::Symbol(symbol) => symbol.destructure(),
+                let symbol = match ty {
+                    Type::Symbol(symbol) => symbol,
 
                     ty => {
                         panic!("expected a struct type, found `{ty:?}`");
@@ -263,18 +263,16 @@ impl Assigned {
                 };
 
                 assert_eq!(
-                    environment.tracked_engine().get_kind(struct_id).await,
+                    environment.tracked_engine().get_kind(symbol.id()).await,
                     Kind::Struct
                 );
 
-                let inst = environment
-                    .tracked_engine()
-                    .get_instantiation(struct_id, generic_arguments)
-                    .await
-                    .map_err(|_| UnrecoverableError::Reported)?;
+                let inst = symbol
+                    .create_instantiation(environment.tracked_engine())
+                    .await;
 
                 let fields =
-                    environment.tracked_engine().get_fields(struct_id).await;
+                    environment.tracked_engine().get_fields(symbol.id()).await;
 
                 if let Self::Whole(whole_proj) = proj {
                     // if have concluded, we should've returned earlier
@@ -426,19 +424,17 @@ impl Assigned {
                     ) => (projection, ty),
                 };
 
-                let (enum_id, generic_arguments) = match ty {
-                    Type::Symbol(symbol) => symbol.destructure(),
+                let symbol = match ty {
+                    Type::Symbol(symbol) => symbol,
 
                     ty => {
                         panic!("expected an enum type, found `{ty:?}`");
                     }
                 };
 
-                let inst = environment
-                    .tracked_engine()
-                    .get_instantiation(enum_id, generic_arguments)
-                    .await
-                    .map_err(|_| UnrecoverableError::Reported)?;
+                let inst = symbol
+                    .create_instantiation(environment.tracked_engine())
+                    .await;
 
                 if let Self::Whole(whole_proj) = proj {
                     // if have concluded, we should've returned earlier

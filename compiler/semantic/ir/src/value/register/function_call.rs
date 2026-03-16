@@ -164,6 +164,15 @@ impl FunctionCall {
 
         Some(instantiation)
     }
+
+    #[must_use]
+    pub fn arguments(&self) -> &[Value] { &self.arguments }
+
+    pub fn effect_arguments(
+        &self,
+    ) -> impl Iterator<Item = (ID<effect::Unit>, &EffectHandlerArgument)> {
+        self.effect_arguments.iter().map(|x| (*x.0, x.1))
+    }
 }
 
 impl crate::visitor::Element for FunctionCall {

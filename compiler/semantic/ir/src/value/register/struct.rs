@@ -56,6 +56,14 @@ impl Struct {
     pub const fn struct_id(&self) -> Global<pernixc_symbol::ID> {
         self.symbol.id()
     }
+
+    #[must_use]
+    pub fn get_initializer_by_field_id(
+        &self,
+        field_id: ID<Field>,
+    ) -> Option<&Value> {
+        self.initializers_by_field_id.get(&field_id)
+    }
 }
 
 impl crate::visitor::Element for Struct {

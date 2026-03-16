@@ -6,9 +6,6 @@ use pernixc_lexical::tree::RelativeSpan;
 use pernixc_semantic_element::{
     variance::Variance, variant::get_variant_associated_type,
 };
-use pernixc_symbol::parent::get_parent;
-use pernixc_target::Global;
-use pernixc_term::instantiation::get_instantiation;
 use pernixc_type_system::{UnrecoverableError, normalizer::Normalizer};
 
 use crate::{Region, context::Context, subset::Changes};
@@ -20,21 +17,15 @@ impl<N: Normalizer> Context<'_, N> {
         variant: &Variant,
         span: &RelativeSpan,
     ) -> Result<Changes, UnrecoverableError> {
-        let enum_id = Global::new(
-            variant.variant_id.target_id,
-            self.tracked_engine().get_parent(variant.variant_id).await.unwrap(),
-        );
+        let enum_id = variant.parent_enum_id(self.tracked_engine()).await;
 
         let variant_sym = self
             .tracked_engine()
-            .get_variant_associated_type(variant.variant_id)
+            .get_variant_associated_type(variant.variant_id())
             .await;
 
-        let instantiation = self
-            .tracked_engine()
-            .get_instantiation(enum_id, variant.generic_arguments.clone())
-            .await
-            .map_err(|_| UnrecoverableError::Reported)?;
+        let instantiation =
+            variant.create_instantiation(self.tracked_engine()).await;
 
         let mut lifetime_constraints = BTreeSet::new();
 
@@ -43,11 +34,9 @@ impl<N: Normalizer> Context<'_, N> {
             let mut associated_type = (*variant_sym).clone();
             instantiation.instantiate(&mut associated_type);
 
-            let associated_value = variant.associated_value.as_ref().unwrap();
-
             self.subtypes_value(
                 associated_type,
-                associated_value,
+                variant.associated_value().unwrap(),
                 Variance::Covariant,
                 &mut lifetime_constraints,
             )

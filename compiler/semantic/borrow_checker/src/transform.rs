@@ -3,7 +3,7 @@
 
 use pernixc_ir::{
     IR,
-    transform::{Element, Transformable, Transformer},
+    transform::{Element, Transformer},
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
@@ -82,47 +82,28 @@ fn transform_lifetime(
     }
 }
 
-impl Transformer<Lifetime> for ToBorrowTransformer {
+impl Transformer for ToBorrowTransformer {
     async fn transform(
         &mut self,
-        term: &mut Lifetime,
-        _: <Lifetime as Transformable>::Source,
-        _: RelativeSpan,
+        mut resolution: pernixc_ir::transform::ResolutionMut<'_>,
+        _span: RelativeSpan,
     ) {
-        transform_lifetime(term, &mut self.generator);
-    }
-}
-
-impl Transformer<Type> for ToBorrowTransformer {
-    async fn transform(
-        &mut self,
-        term: &mut Type,
-        _: <Type as Transformable>::Source,
-        _: RelativeSpan,
-    ) {
-        visitor::accept_recursive_mut(term, self);
-    }
-}
-
-impl Transformer<Constant> for ToBorrowTransformer {
-    async fn transform(
-        &mut self,
-        term: &mut Constant,
-        _: <Constant as Transformable>::Source,
-        _: RelativeSpan,
-    ) {
-        visitor::accept_recursive_mut(term, self);
-    }
-}
-
-impl Transformer<Instance> for ToBorrowTransformer {
-    async fn transform(
-        &mut self,
-        term: &mut Instance,
-        _: <Instance as Transformable>::Source,
-        _: RelativeSpan,
-    ) {
-        visitor::accept_recursive_mut(term, self);
+        for term in resolution.iter_all_term_mut() {
+            match term {
+                pernixc_term::TermMut::Constant(constant) => {
+                    visitor::accept_recursive_mut(constant, self);
+                }
+                pernixc_term::TermMut::Lifetime(lifetime) => {
+                    transform_lifetime(lifetime, &mut self.generator);
+                }
+                pernixc_term::TermMut::Type(ty) => {
+                    visitor::accept_recursive_mut(ty, self);
+                }
+                pernixc_term::TermMut::Instance(instance) => {
+                    visitor::accept_recursive_mut(instance, self);
+                }
+            }
+        }
     }
 }
 

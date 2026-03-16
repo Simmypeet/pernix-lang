@@ -55,6 +55,16 @@ impl Variant {
     ) -> Instantiation {
         self.symbol.create_instantiation(engine).await
     }
+
+    #[must_use]
+    pub const fn variant_id(&self) -> Global<pernixc_symbol::ID> {
+        self.symbol.variant_id()
+    }
+
+    #[must_use]
+    pub const fn associated_value(&self) -> Option<&Value> {
+        self.associated_value.as_ref()
+    }
 }
 
 impl Variant {
