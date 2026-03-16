@@ -81,62 +81,70 @@ impl Checker<'_> {
                 .await;
             }
 
-            Resolution::GenericAssociatedSymbol(assoc_symbol) => {
-                // additional adt implementation check
-
-                // the trait implementation doesn't need to be checked here
-                // because it can never be referred directly in the source code
-                let symbol_kind = self
+            Resolution::IntermediateAdtImplSymbol(assoc_symbol) => {
+                let impl_id = self
                     .environment
                     .tracked_engine()
-                    .get_kind(assoc_symbol.id())
+                    .get_parent_global(assoc_symbol.id())
+                    .await
+                    .unwrap();
+
+                let Ok(Some(implementation_check)) = self
+                    .environment
+                    .wf_check_implementation(
+                        impl_id,
+                        resolution_span,
+                        assoc_symbol.parent_generic_arguments(),
+                        self.handler,
+                    )
+                    .await
+                else {
+                    return;
+                };
+
+                let mut inst = implementation_check.into_instantiation();
+
+                inst.append_from_generic_arguments(
+                    assoc_symbol.member_generic_arguments(),
+                    assoc_symbol.id(),
+                    &*self
+                        .tracked_engine()
+                        .get_generic_parameters(assoc_symbol.id())
+                        .await,
+                );
+
+                let instances = assoc_symbol
+                    .member_generic_arguments()
+                    .instances()
+                    .to_vec();
+
+                self.environment
+                    .wf_check_instantiation(
+                        assoc_symbol.id(),
+                        resolution_span,
+                        &inst,
+                        self.handler,
+                    )
                     .await;
 
-                let inst = match symbol_kind {
-                    Kind::ImplementationAssociatedConstant
-                    | Kind::ImplementationAssociatedFunction
-                    | Kind::ImplementationAssociatedType => {
-                        let impl_id = self
-                            .environment
-                            .tracked_engine()
-                            .get_parent_global(assoc_symbol.id())
-                            .await
-                            .unwrap();
+                self.environment
+                    .check_instantiated_instance_arguments(
+                        assoc_symbol.id(),
+                        &instances,
+                        resolution_span,
+                        &inst,
+                        self.handler,
+                    )
+                    .await;
+            }
 
-                        let Ok(Some(implementation_check)) = self
-                            .environment
-                            .wf_check_implementation(
-                                impl_id,
-                                resolution_span,
-                                assoc_symbol.parent_generic_arguments(),
-                                self.handler,
-                            )
-                            .await
-                        else {
-                            return;
-                        };
+            Resolution::GenericAssociatedSymbol(assoc_symbol) => {
+                // the trait implementation doesn't need to be checked here
+                // because it can never be referred directly in the source code
 
-                        let mut inst =
-                            implementation_check.into_instantiation();
-
-                        inst.append_from_generic_arguments(
-                            assoc_symbol.member_generic_arguments(),
-                            assoc_symbol.id(),
-                            &*self
-                                .tracked_engine()
-                                .get_generic_parameters(assoc_symbol.id())
-                                .await,
-                        );
-
-                        inst
-                    }
-
-                    _ => {
-                        assoc_symbol
-                            .create_instantiation(self.tracked_engine())
-                            .await
-                    }
-                };
+                let inst = assoc_symbol
+                    .create_instantiation(self.tracked_engine())
+                    .await;
 
                 let instances = assoc_symbol
                     .member_generic_arguments()

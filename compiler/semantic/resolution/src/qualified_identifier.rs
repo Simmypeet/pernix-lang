@@ -17,7 +17,7 @@ use pernixc_symbol::{
     kind::{Kind, get_kind},
     member::{get_member_by_name, get_members},
     name::get_qualified_name,
-    parent::{get_closest_module_id, scope_walker},
+    parent::{get_closest_module_id, get_parent_global, scope_walker},
 };
 use pernixc_syntax::{
     Identifier, QualifiedIdentifier, QualifiedIdentifierRoot, SimplePath,
@@ -32,6 +32,7 @@ use pernixc_term::{
     },
     generic_parameters::get_generic_parameters,
     instance::{Instance, InstanceAssociated},
+    instantiation::Instantiation,
     r#type::Type,
 };
 use qbice::{Decode, Encode, Identifiable, StableHash};
@@ -39,10 +40,130 @@ use qbice::{Decode, Encode, Identifiable, StableHash};
 use crate::{
     Error, Resolver,
     diagnostic::{
-        Diagnostic, NoGenericArgumentsRequired, NoMemberInFunction,
+        Diagnostic, NoGenericArgumentsRequired, NoMemberInSymbol,
         NoMemberInType, SymbolIsNotAccessible, SymbolNotFound, ThisNotFound,
     },
 };
+
+/// Represents a resolution to the variant.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+)]
+pub struct Variant(Symbol);
+
+impl Variant {
+    /// Creates a new [`Variant`] from the given [`Symbol`].
+    #[must_use]
+    pub const fn from_symbol(symbol: Symbol) -> Self { Self(symbol) }
+
+    /// Creates a new [`Variant`]
+    #[must_use]
+    pub fn new(
+        variant_id: Global<pernixc_symbol::ID>,
+        generic_arguments: GenericArguments,
+    ) -> Self {
+        Self(Symbol::new(variant_id, generic_arguments))
+    }
+
+    /// Returns the ID of the resolved variant symbol.
+    #[must_use]
+    pub const fn variant_id(&self) -> Global<pernixc_symbol::ID> { self.0.id() }
+
+    /// Returns the generic arguments supplied to the parent enum of the variant
+    /// symbol.
+    #[must_use]
+    pub const fn enum_generic_arguments(&self) -> &GenericArguments {
+        self.0.generic_arguments()
+    }
+
+    /// Returns the type of the variant.
+    pub async fn create_enum_type(&self, engine: &TrackedEngine) -> Type {
+        let enum_id =
+            engine.get_parent_global(self.variant_id()).await.unwrap();
+
+        Type::new_symbol(enum_id, self.0.generic_arguments().clone())
+    }
+
+    /// Creates [`Instantiation`] for this variant.
+    pub async fn create_instantiation(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Instantiation {
+        self.0.create_instantiation_parent(engine).await
+    }
+}
+
+/// Represents a resolution to an ADT implements member.
+///
+/// This is the intermediate resolution, which can't be directly used to create
+/// an [`Instantiation`] to the implements associated symbol.
+///
+/// For example,
+///
+/// ```pnx
+/// public struct Test[T, U]:
+///     pass
+///
+///
+/// implements[T] Test[T]:
+///     public function inner()
+/// ```
+///
+/// When will resolve for `Test[int32, bool]::inner`, the resolution would be
+/// valid and produced this struct where [`Self::adt_generic_arguments`] is
+/// `[int32, bool]` and [`Self::impl_associated_generic_arguments`] is `[int32]`
+/// .
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+)]
+pub struct IntermediateAdtImplSymbol {
+    adt_generic_arguments: GenericArguments,
+    impl_associated_generic_arguments: GenericArguments,
+    impl_associated_symbol_id: Global<pernixc_symbol::ID>,
+}
+
+impl IntermediateAdtImplSymbol {
+    /// Creates a new [`IntermediateAdtImplSymbol`] with the given generic
+    /// arguments and the symbol ID of the implements associated symbol.
+    #[must_use]
+    pub const fn new(
+        adt_generic_arguments: GenericArguments,
+        impl_associated_generic_arguments: GenericArguments,
+        impl_associated_symbol_id: Global<pernixc_symbol::ID>,
+    ) -> Self {
+        Self {
+            adt_generic_arguments,
+            impl_associated_generic_arguments,
+            impl_associated_symbol_id,
+        }
+    }
+
+    /// Returns the impl associated symbol ID.
+    #[must_use]
+    pub const fn impl_associated_symbol_id(
+        &self,
+    ) -> Global<pernixc_symbol::ID> {
+        self.impl_associated_symbol_id
+    }
+}
 
 /// Represents a resolution of a qualified identifier syntax.
 #[derive(
@@ -64,10 +185,13 @@ pub enum Resolution {
     Module(Global<pernixc_symbol::ID>),
 
     /// Resolved to an enum-variant symbol.
-    Variant(Symbol),
+    Variant(Variant),
 
     /// Resolved to a symbol with generic arguments such as `Symbol['a, T, U]`.
     GenericSymbol(Symbol),
+
+    /// See [`IntermediateAdtImplSymbol`] for more details.
+    IntermediateAdtImplSymbol(IntermediateAdtImplSymbol),
 
     /// Resolved to a member symbol with generic arguments such as
     /// `Symbol[V]::member['a, T, U]`.
@@ -90,9 +214,12 @@ impl Resolution {
     pub const fn global_id(&self) -> Option<Global<pernixc_symbol::ID>> {
         match self {
             Self::Module(id) => Some(*id),
-            Self::Variant(variant) => Some(variant.id()),
+            Self::Variant(variant) => Some(variant.variant_id()),
             Self::GenericSymbol(generic) => Some(generic.id()),
             Self::GenericAssociatedSymbol(member) => Some(member.id()),
+            Self::IntermediateAdtImplSymbol(impl_symbol) => {
+                Some(impl_symbol.impl_associated_symbol_id)
+            }
             Self::InstanceAssociatedSymbol(func) => {
                 Some(func.trait_associated_symbol_id())
             }
@@ -115,6 +242,7 @@ impl Resolution {
                 Self::Module(_)
                 | Self::Variant(_)
                 | Self::GenericSymbol(_)
+                | Self::IntermediateAdtImplSymbol(_)
                 | Self::GenericAssociatedSymbol(_)
                 | Self::InstanceAssociatedSymbol(_) => {
                     unreachable!("should've gotten a global_id()")
@@ -164,7 +292,7 @@ fn to_resolution(
             ))
         }
 
-        Kind::Variant => Resolution::Variant(Symbol::new(
+        Kind::Variant => Resolution::Variant(Variant::new(
             resolved_id,
             latest_resolution
                 .into_generic_symbol()
@@ -207,13 +335,11 @@ fn to_resolution(
             | Resolution::GenericAssociatedSymbol(_)
             | Resolution::Module(_)
             | Resolution::InstanceAssociatedSymbol(_)
+            | Resolution::IntermediateAdtImplSymbol(_)
             | Resolution::Variant(_) => unreachable!(),
         },
 
-        Kind::ImplementationAssociatedConstant
-        | Kind::ImplementationAssociatedFunction
-        | Kind::EffectOperation
-        | Kind::ImplementationAssociatedType => {
+        Kind::EffectOperation => {
             Resolution::GenericAssociatedSymbol(AssociatedSymbol::new(
                 resolved_id,
                 latest_resolution
@@ -223,6 +349,20 @@ fn to_resolution(
                 generic_arguments.unwrap(),
             ))
         }
+
+        Kind::ImplementationAssociatedConstant
+        | Kind::ImplementationAssociatedType
+        | Kind::ImplementationAssociatedFunction => {
+            Resolution::IntermediateAdtImplSymbol(IntermediateAdtImplSymbol {
+                adt_generic_arguments: latest_resolution
+                    .into_generic_symbol()
+                    .unwrap()
+                    .into_generic_arguments(),
+                impl_associated_generic_arguments: generic_arguments.unwrap(),
+                impl_associated_symbol_id: resolved_id,
+            })
+        }
+
         Kind::PositiveImplementation | Kind::NegativeImplementation => {
             unreachable!()
         }
@@ -679,9 +819,20 @@ impl Resolver<'_, '_> {
 
             Resolution::InstanceAssociatedSymbol(function_id) => {
                 self.receive_diagnostic(Diagnostic::NoMemberInFunction(
-                    NoMemberInFunction::builder()
+                    NoMemberInSymbol::builder()
                         .resolution_span(identifier.span)
-                        .function_id(function_id.trait_associated_symbol_id())
+                        .symbol_id(function_id.trait_associated_symbol_id())
+                        .build(),
+                ));
+
+                return Err(Error::Abort);
+            }
+
+            Resolution::IntermediateAdtImplSymbol(symbol) => {
+                self.receive_diagnostic(Diagnostic::NoMemberInFunction(
+                    NoMemberInSymbol::builder()
+                        .resolution_span(identifier.span)
+                        .symbol_id(symbol.impl_associated_symbol_id())
                         .build(),
                 ));
 
