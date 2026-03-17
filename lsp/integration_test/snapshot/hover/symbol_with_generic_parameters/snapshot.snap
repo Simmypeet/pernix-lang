@@ -1,0 +1,8 @@
+---
+source: lsp/integration_test/snapshot/mod.rs
+expression: string
+---
+```pernix
+public struct Test['a, T, instance I: Another[T]]:
+    public a: T
+```
