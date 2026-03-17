@@ -5,11 +5,13 @@ use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet},
     marker::PhantomData,
+    ops::Deref,
 };
 
 use getset::Getters;
 use pernixc_arena::ID;
 use pernixc_handler::{Handler, Storage};
+use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_resolution::{
     ElidedTermProvider, Resolver, qualified_identifier::Resolution,
@@ -20,8 +22,10 @@ use pernixc_term::{
     constant::Constant,
     display::{self, InferenceRenderingMap},
     generic_arguments::GenericArguments,
+    generic_parameters::get_generic_parameters,
     inference,
     instance::Instance,
+    instantiation::Instantiation,
     lifetime::Lifetime,
     r#type::{Primitive, Type},
     visitor::RecursiveIterator,
@@ -1104,6 +1108,91 @@ impl Binder<'_> {
                 .instance_table
                 .get_inference_rendering_map(),
         }
+    }
+}
+
+impl Binder<'_> {
+    pub async fn resolve_inferring_instance_variable(
+        &mut self,
+        symbol_id: Global<pernixc_symbol::ID>,
+        instantiation_usage: &Instantiation,
+        span: &RelativeSpan,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<(), UnrecoverableError> {
+        let generic_parameters =
+            self.engine().get_generic_parameters(symbol_id).await;
+
+        // iterate through each instance parameter and see if there're any
+        // inferring varabiles.
+        for (instance_parameter_id, instance_parameter) in
+            generic_parameters.instance_parameters_as_order()
+        {
+            let instance_term = instantiation_usage
+                .get_instance_mapping(&Instance::new_parameter(
+                    symbol_id,
+                    instance_parameter_id,
+                ))
+                .unwrap();
+
+            // if it's inference variable, then resolve it and update the
+            // inference table
+            let Instance::Inference(instance_inference) = instance_term else {
+                // has already been resolved, no need to resolve again
+                continue;
+            };
+
+            let inferring_id = match self
+                .inference_context
+                .instance_table
+                .get_inference(*instance_inference)
+                .unwrap()
+            {
+                Inference::Known(_) => {
+                    // has already been resolved, no need to resolve again
+                    continue;
+                }
+                Inference::Inferring(id) => id,
+            };
+
+            let Some(mut expected_trait_ref) =
+                instance_parameter.trait_ref().map(|x| x.deref().clone())
+            else {
+                // instance parameter is malformed, cannot resolve. assign
+                // it to a dummy instance.
+                self.inference_context
+                    .instance_table
+                    .assign_known(*inferring_id, Instance::new_error())
+                    .unwrap();
+
+                continue;
+            };
+
+            expected_trait_ref.instantiate(instantiation_usage);
+
+            // use this expected trait ref to guide resolution.
+            let env = self.create_environment();
+
+            match env.resolve_instance(&expected_trait_ref).await.map_err(
+                |x| x.report_as_type_calculating_overflow(*span, &handler),
+            )? {
+                Ok(resolve) => {
+                    self.inference_context
+                        .instance_table
+                        .assign_known(*inferring_id, resolve.instance().clone())
+                        .unwrap();
+                }
+
+                Err(_) => {
+                    // failed to resolve, assign it to a dummy instance.
+                    self.inference_context
+                        .instance_table
+                        .assign_known(*inferring_id, Instance::new_error())
+                        .unwrap();
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 

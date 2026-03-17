@@ -351,6 +351,17 @@ pub struct ResolvedInstance {
     source: InstanceSource,
 }
 
+impl ResolvedInstance {
+    #[must_use]
+    pub const fn instance(&self) -> &Instance { &self.instance }
+
+    #[must_use]
+    pub fn into_instance(self) -> Instance { self.instance }
+
+    #[must_use]
+    pub const fn source(&self) -> InstanceSource { self.source }
+}
+
 #[allow(clippy::too_many_lines)]
 async fn resolve_from_lexical_instances<N: Normalizer>(
     current_site: Global<pernixc_symbol::ID>,
