@@ -10,7 +10,7 @@ public struct Test['a, 'b, T, U]:
         'b: 'a + 'static
         const T + U
         tuple T + U
-        trait Another[T] + Fizz[U]
+        marker Another[T] + Fizz[U]
 
     public publicField: T
     internal privateField: U
