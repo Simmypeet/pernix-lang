@@ -21,9 +21,63 @@ use crate::{
     diagnostic::{Diagnostic, TypeAnnotationRequired},
 };
 
-struct EraseInference {
+struct SearchInference {
     found_inference: bool,
 }
+
+impl MutableRecursive<Lifetime> for SearchInference {
+    fn visit(
+        &mut self,
+        _: &mut Lifetime,
+        _: impl Iterator<Item = TermLocation>,
+    ) -> bool {
+        true
+    }
+}
+
+impl MutableRecursive<Type> for SearchInference {
+    fn visit(
+        &mut self,
+        term: &mut Type,
+        _: impl Iterator<Item = TermLocation>,
+    ) -> bool {
+        if term.is_inference() {
+            self.found_inference = true;
+        }
+
+        true
+    }
+}
+
+impl MutableRecursive<Constant> for SearchInference {
+    fn visit(
+        &mut self,
+        term: &mut Constant,
+        _: impl Iterator<Item = TermLocation>,
+    ) -> bool {
+        if term.is_inference() {
+            self.found_inference = true;
+        }
+
+        true
+    }
+}
+
+impl MutableRecursive<Instance> for SearchInference {
+    fn visit(
+        &mut self,
+        instance: &mut Instance,
+        _: impl Iterator<Item = TermLocation>,
+    ) -> bool {
+        if instance.is_inference() {
+            self.found_inference = true;
+        }
+
+        true
+    }
+}
+
+struct EraseInference;
 
 impl MutableRecursive<Lifetime> for EraseInference {
     fn visit(
@@ -43,7 +97,6 @@ impl MutableRecursive<Type> for EraseInference {
     ) -> bool {
         if term.is_inference() {
             *term = Type::Error(pernixc_term::error::Error);
-            self.found_inference = true;
         }
 
         true
@@ -58,7 +111,6 @@ impl MutableRecursive<Constant> for EraseInference {
     ) -> bool {
         if term.is_inference() {
             *term = Constant::Error(pernixc_term::error::Error);
-            self.found_inference = true;
         }
 
         true
@@ -73,7 +125,6 @@ impl MutableRecursive<Instance> for EraseInference {
     ) -> bool {
         if instance.is_inference() {
             *instance = Instance::Error(pernixc_term::error::Error);
-            self.found_inference = true;
         }
 
         true
@@ -128,7 +179,45 @@ impl Transformer for ReplaceInference<'_> {
                 }
             }
 
-            let mut erase_inference = EraseInference { found_inference: false };
+            let mut search_inference =
+                SearchInference { found_inference: false };
+
+            match &mut term {
+                pernixc_term::TermMut::Constant(constant) => {
+                    visitor::accept_recursive_mut(
+                        *constant,
+                        &mut search_inference,
+                    );
+                }
+                pernixc_term::TermMut::Lifetime(lifetime) => {
+                    visitor::accept_recursive_mut(
+                        *lifetime,
+                        &mut search_inference,
+                    );
+                }
+                pernixc_term::TermMut::Type(ty) => {
+                    visitor::accept_recursive_mut(*ty, &mut search_inference);
+                }
+                pernixc_term::TermMut::Instance(instance) => {
+                    visitor::accept_recursive_mut(
+                        *instance,
+                        &mut search_inference,
+                    );
+                }
+            }
+
+            if search_inference.found_inference {
+                self.handler.receive(
+                    TypeAnnotationRequired {
+                        span,
+                        term: term.to_owned_term(),
+                        rendering_map: self.rendering_map.clone(),
+                    }
+                    .into(),
+                );
+            }
+
+            let mut erase_inference = EraseInference;
 
             match &mut term {
                 pernixc_term::TermMut::Constant(constant) => {
@@ -152,17 +241,6 @@ impl Transformer for ReplaceInference<'_> {
                         &mut erase_inference,
                     );
                 }
-            }
-
-            if erase_inference.found_inference {
-                self.handler.receive(
-                    TypeAnnotationRequired {
-                        span,
-                        term: term.to_owned_term(),
-                        rendering_map: self.rendering_map.clone(),
-                    }
-                    .into(),
-                );
             }
         }
     }
