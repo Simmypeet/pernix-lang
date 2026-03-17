@@ -445,6 +445,7 @@ pub(super) async fn search_this(
                 | Kind::Struct
                 | Kind::Enum
                 | Kind::PositiveImplementation
+                | Kind::Instance
         ) {
             return Some((current, kind));
         }
@@ -539,16 +540,17 @@ impl Resolver<'_, '_> {
                 };
 
                 match kind {
-                    Kind::Trait | Kind::Enum | Kind::Struct => {
-                        Resolution::GenericSymbol(Symbol::new(
-                            this_symbol,
-                            this_symbol
-                                .create_identity_generic_arguments(
-                                    self.tracked_engine(),
-                                )
-                                .await,
-                        ))
-                    }
+                    Kind::Trait
+                    | Kind::Enum
+                    | Kind::Struct
+                    | Kind::Instance => Resolution::GenericSymbol(Symbol::new(
+                        this_symbol,
+                        this_symbol
+                            .create_identity_generic_arguments(
+                                self.tracked_engine(),
+                            )
+                            .await,
+                    )),
 
                     Kind::PositiveImplementation => {
                         let Some(implemented_id) = self

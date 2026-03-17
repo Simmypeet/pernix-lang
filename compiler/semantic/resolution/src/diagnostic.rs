@@ -139,7 +139,7 @@ impl Report for ThisNotFound {
                 engine.to_absolute_span(&self.this_span).await,
                 Some(
                     "`this` keyword is only available in `implements`, \
-                     `struct`, `enum`, or `trait`"
+                     `struct`, `enum`, `instance`, or `trait`"
                         .to_string(),
                 ),
             ))
