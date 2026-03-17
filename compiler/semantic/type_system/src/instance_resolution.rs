@@ -275,12 +275,36 @@ pub enum ResolveError {
 /// The instance resolution ended up requiring another instance resolution,
 /// which has failed with the given error.
 #[derive(Debug, Clone)]
-#[allow(unused)]
 pub struct RecursiveError {
     current_trait_ref: TraitRef,
     resolving_symbol: Global<pernixc_symbol::ID>,
 
     errors: Vec<(ID<InstanceParameter>, ResolveError)>,
+}
+
+impl RecursiveError {
+    /// The trait reference that was being resolved at this level of the
+    /// recursion.
+    #[must_use]
+    pub const fn current_trait_ref(&self) -> &TraitRef {
+        &self.current_trait_ref
+    }
+
+    /// The global symbol ID that was being resolved (i.e. the instance
+    /// candidate that required sub-instance resolution).
+    #[must_use]
+    pub const fn resolving_symbol(&self) -> Global<pernixc_symbol::ID> {
+        self.resolving_symbol
+    }
+
+    /// The list of instance-parameter errors that caused this recursive error.
+    ///
+    /// Each entry is the ID of the instance parameter that couldn't be resolved
+    /// and the corresponding [`ResolveError`] explaining why.
+    #[must_use]
+    pub fn errors(&self) -> &[(ID<InstanceParameter>, ResolveError)] {
+        &self.errors
+    }
 }
 
 impl environment::Query for ResolveInstance {
