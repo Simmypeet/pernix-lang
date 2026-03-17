@@ -52,13 +52,35 @@ pub(super) async fn format_generic_parameters(
         }
         first = false;
 
-        write!(buffer, "{}", constant_parameter.name().as_ref()).unwrap();
+        write!(buffer, "const {}: ", constant_parameter.name().as_ref())
+            .unwrap();
 
         constant_parameter
             .r#type()
             .write_async_with_configuration(self, buffer, &configuration)
             .await
             .unwrap();
+    }
+
+    for (_, instance_parameter) in
+        generic_parameters.instance_parameters_as_order()
+    {
+        if !first {
+            write!(buffer, ", ").unwrap();
+        }
+        first = false;
+
+        write!(buffer, "instance {}: ", instance_parameter.name().as_ref())
+            .unwrap();
+
+        if let Some(trait_ref) = instance_parameter.trait_ref() {
+            trait_ref
+                .write_async_with_configuration(self, buffer, &configuration)
+                .await
+                .unwrap();
+        } else {
+            write!(buffer, "{{error}}").unwrap();
+        }
     }
 
     write!(buffer, "]").unwrap();
