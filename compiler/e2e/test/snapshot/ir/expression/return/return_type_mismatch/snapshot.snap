@@ -1,0 +1,26 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: run
+---
+stderr:
+[error]: mismatched types: expected `T`, found `bool`
+  ╭▸ compiler/e2e/test/snapshot/ir/expression/return/return_type_mismatch/main.pnx:3:16
+  │
+3 │         return true
+  │                ━━━━ expected `T`, found `bool`
+  │
+  ╰ help: ensure the expression type matches the expected type
+
+[error]: mismatched types: expected `T`, found `{number}`
+  ╭▸ compiler/e2e/test/snapshot/ir/expression/return/return_type_mismatch/main.pnx:5:16
+  │
+5 │         return 32 # should be a type error, since 32 is not a bool
+  │                ━━ expected `T`, found `{number}`
+  │
+  ╰ help: ensure the expression type matches the expected type
+
+[error]: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

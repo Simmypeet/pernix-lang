@@ -1,11 +1,16 @@
 public trait Fizz[T]:
     public type Output
 
+
     public function fizz(x: T) -> this::Output
 
 
-final implements[T] Fizz[T]:
+public instance Test[T]: Fizz[T]:
     type Output = T
 
+
     function fizz(x: T) -> this::Output:
-        return x
+        if true:
+            return x # should be fine
+        else:
+            return 32 # should be a type error

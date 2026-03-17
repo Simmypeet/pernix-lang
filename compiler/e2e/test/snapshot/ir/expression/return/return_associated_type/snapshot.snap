@@ -1,8 +1,18 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
+[error]: mismatched types: expected `T`, found `{number}`
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/return/return_associated_type/main.pnx:16:20
+   │
+16 │             return 32 # should be a type error
+   │                    ━━ expected `T`, found `{number}`
+   │
+   ╰ help: ensure the expression type matches the expected type
+
+[error]: Compilation aborted due to 1 error(s)
+
 
 
 stdout:

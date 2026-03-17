@@ -1,0 +1,5 @@
+public function returnBool[T]() -> T:
+    if true:
+        return true
+    else:
+        return 32 # should be a type error, since 32 is not a bool
