@@ -352,7 +352,18 @@ impl environment::Query for ResolveInstance {
 }
 
 /// The source of the resolved instance, used for error reporting.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    StableHash,
+    Encode,
+    Decode,
+)]
 pub enum InstanceSource {
     /// Comes from the instance parameters surrounding the query site.
     FromInstanceParameterID(InstanceParameterID),
@@ -371,7 +382,9 @@ pub enum InstanceSource {
 
 /// Represents an instance that has been choosen as the result of instance
 /// resolution.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode,
+)]
 pub struct ResolvedInstance {
     instance: Instance,
     source: InstanceSource,

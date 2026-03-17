@@ -197,10 +197,24 @@ impl Normalizer for InferenceContext {
     }
 
     async fn normalize_instance(
-        _: &Instance,
-        _: &Environment<'_, Self>,
+        instance: &Instance,
+        environment: &Environment<'_, Self>,
     ) -> Result<Option<Succeeded<Instance>>, OverflowError> {
-        todo!()
+        let Instance::Inference(inference) = instance else {
+            return Ok(None);
+        };
+
+        let Some(inference) =
+            environment.normalizer().instance_table.get_inference(*inference)
+        else {
+            return Ok(None);
+        };
+
+        if let table::Inference::Known(instance) = inference {
+            Ok(Some(Succeeded::new(instance.clone())))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -828,7 +842,7 @@ impl Binder<'_> {
             .build();
 
         let resolution =
-            resolver.resolve_qualified_identifier(syntax_tree).await;
+            dbg!(resolver.resolve_qualified_identifier(syntax_tree).await);
 
         resolution_handler.propagate(handler);
 
@@ -1111,28 +1125,31 @@ impl Binder<'_> {
     }
 }
 
-impl Binder<'_> {
+impl InferenceContext {
     pub async fn resolve_inferring_instance_variable(
         &mut self,
         symbol_id: Global<pernixc_symbol::ID>,
         instantiation_usage: &Instantiation,
         span: &RelativeSpan,
+        engine: &TrackedEngine,
+        premise: &Premise,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<(), UnrecoverableError> {
-        let generic_parameters =
-            self.engine().get_generic_parameters(symbol_id).await;
+        let generic_parameters = engine.get_generic_parameters(symbol_id).await;
 
         // iterate through each instance parameter and see if there're any
         // inferring varabiles.
         for (instance_parameter_id, instance_parameter) in
             generic_parameters.instance_parameters_as_order()
         {
-            let instance_term = instantiation_usage
-                .get_instance_mapping(&Instance::new_parameter(
-                    symbol_id,
-                    instance_parameter_id,
-                ))
-                .unwrap();
+            let instance_term = dbg!(
+                instantiation_usage
+                    .get_instance_mapping(&Instance::new_parameter(
+                        symbol_id,
+                        instance_parameter_id,
+                    ))
+                    .unwrap()
+            );
 
             // if it's inference variable, then resolve it and update the
             // inference table
@@ -1142,7 +1159,6 @@ impl Binder<'_> {
             };
 
             let inferring_id = match self
-                .inference_context
                 .instance_table
                 .get_inference(*instance_inference)
                 .unwrap()
@@ -1159,8 +1175,7 @@ impl Binder<'_> {
             else {
                 // instance parameter is malformed, cannot resolve. assign
                 // it to a dummy instance.
-                self.inference_context
-                    .instance_table
+                self.instance_table
                     .assign_known(*inferring_id, Instance::new_error())
                     .unwrap();
 
@@ -1170,22 +1185,30 @@ impl Binder<'_> {
             expected_trait_ref.instantiate(instantiation_usage);
 
             // use this expected trait ref to guide resolution.
-            let env = self.create_environment();
+            let env = Environment::new(
+                Cow::Borrowed(premise),
+                Cow::Borrowed(engine),
+                self,
+            );
 
             match env.resolve_instance(&expected_trait_ref).await.map_err(
                 |x| x.report_as_type_calculating_overflow(*span, &handler),
             )? {
                 Ok(resolve) => {
-                    self.inference_context
-                        .instance_table
+                    self.instance_table
                         .assign_known(*inferring_id, resolve.instance().clone())
                         .unwrap();
                 }
 
-                Err(_) => {
+                Err(err) => {
+                    for err in
+                        err.generate_diagnostics(&expected_trait_ref, *span)
+                    {
+                        handler.receive(err.into());
+                    }
+
                     // failed to resolve, assign it to a dummy instance.
-                    self.inference_context
-                        .instance_table
+                    self.instance_table
                         .assign_known(*inferring_id, Instance::new_error())
                         .unwrap();
                 }

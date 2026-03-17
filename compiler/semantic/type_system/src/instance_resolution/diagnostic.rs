@@ -25,6 +25,7 @@ use pernixc_term::{
     generic_parameters::{InstanceParameter, get_generic_parameters},
     instance::TraitRef,
 };
+use qbice::{Decode, Encode, StableHash};
 
 use super::{InstanceSource, RecursiveError, ResolveError};
 
@@ -36,7 +37,9 @@ use super::{InstanceSource, RecursiveError, ResolveError};
 /// Stores the raw data needed to render a single "note" in the chain that leads
 /// from a root [`InstanceResolutionError`] down to a leaf failure.  The
 /// rendering happens lazily inside [`Report::report`].
-#[derive(Debug, Clone)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode,
+)]
 pub struct InstanceResolutionFrame {
     /// The trait reference that was being resolved at this level.
     parent_trait_ref: TraitRef,
@@ -54,7 +57,9 @@ pub struct InstanceResolutionFrame {
 // ─────────────────────────────────────────────────────────
 
 /// The concrete reason for the leaf failure, stored in an un-rendered form.
-#[derive(Debug, Clone)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode,
+)]
 pub enum InstanceResolutionErrorKind {
     /// No instance was found that satisfies the required trait reference.
     NotFound,
@@ -81,7 +86,9 @@ pub enum InstanceResolutionErrorKind {
 /// The `context_stack` carries the trace from the root call down to this leaf,
 /// ordered outermost → innermost.  Each frame becomes a `note` in the rendered
 /// diagnostic.
-#[derive(Debug, Clone)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, StableHash, Encode, Decode,
+)]
 pub struct InstanceResolutionError {
     /// The trait reference that failed to resolve at this leaf.
     expected_trait_ref: TraitRef,

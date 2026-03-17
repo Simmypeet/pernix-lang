@@ -123,7 +123,7 @@ impl Binder<'_> {
         }
 
         // transform inference types
-        self.transform_inference(handler).await;
+        self.transform_inference(handler).await?;
 
         let current_site = self.current_site();
         let ty_env = TyEnvironment::new(

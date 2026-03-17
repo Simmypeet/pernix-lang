@@ -16,6 +16,7 @@ use pernixc_target::Global;
 use pernixc_term::{
     display::Display, effect, generic_arguments::GenericArguments, r#type::Type,
 };
+use pernixc_type_system::instance_resolution::diagnostic::InstanceResolutionError;
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
 use crate::{
@@ -88,6 +89,7 @@ diagnostic_enum! {
             NotAllFlowPathsReturnAValueInClosure
         ),
         ResumeCallOutsideOperationHandler(ResumeCallOutsideOperationHandler),
+        InstanceResolutionError(InstanceResolutionError)
     }
 }
 
