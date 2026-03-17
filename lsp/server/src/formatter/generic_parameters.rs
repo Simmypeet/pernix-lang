@@ -4,7 +4,7 @@ use pernixc_extend::extend;
 use pernixc_qbice::TrackedEngine;
 use pernixc_term::{
     display::{self, Display},
-    generic_parameters::GenericParameters,
+    generic_parameters::{GenericParameter, GenericParameters},
 };
 
 /// Formats the given generic parameters into the provided string buffer.
@@ -28,7 +28,7 @@ pub(super) async fn format_generic_parameters(
         }
         first = false;
 
-        write!(buffer, "'{}", lifetime.name.as_ref()).unwrap();
+        write!(buffer, "'{}", lifetime.name().as_ref()).unwrap();
     }
 
     for (_, type_parameter) in generic_parameters.type_parameters_as_order() {
@@ -37,7 +37,7 @@ pub(super) async fn format_generic_parameters(
         }
         first = false;
 
-        write!(buffer, "{}", type_parameter.name.as_ref()).unwrap();
+        write!(buffer, "{}", type_parameter.name().as_ref()).unwrap();
     }
 
     let configuration = display::Configuration::builder()
@@ -52,13 +52,35 @@ pub(super) async fn format_generic_parameters(
         }
         first = false;
 
-        write!(buffer, "{}", constant_parameter.name.as_ref()).unwrap();
+        write!(buffer, "const {}: ", constant_parameter.name().as_ref())
+            .unwrap();
 
         constant_parameter
-            .r#type
+            .r#type()
             .write_async_with_configuration(self, buffer, &configuration)
             .await
             .unwrap();
+    }
+
+    for (_, instance_parameter) in
+        generic_parameters.instance_parameters_as_order()
+    {
+        if !first {
+            write!(buffer, ", ").unwrap();
+        }
+        first = false;
+
+        write!(buffer, "instance {}: ", instance_parameter.name().as_ref())
+            .unwrap();
+
+        if let Some(trait_ref) = instance_parameter.trait_ref() {
+            trait_ref
+                .write_async_with_configuration(self, buffer, &configuration)
+                .await
+                .unwrap();
+        } else {
+            write!(buffer, "{{error}}").unwrap();
+        }
     }
 
     write!(buffer, "]").unwrap();

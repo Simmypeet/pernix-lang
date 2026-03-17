@@ -2,9 +2,7 @@ use pernixc_hash::HashMap;
 use pernixc_symbol::name::get_name;
 use pernixc_target::Global;
 use pernixc_term::{
-    generic_arguments::{GenericArguments, TraitMember},
-    predicate::Predicate,
-    r#type::Type,
+    generic_arguments::GenericArguments, predicate::Predicate, r#type::Type,
 };
 
 use crate::formatter::Formatter;
@@ -47,7 +45,10 @@ impl Formatter<'_, '_> {
     async fn trait_type_compatible_clause(
         &mut self,
         trait_type_compatible_clause: impl Iterator<
-            Item = &'_ pernixc_term::predicate::Compatible<TraitMember, Type>,
+            Item = &'_ pernixc_term::predicate::Compatible<
+                pernixc_term::instance::InstanceAssociated,
+                Type,
+            >,
         >,
     ) {
         for predicate in trait_type_compatible_clause {
@@ -165,11 +166,9 @@ impl Formatter<'_, '_> {
                         .filter_map(|x| x.predicate.as_lifetime_outlives()),
                 )
                 .await;
-                x.trait_type_compatible_clause(
-                    where_clause
-                        .iter()
-                        .filter_map(|x| x.predicate.as_trait_type_compatible()),
-                )
+                x.trait_type_compatible_clause(where_clause.iter().filter_map(
+                    |x| x.predicate.as_instance_associated_type_equality(),
+                ))
                 .await;
                 x.constant_type_clause(
                     where_clause
@@ -184,26 +183,13 @@ impl Formatter<'_, '_> {
                 )
                 .await;
                 x.qualified_identifier_bound(
-                    "trait",
-                    where_clause.iter().filter_map(|x| match &x.predicate {
-                        Predicate::PositiveTrait(x) => {
-                            Some((false, x.trait_id, &x.generic_arguments))
-                        }
-                        Predicate::NegativeTrait(x) => {
-                            Some((true, x.trait_id, &x.generic_arguments))
-                        }
-                        _ => None,
-                    }),
-                )
-                .await;
-                x.qualified_identifier_bound(
                     "marker",
                     where_clause.iter().filter_map(|x| match &x.predicate {
                         Predicate::PositiveMarker(x) => {
-                            Some((false, x.marker_id, &x.generic_arguments))
+                            Some((false, x.marker_id(), x.generic_arguments()))
                         }
                         Predicate::NegativeMarker(x) => {
-                            Some((true, x.marker_id, &x.generic_arguments))
+                            Some((true, x.marker_id(), x.generic_arguments()))
                         }
                         _ => None,
                     }),

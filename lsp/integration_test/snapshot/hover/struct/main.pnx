@@ -1,9 +1,7 @@
-public trait Another[T]:
-    pass
+public marker Another[T]
 
 
-public trait Fizz[T]:
-    pass
+public marker Fizz[T]
 
 
 public struct Test[

@@ -427,7 +427,13 @@ fn allow_completion(self: pernixc_symbol::kind::Kind) -> bool {
         | pernixc_symbol::kind::Kind::Marker
         | pernixc_symbol::kind::Kind::ImplementationAssociatedType
         | pernixc_symbol::kind::Kind::ImplementationAssociatedFunction
-        | pernixc_symbol::kind::Kind::ImplementationAssociatedConstant => true,
+        | pernixc_symbol::kind::Kind::ImplementationAssociatedConstant
+        | pernixc_symbol::kind::Kind::TraitAssociatedInstance
+        | pernixc_symbol::kind::Kind::Instance
+        | pernixc_symbol::kind::Kind::InstanceAssociatedType
+        | pernixc_symbol::kind::Kind::InstanceAssociatedFunction
+        | pernixc_symbol::kind::Kind::InstanceAssociatedInstance
+        | pernixc_symbol::kind::Kind::InstanceAssociatedConstant => true,
 
         pernixc_symbol::kind::Kind::PositiveImplementation
         | pernixc_symbol::kind::Kind::NegativeImplementation => false,
@@ -459,20 +465,27 @@ fn kind_to_completion_item_kind(
         pernixc_symbol::kind::Kind::Variant => CompletionItemKind::ENUM_MEMBER,
 
         pernixc_symbol::kind::Kind::TraitAssociatedType
+        | pernixc_symbol::kind::Kind::InstanceAssociatedType
         | pernixc_symbol::kind::Kind::ImplementationAssociatedType => {
             CompletionItemKind::TYPE_PARAMETER
         }
 
         pernixc_symbol::kind::Kind::TraitAssociatedConstant
+        | pernixc_symbol::kind::Kind::InstanceAssociatedConstant
         | pernixc_symbol::kind::Kind::ImplementationAssociatedConstant => {
             CompletionItemKind::CONSTANT
         }
 
         pernixc_symbol::kind::Kind::TraitAssociatedFunction
         | pernixc_symbol::kind::Kind::EffectOperation
+        | pernixc_symbol::kind::Kind::InstanceAssociatedFunction
         | pernixc_symbol::kind::Kind::ImplementationAssociatedFunction => {
             CompletionItemKind::METHOD
         }
+
+        pernixc_symbol::kind::Kind::TraitAssociatedInstance
+        | pernixc_symbol::kind::Kind::InstanceAssociatedInstance
+        | pernixc_symbol::kind::Kind::Instance => CompletionItemKind::VARIABLE,
 
         pernixc_symbol::kind::Kind::PositiveImplementation
         | pernixc_symbol::kind::Kind::NegativeImplementation => {

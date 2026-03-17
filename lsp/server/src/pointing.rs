@@ -185,6 +185,7 @@ pub async fn resolve_qualified_identifier_path(
         let Some(resolved_id) = self
             .resolve_in(
                 current_symbol_id,
+                current_site.target_id,
                 &identifier.kind.0,
                 /* consider_adt_implements */ true,
             )

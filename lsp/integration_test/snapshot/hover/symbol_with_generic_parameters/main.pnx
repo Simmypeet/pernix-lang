@@ -1,0 +1,9 @@
+public trait Another[T]:
+    pass
+
+
+public struct Test['a, T, instance I: Another[T]]:
+    public a: T
+
+
+public type AliasType['a, T, instance I: Another[T]] = Te<cursor>st['a, T, I]
