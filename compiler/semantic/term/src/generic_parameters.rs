@@ -267,8 +267,10 @@ impl GenericParameter for TypeParameter {
     Decode,
     new,
 )]
+#[derive(getset::Getters)]
 pub struct ConstantParameter {
     name: Interned<str>,
+    #[getset(get = "pub")]
     r#type: Type,
     span: Option<RelativeSpan>,
 }

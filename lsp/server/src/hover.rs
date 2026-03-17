@@ -54,13 +54,22 @@ pub async fn handle_hover(
 
         pernixc_symbol::kind::Kind::Type
         | pernixc_symbol::kind::Kind::ImplementationAssociatedType
-        | pernixc_symbol::kind::Kind::TraitAssociatedType => {
+        | pernixc_symbol::kind::Kind::TraitAssociatedType
+        | pernixc_symbol::kind::Kind::InstanceAssociatedType => {
             self.format_type_signature(symbol).await
+        }
+
+        pernixc_symbol::kind::Kind::TraitAssociatedInstance
+        | pernixc_symbol::kind::Kind::InstanceAssociatedInstance
+        | pernixc_symbol::kind::Kind::Instance => {
+            self.format_simple_signature_with_where_clause(symbol, "instance")
+                .await
         }
 
         pernixc_symbol::kind::Kind::Function
         | pernixc_symbol::kind::Kind::ExternFunction
         | pernixc_symbol::kind::Kind::TraitAssociatedFunction
+        | pernixc_symbol::kind::Kind::InstanceAssociatedFunction
         | pernixc_symbol::kind::Kind::ImplementationAssociatedFunction => {
             self.format_function_signature(
                 symbol,
@@ -95,6 +104,7 @@ pub async fn handle_hover(
         pernixc_symbol::kind::Kind::EffectOperation
         | pernixc_symbol::kind::Kind::Constant
         | pernixc_symbol::kind::Kind::TraitAssociatedConstant
+        | pernixc_symbol::kind::Kind::InstanceAssociatedConstant
         | pernixc_symbol::kind::Kind::PositiveImplementation
         | pernixc_symbol::kind::Kind::NegativeImplementation
         | pernixc_symbol::kind::Kind::ImplementationAssociatedConstant => {

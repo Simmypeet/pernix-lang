@@ -365,8 +365,8 @@ impl Analyzer {
 
         if let Some(check) = check {
             for diag in check.all_diagnostics() {
-                let url = if let Some(primary) = &diag.primary_highlight {
-                    engine.get_url_by_source_id(primary.span.source_id).await
+                let url = if let Some(primary) = &diag.primary_highlight() {
+                    engine.get_url_by_source_id(primary.span().source_id).await
                 } else {
                     Url::from_file_path(self.workspace.root_source_file())
                         .unwrap()
@@ -460,8 +460,8 @@ async fn to_lsp_diagnostic(
     diagnostic: &pernixc_diagnostic::Rendered<ByteIndex>,
 ) -> tower_lsp::lsp_types::Diagnostic {
     let primary_range =
-        if let Some(primary_highlight) = &diagnostic.primary_highlight {
-            self.to_lsp_range(&primary_highlight.span).await
+        if let Some(primary_highlight) = &diagnostic.primary_highlight() {
+            self.to_lsp_range(primary_highlight.span()).await
         } else {
             tower_lsp::lsp_types::Range {
                 start: tower_lsp::lsp_types::Position { line: 0, character: 0 },
@@ -469,7 +469,7 @@ async fn to_lsp_diagnostic(
             }
         };
 
-    let severity = match diagnostic.severity {
+    let severity = match diagnostic.severity() {
         pernixc_diagnostic::Severity::Error => {
             tower_lsp::lsp_types::DiagnosticSeverity::ERROR
         }
@@ -483,25 +483,27 @@ async fn to_lsp_diagnostic(
 
     let related_information = {
         let mut result = Vec::new();
-        for related in &diagnostic.related {
+        for related in diagnostic.related() {
             result.push(tower_lsp::lsp_types::DiagnosticRelatedInformation {
                 location: tower_lsp::lsp_types::Location {
                     uri: self
-                        .get_url_by_source_id(related.span.source_id)
+                        .get_url_by_source_id(related.span().source_id)
                         .await,
-                    range: self.to_lsp_range(&related.span).await,
+                    range: self.to_lsp_range(related.span()).await,
                 },
-                message: related.message.clone().unwrap_or_default(),
+                message: related
+                    .message()
+                    .map_or(String::new(), std::string::ToString::to_string),
             });
         }
 
         if result.is_empty() { None } else { Some(result) }
     };
 
-    let mut message = diagnostic.message.clone();
+    let mut message = diagnostic.message().to_string();
 
     if let Some(primary_message) =
-        diagnostic.primary_highlight.as_ref().and_then(|x| x.message.as_ref())
+        diagnostic.primary_highlight().as_ref().and_then(|x| x.message())
     {
         message.push('\n');
         message.push_str(primary_message);

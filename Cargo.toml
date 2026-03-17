@@ -140,7 +140,7 @@ stacker = "0.1.21"
 serde_json = { version = "1.0.96" }
 fuzzy-matcher = { version = "0.3.7" }
 console-subscriber = "0.5.0"
-qbice = { version = "0.6.6", features = ["rocksdb"] }
+qbice = { version = "0.6.7", features = ["rocksdb"] }
 linkme = { version = "0.3.35" }
 tikv-jemallocator = { version = "0.6.1", features = [
     "override_allocator_on_supported_platforms",
