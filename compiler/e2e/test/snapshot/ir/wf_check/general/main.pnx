@@ -1,18 +1,11 @@
-public trait ImpossibleTrait[T]:
-    pass
+public marker ImpossibleMarker[T]
 
 
-public struct MyStruct[T]:
-    where:
-        trait ImpossibleTrait[T]
-
+public struct MyStruct[T: ImpossibleMarker]:
     public field: T
 
 
-public enum MyEnum[T]:
-    where:
-        trait ImpossibleTrait[T]
-
+public enum MyEnum[T: ImpossibleMarker]:
     Variant(T)
 
 

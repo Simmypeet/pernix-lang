@@ -3,35 +3,39 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: run
 ---
 stderr:
-[error]: unsatisfied predicate
-   ╭▸ compiler/e2e/test/snapshot/ir/wf_check/general/main.pnx:20:13
+[error]: the predicate `marker main::ImpossibleMarker[int32]` is not satisfied
+   ╭▸ compiler/e2e/test/snapshot/ir/wf_check/general/main.pnx:13:13
    │
- 7 │         trait ImpossibleTrait[T]
-   │               ────────────────── the required predicate was declared here
-   ‡
-20 │     let x = MyStruct { field: 5 }
-   ╰╴            ━━━━━━━━━━━━━━━━━━━━━ the predicate `trait main::ImpossibleTrait[int32]` is not satisfied
+13 │     let x = MyStruct { field: 5 }
+   ╰╴            ━━━━━━━━━━━━━━━━━━━━━
+[note]: the required predicate is declared here
+  ╭▸ compiler/e2e/test/snapshot/ir/wf_check/general/main.pnx:4:27
+  │
+4 │ public struct MyStruct[T: ImpossibleMarker]:
+  ╰╴                          ━━━━━━━━━━━━━━━━
 
-[error]: unsatisfied predicate
-   ╭▸ compiler/e2e/test/snapshot/ir/wf_check/general/main.pnx:21:13
+[error]: the predicate `marker main::ImpossibleMarker[int32]` is not satisfied
+   ╭▸ compiler/e2e/test/snapshot/ir/wf_check/general/main.pnx:14:13
    │
-14 │         trait ImpossibleTrait[T]
-   │               ────────────────── the required predicate was declared here
-   ‡
-21 │     let y = MyEnum::Variant(10)
-   ╰╴            ━━━━━━━━━━━━━━━━━━━ the predicate `trait main::ImpossibleTrait[int32]` is not satisfied
+14 │     let y = MyEnum::Variant(10)
+   ╰╴            ━━━━━━━━━━━━━━━━━━━
+[note]: the required predicate is declared here
+  ╭▸ compiler/e2e/test/snapshot/ir/wf_check/general/main.pnx:8:23
+  │
+8 │ public enum MyEnum[T: ImpossibleMarker]:
+  ╰╴                      ━━━━━━━━━━━━━━━━
 
-[error]: unsatisfied predicate
-   ╭▸ compiler/e2e/test/snapshot/ir/wf_check/general/main.pnx:22:23
+[error]: the predicate `T: tuple` is not satisfied
+   ╭▸ compiler/e2e/test/snapshot/ir/wf_check/general/main.pnx:15:23
    │
-22 │     let b = (true, ...a, false)
-   ╰╴                      ━ the predicate `T: tuple` is not satisfied
+15 │     let b = (true, ...a, false)
+   ╰╴                      ━
 
-[error]: unsatisfied predicate
-   ╭▸ compiler/e2e/test/snapshot/ir/wf_check/general/main.pnx:38:13
+[error]: found negative implementation
+   ╭▸ compiler/e2e/test/snapshot/ir/wf_check/general/main.pnx:31:13
    │
-38 │     let b = *y # not fine, mutable ref cannot be copied
-   ╰╴            ━━ the predicate `marker core::Copy[main::StructMutableRef]` is not satisfied
+31 │     let b = *y # not fine, mutable ref cannot be copied
+   ╰╴            ━━ the predicate `marker core::Copy[&mut int32]` is explicitly marked as unsatisfiable by a negative implementation
 
 [error]: Compilation aborted due to 4 error(s)
 
