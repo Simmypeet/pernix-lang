@@ -1,152 +1,220 @@
 //! Defines diagnostic types for instance resolution errors.
 //!
 //! The main entry point is [`InstanceResolutionError`] whose
-//! [`InstanceResolutionError::generate_diagnostics`] method produces **one
-//! [`Rendered`] diagnostic per leaf error**, each accompanied by a note chain
-//! that traces from the root resolution call down to the exact failure.
+//! [`InstanceResolutionError::generate_diagnostics`] method produces
+//! **one [`InstanceResolutionLeafError`] per leaf failure** in the error tree.
+//! Each [`InstanceResolutionLeafError`] stores un-rendered raw data and
+//! implements [`Report`], so callers can either render it immediately or
+//! inspect/store it first.
 //!
-//! This mirrors the `generate_marker_error` pattern in `wf_check.rs`:
-//! the "context stack" (note chain) is built **top-down** as the recursion
-//! descends, and exactly one diagnostic is emitted each time a leaf error
-//! (`NotFound`, `Cyclic`, or `Ambiguous`) is encountered.
+//! The recursion pattern mirrors `generate_marker_error` in `wf_check.rs`:
+//! the context stack (`Vec<InstanceResolutionFrame>`) is built top-down, and
+//! one output value is emitted per leaf.
 
-use pernixc_diagnostic::{Highlight, Note, Rendered};
+use std::sync::Arc;
+
+use pernixc_arena::ID;
+use pernixc_diagnostic::{Highlight, Note, Rendered, Report};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_source_file::ByteIndex;
 use pernixc_symbol::{source_map::to_absolute_span, span::get_span};
 use pernixc_target::Global;
 use pernixc_term::{
-    display::Display, generic_parameters::get_generic_parameters,
+    display::Display,
+    generic_parameters::{InstanceParameter, get_generic_parameters},
     instance::TraitRef,
 };
 
 use super::{InstanceSource, RecursiveError, ResolveError};
 
-// ─── internal helpers
-// ─────────────────────────────────────────────────────────
+// ─── context frame
+// ────────────────────────────────────────────────────────────
 
-/// Tries to retrieve and convert a symbol's declaration span into an absolute-
-/// span [`Highlight`], returning `None` when no span is available.
-async fn symbol_highlight(
-    engine: &TrackedEngine,
-    symbol_id: Global<pernixc_symbol::ID>,
-    message: impl Into<Option<String>>,
-) -> Option<Highlight<ByteIndex>> {
-    let span = engine.get_span(symbol_id).await?;
-    let abs = engine.to_absolute_span(&span).await;
-    Some(Highlight::new(abs, message.into()))
+/// One frame in the resolution trace stack.
+///
+/// Stores the raw data needed to render a single "note" in the chain that leads
+/// from a root [`InstanceResolutionError`] down to a leaf failure.  The
+/// rendering happens lazily inside [`Report::report`].
+#[derive(Debug, Clone)]
+pub struct InstanceResolutionFrame {
+    /// The trait reference that was being resolved at this level.
+    parent_trait_ref: TraitRef,
+
+    /// The instance symbol candidate that was selected at this level of
+    /// resolution (the symbol that requires a sub-instance parameter).
+    resolving_symbol: Global<pernixc_symbol::ID>,
+
+    /// The ID of the instance parameter (on `resolving_symbol`) that could not
+    /// be resolved, triggering the descent to the next level.
+    param_id: ID<InstanceParameter>,
 }
 
-// ─── core recursive generator
-// ─────────────────────────────────────────────────
+// ─── leaf error kinds
+// ─────────────────────────────────────────────────────────
 
-/// Mirrors `generate_marker_error` in `wf_check.rs`.
+/// The concrete reason for the leaf failure, stored in an un-rendered form.
+#[derive(Debug, Clone)]
+pub enum InstanceResolutionErrorKind {
+    /// No instance was found that satisfies the required trait reference.
+    NotFound,
+
+    /// The resolution would have required itself, forming a cycle.
+    Cyclic,
+
+    /// Multiple instances matched, making the resolution ambiguous.
+    Ambiguous {
+        /// The set of ambiguous instance sources.
+        sources: Arc<[InstanceSource]>,
+    },
+}
+
+// ─── public leaf diagnostic type ─────────────────────────────────────────────
+
+/// A single leaf-level instance resolution failure.
 ///
-/// Walks the [`ResolveError`] tree depth-first, building up a `note_stack` as
-/// it descends.  Whenever a **leaf** error is reached (`NotFound`, `Cyclic`,
-/// or `Ambiguous`), a complete [`Rendered`] diagnostic is pushed into
-/// `diagnostics` with:
-/// - a primary highlight at `instantiation_span`,
-/// - a message that names the leaf failure,
-/// - the full `note_stack` as trace notes (root → leaf).
+/// This is the intermediary type produced by
+/// [`ResolveError::generate_diagnostics`].  It stores the raw
+/// data (trait references, symbol IDs, spans) without any async rendering.
+/// Call [`Report::report`] to convert it to a [`Rendered`] diagnostic.
 ///
-/// Multiple leaves therefore produce multiple distinct diagnostics, each with
-/// the same root context but a different failure note at the end.
-#[allow(clippy::too_many_lines)]
-async fn generate_instance_resolution_diagnostics_inner(
-    engine: &TrackedEngine,
-    expected_trait_ref: &TraitRef,
+/// The `context_stack` carries the trace from the root call down to this leaf,
+/// ordered outermost → innermost.  Each frame becomes a `note` in the rendered
+/// diagnostic.
+#[derive(Debug, Clone)]
+pub struct InstanceResolutionError {
+    /// The trait reference that failed to resolve at this leaf.
+    expected_trait_ref: TraitRef,
+
+    /// The span at the original call-site that triggered instance resolution.
     instantiation_span: RelativeSpan,
-    error: &ResolveError,
-    // Accumulated note chain from the root down to the current recursion
-    // level.
-    note_stack: Vec<Note<ByteIndex>>,
-    diagnostics: &mut Vec<Rendered<ByteIndex>>,
-) {
-    let trait_ref_str = expected_trait_ref
-        .write_to_string(engine)
-        .await
-        .unwrap_or_else(|_| "<?>".to_string());
 
-    let primary_span = engine.to_absolute_span(&instantiation_span).await;
+    /// The specific reason this leaf failed.
+    kind: InstanceResolutionErrorKind,
 
-    match error {
-        // ── leaf: NotFound ────────────────────────────────────────────────
-        ResolveError::NotFound => {
-            diagnostics.push(
-                Rendered::builder()
-                    .message(format!("no instance found for `{trait_ref_str}`"))
-                    .primary_highlight(
-                        Highlight::builder()
-                            .span(primary_span)
-                            .message(format!(
-                                "an instance of `{trait_ref_str}` is required \
-                                 here"
-                            ))
-                            .build(),
-                    )
-                    .help_message(
-                        "consider adding an `instance` parameter or importing \
-                         a suitable instance implementation into scope",
-                    )
-                    .notes(note_stack)
-                    .build(),
-            );
-        }
+    /// The resolution trace from root → this leaf.
+    ///
+    /// Each entry describes one level of the recursion: which symbol was being
+    /// resolved, and which of its instance parameters caused the descent.
+    context_stack: Vec<InstanceResolutionFrame>,
+}
 
-        // ── leaf: Cyclic ──────────────────────────────────────────────────
-        ResolveError::Cyclic => {
-            diagnostics.push(
-                Rendered::builder()
-                    .message(format!(
-                        "cyclic instance dependency while resolving \
-                         `{trait_ref_str}`"
-                    ))
-                    .primary_highlight(
-                        Highlight::builder()
-                            .span(primary_span)
-                            .message(format!(
-                                "resolving `{trait_ref_str}` requires itself"
-                            ))
-                            .build(),
-                    )
-                    .help_message(
-                        "instance resolution encountered a cycle; try \
-                         restructuring the instance hierarchy to break the \
-                         cycle",
-                    )
-                    .notes(note_stack)
-                    .build(),
-            );
-        }
+impl Report for InstanceResolutionError {
+    #[allow(clippy::too_many_lines)]
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let trait_ref_str =
+            self.expected_trait_ref.write_to_string(engine).await.unwrap();
 
-        // ── leaf: Ambiguous ───────────────────────────────────────────────
-        ResolveError::Ambiguous(sources) => {
-            let mut related = Vec::new();
+        let primary_span =
+            engine.to_absolute_span(&self.instantiation_span).await;
 
-            for source in sources.iter() {
-                let candidate_id = match source {
-                    InstanceSource::FromGlobalInstance(id)
-                    | InstanceSource::FromAssociatedInstance(id)
-                    | InstanceSource::FromInstanceScope(id) => Some(*id),
+        // Render each frame in the context stack into a Note.
+        let mut notes: Vec<Note<ByteIndex>> = Vec::new();
 
-                    InstanceSource::FromInstanceParameterID(_) => None,
-                };
+        for frame in &self.context_stack {
+            let generic_params =
+                engine.get_generic_parameters(frame.resolving_symbol).await;
 
-                if let Some(id) = candidate_id
-                    && let Some(h) = symbol_highlight(
-                        engine,
-                        id,
-                        "this candidate instance also matches".to_string(),
-                    )
-                    .await
+            let param_name = generic_params
+                .get_instance_parameter(frame.param_id)
+                .name()
+                .to_string();
+
+            let parent_trait_ref_str =
+                frame.parent_trait_ref.write_to_string(engine).await.unwrap();
+
+            let related: Vec<Highlight<ByteIndex>> = {
+                if let Some(span) =
+                    engine.get_span(frame.resolving_symbol).await
                 {
-                    related.push(h);
+                    let abs = engine.to_absolute_span(&span).await;
+                    vec![Highlight::new(
+                        abs,
+                        Some(
+                            "this instance requires the parameter to be \
+                             resolved"
+                                .to_string(),
+                        ),
+                    )]
+                } else {
+                    vec![]
                 }
-            }
+            };
 
-            diagnostics.push(
+            notes.push(
+                Note::builder()
+                    .message(format!(
+                        "required because resolving instance parameter \
+                         `{param_name}` for `{parent_trait_ref_str}`"
+                    ))
+                    .related(related)
+                    .build(),
+            );
+        }
+
+        match &self.kind {
+            InstanceResolutionErrorKind::NotFound => Rendered::builder()
+                .message(format!("no instance found for `{trait_ref_str}`"))
+                .primary_highlight(
+                    Highlight::builder()
+                        .span(primary_span)
+                        .message(format!(
+                            "an instance of `{trait_ref_str}` is required here"
+                        ))
+                        .build(),
+                )
+                .help_message(
+                    "consider adding an `instance` parameter or importing a \
+                     suitable instance implementation into scope",
+                )
+                .notes(notes)
+                .build(),
+
+            InstanceResolutionErrorKind::Cyclic => Rendered::builder()
+                .message(format!(
+                    "cyclic instance dependency while resolving \
+                     `{trait_ref_str}`"
+                ))
+                .primary_highlight(
+                    Highlight::builder()
+                        .span(primary_span)
+                        .message(format!(
+                            "resolving `{trait_ref_str}` requires itself"
+                        ))
+                        .build(),
+                )
+                .help_message(
+                    "instance resolution encountered a cycle; try \
+                     restructuring the instance hierarchy to break the cycle",
+                )
+                .notes(notes)
+                .build(),
+
+            InstanceResolutionErrorKind::Ambiguous { sources } => {
+                let mut related = Vec::new();
+
+                for source in sources.iter() {
+                    let candidate_id = match source {
+                        InstanceSource::FromGlobalInstance(id)
+                        | InstanceSource::FromAssociatedInstance(id)
+                        | InstanceSource::FromInstanceScope(id) => Some(*id),
+                        InstanceSource::FromInstanceParameterID(_) => None,
+                    };
+
+                    if let Some(id) = candidate_id
+                        && let Some(span) = engine.get_span(id).await
+                    {
+                        let abs = engine.to_absolute_span(&span).await;
+                        related.push(Highlight::new(
+                            abs,
+                            Some(
+                                "this candidate instance also matches"
+                                    .to_string(),
+                            ),
+                        ));
+                    }
+                }
+
                 Rendered::builder()
                     .message(format!(
                         "ambiguous instance resolution for `{trait_ref_str}`"
@@ -166,164 +234,118 @@ async fn generate_instance_resolution_diagnostics_inner(
                          consider providing a more specific instance or \
                          removing the ambiguity",
                     )
-                    .notes(note_stack)
-                    .build(),
-            );
-        }
-
-        // ── recursive: descend one level, extend the note stack ───────────
-        ResolveError::Recursive(recursive) => {
-            Box::pin(generate_recursive_diagnostics(
-                engine,
-                expected_trait_ref,
-                instantiation_span,
-                recursive,
-                note_stack,
-                diagnostics,
-            ))
-            .await;
+                    .notes(notes)
+                    .build()
+            }
         }
     }
 }
 
-/// Handles the [`ResolveError::Recursive`] variant by iterating over every
-/// failed instance-parameter sub-resolution, appending a context note to the
-/// stack, and then recursing.
-async fn generate_recursive_diagnostics(
-    engine: &TrackedEngine,
-    // The trait ref from the *parent* call (used in the context note).
+// ─── internal recursive collector ────────────────────────────────────────────
+
+fn collect_leaf_diagnostics_inner(
+    expected_trait_ref: &TraitRef,
+    instantiation_span: RelativeSpan,
+    error: &ResolveError,
+    // Accumulated (un-rendered) context stack — cloned per branch.
+    context_stack: Vec<InstanceResolutionFrame>,
+    output: &mut Vec<InstanceResolutionError>,
+) {
+    match error {
+        ResolveError::NotFound => {
+            output.push(InstanceResolutionError {
+                expected_trait_ref: expected_trait_ref.clone(),
+                instantiation_span,
+                kind: InstanceResolutionErrorKind::NotFound,
+                context_stack,
+            });
+        }
+
+        ResolveError::Cyclic => {
+            output.push(InstanceResolutionError {
+                expected_trait_ref: expected_trait_ref.clone(),
+                instantiation_span,
+                kind: InstanceResolutionErrorKind::Cyclic,
+                context_stack,
+            });
+        }
+
+        ResolveError::Ambiguous(sources) => {
+            output.push(InstanceResolutionError {
+                expected_trait_ref: expected_trait_ref.clone(),
+                instantiation_span,
+                kind: InstanceResolutionErrorKind::Ambiguous {
+                    sources: sources.clone(),
+                },
+                context_stack,
+            });
+        }
+
+        ResolveError::Recursive(recursive) => {
+            collect_recursive_inner(
+                expected_trait_ref,
+                instantiation_span,
+                recursive,
+                &context_stack,
+                output,
+            );
+        }
+    }
+}
+
+fn collect_recursive_inner(
     parent_trait_ref: &TraitRef,
     instantiation_span: RelativeSpan,
     recursive: &RecursiveError,
-    note_stack: Vec<Note<ByteIndex>>,
-    diagnostics: &mut Vec<Rendered<ByteIndex>>,
+    context_stack: &[InstanceResolutionFrame],
+    output: &mut Vec<InstanceResolutionError>,
 ) {
     let resolving_symbol = recursive.resolving_symbol();
 
-    // Get generic parameters so we can look up instance parameter names.
-    let generic_params = engine.get_generic_parameters(resolving_symbol).await;
-
-    let parent_trait_ref_str = parent_trait_ref
-        .write_to_string(engine)
-        .await
-        .unwrap_or_else(|_| "<?>".to_string());
-
     for (param_id, sub_error) in recursive.errors() {
-        let param_name =
-            generic_params.get_instance_parameter(*param_id).name().to_string();
+        // The sub-error's "expected" trait ref is the current_trait_ref from
+        // the RecursiveError (the trait ref being resolved at that level).
+        // No engine needed here — this is pure data collection.
+        let sub_trait_ref = recursive.current_trait_ref().clone();
 
-        // Build the context note that describes *this* level of the recursion:
-        // "required because resolving instance parameter `<name>` needed by
-        //  `<parent_trait_ref>` through `<resolving_symbol>`".
-        let note_msg = format!(
-            "required because resolving instance parameter `{param_name}` for \
-             `{parent_trait_ref_str}`"
-        );
-
-        let related: Vec<Highlight<ByteIndex>> = symbol_highlight(
-            engine,
+        // Build the new frame for this level and push it onto a per-branch
+        // clone of the stack.
+        let mut child_stack = context_stack.to_vec();
+        child_stack.push(InstanceResolutionFrame {
+            parent_trait_ref: parent_trait_ref.clone(),
             resolving_symbol,
-            "this instance requires the parameter to be resolved".to_string(),
-        )
-        .await
-        .into_iter()
-        .collect();
+            param_id: *param_id,
+        });
 
-        // Clone the stack and append the new context note before passing it
-        // down, so each sibling sub-error gets its own independent stack.
-        let mut child_stack = note_stack.clone();
-        child_stack
-            .push(Note::builder().message(note_msg).related(related).build());
-
-        // The sub-error's "expected trait ref" is the trait ref of the
-        // sub-instance parameter declaration (if available).
-        let sub_trait_ref = generic_params
-            .get_instance_parameter(*param_id)
-            .trait_ref()
-            .map_or_else(
-                || recursive.current_trait_ref().clone(),
-                |tr| (**tr).clone(),
-            );
-
-        Box::pin(generate_instance_resolution_diagnostics_inner(
-            engine,
+        collect_leaf_diagnostics_inner(
             &sub_trait_ref,
             instantiation_span,
             sub_error,
             child_stack,
-            diagnostics,
-        ))
-        .await;
+            output,
+        );
     }
 }
 
-// ─── public API
-// ───────────────────────────────────────────────────────────────
-
-/// A value that represents a failure during instance resolution.
-///
-/// Call [`InstanceResolutionError::generate_diagnostics`] to obtain the full
-/// set of [`Rendered`] diagnostics, one per leaf failure in the error tree.
-///
-/// ## Why not `Report`?
-///
-/// [`pernixc_diagnostic::Report`] models a single diagnostic.  Instance
-/// resolution may produce **multiple** leaf errors (e.g. when resolving a
-/// symbol that requires two different instance parameters and both fail).
-/// Using a `Vec<Rendered>` output lets each leaf error be its own diagnostic
-/// with its own complete note chain, exactly as `generate_marker_error` in
-/// `wf_check.rs` produces multiple entries in a `Vec<Diagnostic>`.
-#[derive(Debug, Clone)]
-pub struct InstanceResolutionError {
-    /// The trait reference whose instance couldn't be resolved.
-    pub expected_trait_ref: TraitRef,
-
-    /// The span at the call-site that triggered the resolution (used as the
-    /// primary highlight in every emitted diagnostic).
-    pub instantiation_span: RelativeSpan,
-
-    /// The underlying resolution error.
-    pub error: ResolveError,
-}
-
-impl InstanceResolutionError {
-    /// Creates a new [`InstanceResolutionError`].
+impl ResolveError {
+    /// Generates a list of [`InstanceResolutionLeafError`] from the given
+    /// [`ResolveError`].
     #[must_use]
-    pub const fn new(
-        expected_trait_ref: TraitRef,
-        instantiation_span: RelativeSpan,
-        error: ResolveError,
-    ) -> Self {
-        Self { expected_trait_ref, instantiation_span, error }
-    }
-
-    /// Produces one [`Rendered`] diagnostic for **each leaf failure** in the
-    /// error tree.
-    ///
-    /// Each diagnostic carries:
-    /// - a primary highlight at [`Self::instantiation_span`],
-    /// - the leaf error message as the main message,
-    /// - a note chain (root → leaf) tracing exactly why that leaf was reached.
-    ///
-    /// This means a single [`InstanceResolutionError`] may produce more than
-    /// one entry when the underlying [`ResolveError`] is
-    /// [`ResolveError::Recursive`] with multiple failed instance parameters.
-    pub async fn generate_diagnostics(
+    pub fn generate_diagnostics(
         &self,
-        engine: &TrackedEngine,
-    ) -> Vec<Rendered<ByteIndex>> {
-        let mut diagnostics = Vec::new();
+        expected_trait_ref: &TraitRef,
+        instantiation_span: RelativeSpan,
+    ) -> Vec<InstanceResolutionError> {
+        let mut output = Vec::new();
 
-        generate_instance_resolution_diagnostics_inner(
-            engine,
-            &self.expected_trait_ref,
-            self.instantiation_span,
-            &self.error,
-            Vec::new(), // start with an empty note stack at the root
-            &mut diagnostics,
-        )
-        .await;
+        collect_leaf_diagnostics_inner(
+            expected_trait_ref,
+            instantiation_span,
+            self,
+            Vec::new(),
+            &mut output,
+        );
 
-        diagnostics
+        output
     }
 }
