@@ -14,11 +14,9 @@ public trait MyTrait[T]:
     pass
 
 
-final implements[T] MyTrait[T]
-
-
-public function main():
+public function main[instance I: MyTrait[int32]]():
     MyStruct()
     MyEnum()
     myModule()
     MyTrait[int32]()
+    I()
