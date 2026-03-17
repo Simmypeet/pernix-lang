@@ -245,7 +245,12 @@ impl Query for PositiveMarker {
                         ))));
                     }
 
-                    PositiveError::NegativeMarkerImplementation(result)
+                    // has been explicitly resolved to a negative
+                    // implementation, so we can return
+                    // early with the error
+                    return Ok(Err(
+                        PositiveError::NegativeMarkerImplementation(result),
+                    ));
                 }
                 Err(error) => {
                     // if failed by anything other than not found, then we'll

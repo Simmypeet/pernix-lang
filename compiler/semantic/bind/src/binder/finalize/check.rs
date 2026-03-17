@@ -164,15 +164,16 @@ async fn check_register_assignment<N: Normalizer>(
                     .await
                     .unwrap();
 
-                let predicate = Predicate::PositiveMarker(PositiveMarker::new(
-                    copy_marker,
-                    GenericArguments::new(
-                        Vec::new(),
-                        vec![ty.result.clone()],
-                        Vec::new(),
-                        Vec::new(),
-                    ),
-                ));
+                let predicate =
+                    Predicate::PositiveMarker(PositiveMarker::new(
+                        copy_marker,
+                        GenericArguments::new(
+                            Vec::new(),
+                            vec![ty.result.clone()],
+                            Vec::new(),
+                            Vec::new(),
+                        ),
+                    ));
 
                 value_environment
                     .type_environment
