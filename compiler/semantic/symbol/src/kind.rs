@@ -265,6 +265,7 @@ impl Kind {
                 | Self::ImplementationAssociatedFunction
                 | Self::ExternFunction
                 | Self::EffectOperation
+                | Self::InstanceAssociatedFunction
         )
     }
 
@@ -327,7 +328,12 @@ impl Kind {
     /// Checks if the symbol has a function body
     #[must_use]
     pub const fn has_function_body(&self) -> bool {
-        matches!(self, Self::Function | Self::ImplementationAssociatedFunction)
+        matches!(
+            self,
+            Self::Function
+                | Self::ImplementationAssociatedFunction
+                | Self::InstanceAssociatedFunction
+        )
     }
 
     /// Checks if the symbol has a variant associated type
