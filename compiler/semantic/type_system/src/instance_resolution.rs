@@ -3,6 +3,8 @@
 //! The module for resolving an `instance` when the `instance` term is left
 //! out for inference.
 
+pub mod diagnostic;
+
 use std::{
     ops::{Deref, Not},
     sync::Arc,
@@ -10,6 +12,7 @@ use std::{
 
 use derive_more::From;
 use linkme::distributed_slice;
+use pernixc_arena::ID;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_semantic_element::{
     global_instances::get_global_instances_of, import::get_import_map,
@@ -277,8 +280,7 @@ pub struct RecursiveError {
     current_trait_ref: TraitRef,
     resolving_symbol: Global<pernixc_symbol::ID>,
 
-    recurse_instance_parameter_id: pernixc_arena::ID<InstanceParameter>,
-    recurse_error: ResolveError,
+    errors: Vec<(ID<InstanceParameter>, ResolveError)>,
 }
 
 impl environment::Query for ResolveInstance {
@@ -663,6 +665,8 @@ impl<N: Normalizer> Environment<'_, N> {
         current_expected_trait_ref: &TraitRef,
         mut deduced: Instantiation,
     ) -> Result<Instantiation, ResolveSymbolError> {
+        let mut recursive_errors = Vec::new();
+
         // NOTE: we iterate through the instance parameters **in order**, so
         // that the dependency between instance parameters is respected.
         for (instance_param_id, instance_param) in
@@ -696,30 +700,26 @@ impl<N: Normalizer> Environment<'_, N> {
 
             let resolved =
                 match self.query(&ResolveInstance { trait_ref }).await? {
-                    Ok(resolved) => resolved,
+                    Ok(resolved) => resolved.instance.clone(),
                     Err(err) => {
-                        return Err(ResolveSymbolError::Recursive(Arc::new(
-                            RecursiveError {
-                                current_trait_ref: current_expected_trait_ref
-                                    .clone(),
-                                resolving_symbol: symbol_id,
-
-                                recurse_instance_parameter_id:
-                                    instance_param_id,
-                                recurse_error: err,
-                            },
-                        )));
+                        recursive_errors.push((instance_param_id, err));
+                        Instance::new_error()
                     }
                 };
 
             // Add the resolved instance to the deduction result.
-            deduced.insert_instance_mapping(
-                instance_param_term,
-                resolved.instance.clone(),
-            );
+            deduced.insert_instance_mapping(instance_param_term, resolved);
         }
 
-        Ok(deduced)
+        if recursive_errors.is_empty() {
+            Ok(deduced)
+        } else {
+            Err(ResolveSymbolError::Recursive(Arc::new(RecursiveError {
+                current_trait_ref: current_expected_trait_ref.clone(),
+                resolving_symbol: symbol_id,
+                errors: recursive_errors,
+            })))
+        }
     }
 
     async fn deduce_instance_symbol(
