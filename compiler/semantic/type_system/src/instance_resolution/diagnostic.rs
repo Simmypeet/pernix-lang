@@ -112,6 +112,11 @@ pub struct InstanceResolutionError {
     context_stack: Vec<InstanceResolutionFrame>,
 }
 
+enum SymbolOrParameter {
+    Symbol(Global<pernixc_symbol::ID>),
+    Parameter(InstanceParameterID),
+}
+
 impl Report for InstanceResolutionError {
     #[allow(clippy::too_many_lines)]
     async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
@@ -214,21 +219,46 @@ impl Report for InstanceResolutionError {
                     let candidate_id = match source {
                         InstanceSource::FromGlobalInstance(id)
                         | InstanceSource::FromAssociatedInstance(id)
-                        | InstanceSource::FromInstanceScope(id) => Some(*id),
-                        InstanceSource::FromInstanceParameterID(_) => None,
+                        | InstanceSource::FromInstanceScope(id) => {
+                            SymbolOrParameter::Symbol(*id)
+                        }
+                        InstanceSource::FromInstanceParameterID(id) => {
+                            SymbolOrParameter::Parameter(*id)
+                        }
                     };
 
-                    if let Some(id) = candidate_id
-                        && let Some(span) = engine.get_span(id).await
-                    {
-                        let abs = engine.to_absolute_span(&span).await;
-                        related.push(Highlight::new(
-                            abs,
-                            Some(
-                                "this candidate instance also matches"
-                                    .to_string(),
-                            ),
-                        ));
+                    match candidate_id {
+                        SymbolOrParameter::Symbol(global) => {
+                            if let Some(span) = engine.get_span(global).await {
+                                let abs = engine.to_absolute_span(&span).await;
+                                related.push(Highlight::new(
+                                    abs,
+                                    Some(
+                                        "this candidate instance also matches"
+                                            .to_string(),
+                                    ),
+                                ));
+                            }
+                        }
+                        SymbolOrParameter::Parameter(member_id) => {
+                            let generic_params = engine
+                                .get_generic_parameters(member_id.parent_id())
+                                .await;
+
+                            if let Some(span) =
+                                generic_params[member_id.id()].span()
+                            {
+                                let abs = engine.to_absolute_span(span).await;
+                                related.push(Highlight::new(
+                                    abs,
+                                    Some(
+                                        "this candidate instance parameter \
+                                         also matches"
+                                            .to_string(),
+                                    ),
+                                ));
+                            }
+                        }
                     }
                 }
 
