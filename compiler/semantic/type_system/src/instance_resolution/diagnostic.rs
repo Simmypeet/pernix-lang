@@ -11,18 +11,22 @@
 //! the context stack (`Vec<InstanceResolutionFrame>`) is built top-down, and
 //! one output value is emitted per leaf.
 
-use std::sync::Arc;
+use std::{ops::Deref, sync::Arc};
 
 use pernixc_arena::ID;
 use pernixc_diagnostic::{Highlight, Note, Rendered, Report};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_source_file::ByteIndex;
-use pernixc_symbol::{source_map::to_absolute_span, span::get_span};
+use pernixc_symbol::{
+    kind::get_kind, source_map::to_absolute_span, span::get_span,
+};
 use pernixc_target::Global;
 use pernixc_term::{
     display::Display,
-    generic_parameters::{InstanceParameter, get_generic_parameters},
+    generic_parameters::{
+        InstanceParameter, InstanceParameterID, get_generic_parameters,
+    },
     instance::TraitRef,
 };
 use qbice::{Decode, Encode, StableHash};
@@ -51,6 +55,8 @@ pub struct InstanceResolutionFrame {
     /// The ID of the instance parameter (on `resolving_symbol`) that could not
     /// be resolved, triggering the descent to the next level.
     param_id: ID<InstanceParameter>,
+
+    base: bool,
 }
 
 // ─── leaf error kinds
@@ -130,21 +136,25 @@ impl Report for InstanceResolutionError {
             let parent_trait_ref_str =
                 frame.parent_trait_ref.write_to_string(engine).await.unwrap();
 
-            let related: Vec<Highlight<ByteIndex>> = {
-                if let Some(span) =
-                    engine.get_span(frame.resolving_symbol).await
-                {
-                    let abs = engine.to_absolute_span(&span).await;
-                    vec![Highlight::new(
+            let highlight: Option<Highlight<ByteIndex>> = {
+                let generic_params =
+                    engine.get_generic_parameters(frame.resolving_symbol).await;
+
+                if let Some(span) = generic_params[frame.param_id].span() {
+                    let abs = engine.to_absolute_span(span).await;
+                    let kind = engine
+                        .get_kind(frame.resolving_symbol)
+                        .await
+                        .kind_str();
+
+                    Some(Highlight::new(
                         abs,
-                        Some(
-                            "this instance requires the parameter to be \
-                             resolved"
-                                .to_string(),
-                        ),
-                    )]
+                        Some(format!(
+                            "this {kind} requires the parameter to be resolved"
+                        )),
+                    ))
                 } else {
-                    vec![]
+                    None
                 }
             };
 
@@ -154,7 +164,7 @@ impl Report for InstanceResolutionError {
                         "required because resolving instance parameter \
                          `{param_name}` for `{parent_trait_ref_str}`"
                     ))
-                    .related(related)
+                    .maybe_primary_highlight(highlight)
                     .build(),
             );
         }
@@ -250,7 +260,8 @@ impl Report for InstanceResolutionError {
 
 // ─── internal recursive collector ────────────────────────────────────────────
 
-fn collect_leaf_diagnostics_inner(
+async fn collect_leaf_diagnostics_inner(
+    engine: &TrackedEngine,
     expected_trait_ref: &TraitRef,
     instantiation_span: RelativeSpan,
     error: &ResolveError,
@@ -290,68 +301,89 @@ fn collect_leaf_diagnostics_inner(
 
         ResolveError::Recursive(recursive) => {
             collect_recursive_inner(
-                expected_trait_ref,
+                engine,
                 instantiation_span,
                 recursive,
                 &context_stack,
                 output,
-            );
+            )
+            .await;
         }
     }
 }
 
-fn collect_recursive_inner(
-    parent_trait_ref: &TraitRef,
+async fn collect_recursive_inner(
+    engine: &TrackedEngine,
     instantiation_span: RelativeSpan,
     recursive: &RecursiveError,
     context_stack: &[InstanceResolutionFrame],
     output: &mut Vec<InstanceResolutionError>,
 ) {
     let resolving_symbol = recursive.resolving_symbol();
+    let generic_params = engine.get_generic_parameters(resolving_symbol).await;
 
-    for (param_id, sub_error) in recursive.errors() {
-        // The sub-error's "expected" trait ref is the current_trait_ref from
-        // the RecursiveError (the trait ref being resolved at that level).
-        // No engine needed here — this is pure data collection.
-        let sub_trait_ref = recursive.current_trait_ref().clone();
+    let inst = recursive.current_trait_ref().create_instantiation(engine).await;
 
-        // Build the new frame for this level and push it onto a per-branch
-        // clone of the stack.
-        let mut child_stack = context_stack.to_vec();
-        child_stack.push(InstanceResolutionFrame {
-            parent_trait_ref: parent_trait_ref.clone(),
-            resolving_symbol,
-            param_id: *param_id,
-        });
+    Box::pin(async move {
+        for (param_id, sub_error) in recursive.errors() {
+            let mut trait_ref = generic_params[*param_id]
+                .trait_ref()
+                .map(|x| x.deref().clone())
+                .unwrap();
 
-        collect_leaf_diagnostics_inner(
-            &sub_trait_ref,
-            instantiation_span,
-            sub_error,
-            child_stack,
-            output,
-        );
-    }
+            trait_ref.instantiate(&inst);
+
+            // Build the new frame for this level and push it onto a per-branch
+            // clone of the stack.
+            let mut child_stack = context_stack.to_vec();
+            child_stack.push(InstanceResolutionFrame {
+                parent_trait_ref: trait_ref.clone(),
+                resolving_symbol,
+                param_id: *param_id,
+                base: false,
+            });
+
+            collect_leaf_diagnostics_inner(
+                engine,
+                &trait_ref,
+                instantiation_span,
+                sub_error,
+                child_stack,
+                output,
+            )
+            .await;
+        }
+    })
+    .await;
 }
 
 impl ResolveError {
     /// Generates a list of [`InstanceResolutionLeafError`] from the given
     /// [`ResolveError`].
     #[must_use]
-    pub fn generate_diagnostics(
+    pub async fn generate_diagnostics(
         &self,
+        engine: &TrackedEngine,
         expected_trait_ref: &TraitRef,
+        instance_parameter_id: InstanceParameterID,
         instantiation_span: RelativeSpan,
     ) -> Vec<InstanceResolutionError> {
         let mut output = Vec::new();
 
         collect_leaf_diagnostics_inner(
+            engine,
             expected_trait_ref,
             instantiation_span,
             self,
-            Vec::new(),
+            vec![InstanceResolutionFrame {
+                parent_trait_ref: expected_trait_ref.clone(),
+                resolving_symbol: instance_parameter_id.parent_id(),
+                param_id: instance_parameter_id.id(),
+                base: true,
+            }],
             &mut output,
-        );
+        )
+        .await;
 
         output
     }

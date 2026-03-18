@@ -22,7 +22,7 @@ use pernixc_term::{
     constant::Constant,
     display::{self, InferenceRenderingMap},
     generic_arguments::GenericArguments,
-    generic_parameters::get_generic_parameters,
+    generic_parameters::{InstanceParameterID, get_generic_parameters},
     inference,
     instance::Instance,
     instantiation::Instantiation,
@@ -1199,8 +1199,17 @@ impl InferenceContext {
                 }
 
                 Err(err) => {
-                    for err in
-                        err.generate_diagnostics(&expected_trait_ref, *span)
+                    for err in err
+                        .generate_diagnostics(
+                            engine,
+                            &expected_trait_ref,
+                            InstanceParameterID::new(
+                                symbol_id,
+                                instance_parameter_id,
+                            ),
+                            *span,
+                        )
+                        .await
                     {
                         handler.receive(err.into());
                     }
