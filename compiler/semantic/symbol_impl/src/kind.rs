@@ -4,7 +4,8 @@ use linkme::distributed_slice;
 use pernixc_extend::extend;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_symbol::{
-    AllAdtIDKey, AllFunctionWithBodyIDKey, AllImplementsIDKey, ID,
+    AllAdtIDKey, AllFunctionWithBodyIDKey, AllImplementsIDKey,
+    AllInstanceIDKey, ID,
     kind::{Key, Kind},
 };
 use pernixc_target::{Global, TargetID};
@@ -356,3 +357,43 @@ async fn all_function_ids_executor(
 #[distributed_slice(PERNIX_PROGRAM)]
 static ALL_FUNCTION_WITH_BODY_ID_EXECUTOR: Registration<Config> =
     Registration::new::<AllFunctionWithBodyIDKey, AllFunctionIdsExecutor>();
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+pub struct InstanceFilter;
+
+impl Filter for InstanceFilter {
+    async fn filter(&self, kind: pernixc_symbol::kind::Kind) -> bool {
+        kind == pernixc_symbol::kind::Kind::Instance
+    }
+}
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static INSTANCE_FILTER_EXECUTOR: Registration<Config> =
+    Registration::new::<FilterKey<InstanceFilter>, FilterExecutor>();
+
+#[executor(config = Config)]
+async fn all_instance_ids_executor(
+    key: &AllInstanceIDKey,
+    engine: &TrackedEngine,
+) -> Arc<[ID]> {
+    engine
+        .query(&FilterKey { target_id: key.target_id, filter: InstanceFilter })
+        .await
+}
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static ALL_INSTANCE_ID_EXECUTOR: Registration<Config> =
+    Registration::new::<AllInstanceIDKey, AllInstanceIdsExecutor>();

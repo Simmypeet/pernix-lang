@@ -21,6 +21,7 @@ struct CoreLibInitializer<'i> {
 }
 
 /// Initializes all the core library intrinsics.
+#[allow(clippy::too_many_lines)]
 pub async fn initialize_corelib(input_session: &mut InputSession) {
     let mut initializer = CoreLibInitializer {
         input_session,
@@ -34,6 +35,17 @@ pub async fn initialize_corelib(input_session: &mut InputSession) {
     let copy_marker_id = initializer.initialize_copy_marker().await;
     let drop_trait_id = initializer.initialize_drop_trait(copy_marker_id).await;
     let intrinsic_ids = initializer.initialize_intrinsics().await;
+
+    // corelib doesn't link to any other target.
+    initializer
+        .input_session
+        .set_input(
+            pernixc_target::LinkKey {
+                target_id: pernixc_target::TargetID::CORE,
+            },
+            initializer.input_session.intern(HashSet::default()),
+        )
+        .await;
 
     initializer
         .input_session

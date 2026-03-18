@@ -20,3 +20,4 @@ mod variance;
 mod variant;
 mod wf_check;
 mod where_clause;
+mod global_instances;

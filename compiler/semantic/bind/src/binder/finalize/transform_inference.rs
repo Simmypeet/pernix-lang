@@ -274,7 +274,7 @@ impl Transformer for ReplaceInference<'_, '_> {
 
         match resolution {
             ResolutionMut::Symbol(symbol) => {
-                let inst = dbg!(symbol.create_instantiation(self.engine).await);
+                let inst = symbol.create_instantiation(self.engine).await;
 
                 if let Err(e) = self
                     .inference_context

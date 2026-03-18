@@ -842,7 +842,7 @@ impl Binder<'_> {
             .build();
 
         let resolution =
-            dbg!(resolver.resolve_qualified_identifier(syntax_tree).await);
+            resolver.resolve_qualified_identifier(syntax_tree).await;
 
         resolution_handler.propagate(handler);
 
@@ -1142,14 +1142,12 @@ impl InferenceContext {
         for (instance_parameter_id, instance_parameter) in
             generic_parameters.instance_parameters_as_order()
         {
-            let instance_term = dbg!(
-                instantiation_usage
-                    .get_instance_mapping(&Instance::new_parameter(
-                        symbol_id,
-                        instance_parameter_id,
-                    ))
-                    .unwrap()
-            );
+            let instance_term = instantiation_usage
+                .get_instance_mapping(&Instance::new_parameter(
+                    symbol_id,
+                    instance_parameter_id,
+                ))
+                .unwrap();
 
             // if it's inference variable, then resolve it and update the
             // inference table

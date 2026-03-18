@@ -334,6 +334,28 @@ pub struct AllImplementsIDKey {
     pub target_id: TargetID,
 }
 
+/// Retrieves all instance symbol IDs in the given target.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    Query,
+)]
+#[value(Arc<[ID]>)]
+#[extend(name = get_all_instance_ids, by_val)]
+pub struct AllInstanceIDKey {
+    /// The target ID to get all instance symbol IDs for.
+    pub target_id: TargetID,
+}
+
 /// Retrieves all function having body symbol IDs in the given target.
 #[derive(
     Debug,

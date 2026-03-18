@@ -28,15 +28,15 @@ use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 #[value(Interned<HashSet<Global<pernixc_symbol::ID>>>)]
 #[extend(name = get_global_instances_of, by_val)]
 pub struct Key {
-    /// The global ID of the symbol to get implementations for.
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    /// The trait symbol to get the instances of.
+    pub trait_id: Global<pernixc_symbol::ID>,
 
     /// The target ID to search for implementations in.
     pub target_id: pernixc_target::TargetID,
 }
 
-/// A query for retrieving all the `implements` IDs that implements this symbol
-/// in a specific target.
+/// A query for retrieving all the `instance` IDs that are associated with a
+/// `trait` symbol in a specific target.
 #[derive(
     Debug,
     Clone,
@@ -53,8 +53,8 @@ pub struct Key {
 )]
 #[value(Interned<HashSet<Global<pernixc_symbol::ID>>>)]
 pub struct InTargetKey {
-    /// The ID of the implementable (trait or marker).
-    pub implementable_id: Global<pernixc_symbol::ID>,
+    /// The trait symbol to get the instances of.
+    pub trait_id: Global<pernixc_symbol::ID>,
 
     /// The target ID to search for implementations in.
     pub target_id: pernixc_target::TargetID,
