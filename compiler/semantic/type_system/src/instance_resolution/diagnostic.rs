@@ -11,7 +11,7 @@
 //! the context stack (`Vec<InstanceResolutionFrame>`) is built top-down, and
 //! one output value is emitted per leaf.
 
-use std::{ops::Deref, sync::Arc};
+use std::sync::Arc;
 
 use pernixc_arena::ID;
 use pernixc_diagnostic::{Highlight, Note, Rendered, Report};
@@ -320,19 +320,9 @@ async fn collect_recursive_inner(
     output: &mut Vec<InstanceResolutionError>,
 ) {
     let resolving_symbol = recursive.resolving_symbol();
-    let generic_params = engine.get_generic_parameters(resolving_symbol).await;
-
-    let inst = recursive.current_trait_ref().create_instantiation(engine).await;
 
     Box::pin(async move {
-        for (param_id, sub_error) in recursive.errors() {
-            let mut trait_ref = generic_params[*param_id]
-                .trait_ref()
-                .map(|x| x.deref().clone())
-                .unwrap();
-
-            trait_ref.instantiate(&inst);
-
+        for (param_id, sub_error, trait_ref) in recursive.errors() {
             // Build the new frame for this level and push it onto a per-branch
             // clone of the stack.
             let mut child_stack = context_stack.to_vec();
@@ -345,7 +335,7 @@ async fn collect_recursive_inner(
 
             collect_leaf_diagnostics_inner(
                 engine,
-                &trait_ref,
+                trait_ref,
                 instantiation_span,
                 sub_error,
                 child_stack,

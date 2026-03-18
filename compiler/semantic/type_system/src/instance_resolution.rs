@@ -276,20 +276,12 @@ pub enum ResolveError {
 /// which has failed with the given error.
 #[derive(Debug, Clone)]
 pub struct RecursiveError {
-    current_trait_ref: TraitRef,
     resolving_symbol: Global<pernixc_symbol::ID>,
 
-    errors: Vec<(ID<InstanceParameter>, ResolveError)>,
+    errors: Vec<(ID<InstanceParameter>, ResolveError, TraitRef)>,
 }
 
 impl RecursiveError {
-    /// The trait reference that was being resolved at this level of the
-    /// recursion.
-    #[must_use]
-    pub const fn current_trait_ref(&self) -> &TraitRef {
-        &self.current_trait_ref
-    }
-
     /// The global symbol ID that was being resolved (i.e. the instance
     /// candidate that required sub-instance resolution).
     #[must_use]
@@ -302,7 +294,7 @@ impl RecursiveError {
     /// Each entry is the ID of the instance parameter that couldn't be resolved
     /// and the corresponding [`ResolveError`] explaining why.
     #[must_use]
-    pub fn errors(&self) -> &[(ID<InstanceParameter>, ResolveError)] {
+    pub fn errors(&self) -> &[(ID<InstanceParameter>, ResolveError, TraitRef)] {
         &self.errors
     }
 }
@@ -699,7 +691,6 @@ impl<N: Normalizer> Environment<'_, N> {
         &self,
         symbol_id: Global<pernixc_symbol::ID>,
         symbol_generic_params: &GenericParameters,
-        current_expected_trait_ref: &TraitRef,
         mut deduced: Instantiation,
     ) -> Result<Instantiation, ResolveSymbolError> {
         let mut recursive_errors = Vec::new();
@@ -735,14 +726,16 @@ impl<N: Normalizer> Environment<'_, N> {
             // IMPORTANT: instantiate trait_ref to the latest known deduction.
             trait_ref.instantiate(&deduced);
 
-            let resolved =
-                match self.query(&ResolveInstance { trait_ref }).await? {
-                    Ok(resolved) => resolved.instance.clone(),
-                    Err(err) => {
-                        recursive_errors.push((instance_param_id, err));
-                        Instance::new_error()
-                    }
-                };
+            let resolved = match self
+                .query(&ResolveInstance { trait_ref: trait_ref.clone() })
+                .await?
+            {
+                Ok(resolved) => resolved.instance.clone(),
+                Err(err) => {
+                    recursive_errors.push((instance_param_id, err, trait_ref));
+                    Instance::new_error()
+                }
+            };
 
             // Add the resolved instance to the deduction result.
             deduced.insert_instance_mapping(instance_param_term, resolved);
@@ -752,7 +745,6 @@ impl<N: Normalizer> Environment<'_, N> {
             Ok(deduced)
         } else {
             Err(ResolveSymbolError::Recursive(Arc::new(RecursiveError {
-                current_trait_ref: current_expected_trait_ref.clone(),
                 resolving_symbol: symbol_id,
                 errors: recursive_errors,
             })))
@@ -805,7 +797,6 @@ impl<N: Normalizer> Environment<'_, N> {
             .recursive_resolve_instance(
                 symbol_id,
                 &symbol_generic_parameters,
-                expected_trait_ref,
                 inst,
             )
             .await?;
