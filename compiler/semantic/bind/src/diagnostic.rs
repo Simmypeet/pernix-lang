@@ -3,6 +3,7 @@
 use std::fmt::Write;
 
 use pernixc_diagnostic::{Highlight, Report, Severity};
+use pernixc_ir::transform::ResolutionOwned;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_source_file::ByteIndex;
@@ -370,7 +371,7 @@ pub struct TypeAnnotationRequired {
     pub span: RelativeSpan,
 
     /// The generic parameter that requires a type annotation.
-    pub term: pernixc_term::Term,
+    pub term: ResolutionOwned,
 
     /// The rendering map for inference variables.
     pub rendering_map: RenderingMap,

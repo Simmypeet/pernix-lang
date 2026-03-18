@@ -26,10 +26,10 @@ use pernixc_syntax::{
 use pernixc_target::{Global, TargetID, get_linked_targets, get_target_map};
 use pernixc_term::{
     TermMut,
-    display::Display,
+    display::{self, Display},
     generic_arguments::{
-        AssociatedSymbol, GenericArguments, Symbol,
-        create_identity_generic_arguments,
+        AssociatedSymbol, DisplaySymbolWithGenericArguments, GenericArguments,
+        Symbol, create_identity_generic_arguments,
     },
     generic_parameters::get_generic_parameters,
     instance::{Instance, InstanceAssociated},
@@ -60,6 +60,23 @@ use crate::{
     StableHash,
 )]
 pub struct Variant(Symbol);
+
+impl display::Display for Variant {
+    async fn fmt(
+        &self,
+        engine: &TrackedEngine,
+        formatter: &mut display::Formatter<'_, '_>,
+    ) -> std::fmt::Result {
+        let parent_enum_id = self.parent_enum_id(engine).await;
+
+        DisplaySymbolWithGenericArguments::new(
+            parent_enum_id,
+            self.0.generic_arguments(),
+        )
+        .fmt(engine, formatter)
+        .await
+    }
+}
 
 impl Variant {
     /// Creates a new [`Variant`] from the given [`Symbol`].

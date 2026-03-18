@@ -167,23 +167,40 @@ async fn simplify_inference<T: Term + Default>(
     }
 }
 
-impl Transformer for ReplaceInference<'_, '_> {
-    #[allow(clippy::too_many_lines)]
-    async fn transform(
-        &mut self,
-        mut resolution: ResolutionMut<'_>,
-        span: RelativeSpan,
-    ) {
-        if self.unrecoverable_error.is_some() {
-            return;
-        }
+fn erase_inference(resolution: &mut ResolutionMut<'_>) {
+    for mut term in resolution.iter_all_term_mut() {
+        let mut erase_inference = EraseInference;
 
+        match &mut term {
+            pernixc_term::TermMut::Constant(constant) => {
+                visitor::accept_recursive_mut(*constant, &mut erase_inference);
+            }
+            pernixc_term::TermMut::Lifetime(lifetime) => {
+                visitor::accept_recursive_mut(*lifetime, &mut erase_inference);
+            }
+            pernixc_term::TermMut::Type(ty) => {
+                visitor::accept_recursive_mut(*ty, &mut erase_inference);
+            }
+            pernixc_term::TermMut::Instance(instance) => {
+                visitor::accept_recursive_mut(*instance, &mut erase_inference);
+            }
+        }
+    }
+}
+
+impl ReplaceInference<'_, '_> {
+    async fn finalize_type_inference(
+        &mut self,
+        span: RelativeSpan,
+        resolution: &mut ResolutionMut<'_>,
+    ) -> Result<bool, ()> {
         let env = Environment::new(
             Cow::Borrowed(self.premise),
             Cow::Borrowed(self.engine),
             self.inference_context,
         );
 
+        let mut found_inference = false;
         for mut term in resolution.iter_all_term_mut() {
             let result = match &mut term {
                 pernixc_term::TermMut::Constant(constant) => {
@@ -204,7 +221,7 @@ impl Transformer for ReplaceInference<'_, '_> {
 
             if let Err(e) = result {
                 self.unrecoverable_error = Some(e);
-                return;
+                return Err(());
             }
 
             let mut search_inference =
@@ -234,43 +251,42 @@ impl Transformer for ReplaceInference<'_, '_> {
                 }
             }
 
-            if search_inference.found_inference {
-                self.handler.receive(
-                    TypeAnnotationRequired {
-                        span,
-                        term: dbg!(term.to_owned_term()),
-                        rendering_map: self.rendering_map.clone(),
-                    }
-                    .into(),
-                );
-            }
-
-            let mut erase_inference = EraseInference;
-
-            match &mut term {
-                pernixc_term::TermMut::Constant(constant) => {
-                    visitor::accept_recursive_mut(
-                        *constant,
-                        &mut erase_inference,
-                    );
-                }
-                pernixc_term::TermMut::Lifetime(lifetime) => {
-                    visitor::accept_recursive_mut(
-                        *lifetime,
-                        &mut erase_inference,
-                    );
-                }
-                pernixc_term::TermMut::Type(ty) => {
-                    visitor::accept_recursive_mut(*ty, &mut erase_inference);
-                }
-                pernixc_term::TermMut::Instance(instance) => {
-                    visitor::accept_recursive_mut(
-                        *instance,
-                        &mut erase_inference,
-                    );
-                }
-            }
+            found_inference |= search_inference.found_inference;
         }
+
+        Ok(found_inference)
+    }
+}
+
+impl Transformer for ReplaceInference<'_, '_> {
+    #[allow(clippy::too_many_lines)]
+    async fn transform(
+        &mut self,
+        mut resolution: ResolutionMut<'_>,
+        span: RelativeSpan,
+    ) {
+        if self.unrecoverable_error.is_some() {
+            return;
+        }
+
+        let Ok(found_inference) =
+            self.finalize_type_inference(span, &mut resolution).await
+        else {
+            return;
+        };
+
+        if found_inference {
+            self.handler.receive(
+                TypeAnnotationRequired {
+                    span,
+                    term: resolution.to_owned(),
+                    rendering_map: self.rendering_map.clone(),
+                }
+                .into(),
+            );
+        }
+
+        erase_inference(&mut resolution);
 
         match resolution {
             ResolutionMut::Symbol(symbol) => {

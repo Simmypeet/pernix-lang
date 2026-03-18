@@ -380,6 +380,24 @@ impl GenericArguments {
                     .map(|(i1, i2)| ZipRef::Instance(i1, i2)),
             )
     }
+
+    /// Creates an [`Instantiation`] for the symbol with the given ID by using
+    /// the generic arguments in `self` and the generic parameters of the symbol
+    /// with the given ID.
+    #[must_use]
+    pub async fn create_instantiation_for_generic_symbol(
+        &self,
+        global_id: Global<pernixc_symbol::ID>,
+        engine: &TrackedEngine,
+    ) -> Instantiation {
+        let generic_parameters = engine.get_generic_parameters(global_id).await;
+
+        Instantiation::from_generic_arguments(
+            self,
+            global_id,
+            &generic_parameters,
+        )
+    }
 }
 
 /// Creates an identity generic arguments for the symbol with the given ID.
@@ -1010,21 +1028,54 @@ impl GenericArguments {
     }
 }
 
-impl crate::display::Display for Symbol {
+/// Implements the [`display::Display`]
+#[derive(Debug)]
+pub struct DisplaySymbolWithGenericArguments<'a> {
+    global_id: Global<pernixc_symbol::ID>,
+    generic_arguments: &'a GenericArguments,
+}
+
+impl<'a> DisplaySymbolWithGenericArguments<'a> {
+    #[must_use]
+    pub const fn new(
+        global_id: Global<pernixc_symbol::ID>,
+        generic_arguments: &'a GenericArguments,
+    ) -> Self {
+        Self { global_id, generic_arguments }
+    }
+}
+
+impl crate::display::Display for DisplaySymbolWithGenericArguments<'_> {
     async fn fmt(
         &self,
         engine: &pernixc_qbice::TrackedEngine,
         formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
         if formatter.configuration().short_qualified_identifiers() {
-            let name = engine.get_name(self.id).await;
+            let name = engine.get_name(self.global_id).await;
             write!(formatter, "{}", &*name)?;
         } else {
-            let qualified_name = engine.get_qualified_name(self.id).await;
+            let qualified_name =
+                engine.get_qualified_name(self.global_id).await;
             write!(formatter, "{qualified_name}")?;
         }
 
         self.generic_arguments.fmt(engine, formatter).await
+    }
+}
+
+impl crate::display::Display for Symbol {
+    async fn fmt(
+        &self,
+        engine: &pernixc_qbice::TrackedEngine,
+        formatter: &mut crate::display::Formatter<'_, '_>,
+    ) -> std::fmt::Result {
+        DisplaySymbolWithGenericArguments {
+            global_id: self.id,
+            generic_arguments: &self.generic_arguments,
+        }
+        .fmt(engine, formatter)
+        .await
     }
 }
 
@@ -1039,8 +1090,15 @@ impl crate::display::Display for AssociatedSymbol {
             .target_id
             .make_global(engine.get_parent(self.id).await.unwrap());
 
-        let parent_qualified_name = engine.get_qualified_name(parent_id).await;
-        write!(formatter, "{parent_qualified_name}")?;
+        if formatter.configuration().short_qualified_identifiers() {
+            let parent_name = engine.get_name(parent_id).await;
+            write!(formatter, "{}", &*parent_name)?;
+        } else {
+            let parent_qualified_name =
+                engine.get_qualified_name(parent_id).await;
+            write!(formatter, "{parent_qualified_name}")?;
+        }
+
         self.parent_generic_arguments.fmt(engine, formatter).await?;
 
         let name = engine.get_name(self.id).await;
