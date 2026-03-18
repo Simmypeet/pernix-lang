@@ -10,6 +10,11 @@ stderr:
    │     ━━━━━━━━━━━━━━━━━ an instance of `main::Require[T]` is required here
    │
    ╰ help: consider adding an `instance` parameter or importing a suitable instance implementation into scope
+[note]: required because resolving instance parameter `I` for `main::Require[T]`
+  ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/simple_not_found/main.pnx:5:32
+  │
+5 │ public struct Test[T, instance I: Require[T]]:
+  ╰╴                               ━ this struct requires the parameter to be resolved
 
 [error]: Compilation aborted due to 1 error(s)
 

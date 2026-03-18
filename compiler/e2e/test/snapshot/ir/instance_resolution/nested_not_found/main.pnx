@@ -1,0 +1,22 @@
+public trait Require[T]:
+    pass
+
+
+public instance Outer[T, instance X: Require[Test[T]]]: Require[Test[Test[T]]]:
+    pass
+
+
+public instance Inner[T, instance Y: Require[T]]: Require[Test[T]]:
+    pass
+
+
+public struct Test[T]:
+    public value: T
+
+
+public function require[T, instance I: Require[T]](test: T):
+    pass
+
+
+public function useTest[T](a: T):
+    require(Test{value: Test{value: a}})
