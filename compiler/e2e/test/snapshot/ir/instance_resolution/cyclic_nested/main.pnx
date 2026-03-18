@@ -1,0 +1,45 @@
+public trait Require[T]:
+    pass
+
+
+public struct Box[T]:
+    private fake: phantom T
+
+
+public instance BoxInst[T, instance X: Require[T]]: Require[Box[T]]:
+    pass
+
+
+public enum Option[T]:
+    Some(T)
+    None
+
+
+public instance OptionInst[T, instance X: Require[T]]: Require[Option[T]]:
+    pass
+
+
+public struct LinkedList[T]:
+    public head: T
+    public tail: Option[Box[LinkedList[T]]]
+
+
+public instance LinkedListInst[
+    T,
+    instance H: Require[T],
+    # error: this should cause a cyclic instance resolution error
+    instance T: Require[Option[Box[LinkedList[T]]]],
+]: Require[LinkedList[T]]:
+    pass
+
+
+public instance Int32Inst: Require[int32]:
+    pass
+
+
+public function require[T, instance I: Require[T]](value: T):
+    pass
+
+
+public function useLinkedList():
+    require(LinkedList { head: 1i32, tail: Option::None })
