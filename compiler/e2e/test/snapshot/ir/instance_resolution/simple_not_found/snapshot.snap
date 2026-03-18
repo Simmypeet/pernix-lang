@@ -1,0 +1,18 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: run
+---
+stderr:
+[error]: no instance found for `main::Require[T]`
+   ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/simple_not_found/main.pnx:11:5
+   │
+11 │     Test { value: a } 
+   │     ━━━━━━━━━━━━━━━━━ an instance of `main::Require[T]` is required here
+   │
+   ╰ help: consider adding an `instance` parameter or importing a suitable instance implementation into scope
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:
