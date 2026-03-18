@@ -1,0 +1,28 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: run
+---
+stderr:
+[error]: ambiguous instance resolution for `main::Order[T]`
+   ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/ambiguous/main.pnx:18:9
+   │
+14 │ implements[T, instance O: Order[T]] MaxHeap[T, O]:
+   │                        ─ this candidate instance parameter also matches
+15 │     public function withOrder[instance O2: Order[T]](value: T):
+   │                                        ── this candidate instance parameter also matches
+   ‡
+18 │         requireOrder(value)
+   │         ━━━━━━━━━━━━━━━━━━━ multiple instances match `main::Order[T]`
+   │
+   ╰ help: the resolution is ambiguous because more than one instance satisfies the required trait reference; consider providing a more specific instance or removing the ambiguity
+[note]: required because resolving instance parameter `O` for `main::Order[T]`
+   ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/ambiguous/main.pnx:10:42
+   │
+10 │ public function requireOrder[T, instance O: Order[T]](value: T):
+   ╰╴                                         ━ this function requires the parameter to be resolved
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:
