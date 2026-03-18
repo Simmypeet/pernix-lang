@@ -19,7 +19,7 @@ stderr:
    │
    ╰ help: consider adding a type annotation
 
-[error]: type annotation is required for `{any}`
+[error]: type annotation is required for `main::Vector[{any}]::new`
    ╭▸ compiler/e2e/test/snapshot/ir/expression/infer/main.pnx:21:22
    │
 21 │     let mut newVec = Vector::new()
