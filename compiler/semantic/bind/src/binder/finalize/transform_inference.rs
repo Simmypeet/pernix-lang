@@ -4,13 +4,18 @@ use pernixc_handler::Handler;
 use pernixc_ir::transform::{Element, ResolutionMut, Transformer};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
+use pernixc_resolution::qualified_identifier::Variant;
+use pernixc_semantic_element::trait_ref::create_instantiation;
+use pernixc_symbol::parent::get_parent_global;
 use pernixc_term::{
+    TermMut,
     constant::Constant,
-    instance::Instance,
+    generic_arguments::{AssociatedSymbol, Symbol},
+    instance::{Instance, InstanceAssociated},
     lifetime::Lifetime,
     sub_term::TermLocation,
     r#type::Type,
-    visitor::{self, MutableRecursive},
+    visitor::{self, AsyncRecursive, MutableRecursive},
 };
 use pernixc_type_system::{
     UnrecoverableError,
@@ -25,6 +30,353 @@ use crate::{
     },
     diagnostic::{Diagnostic, TypeAnnotationRequired},
 };
+
+struct InstanceInferenceResolver<'x, 'a> {
+    inference_context: &'x mut InferenceContext,
+    premise: &'a Premise,
+    engine: &'a TrackedEngine,
+    handler: &'a dyn Handler<Diagnostic>,
+
+    span: RelativeSpan,
+    unrecoverable_error: Option<UnrecoverableError>,
+}
+
+impl InstanceInferenceResolver<'_, '_> {
+    async fn resolve_inferring_instance_variable_on_symbol(
+        &mut self,
+        symbol: &Symbol,
+    ) -> bool {
+        let inst = symbol.create_instantiation(self.engine).await;
+
+        if let Err(er) = self
+            .inference_context
+            .resolve_inferring_instance_variable(
+                symbol.id(),
+                &inst,
+                &self.span,
+                self.engine,
+                self.premise,
+                self.handler,
+            )
+            .await
+        {
+            self.unrecoverable_error = Some(er);
+            false
+        } else {
+            true
+        }
+    }
+
+    async fn resolve_inferring_instance_variable_on_variant(
+        &mut self,
+        symbol: &Variant,
+    ) -> bool {
+        let enum_inst = symbol.create_instantiation(self.engine).await;
+        let enum_id = symbol.parent_enum_id(self.engine).await;
+
+        if let Err(err) = self
+            .inference_context
+            .resolve_inferring_instance_variable(
+                enum_id,
+                &enum_inst,
+                &self.span,
+                self.engine,
+                self.premise,
+                self.handler,
+            )
+            .await
+        {
+            self.unrecoverable_error = Some(err);
+            false
+        } else {
+            true
+        }
+    }
+
+    async fn resolve_inferring_instance_variable_on_associated_symbol(
+        &mut self,
+        associated_symbol: &AssociatedSymbol,
+    ) -> bool {
+        let inst = associated_symbol.create_instantiation(self.engine).await;
+
+        if let Err(err) = self
+            .inference_context
+            .resolve_inferring_instance_variable(
+                associated_symbol.id(),
+                &inst,
+                &self.span,
+                self.engine,
+                self.premise,
+                self.handler,
+            )
+            .await
+        {
+            self.unrecoverable_error = Some(err);
+            return false;
+        }
+
+        let parent_id = self
+            .engine
+            .get_parent_global(associated_symbol.id())
+            .await
+            .unwrap();
+
+        if let Err(err) = self
+            .inference_context
+            .resolve_inferring_instance_variable(
+                parent_id,
+                &inst,
+                &self.span,
+                self.engine,
+                self.premise,
+                self.handler,
+            )
+            .await
+        {
+            self.unrecoverable_error = Some(err);
+            return false;
+        }
+
+        true
+    }
+
+    async fn resolve_inferring_instance_variable_on_instance_associated(
+        &mut self,
+        instance_associated: &InstanceAssociated,
+    ) -> bool {
+        let Some(inst) =
+            instance_associated.create_instantiation(self.engine).await
+        else {
+            return true;
+        };
+
+        if let Err(err) = self
+            .inference_context
+            .resolve_inferring_instance_variable(
+                instance_associated.trait_associated_symbol_id(),
+                &inst,
+                &self.span,
+                self.engine,
+                self.premise,
+                self.handler,
+            )
+            .await
+        {
+            self.unrecoverable_error = Some(err);
+            return false;
+        }
+
+        true
+    }
+
+    async fn reucrsive_resolve_inference_instance(
+        &mut self,
+        term_muts: impl Iterator<Item = TermMut<'_>>,
+    ) -> bool {
+        for term in term_muts {
+            if self.unrecoverable_error.is_some() {
+                return false;
+            }
+
+            match term {
+                TermMut::Constant(constant) => {
+                    visitor::accept_recursive_async(constant, self).await;
+                }
+                TermMut::Lifetime(_) => {}
+
+                TermMut::Type(ty) => {
+                    visitor::accept_recursive_async(ty, self).await;
+                }
+                TermMut::Instance(instance) => {
+                    visitor::accept_recursive_async(instance, self).await;
+                }
+            }
+        }
+
+        if self.unrecoverable_error.is_some() {
+            return false;
+        }
+
+        true
+    }
+
+    async fn resolve_inference_instance_on_resolution(
+        &mut self,
+        resolution: &mut ResolutionMut<'_>,
+    ) -> bool {
+        match resolution {
+            ResolutionMut::Symbol(symbol) => {
+                if !self
+                    .resolve_inferring_instance_variable_on_symbol(symbol)
+                    .await
+                {
+                    return false;
+                }
+
+                self.reucrsive_resolve_inference_instance(
+                    symbol.iter_all_term_mut(),
+                )
+                .await
+            }
+
+            ResolutionMut::Variant(symbol) => {
+                if !self
+                    .resolve_inferring_instance_variable_on_variant(symbol)
+                    .await
+                {
+                    return false;
+                }
+
+                self.reucrsive_resolve_inference_instance(
+                    symbol.iter_all_term_mut(),
+                )
+                .await
+            }
+
+            ResolutionMut::AssociatedSymbol(associated_symbol) => {
+                if !self
+                    .resolve_inferring_instance_variable_on_associated_symbol(
+                        associated_symbol,
+                    )
+                    .await
+                {
+                    return false;
+                }
+
+                self.reucrsive_resolve_inference_instance(
+                    associated_symbol.iter_all_term_mut(),
+                )
+                .await
+            }
+
+            ResolutionMut::InstanceAssociated(instance_associated) => {
+                if !self
+                    .resolve_inferring_instance_variable_on_instance_associated(
+                        instance_associated,
+                    )
+                    .await
+                {
+                    return false;
+                }
+
+                self.reucrsive_resolve_inference_instance(
+                    instance_associated.iter_all_term_mut(),
+                )
+                .await
+            }
+
+            ResolutionMut::Type(ty) => {
+                self.reucrsive_resolve_inference_instance(std::iter::once(
+                    TermMut::Type(ty),
+                ))
+                .await
+            }
+
+            ResolutionMut::Lifetime(_) => self.unrecoverable_error.is_none(),
+        }
+    }
+}
+
+impl AsyncRecursive<Lifetime> for InstanceInferenceResolver<'_, '_> {
+    async fn visit(
+        &mut self,
+        _: &Lifetime,
+        _: impl Iterator<Item = TermLocation> + Send,
+    ) -> bool {
+        if self.unrecoverable_error.is_some() {
+            return false;
+        }
+
+        true
+    }
+}
+
+impl AsyncRecursive<Type> for InstanceInferenceResolver<'_, '_> {
+    async fn visit(
+        &mut self,
+        ty: &Type,
+        _: impl Iterator<Item = TermLocation> + Send,
+    ) -> bool {
+        if self.unrecoverable_error.is_some() {
+            return false;
+        }
+
+        match ty {
+            Type::Pointer(_)
+            | Type::Reference(_)
+            | Type::Array(_)
+            | Type::Tuple(_)
+            | Type::Phantom(_)
+            | Type::Inference(_)
+            | Type::Primitive(_)
+            | Type::FunctionSignature(_)
+            | Type::Error(_)
+            | Type::Parameter(_) => true,
+
+            Type::Symbol(symbol) => {
+                self.resolve_inferring_instance_variable_on_symbol(symbol).await
+            }
+
+            Type::InstanceAssociated(instance_associated) => {
+                self.resolve_inferring_instance_variable_on_instance_associated(
+                    instance_associated,
+                )
+                .await
+            }
+
+            Type::AssociatedSymbol(associated_symbol) => {
+                self.resolve_inferring_instance_variable_on_associated_symbol(
+                    associated_symbol,
+                )
+                .await
+            }
+        }
+    }
+}
+
+impl AsyncRecursive<Constant> for InstanceInferenceResolver<'_, '_> {
+    async fn visit(
+        &mut self,
+        _: &Constant,
+        _: impl Iterator<Item = TermLocation> + Send,
+    ) -> bool {
+        if self.unrecoverable_error.is_some() {
+            return false;
+        }
+
+        true
+    }
+}
+
+impl AsyncRecursive<Instance> for InstanceInferenceResolver<'_, '_> {
+    async fn visit(
+        &mut self,
+        instance: &Instance,
+        _: impl Iterator<Item = TermLocation> + Send,
+    ) -> bool {
+        if self.unrecoverable_error.is_some() {
+            return false;
+        }
+
+        match instance {
+            Instance::AnonymousTrait(_)
+            | Instance::Inference(_)
+            | Instance::Error(_)
+            | Instance::Parameter(_) => true,
+
+            Instance::Symbol(symbol) => {
+                self.resolve_inferring_instance_variable_on_symbol(symbol).await
+            }
+
+            Instance::InstanceAssociated(instance_associated) => {
+                self.resolve_inferring_instance_variable_on_instance_associated(
+                    instance_associated,
+                )
+                .await
+            }
+        }
+    }
+}
 
 struct SearchInference {
     found_inference: bool,
@@ -288,32 +640,39 @@ impl Transformer for ReplaceInference<'_, '_> {
 
         erase_inference(&mut resolution);
 
-        match resolution {
-            ResolutionMut::Symbol(symbol) => {
-                let inst = symbol.create_instantiation(self.engine).await;
+        let mut resolver = InstanceInferenceResolver {
+            inference_context: self.inference_context,
+            premise: self.premise,
+            engine: self.engine,
+            handler: self.handler,
+            span,
+            unrecoverable_error: None,
+        };
 
-                if let Err(e) = self
-                    .inference_context
-                    .resolve_inferring_instance_variable(
-                        symbol.id(),
-                        &inst,
-                        &span,
-                        self.engine,
-                        self.premise,
-                        self.handler,
-                    )
-                    .await
-                {
-                    self.unrecoverable_error = Some(e);
+        resolver
+            .resolve_inference_instance_on_resolution(&mut resolution)
+            .await;
+
+        self.unrecoverable_error = resolver.unrecoverable_error;
+
+        let Ok(found_inference) =
+            self.finalize_type_inference(span, &mut resolution).await
+        else {
+            return;
+        };
+
+        if found_inference {
+            self.handler.receive(
+                TypeAnnotationRequired {
+                    span,
+                    term: resolution.to_owned(),
+                    rendering_map: self.rendering_map.clone(),
                 }
-            }
-
-            ResolutionMut::Variant(_)
-            | ResolutionMut::AssociatedSymbol(_)
-            | ResolutionMut::InstanceAssociated(_)
-            | ResolutionMut::Type(_)
-            | ResolutionMut::Lifetime(_) => {}
+                .into(),
+            );
         }
+
+        erase_inference(&mut resolution);
     }
 }
 
