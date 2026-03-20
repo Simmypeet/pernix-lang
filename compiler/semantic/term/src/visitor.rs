@@ -81,6 +81,24 @@ pub trait AsyncVisitor<T: Element>: Send {
     ) -> impl Future<Output = bool> + Send;
 }
 
+/// An asynchronous version of the [`Recursive`] trait.
+pub trait AsyncRecursive<T: Element>: Send {
+    /// Visits a term.
+    ///
+    /// # Parameters
+    ///
+    /// - `T`: The term to visit.
+    /// - `locations`: The iterator of all the locations taken to reach the
+    ///   current term. The last element of the iterator is the location of the
+    ///   current term. If the iterator is empty, then the current term is the
+    ///   root term.
+    fn visit(
+        &mut self,
+        term: &T,
+        locations: impl Iterator<Item = TermLocation> + Send,
+    ) -> impl Future<Output = bool> + Send;
+}
+
 /// An asynchronous version of the [`MutableRecursive`] trait.
 pub trait AsyncMutableRecursive<T: Element>: Send {
     /// Visits a term.
@@ -173,6 +191,36 @@ impl<
             term,
             location,
             term.accept_one_level(self)
+        )
+    }
+}
+
+#[derive(Debug)]
+pub struct RecursiveVisitorAdapterAsync<'a, V> {
+    visitor: &'a mut V,
+    current_locations: Vec<TermLocation>,
+}
+
+impl<
+    T: Element + Sync,
+    V: AsyncRecursive<T>
+        + AsyncRecursive<Lifetime>
+        + AsyncRecursive<Type>
+        + AsyncRecursive<Constant>
+        + AsyncRecursive<Instance>,
+> AsyncVisitor<T> for RecursiveVisitorAdapterAsync<'_, V>
+{
+    async fn visit(
+        &mut self,
+        term: &T,
+        location: <T as Element>::Location,
+    ) -> bool {
+        implements_visit_recursive!(
+            self,
+            term,
+            location,
+            Box::pin(term.accept_one_level_async(self)).await,
+            await
         )
     }
 }
@@ -324,6 +372,20 @@ pub trait Element: Send + Sized + SubTerm {
         locations: impl Iterator<Item = TermLocation>,
     ) -> bool;
 
+    /// Similar to [`Element::accept_single_recursive()`], but for
+    /// asynchronous visitors.
+    fn accept_single_recursive_async<
+        'a,
+        V: AsyncRecursive<Lifetime>
+            + AsyncRecursive<Type>
+            + AsyncRecursive<Constant>
+            + AsyncRecursive<Instance>,
+    >(
+        &'a self,
+        visitor: &'a mut V,
+        locations: impl Iterator<Item = TermLocation> + Send + 'a,
+    ) -> impl Future<Output = bool> + Send + 'a;
+
     /// Similar to [`Element::accept_single_recursive()`], but for mutable
     /// references.
     fn accept_single_recursive_mut<
@@ -443,6 +505,28 @@ pub fn accept_recursive<
     }
 
     !element.accept_single_recursive(visitor, std::iter::empty())
+}
+
+/// Similar to [`accept_recursive()`], but for asynchronous visitors.
+pub async fn accept_recursive_async<
+    V: AsyncRecursive<Lifetime>
+        + AsyncRecursive<Type>
+        + AsyncRecursive<Constant>
+        + AsyncRecursive<Instance>,
+    E: Element,
+>(
+    element: &E,
+    visitor: &mut V,
+) -> bool {
+    if !element.accept_single_recursive_async(visitor, std::iter::empty()).await
+    {
+        return false;
+    }
+
+    let mut adapter =
+        RecursiveVisitorAdapterAsync { visitor, current_locations: Vec::new() };
+
+    element.accept_one_level_async(&mut adapter).await.unwrap_or(true)
 }
 
 /// Similar to [`accept_recursive()`], but for mutable references.
@@ -650,6 +734,20 @@ impl Element for Type {
         visitor.visit(self, locations)
     }
 
+    async fn accept_single_recursive_async<
+        'a,
+        V: AsyncRecursive<Lifetime>
+            + AsyncRecursive<Self>
+            + AsyncRecursive<Constant>
+            + AsyncRecursive<Instance>,
+    >(
+        &'a self,
+        visitor: &'a mut V,
+        locations: impl Iterator<Item = TermLocation> + Send + 'a,
+    ) -> bool {
+        visitor.visit(self, locations).await
+    }
+
     fn accept_single_recursive_mut<
         V: MutableRecursive<Lifetime>
             + MutableRecursive<Self>
@@ -817,6 +915,20 @@ impl Element for Lifetime {
         locations: impl Iterator<Item = TermLocation>,
     ) -> bool {
         visitor.visit(self, locations)
+    }
+
+    async fn accept_single_recursive_async<
+        'a,
+        V: AsyncRecursive<Self>
+            + AsyncRecursive<Type>
+            + AsyncRecursive<Constant>
+            + AsyncRecursive<Instance>,
+    >(
+        &'a self,
+        visitor: &'a mut V,
+        locations: impl Iterator<Item = TermLocation> + Send + 'a,
+    ) -> bool {
+        visitor.visit(self, locations).await
     }
 
     fn accept_single_recursive_mut<
@@ -1027,6 +1139,20 @@ impl Element for Constant {
         locations: impl Iterator<Item = TermLocation>,
     ) -> bool {
         visitor.visit(self, locations)
+    }
+
+    async fn accept_single_recursive_async<
+        'a,
+        V: AsyncRecursive<Lifetime>
+            + AsyncRecursive<Type>
+            + AsyncRecursive<Self>
+            + AsyncRecursive<Instance>,
+    >(
+        &'a self,
+        visitor: &'a mut V,
+        locations: impl Iterator<Item = TermLocation> + Send + 'a,
+    ) -> bool {
+        visitor.visit(self, locations).await
     }
 
     fn accept_single_recursive_mut<
@@ -1307,6 +1433,20 @@ impl Element for Instance {
         locations: impl Iterator<Item = TermLocation>,
     ) -> bool {
         visitor.visit(self, locations)
+    }
+
+    async fn accept_single_recursive_async<
+        'a,
+        V: AsyncRecursive<Lifetime>
+            + AsyncRecursive<Type>
+            + AsyncRecursive<Constant>
+            + AsyncRecursive<Self>,
+    >(
+        &'a self,
+        visitor: &'a mut V,
+        locations: impl Iterator<Item = TermLocation> + Send + 'a,
+    ) -> bool {
+        visitor.visit(self, locations).await
     }
 
     fn accept_single_recursive_mut<
