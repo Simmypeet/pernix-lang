@@ -13,7 +13,7 @@ use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
 use crate::{
     Values,
-    resolution_visitor::{MutableResolutionVisitor, ResolutionMut},
+    resolution_visitor::{Abort, MutableResolutionVisitor, ResolutionMut},
     value::{Environment, TypeOf},
 };
 
@@ -297,7 +297,7 @@ impl Literal {
     pub async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
-    ) {
+    ) -> Result<(), Abort> {
         match self {
             Self::Numeric(numeric) => {
                 visitor
@@ -305,7 +305,7 @@ impl Literal {
                         ResolutionMut::Type(&mut numeric.r#type),
                         numeric.span,
                     )
-                    .await;
+                    .await?;
             }
 
             Self::Error(error) => {
@@ -314,7 +314,7 @@ impl Literal {
                         ResolutionMut::Type(&mut error.r#type),
                         error.span,
                     )
-                    .await;
+                    .await?;
             }
 
             Self::Character(character) => {
@@ -323,7 +323,7 @@ impl Literal {
                         ResolutionMut::Type(&mut character.r#type),
                         character.span,
                     )
-                    .await;
+                    .await?;
             }
 
             Self::Unreachable(unreachable) => {
@@ -332,7 +332,7 @@ impl Literal {
                         ResolutionMut::Type(&mut unreachable.r#type),
                         unreachable.span,
                     )
-                    .await;
+                    .await?;
             }
 
             Self::Phantom(phantom) => {
@@ -341,10 +341,11 @@ impl Literal {
                         ResolutionMut::Type(&mut phantom.r#type),
                         phantom.span,
                     )
-                    .await;
+                    .await?;
             }
 
             Self::String(_) | Self::Unit(_) | Self::Boolean(_) => {}
         }
+        Ok(())
     }
 }

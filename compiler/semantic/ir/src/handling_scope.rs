@@ -15,7 +15,7 @@ use pernixc_type_system::OverflowError;
 use qbice::{Decode, Encode, StableHash};
 
 use crate::resolution_visitor::{
-    self, MutableResolutionVisitor, ResolutionMut,
+    self, Abort, MutableResolutionVisitor, ResolutionMut,
 };
 
 /// A collection of all the effect handler groups in a function body.
@@ -47,10 +47,11 @@ impl resolution_visitor::ResolutionVisitable for HandlingScopes {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
-    ) {
+    ) -> Result<(), Abort> {
         for handling_scope in self.0.items_mut() {
-            handling_scope.accept_mut(visitor).await;
+            handling_scope.accept_mut(visitor).await?;
         }
+        Ok(())
     }
 }
 
@@ -127,13 +128,13 @@ impl resolution_visitor::ResolutionVisitable for HandlingScope {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
-    ) {
+    ) -> Result<(), Abort> {
         visitor
             .visit_mut(
                 ResolutionMut::Type(&mut self.return_type),
                 self.do_with_span,
             )
-            .await;
+            .await
     }
 }
 

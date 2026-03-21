@@ -19,7 +19,7 @@ use super::{
         register::{Assignment, Register},
     },
 };
-use crate::resolution_visitor::{self, MutableResolutionVisitor};
+use crate::resolution_visitor::{self, Abort, MutableResolutionVisitor};
 
 /// Represents a jump to another block unconditionally.
 #[derive(
@@ -68,10 +68,11 @@ impl ConditionalJump {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
-    ) {
+    ) -> Result<(), Abort> {
         if let Value::Literal(literal) = &mut self.condition {
-            literal.accept_mut(visitor).await;
+            literal.accept_mut(visitor).await?;
         }
+        Ok(())
     }
 }
 
@@ -115,10 +116,11 @@ impl SwitchJump {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
-    ) {
+    ) -> Result<(), Abort> {
         if let Value::Literal(literal) = &mut self.integer {
-            literal.accept_mut(visitor).await;
+            literal.accept_mut(visitor).await?;
         }
+        Ok(())
     }
 }
 
@@ -135,14 +137,15 @@ impl Jump {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
-    ) {
+    ) -> Result<(), Abort> {
         match self {
             Self::Unconditional(_) => {}
             Self::Conditional(conditional) => {
-                conditional.accept_mut(visitor).await;
+                conditional.accept_mut(visitor).await?;
             }
-            Self::Switch(switch) => switch.accept_mut(visitor).await,
+            Self::Switch(switch) => switch.accept_mut(visitor).await?,
         }
+        Ok(())
     }
 
     /// Returns the block IDs that this jump goes to.
@@ -191,10 +194,11 @@ impl Return {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
-    ) {
+    ) -> Result<(), Abort> {
         if let Value::Literal(literal) = &mut self.value {
-            literal.accept_mut(visitor).await;
+            literal.accept_mut(visitor).await?;
         }
+        Ok(())
     }
 }
 
@@ -248,12 +252,13 @@ impl Store {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
-    ) {
+    ) -> Result<(), Abort> {
         if let Value::Literal(literal) = &mut self.value {
-            literal.accept_mut(visitor).await;
+            literal.accept_mut(visitor).await?;
         }
 
-        self.address.accept_mut(visitor).await;
+        self.address.accept_mut(visitor).await?;
+        Ok(())
     }
 }
 
@@ -336,9 +341,10 @@ impl TuplePack {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
-    ) {
-        self.store_address.accept_mut(visitor).await;
-        self.tuple_address.accept_mut(visitor).await;
+    ) -> Result<(), Abort> {
+        self.store_address.accept_mut(visitor).await?;
+        self.tuple_address.accept_mut(visitor).await?;
+        Ok(())
     }
 }
 
@@ -396,8 +402,9 @@ impl Drop {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
-    ) {
-        self.address.accept_mut(visitor).await;
+    ) -> Result<(), Abort> {
+        self.address.accept_mut(visitor).await?;
+        Ok(())
     }
 }
 
@@ -429,8 +436,9 @@ impl DropUnpackTuple {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
-    ) {
-        self.tuple_address.accept_mut(visitor).await;
+    ) -> Result<(), Abort> {
+        self.tuple_address.accept_mut(visitor).await?;
+        Ok(())
     }
 }
 
@@ -489,20 +497,21 @@ impl resolution_visitor::ResolutionVisitable for Instruction {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
-    ) {
+    ) -> Result<(), Abort> {
         match self {
-            Self::Store(store) => store.accept_mut(visitor).await,
+            Self::Store(store) => store.accept_mut(visitor).await?,
             Self::TuplePack(tuple_pack) => {
-                tuple_pack.accept_mut(visitor).await;
+                tuple_pack.accept_mut(visitor).await?;
             }
-            Self::DropUnpackTuple(drop) => drop.accept_mut(visitor).await,
-            Self::Drop(drop) => drop.accept_mut(visitor).await,
+            Self::DropUnpackTuple(drop) => drop.accept_mut(visitor).await?,
+            Self::Drop(drop) => drop.accept_mut(visitor).await?,
 
             Self::RegisterAssignment(_)
             | Self::RegisterDiscard(_)
             | Self::ScopePush(_)
             | Self::ScopePop(_) => {}
         }
+        Ok(())
     }
 }
 
@@ -526,12 +535,13 @@ impl resolution_visitor::ResolutionVisitable for Terminator {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
-    ) {
+    ) -> Result<(), Abort> {
         match self {
-            Self::Jump(jump) => jump.accept_mut(visitor).await,
-            Self::Return(ret) => ret.accept_mut(visitor).await,
+            Self::Jump(jump) => jump.accept_mut(visitor).await?,
+            Self::Return(ret) => ret.accept_mut(visitor).await?,
             Self::Panic => {}
         }
+        Ok(())
     }
 }
 

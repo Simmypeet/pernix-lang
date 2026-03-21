@@ -11,7 +11,7 @@ use qbice::{Decode, Encode, StableHash};
 use crate::{
     Values,
     control_flow_graph::Block,
-    resolution_visitor::{MutableResolutionVisitor, ResolutionMut},
+    resolution_visitor::{Abort, MutableResolutionVisitor, ResolutionMut},
     value::{Environment, TypeOf, Value, register::Register},
 };
 
@@ -56,14 +56,15 @@ pub(super) async fn transform_phi<T: MutableResolutionVisitor>(
     phi: &mut Phi,
     visitor: &mut T,
     span: pernixc_lexical::tree::RelativeSpan,
-) {
+) -> Result<(), Abort> {
     for value in phi.incoming_values.values_mut() {
         if let Some(literal) = value.as_literal_mut() {
-            literal.accept_mut(visitor).await;
+            literal.accept_mut(visitor).await?;
         }
     }
 
-    visitor.visit_mut(ResolutionMut::Type(&mut phi.r#type), span).await;
+    visitor.visit_mut(ResolutionMut::Type(&mut phi.r#type), span).await?;
+    Ok(())
 }
 
 impl TypeOf<&Phi> for Values {

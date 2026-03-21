@@ -9,7 +9,9 @@ use crate::{
     alloca::Alloca,
     control_flow_graph::ControlFlowGraph,
     function_ir::IRContext,
-    resolution_visitor::{self, MutableResolutionVisitor, ResolutionMut},
+    resolution_visitor::{
+        self, Abort, MutableResolutionVisitor, ResolutionMut,
+    },
     scope,
     value::{Value, register::Register},
 };
@@ -81,10 +83,11 @@ impl resolution_visitor::ResolutionVisitable for IRMap {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
-    ) {
+    ) -> Result<(), Abort> {
         for (_, ir_with_context) in &mut self.irs {
-            ir_with_context.ir.accept_mut(visitor).await;
+            ir_with_context.ir.accept_mut(visitor).await?;
         }
+        Ok(())
     }
 }
 
@@ -163,17 +166,19 @@ impl resolution_visitor::ResolutionVisitable for IR {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
-    ) {
-        self.control_flow_graph.accept_mut(visitor).await;
+    ) -> Result<(), Abort> {
+        self.control_flow_graph.accept_mut(visitor).await?;
 
         for (_, register) in &mut self.values.registers {
-            register.accept_mut(visitor).await;
+            register.accept_mut(visitor).await?;
         }
 
         for alloca in self.values.allocas.items_mut() {
             visitor
                 .visit_mut(ResolutionMut::Type(&mut alloca.r#type), alloca.span)
-                .await;
+                .await?;
         }
+
+        Ok(())
     }
 }

@@ -23,7 +23,7 @@ use crate::{
     alloca::Alloca,
     capture::Capture,
     closure_parameters::ClosureParameter,
-    resolution_visitor::MutableResolutionVisitor,
+    resolution_visitor::{Abort, MutableResolutionVisitor},
     value::{Environment, TypeOf, Value},
 };
 
@@ -673,10 +673,10 @@ impl Address {
     pub async fn accept_mut<T: MutableResolutionVisitor>(
         mut self: &mut Self,
         visitor: &mut T,
-    ) {
+    ) -> Result<(), Abort> {
         loop {
             match self {
-                Self::Memory(_) => return,
+                Self::Memory(_) => return Ok(()),
 
                 Self::Field(field) => {
                     self = field.struct_address.as_mut();
@@ -686,7 +686,7 @@ impl Address {
                 }
                 Self::Index(index) => {
                     if let Value::Literal(literal) = &mut index.indexing_value {
-                        literal.accept_mut(visitor).await;
+                        literal.accept_mut(visitor).await?;
                     }
 
                     self = index.array_address.as_mut();

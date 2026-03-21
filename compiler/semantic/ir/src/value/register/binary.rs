@@ -6,7 +6,8 @@ use pernixc_type_system::{OverflowError, Succeeded, normalizer::Normalizer};
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
-    Values, resolution_visitor,
+    Values,
+    resolution_visitor::{self, Abort},
     value::{Environment, TypeOf, Value, register::Register},
 };
 
@@ -190,14 +191,15 @@ pub(super) async fn transform_binary<
 >(
     binary: &mut Binary,
     visitor: &mut T,
-) {
+) -> Result<(), Abort> {
     if let Some(literal) = binary.lhs.as_literal_mut() {
-        literal.accept_mut(visitor).await;
+        literal.accept_mut(visitor).await?;
     }
 
     if let Some(literal) = binary.rhs.as_literal_mut() {
-        literal.accept_mut(visitor).await;
+        literal.accept_mut(visitor).await?;
     }
+    Ok(())
 }
 
 impl TypeOf<&Binary> for Values {

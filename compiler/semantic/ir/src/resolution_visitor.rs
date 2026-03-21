@@ -25,6 +25,11 @@ use pernixc_term::{
 };
 use qbice::{Decode, Encode, StableHash};
 
+/// A type representing visitation abort, used to short-circuit the entire
+/// visitation process.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Abort;
+
 #[derive(
     Debug,
     Clone,
@@ -203,12 +208,14 @@ impl ResolutionMut<'_> {
 pub trait MutableResolutionVisitor {
     /// Visits the given term `term`, using the provided `source` for error
     /// reporting if necessary.
+    ///
+    /// Returns `Err(Abort)` to short-circuit the entire visitation process.
     #[allow(async_fn_in_trait)]
     async fn visit_mut(
         &mut self,
         resolution: ResolutionMut<'_>,
         span: RelativeSpan,
-    );
+    ) -> Result<(), Abort>;
 }
 
 /// A trait for an object that can have [`MutableResolutionVisitor`] elements
@@ -216,9 +223,11 @@ pub trait MutableResolutionVisitor {
 pub trait ResolutionVisitable {
     /// Visits the types, lifetimes, and constants in self using the given
     /// visitor.
+    ///
+    /// Returns `Err(Abort)` if the visitor aborts the visitation process.
     #[allow(async_fn_in_trait)]
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
-    );
+    ) -> Result<(), Abort>;
 }

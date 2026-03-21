@@ -9,7 +9,7 @@ use pernixc_transitive_closure::TransitiveClosure;
 use qbice::{Decode, Encode, StableHash};
 
 use super::instruction::{Instruction, Jump, Terminator};
-use crate::resolution_visitor::{self, MutableResolutionVisitor};
+use crate::resolution_visitor::{self, Abort, MutableResolutionVisitor};
 
 /// A data structure used for computing whether a particular block in the
 /// control flow graph is reachable to another.
@@ -140,14 +140,16 @@ impl resolution_visitor::ResolutionVisitable for Block {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
-    ) {
+    ) -> Result<(), Abort> {
         for inst in &mut self.instructions {
-            inst.accept_mut(visitor).await;
+            inst.accept_mut(visitor).await?;
         }
 
         if let Some(terminator) = &mut self.terminator {
-            terminator.accept_mut(visitor).await;
+            terminator.accept_mut(visitor).await?;
         }
+
+        Ok(())
     }
 }
 
@@ -723,10 +725,11 @@ impl resolution_visitor::ResolutionVisitable for ControlFlowGraph {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
-    ) {
+    ) -> Result<(), Abort> {
         for block in self.blocks.iter_mut().map(|(_, x)| x) {
-            block.accept_mut(visitor).await;
+            block.accept_mut(visitor).await?;
         }
+        Ok(())
     }
 }
 

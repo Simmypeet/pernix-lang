@@ -10,7 +10,7 @@ use qbice::{Decode, Encode, StableHash};
 use crate::{
     Values,
     handling_scope::{HandlerClauseID, OperationHandlerID},
-    resolution_visitor::MutableResolutionVisitor,
+    resolution_visitor::{Abort, MutableResolutionVisitor},
     value::{TypeOf, Value},
     visitor,
 };
@@ -68,10 +68,11 @@ impl ResumeCall {
 pub(super) async fn transform_resume_call<T: MutableResolutionVisitor>(
     resume_call: &mut ResumeCall,
     visitor: &mut T,
-) {
+) -> Result<(), Abort> {
     if let Value::Literal(literal) = &mut resume_call.value {
-        literal.accept_mut(visitor).await;
+        literal.accept_mut(visitor).await?;
     }
+    Ok(())
 }
 
 impl visitor::Element for ResumeCall {

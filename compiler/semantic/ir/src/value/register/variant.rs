@@ -11,7 +11,7 @@ use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Values,
-    resolution_visitor::{MutableResolutionVisitor, ResolutionMut},
+    resolution_visitor::{Abort, MutableResolutionVisitor, ResolutionMut},
     value::{TypeOf, Value, register::Register},
 };
 
@@ -92,14 +92,17 @@ pub(super) async fn transform_variant<T: MutableResolutionVisitor>(
     variant: &mut Variant,
     visitor: &mut T,
     span: pernixc_lexical::tree::RelativeSpan,
-) {
+) -> Result<(), Abort> {
     if let Some(value) = variant.associated_value.as_mut()
         && let Some(literal) = value.as_literal_mut()
     {
-        literal.accept_mut(visitor).await;
+        literal.accept_mut(visitor).await?;
     }
 
-    visitor.visit_mut(ResolutionMut::Variant(&mut variant.symbol), span).await;
+    visitor
+        .visit_mut(ResolutionMut::Variant(&mut variant.symbol), span)
+        .await?;
+    Ok(())
 }
 
 impl TypeOf<&Variant> for Values {

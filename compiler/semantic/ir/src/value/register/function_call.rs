@@ -24,7 +24,7 @@ use qbice::{Decode, Encode, StableHash};
 use crate::{
     Values,
     handling_scope::HandlerClauseID,
-    resolution_visitor::{MutableResolutionVisitor, ResolutionMut},
+    resolution_visitor::{Abort, MutableResolutionVisitor, ResolutionMut},
     value::{TypeOf, Value, register::Register},
 };
 
@@ -188,7 +188,7 @@ pub(super) async fn transform_function_call<T: MutableResolutionVisitor>(
     function_call: &mut FunctionCall,
     visitor: &mut T,
     span: pernixc_lexical::tree::RelativeSpan,
-) {
+) -> Result<(), Abort> {
     let res = match &mut function_call.callee {
         Callee::Function(symbol) => ResolutionMut::Symbol(symbol),
         Callee::AssociatedFunction(associated_symbol) => {
@@ -199,17 +199,18 @@ pub(super) async fn transform_function_call<T: MutableResolutionVisitor>(
         }
     };
 
-    visitor.visit_mut(res, span).await;
+    visitor.visit_mut(res, span).await?;
 
     for argument in &mut function_call.arguments {
         if let Some(literal) = argument.as_literal_mut() {
-            literal.accept_mut(visitor).await;
+            literal.accept_mut(visitor).await?;
         }
     }
 
     for lt in function_call.elided_lifetimes_instantiation.values_mut() {
-        visitor.visit_mut(ResolutionMut::Lifetime(lt), span).await;
+        visitor.visit_mut(ResolutionMut::Lifetime(lt), span).await?;
     }
+    Ok(())
 }
 
 impl TypeOf<&FunctionCall> for Values {

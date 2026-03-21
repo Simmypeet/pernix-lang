@@ -4,7 +4,7 @@
 use pernixc_ir::{
     IR,
     resolution_visitor::{
-        MutableResolutionVisitor, ResolutionMut, ResolutionVisitable,
+        Abort, MutableResolutionVisitor, ResolutionMut, ResolutionVisitable,
     },
 };
 use pernixc_lexical::tree::RelativeSpan;
@@ -88,7 +88,7 @@ impl MutableResolutionVisitor for ToBorrowTransformer {
         &mut self,
         mut resolution: ResolutionMut<'_>,
         _span: RelativeSpan,
-    ) {
+    ) -> Result<(), Abort> {
         for term in resolution.iter_all_term_mut() {
             match term {
                 pernixc_term::TermMut::Constant(constant) => {
@@ -105,6 +105,7 @@ impl MutableResolutionVisitor for ToBorrowTransformer {
                 }
             }
         }
+        Ok(())
     }
 }
 
@@ -114,7 +115,7 @@ pub(super) async fn transform_to_inference(
     let mut transformer =
         ToBorrowTransformer { generator: LocalRegionGenerator::new() };
 
-    ir.accept_mut(&mut transformer).await;
+    let _ = ir.accept_mut(&mut transformer).await;
 
     transformer.generator
 }

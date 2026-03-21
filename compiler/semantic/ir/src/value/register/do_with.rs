@@ -13,7 +13,9 @@ use crate::{
     IRWithContext, Values,
     capture::Capture,
     handling_scope::HandlingScope,
-    resolution_visitor::{self, MutableResolutionVisitor, ResolutionVisitable},
+    resolution_visitor::{
+        self, Abort, MutableResolutionVisitor, ResolutionVisitable,
+    },
     value::{Environment, TypeOf, Value, register::Register},
 };
 
@@ -63,12 +65,13 @@ impl resolution_visitor::ResolutionVisitable for CaptureArguments {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
-    ) {
+    ) -> Result<(), Abort> {
         for value in
             self.arguments.values_mut().filter_map(|x| x.as_literal_mut())
         {
-            value.accept_mut(visitor).await;
+            value.accept_mut(visitor).await?;
         }
+        Ok(())
     }
 }
 
@@ -100,8 +103,8 @@ impl resolution_visitor::ResolutionVisitable for Do {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
-    ) {
-        self.capture_arguments.accept_mut(visitor).await;
+    ) -> Result<(), Abort> {
+        self.capture_arguments.accept_mut(visitor).await
     }
 }
 
@@ -190,8 +193,8 @@ impl resolution_visitor::ResolutionVisitable for HandlerChain {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
-    ) {
-        self.capture_arguments.accept_mut(visitor).await;
+    ) -> Result<(), Abort> {
+        self.capture_arguments.accept_mut(visitor).await
     }
 }
 
@@ -247,9 +250,10 @@ impl crate::visitor::Element for DoWith {
 pub(super) async fn transform_do_with<T: MutableResolutionVisitor>(
     do_with: &mut DoWith,
     visitor: &mut T,
-) {
-    do_with.do_block.accept_mut(visitor).await;
-    do_with.handleer_chain.accept_mut(visitor).await;
+) -> Result<(), Abort> {
+    do_with.do_block.accept_mut(visitor).await?;
+    do_with.handleer_chain.accept_mut(visitor).await?;
+    Ok(())
 }
 
 impl TypeOf<&DoWith> for Values {

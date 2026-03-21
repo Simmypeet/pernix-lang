@@ -12,7 +12,9 @@ use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     address::Address,
-    resolution_visitor::{self, MutableResolutionVisitor, ResolutionMut},
+    resolution_visitor::{
+        self, Abort, MutableResolutionVisitor, ResolutionMut,
+    },
 };
 
 pub mod builder;
@@ -34,14 +36,14 @@ impl resolution_visitor::ResolutionVisitable for Captures {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
-    ) {
+    ) -> Result<(), Abort> {
         for (_, capture) in self.captures.iter_mut() {
             visitor
                 .visit_mut(
                     ResolutionMut::Type(&mut capture.address_type),
                     capture.span,
                 )
-                .await;
+                .await?;
 
             if let CaptureMode::ByReference(reference_mode) =
                 &mut capture.capture_mode
@@ -51,9 +53,10 @@ impl resolution_visitor::ResolutionVisitable for Captures {
                         ResolutionMut::Lifetime(&mut reference_mode.lifetime),
                         capture.span,
                     )
-                    .await;
+                    .await?;
             }
         }
+        Ok(())
     }
 }
 
@@ -220,9 +223,10 @@ impl resolution_visitor::ResolutionVisitable for CapturesMap {
     async fn accept_mut<T: resolution_visitor::MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
-    ) {
+    ) -> Result<(), Abort> {
         for (_, captures) in &mut self.arena {
-            captures.accept_mut(visitor).await;
+            captures.accept_mut(visitor).await?;
         }
+        Ok(())
     }
 }

@@ -41,8 +41,8 @@ impl pernixc_ir::resolution_visitor::ResolutionVisitable for Context {
     >(
         &mut self,
         visitor: &mut T,
-    ) {
-        self.handling_scopes.accept_mut(visitor).await;
+    ) -> Result<(), pernixc_ir::resolution_visitor::Abort> {
+        self.handling_scopes.accept_mut(visitor).await
     }
 }
 

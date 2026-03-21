@@ -7,7 +7,7 @@ use pernixc_semantic_element::parameter::Parameters;
 use pernixc_term::{instantiation::Instantiation, r#type::Type};
 use qbice::{Decode, Encode, StableHash};
 
-use crate::resolution_visitor::{self, ResolutionMut};
+use crate::resolution_visitor::{self, Abort, ResolutionMut};
 
 /// Represents a parameter taken by a closure.
 #[derive(
@@ -98,15 +98,16 @@ impl resolution_visitor::ResolutionVisitable for ClosureParameters {
     async fn accept_mut<T: resolution_visitor::MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
-    ) {
+    ) -> Result<(), Abort> {
         for (_, parameter) in self.0.iter_mut_unordered() {
             visitor
                 .visit_mut(
                     ResolutionMut::Type(&mut parameter.r#type),
                     parameter.span,
                 )
-                .await;
+                .await?;
         }
+        Ok(())
     }
 }
 
@@ -148,9 +149,10 @@ impl resolution_visitor::ResolutionVisitable for ClosureParametersMap {
     async fn accept_mut<T: resolution_visitor::MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
-    ) {
+    ) -> Result<(), Abort> {
         for (_, closure_parameters) in &mut self.arena {
-            closure_parameters.accept_mut(visitor).await;
+            closure_parameters.accept_mut(visitor).await?;
         }
+        Ok(())
     }
 }

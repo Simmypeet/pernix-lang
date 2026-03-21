@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use pernixc_handler::Handler;
 use pernixc_ir::resolution_visitor::{
-    MutableResolutionVisitor, ResolutionMut, ResolutionVisitable,
+    Abort, MutableResolutionVisitor, ResolutionMut, ResolutionVisitable,
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
@@ -47,7 +47,7 @@ impl InstanceInferenceResolver<'_, '_> {
     async fn resolve_inferring_instance_variable_on_symbol(
         &mut self,
         symbol: &Symbol,
-    ) -> bool {
+    ) -> Result<(), Abort> {
         let inst = symbol.create_instantiation(self.engine).await;
 
         if let Err(er) = self
@@ -63,16 +63,16 @@ impl InstanceInferenceResolver<'_, '_> {
             .await
         {
             self.unrecoverable_error = Some(er);
-            false
+            Err(Abort)
         } else {
-            true
+            Ok(())
         }
     }
 
     async fn resolve_inferring_instance_variable_on_variant(
         &mut self,
         symbol: &Variant,
-    ) -> bool {
+    ) -> Result<(), Abort> {
         let enum_inst = symbol.create_instantiation(self.engine).await;
         let enum_id = symbol.parent_enum_id(self.engine).await;
 
@@ -89,16 +89,16 @@ impl InstanceInferenceResolver<'_, '_> {
             .await
         {
             self.unrecoverable_error = Some(err);
-            false
+            Err(Abort)
         } else {
-            true
+            Ok(())
         }
     }
 
     async fn resolve_inferring_instance_variable_on_associated_symbol(
         &mut self,
         associated_symbol: &AssociatedSymbol,
-    ) -> bool {
+    ) -> Result<(), Abort> {
         let inst = associated_symbol.create_instantiation(self.engine).await;
 
         if let Err(err) = self
@@ -114,7 +114,7 @@ impl InstanceInferenceResolver<'_, '_> {
             .await
         {
             self.unrecoverable_error = Some(err);
-            return false;
+            return Err(Abort);
         }
 
         let parent_id = self
@@ -136,20 +136,20 @@ impl InstanceInferenceResolver<'_, '_> {
             .await
         {
             self.unrecoverable_error = Some(err);
-            return false;
+            return Err(Abort);
         }
 
-        true
+        Ok(())
     }
 
     async fn resolve_inferring_instance_variable_on_instance_associated(
         &mut self,
         instance_associated: &InstanceAssociated,
-    ) -> bool {
+    ) -> Result<(), Abort> {
         let Some(inst) =
             instance_associated.create_instantiation(self.engine).await
         else {
-            return true;
+            return Ok(());
         };
 
         if let Err(err) = self
@@ -165,55 +165,47 @@ impl InstanceInferenceResolver<'_, '_> {
             .await
         {
             self.unrecoverable_error = Some(err);
-            return false;
+            return Err(Abort);
         }
 
-        true
+        Ok(())
     }
 
     async fn reucrsive_resolve_inference_instance(
         &mut self,
         term_muts: impl Iterator<Item = TermMut<'_>>,
-    ) -> bool {
+    ) -> Result<(), Abort> {
         for term in term_muts {
-            if self.unrecoverable_error.is_some() {
-                return false;
-            }
-
-            match term {
+            let succeeded = match term {
                 TermMut::Constant(constant) => {
-                    visitor::accept_recursive_async(constant, self).await;
+                    visitor::accept_recursive_async(constant, self).await
                 }
-                TermMut::Lifetime(_) => {}
+                TermMut::Lifetime(_) => true,
 
                 TermMut::Type(ty) => {
-                    visitor::accept_recursive_async(ty, self).await;
+                    visitor::accept_recursive_async(ty, self).await
                 }
                 TermMut::Instance(instance) => {
-                    visitor::accept_recursive_async(instance, self).await;
+                    visitor::accept_recursive_async(instance, self).await
                 }
+            };
+
+            if !succeeded {
+                return Err(Abort);
             }
         }
 
-        if self.unrecoverable_error.is_some() {
-            return false;
-        }
-
-        true
+        Ok(())
     }
 
     async fn resolve_inference_instance_on_resolution(
         &mut self,
         resolution: &mut ResolutionMut<'_>,
-    ) -> bool {
+    ) -> Result<(), Abort> {
         match resolution {
             ResolutionMut::Symbol(symbol) => {
-                if !self
-                    .resolve_inferring_instance_variable_on_symbol(symbol)
-                    .await
-                {
-                    return false;
-                }
+                self.resolve_inferring_instance_variable_on_symbol(symbol)
+                    .await?;
 
                 self.reucrsive_resolve_inference_instance(
                     symbol.iter_all_term_mut(),
@@ -222,12 +214,8 @@ impl InstanceInferenceResolver<'_, '_> {
             }
 
             ResolutionMut::Variant(symbol) => {
-                if !self
-                    .resolve_inferring_instance_variable_on_variant(symbol)
-                    .await
-                {
-                    return false;
-                }
+                self.resolve_inferring_instance_variable_on_variant(symbol)
+                    .await?;
 
                 self.reucrsive_resolve_inference_instance(
                     symbol.iter_all_term_mut(),
@@ -236,14 +224,10 @@ impl InstanceInferenceResolver<'_, '_> {
             }
 
             ResolutionMut::AssociatedSymbol(associated_symbol) => {
-                if !self
-                    .resolve_inferring_instance_variable_on_associated_symbol(
-                        associated_symbol,
-                    )
-                    .await
-                {
-                    return false;
-                }
+                self.resolve_inferring_instance_variable_on_associated_symbol(
+                    associated_symbol,
+                )
+                .await?;
 
                 self.reucrsive_resolve_inference_instance(
                     associated_symbol.iter_all_term_mut(),
@@ -252,14 +236,10 @@ impl InstanceInferenceResolver<'_, '_> {
             }
 
             ResolutionMut::InstanceAssociated(instance_associated) => {
-                if !self
-                    .resolve_inferring_instance_variable_on_instance_associated(
-                        instance_associated,
-                    )
-                    .await
-                {
-                    return false;
-                }
+                self.resolve_inferring_instance_variable_on_instance_associated(
+                    instance_associated,
+                )
+                .await?;
 
                 self.reucrsive_resolve_inference_instance(
                     instance_associated.iter_all_term_mut(),
@@ -274,7 +254,7 @@ impl InstanceInferenceResolver<'_, '_> {
                 .await
             }
 
-            ResolutionMut::Lifetime(_) => self.unrecoverable_error.is_none(),
+            ResolutionMut::Lifetime(_) => Ok(()),
         }
     }
 }
@@ -315,23 +295,24 @@ impl AsyncRecursive<Type> for InstanceInferenceResolver<'_, '_> {
             | Type::Error(_)
             | Type::Parameter(_) => true,
 
-            Type::Symbol(symbol) => {
-                self.resolve_inferring_instance_variable_on_symbol(symbol).await
-            }
+            Type::Symbol(symbol) => self
+                .resolve_inferring_instance_variable_on_symbol(symbol)
+                .await
+                .is_ok(),
 
-            Type::InstanceAssociated(instance_associated) => {
-                self.resolve_inferring_instance_variable_on_instance_associated(
+            Type::InstanceAssociated(instance_associated) => self
+                .resolve_inferring_instance_variable_on_instance_associated(
                     instance_associated,
                 )
                 .await
-            }
+                .is_ok(),
 
-            Type::AssociatedSymbol(associated_symbol) => {
-                self.resolve_inferring_instance_variable_on_associated_symbol(
+            Type::AssociatedSymbol(associated_symbol) => self
+                .resolve_inferring_instance_variable_on_associated_symbol(
                     associated_symbol,
                 )
                 .await
-            }
+                .is_ok(),
         }
     }
 }
@@ -366,16 +347,17 @@ impl AsyncRecursive<Instance> for InstanceInferenceResolver<'_, '_> {
             | Instance::Error(_)
             | Instance::Parameter(_) => true,
 
-            Instance::Symbol(symbol) => {
-                self.resolve_inferring_instance_variable_on_symbol(symbol).await
-            }
+            Instance::Symbol(symbol) => self
+                .resolve_inferring_instance_variable_on_symbol(symbol)
+                .await
+                .is_ok(),
 
-            Instance::InstanceAssociated(instance_associated) => {
-                self.resolve_inferring_instance_variable_on_instance_associated(
+            Instance::InstanceAssociated(instance_associated) => self
+                .resolve_inferring_instance_variable_on_instance_associated(
                     instance_associated,
                 )
                 .await
-            }
+                .is_ok(),
         }
     }
 }
@@ -547,7 +529,7 @@ impl ReplaceInference<'_, '_> {
         &mut self,
         span: RelativeSpan,
         resolution: &mut ResolutionMut<'_>,
-    ) -> Result<bool, ()> {
+    ) -> Result<bool, Abort> {
         let env = Environment::new(
             Cow::Borrowed(self.premise),
             Cow::Borrowed(self.engine),
@@ -575,7 +557,7 @@ impl ReplaceInference<'_, '_> {
 
             if let Err(e) = result {
                 self.unrecoverable_error = Some(e);
-                return Err(());
+                return Err(Abort);
             }
 
             let mut search_inference =
@@ -618,16 +600,9 @@ impl MutableResolutionVisitor for ReplaceInference<'_, '_> {
         &mut self,
         mut resolution: ResolutionMut<'_>,
         span: RelativeSpan,
-    ) {
-        if self.unrecoverable_error.is_some() {
-            return;
-        }
-
-        let Ok(found_inference) =
-            self.finalize_type_inference(span, &mut resolution).await
-        else {
-            return;
-        };
+    ) -> Result<(), Abort> {
+        let found_inference =
+            self.finalize_type_inference(span, &mut resolution).await?;
 
         if found_inference {
             self.handler.receive(
@@ -651,17 +626,16 @@ impl MutableResolutionVisitor for ReplaceInference<'_, '_> {
             unrecoverable_error: None,
         };
 
-        resolver
+        let result = resolver
             .resolve_inference_instance_on_resolution(&mut resolution)
             .await;
 
         self.unrecoverable_error = resolver.unrecoverable_error;
 
-        let Ok(found_inference) =
-            self.finalize_type_inference(span, &mut resolution).await
-        else {
-            return;
-        };
+        result?;
+
+        let found_inference =
+            self.finalize_type_inference(span, &mut resolution).await?;
 
         if found_inference {
             self.handler.receive(
@@ -675,6 +649,8 @@ impl MutableResolutionVisitor for ReplaceInference<'_, '_> {
         }
 
         erase_inference(&mut resolution);
+
+        Ok(())
     }
 }
 
@@ -696,19 +672,19 @@ impl Binder<'_> {
             unrecoverable_error: None,
         };
 
-        self.ir.accept_mut(&mut visitor).await;
+        let _ = self.ir.accept_mut(&mut visitor).await;
         visitor.bail()?;
 
-        self.ir_map.accept_mut(&mut visitor).await;
+        let _ = self.ir_map.accept_mut(&mut visitor).await;
         visitor.bail()?;
 
-        self.effect_handler_context.accept_mut(&mut visitor).await;
+        let _ = self.effect_handler_context.accept_mut(&mut visitor).await;
         visitor.bail()?;
 
-        self.closure_parameters_map.accept_mut(&mut visitor).await;
+        let _ = self.closure_parameters_map.accept_mut(&mut visitor).await;
         visitor.bail()?;
 
-        self.captures_map.accept_mut(&mut visitor).await;
+        let _ = self.captures_map.accept_mut(&mut visitor).await;
         visitor.bail()?;
 
         Ok(())

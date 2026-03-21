@@ -15,7 +15,7 @@ use qbice::{Decode, Encode, StableHash};
 use crate::{
     Values,
     address::Address,
-    resolution_visitor::{self, MutableResolutionVisitor},
+    resolution_visitor::{self, Abort, MutableResolutionVisitor},
     value::{Environment, TypeOf, Value},
     visitor,
 };
@@ -177,25 +177,25 @@ impl resolution_visitor::ResolutionVisitable for Register {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
-    ) {
+    ) -> Result<(), Abort> {
         match &mut self.assignment {
             Assignment::Tuple(tuple) => {
-                tuple::transform_tuple(tuple, visitor).await;
+                tuple::transform_tuple(tuple, visitor).await?;
             }
             Assignment::Load(load) => {
-                load::transform_load(load, visitor).await;
+                load::transform_load(load, visitor).await?;
             }
             Assignment::Borrow(borrow) => {
-                borrow::transform_borrow(borrow, visitor, self.span).await;
+                borrow::transform_borrow(borrow, visitor, self.span).await?;
             }
             Assignment::Prefix(prefix) => {
-                prefix::transform_prefix(prefix, visitor, self.span).await;
+                prefix::transform_prefix(prefix, visitor, self.span).await?;
             }
             Assignment::Struct(st) => {
-                r#struct::transform_struct(st, visitor, self.span).await;
+                r#struct::transform_struct(st, visitor, self.span).await?;
             }
             Assignment::Variant(variant) => {
-                variant::transform_variant(variant, visitor, self.span).await;
+                variant::transform_variant(variant, visitor, self.span).await?;
             }
             Assignment::FunctionCall(function_call) => {
                 function_call::transform_function_call(
@@ -203,34 +203,35 @@ impl resolution_visitor::ResolutionVisitable for Register {
                     visitor,
                     self.span,
                 )
-                .await;
+                .await?;
             }
             Assignment::Binary(binary) => {
-                binary::transform_binary(binary, visitor).await;
+                binary::transform_binary(binary, visitor).await?;
             }
             Assignment::Array(array) => {
-                array::transform_array(array, visitor, self.span).await;
+                array::transform_array(array, visitor, self.span).await?;
             }
             Assignment::Phi(phi) => {
-                phi::transform_phi(phi, visitor, self.span).await;
+                phi::transform_phi(phi, visitor, self.span).await?;
             }
             Assignment::Cast(cast) => {
-                cast::transform_cast(cast, visitor, self.span).await;
+                cast::transform_cast(cast, visitor, self.span).await?;
             }
             Assignment::VariantNumber(variant_number) => {
                 variant_number::transform_variant_number(
                     variant_number,
                     visitor,
                 )
-                .await;
+                .await?;
             }
             Assignment::Do(d) => {
-                do_with::transform_do_with(d, visitor).await;
+                do_with::transform_do_with(d, visitor).await?;
             }
             Assignment::ResumeCall(r) => {
-                resume_call::transform_resume_call(r, visitor).await;
+                resume_call::transform_resume_call(r, visitor).await?;
             }
         }
+        Ok(())
     }
 }
 
