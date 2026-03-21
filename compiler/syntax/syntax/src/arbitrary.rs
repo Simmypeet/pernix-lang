@@ -591,6 +591,7 @@ reference! {
     #[derive(Debug, Clone)]
     pub enum GenericArgument for super::GenericArgument {
         Lifetime(Lifetime),
+        Elided(Elided),
         InstanceValue(InstanceValue),
         Type(Type),
         Constant(ConstantArgument),
@@ -605,6 +606,7 @@ impl IndentDisplay for GenericArgument {
     ) -> std::fmt::Result {
         match self {
             Self::Lifetime(i) => i.fmt(f),
+            Self::Elided(i) => i.fmt(f),
             Self::Type(i) => i.indent_fmt(f, indent),
             Self::Constant(i) => i.indent_fmt(f, indent),
             Self::InstanceValue(i) => i.indent_fmt(f, indent),
@@ -639,6 +641,7 @@ impl Arbitrary for GenericArgument {
                             qualified_identifier,
                         })
                     }
+                    Type::Elided(elided) => Self::Elided(elided),
                     x => Self::Type(x),
                 }
             }),

@@ -192,6 +192,20 @@ impl<'i, 'm> Resolver<'i, 'm> {
                     Box::pin(async move { self.resolve_type(ty).await }).await
                 }
 
+                GenericArgumentSyn::Elided(elided) => {
+                    self.create_elided_type().unwrap_or_else(|| {
+                        self.receive_diagnostic(
+                            Diagnostic::UnexpectedInference(
+                                UnexpectedInference {
+                                    unexpected_span: elided.span(),
+                                    generic_kind: GenericKind::Type,
+                                },
+                            ),
+                        );
+                        Type::Error(pernixc_term::error::Error)
+                    })
+                }
+
                 GenericArgumentSyn::Constant(constant_argument) => {
                     self.receive_diagnostic(
                         Diagnostic::MismatchedKindInArgument(
@@ -248,6 +262,20 @@ impl<'i, 'm> Resolver<'i, 'm> {
                     .await
                 }
 
+                GenericArgumentSyn::Elided(elided) => {
+                    self.create_elided_instance().unwrap_or_else(|| {
+                        self.receive_diagnostic(
+                            Diagnostic::UnexpectedInference(
+                                UnexpectedInference {
+                                    unexpected_span: elided.span(),
+                                    generic_kind: GenericKind::Instance,
+                                },
+                            ),
+                        );
+                        Instance::Error(pernixc_term::error::Error)
+                    })
+                }
+
                 syn => {
                     self.receive_diagnostic(
                         Diagnostic::MismatchedKindInArgument(
@@ -270,7 +298,10 @@ impl<'i, 'm> Resolver<'i, 'm> {
                                         GenericKind::Constant
                                     }
 
-                                    InstanceValue(_) => unreachable!(),
+                                    InstanceValue(_)
+                                    | GenericArgumentSyn::Elided(_) => {
+                                        unreachable!()
+                                    }
                                 })
                                 .build(),
                         ),

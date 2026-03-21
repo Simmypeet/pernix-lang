@@ -154,6 +154,7 @@ abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
     pub enum GenericArgument {
         Lifetime(Lifetime = ast::<Lifetime>()),
+        Elided(Elided = ast::<Elided>()),
         /// During resolution in generic parameter, this variant can be
         /// interpreted as a type argument if the HigherRankedLifetimes is None.
         InstanceValue(InstanceValue = ast::<InstanceValue>()),
