@@ -13,7 +13,7 @@ use pernixc_target::Global;
 use qbice::{Decode, Encode, Identifiable, StableHash};
 
 use crate::{
-    TermMut,
+    TermMut, TermRef,
     constant::Constant,
     generic_parameters::{
         ConstantParameterID, GenericKind, GenericParameters,
@@ -348,6 +348,17 @@ impl GenericArguments {
             .chain(self.types.iter_mut().map(TermMut::Type))
             .chain(self.constants.iter_mut().map(TermMut::Constant))
             .chain(self.instancces.iter_mut().map(TermMut::Instance))
+    }
+
+    /// Returns an iterator over immutable references to all sub-terms in the
+    /// generic arguments.
+    pub fn iter_all_term(&self) -> impl Iterator<Item = TermRef<'_>> + '_ {
+        self.lifetimes
+            .iter()
+            .map(TermRef::Lifetime)
+            .chain(self.types.iter().map(TermRef::Type))
+            .chain(self.constants.iter().map(TermRef::Constant))
+            .chain(self.instancces.iter().map(TermRef::Instance))
     }
 
     /// Returns an iterator that matches each argument in `self` to the
@@ -741,6 +752,12 @@ impl Symbol {
     ) -> impl Iterator<Item = TermMut<'_>> + '_ {
         self.generic_arguments.iter_all_term_mut()
     }
+
+    /// Returns an iterator yielding immutable references to all terms appeared
+    /// in the generic arguments.
+    pub fn iter_all_term(&self) -> impl Iterator<Item = TermRef<'_>> + '_ {
+        self.generic_arguments.iter_all_term()
+    }
 }
 
 /// Represents a term where the associated symbol is supplied with generic
@@ -837,6 +854,14 @@ impl AssociatedSymbol {
         self.member_generic_arguments
             .iter_all_term_mut()
             .chain(self.parent_generic_arguments.iter_all_term_mut())
+    }
+
+    /// Returns an iterator yielding immutable references to all terms appeared
+    /// in the generic arguments.
+    pub fn iter_all_term(&self) -> impl Iterator<Item = TermRef<'_>> + '_ {
+        self.member_generic_arguments
+            .iter_all_term()
+            .chain(self.parent_generic_arguments.iter_all_term())
     }
 }
 

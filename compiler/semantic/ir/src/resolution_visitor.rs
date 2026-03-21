@@ -15,7 +15,7 @@ use pernixc_symbol::{
     parent::get_parent_global,
 };
 use pernixc_term::{
-    self, TermMut, display,
+    self, TermMut, TermRef, display,
     generic_arguments::{
         AssociatedSymbol, DisplaySymbolWithGenericArguments, Symbol,
     },
@@ -71,6 +71,9 @@ pub enum Resolution<'x> {
     Lifetime(&'x Lifetime),
 }
 
+/// Alias for immutable resolution references.
+pub type ResolutionRef<'x> = Resolution<'x>;
+
 impl Resolution<'_> {
     #[must_use]
     pub fn to_owned(&self) -> ResolutionOwned {
@@ -90,6 +93,57 @@ impl Resolution<'_> {
             Self::Type(ty) => ResolutionOwned::Type((*ty).clone()),
             Self::Lifetime(lifetime) => {
                 ResolutionOwned::Lifetime((*lifetime).clone())
+            }
+        }
+    }
+
+    /// Returns an iterator over immutable references to all sub-terms in the
+    /// resolution.
+    pub fn iter_all_term(&self) -> impl Iterator<Item = TermRef<'_>> {
+        enum Six<A, B, C, D, E, F> {
+            A(A),
+            B(B),
+            C(C),
+            D(D),
+            E(E),
+            F(F),
+        }
+
+        impl<
+            A: Iterator,
+            B: Iterator<Item = A::Item>,
+            C: Iterator<Item = A::Item>,
+            D: Iterator<Item = A::Item>,
+            E: Iterator<Item = A::Item>,
+            F: Iterator<Item = A::Item>,
+        > Iterator for Six<A, B, C, D, E, F>
+        {
+            type Item = A::Item;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                match self {
+                    Self::A(a) => a.next(),
+                    Self::B(b) => b.next(),
+                    Self::C(c) => c.next(),
+                    Self::D(d) => d.next(),
+                    Self::E(e) => e.next(),
+                    Self::F(f) => f.next(),
+                }
+            }
+        }
+
+        match self {
+            Self::Symbol(symbol) => Six::A(symbol.iter_all_term()),
+            Self::Variant(variant) => Six::B(variant.iter_all_term()),
+            Self::AssociatedSymbol(associated_symbol) => {
+                Six::C(associated_symbol.iter_all_term())
+            }
+            Self::InstanceAssociated(instance_associated) => {
+                Six::D(instance_associated.iter_all_term())
+            }
+            Self::Type(ty) => Six::E(std::iter::once(TermRef::Type(ty))),
+            Self::Lifetime(lifetime) => {
+                Six::F(std::iter::once(TermRef::Lifetime(lifetime)))
             }
         }
     }

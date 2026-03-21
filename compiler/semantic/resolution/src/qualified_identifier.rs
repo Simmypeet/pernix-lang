@@ -25,7 +25,7 @@ use pernixc_syntax::{
 };
 use pernixc_target::{Global, TargetID, get_linked_targets, get_target_map};
 use pernixc_term::{
-    TermMut,
+    TermMut, TermRef,
     display::{self, Display},
     generic_arguments::{
         AssociatedSymbol, DisplaySymbolWithGenericArguments, GenericArguments,
@@ -125,6 +125,12 @@ impl Variant {
         &mut self,
     ) -> impl Iterator<Item = TermMut<'_>> + '_ {
         self.0.iter_all_term_mut()
+    }
+
+    /// Returns an iterator yielding immutable references to all terms appeared
+    /// in the generic arguments.
+    pub fn iter_all_term(&self) -> impl Iterator<Item = TermRef<'_>> + '_ {
+        self.0.iter_all_term()
     }
 
     #[must_use]
