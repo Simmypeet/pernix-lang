@@ -1,0 +1,16 @@
+public marker Test[T]
+
+
+public effect RequireTest[T: Test]:
+    operation()
+
+
+public function main():
+    do:
+        pass
+    
+
+    # this should invoke `T: Test` unsatisfied
+    with RequireTest[int32]:
+        operation():
+            pass

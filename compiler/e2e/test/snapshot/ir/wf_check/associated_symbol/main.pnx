@@ -1,0 +1,16 @@
+public marker Test[T]
+
+
+public struct Another[T]:
+    private value: T
+
+
+implements[T] Another[T]:
+    public function requireTest(self: &this):
+        where:
+            T: Test
+
+
+    public function useTest(self: &this):
+        # should invoke `T: Test` unsatisfied
+        self.requireTest()

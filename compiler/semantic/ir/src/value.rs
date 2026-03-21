@@ -15,7 +15,7 @@ use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Values, capture::Captures, closure_parameters::ClosureParameters,
-    value::register::Register,
+    handling_scope::HandlerClauseID, value::register::Register,
 };
 pub mod literal;
 pub mod register;
@@ -82,6 +82,14 @@ impl<'e, N: Normalizer> Environment<'e, N> {
     #[must_use]
     pub const fn closure_parameters(&self) -> &'e ClosureParameters {
         self.closure_parameters.unwrap()
+    }
+
+    #[must_use]
+    pub fn get_handler_clause(
+        &self,
+        handler_clause_id: HandlerClauseID,
+    ) -> &'e crate::handling_scope::HandlerClause {
+        self.handling_scopes.get_handler_clause(handler_clause_id)
     }
 }
 

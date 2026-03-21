@@ -12,7 +12,7 @@ use qbice::{Decode, Encode, StableHash};
 use crate::{
     IRWithContext, Values,
     capture::Capture,
-    handling_scope::HandlingScope,
+    handling_scope::{HandlerClauseID, HandlingScope},
     resolution_visitor::{
         self, Abort, MutableResolutionVisitable, MutableResolutionVisitor,
         ResolutionVisitable, ResolutionVisitor,
@@ -273,6 +273,16 @@ impl DoWith {
             .extend(self.handleer_chain.capture_arguments.get_used_registers());
         registers.extend(self.do_block.capture_arguments.get_used_registers());
         registers
+    }
+
+    pub fn handler_clause_ids(
+        &self,
+    ) -> impl Iterator<Item = HandlerClauseID> + '_ {
+        self.handleer_chain
+            .handler_clauses
+            .keys()
+            .copied()
+            .map(|x| HandlerClauseID::new(self.handling_scope_id, x))
     }
 }
 

@@ -528,6 +528,7 @@ async fn extract_handler_chain(
                 HandlerClause::new(
                     effect.effect_id(),
                     effect.generic_arguments().clone(),
+                    qualified_identifier.span(),
                 ),
             ),
             unit: effect,

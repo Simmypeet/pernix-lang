@@ -266,23 +266,32 @@ impl HandlingScope {
     CopyGetters,
     Getters,
 )]
-pub struct HandlerClause(Symbol);
+pub struct HandlerClause {
+    symbol: Symbol,
+    qualified_identifier_span: RelativeSpan,
+}
 
 impl HandlerClause {
     #[must_use]
     pub const fn new(
         effect_id: Global<pernixc_symbol::ID>,
         generic_arguments: GenericArguments,
+        span: RelativeSpan,
     ) -> Self {
-        Self(Symbol::new(effect_id, generic_arguments))
+        Self {
+            symbol: Symbol::new(effect_id, generic_arguments),
+            qualified_identifier_span: span,
+        }
     }
 
     #[must_use]
-    pub const fn effect_id(&self) -> Global<pernixc_symbol::ID> { self.0.id() }
+    pub const fn effect_id(&self) -> Global<pernixc_symbol::ID> {
+        self.symbol.id()
+    }
 
     #[must_use]
     pub const fn generic_arguments(&self) -> &GenericArguments {
-        self.0.generic_arguments()
+        self.symbol.generic_arguments()
     }
 
     #[must_use]
@@ -290,7 +299,12 @@ impl HandlerClause {
         &self,
         engine: &TrackedEngine,
     ) -> Instantiation {
-        self.0.create_instantiation(engine).await
+        self.symbol.create_instantiation(engine).await
+    }
+
+    #[must_use]
+    pub const fn qualified_identifier_span(&self) -> &RelativeSpan {
+        &self.qualified_identifier_span
     }
 }
 

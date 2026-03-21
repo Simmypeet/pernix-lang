@@ -98,7 +98,7 @@ async fn check_register_assignment<N: Normalizer>(
                     value_environment
                         .type_environment
                         .wf_check_instantiation(
-                            parent_implementation_id,
+                            function_call.callee_symbol_id(),
                             &register.span,
                             &inst,
                             &handler,
@@ -220,13 +220,37 @@ async fn check_register_assignment<N: Normalizer>(
             Ok(())
         }
 
+        register::Assignment::Do(do_with) => {
+            for handler_clause_id in do_with.handler_clause_ids() {
+                let handler_clause =
+                    value_environment.get_handler_clause(handler_clause_id);
+
+                let inst = handler_clause
+                    .create_instantiation(value_environment.tracked_engine())
+                    .await;
+
+                let effect_id = handler_clause.effect_id();
+
+                value_environment
+                    .type_environment
+                    .wf_check_instantiation(
+                        effect_id,
+                        handler_clause.qualified_identifier_span(),
+                        &inst,
+                        &handler,
+                    )
+                    .await?;
+            }
+
+            Ok(())
+        }
+
         register::Assignment::Borrow(_)
         | register::Assignment::Prefix(_)
         | register::Assignment::Binary(_)
         | register::Assignment::Array(_)
         | register::Assignment::Phi(_)
         | register::Assignment::Cast(_)
-        | register::Assignment::Do(_)
         | register::Assignment::ResumeCall(_)
         | register::Assignment::VariantNumber(_) => Ok(()),
     }
