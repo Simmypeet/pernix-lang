@@ -22,6 +22,8 @@ use crate::{
     },
 };
 
+pub mod symbol;
+
 /// Represents a visitor that visits a term recursively.
 pub trait Recursive<'a, T> {
     /// Visits a term
@@ -1570,3 +1572,7 @@ impl<'a> Iterator for RecursiveIterator<'a> {
 
     fn next(&mut self) -> Option<Self::Item> { self.0.next() }
 }
+
+pub use symbol::{
+    AsyncRecursiveSymbolVisitor, SymbolElement, accept_symbol_recursive_async,
+};
