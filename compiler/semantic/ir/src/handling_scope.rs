@@ -14,7 +14,9 @@ use pernixc_term::{
 use pernixc_type_system::OverflowError;
 use qbice::{Decode, Encode, StableHash};
 
-use crate::transform::{self, ResolutionMut, Transformer};
+use crate::resolution_visitor::{
+    self, MutableResolutionVisitor, ResolutionMut,
+};
 
 /// A collection of all the effect handler groups in a function body.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Default)]
@@ -41,14 +43,13 @@ impl std::ops::Index<ID<HandlingScope>> for HandlingScopes {
     }
 }
 
-impl transform::Element for HandlingScopes {
-    async fn transform<T: Transformer>(
+impl resolution_visitor::ResolutionVisitable for HandlingScopes {
+    async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
-        transformer: &mut T,
-        engine: &pernixc_qbice::TrackedEngine,
+        visitor: &mut T,
     ) {
         for handling_scope in self.0.items_mut() {
-            handling_scope.transform(transformer, engine).await;
+            handling_scope.accept_mut(visitor).await;
         }
     }
 }
@@ -122,14 +123,13 @@ pub struct HandlingScope {
     return_type: Type,
 }
 
-impl transform::Element for HandlingScope {
-    async fn transform<T: Transformer>(
+impl resolution_visitor::ResolutionVisitable for HandlingScope {
+    async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
-        transformer: &mut T,
-        _engine: &pernixc_qbice::TrackedEngine,
+        visitor: &mut T,
     ) {
-        transformer
-            .transform(
+        visitor
+            .visit_mut(
                 ResolutionMut::Type(&mut self.return_type),
                 self.do_with_span,
             )

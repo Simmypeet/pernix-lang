@@ -8,7 +8,6 @@ use std::borrow::Cow;
 use enum_as_inner::EnumAsInner;
 use pernixc_arena::ID;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_qbice::TrackedEngine;
 use pernixc_term::r#type::Type;
 use pernixc_type_system::{OverflowError, Succeeded, normalizer::Normalizer};
 use qbice::{Decode, Encode, StableHash};
@@ -16,7 +15,7 @@ use qbice::{Decode, Encode, StableHash};
 use crate::{
     Values,
     address::Address,
-    transform::{self, Transformer},
+    resolution_visitor::{self, MutableResolutionVisitor},
     value::{Environment, TypeOf, Value},
     visitor,
 };
@@ -174,64 +173,62 @@ impl TypeOf<ID<Register>> for Values {
     }
 }
 
-impl transform::Element for Register {
-    async fn transform<T: Transformer>(
+impl resolution_visitor::ResolutionVisitable for Register {
+    async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
-        transformer: &mut T,
-        engine: &TrackedEngine,
+        visitor: &mut T,
     ) {
         match &mut self.assignment {
             Assignment::Tuple(tuple) => {
-                tuple::transform_tuple(tuple, transformer).await;
+                tuple::transform_tuple(tuple, visitor).await;
             }
             Assignment::Load(load) => {
-                load::transform_load(load, transformer, self.span).await;
+                load::transform_load(load, visitor).await;
             }
             Assignment::Borrow(borrow) => {
-                borrow::transform_borrow(borrow, transformer, self.span).await;
+                borrow::transform_borrow(borrow, visitor, self.span).await;
             }
             Assignment::Prefix(prefix) => {
-                prefix::transform_prefix(prefix, transformer, self.span).await;
+                prefix::transform_prefix(prefix, visitor, self.span).await;
             }
             Assignment::Struct(st) => {
-                r#struct::transform_struct(st, transformer, self.span).await;
+                r#struct::transform_struct(st, visitor, self.span).await;
             }
             Assignment::Variant(variant) => {
-                variant::transform_variant(variant, transformer, self.span)
-                    .await;
+                variant::transform_variant(variant, visitor, self.span).await;
             }
             Assignment::FunctionCall(function_call) => {
                 function_call::transform_function_call(
                     function_call,
-                    transformer,
+                    visitor,
                     self.span,
                 )
                 .await;
             }
             Assignment::Binary(binary) => {
-                binary::transform_binary(binary, transformer, self.span).await;
+                binary::transform_binary(binary, visitor).await;
             }
             Assignment::Array(array) => {
-                array::transform_array(array, transformer, self.span).await;
+                array::transform_array(array, visitor, self.span).await;
             }
             Assignment::Phi(phi) => {
-                phi::transform_phi(phi, transformer, self.span).await;
+                phi::transform_phi(phi, visitor, self.span).await;
             }
             Assignment::Cast(cast) => {
-                cast::transform_cast(cast, transformer, self.span).await;
+                cast::transform_cast(cast, visitor, self.span).await;
             }
             Assignment::VariantNumber(variant_number) => {
                 variant_number::transform_variant_number(
                     variant_number,
-                    transformer,
+                    visitor,
                 )
                 .await;
             }
             Assignment::Do(d) => {
-                do_with::transform_do_with(d, transformer, engine).await;
+                do_with::transform_do_with(d, visitor).await;
             }
             Assignment::ResumeCall(r) => {
-                resume_call::transform_resume_call(r, transformer).await;
+                resume_call::transform_resume_call(r, visitor).await;
             }
         }
     }

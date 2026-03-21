@@ -9,7 +9,7 @@ use pernixc_transitive_closure::TransitiveClosure;
 use qbice::{Decode, Encode, StableHash};
 
 use super::instruction::{Instruction, Jump, Terminator};
-use crate::transform::{self, Transformer};
+use crate::resolution_visitor::{self, MutableResolutionVisitor};
 
 /// A data structure used for computing whether a particular block in the
 /// control flow graph is reachable to another.
@@ -136,18 +136,17 @@ impl Block {
     }
 }
 
-impl transform::Element for Block {
-    async fn transform<T: Transformer>(
+impl resolution_visitor::ResolutionVisitable for Block {
+    async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
-        transformer: &mut T,
-        engine: &pernixc_qbice::TrackedEngine,
+        visitor: &mut T,
     ) {
         for inst in &mut self.instructions {
-            inst.transform(transformer, engine).await;
+            inst.accept_mut(visitor).await;
         }
 
         if let Some(terminator) = &mut self.terminator {
-            terminator.transform(transformer, engine).await;
+            terminator.accept_mut(visitor).await;
         }
     }
 }
@@ -720,14 +719,13 @@ impl ControlFlowGraph {
     }
 }
 
-impl transform::Element for ControlFlowGraph {
-    async fn transform<T: Transformer>(
+impl resolution_visitor::ResolutionVisitable for ControlFlowGraph {
+    async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
-        transformer: &mut T,
-        engine: &pernixc_qbice::TrackedEngine,
+        visitor: &mut T,
     ) {
         for block in self.blocks.iter_mut().map(|(_, x)| x) {
-            block.transform(transformer, engine).await;
+            block.accept_mut(visitor).await;
         }
     }
 }

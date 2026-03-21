@@ -12,7 +12,7 @@ pub mod instruction;
 pub mod ir;
 pub mod pattern;
 pub mod scope;
-pub mod transform;
+pub mod resolution_visitor;
 pub mod typer;
 pub mod value;
 pub mod visitor;

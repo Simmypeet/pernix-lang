@@ -9,11 +9,11 @@ use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Values,
-    transform::Transformer,
+    resolution_visitor::MutableResolutionVisitor,
     value::{TypeOf, Value, register::Register},
 };
 
-/// Represents an element of a [`Tuple`].
+/// Represents a tuple of values.
 #[derive(
     Debug,
     Clone,
@@ -71,14 +71,14 @@ impl crate::visitor::Element for Tuple {
     }
 }
 
-pub(super) async fn transform_tuple<T: Transformer>(
+pub(super) async fn transform_tuple<T: MutableResolutionVisitor>(
     tuple: &mut Tuple,
-    transformer: &mut T,
+    visitor: &mut T,
 ) {
     for element in
         tuple.elements.iter_mut().filter_map(|x| x.value.as_literal_mut())
     {
-        element.transform(transformer).await;
+        element.accept_mut(visitor).await;
     }
 }
 

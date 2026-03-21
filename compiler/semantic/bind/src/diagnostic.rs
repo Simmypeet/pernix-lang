@@ -3,7 +3,7 @@
 use std::fmt::Write;
 
 use pernixc_diagnostic::{Highlight, Report, Severity};
-use pernixc_ir::transform::ResolutionOwned;
+use pernixc_ir::resolution_visitor::ResolutionOwned;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_source_file::ByteIndex;

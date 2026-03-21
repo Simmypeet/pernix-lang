@@ -15,7 +15,7 @@ use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Values,
-    transform::{ResolutionMut, Transformer},
+    resolution_visitor::{MutableResolutionVisitor, ResolutionMut},
     value::{TypeOf, Value, register::Register},
 };
 
@@ -71,18 +71,18 @@ impl crate::visitor::Element for Struct {
     }
 }
 
-pub(super) async fn transform_struct<T: Transformer>(
+pub(super) async fn transform_struct<T: MutableResolutionVisitor>(
     st: &mut Struct,
-    transformer: &mut T,
+    visitor: &mut T,
     span: pernixc_lexical::tree::RelativeSpan,
 ) {
     for value in st.initializers_by_field_id.values_mut() {
         if let Some(literal) = value.as_literal_mut() {
-            literal.transform(transformer).await;
+            literal.accept_mut(visitor).await;
         }
     }
 
-    transformer.transform(ResolutionMut::Symbol(&mut st.symbol), span).await;
+    visitor.visit_mut(ResolutionMut::Symbol(&mut st.symbol), span).await;
 }
 
 impl TypeOf<&Struct> for Values {

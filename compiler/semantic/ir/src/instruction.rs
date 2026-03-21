@@ -19,7 +19,7 @@ use super::{
         register::{Assignment, Register},
     },
 };
-use crate::transform::{self, Transformer};
+use crate::resolution_visitor::{self, MutableResolutionVisitor};
 
 /// Represents a jump to another block unconditionally.
 #[derive(
@@ -65,9 +65,12 @@ pub struct ConditionalJump {
 }
 
 impl ConditionalJump {
-    async fn transform<T: Transformer>(&mut self, transformer: &mut T) {
+    async fn accept_mut<T: MutableResolutionVisitor>(
+        &mut self,
+        visitor: &mut T,
+    ) {
         if let Value::Literal(literal) = &mut self.condition {
-            literal.transform(transformer).await;
+            literal.accept_mut(visitor).await;
         }
     }
 }
@@ -109,9 +112,12 @@ pub struct SwitchJump {
 }
 
 impl SwitchJump {
-    async fn transform<T: Transformer>(&mut self, transformer: &mut T) {
+    async fn accept_mut<T: MutableResolutionVisitor>(
+        &mut self,
+        visitor: &mut T,
+    ) {
         if let Value::Literal(literal) = &mut self.integer {
-            literal.transform(transformer).await;
+            literal.accept_mut(visitor).await;
         }
     }
 }
@@ -126,13 +132,16 @@ pub enum Jump {
 }
 
 impl Jump {
-    async fn transform<T: Transformer>(&mut self, transformer: &mut T) {
+    async fn accept_mut<T: MutableResolutionVisitor>(
+        &mut self,
+        visitor: &mut T,
+    ) {
         match self {
             Self::Unconditional(_) => {}
             Self::Conditional(conditional) => {
-                conditional.transform(transformer).await;
+                conditional.accept_mut(visitor).await;
             }
-            Self::Switch(switch) => switch.transform(transformer).await,
+            Self::Switch(switch) => switch.accept_mut(visitor).await,
         }
     }
 
@@ -178,10 +187,13 @@ pub struct Return {
 }
 
 impl Return {
-    /// Transforms the return value using the given transformer.
-    async fn transform<T: Transformer>(&mut self, transformer: &mut T) {
+    /// Transforms the return value using the given visitor.
+    async fn accept_mut<T: MutableResolutionVisitor>(
+        &mut self,
+        visitor: &mut T,
+    ) {
         if let Value::Literal(literal) = &mut self.value {
-            literal.transform(transformer).await;
+            literal.accept_mut(visitor).await;
         }
     }
 }
@@ -233,12 +245,15 @@ pub struct Store {
 }
 
 impl Store {
-    async fn transform<T: Transformer>(&mut self, transformer: &mut T) {
+    async fn accept_mut<T: MutableResolutionVisitor>(
+        &mut self,
+        visitor: &mut T,
+    ) {
         if let Value::Literal(literal) = &mut self.value {
-            literal.transform(transformer).await;
+            literal.accept_mut(visitor).await;
         }
 
-        self.address.transform(transformer).await;
+        self.address.accept_mut(visitor).await;
     }
 }
 
@@ -318,9 +333,12 @@ pub struct TuplePack {
 }
 
 impl TuplePack {
-    async fn transform<T: Transformer>(&mut self, transformer: &mut T) {
-        self.store_address.transform(transformer).await;
-        self.tuple_address.transform(transformer).await;
+    async fn accept_mut<T: MutableResolutionVisitor>(
+        &mut self,
+        visitor: &mut T,
+    ) {
+        self.store_address.accept_mut(visitor).await;
+        self.tuple_address.accept_mut(visitor).await;
     }
 }
 
@@ -375,8 +393,11 @@ pub struct Drop {
 }
 
 impl Drop {
-    async fn transform<T: Transformer>(&mut self, transformer: &mut T) {
-        self.address.transform(transformer).await;
+    async fn accept_mut<T: MutableResolutionVisitor>(
+        &mut self,
+        visitor: &mut T,
+    ) {
+        self.address.accept_mut(visitor).await;
     }
 }
 
@@ -405,8 +426,11 @@ pub struct DropUnpackTuple {
 }
 
 impl DropUnpackTuple {
-    async fn transform<T: Transformer>(&mut self, transformer: &mut T) {
-        self.tuple_address.transform(transformer).await;
+    async fn accept_mut<T: MutableResolutionVisitor>(
+        &mut self,
+        visitor: &mut T,
+    ) {
+        self.tuple_address.accept_mut(visitor).await;
     }
 }
 
@@ -461,19 +485,18 @@ pub enum Instruction {
     Drop(Drop),
 }
 
-impl transform::Element for Instruction {
-    async fn transform<T: Transformer>(
+impl resolution_visitor::ResolutionVisitable for Instruction {
+    async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
-        transformer: &mut T,
-        _: &pernixc_qbice::TrackedEngine,
+        visitor: &mut T,
     ) {
         match self {
-            Self::Store(store) => store.transform(transformer).await,
+            Self::Store(store) => store.accept_mut(visitor).await,
             Self::TuplePack(tuple_pack) => {
-                tuple_pack.transform(transformer).await;
+                tuple_pack.accept_mut(visitor).await;
             }
-            Self::DropUnpackTuple(drop) => drop.transform(transformer).await,
-            Self::Drop(drop) => drop.transform(transformer).await,
+            Self::DropUnpackTuple(drop) => drop.accept_mut(visitor).await,
+            Self::Drop(drop) => drop.accept_mut(visitor).await,
 
             Self::RegisterAssignment(_)
             | Self::RegisterDiscard(_)
@@ -499,15 +522,14 @@ pub enum Terminator {
     Panic,
 }
 
-impl transform::Element for Terminator {
-    async fn transform<T: Transformer>(
+impl resolution_visitor::ResolutionVisitable for Terminator {
+    async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
-        transformer: &mut T,
-        _: &pernixc_qbice::TrackedEngine,
+        visitor: &mut T,
     ) {
         match self {
-            Self::Jump(jump) => jump.transform(transformer).await,
-            Self::Return(ret) => ret.transform(transformer).await,
+            Self::Jump(jump) => jump.accept_mut(visitor).await,
+            Self::Return(ret) => ret.accept_mut(visitor).await,
             Self::Panic => {}
         }
     }

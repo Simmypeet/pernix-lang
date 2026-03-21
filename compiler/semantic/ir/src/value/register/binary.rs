@@ -6,8 +6,7 @@ use pernixc_type_system::{OverflowError, Succeeded, normalizer::Normalizer};
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
-    Values,
-    transform::Transformer,
+    Values, resolution_visitor,
     value::{Environment, TypeOf, Value, register::Register},
 };
 
@@ -186,17 +185,18 @@ impl crate::visitor::Element for Binary {
     }
 }
 
-pub(super) async fn transform_binary<T: Transformer>(
+pub(super) async fn transform_binary<
+    T: resolution_visitor::MutableResolutionVisitor,
+>(
     binary: &mut Binary,
-    transformer: &mut T,
-    _span: pernixc_lexical::tree::RelativeSpan,
+    visitor: &mut T,
 ) {
     if let Some(literal) = binary.lhs.as_literal_mut() {
-        literal.transform(transformer).await;
+        literal.accept_mut(visitor).await;
     }
 
     if let Some(literal) = binary.rhs.as_literal_mut() {
-        literal.transform(transformer).await;
+        literal.accept_mut(visitor).await;
     }
 }
 

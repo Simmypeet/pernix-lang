@@ -4,7 +4,6 @@
 use derive_more::Index;
 use pernixc_arena::Arena;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_qbice::TrackedEngine;
 use pernixc_term::{
     lifetime::Lifetime,
     r#type::{Qualifier, Reference, Type},
@@ -13,7 +12,7 @@ use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     address::Address,
-    transform::{self, ResolutionMut, Transformer},
+    resolution_visitor::{self, MutableResolutionVisitor, ResolutionMut},
 };
 
 pub mod builder;
@@ -31,15 +30,14 @@ pub struct Captures {
     capture_order: Vec<pernixc_arena::ID<Capture>>,
 }
 
-impl transform::Element for Captures {
-    async fn transform<T: Transformer>(
+impl resolution_visitor::ResolutionVisitable for Captures {
+    async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
-        transformer: &mut T,
-        _: &TrackedEngine,
+        visitor: &mut T,
     ) {
         for (_, capture) in self.captures.iter_mut() {
-            transformer
-                .transform(
+            visitor
+                .visit_mut(
                     ResolutionMut::Type(&mut capture.address_type),
                     capture.span,
                 )
@@ -48,8 +46,8 @@ impl transform::Element for Captures {
             if let CaptureMode::ByReference(reference_mode) =
                 &mut capture.capture_mode
             {
-                transformer
-                    .transform(
+                visitor
+                    .visit_mut(
                         ResolutionMut::Lifetime(&mut reference_mode.lifetime),
                         capture.span,
                     )
@@ -218,14 +216,13 @@ impl CapturesMap {
     }
 }
 
-impl transform::Element for CapturesMap {
-    async fn transform<T: transform::Transformer>(
+impl resolution_visitor::ResolutionVisitable for CapturesMap {
+    async fn accept_mut<T: resolution_visitor::MutableResolutionVisitor>(
         &mut self,
-        transformer: &mut T,
-        engine: &TrackedEngine,
+        visitor: &mut T,
     ) {
         for (_, captures) in &mut self.arena {
-            captures.transform(transformer, engine).await;
+            captures.accept_mut(visitor).await;
         }
     }
 }

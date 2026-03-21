@@ -11,7 +11,6 @@ use pernixc_ir::{
         OperationHandlerID,
     },
     ir::IR,
-    transform,
     value::register::do_with::{Do, OperationHandler},
 };
 use pernixc_lexical::tree::RelativeSpan;
@@ -36,13 +35,14 @@ pub struct Context {
     operation_handler_stack: Vec<OperationHandlerID>,
 }
 
-impl transform::Element for Context {
-    async fn transform<T: transform::Transformer>(
+impl pernixc_ir::resolution_visitor::ResolutionVisitable for Context {
+    async fn accept_mut<
+        T: pernixc_ir::resolution_visitor::MutableResolutionVisitor,
+    >(
         &mut self,
-        transformer: &mut T,
-        engine: &TrackedEngine,
+        visitor: &mut T,
     ) {
-        self.handling_scopes.transform(transformer, engine).await;
+        self.handling_scopes.accept_mut(visitor).await;
     }
 }
 

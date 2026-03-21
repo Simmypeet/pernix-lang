@@ -7,7 +7,7 @@ use pernixc_semantic_element::parameter::Parameters;
 use pernixc_term::{instantiation::Instantiation, r#type::Type};
 use qbice::{Decode, Encode, StableHash};
 
-use crate::transform::{self, ResolutionMut};
+use crate::resolution_visitor::{self, ResolutionMut};
 
 /// Represents a parameter taken by a closure.
 #[derive(
@@ -94,15 +94,14 @@ impl ClosureParameters {
     }
 }
 
-impl transform::Element for ClosureParameters {
-    async fn transform<T: transform::Transformer>(
+impl resolution_visitor::ResolutionVisitable for ClosureParameters {
+    async fn accept_mut<T: resolution_visitor::MutableResolutionVisitor>(
         &mut self,
-        transformer: &mut T,
-        _engine: &pernixc_qbice::TrackedEngine,
+        visitor: &mut T,
     ) {
         for (_, parameter) in self.0.iter_mut_unordered() {
-            transformer
-                .transform(
+            visitor
+                .visit_mut(
                     ResolutionMut::Type(&mut parameter.r#type),
                     parameter.span,
                 )
@@ -145,14 +144,13 @@ impl ClosureParametersMap {
     }
 }
 
-impl transform::Element for ClosureParametersMap {
-    async fn transform<T: transform::Transformer>(
+impl resolution_visitor::ResolutionVisitable for ClosureParametersMap {
+    async fn accept_mut<T: resolution_visitor::MutableResolutionVisitor>(
         &mut self,
-        transformer: &mut T,
-        engine: &pernixc_qbice::TrackedEngine,
+        visitor: &mut T,
     ) {
         for (_, closure_parameters) in &mut self.arena {
-            closure_parameters.transform(transformer, engine).await;
+            closure_parameters.accept_mut(visitor).await;
         }
     }
 }

@@ -3,15 +3,14 @@
 use getset::{CopyGetters, Getters, MutGetters};
 use pernixc_arena::{Arena, ID};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_qbice::TrackedEngine;
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     alloca::Alloca,
     control_flow_graph::ControlFlowGraph,
     function_ir::IRContext,
+    resolution_visitor::{self, MutableResolutionVisitor, ResolutionMut},
     scope,
-    transform::{self, ResolutionMut, Transformer},
     value::{Value, register::Register},
 };
 
@@ -78,14 +77,13 @@ pub struct IRMap {
     irs: Arena<IRWithContext>,
 }
 
-impl transform::Element for IRMap {
-    async fn transform<T: Transformer>(
+impl resolution_visitor::ResolutionVisitable for IRMap {
+    async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
-        transformer: &mut T,
-        engine: &TrackedEngine,
+        visitor: &mut T,
     ) {
         for (_, ir_with_context) in &mut self.irs {
-            ir_with_context.ir.transform(transformer, engine).await;
+            ir_with_context.ir.accept_mut(visitor).await;
         }
     }
 }
@@ -161,21 +159,20 @@ pub struct IR {
     pub scope_tree: scope::Tree,
 }
 
-impl transform::Element for IR {
-    async fn transform<T: Transformer>(
+impl resolution_visitor::ResolutionVisitable for IR {
+    async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
-        transformer: &mut T,
-        engine: &TrackedEngine,
+        visitor: &mut T,
     ) {
-        self.control_flow_graph.transform(transformer, engine).await;
+        self.control_flow_graph.accept_mut(visitor).await;
 
         for (_, register) in &mut self.values.registers {
-            register.transform(transformer, engine).await;
+            register.accept_mut(visitor).await;
         }
 
         for alloca in self.values.allocas.items_mut() {
-            transformer
-                .transform(ResolutionMut::Type(&mut alloca.r#type), alloca.span)
+            visitor
+                .visit_mut(ResolutionMut::Type(&mut alloca.r#type), alloca.span)
                 .await;
         }
     }

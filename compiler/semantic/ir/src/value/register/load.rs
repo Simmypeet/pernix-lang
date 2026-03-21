@@ -8,7 +8,7 @@ use qbice::{Decode, Encode, StableHash};
 use crate::{
     Values,
     address::Address,
-    transform::Transformer,
+    resolution_visitor::MutableResolutionVisitor,
     value::{Environment, TypeOf},
 };
 
@@ -82,12 +82,11 @@ impl crate::visitor::Element for Load {
     }
 }
 
-pub(super) async fn transform_load<T: Transformer>(
+pub(super) async fn transform_load<T: MutableResolutionVisitor>(
     load: &mut Load,
-    transformer: &mut T,
-    _span: pernixc_lexical::tree::RelativeSpan,
+    visitor: &mut T,
 ) {
-    load.address.transform(transformer).await;
+    load.address.accept_mut(visitor).await;
 }
 
 impl TypeOf<&Load> for Values {

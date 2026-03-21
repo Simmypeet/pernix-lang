@@ -368,11 +368,7 @@ pub async fn borrow_check<N: Normalizer>(
     // NOTE: we clone the whole ir here, is there a better way to do this?
     let mut ir = ir.clone();
 
-    transform::transform_to_inference(
-        &mut ir,
-        value_environment.tracked_engine(),
-    )
-    .await;
+    transform::transform_to_inference(&mut ir).await;
 
     let context =
         context::Context::new(&ir, value_environment, handler).await?;

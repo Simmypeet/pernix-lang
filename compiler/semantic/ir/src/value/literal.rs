@@ -13,7 +13,7 @@ use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
 use crate::{
     Values,
-    transform::{ResolutionMut, Transformer},
+    resolution_visitor::{MutableResolutionVisitor, ResolutionMut},
     value::{Environment, TypeOf},
 };
 
@@ -293,12 +293,15 @@ impl TypeOf<&Literal> for Values {
 }
 
 impl Literal {
-    /// Transforms the types in the literal using the provided transformer.
-    pub async fn transform<T: Transformer>(&mut self, transformer: &mut T) {
+    /// Transforms the types in the literal using the provided visitor.
+    pub async fn accept_mut<T: MutableResolutionVisitor>(
+        &mut self,
+        visitor: &mut T,
+    ) {
         match self {
             Self::Numeric(numeric) => {
-                transformer
-                    .transform(
+                visitor
+                    .visit_mut(
                         ResolutionMut::Type(&mut numeric.r#type),
                         numeric.span,
                     )
@@ -306,8 +309,8 @@ impl Literal {
             }
 
             Self::Error(error) => {
-                transformer
-                    .transform(
+                visitor
+                    .visit_mut(
                         ResolutionMut::Type(&mut error.r#type),
                         error.span,
                     )
@@ -315,8 +318,8 @@ impl Literal {
             }
 
             Self::Character(character) => {
-                transformer
-                    .transform(
+                visitor
+                    .visit_mut(
                         ResolutionMut::Type(&mut character.r#type),
                         character.span,
                     )
@@ -324,8 +327,8 @@ impl Literal {
             }
 
             Self::Unreachable(unreachable) => {
-                transformer
-                    .transform(
+                visitor
+                    .visit_mut(
                         ResolutionMut::Type(&mut unreachable.r#type),
                         unreachable.span,
                     )
@@ -333,8 +336,8 @@ impl Literal {
             }
 
             Self::Phantom(phantom) => {
-                transformer
-                    .transform(
+                visitor
+                    .visit_mut(
                         ResolutionMut::Type(&mut phantom.r#type),
                         phantom.span,
                     )

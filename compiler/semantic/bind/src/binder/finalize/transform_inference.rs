@@ -1,7 +1,9 @@
 use std::borrow::Cow;
 
 use pernixc_handler::Handler;
-use pernixc_ir::transform::{Element, ResolutionMut, Transformer};
+use pernixc_ir::resolution_visitor::{
+    MutableResolutionVisitor, ResolutionMut, ResolutionVisitable,
+};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_resolution::qualified_identifier::Variant;
@@ -610,9 +612,9 @@ impl ReplaceInference<'_, '_> {
     }
 }
 
-impl Transformer for ReplaceInference<'_, '_> {
+impl MutableResolutionVisitor for ReplaceInference<'_, '_> {
     #[allow(clippy::too_many_lines)]
-    async fn transform(
+    async fn visit_mut(
         &mut self,
         mut resolution: ResolutionMut<'_>,
         span: RelativeSpan,
@@ -684,7 +686,7 @@ impl Binder<'_> {
         self.inference_context.fill_default_inferences();
         let rendering_map = self.get_rendering_map();
 
-        let mut transformer = ReplaceInference {
+        let mut visitor = ReplaceInference {
             inference_context: &mut self.inference_context,
             premise: &self.environment.premise,
             engine: self.engine,
@@ -694,24 +696,20 @@ impl Binder<'_> {
             unrecoverable_error: None,
         };
 
-        self.ir.transform(&mut transformer, self.engine).await;
-        transformer.bail()?;
+        self.ir.accept_mut(&mut visitor).await;
+        visitor.bail()?;
 
-        self.ir_map.transform(&mut transformer, self.engine).await;
-        transformer.bail()?;
+        self.ir_map.accept_mut(&mut visitor).await;
+        visitor.bail()?;
 
-        self.effect_handler_context
-            .transform(&mut transformer, self.engine)
-            .await;
-        transformer.bail()?;
+        self.effect_handler_context.accept_mut(&mut visitor).await;
+        visitor.bail()?;
 
-        self.closure_parameters_map
-            .transform(&mut transformer, self.engine)
-            .await;
-        transformer.bail()?;
+        self.closure_parameters_map.accept_mut(&mut visitor).await;
+        visitor.bail()?;
 
-        self.captures_map.transform(&mut transformer, self.engine).await;
-        transformer.bail()?;
+        self.captures_map.accept_mut(&mut visitor).await;
+        visitor.bail()?;
 
         Ok(())
     }

@@ -23,7 +23,7 @@ use crate::{
     alloca::Alloca,
     capture::Capture,
     closure_parameters::ClosureParameter,
-    transform::Transformer,
+    resolution_visitor::MutableResolutionVisitor,
     value::{Environment, TypeOf, Value},
 };
 
@@ -669,10 +669,10 @@ impl TypeOf<&Address> for Values {
 }
 
 impl Address {
-    /// Transforms the types in the address using the provided transformer.
-    pub async fn transform<T: Transformer>(
+    /// Transforms the types in the address using the provided visitor.
+    pub async fn accept_mut<T: MutableResolutionVisitor>(
         mut self: &mut Self,
-        transformer: &mut T,
+        visitor: &mut T,
     ) {
         loop {
             match self {
@@ -686,7 +686,7 @@ impl Address {
                 }
                 Self::Index(index) => {
                     if let Value::Literal(literal) = &mut index.indexing_value {
-                        literal.transform(transformer).await;
+                        literal.accept_mut(visitor).await;
                     }
 
                     self = index.array_address.as_mut();

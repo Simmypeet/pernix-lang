@@ -7,7 +7,7 @@ use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Values,
-    transform::Transformer,
+    resolution_visitor::MutableResolutionVisitor,
     value::{Environment, TypeOf, Value, register::Register},
 };
 
@@ -71,13 +71,13 @@ impl crate::visitor::Element for Prefix {
     }
 }
 
-pub(super) async fn transform_prefix<T: Transformer>(
+pub(super) async fn transform_prefix<T: MutableResolutionVisitor>(
     prefix: &mut Prefix,
-    transformer: &mut T,
+    visitor: &mut T,
     _span: pernixc_lexical::tree::RelativeSpan,
 ) {
     if let Some(operand) = prefix.operand.as_literal_mut() {
-        operand.transform(transformer).await;
+        operand.accept_mut(visitor).await;
     }
 }
 

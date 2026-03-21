@@ -1,4 +1,4 @@
-//! Defines the trait [`Transformable`]; an object primarily used for
+//! Defines the trait [`ResolutionVisitable`]; an object primarily used for
 //! transforming the inference variables in the IR to concrete types after
 //! type inference has been completed.
 
@@ -200,26 +200,25 @@ impl ResolutionMut<'_> {
 }
 
 /// A trait for transforming the [`ResolutionMut`]s in an object
-pub trait Transformer {
-    /// Transforms the given term `term`, using the provided `source` for error
+pub trait MutableResolutionVisitor {
+    /// Visits the given term `term`, using the provided `source` for error
     /// reporting if necessary.
     #[allow(async_fn_in_trait)]
-    async fn transform(
+    async fn visit_mut(
         &mut self,
         resolution: ResolutionMut<'_>,
         span: RelativeSpan,
     );
 }
 
-/// A trait for an object that can have [`Transformable`] elements transformed
-/// within it.
-pub trait Element {
-    /// Transforms the types, lifetimes, and constants in self using the given
-    /// transformer.
+/// A trait for an object that can have [`MutableResolutionVisitor`] elements
+/// visited within it.
+pub trait ResolutionVisitable {
+    /// Visits the types, lifetimes, and constants in self using the given
+    /// visitor.
     #[allow(async_fn_in_trait)]
-    async fn transform<T: Transformer>(
+    async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
-        transformer: &mut T,
-        engine: &TrackedEngine,
+        visitor: &mut T,
     );
 }

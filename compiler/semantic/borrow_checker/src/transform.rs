@@ -3,10 +3,11 @@
 
 use pernixc_ir::{
     IR,
-    transform::{Element, Transformer},
+    resolution_visitor::{
+        MutableResolutionVisitor, ResolutionMut, ResolutionVisitable,
+    },
 };
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_qbice::TrackedEngine;
 use pernixc_term::{
     constant::Constant,
     instance::Instance,
@@ -82,10 +83,10 @@ fn transform_lifetime(
     }
 }
 
-impl Transformer for ToBorrowTransformer {
-    async fn transform(
+impl MutableResolutionVisitor for ToBorrowTransformer {
+    async fn visit_mut(
         &mut self,
-        mut resolution: pernixc_ir::transform::ResolutionMut<'_>,
+        mut resolution: ResolutionMut<'_>,
         _span: RelativeSpan,
     ) {
         for term in resolution.iter_all_term_mut() {
@@ -109,12 +110,11 @@ impl Transformer for ToBorrowTransformer {
 
 pub(super) async fn transform_to_inference(
     ir: &mut IR,
-    engine: &TrackedEngine,
 ) -> LocalRegionGenerator {
     let mut transformer =
         ToBorrowTransformer { generator: LocalRegionGenerator::new() };
 
-    ir.transform(&mut transformer, engine).await;
+    ir.accept_mut(&mut transformer).await;
 
     transformer.generator
 }

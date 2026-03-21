@@ -9,7 +9,7 @@ use qbice::{Decode, Encode, StableHash};
 use crate::{
     Values,
     address::Address,
-    transform::Transformer,
+    resolution_visitor::MutableResolutionVisitor,
     value::{Environment, TypeOf},
 };
 
@@ -46,11 +46,11 @@ impl crate::visitor::Element for VariantNumber {
     }
 }
 
-pub(super) async fn transform_variant_number<T: Transformer>(
+pub(super) async fn transform_variant_number<T: MutableResolutionVisitor>(
     variant_number: &mut VariantNumber,
-    transformer: &mut T,
+    visitor: &mut T,
 ) {
-    variant_number.address.transform(transformer).await;
+    variant_number.address.accept_mut(visitor).await;
 }
 
 impl TypeOf<&VariantNumber> for Values {

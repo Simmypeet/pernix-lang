@@ -24,7 +24,7 @@ use qbice::{Decode, Encode, StableHash};
 use crate::{
     Values,
     handling_scope::HandlerClauseID,
-    transform::{ResolutionMut, Transformer},
+    resolution_visitor::{MutableResolutionVisitor, ResolutionMut},
     value::{TypeOf, Value, register::Register},
 };
 
@@ -184,9 +184,9 @@ impl crate::visitor::Element for FunctionCall {
 }
 
 #[allow(clippy::too_many_lines)]
-pub(super) async fn transform_function_call<T: Transformer>(
+pub(super) async fn transform_function_call<T: MutableResolutionVisitor>(
     function_call: &mut FunctionCall,
-    transformer: &mut T,
+    visitor: &mut T,
     span: pernixc_lexical::tree::RelativeSpan,
 ) {
     let res = match &mut function_call.callee {
@@ -199,16 +199,16 @@ pub(super) async fn transform_function_call<T: Transformer>(
         }
     };
 
-    transformer.transform(res, span).await;
+    visitor.visit_mut(res, span).await;
 
     for argument in &mut function_call.arguments {
         if let Some(literal) = argument.as_literal_mut() {
-            literal.transform(transformer).await;
+            literal.accept_mut(visitor).await;
         }
     }
 
     for lt in function_call.elided_lifetimes_instantiation.values_mut() {
-        transformer.transform(ResolutionMut::Lifetime(lt), span).await;
+        visitor.visit_mut(ResolutionMut::Lifetime(lt), span).await;
     }
 }
 

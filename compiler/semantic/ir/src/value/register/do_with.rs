@@ -5,7 +5,6 @@ use std::ops::Deref;
 use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
 use pernixc_hash::HashMap;
-use pernixc_qbice::TrackedEngine;
 use pernixc_term::r#type::Type;
 use pernixc_type_system::{OverflowError, Succeeded, normalizer::Normalizer};
 use qbice::{Decode, Encode, StableHash};
@@ -14,7 +13,7 @@ use crate::{
     IRWithContext, Values,
     capture::Capture,
     handling_scope::HandlingScope,
-    transform::{self, Element, Transformer},
+    resolution_visitor::{self, MutableResolutionVisitor, ResolutionVisitable},
     value::{Environment, TypeOf, Value, register::Register},
 };
 
@@ -60,16 +59,15 @@ impl CaptureArguments {
     }
 }
 
-impl transform::Element for CaptureArguments {
-    async fn transform<T: Transformer>(
+impl resolution_visitor::ResolutionVisitable for CaptureArguments {
+    async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
-        transformer: &mut T,
-        _engine: &TrackedEngine,
+        visitor: &mut T,
     ) {
         for value in
             self.arguments.values_mut().filter_map(|x| x.as_literal_mut())
         {
-            value.transform(transformer).await;
+            value.accept_mut(visitor).await;
         }
     }
 }
@@ -98,13 +96,12 @@ impl Do {
     }
 }
 
-impl transform::Element for Do {
-    async fn transform<T: Transformer>(
+impl resolution_visitor::ResolutionVisitable for Do {
+    async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
-        transformer: &mut T,
-        engine: &TrackedEngine,
+        visitor: &mut T,
     ) {
-        self.capture_arguments.transform(transformer, engine).await;
+        self.capture_arguments.accept_mut(visitor).await;
     }
 }
 
@@ -189,13 +186,12 @@ impl HandlerChain {
     }
 }
 
-impl transform::Element for HandlerChain {
-    async fn transform<T: Transformer>(
+impl resolution_visitor::ResolutionVisitable for HandlerChain {
+    async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
-        transformer: &mut T,
-        engine: &TrackedEngine,
+        visitor: &mut T,
     ) {
-        self.capture_arguments.transform(transformer, engine).await;
+        self.capture_arguments.accept_mut(visitor).await;
     }
 }
 
@@ -248,13 +244,12 @@ impl crate::visitor::Element for DoWith {
     }
 }
 
-pub(super) async fn transform_do_with<T: Transformer>(
+pub(super) async fn transform_do_with<T: MutableResolutionVisitor>(
     do_with: &mut DoWith,
-    transformer: &mut T,
-    engine: &TrackedEngine,
+    visitor: &mut T,
 ) {
-    do_with.do_block.transform(transformer, engine).await;
-    do_with.handleer_chain.transform(transformer, engine).await;
+    do_with.do_block.accept_mut(visitor).await;
+    do_with.handleer_chain.accept_mut(visitor).await;
 }
 
 impl TypeOf<&DoWith> for Values {
