@@ -9,7 +9,7 @@ use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Values,
-    resolution_visitor::{Abort, MutableResolutionVisitor},
+    resolution_visitor::{Abort, MutableResolutionVisitor, ResolutionVisitor},
     value::{TypeOf, Value, register::Register},
 };
 
@@ -79,6 +79,16 @@ pub(super) async fn transform_tuple<T: MutableResolutionVisitor>(
         tuple.elements.iter_mut().filter_map(|x| x.value.as_literal_mut())
     {
         element.accept_mut(visitor).await?;
+    }
+    Ok(())
+}
+
+pub(super) async fn inspect_tuple<T: ResolutionVisitor>(
+    tuple: &Tuple,
+    visitor: &mut T,
+) -> Result<(), Abort> {
+    for element in tuple.elements.iter().filter_map(|x| x.value.as_literal()) {
+        element.accept(visitor).await?;
     }
     Ok(())
 }

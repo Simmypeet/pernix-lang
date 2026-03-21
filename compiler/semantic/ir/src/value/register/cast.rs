@@ -9,7 +9,9 @@ use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     Values,
-    resolution_visitor::{self, Abort, ResolutionMut},
+    resolution_visitor::{
+        self, Abort, Resolution, ResolutionMut, ResolutionVisitor,
+    },
     value::{Environment, TypeOf, Value, register::Register},
 };
 
@@ -60,6 +62,19 @@ pub(super) async fn transform_cast<
     }
 
     visitor.visit_mut(ResolutionMut::Type(&mut cast.r#type), span).await?;
+    Ok(())
+}
+
+pub(super) async fn inspect_cast<T: ResolutionVisitor>(
+    cast: &Cast,
+    visitor: &mut T,
+    span: pernixc_lexical::tree::RelativeSpan,
+) -> Result<(), Abort> {
+    if let Some(literal) = cast.value.as_literal() {
+        literal.accept(visitor).await?;
+    }
+
+    visitor.visit(Resolution::Type(&cast.r#type), span).await?;
     Ok(())
 }
 

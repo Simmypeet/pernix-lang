@@ -202,6 +202,20 @@ pub(super) async fn transform_binary<
     Ok(())
 }
 
+pub(super) async fn inspect_binary<T: resolution_visitor::ResolutionVisitor>(
+    binary: &Binary,
+    visitor: &mut T,
+) -> Result<(), Abort> {
+    if let Some(literal) = binary.lhs.as_literal() {
+        literal.accept(visitor).await?;
+    }
+
+    if let Some(literal) = binary.rhs.as_literal() {
+        literal.accept(visitor).await?;
+    }
+    Ok(())
+}
+
 impl TypeOf<&Binary> for Values {
     async fn type_of<N: Normalizer>(
         &self,

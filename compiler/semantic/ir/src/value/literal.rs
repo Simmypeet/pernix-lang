@@ -13,7 +13,10 @@ use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
 use crate::{
     Values,
-    resolution_visitor::{Abort, MutableResolutionVisitor, ResolutionMut},
+    resolution_visitor::{
+        Abort, MutableResolutionVisitor, Resolution, ResolutionMut,
+        ResolutionVisitor,
+    },
     value::{Environment, TypeOf},
 };
 
@@ -293,6 +296,51 @@ impl TypeOf<&Literal> for Values {
 }
 
 impl Literal {
+    /// Visits the types in the literal using the provided visitor.
+    pub async fn accept<T: ResolutionVisitor>(
+        &self,
+        visitor: &mut T,
+    ) -> Result<(), Abort> {
+        match self {
+            Self::Numeric(numeric) => {
+                visitor
+                    .visit(Resolution::Type(&numeric.r#type), numeric.span)
+                    .await?;
+            }
+
+            Self::Error(error) => {
+                visitor
+                    .visit(Resolution::Type(&error.r#type), error.span)
+                    .await?;
+            }
+
+            Self::Character(character) => {
+                visitor
+                    .visit(Resolution::Type(&character.r#type), character.span)
+                    .await?;
+            }
+
+            Self::Unreachable(unreachable) => {
+                visitor
+                    .visit(
+                        Resolution::Type(&unreachable.r#type),
+                        unreachable.span,
+                    )
+                    .await?;
+            }
+
+            Self::Phantom(phantom) => {
+                visitor
+                    .visit(Resolution::Type(&phantom.r#type), phantom.span)
+                    .await?;
+            }
+
+            Self::String(_) | Self::Unit(_) | Self::Boolean(_) => {}
+        }
+
+        Ok(())
+    }
+
     /// Transforms the types in the literal using the provided visitor.
     pub async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,

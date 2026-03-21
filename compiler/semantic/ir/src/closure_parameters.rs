@@ -7,7 +7,9 @@ use pernixc_semantic_element::parameter::Parameters;
 use pernixc_term::{instantiation::Instantiation, r#type::Type};
 use qbice::{Decode, Encode, StableHash};
 
-use crate::resolution_visitor::{self, Abort, ResolutionMut};
+use crate::resolution_visitor::{
+    self, Abort, Resolution, ResolutionMut, ResolutionVisitor,
+};
 
 /// Represents a parameter taken by a closure.
 #[derive(
@@ -111,6 +113,20 @@ impl resolution_visitor::MutableResolutionVisitable for ClosureParameters {
     }
 }
 
+impl resolution_visitor::ResolutionVisitable for ClosureParameters {
+    async fn accept<T: ResolutionVisitor>(
+        &self,
+        visitor: &mut T,
+    ) -> Result<(), Abort> {
+        for (_, parameter) in self.0.iter() {
+            visitor
+                .visit(Resolution::Type(&parameter.r#type), parameter.span)
+                .await?;
+        }
+        Ok(())
+    }
+}
+
 /// A collection of all closure parameters used in a function.
 #[derive(
     Debug,
@@ -152,6 +168,18 @@ impl resolution_visitor::MutableResolutionVisitable for ClosureParametersMap {
     ) -> Result<(), Abort> {
         for (_, closure_parameters) in &mut self.arena {
             closure_parameters.accept_mut(visitor).await?;
+        }
+        Ok(())
+    }
+}
+
+impl resolution_visitor::ResolutionVisitable for ClosureParametersMap {
+    async fn accept<T: ResolutionVisitor>(
+        &self,
+        visitor: &mut T,
+    ) -> Result<(), Abort> {
+        for (_, closure_parameters) in &self.arena {
+            closure_parameters.accept(visitor).await?;
         }
         Ok(())
     }

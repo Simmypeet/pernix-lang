@@ -61,7 +61,57 @@ pub enum ResolutionMut<'x> {
     Lifetime(&'x mut Lifetime),
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum Resolution<'x> {
+    Symbol(&'x Symbol),
+    Variant(&'x pernixc_resolution::qualified_identifier::Variant),
+    AssociatedSymbol(&'x AssociatedSymbol),
+    InstanceAssociated(&'x InstanceAssociated),
+    Type(&'x Type),
+    Lifetime(&'x Lifetime),
+}
+
+impl Resolution<'_> {
+    #[must_use]
+    pub fn to_owned(&self) -> ResolutionOwned {
+        match self {
+            Self::Symbol(symbol) => ResolutionOwned::Symbol((*symbol).clone()),
+            Self::Variant(variant) => {
+                ResolutionOwned::Variant((*variant).clone())
+            }
+            Self::AssociatedSymbol(associated_symbol) => {
+                ResolutionOwned::AssociatedSymbol((*associated_symbol).clone())
+            }
+            Self::InstanceAssociated(instance_associated) => {
+                ResolutionOwned::InstanceAssociated(
+                    (*instance_associated).clone(),
+                )
+            }
+            Self::Type(ty) => ResolutionOwned::Type((*ty).clone()),
+            Self::Lifetime(lifetime) => {
+                ResolutionOwned::Lifetime((*lifetime).clone())
+            }
+        }
+    }
+}
+
 impl ResolutionMut<'_> {
+    #[must_use]
+    pub const fn as_resolution_ref(&self) -> Resolution<'_> {
+        match self {
+            Self::Symbol(symbol) => Resolution::Symbol(symbol),
+            Self::Variant(variant) => Resolution::Variant(variant),
+            Self::AssociatedSymbol(associated_symbol) => {
+                Resolution::AssociatedSymbol(associated_symbol)
+            }
+            Self::InstanceAssociated(instance_associated) => {
+                Resolution::InstanceAssociated(instance_associated)
+            }
+            Self::Type(ty) => Resolution::Type(ty),
+            Self::Lifetime(lifetime) => Resolution::Lifetime(lifetime),
+        }
+    }
+
     #[must_use]
     pub fn to_owned(&self) -> ResolutionOwned {
         match self {
@@ -218,6 +268,20 @@ pub trait MutableResolutionVisitor {
     ) -> Result<(), Abort>;
 }
 
+/// A trait for inspecting the [`Resolution`]s in an object.
+pub trait ResolutionVisitor {
+    /// Visits the given resolution `resolution`, using the provided `source`
+    /// for error reporting if necessary.
+    ///
+    /// Returns `Err(Abort)` to short-circuit the entire visitation process.
+    #[allow(async_fn_in_trait)]
+    async fn visit(
+        &mut self,
+        resolution: Resolution<'_>,
+        span: RelativeSpan,
+    ) -> Result<(), Abort>;
+}
+
 /// A trait for an object that can have [`MutableResolutionVisitor`] elements
 /// visited within it.
 pub trait MutableResolutionVisitable {
@@ -228,6 +292,20 @@ pub trait MutableResolutionVisitable {
     #[allow(async_fn_in_trait)]
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
+        visitor: &mut T,
+    ) -> Result<(), Abort>;
+}
+
+/// A trait for an object that can have [`ResolutionVisitor`] elements visited
+/// within it.
+pub trait ResolutionVisitable {
+    /// Visits the types, lifetimes, and constants in self using the given
+    /// visitor.
+    ///
+    /// Returns `Err(Abort)` if the visitor aborts the visitation process.
+    #[allow(async_fn_in_trait)]
+    async fn accept<T: ResolutionVisitor>(
+        &self,
         visitor: &mut T,
     ) -> Result<(), Abort>;
 }

@@ -13,7 +13,8 @@ use qbice::{Decode, Encode, StableHash};
 use crate::{
     address::Address,
     resolution_visitor::{
-        self, Abort, MutableResolutionVisitor, ResolutionMut,
+        self, Abort, MutableResolutionVisitor, Resolution, ResolutionMut,
+        ResolutionVisitor,
     },
 };
 
@@ -51,6 +52,31 @@ impl resolution_visitor::MutableResolutionVisitable for Captures {
                 visitor
                     .visit_mut(
                         ResolutionMut::Lifetime(&mut reference_mode.lifetime),
+                        capture.span,
+                    )
+                    .await?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl resolution_visitor::ResolutionVisitable for Captures {
+    async fn accept<T: ResolutionVisitor>(
+        &self,
+        visitor: &mut T,
+    ) -> Result<(), Abort> {
+        for (_, capture) in self.captures.iter() {
+            visitor
+                .visit(Resolution::Type(&capture.address_type), capture.span)
+                .await?;
+
+            if let CaptureMode::ByReference(reference_mode) =
+                &capture.capture_mode
+            {
+                visitor
+                    .visit(
+                        Resolution::Lifetime(&reference_mode.lifetime),
                         capture.span,
                     )
                     .await?;
@@ -226,6 +252,18 @@ impl resolution_visitor::MutableResolutionVisitable for CapturesMap {
     ) -> Result<(), Abort> {
         for (_, captures) in &mut self.arena {
             captures.accept_mut(visitor).await?;
+        }
+        Ok(())
+    }
+}
+
+impl resolution_visitor::ResolutionVisitable for CapturesMap {
+    async fn accept<T: ResolutionVisitor>(
+        &self,
+        visitor: &mut T,
+    ) -> Result<(), Abort> {
+        for (_, captures) in &self.arena {
+            captures.accept(visitor).await?;
         }
         Ok(())
     }

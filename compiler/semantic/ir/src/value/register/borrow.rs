@@ -11,7 +11,9 @@ use qbice::{Decode, Encode, StableHash};
 use crate::{
     Values,
     address::Address,
-    resolution_visitor::{self, Abort, ResolutionMut},
+    resolution_visitor::{
+        self, Abort, Resolution, ResolutionMut, ResolutionVisitor,
+    },
     value::{Environment, TypeOf},
 };
 
@@ -56,6 +58,19 @@ pub(super) async fn transform_borrow<
 
     visitor
         .visit_mut(ResolutionMut::Lifetime(&mut borrow.lifetime), span)
+        .await?;
+    Ok(())
+}
+
+pub(super) async fn inspect_borrow<T: ResolutionVisitor>(
+    borrow: &Borrow,
+    visitor: &mut T,
+    span: RelativeSpan,
+) -> Result<(), Abort> {
+    borrow.address.accept(visitor).await?;
+
+    visitor
+        .visit(Resolution::Lifetime(&borrow.lifetime), span)
         .await?;
     Ok(())
 }

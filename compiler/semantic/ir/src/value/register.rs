@@ -15,7 +15,9 @@ use qbice::{Decode, Encode, StableHash};
 use crate::{
     Values,
     address::Address,
-    resolution_visitor::{self, Abort, MutableResolutionVisitor},
+    resolution_visitor::{
+        self, Abort, MutableResolutionVisitor, ResolutionVisitor,
+    },
     value::{Environment, TypeOf, Value},
     visitor,
 };
@@ -229,6 +231,65 @@ impl resolution_visitor::MutableResolutionVisitable for Register {
             }
             Assignment::ResumeCall(r) => {
                 resume_call::transform_resume_call(r, visitor).await?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl resolution_visitor::ResolutionVisitable for Register {
+    async fn accept<T: ResolutionVisitor>(
+        &self,
+        visitor: &mut T,
+    ) -> Result<(), Abort> {
+        match &self.assignment {
+            Assignment::Tuple(tuple) => {
+                tuple::inspect_tuple(tuple, visitor).await?;
+            }
+            Assignment::Load(load) => {
+                load::inspect_load(load, visitor).await?;
+            }
+            Assignment::Borrow(borrow) => {
+                borrow::inspect_borrow(borrow, visitor, self.span).await?;
+            }
+            Assignment::Prefix(prefix) => {
+                prefix::inspect_prefix(prefix, visitor, self.span).await?;
+            }
+            Assignment::Struct(st) => {
+                r#struct::inspect_struct(st, visitor, self.span).await?;
+            }
+            Assignment::Variant(variant) => {
+                variant::inspect_variant(variant, visitor, self.span).await?;
+            }
+            Assignment::FunctionCall(function_call) => {
+                function_call::inspect_function_call(
+                    function_call,
+                    visitor,
+                    self.span,
+                )
+                .await?;
+            }
+            Assignment::Binary(binary) => {
+                binary::inspect_binary(binary, visitor).await?;
+            }
+            Assignment::Array(array) => {
+                array::inspect_array(array, visitor, self.span).await?;
+            }
+            Assignment::Phi(phi) => {
+                phi::inspect_phi(phi, visitor, self.span).await?;
+            }
+            Assignment::Cast(cast) => {
+                cast::inspect_cast(cast, visitor, self.span).await?;
+            }
+            Assignment::VariantNumber(variant_number) => {
+                variant_number::inspect_variant_number(variant_number, visitor)
+                    .await?;
+            }
+            Assignment::Do(d) => {
+                do_with::inspect_do_with(d, visitor).await?;
+            }
+            Assignment::ResumeCall(r) => {
+                resume_call::inspect_resume_call(r, visitor).await?;
             }
         }
         Ok(())

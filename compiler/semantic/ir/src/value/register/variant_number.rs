@@ -9,7 +9,7 @@ use qbice::{Decode, Encode, StableHash};
 use crate::{
     Values,
     address::Address,
-    resolution_visitor::{Abort, MutableResolutionVisitor},
+    resolution_visitor::{Abort, MutableResolutionVisitor, ResolutionVisitor},
     value::{Environment, TypeOf},
 };
 
@@ -51,6 +51,14 @@ pub(super) async fn transform_variant_number<T: MutableResolutionVisitor>(
     visitor: &mut T,
 ) -> Result<(), Abort> {
     variant_number.address.accept_mut(visitor).await?;
+    Ok(())
+}
+
+pub(super) async fn inspect_variant_number<T: ResolutionVisitor>(
+    variant_number: &VariantNumber,
+    visitor: &mut T,
+) -> Result<(), Abort> {
+    variant_number.address.accept(visitor).await?;
     Ok(())
 }
 

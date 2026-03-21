@@ -23,7 +23,9 @@ use crate::{
     alloca::Alloca,
     capture::Capture,
     closure_parameters::ClosureParameter,
-    resolution_visitor::{Abort, MutableResolutionVisitor},
+    resolution_visitor::{
+        Abort, MutableResolutionVisitor, ResolutionVisitor,
+    },
     value::{Environment, TypeOf, Value},
 };
 
@@ -285,6 +287,38 @@ impl Address {
                 Self::Reference(reference) => {
                     self = &*reference.reference_address;
                     count += 1;
+                }
+            }
+        }
+    }
+
+    /// Visits the types in the address using the provided visitor.
+    pub async fn accept<T: ResolutionVisitor>(
+        mut self: &Self,
+        visitor: &mut T,
+    ) -> Result<(), Abort> {
+        loop {
+            match self {
+                Self::Memory(_) => return Ok(()),
+
+                Self::Field(field) => {
+                    self = field.struct_address.as_ref();
+                }
+                Self::Tuple(tuple) => {
+                    self = tuple.tuple_address.as_ref();
+                }
+                Self::Index(index) => {
+                    if let Value::Literal(literal) = &index.indexing_value {
+                        literal.accept(visitor).await?;
+                    }
+
+                    self = index.array_address.as_ref();
+                }
+                Self::Variant(variant) => {
+                    self = variant.enum_address.as_ref();
+                }
+                Self::Reference(reference) => {
+                    self = reference.reference_address.as_ref();
                 }
             }
         }

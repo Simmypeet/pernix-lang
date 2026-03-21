@@ -15,6 +15,7 @@ use crate::{
     handling_scope::HandlingScope,
     resolution_visitor::{
         self, Abort, MutableResolutionVisitable, MutableResolutionVisitor,
+        ResolutionVisitable, ResolutionVisitor,
     },
     value::{Environment, TypeOf, Value, register::Register},
 };
@@ -75,6 +76,18 @@ impl resolution_visitor::MutableResolutionVisitable for CaptureArguments {
     }
 }
 
+impl resolution_visitor::ResolutionVisitable for CaptureArguments {
+    async fn accept<T: ResolutionVisitor>(
+        &self,
+        visitor: &mut T,
+    ) -> Result<(), Abort> {
+        for value in self.arguments.values().filter_map(|x| x.as_literal()) {
+            value.accept(visitor).await?;
+        }
+        Ok(())
+    }
+}
+
 /// Represents a `do` part of an `do-with` expression.
 ///
 /// This is where the main computation takes place, potentially involving
@@ -105,6 +118,15 @@ impl resolution_visitor::MutableResolutionVisitable for Do {
         visitor: &mut T,
     ) -> Result<(), Abort> {
         self.capture_arguments.accept_mut(visitor).await
+    }
+}
+
+impl resolution_visitor::ResolutionVisitable for Do {
+    async fn accept<T: ResolutionVisitor>(
+        &self,
+        visitor: &mut T,
+    ) -> Result<(), Abort> {
+        self.capture_arguments.accept(visitor).await
     }
 }
 
@@ -198,6 +220,15 @@ impl resolution_visitor::MutableResolutionVisitable for HandlerChain {
     }
 }
 
+impl resolution_visitor::ResolutionVisitable for HandlerChain {
+    async fn accept<T: ResolutionVisitor>(
+        &self,
+        visitor: &mut T,
+    ) -> Result<(), Abort> {
+        self.capture_arguments.accept(visitor).await
+    }
+}
+
 /// Represents a `do-with` expression in the IR.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Getters, Encode, Decode)]
 pub struct DoWith {
@@ -254,6 +285,24 @@ pub(super) async fn transform_do_with<T: MutableResolutionVisitor>(
     do_with.do_block.accept_mut(visitor).await?;
     do_with.handleer_chain.accept_mut(visitor).await?;
     Ok(())
+}
+
+pub(super) async fn inspect_do_with<T: ResolutionVisitor>(
+    do_with: &DoWith,
+    visitor: &mut T,
+) -> Result<(), Abort> {
+    do_with.do_block.accept(visitor).await?;
+    do_with.handleer_chain.accept(visitor).await?;
+    Ok(())
+}
+
+impl resolution_visitor::ResolutionVisitable for DoWith {
+    async fn accept<T: ResolutionVisitor>(
+        &self,
+        visitor: &mut T,
+    ) -> Result<(), Abort> {
+        inspect_do_with(self, visitor).await
+    }
 }
 
 impl TypeOf<&DoWith> for Values {

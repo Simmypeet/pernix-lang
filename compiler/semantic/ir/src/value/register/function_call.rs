@@ -24,7 +24,10 @@ use qbice::{Decode, Encode, StableHash};
 use crate::{
     Values,
     handling_scope::HandlerClauseID,
-    resolution_visitor::{Abort, MutableResolutionVisitor, ResolutionMut},
+    resolution_visitor::{
+        Abort, MutableResolutionVisitor, Resolution, ResolutionMut,
+        ResolutionVisitor,
+    },
     value::{TypeOf, Value, register::Register},
 };
 
@@ -209,6 +212,36 @@ pub(super) async fn transform_function_call<T: MutableResolutionVisitor>(
 
     for lt in function_call.elided_lifetimes_instantiation.values_mut() {
         visitor.visit_mut(ResolutionMut::Lifetime(lt), span).await?;
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_lines)]
+pub(super) async fn inspect_function_call<T: ResolutionVisitor>(
+    function_call: &FunctionCall,
+    visitor: &mut T,
+    span: pernixc_lexical::tree::RelativeSpan,
+) -> Result<(), Abort> {
+    let res = match &function_call.callee {
+        Callee::Function(symbol) => Resolution::Symbol(symbol),
+        Callee::AssociatedFunction(associated_symbol) => {
+            Resolution::AssociatedSymbol(associated_symbol)
+        }
+        Callee::InstanceAssociatedFunction(instance_associated) => {
+            Resolution::InstanceAssociated(instance_associated)
+        }
+    };
+
+    visitor.visit(res, span).await?;
+
+    for argument in &function_call.arguments {
+        if let Some(literal) = argument.as_literal() {
+            literal.accept(visitor).await?;
+        }
+    }
+
+    for lt in function_call.elided_lifetimes_instantiation.values() {
+        visitor.visit(Resolution::Lifetime(lt), span).await?;
     }
     Ok(())
 }
