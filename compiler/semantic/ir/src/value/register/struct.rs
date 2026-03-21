@@ -22,6 +22,31 @@ use crate::{
     value::{TypeOf, Value, register::Register},
 };
 
+macro_rules! visit_struct {
+    (
+        $st:expr,
+        $visitor:expr,
+        $span:expr,
+        $values_method:ident,
+        $literal_accessor:ident,
+        $accept_method:ident,
+        $visit_method:ident,
+        $resolution_ctor:ident,
+        $symbol_expr:expr
+    ) => {{
+        for value in $st.initializers_by_field_id.$values_method() {
+            if let Some(literal) = value.$literal_accessor() {
+                literal.$accept_method($visitor).await?;
+            }
+        }
+
+        $visitor
+            .$visit_method($resolution_ctor::Symbol($symbol_expr), $span)
+            .await?;
+        Ok(())
+    }};
+}
+
 /// Represents a struct value.
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, StableHash)]
 pub struct Struct {
@@ -79,14 +104,17 @@ pub(super) async fn transform_struct<T: MutableResolutionVisitor>(
     visitor: &mut T,
     span: pernixc_lexical::tree::RelativeSpan,
 ) -> Result<(), Abort> {
-    for value in st.initializers_by_field_id.values_mut() {
-        if let Some(literal) = value.as_literal_mut() {
-            literal.accept_mut(visitor).await?;
-        }
-    }
-
-    visitor.visit_mut(ResolutionMut::Symbol(&mut st.symbol), span).await?;
-    Ok(())
+    visit_struct!(
+        st,
+        visitor,
+        span,
+        values_mut,
+        as_literal_mut,
+        accept_mut,
+        visit_mut,
+        ResolutionMut,
+        &mut st.symbol
+    )
 }
 
 pub(super) async fn inspect_struct<T: ResolutionVisitor>(
@@ -94,14 +122,10 @@ pub(super) async fn inspect_struct<T: ResolutionVisitor>(
     visitor: &mut T,
     span: pernixc_lexical::tree::RelativeSpan,
 ) -> Result<(), Abort> {
-    for value in st.initializers_by_field_id.values() {
-        if let Some(literal) = value.as_literal() {
-            literal.accept(visitor).await?;
-        }
-    }
-
-    visitor.visit(Resolution::Symbol(&st.symbol), span).await?;
-    Ok(())
+    visit_struct!(
+        st, visitor, span, values, as_literal, accept, visit, Resolution,
+        &st.symbol
+    )
 }
 
 impl TypeOf<&Struct> for Values {

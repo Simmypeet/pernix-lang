@@ -18,6 +18,31 @@ use crate::{
     value::{Environment, TypeOf, Value, register::Register},
 };
 
+macro_rules! visit_phi {
+    (
+        $phi:expr,
+        $visitor:expr,
+        $span:expr,
+        $values_method:ident,
+        $literal_accessor:ident,
+        $accept_method:ident,
+        $visit_method:ident,
+        $resolution_ctor:ident,
+        $type_expr:expr
+    ) => {{
+        for value in $phi.incoming_values.$values_method() {
+            if let Some(literal) = value.$literal_accessor() {
+                literal.$accept_method($visitor).await?;
+            }
+        }
+
+        $visitor
+            .$visit_method($resolution_ctor::Type($type_expr), $span)
+            .await?;
+        Ok(())
+    }};
+}
+
 /// Represents a phi node in the SSA form.
 ///
 /// A phi node is used to determine the value based on the flow of the
@@ -60,14 +85,17 @@ pub(super) async fn transform_phi<T: MutableResolutionVisitor>(
     visitor: &mut T,
     span: pernixc_lexical::tree::RelativeSpan,
 ) -> Result<(), Abort> {
-    for value in phi.incoming_values.values_mut() {
-        if let Some(literal) = value.as_literal_mut() {
-            literal.accept_mut(visitor).await?;
-        }
-    }
-
-    visitor.visit_mut(ResolutionMut::Type(&mut phi.r#type), span).await?;
-    Ok(())
+    visit_phi!(
+        phi,
+        visitor,
+        span,
+        values_mut,
+        as_literal_mut,
+        accept_mut,
+        visit_mut,
+        ResolutionMut,
+        &mut phi.r#type
+    )
 }
 
 pub(super) async fn inspect_phi<T: ResolutionVisitor>(
@@ -75,14 +103,17 @@ pub(super) async fn inspect_phi<T: ResolutionVisitor>(
     visitor: &mut T,
     span: pernixc_lexical::tree::RelativeSpan,
 ) -> Result<(), Abort> {
-    for value in phi.incoming_values.values() {
-        if let Some(literal) = value.as_literal() {
-            literal.accept(visitor).await?;
-        }
-    }
-
-    visitor.visit(Resolution::Type(&phi.r#type), span).await?;
-    Ok(())
+    visit_phi!(
+        phi,
+        visitor,
+        span,
+        values,
+        as_literal,
+        accept,
+        visit,
+        Resolution,
+        &phi.r#type
+    )
 }
 
 impl TypeOf<&Phi> for Values {

@@ -13,6 +13,15 @@ use crate::resolution_visitor::{
     self, Abort, MutableResolutionVisitor, ResolutionVisitor,
 };
 
+macro_rules! visit_block_items {
+    ($iter:expr, $visitor:expr, $method:ident) => {{
+        for block in $iter {
+            block.$method($visitor).await?;
+        }
+        Ok(())
+    }};
+}
+
 /// A data structure used for computing whether a particular block in the
 /// control flow graph is reachable to another.
 ///
@@ -745,10 +754,7 @@ impl resolution_visitor::MutableResolutionVisitable for ControlFlowGraph {
         &mut self,
         visitor: &mut T,
     ) -> Result<(), Abort> {
-        for block in self.blocks.iter_mut().map(|(_, x)| x) {
-            block.accept_mut(visitor).await?;
-        }
-        Ok(())
+        visit_block_items!(self.blocks.iter_mut().map(|(_, x)| x), visitor, accept_mut)
     }
 }
 
@@ -757,10 +763,7 @@ impl resolution_visitor::ResolutionVisitable for ControlFlowGraph {
         &self,
         visitor: &mut T,
     ) -> Result<(), Abort> {
-        for block in self.blocks.iter().map(|(_, x)| x) {
-            block.accept(visitor).await?;
-        }
-        Ok(())
+        visit_block_items!(self.blocks.iter().map(|(_, x)| x), visitor, accept)
     }
 }
 

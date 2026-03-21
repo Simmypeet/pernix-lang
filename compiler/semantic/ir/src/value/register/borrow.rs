@@ -17,6 +17,25 @@ use crate::{
     value::{Environment, TypeOf},
 };
 
+macro_rules! visit_borrow_contents {
+    (
+        $borrow:expr,
+        $visitor:expr,
+        $span:expr,
+        $address_method:ident,
+        $visit_method:ident,
+        $resolution_ctor:ident,
+        $lifetime:expr
+    ) => {{
+        $borrow.address.$address_method($visitor).await?;
+
+        $visitor
+            .$visit_method($resolution_ctor::Lifetime($lifetime), $span)
+            .await?;
+        Ok(())
+    }};
+}
+
 /// Obtains a reference at the given address.
 #[derive(
     Debug,
@@ -54,12 +73,15 @@ pub(super) async fn transform_borrow<
     visitor: &mut T,
     span: RelativeSpan,
 ) -> Result<(), Abort> {
-    borrow.address.accept_mut(visitor).await?;
-
-    visitor
-        .visit_mut(ResolutionMut::Lifetime(&mut borrow.lifetime), span)
-        .await?;
-    Ok(())
+    visit_borrow_contents!(
+        borrow,
+        visitor,
+        span,
+        accept_mut,
+        visit_mut,
+        ResolutionMut,
+        &mut borrow.lifetime
+    )
 }
 
 pub(super) async fn inspect_borrow<T: ResolutionVisitor>(
@@ -67,12 +89,15 @@ pub(super) async fn inspect_borrow<T: ResolutionVisitor>(
     visitor: &mut T,
     span: RelativeSpan,
 ) -> Result<(), Abort> {
-    borrow.address.accept(visitor).await?;
-
-    visitor
-        .visit(Resolution::Lifetime(&borrow.lifetime), span)
-        .await?;
-    Ok(())
+    visit_borrow_contents!(
+        borrow,
+        visitor,
+        span,
+        accept,
+        visit,
+        Resolution,
+        &borrow.lifetime
+    )
 }
 
 impl TypeOf<&Borrow> for Values {

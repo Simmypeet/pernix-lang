@@ -11,6 +11,19 @@ use crate::{
     value::{Environment, TypeOf, Value, register::Register},
 };
 
+macro_rules! visit_binary_literals {
+    ($binary:expr, $visitor:expr, $literal_accessor:ident, $accept_method:ident) => {{
+        if let Some(literal) = $binary.lhs.$literal_accessor() {
+            literal.$accept_method($visitor).await?;
+        }
+
+        if let Some(literal) = $binary.rhs.$literal_accessor() {
+            literal.$accept_method($visitor).await?;
+        }
+        Ok(())
+    }};
+}
+
 /// Represents an arithmetic operator that works on numbers.
 ///
 /// The both lhs and rhs operands are required to have the same type. The return
@@ -192,28 +205,14 @@ pub(super) async fn transform_binary<
     binary: &mut Binary,
     visitor: &mut T,
 ) -> Result<(), Abort> {
-    if let Some(literal) = binary.lhs.as_literal_mut() {
-        literal.accept_mut(visitor).await?;
-    }
-
-    if let Some(literal) = binary.rhs.as_literal_mut() {
-        literal.accept_mut(visitor).await?;
-    }
-    Ok(())
+    visit_binary_literals!(binary, visitor, as_literal_mut, accept_mut)
 }
 
 pub(super) async fn inspect_binary<T: resolution_visitor::ResolutionVisitor>(
     binary: &Binary,
     visitor: &mut T,
 ) -> Result<(), Abort> {
-    if let Some(literal) = binary.lhs.as_literal() {
-        literal.accept(visitor).await?;
-    }
-
-    if let Some(literal) = binary.rhs.as_literal() {
-        literal.accept(visitor).await?;
-    }
-    Ok(())
+    visit_binary_literals!(binary, visitor, as_literal, accept)
 }
 
 impl TypeOf<&Binary> for Values {

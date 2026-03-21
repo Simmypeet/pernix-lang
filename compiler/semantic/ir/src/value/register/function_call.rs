@@ -31,6 +31,49 @@ use crate::{
     value::{TypeOf, Value, register::Register},
 };
 
+macro_rules! visit_function_call {
+    (
+        $function_call:expr,
+        $visitor:expr,
+        $span:expr,
+        $callee_ref:expr,
+        $res_symbol_ctor:ident,
+        $res_associated_ctor:ident,
+        $res_instance_ctor:ident,
+        $visit_method:ident,
+        $arguments_iter:expr,
+        $literal_accessor:ident,
+        $accept_method:ident,
+        $lifetimes_values:expr,
+        $res_lifetime_ctor:ident
+    ) => {{
+        let res = match $callee_ref {
+            Callee::Function(symbol) => $res_symbol_ctor::Symbol(symbol),
+            Callee::AssociatedFunction(associated_symbol) => {
+                $res_associated_ctor::AssociatedSymbol(associated_symbol)
+            }
+            Callee::InstanceAssociatedFunction(instance_associated) => {
+                $res_instance_ctor::InstanceAssociated(instance_associated)
+            }
+        };
+
+        $visitor.$visit_method(res, $span).await?;
+
+        for argument in $arguments_iter {
+            if let Some(literal) = argument.$literal_accessor() {
+                literal.$accept_method($visitor).await?;
+            }
+        }
+
+        for lt in $lifetimes_values {
+            $visitor
+                .$visit_method($res_lifetime_ctor::Lifetime(lt), $span)
+                .await?;
+        }
+        Ok(())
+    }};
+}
+
 /// Specifies how an effectful operation's capability arguments are supplied.
 #[derive(
     Debug,
@@ -192,28 +235,21 @@ pub(super) async fn transform_function_call<T: MutableResolutionVisitor>(
     visitor: &mut T,
     span: pernixc_lexical::tree::RelativeSpan,
 ) -> Result<(), Abort> {
-    let res = match &mut function_call.callee {
-        Callee::Function(symbol) => ResolutionMut::Symbol(symbol),
-        Callee::AssociatedFunction(associated_symbol) => {
-            ResolutionMut::AssociatedSymbol(associated_symbol)
-        }
-        Callee::InstanceAssociatedFunction(instance_associated) => {
-            ResolutionMut::InstanceAssociated(instance_associated)
-        }
-    };
-
-    visitor.visit_mut(res, span).await?;
-
-    for argument in &mut function_call.arguments {
-        if let Some(literal) = argument.as_literal_mut() {
-            literal.accept_mut(visitor).await?;
-        }
-    }
-
-    for lt in function_call.elided_lifetimes_instantiation.values_mut() {
-        visitor.visit_mut(ResolutionMut::Lifetime(lt), span).await?;
-    }
-    Ok(())
+    visit_function_call!(
+        function_call,
+        visitor,
+        span,
+        &mut function_call.callee,
+        ResolutionMut,
+        ResolutionMut,
+        ResolutionMut,
+        visit_mut,
+        &mut function_call.arguments,
+        as_literal_mut,
+        accept_mut,
+        function_call.elided_lifetimes_instantiation.values_mut(),
+        ResolutionMut
+    )
 }
 
 #[allow(clippy::too_many_lines)]
@@ -222,28 +258,21 @@ pub(super) async fn inspect_function_call<T: ResolutionVisitor>(
     visitor: &mut T,
     span: pernixc_lexical::tree::RelativeSpan,
 ) -> Result<(), Abort> {
-    let res = match &function_call.callee {
-        Callee::Function(symbol) => Resolution::Symbol(symbol),
-        Callee::AssociatedFunction(associated_symbol) => {
-            Resolution::AssociatedSymbol(associated_symbol)
-        }
-        Callee::InstanceAssociatedFunction(instance_associated) => {
-            Resolution::InstanceAssociated(instance_associated)
-        }
-    };
-
-    visitor.visit(res, span).await?;
-
-    for argument in &function_call.arguments {
-        if let Some(literal) = argument.as_literal() {
-            literal.accept(visitor).await?;
-        }
-    }
-
-    for lt in function_call.elided_lifetimes_instantiation.values() {
-        visitor.visit(Resolution::Lifetime(lt), span).await?;
-    }
-    Ok(())
+    visit_function_call!(
+        function_call,
+        visitor,
+        span,
+        &function_call.callee,
+        Resolution,
+        Resolution,
+        Resolution,
+        visit,
+        &function_call.arguments,
+        as_literal,
+        accept,
+        function_call.elided_lifetimes_instantiation.values(),
+        Resolution
+    )
 }
 
 impl TypeOf<&FunctionCall> for Values {

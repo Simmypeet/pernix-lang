@@ -15,6 +15,15 @@ use crate::{
     visitor,
 };
 
+macro_rules! visit_resume_literal {
+    ($resume_call:expr, $visitor:expr, $literal_accessor:ident, $accept_method:ident) => {{
+        if let Some(literal) = $resume_call.value.$literal_accessor() {
+            literal.$accept_method($visitor).await?;
+        }
+        Ok(())
+    }};
+}
+
 /// Represents a `reumse(value)` expression found inside operation handler
 /// clause.
 #[derive(
@@ -69,20 +78,14 @@ pub(super) async fn transform_resume_call<T: MutableResolutionVisitor>(
     resume_call: &mut ResumeCall,
     visitor: &mut T,
 ) -> Result<(), Abort> {
-    if let Value::Literal(literal) = &mut resume_call.value {
-        literal.accept_mut(visitor).await?;
-    }
-    Ok(())
+    visit_resume_literal!(resume_call, visitor, as_literal_mut, accept_mut)
 }
 
 pub(super) async fn inspect_resume_call<T: ResolutionVisitor>(
     resume_call: &ResumeCall,
     visitor: &mut T,
 ) -> Result<(), Abort> {
-    if let Value::Literal(literal) = &resume_call.value {
-        literal.accept(visitor).await?;
-    }
-    Ok(())
+    visit_resume_literal!(resume_call, visitor, as_literal, accept)
 }
 
 impl visitor::Element for ResumeCall {

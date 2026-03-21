@@ -11,6 +11,47 @@ use crate::resolution_visitor::{
     self, Abort, Resolution, ResolutionMut, ResolutionVisitor,
 };
 
+macro_rules! visit_closure_parameters {
+    (
+        $iterable:expr,
+        $visitor:expr,
+        $visit_method:ident,
+        $resolution_ctor:ident,
+        $type_ref:ident
+    ) => {{
+        for (_, parameter) in $iterable {
+            $visitor
+                .$visit_method(
+                    $resolution_ctor::Type($type_ref!(parameter.r#type)),
+                    parameter.span,
+                )
+                .await?;
+        }
+        Ok(())
+    }};
+}
+
+macro_rules! visit_closure_parameter_maps {
+    ($iterable:expr, $visitor:expr, $accept_method:ident) => {{
+        for (_, closure_parameters) in $iterable {
+            closure_parameters.$accept_method($visitor).await?;
+        }
+        Ok(())
+    }};
+}
+
+macro_rules! immut_ref {
+    ($field:expr) => {
+        &$field
+    };
+}
+
+macro_rules! mut_ref {
+    ($field:expr) => {
+        &mut $field
+    };
+}
+
 /// Represents a parameter taken by a closure.
 #[derive(
     Debug,
@@ -101,15 +142,13 @@ impl resolution_visitor::MutableResolutionVisitable for ClosureParameters {
         &mut self,
         visitor: &mut T,
     ) -> Result<(), Abort> {
-        for (_, parameter) in self.0.iter_mut_unordered() {
-            visitor
-                .visit_mut(
-                    ResolutionMut::Type(&mut parameter.r#type),
-                    parameter.span,
-                )
-                .await?;
-        }
-        Ok(())
+        visit_closure_parameters!(
+            self.0.iter_mut_unordered(),
+            visitor,
+            visit_mut,
+            ResolutionMut,
+            mut_ref
+        )
     }
 }
 
@@ -118,12 +157,13 @@ impl resolution_visitor::ResolutionVisitable for ClosureParameters {
         &self,
         visitor: &mut T,
     ) -> Result<(), Abort> {
-        for (_, parameter) in self.0.iter() {
-            visitor
-                .visit(Resolution::Type(&parameter.r#type), parameter.span)
-                .await?;
-        }
-        Ok(())
+        visit_closure_parameters!(
+            self.0.iter(),
+            visitor,
+            visit,
+            Resolution,
+            immut_ref
+        )
     }
 }
 
@@ -166,10 +206,7 @@ impl resolution_visitor::MutableResolutionVisitable for ClosureParametersMap {
         &mut self,
         visitor: &mut T,
     ) -> Result<(), Abort> {
-        for (_, closure_parameters) in &mut self.arena {
-            closure_parameters.accept_mut(visitor).await?;
-        }
-        Ok(())
+        visit_closure_parameter_maps!(&mut self.arena, visitor, accept_mut)
     }
 }
 
@@ -178,9 +215,6 @@ impl resolution_visitor::ResolutionVisitable for ClosureParametersMap {
         &self,
         visitor: &mut T,
     ) -> Result<(), Abort> {
-        for (_, closure_parameters) in &self.arena {
-            closure_parameters.accept(visitor).await?;
-        }
-        Ok(())
+        visit_closure_parameter_maps!(&self.arena, visitor, accept)
     }
 }

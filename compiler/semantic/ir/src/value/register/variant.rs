@@ -18,6 +18,31 @@ use crate::{
     value::{TypeOf, Value, register::Register},
 };
 
+macro_rules! visit_variant {
+    (
+        $variant:expr,
+        $visitor:expr,
+        $span:expr,
+        $associated_value:expr,
+        $literal_accessor:ident,
+        $accept_method:ident,
+        $visit_method:ident,
+        $resolution_ctor:ident,
+        $symbol_expr:expr
+    ) => {{
+        if let Some(value) = $associated_value
+            && let Some(literal) = value.$literal_accessor()
+        {
+            literal.$accept_method($visitor).await?;
+        }
+
+        $visitor
+            .$visit_method($resolution_ctor::Variant($symbol_expr), $span)
+            .await?;
+        Ok(())
+    }};
+}
+
 /// Represents a variant value.
 #[derive(
     Debug,
@@ -96,16 +121,17 @@ pub(super) async fn transform_variant<T: MutableResolutionVisitor>(
     visitor: &mut T,
     span: pernixc_lexical::tree::RelativeSpan,
 ) -> Result<(), Abort> {
-    if let Some(value) = variant.associated_value.as_mut()
-        && let Some(literal) = value.as_literal_mut()
-    {
-        literal.accept_mut(visitor).await?;
-    }
-
-    visitor
-        .visit_mut(ResolutionMut::Variant(&mut variant.symbol), span)
-        .await?;
-    Ok(())
+    visit_variant!(
+        variant,
+        visitor,
+        span,
+        variant.associated_value.as_mut(),
+        as_literal_mut,
+        accept_mut,
+        visit_mut,
+        ResolutionMut,
+        &mut variant.symbol
+    )
 }
 
 pub(super) async fn inspect_variant<T: ResolutionVisitor>(
@@ -113,14 +139,17 @@ pub(super) async fn inspect_variant<T: ResolutionVisitor>(
     visitor: &mut T,
     span: pernixc_lexical::tree::RelativeSpan,
 ) -> Result<(), Abort> {
-    if let Some(value) = variant.associated_value.as_ref()
-        && let Some(literal) = value.as_literal()
-    {
-        literal.accept(visitor).await?;
-    }
-
-    visitor.visit(Resolution::Variant(&variant.symbol), span).await?;
-    Ok(())
+    visit_variant!(
+        variant,
+        visitor,
+        span,
+        variant.associated_value.as_ref(),
+        as_literal,
+        accept,
+        visit,
+        Resolution,
+        &variant.symbol
+    )
 }
 
 impl TypeOf<&Variant> for Values {

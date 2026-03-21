@@ -13,6 +13,15 @@ use crate::{
     value::{TypeOf, Value, register::Register},
 };
 
+macro_rules! visit_tuple_literals {
+    ($elements:expr, $literal_accessor:ident, $visitor:expr, $accept_method:ident) => {{
+        for element in $elements.filter_map(|x| x.value.$literal_accessor()) {
+            element.$accept_method($visitor).await?;
+        }
+        Ok(())
+    }};
+}
+
 /// Represents a tuple of values.
 #[derive(
     Debug,
@@ -75,22 +84,19 @@ pub(super) async fn transform_tuple<T: MutableResolutionVisitor>(
     tuple: &mut Tuple,
     visitor: &mut T,
 ) -> Result<(), Abort> {
-    for element in
-        tuple.elements.iter_mut().filter_map(|x| x.value.as_literal_mut())
-    {
-        element.accept_mut(visitor).await?;
-    }
-    Ok(())
+    visit_tuple_literals!(
+        tuple.elements.iter_mut(),
+        as_literal_mut,
+        visitor,
+        accept_mut
+    )
 }
 
 pub(super) async fn inspect_tuple<T: ResolutionVisitor>(
     tuple: &Tuple,
     visitor: &mut T,
 ) -> Result<(), Abort> {
-    for element in tuple.elements.iter().filter_map(|x| x.value.as_literal()) {
-        element.accept(visitor).await?;
-    }
-    Ok(())
+    visit_tuple_literals!(tuple.elements.iter(), as_literal, visitor, accept)
 }
 
 impl TypeOf<&Tuple> for Values {

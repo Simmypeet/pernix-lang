@@ -19,6 +19,44 @@ use crate::resolution_visitor::{
     ResolutionVisitor,
 };
 
+macro_rules! visit_handling_scopes {
+    ($iterable:expr, $visitor:expr, $accept_method:ident) => {{
+        for handling_scope in $iterable {
+            handling_scope.$accept_method($visitor).await?;
+        }
+        Ok(())
+    }};
+}
+
+macro_rules! visit_scope_return_type {
+    (
+        $this:expr,
+        $visitor:expr,
+        $visit_method:ident,
+        $resolution_ctor:ident,
+        $type_ref:ident
+    ) => {{
+        $visitor
+            .$visit_method(
+                $resolution_ctor::Type($type_ref!($this.return_type)),
+                $this.do_with_span,
+            )
+            .await
+    }};
+}
+
+macro_rules! immut_ref {
+    ($field:expr) => {
+        &$field
+    };
+}
+
+macro_rules! mut_ref {
+    ($field:expr) => {
+        &mut $field
+    };
+}
+
 /// A collection of all the effect handler groups in a function body.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Default)]
 pub struct HandlingScopes(Arena<HandlingScope>);
@@ -49,10 +87,7 @@ impl resolution_visitor::MutableResolutionVisitable for HandlingScopes {
         &mut self,
         visitor: &mut T,
     ) -> Result<(), Abort> {
-        for handling_scope in self.0.items_mut() {
-            handling_scope.accept_mut(visitor).await?;
-        }
-        Ok(())
+        visit_handling_scopes!(self.0.items_mut(), visitor, accept_mut)
     }
 }
 
@@ -61,10 +96,7 @@ impl resolution_visitor::ResolutionVisitable for HandlingScopes {
         &self,
         visitor: &mut T,
     ) -> Result<(), Abort> {
-        for handling_scope in self.0.items() {
-            handling_scope.accept(visitor).await?;
-        }
-        Ok(())
+        visit_handling_scopes!(self.0.items(), visitor, accept)
     }
 }
 
@@ -142,12 +174,13 @@ impl resolution_visitor::MutableResolutionVisitable for HandlingScope {
         &mut self,
         visitor: &mut T,
     ) -> Result<(), Abort> {
-        visitor
-            .visit_mut(
-                ResolutionMut::Type(&mut self.return_type),
-                self.do_with_span,
-            )
-            .await
+        visit_scope_return_type!(
+            self,
+            visitor,
+            visit_mut,
+            ResolutionMut,
+            mut_ref
+        )
     }
 }
 
@@ -156,9 +189,7 @@ impl resolution_visitor::ResolutionVisitable for HandlingScope {
         &self,
         visitor: &mut T,
     ) -> Result<(), Abort> {
-        visitor
-            .visit(Resolution::Type(&self.return_type), self.do_with_span)
-            .await
+        visit_scope_return_type!(self, visitor, visit, Resolution, immut_ref)
     }
 }
 

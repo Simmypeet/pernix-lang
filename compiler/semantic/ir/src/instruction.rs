@@ -23,6 +23,49 @@ use crate::resolution_visitor::{
     self, Abort, MutableResolutionVisitor, ResolutionVisitor,
 };
 
+macro_rules! dispatch_jump {
+    ($self:expr, $visitor:expr, $method:ident) => {{
+        match $self {
+            Jump::Unconditional(_) => {}
+            Jump::Conditional(conditional) => {
+                conditional.$method($visitor).await?;
+            }
+            Jump::Switch(switch) => switch.$method($visitor).await?,
+        }
+        Ok(())
+    }};
+}
+
+macro_rules! dispatch_instruction {
+    ($self:expr, $visitor:expr, $method:ident) => {{
+        match $self {
+            Instruction::Store(store) => store.$method($visitor).await?,
+            Instruction::TuplePack(tuple_pack) => {
+                tuple_pack.$method($visitor).await?;
+            }
+            Instruction::DropUnpackTuple(drop) => drop.$method($visitor).await?,
+            Instruction::Drop(drop) => drop.$method($visitor).await?,
+
+            Instruction::RegisterAssignment(_)
+            | Instruction::RegisterDiscard(_)
+            | Instruction::ScopePush(_)
+            | Instruction::ScopePop(_) => {}
+        }
+        Ok(())
+    }};
+}
+
+macro_rules! dispatch_terminator {
+    ($self:expr, $visitor:expr, $method:ident) => {{
+        match $self {
+            Terminator::Jump(jump) => jump.$method($visitor).await?,
+            Terminator::Return(ret) => ret.$method($visitor).await?,
+            Terminator::Panic => {}
+        }
+        Ok(())
+    }};
+}
+
 /// Represents a jump to another block unconditionally.
 #[derive(
     Debug,
@@ -160,28 +203,14 @@ impl Jump {
         &self,
         visitor: &mut T,
     ) -> Result<(), Abort> {
-        match self {
-            Self::Unconditional(_) => {}
-            Self::Conditional(conditional) => {
-                conditional.accept(visitor).await?;
-            }
-            Self::Switch(switch) => switch.accept(visitor).await?,
-        }
-        Ok(())
+        dispatch_jump!(self, visitor, accept)
     }
 
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
     ) -> Result<(), Abort> {
-        match self {
-            Self::Unconditional(_) => {}
-            Self::Conditional(conditional) => {
-                conditional.accept_mut(visitor).await?;
-            }
-            Self::Switch(switch) => switch.accept_mut(visitor).await?,
-        }
-        Ok(())
+        dispatch_jump!(self, visitor, accept_mut)
     }
 
     /// Returns the block IDs that this jump goes to.
@@ -582,20 +611,7 @@ impl resolution_visitor::MutableResolutionVisitable for Instruction {
         &mut self,
         visitor: &mut T,
     ) -> Result<(), Abort> {
-        match self {
-            Self::Store(store) => store.accept_mut(visitor).await?,
-            Self::TuplePack(tuple_pack) => {
-                tuple_pack.accept_mut(visitor).await?;
-            }
-            Self::DropUnpackTuple(drop) => drop.accept_mut(visitor).await?,
-            Self::Drop(drop) => drop.accept_mut(visitor).await?,
-
-            Self::RegisterAssignment(_)
-            | Self::RegisterDiscard(_)
-            | Self::ScopePush(_)
-            | Self::ScopePop(_) => {}
-        }
-        Ok(())
+        dispatch_instruction!(self, visitor, accept_mut)
     }
 }
 
@@ -604,20 +620,7 @@ impl resolution_visitor::ResolutionVisitable for Instruction {
         &self,
         visitor: &mut T,
     ) -> Result<(), Abort> {
-        match self {
-            Self::Store(store) => store.accept(visitor).await?,
-            Self::TuplePack(tuple_pack) => {
-                tuple_pack.accept(visitor).await?;
-            }
-            Self::DropUnpackTuple(drop) => drop.accept(visitor).await?,
-            Self::Drop(drop) => drop.accept(visitor).await?,
-
-            Self::RegisterAssignment(_)
-            | Self::RegisterDiscard(_)
-            | Self::ScopePush(_)
-            | Self::ScopePop(_) => {}
-        }
-        Ok(())
+        dispatch_instruction!(self, visitor, accept)
     }
 }
 
@@ -642,12 +645,7 @@ impl resolution_visitor::MutableResolutionVisitable for Terminator {
         &mut self,
         visitor: &mut T,
     ) -> Result<(), Abort> {
-        match self {
-            Self::Jump(jump) => jump.accept_mut(visitor).await?,
-            Self::Return(ret) => ret.accept_mut(visitor).await?,
-            Self::Panic => {}
-        }
-        Ok(())
+        dispatch_terminator!(self, visitor, accept_mut)
     }
 }
 
@@ -656,12 +654,7 @@ impl resolution_visitor::ResolutionVisitable for Terminator {
         &self,
         visitor: &mut T,
     ) -> Result<(), Abort> {
-        match self {
-            Self::Jump(jump) => jump.accept(visitor).await?,
-            Self::Return(ret) => ret.accept(visitor).await?,
-            Self::Panic => {}
-        }
-        Ok(())
+        dispatch_terminator!(self, visitor, accept)
     }
 }
 

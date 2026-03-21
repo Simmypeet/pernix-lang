@@ -20,6 +20,15 @@ use crate::{
     value::{Environment, TypeOf, Value, register::Register},
 };
 
+macro_rules! visit_capture_literals {
+    ($iter:expr, $visitor:expr, $method:ident) => {{
+        for value in $iter {
+            value.$method($visitor).await?;
+        }
+        Ok(())
+    }};
+}
+
 /// Representing the capture initialization. This contains all the values
 /// used to initialize the captures.
 #[derive(
@@ -67,12 +76,11 @@ impl resolution_visitor::MutableResolutionVisitable for CaptureArguments {
         &mut self,
         visitor: &mut T,
     ) -> Result<(), Abort> {
-        for value in
-            self.arguments.values_mut().filter_map(|x| x.as_literal_mut())
-        {
-            value.accept_mut(visitor).await?;
-        }
-        Ok(())
+        visit_capture_literals!(
+            self.arguments.values_mut().filter_map(|x| x.as_literal_mut()),
+            visitor,
+            accept_mut
+        )
     }
 }
 
@@ -81,10 +89,11 @@ impl resolution_visitor::ResolutionVisitable for CaptureArguments {
         &self,
         visitor: &mut T,
     ) -> Result<(), Abort> {
-        for value in self.arguments.values().filter_map(|x| x.as_literal()) {
-            value.accept(visitor).await?;
-        }
-        Ok(())
+        visit_capture_literals!(
+            self.arguments.values().filter_map(|x| x.as_literal()),
+            visitor,
+            accept
+        )
     }
 }
 

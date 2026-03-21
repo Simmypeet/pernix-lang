@@ -20,6 +20,79 @@ use crate::{
     value::{Environment, TypeOf},
 };
 
+macro_rules! visit_typed_literals {
+    (
+        $this:expr,
+        $visitor:expr,
+        $visit_method:ident,
+        $resolution_ctor:ident,
+        $type_ref:ident
+    ) => {{
+        match $this {
+            Literal::Numeric(numeric) => {
+                $visitor
+                    .$visit_method(
+                        $resolution_ctor::Type($type_ref!(numeric.r#type)),
+                        numeric.span,
+                    )
+                    .await?;
+            }
+
+            Literal::Error(error) => {
+                $visitor
+                    .$visit_method(
+                        $resolution_ctor::Type($type_ref!(error.r#type)),
+                        error.span,
+                    )
+                    .await?;
+            }
+
+            Literal::Character(character) => {
+                $visitor
+                    .$visit_method(
+                        $resolution_ctor::Type($type_ref!(character.r#type)),
+                        character.span,
+                    )
+                    .await?;
+            }
+
+            Literal::Unreachable(unreachable) => {
+                $visitor
+                    .$visit_method(
+                        $resolution_ctor::Type($type_ref!(unreachable.r#type)),
+                        unreachable.span,
+                    )
+                    .await?;
+            }
+
+            Literal::Phantom(phantom) => {
+                $visitor
+                    .$visit_method(
+                        $resolution_ctor::Type($type_ref!(phantom.r#type)),
+                        phantom.span,
+                    )
+                    .await?;
+            }
+
+            Literal::String(_) | Literal::Unit(_) | Literal::Boolean(_) => {}
+        }
+
+        Ok(())
+    }};
+}
+
+macro_rules! immut_ref {
+    ($field:expr) => {
+        &$field
+    };
+}
+
+macro_rules! mut_ref {
+    ($field:expr) => {
+        &mut $field
+    };
+}
+
 /// Represents a numeric literal value.
 #[derive(
     Debug,
@@ -301,44 +374,7 @@ impl Literal {
         &self,
         visitor: &mut T,
     ) -> Result<(), Abort> {
-        match self {
-            Self::Numeric(numeric) => {
-                visitor
-                    .visit(Resolution::Type(&numeric.r#type), numeric.span)
-                    .await?;
-            }
-
-            Self::Error(error) => {
-                visitor
-                    .visit(Resolution::Type(&error.r#type), error.span)
-                    .await?;
-            }
-
-            Self::Character(character) => {
-                visitor
-                    .visit(Resolution::Type(&character.r#type), character.span)
-                    .await?;
-            }
-
-            Self::Unreachable(unreachable) => {
-                visitor
-                    .visit(
-                        Resolution::Type(&unreachable.r#type),
-                        unreachable.span,
-                    )
-                    .await?;
-            }
-
-            Self::Phantom(phantom) => {
-                visitor
-                    .visit(Resolution::Type(&phantom.r#type), phantom.span)
-                    .await?;
-            }
-
-            Self::String(_) | Self::Unit(_) | Self::Boolean(_) => {}
-        }
-
-        Ok(())
+        visit_typed_literals!(self, visitor, visit, Resolution, immut_ref)
     }
 
     /// Transforms the types in the literal using the provided visitor.
@@ -346,54 +382,6 @@ impl Literal {
         &mut self,
         visitor: &mut T,
     ) -> Result<(), Abort> {
-        match self {
-            Self::Numeric(numeric) => {
-                visitor
-                    .visit_mut(
-                        ResolutionMut::Type(&mut numeric.r#type),
-                        numeric.span,
-                    )
-                    .await?;
-            }
-
-            Self::Error(error) => {
-                visitor
-                    .visit_mut(
-                        ResolutionMut::Type(&mut error.r#type),
-                        error.span,
-                    )
-                    .await?;
-            }
-
-            Self::Character(character) => {
-                visitor
-                    .visit_mut(
-                        ResolutionMut::Type(&mut character.r#type),
-                        character.span,
-                    )
-                    .await?;
-            }
-
-            Self::Unreachable(unreachable) => {
-                visitor
-                    .visit_mut(
-                        ResolutionMut::Type(&mut unreachable.r#type),
-                        unreachable.span,
-                    )
-                    .await?;
-            }
-
-            Self::Phantom(phantom) => {
-                visitor
-                    .visit_mut(
-                        ResolutionMut::Type(&mut phantom.r#type),
-                        phantom.span,
-                    )
-                    .await?;
-            }
-
-            Self::String(_) | Self::Unit(_) | Self::Boolean(_) => {}
-        }
-        Ok(())
+        visit_typed_literals!(self, visitor, visit_mut, ResolutionMut, mut_ref)
     }
 }

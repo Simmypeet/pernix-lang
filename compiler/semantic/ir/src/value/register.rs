@@ -55,6 +55,74 @@ pub use tuple::{Tuple, TupleElement};
 pub use variant::Variant;
 pub use variant_number::VariantNumber;
 
+macro_rules! visit_assignment_with {
+    (
+        $assignment:expr,
+        $visitor:expr,
+        $span:expr,
+        $tuple_fn:path,
+        $load_fn:path,
+        $borrow_fn:path,
+        $prefix_fn:path,
+        $struct_fn:path,
+        $variant_fn:path,
+        $function_call_fn:path,
+        $binary_fn:path,
+        $array_fn:path,
+        $phi_fn:path,
+        $cast_fn:path,
+        $variant_number_fn:path,
+        $do_with_fn:path,
+        $resume_call_fn:path
+    ) => {{
+        match $assignment {
+            Assignment::Tuple(tuple) => {
+                $tuple_fn(tuple, $visitor).await?;
+            }
+            Assignment::Load(load) => {
+                $load_fn(load, $visitor).await?;
+            }
+            Assignment::Borrow(borrow) => {
+                $borrow_fn(borrow, $visitor, $span).await?;
+            }
+            Assignment::Prefix(prefix) => {
+                $prefix_fn(prefix, $visitor, $span).await?;
+            }
+            Assignment::Struct(st) => {
+                $struct_fn(st, $visitor, $span).await?;
+            }
+            Assignment::Variant(variant) => {
+                $variant_fn(variant, $visitor, $span).await?;
+            }
+            Assignment::FunctionCall(function_call) => {
+                $function_call_fn(function_call, $visitor, $span).await?;
+            }
+            Assignment::Binary(binary) => {
+                $binary_fn(binary, $visitor).await?;
+            }
+            Assignment::Array(array) => {
+                $array_fn(array, $visitor, $span).await?;
+            }
+            Assignment::Phi(phi) => {
+                $phi_fn(phi, $visitor, $span).await?;
+            }
+            Assignment::Cast(cast) => {
+                $cast_fn(cast, $visitor, $span).await?;
+            }
+            Assignment::VariantNumber(variant_number) => {
+                $variant_number_fn(variant_number, $visitor).await?;
+            }
+            Assignment::Do(d) => {
+                $do_with_fn(d, $visitor).await?;
+            }
+            Assignment::ResumeCall(r) => {
+                $resume_call_fn(r, $visitor).await?;
+            }
+        }
+        Ok(())
+    }};
+}
+
 /// An enumeration of the different kinds of values that can be assigned in the
 /// register.
 #[derive(
@@ -180,60 +248,25 @@ impl resolution_visitor::MutableResolutionVisitable for Register {
         &mut self,
         visitor: &mut T,
     ) -> Result<(), Abort> {
-        match &mut self.assignment {
-            Assignment::Tuple(tuple) => {
-                tuple::transform_tuple(tuple, visitor).await?;
-            }
-            Assignment::Load(load) => {
-                load::transform_load(load, visitor).await?;
-            }
-            Assignment::Borrow(borrow) => {
-                borrow::transform_borrow(borrow, visitor, self.span).await?;
-            }
-            Assignment::Prefix(prefix) => {
-                prefix::transform_prefix(prefix, visitor, self.span).await?;
-            }
-            Assignment::Struct(st) => {
-                r#struct::transform_struct(st, visitor, self.span).await?;
-            }
-            Assignment::Variant(variant) => {
-                variant::transform_variant(variant, visitor, self.span).await?;
-            }
-            Assignment::FunctionCall(function_call) => {
-                function_call::transform_function_call(
-                    function_call,
-                    visitor,
-                    self.span,
-                )
-                .await?;
-            }
-            Assignment::Binary(binary) => {
-                binary::transform_binary(binary, visitor).await?;
-            }
-            Assignment::Array(array) => {
-                array::transform_array(array, visitor, self.span).await?;
-            }
-            Assignment::Phi(phi) => {
-                phi::transform_phi(phi, visitor, self.span).await?;
-            }
-            Assignment::Cast(cast) => {
-                cast::transform_cast(cast, visitor, self.span).await?;
-            }
-            Assignment::VariantNumber(variant_number) => {
-                variant_number::transform_variant_number(
-                    variant_number,
-                    visitor,
-                )
-                .await?;
-            }
-            Assignment::Do(d) => {
-                do_with::transform_do_with(d, visitor).await?;
-            }
-            Assignment::ResumeCall(r) => {
-                resume_call::transform_resume_call(r, visitor).await?;
-            }
-        }
-        Ok(())
+        visit_assignment_with!(
+            &mut self.assignment,
+            visitor,
+            self.span,
+            tuple::transform_tuple,
+            load::transform_load,
+            borrow::transform_borrow,
+            prefix::transform_prefix,
+            r#struct::transform_struct,
+            variant::transform_variant,
+            function_call::transform_function_call,
+            binary::transform_binary,
+            array::transform_array,
+            phi::transform_phi,
+            cast::transform_cast,
+            variant_number::transform_variant_number,
+            do_with::transform_do_with,
+            resume_call::transform_resume_call
+        )
     }
 }
 
@@ -242,57 +275,25 @@ impl resolution_visitor::ResolutionVisitable for Register {
         &self,
         visitor: &mut T,
     ) -> Result<(), Abort> {
-        match &self.assignment {
-            Assignment::Tuple(tuple) => {
-                tuple::inspect_tuple(tuple, visitor).await?;
-            }
-            Assignment::Load(load) => {
-                load::inspect_load(load, visitor).await?;
-            }
-            Assignment::Borrow(borrow) => {
-                borrow::inspect_borrow(borrow, visitor, self.span).await?;
-            }
-            Assignment::Prefix(prefix) => {
-                prefix::inspect_prefix(prefix, visitor, self.span).await?;
-            }
-            Assignment::Struct(st) => {
-                r#struct::inspect_struct(st, visitor, self.span).await?;
-            }
-            Assignment::Variant(variant) => {
-                variant::inspect_variant(variant, visitor, self.span).await?;
-            }
-            Assignment::FunctionCall(function_call) => {
-                function_call::inspect_function_call(
-                    function_call,
-                    visitor,
-                    self.span,
-                )
-                .await?;
-            }
-            Assignment::Binary(binary) => {
-                binary::inspect_binary(binary, visitor).await?;
-            }
-            Assignment::Array(array) => {
-                array::inspect_array(array, visitor, self.span).await?;
-            }
-            Assignment::Phi(phi) => {
-                phi::inspect_phi(phi, visitor, self.span).await?;
-            }
-            Assignment::Cast(cast) => {
-                cast::inspect_cast(cast, visitor, self.span).await?;
-            }
-            Assignment::VariantNumber(variant_number) => {
-                variant_number::inspect_variant_number(variant_number, visitor)
-                    .await?;
-            }
-            Assignment::Do(d) => {
-                do_with::inspect_do_with(d, visitor).await?;
-            }
-            Assignment::ResumeCall(r) => {
-                resume_call::inspect_resume_call(r, visitor).await?;
-            }
-        }
-        Ok(())
+        visit_assignment_with!(
+            &self.assignment,
+            visitor,
+            self.span,
+            tuple::inspect_tuple,
+            load::inspect_load,
+            borrow::inspect_borrow,
+            prefix::inspect_prefix,
+            r#struct::inspect_struct,
+            variant::inspect_variant,
+            function_call::inspect_function_call,
+            binary::inspect_binary,
+            array::inspect_array,
+            phi::inspect_phi,
+            cast::inspect_cast,
+            variant_number::inspect_variant_number,
+            do_with::inspect_do_with,
+            resume_call::inspect_resume_call
+        )
     }
 }
 

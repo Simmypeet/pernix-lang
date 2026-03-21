@@ -11,6 +11,15 @@ use crate::{
     value::{Environment, TypeOf, Value, register::Register},
 };
 
+macro_rules! visit_prefix_operand {
+    ($prefix:expr, $visitor:expr, $literal_accessor:ident, $accept_method:ident) => {{
+        if let Some(operand) = $prefix.operand.$literal_accessor() {
+            operand.$accept_method($visitor).await?;
+        }
+        Ok(())
+    }};
+}
+
 /// An enumeration of the different kinds of prefix operators.
 #[derive(
     Debug,
@@ -76,10 +85,7 @@ pub(super) async fn transform_prefix<T: MutableResolutionVisitor>(
     visitor: &mut T,
     _span: pernixc_lexical::tree::RelativeSpan,
 ) -> Result<(), Abort> {
-    if let Some(operand) = prefix.operand.as_literal_mut() {
-        operand.accept_mut(visitor).await?;
-    }
-    Ok(())
+    visit_prefix_operand!(prefix, visitor, as_literal_mut, accept_mut)
 }
 
 pub(super) async fn inspect_prefix<T: ResolutionVisitor>(
@@ -87,10 +93,7 @@ pub(super) async fn inspect_prefix<T: ResolutionVisitor>(
     visitor: &mut T,
     _span: pernixc_lexical::tree::RelativeSpan,
 ) -> Result<(), Abort> {
-    if let Some(operand) = prefix.operand.as_literal() {
-        operand.accept(visitor).await?;
-    }
-    Ok(())
+    visit_prefix_operand!(prefix, visitor, as_literal, accept)
 }
 
 impl TypeOf<&Prefix> for Values {

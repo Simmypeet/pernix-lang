@@ -15,6 +15,26 @@ use crate::{
     value::{Environment, TypeOf, Value, register::Register},
 };
 
+macro_rules! visit_array_literals {
+    ($values:expr, $literal_accessor:ident, $visitor:expr, $accept_method:ident) => {{
+        for value in $values {
+            if let Some(literal) = value.$literal_accessor() {
+                literal.$accept_method($visitor).await?;
+            }
+        }
+        Ok(())
+    }};
+}
+
+macro_rules! visit_array_type {
+    ($visitor:expr, $visit_method:ident, $resolution_ctor:ident, $element_type:expr, $span:expr) => {{
+        $visitor
+            .$visit_method($resolution_ctor::Type($element_type), $span)
+            .await?;
+        Ok(())
+    }};
+}
+
 /// Represents an array of values.
 #[derive(
     Debug,
@@ -63,16 +83,19 @@ pub(super) async fn transform_array<
     visitor: &mut T,
     span: pernixc_lexical::tree::RelativeSpan,
 ) -> Result<(), Abort> {
-    for value in &mut array.elements {
-        if let Some(literal) = value.as_literal_mut() {
-            literal.accept_mut(visitor).await?;
-        }
-    }
-
-    visitor
-        .visit_mut(ResolutionMut::Type(&mut array.element_type), span)
-        .await?;
-    Ok(())
+    visit_array_literals!(
+        &mut array.elements,
+        as_literal_mut,
+        visitor,
+        accept_mut
+    )?;
+    visit_array_type!(
+        visitor,
+        visit_mut,
+        ResolutionMut,
+        &mut array.element_type,
+        span
+    )
 }
 
 pub(super) async fn inspect_array<T: ResolutionVisitor>(
@@ -80,14 +103,8 @@ pub(super) async fn inspect_array<T: ResolutionVisitor>(
     visitor: &mut T,
     span: pernixc_lexical::tree::RelativeSpan,
 ) -> Result<(), Abort> {
-    for value in &array.elements {
-        if let Some(literal) = value.as_literal() {
-            literal.accept(visitor).await?;
-        }
-    }
-
-    visitor.visit(Resolution::Type(&array.element_type), span).await?;
-    Ok(())
+    visit_array_literals!(&array.elements, as_literal, visitor, accept)?;
+    visit_array_type!(visitor, visit, Resolution, &array.element_type, span)
 }
 
 impl TypeOf<&Array> for Values {

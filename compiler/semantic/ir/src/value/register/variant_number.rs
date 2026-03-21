@@ -13,6 +13,13 @@ use crate::{
     value::{Environment, TypeOf},
 };
 
+macro_rules! visit_variant_number_address {
+    ($variant_number:expr, $visitor:expr, $accept_method:ident) => {{
+        $variant_number.address.$accept_method($visitor).await?;
+        Ok(())
+    }};
+}
+
 /// Returns the variant number of the given address to the enum.
 ///
 /// The variant number is supposed to be a unique identifier specifying which
@@ -50,16 +57,14 @@ pub(super) async fn transform_variant_number<T: MutableResolutionVisitor>(
     variant_number: &mut VariantNumber,
     visitor: &mut T,
 ) -> Result<(), Abort> {
-    variant_number.address.accept_mut(visitor).await?;
-    Ok(())
+    visit_variant_number_address!(variant_number, visitor, accept_mut)
 }
 
 pub(super) async fn inspect_variant_number<T: ResolutionVisitor>(
     variant_number: &VariantNumber,
     visitor: &mut T,
 ) -> Result<(), Abort> {
-    variant_number.address.accept(visitor).await?;
-    Ok(())
+    visit_variant_number_address!(variant_number, visitor, accept)
 }
 
 impl TypeOf<&VariantNumber> for Values {

@@ -18,6 +18,61 @@ use crate::{
     },
 };
 
+macro_rules! visit_captures {
+    (
+        $captures:expr,
+        $visitor:expr,
+        $visit_method:ident,
+        $resolution_ctor:ident,
+        $type_ref:ident,
+        $capture_mode_ref:ident
+    ) => {{
+        for (_, capture) in $captures {
+            $visitor
+                .$visit_method(
+                    $resolution_ctor::Type($type_ref!(capture.address_type)),
+                    capture.span,
+                )
+                .await?;
+
+            if let CaptureMode::ByReference(reference_mode) =
+                $capture_mode_ref!(capture.capture_mode)
+            {
+                $visitor
+                    .$visit_method(
+                        $resolution_ctor::Lifetime($type_ref!(
+                            reference_mode.lifetime
+                        )),
+                        capture.span,
+                    )
+                    .await?;
+            }
+        }
+        Ok(())
+    }};
+}
+
+macro_rules! visit_captures_map {
+    ($iterable:expr, $visitor:expr, $accept_method:ident) => {{
+        for (_, captures) in $iterable {
+            captures.$accept_method($visitor).await?;
+        }
+        Ok(())
+    }};
+}
+
+macro_rules! immut_ref {
+    ($field:expr) => {
+        &$field
+    };
+}
+
+macro_rules! mut_ref {
+    ($field:expr) => {
+        &mut $field
+    };
+}
+
 pub mod builder;
 pub mod pruning;
 
@@ -38,26 +93,14 @@ impl resolution_visitor::MutableResolutionVisitable for Captures {
         &mut self,
         visitor: &mut T,
     ) -> Result<(), Abort> {
-        for (_, capture) in self.captures.iter_mut() {
-            visitor
-                .visit_mut(
-                    ResolutionMut::Type(&mut capture.address_type),
-                    capture.span,
-                )
-                .await?;
-
-            if let CaptureMode::ByReference(reference_mode) =
-                &mut capture.capture_mode
-            {
-                visitor
-                    .visit_mut(
-                        ResolutionMut::Lifetime(&mut reference_mode.lifetime),
-                        capture.span,
-                    )
-                    .await?;
-            }
-        }
-        Ok(())
+        visit_captures!(
+            self.captures.iter_mut(),
+            visitor,
+            visit_mut,
+            ResolutionMut,
+            mut_ref,
+            mut_ref
+        )
     }
 }
 
@@ -66,23 +109,14 @@ impl resolution_visitor::ResolutionVisitable for Captures {
         &self,
         visitor: &mut T,
     ) -> Result<(), Abort> {
-        for (_, capture) in self.captures.iter() {
-            visitor
-                .visit(Resolution::Type(&capture.address_type), capture.span)
-                .await?;
-
-            if let CaptureMode::ByReference(reference_mode) =
-                &capture.capture_mode
-            {
-                visitor
-                    .visit(
-                        Resolution::Lifetime(&reference_mode.lifetime),
-                        capture.span,
-                    )
-                    .await?;
-            }
-        }
-        Ok(())
+        visit_captures!(
+            self.captures.iter(),
+            visitor,
+            visit,
+            Resolution,
+            immut_ref,
+            immut_ref
+        )
     }
 }
 
@@ -250,10 +284,7 @@ impl resolution_visitor::MutableResolutionVisitable for CapturesMap {
         &mut self,
         visitor: &mut T,
     ) -> Result<(), Abort> {
-        for (_, captures) in &mut self.arena {
-            captures.accept_mut(visitor).await?;
-        }
-        Ok(())
+        visit_captures_map!(&mut self.arena, visitor, accept_mut)
     }
 }
 
@@ -262,9 +293,6 @@ impl resolution_visitor::ResolutionVisitable for CapturesMap {
         &self,
         visitor: &mut T,
     ) -> Result<(), Abort> {
-        for (_, captures) in &self.arena {
-            captures.accept(visitor).await?;
-        }
-        Ok(())
+        visit_captures_map!(&self.arena, visitor, accept)
     }
 }

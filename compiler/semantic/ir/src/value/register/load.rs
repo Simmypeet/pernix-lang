@@ -12,6 +12,13 @@ use crate::{
     value::{Environment, TypeOf},
 };
 
+macro_rules! visit_load_address {
+    ($load:expr, $visitor:expr, $accept_method:ident) => {{
+        $load.address.$accept_method($visitor).await?;
+        Ok(())
+    }};
+}
+
 /// Indicates how a load is being used. This is used for improving diagnostics
 /// related to use-after-move and similar errors.
 #[derive(
@@ -86,16 +93,14 @@ pub(super) async fn transform_load<T: MutableResolutionVisitor>(
     load: &mut Load,
     visitor: &mut T,
 ) -> Result<(), Abort> {
-    load.address.accept_mut(visitor).await?;
-    Ok(())
+    visit_load_address!(load, visitor, accept_mut)
 }
 
 pub(super) async fn inspect_load<T: ResolutionVisitor>(
     load: &Load,
     visitor: &mut T,
 ) -> Result<(), Abort> {
-    load.address.accept(visitor).await?;
-    Ok(())
+    visit_load_address!(load, visitor, accept)
 }
 
 impl TypeOf<&Load> for Values {

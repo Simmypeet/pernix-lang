@@ -17,6 +17,24 @@ use crate::{
     value::{Value, register::Register},
 };
 
+macro_rules! visit_ir_entries {
+    ($iter:expr, $visitor:expr, $method:ident) => {{
+        for (_, ir_with_context) in $iter {
+            ir_with_context.ir.$method($visitor).await?;
+        }
+        Ok(())
+    }};
+}
+
+macro_rules! visit_registers {
+    ($iter:expr, $visitor:expr, $method:ident) => {{
+        for (_, register) in $iter {
+            register.$method($visitor).await?;
+        }
+        Ok(())
+    }};
+}
+
 /// Composes of the [`IR`] and its associated [`IRContext`].
 #[derive(
     Debug,
@@ -85,10 +103,7 @@ impl resolution_visitor::MutableResolutionVisitable for IRMap {
         &mut self,
         visitor: &mut T,
     ) -> Result<(), Abort> {
-        for (_, ir_with_context) in &mut self.irs {
-            ir_with_context.ir.accept_mut(visitor).await?;
-        }
-        Ok(())
+        visit_ir_entries!(&mut self.irs, visitor, accept_mut)
     }
 }
 
@@ -97,10 +112,7 @@ impl resolution_visitor::ResolutionVisitable for IRMap {
         &self,
         visitor: &mut T,
     ) -> Result<(), Abort> {
-        for (_, ir_with_context) in &self.irs {
-            ir_with_context.ir.accept(visitor).await?;
-        }
-        Ok(())
+        visit_ir_entries!(&self.irs, visitor, accept)
     }
 }
 
@@ -182,9 +194,7 @@ impl resolution_visitor::MutableResolutionVisitable for IR {
     ) -> Result<(), Abort> {
         self.control_flow_graph.accept_mut(visitor).await?;
 
-        for (_, register) in &mut self.values.registers {
-            register.accept_mut(visitor).await?;
-        }
+        visit_registers!(&mut self.values.registers, visitor, accept_mut)?;
 
         for alloca in self.values.allocas.items_mut() {
             visitor
@@ -203,9 +213,7 @@ impl resolution_visitor::ResolutionVisitable for IR {
     ) -> Result<(), Abort> {
         self.control_flow_graph.accept(visitor).await?;
 
-        for (_, register) in &self.values.registers {
-            register.accept(visitor).await?;
-        }
+        visit_registers!(&self.values.registers, visitor, accept)?;
 
         for alloca in self.values.allocas.items() {
             visitor

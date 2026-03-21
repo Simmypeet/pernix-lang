@@ -15,6 +15,28 @@ use crate::{
     value::{Environment, TypeOf, Value, register::Register},
 };
 
+macro_rules! visit_cast {
+    (
+        $cast:expr,
+        $visitor:expr,
+        $span:expr,
+        $literal_accessor:ident,
+        $accept_method:ident,
+        $visit_method:ident,
+        $resolution_ctor:ident,
+        $type_expr:expr
+    ) => {{
+        if let Some(literal) = $cast.value.$literal_accessor() {
+            literal.$accept_method($visitor).await?;
+        }
+
+        $visitor
+            .$visit_method($resolution_ctor::Type($type_expr), $span)
+            .await?;
+        Ok(())
+    }};
+}
+
 /// Represents a cast operation.
 #[derive(
     Debug,
@@ -57,12 +79,16 @@ pub(super) async fn transform_cast<
     visitor: &mut T,
     span: pernixc_lexical::tree::RelativeSpan,
 ) -> Result<(), Abort> {
-    if let Some(literal) = cast.value.as_literal_mut() {
-        literal.accept_mut(visitor).await?;
-    }
-
-    visitor.visit_mut(ResolutionMut::Type(&mut cast.r#type), span).await?;
-    Ok(())
+    visit_cast!(
+        cast,
+        visitor,
+        span,
+        as_literal_mut,
+        accept_mut,
+        visit_mut,
+        ResolutionMut,
+        &mut cast.r#type
+    )
 }
 
 pub(super) async fn inspect_cast<T: ResolutionVisitor>(
@@ -70,12 +96,16 @@ pub(super) async fn inspect_cast<T: ResolutionVisitor>(
     visitor: &mut T,
     span: pernixc_lexical::tree::RelativeSpan,
 ) -> Result<(), Abort> {
-    if let Some(literal) = cast.value.as_literal() {
-        literal.accept(visitor).await?;
-    }
-
-    visitor.visit(Resolution::Type(&cast.r#type), span).await?;
-    Ok(())
+    visit_cast!(
+        cast,
+        visitor,
+        span,
+        as_literal,
+        accept,
+        visit,
+        Resolution,
+        &cast.r#type
+    )
 }
 
 impl TypeOf<&Cast> for Values {
