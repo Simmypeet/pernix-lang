@@ -266,8 +266,8 @@ impl GenericParameter for TypeParameter {
     Encode,
     Decode,
     new,
+    getset::Getters,
 )]
-#[derive(getset::Getters)]
 pub struct ConstantParameter {
     name: Interned<str>,
     #[getset(get = "pub")]

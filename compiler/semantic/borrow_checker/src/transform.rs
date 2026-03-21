@@ -4,7 +4,8 @@
 use pernixc_ir::{
     IR,
     resolution_visitor::{
-        Abort, MutableResolutionVisitor, ResolutionMut, ResolutionVisitable,
+        Abort, MutableResolutionVisitable, MutableResolutionVisitor,
+        ResolutionMut,
     },
 };
 use pernixc_lexical::tree::RelativeSpan;

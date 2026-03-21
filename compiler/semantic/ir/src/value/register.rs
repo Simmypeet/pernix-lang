@@ -173,7 +173,7 @@ impl TypeOf<ID<Register>> for Values {
     }
 }
 
-impl resolution_visitor::ResolutionVisitable for Register {
+impl resolution_visitor::MutableResolutionVisitable for Register {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,

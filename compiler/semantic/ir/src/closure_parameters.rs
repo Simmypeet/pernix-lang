@@ -94,7 +94,7 @@ impl ClosureParameters {
     }
 }
 
-impl resolution_visitor::ResolutionVisitable for ClosureParameters {
+impl resolution_visitor::MutableResolutionVisitable for ClosureParameters {
     async fn accept_mut<T: resolution_visitor::MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
@@ -145,7 +145,7 @@ impl ClosureParametersMap {
     }
 }
 
-impl resolution_visitor::ResolutionVisitable for ClosureParametersMap {
+impl resolution_visitor::MutableResolutionVisitable for ClosureParametersMap {
     async fn accept_mut<T: resolution_visitor::MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,

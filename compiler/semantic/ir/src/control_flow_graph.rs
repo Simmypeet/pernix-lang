@@ -136,7 +136,7 @@ impl Block {
     }
 }
 
-impl resolution_visitor::ResolutionVisitable for Block {
+impl resolution_visitor::MutableResolutionVisitable for Block {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
@@ -721,7 +721,7 @@ impl ControlFlowGraph {
     }
 }
 
-impl resolution_visitor::ResolutionVisitable for ControlFlowGraph {
+impl resolution_visitor::MutableResolutionVisitable for ControlFlowGraph {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,

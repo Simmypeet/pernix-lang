@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use pernixc_handler::Handler;
 use pernixc_ir::resolution_visitor::{
-    Abort, MutableResolutionVisitor, ResolutionMut, ResolutionVisitable,
+    Abort, MutableResolutionVisitable, MutableResolutionVisitor, ResolutionMut,
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;

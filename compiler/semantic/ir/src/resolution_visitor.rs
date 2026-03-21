@@ -220,7 +220,7 @@ pub trait MutableResolutionVisitor {
 
 /// A trait for an object that can have [`MutableResolutionVisitor`] elements
 /// visited within it.
-pub trait ResolutionVisitable {
+pub trait MutableResolutionVisitable {
     /// Visits the types, lifetimes, and constants in self using the given
     /// visitor.
     ///

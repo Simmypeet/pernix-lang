@@ -43,7 +43,7 @@ impl std::ops::Index<ID<HandlingScope>> for HandlingScopes {
     }
 }
 
-impl resolution_visitor::ResolutionVisitable for HandlingScopes {
+impl resolution_visitor::MutableResolutionVisitable for HandlingScopes {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
@@ -124,7 +124,7 @@ pub struct HandlingScope {
     return_type: Type,
 }
 
-impl resolution_visitor::ResolutionVisitable for HandlingScope {
+impl resolution_visitor::MutableResolutionVisitable for HandlingScope {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,

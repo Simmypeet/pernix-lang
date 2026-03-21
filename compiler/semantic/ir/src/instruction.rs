@@ -493,7 +493,7 @@ pub enum Instruction {
     Drop(Drop),
 }
 
-impl resolution_visitor::ResolutionVisitable for Instruction {
+impl resolution_visitor::MutableResolutionVisitable for Instruction {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
@@ -531,7 +531,7 @@ pub enum Terminator {
     Panic,
 }
 
-impl resolution_visitor::ResolutionVisitable for Terminator {
+impl resolution_visitor::MutableResolutionVisitable for Terminator {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,

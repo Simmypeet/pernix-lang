@@ -14,7 +14,7 @@ use crate::{
     capture::Capture,
     handling_scope::HandlingScope,
     resolution_visitor::{
-        self, Abort, MutableResolutionVisitor, ResolutionVisitable,
+        self, Abort, MutableResolutionVisitable, MutableResolutionVisitor,
     },
     value::{Environment, TypeOf, Value, register::Register},
 };
@@ -61,7 +61,7 @@ impl CaptureArguments {
     }
 }
 
-impl resolution_visitor::ResolutionVisitable for CaptureArguments {
+impl resolution_visitor::MutableResolutionVisitable for CaptureArguments {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
@@ -99,7 +99,7 @@ impl Do {
     }
 }
 
-impl resolution_visitor::ResolutionVisitable for Do {
+impl resolution_visitor::MutableResolutionVisitable for Do {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
@@ -189,7 +189,7 @@ impl HandlerChain {
     }
 }
 
-impl resolution_visitor::ResolutionVisitable for HandlerChain {
+impl resolution_visitor::MutableResolutionVisitable for HandlerChain {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,

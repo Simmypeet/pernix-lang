@@ -79,7 +79,7 @@ pub struct IRMap {
     irs: Arena<IRWithContext>,
 }
 
-impl resolution_visitor::ResolutionVisitable for IRMap {
+impl resolution_visitor::MutableResolutionVisitable for IRMap {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
@@ -162,7 +162,7 @@ pub struct IR {
     pub scope_tree: scope::Tree,
 }
 
-impl resolution_visitor::ResolutionVisitable for IR {
+impl resolution_visitor::MutableResolutionVisitable for IR {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,

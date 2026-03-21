@@ -35,7 +35,7 @@ pub struct Context {
     operation_handler_stack: Vec<OperationHandlerID>,
 }
 
-impl pernixc_ir::resolution_visitor::ResolutionVisitable for Context {
+impl pernixc_ir::resolution_visitor::MutableResolutionVisitable for Context {
     async fn accept_mut<
         T: pernixc_ir::resolution_visitor::MutableResolutionVisitor,
     >(

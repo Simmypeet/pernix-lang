@@ -32,7 +32,7 @@ pub struct Captures {
     capture_order: Vec<pernixc_arena::ID<Capture>>,
 }
 
-impl resolution_visitor::ResolutionVisitable for Captures {
+impl resolution_visitor::MutableResolutionVisitable for Captures {
     async fn accept_mut<T: MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
@@ -219,7 +219,7 @@ impl CapturesMap {
     }
 }
 
-impl resolution_visitor::ResolutionVisitable for CapturesMap {
+impl resolution_visitor::MutableResolutionVisitable for CapturesMap {
     async fn accept_mut<T: resolution_visitor::MutableResolutionVisitor>(
         &mut self,
         visitor: &mut T,
