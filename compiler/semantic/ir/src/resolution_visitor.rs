@@ -71,6 +71,14 @@ pub enum Resolution<'x> {
     Lifetime(&'x Lifetime),
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum SymbolicResolution<'a> {
+    Symbol(&'a Symbol),
+    Variant(&'a pernixc_resolution::qualified_identifier::Variant),
+    AssociatedSymbol(&'a AssociatedSymbol),
+    InstanceAssociated(&'a InstanceAssociated),
+}
+
 /// Alias for immutable resolution references.
 pub type ResolutionRef<'x> = Resolution<'x>;
 
@@ -336,6 +344,21 @@ pub trait ResolutionVisitor {
     ) -> Result<(), Abort>;
 }
 
+/// A trait for recursively inspecting symbolic resolutions within terms.
+pub trait RecursiveSymbolicResolutionVisitor: Send {
+    /// Visits the given symbolic resolution `resolution`, using the provided
+    /// `span` for error reporting if necessary.
+    ///
+    /// Returns `Err(Abort)` to short-circuit the entire visitation process.
+    fn visit<'s, 'e>(
+        &'s mut self,
+        resolution: SymbolicResolution<'e>,
+        span: RelativeSpan,
+    ) -> impl std::future::Future<Output = Result<(), Abort>>
+    + Send
+    + use<'s, 'e, Self>;
+}
+
 /// A trait for an object that can have [`MutableResolutionVisitor`] elements
 /// visited within it.
 pub trait MutableResolutionVisitable {
@@ -362,4 +385,135 @@ pub trait ResolutionVisitable {
         &self,
         visitor: &mut T,
     ) -> Result<(), Abort>;
+}
+
+/// Accepts a recursive symbolic resolution visitor on a visitable element.
+///
+/// This function traverses all resolutions in the given element, and for each
+/// resolution that contains symbolic elements (`Symbol`, `AssociatedSymbol`,
+/// `InstanceAssociated`, or `Variant`), it recursively visits those symbols
+/// by delegating to `pernixc_term::accept_symbol_recursive_async`.
+pub async fn accept_recursive_symbolic_resolution_visitor<
+    E: ResolutionVisitable,
+    V: RecursiveSymbolicResolutionVisitor,
+>(
+    element: &E,
+    visitor: &mut V,
+) -> Result<(), Abort> {
+    /// Internal adapter that implements `AsyncRecursiveSymbolVisitor` to bridge
+    /// to `RecursiveSymbolicResolutionVisitor`.
+    struct Adapter<'a, V> {
+        visitor: &'a mut V,
+        span: RelativeSpan,
+    }
+
+    impl<V: RecursiveSymbolicResolutionVisitor>
+        pernixc_term::visitor::symbol::AsyncRecursiveSymbolVisitor
+        for Adapter<'_, V>
+    {
+        async fn visit_symbol(
+            &mut self,
+            symbol_element: pernixc_term::visitor::symbol::SymbolElement<'_>,
+        ) -> bool {
+            // Convert SymbolElement to SymbolicResolution
+            let symbolic_resolution = match symbol_element {
+                pernixc_term::visitor::symbol::SymbolElement::Symbol(sym) => {
+                    SymbolicResolution::Symbol(sym)
+                }
+                pernixc_term::visitor::symbol::SymbolElement::AssociatedSymbol(
+                    assoc,
+                ) => SymbolicResolution::AssociatedSymbol(assoc),
+                pernixc_term::visitor::symbol::SymbolElement::InstanceAssociated(
+                    inst,
+                ) => SymbolicResolution::InstanceAssociated(inst),
+            };
+
+            // Convert Result<(), Abort> to bool
+            // Ok(()) => true (continue visiting)
+            // Err(Abort) => false (stop visiting)
+            self.visitor.visit(symbolic_resolution, self.span).await.is_ok()
+        }
+    }
+
+    /// Internal visitor that collects resolutions and delegates to the symbol
+    /// visitor.
+    struct ResolutionCollector<'a, V> {
+        visitor: &'a mut V,
+    }
+
+    impl<V: RecursiveSymbolicResolutionVisitor> ResolutionVisitor
+        for ResolutionCollector<'_, V>
+    {
+        async fn visit(
+            &mut self,
+            resolution: Resolution<'_>,
+            span: RelativeSpan,
+        ) -> Result<(), Abort> {
+            // Visit all terms within the resolution and delegate symbol
+            // visitation to our adapter
+            let mut adapter = Adapter { visitor: self.visitor, span };
+
+            // Iterate over all terms in the resolution
+            for term in resolution.iter_all_term() {
+                match term {
+                    TermRef::Type(ty) => {
+                        pernixc_term::visitor::symbol::accept_symbol_recursive_async(
+                            ty,
+                            &mut adapter,
+                        )
+                        .await;
+                    }
+                    TermRef::Instance(inst) => {
+                        pernixc_term::visitor::symbol::accept_symbol_recursive_async(
+                            inst,
+                            &mut adapter,
+                        )
+                        .await;
+                    }
+                    TermRef::Lifetime(_) | TermRef::Constant(_) => {
+                        // Lifetimes and Constants don't contain symbols
+                    }
+                }
+            }
+
+            // Finally, match the Resolution itself and convert to
+            // SymbolicResolution if applicable
+            match resolution {
+                Resolution::Symbol(sym) => {
+                    self.visitor
+                        .visit(SymbolicResolution::Symbol(sym), span)
+                        .await?;
+                }
+                Resolution::Variant(variant) => {
+                    self.visitor
+                        .visit(SymbolicResolution::Variant(variant), span)
+                        .await?;
+                }
+                Resolution::AssociatedSymbol(assoc) => {
+                    self.visitor
+                        .visit(
+                            SymbolicResolution::AssociatedSymbol(assoc),
+                            span,
+                        )
+                        .await?;
+                }
+                Resolution::InstanceAssociated(inst) => {
+                    self.visitor
+                        .visit(
+                            SymbolicResolution::InstanceAssociated(inst),
+                            span,
+                        )
+                        .await?;
+                }
+                Resolution::Type(_) | Resolution::Lifetime(_) => {
+                    // Type and Lifetime are not symbolic resolutions
+                }
+            }
+
+            Ok(())
+        }
+    }
+
+    let mut collector = ResolutionCollector { visitor };
+    element.accept(&mut collector).await
 }
