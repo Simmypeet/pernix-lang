@@ -204,45 +204,44 @@ impl InstanceInferenceResolver<'_, '_> {
     ) -> Result<(), Abort> {
         match resolution {
             ResolutionMut::Symbol(symbol) => {
-                self.resolve_inferring_instance_variable_on_symbol(symbol)
-                    .await?;
-
                 self.reucrsive_resolve_inference_instance(
                     symbol.iter_all_term_mut(),
-                )
-                .await
-            }
-
-            ResolutionMut::Variant(symbol) => {
-                self.resolve_inferring_instance_variable_on_variant(symbol)
-                    .await?;
-
-                self.reucrsive_resolve_inference_instance(
-                    symbol.iter_all_term_mut(),
-                )
-                .await
-            }
-
-            ResolutionMut::AssociatedSymbol(associated_symbol) => {
-                self.resolve_inferring_instance_variable_on_associated_symbol(
-                    associated_symbol,
                 )
                 .await?;
 
+                self.resolve_inferring_instance_variable_on_symbol(symbol).await
+            }
+
+            ResolutionMut::Variant(symbol) => {
+                self.reucrsive_resolve_inference_instance(
+                    symbol.iter_all_term_mut(),
+                )
+                .await?;
+
+                self.resolve_inferring_instance_variable_on_variant(symbol)
+                    .await
+            }
+
+            ResolutionMut::AssociatedSymbol(associated_symbol) => {
                 self.reucrsive_resolve_inference_instance(
                     associated_symbol.iter_all_term_mut(),
+                )
+                .await?;
+
+                self.resolve_inferring_instance_variable_on_associated_symbol(
+                    associated_symbol,
                 )
                 .await
             }
 
             ResolutionMut::InstanceAssociated(instance_associated) => {
-                self.resolve_inferring_instance_variable_on_instance_associated(
-                    instance_associated,
+                self.reucrsive_resolve_inference_instance(
+                    instance_associated.iter_all_term_mut(),
                 )
                 .await?;
 
-                self.reucrsive_resolve_inference_instance(
-                    instance_associated.iter_all_term_mut(),
+                self.resolve_inferring_instance_variable_on_instance_associated(
+                    instance_associated,
                 )
                 .await
             }
