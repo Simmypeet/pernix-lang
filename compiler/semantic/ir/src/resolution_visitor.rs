@@ -4,6 +4,7 @@
 
 use std::{fmt::Write, ops::Deref};
 
+use derive_more::From;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::{
@@ -51,7 +52,7 @@ pub enum ResolutionOwned {
     Lifetime(Lifetime),
 }
 
-#[derive(Debug)]
+#[derive(Debug, From)]
 pub enum ResolutionMut<'x> {
     Symbol(&'x mut Symbol),
     Variant(&'x mut pernixc_resolution::qualified_identifier::Variant),
@@ -61,7 +62,7 @@ pub enum ResolutionMut<'x> {
     Lifetime(&'x mut Lifetime),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, From)]
 pub enum Resolution<'x> {
     Symbol(&'x Symbol),
     Variant(&'x pernixc_resolution::qualified_identifier::Variant),
@@ -71,7 +72,7 @@ pub enum Resolution<'x> {
     Lifetime(&'x Lifetime),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, From)]
 pub enum SymbolicResolution<'a> {
     Symbol(&'a Symbol),
     Variant(&'a pernixc_resolution::qualified_identifier::Variant),
@@ -516,4 +517,33 @@ pub async fn accept_recursive_symbolic_resolution_visitor<
 
     let mut collector = ResolutionCollector { visitor };
     element.accept(&mut collector).await
+}
+
+/// An adaptor struct that implements [`ResolutionVisitor`] for any type that
+/// can be converted into a [`Resolution`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct IntoResolutionWithSpan<'a, T> {
+    into_resolution: &'a T,
+    span: RelativeSpan,
+}
+
+impl<'a, T> IntoResolutionWithSpan<'a, T> {
+    /// Creates a new `IntoResolutionWithSpan` adaptor.
+    #[must_use]
+    pub const fn new(into_resolution: &'a T, span: RelativeSpan) -> Self {
+        Self { into_resolution, span }
+    }
+}
+
+impl<'a, T> ResolutionVisitable for IntoResolutionWithSpan<'a, T>
+where
+    &'a T: Into<Resolution<'a>>,
+{
+    async fn accept<V: ResolutionVisitor>(
+        &self,
+        visitor: &mut V,
+    ) -> Result<(), Abort> {
+        let resolution = self.into_resolution.into();
+        visitor.visit(resolution, self.span).await
+    }
 }
