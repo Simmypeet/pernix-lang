@@ -80,6 +80,32 @@ pub enum SymbolicResolution<'a> {
     InstanceAssociated(&'a InstanceAssociated),
 }
 
+impl SymbolicResolution<'_> {
+    /// Creates an instantiation for this symbolic resolution.
+    ///
+    /// Returns `None` if the instantiation creation fails (e.g., for
+    /// `InstanceAssociated` when the trait reference lookup fails).
+    pub async fn create_instantiation(
+        &self,
+        engine: &pernixc_qbice::TrackedEngine,
+    ) -> Option<pernixc_term::instantiation::Instantiation> {
+        match self {
+            Self::Symbol(sym) => Some(sym.create_instantiation(engine).await),
+            Self::Variant(variant) => {
+                Some(variant.create_instantiation(engine).await)
+            }
+            Self::AssociatedSymbol(assoc) => {
+                Some(assoc.create_instantiation(engine).await)
+            }
+            Self::InstanceAssociated(inst) => {
+                // Use the extension method which can fail
+                use pernixc_semantic_element::trait_ref::create_instantiation;
+                inst.create_instantiation(engine).await
+            }
+        }
+    }
+}
+
 /// Alias for immutable resolution references.
 pub type ResolutionRef<'x> = Resolution<'x>;
 

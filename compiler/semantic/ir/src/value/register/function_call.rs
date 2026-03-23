@@ -151,6 +151,20 @@ impl Callee {
     }
 }
 
+impl<'a> From<&'a Callee> for crate::resolution_visitor::Resolution<'a> {
+    fn from(callee: &'a Callee) -> Self {
+        match callee {
+            Callee::Function(symbol) => Self::Symbol(symbol),
+            Callee::AssociatedFunction(associated_symbol) => {
+                Self::AssociatedSymbol(associated_symbol)
+            }
+            Callee::InstanceAssociatedFunction(instance_associated) => {
+                Self::InstanceAssociated(instance_associated)
+            }
+        }
+    }
+}
+
 /// Represents a function call.
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, StableHash)]
 pub struct FunctionCall {

@@ -57,26 +57,10 @@ impl<N: Normalizer> RecursiveSymbolicResolutionVisitor
             }
         };
 
-        let instantiation = match resolution {
-            SymbolicResolution::Symbol(sym) => {
-                sym.create_instantiation(engine).await
-            }
-            SymbolicResolution::Variant(variant) => {
-                variant.create_instantiation(engine).await
-            }
-            SymbolicResolution::AssociatedSymbol(assoc) => {
-                assoc.create_instantiation(engine).await
-            }
-            SymbolicResolution::InstanceAssociated(inst) => {
-                // For InstanceAssociated, create instantiation from the
-                // generic arguments
-                inst.associated_instance_generic_arguments()
-                    .create_instantiation_for_generic_symbol(
-                        inst.trait_associated_symbol_id(),
-                        engine,
-                    )
-                    .await
-            }
+        // Create instantiation, skip if it fails
+        let Some(instantiation) = resolution.create_instantiation(engine).await
+        else {
+            return Ok(());
         };
 
         self.value_environment
@@ -131,6 +115,7 @@ async fn check_register_assignment<N: Normalizer>(
             // Recursively check all symbols within the struct
             let visitable =
                 IntoResolutionWithSpan::new(st.symbol(), register.span);
+
             accept_recursive_symbolic_resolution_visitor(
                 &visitable,
                 &mut wf_check_visitor,
@@ -144,6 +129,7 @@ async fn check_register_assignment<N: Normalizer>(
             // Recursively check all symbols within the variant
             let visitable =
                 IntoResolutionWithSpan::new(variant.symbol(), register.span);
+
             accept_recursive_symbolic_resolution_visitor(
                 &visitable,
                 &mut wf_check_visitor,
@@ -155,40 +141,17 @@ async fn check_register_assignment<N: Normalizer>(
         }
         register::Assignment::FunctionCall(function_call) => {
             // Recursively check all symbols within the function call callee
-            match function_call.callee() {
-                register::function_call::Callee::Function(symbol) => {
-                    let visitable =
-                        IntoResolutionWithSpan::new(symbol, register.span);
-                    accept_recursive_symbolic_resolution_visitor(
-                        &visitable,
-                        &mut wf_check_visitor,
-                    )
-                    .await
-                    .map_err(|_| UnrecoverableError::Reported)?;
-                }
-                register::function_call::Callee::AssociatedFunction(assoc) => {
-                    let visitable =
-                        IntoResolutionWithSpan::new(assoc, register.span);
-                    accept_recursive_symbolic_resolution_visitor(
-                        &visitable,
-                        &mut wf_check_visitor,
-                    )
-                    .await
-                    .map_err(|_| UnrecoverableError::Reported)?;
-                }
-                register::function_call::Callee::InstanceAssociatedFunction(
-                    inst,
-                ) => {
-                    let visitable =
-                        IntoResolutionWithSpan::new(inst, register.span);
-                    accept_recursive_symbolic_resolution_visitor(
-                        &visitable,
-                        &mut wf_check_visitor,
-                    )
-                    .await
-                    .map_err(|_| UnrecoverableError::Reported)?;
-                }
-            }
+            let visitable = IntoResolutionWithSpan::new(
+                function_call.callee(),
+                register.span,
+            );
+
+            accept_recursive_symbolic_resolution_visitor(
+                &visitable,
+                &mut wf_check_visitor,
+            )
+            .await
+            .map_err(|_| UnrecoverableError::Reported)?;
 
             Ok(())
         }
