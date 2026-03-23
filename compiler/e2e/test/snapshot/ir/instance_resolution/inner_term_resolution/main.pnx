@@ -1,0 +1,16 @@
+
+public trait Require[T]:
+    pass
+
+
+public struct Test[T, instance I: Require[T]]:
+    public value: T
+
+
+
+public function require[T]():
+    pass
+
+
+public function useTest[T, U]():
+    require[(Test[T, ..], Test[U, ..])]()

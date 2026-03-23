@@ -222,8 +222,10 @@ async fn check_register_assignment<N: Normalizer>(
                 let handler_clause =
                     value_environment.get_handler_clause(handler_clause_id);
 
-                let visitable =
-                    IntoResolutionWithSpan::new(handler_clause, register.span);
+                let visitable = IntoResolutionWithSpan::new(
+                    handler_clause,
+                    *handler_clause.qualified_identifier_span(),
+                );
 
                 wf_check_visitor.check_resolution(&visitable).await?;
             }
