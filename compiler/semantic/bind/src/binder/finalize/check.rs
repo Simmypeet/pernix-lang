@@ -13,11 +13,7 @@ use pernixc_ir::{
     },
 };
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_symbol::{
-    kind::{Kind, get_kind},
-    name::get_by_qualified_name,
-    parent::get_parent_global,
-};
+use pernixc_symbol::name::get_by_qualified_name;
 use pernixc_target::Global;
 use pernixc_term::{
     generic_arguments::GenericArguments,
@@ -46,52 +42,24 @@ impl<N: Normalizer> RecursiveSymbolicResolutionVisitor
     ) -> Result<(), Abort> {
         let engine = self.value_environment.tracked_engine();
 
-        let symbol_id = match resolution {
-            SymbolicResolution::Symbol(sym) => sym.id(),
-            SymbolicResolution::Variant(variant) => {
-                variant.parent_enum_id(engine).await
-            }
-            SymbolicResolution::AssociatedSymbol(assoc) => assoc.id(),
-            SymbolicResolution::InstanceAssociated(inst) => {
-                inst.trait_associated_symbol_id()
-            }
-        };
-
         // Create instantiation, skip if it fails
         let Some(instantiation) = resolution.create_instantiation(engine).await
         else {
             return Ok(());
         };
 
-        self.value_environment
-            .type_environment
-            .wf_check_instantiation(
-                symbol_id,
-                &span,
-                &instantiation,
-                &self.handler,
-            )
-            .await
-            .map_err(|_| Abort)?;
-
-        // For associated symbols, also check the parent implementation
-        if let SymbolicResolution::AssociatedSymbol(assoc) = resolution {
-            let kind = engine.get_kind(assoc.id()).await;
-            if kind == Kind::ImplementationAssociatedFunction {
-                let parent_implementation_id =
-                    engine.get_parent_global(assoc.id()).await.unwrap();
-
-                self.value_environment
-                    .type_environment
-                    .wf_check_instantiation(
-                        parent_implementation_id,
-                        &span,
-                        &instantiation,
-                        &self.handler,
-                    )
-                    .await
-                    .map_err(|_| Abort)?;
-            }
+        // Get all symbol IDs that need wf_check
+        for symbol_id in resolution.get_symbol_ids_for_wf_check(engine).await {
+            self.value_environment
+                .type_environment
+                .wf_check_instantiation(
+                    symbol_id,
+                    &span,
+                    &instantiation,
+                    &self.handler,
+                )
+                .await
+                .map_err(|_| Abort)?;
         }
 
         Ok(())

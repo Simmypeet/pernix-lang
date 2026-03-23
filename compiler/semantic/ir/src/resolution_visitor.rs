@@ -104,6 +104,79 @@ impl SymbolicResolution<'_> {
             }
         }
     }
+
+    /// Returns the symbol IDs that need to be checked for well-formedness.
+    ///
+    /// - For `Symbol`: returns the symbol's own ID.
+    /// - For `Variant`: returns the parent enum ID.
+    /// - For `AssociatedSymbol`: returns both the symbol ID and its parent ID
+    ///   (always checks parent regardless of kind).
+    /// - For `InstanceAssociated`: returns the trait associated symbol ID.
+    pub async fn get_symbol_ids_for_wf_check(
+        &self,
+        engine: &pernixc_qbice::TrackedEngine,
+    ) -> impl Iterator<Item = pernixc_target::Global<pernixc_symbol::ID>> {
+        use pernixc_symbol::parent::get_parent_global;
+
+        match self {
+            Self::Symbol(sym) => {
+                SymbolIdsIterator::Single(std::iter::once(sym.id()))
+            }
+            Self::Variant(variant) => SymbolIdsIterator::Single(
+                std::iter::once(variant.parent_enum_id(engine).await),
+            ),
+            Self::AssociatedSymbol(assoc) => {
+                let parent_id =
+                    engine.get_parent_global(assoc.id()).await.unwrap();
+                SymbolIdsIterator::Double(
+                    std::iter::once(assoc.id()).chain(std::iter::once(parent_id)),
+                )
+            }
+            Self::InstanceAssociated(inst) => SymbolIdsIterator::Single(
+                std::iter::once(inst.trait_associated_symbol_id()),
+            ),
+        }
+    }
+}
+
+/// Iterator over symbol IDs for well-formedness checking.
+///
+/// This enum is used to avoid heap allocations when iterating over symbol IDs.
+enum SymbolIdsIterator {
+    Single(std::iter::Once<pernixc_target::Global<pernixc_symbol::ID>>),
+    Double(
+        std::iter::Chain<
+            std::iter::Once<pernixc_target::Global<pernixc_symbol::ID>>,
+            std::iter::Once<pernixc_target::Global<pernixc_symbol::ID>>,
+        >,
+    ),
+}
+
+impl Iterator for SymbolIdsIterator {
+    type Item = pernixc_target::Global<pernixc_symbol::ID>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Single(iter) => iter.next(),
+            Self::Double(iter) => iter.next(),
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            Self::Single(_) => (1, Some(1)),
+            Self::Double(_) => (2, Some(2)),
+        }
+    }
+}
+
+impl ExactSizeIterator for SymbolIdsIterator {
+    fn len(&self) -> usize {
+        match self {
+            Self::Single(_) => 1,
+            Self::Double(_) => 2,
+        }
+    }
 }
 
 /// Alias for immutable resolution references.
