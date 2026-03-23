@@ -111,6 +111,20 @@ pub enum Callee {
     InstanceAssociatedFunction(InstanceAssociated),
 }
 
+impl<'a> From<&'a FunctionCall> for Resolution<'a> {
+    fn from(callee: &'a FunctionCall) -> Self {
+        match &callee.callee {
+            Callee::Function(symbol) => Self::Symbol(symbol),
+            Callee::AssociatedFunction(associated_symbol) => {
+                Self::AssociatedSymbol(associated_symbol)
+            }
+            Callee::InstanceAssociatedFunction(instance_associated) => {
+                Self::InstanceAssociated(instance_associated)
+            }
+        }
+    }
+}
+
 impl Callee {
     /// Creates an [`Instantiation`] for this callee.
     pub async fn create_instantiation(
@@ -151,20 +165,6 @@ impl Callee {
     }
 }
 
-impl<'a> From<&'a Callee> for crate::resolution_visitor::Resolution<'a> {
-    fn from(callee: &'a Callee) -> Self {
-        match callee {
-            Callee::Function(symbol) => Self::Symbol(symbol),
-            Callee::AssociatedFunction(associated_symbol) => {
-                Self::AssociatedSymbol(associated_symbol)
-            }
-            Callee::InstanceAssociatedFunction(instance_associated) => {
-                Self::InstanceAssociated(instance_associated)
-            }
-        }
-    }
-}
-
 /// Represents a function call.
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, StableHash)]
 pub struct FunctionCall {
@@ -199,11 +199,6 @@ impl FunctionCall {
     #[must_use]
     pub const fn callee_symbol_id(&self) -> Global<pernixc_symbol::ID> {
         self.callee.get_symbol_id()
-    }
-
-    #[must_use]
-    pub const fn callee(&self) -> &Callee {
-        &self.callee
     }
 
     pub async fn create_instantiation(

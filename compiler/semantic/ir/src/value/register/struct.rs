@@ -54,6 +54,10 @@ pub struct Struct {
     initializers_by_field_id: HashMap<ID<Field>, Value>,
 }
 
+impl<'a> From<&'a Struct> for Resolution<'a> {
+    fn from(val: &'a Struct) -> Self { Resolution::Symbol(&val.symbol) }
+}
+
 impl Struct {
     #[must_use]
     pub const fn new(
@@ -83,11 +87,6 @@ impl Struct {
     #[must_use]
     pub const fn struct_id(&self) -> Global<pernixc_symbol::ID> {
         self.symbol.id()
-    }
-
-    #[must_use]
-    pub const fn symbol(&self) -> &Symbol {
-        &self.symbol
     }
 
     #[must_use]

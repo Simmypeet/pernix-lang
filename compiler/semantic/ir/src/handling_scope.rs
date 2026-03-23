@@ -271,6 +271,10 @@ pub struct HandlerClause {
     qualified_identifier_span: RelativeSpan,
 }
 
+impl<'a> From<&'a HandlerClause> for Resolution<'a> {
+    fn from(val: &'a HandlerClause) -> Self { Resolution::Symbol(&val.symbol) }
+}
+
 impl HandlerClause {
     #[must_use]
     pub const fn new(

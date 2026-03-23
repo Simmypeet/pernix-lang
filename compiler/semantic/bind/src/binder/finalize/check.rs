@@ -111,8 +111,7 @@ async fn check_register_assignment<N: Normalizer>(
     match &register.assignment {
         register::Assignment::Struct(st) => {
             // Recursively check all symbols within the struct
-            let visitable =
-                IntoResolutionWithSpan::new(st.symbol(), register.span);
+            let visitable = IntoResolutionWithSpan::new(st, register.span);
 
             wf_check_visitor.check_resolution(&visitable).await?;
 
@@ -120,8 +119,7 @@ async fn check_register_assignment<N: Normalizer>(
         }
         register::Assignment::Variant(variant) => {
             // Recursively check all symbols within the variant
-            let visitable =
-                IntoResolutionWithSpan::new(variant.symbol(), register.span);
+            let visitable = IntoResolutionWithSpan::new(variant, register.span);
 
             wf_check_visitor.check_resolution(&visitable).await?;
 
@@ -129,10 +127,8 @@ async fn check_register_assignment<N: Normalizer>(
         }
         register::Assignment::FunctionCall(function_call) => {
             // Recursively check all symbols within the function call callee
-            let visitable = IntoResolutionWithSpan::new(
-                function_call.callee(),
-                register.span,
-            );
+            let visitable =
+                IntoResolutionWithSpan::new(function_call, register.span);
 
             wf_check_visitor.check_resolution(&visitable).await?;
 
@@ -226,21 +222,10 @@ async fn check_register_assignment<N: Normalizer>(
                 let handler_clause =
                     value_environment.get_handler_clause(handler_clause_id);
 
-                let inst = handler_clause
-                    .create_instantiation(value_environment.tracked_engine())
-                    .await;
+                let visitable =
+                    IntoResolutionWithSpan::new(handler_clause, register.span);
 
-                let effect_id = handler_clause.effect_id();
-
-                value_environment
-                    .type_environment
-                    .wf_check_instantiation(
-                        effect_id,
-                        handler_clause.qualified_identifier_span(),
-                        &inst,
-                        &handler,
-                    )
-                    .await?;
+                wf_check_visitor.check_resolution(&visitable).await?;
             }
 
             Ok(())

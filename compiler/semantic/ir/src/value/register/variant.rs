@@ -61,6 +61,10 @@ pub struct Variant {
     associated_value: Option<Value>,
 }
 
+impl<'a> From<&'a Variant> for Resolution<'a> {
+    fn from(val: &'a Variant) -> Self { Resolution::Variant(&val.symbol) }
+}
+
 impl Variant {
     #[must_use]
     pub const fn new(
@@ -87,13 +91,6 @@ impl Variant {
     #[must_use]
     pub const fn variant_id(&self) -> Global<pernixc_symbol::ID> {
         self.symbol.variant_id()
-    }
-
-    #[must_use]
-    pub const fn symbol(
-        &self,
-    ) -> &pernixc_resolution::qualified_identifier::Variant {
-        &self.symbol
     }
 
     #[must_use]
