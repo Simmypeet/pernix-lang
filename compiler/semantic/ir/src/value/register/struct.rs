@@ -86,6 +86,11 @@ impl Struct {
     }
 
     #[must_use]
+    pub const fn symbol(&self) -> &Symbol {
+        &self.symbol
+    }
+
+    #[must_use]
     pub fn get_initializer_by_field_id(&self, field_id: ID<Field>) -> &Value {
         self.initializers_by_field_id.get(&field_id).unwrap()
     }

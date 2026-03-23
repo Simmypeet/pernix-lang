@@ -90,6 +90,13 @@ impl Variant {
     }
 
     #[must_use]
+    pub const fn symbol(
+        &self,
+    ) -> &pernixc_resolution::qualified_identifier::Variant {
+        &self.symbol
+    }
+
+    #[must_use]
     pub const fn associated_value(&self) -> Option<&Value> {
         self.associated_value.as_ref()
     }

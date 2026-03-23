@@ -3,11 +3,16 @@ use pernixc_handler::Handler;
 use pernixc_ir::{
     FunctionIR,
     ir::IR,
+    resolution_visitor::{
+        Abort, IntoResolutionWithSpan, RecursiveSymbolicResolutionVisitor,
+        SymbolicResolution, accept_recursive_symbolic_resolution_visitor,
+    },
     value::{
         Environment as ValueEnvironment, TypeOf, Value,
         register::{self, Register},
     },
 };
+use pernixc_lexical::tree::RelativeSpan;
 use pernixc_symbol::{
     kind::{Kind, get_kind},
     name::get_by_qualified_name,
@@ -25,6 +30,90 @@ use pernixc_type_system::{
 
 use crate::{binder::UnrecoverableError, diagnostic::Diagnostic};
 
+/// A visitor that performs well-formedness checks on all symbolic resolutions.
+struct WfCheckVisitor<'a, 'b, N> {
+    value_environment: &'a ValueEnvironment<'b, N>,
+    handler: &'a dyn Handler<Diagnostic>,
+}
+
+impl<N: Normalizer> RecursiveSymbolicResolutionVisitor
+    for WfCheckVisitor<'_, '_, N>
+{
+    async fn visit(
+        &mut self,
+        resolution: SymbolicResolution<'_>,
+        span: RelativeSpan,
+    ) -> Result<(), Abort> {
+        let engine = self.value_environment.tracked_engine();
+
+        let symbol_id = match resolution {
+            SymbolicResolution::Symbol(sym) => sym.id(),
+            SymbolicResolution::Variant(variant) => {
+                variant.parent_enum_id(engine).await
+            }
+            SymbolicResolution::AssociatedSymbol(assoc) => assoc.id(),
+            SymbolicResolution::InstanceAssociated(inst) => {
+                inst.trait_associated_symbol_id()
+            }
+        };
+
+        let instantiation = match resolution {
+            SymbolicResolution::Symbol(sym) => {
+                sym.create_instantiation(engine).await
+            }
+            SymbolicResolution::Variant(variant) => {
+                variant.create_instantiation(engine).await
+            }
+            SymbolicResolution::AssociatedSymbol(assoc) => {
+                assoc.create_instantiation(engine).await
+            }
+            SymbolicResolution::InstanceAssociated(inst) => {
+                // For InstanceAssociated, create instantiation from the
+                // generic arguments
+                inst.associated_instance_generic_arguments()
+                    .create_instantiation_for_generic_symbol(
+                        inst.trait_associated_symbol_id(),
+                        engine,
+                    )
+                    .await
+            }
+        };
+
+        self.value_environment
+            .type_environment
+            .wf_check_instantiation(
+                symbol_id,
+                &span,
+                &instantiation,
+                &self.handler,
+            )
+            .await
+            .map_err(|_| Abort)?;
+
+        // For associated symbols, also check the parent implementation
+        if let SymbolicResolution::AssociatedSymbol(assoc) = resolution {
+            let kind = engine.get_kind(assoc.id()).await;
+            if kind == Kind::ImplementationAssociatedFunction {
+                let parent_implementation_id =
+                    engine.get_parent_global(assoc.id()).await.unwrap();
+
+                self.value_environment
+                    .type_environment
+                    .wf_check_instantiation(
+                        parent_implementation_id,
+                        &span,
+                        &instantiation,
+                        &self.handler,
+                    )
+                    .await
+                    .map_err(|_| Abort)?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
 #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
 async fn check_register_assignment<N: Normalizer>(
     ir: &IR,
@@ -35,107 +124,73 @@ async fn check_register_assignment<N: Normalizer>(
     let register =
         ir.values.registers.get(register_id).expect("Register not found");
 
+    let mut wf_check_visitor = WfCheckVisitor { value_environment, handler };
+
     match &register.assignment {
         register::Assignment::Struct(st) => {
-            let instantiation = st
-                .create_instantiation(value_environment.tracked_engine())
-                .await;
-
-            value_environment
-                .type_environment
-                .wf_check_instantiation(
-                    st.struct_id(),
-                    &register.span,
-                    &instantiation,
-                    &handler,
-                )
-                .await?;
+            // Recursively check all symbols within the struct
+            let visitable =
+                IntoResolutionWithSpan::new(st.symbol(), register.span);
+            accept_recursive_symbolic_resolution_visitor(
+                &visitable,
+                &mut wf_check_visitor,
+            )
+            .await
+            .map_err(|_| UnrecoverableError::Reported)?;
 
             Ok(())
         }
         register::Assignment::Variant(variant) => {
-            let enum_id = variant
-                .parent_enum_id(value_environment.tracked_engine())
-                .await;
-
-            let inst = variant
-                .create_instantiation(value_environment.tracked_engine())
-                .await;
-
-            value_environment
-                .type_environment
-                .wf_check_instantiation(
-                    enum_id,
-                    &register.span,
-                    &inst,
-                    &handler,
-                )
-                .await?;
+            // Recursively check all symbols within the variant
+            let visitable =
+                IntoResolutionWithSpan::new(variant.symbol(), register.span);
+            accept_recursive_symbolic_resolution_visitor(
+                &visitable,
+                &mut wf_check_visitor,
+            )
+            .await
+            .map_err(|_| UnrecoverableError::Reported)?;
 
             Ok(())
         }
         register::Assignment::FunctionCall(function_call) => {
-            let symbol_kind = value_environment
-                .tracked_engine()
-                .get_kind(function_call.callee_symbol_id())
-                .await;
-
-            let Some(inst) = function_call
-                .create_instantiation(value_environment.tracked_engine())
-                .await
-            else {
-                return Ok(());
-            };
-
-            match symbol_kind {
-                Kind::ImplementationAssociatedFunction => {
-                    let parent_implementation_id = value_environment
-                        .tracked_engine()
-                        .get_parent_global(function_call.callee_symbol_id())
-                        .await
-                        .unwrap();
-
-                    value_environment
-                        .type_environment
-                        .wf_check_instantiation(
-                            function_call.callee_symbol_id(),
-                            &register.span,
-                            &inst,
-                            &handler,
-                        )
-                        .await?;
-
-                    value_environment
-                        .type_environment
-                        .wf_check_instantiation(
-                            parent_implementation_id,
-                            &register.span,
-                            &inst,
-                            &handler,
-                        )
-                        .await?;
-
-                    Ok(())
+            // Recursively check all symbols within the function call callee
+            match function_call.callee() {
+                register::function_call::Callee::Function(symbol) => {
+                    let visitable =
+                        IntoResolutionWithSpan::new(symbol, register.span);
+                    accept_recursive_symbolic_resolution_visitor(
+                        &visitable,
+                        &mut wf_check_visitor,
+                    )
+                    .await
+                    .map_err(|_| UnrecoverableError::Reported)?;
                 }
-
-                Kind::Function
-                | Kind::ExternFunction
-                | Kind::EffectOperation => {
-                    value_environment
-                        .type_environment
-                        .wf_check_instantiation(
-                            function_call.callee_symbol_id(),
-                            &register.span,
-                            &inst,
-                            &handler,
-                        )
-                        .await?;
-
-                    Ok(())
+                register::function_call::Callee::AssociatedFunction(assoc) => {
+                    let visitable =
+                        IntoResolutionWithSpan::new(assoc, register.span);
+                    accept_recursive_symbolic_resolution_visitor(
+                        &visitable,
+                        &mut wf_check_visitor,
+                    )
+                    .await
+                    .map_err(|_| UnrecoverableError::Reported)?;
                 }
-
-                _ => unreachable!(),
+                register::function_call::Callee::InstanceAssociatedFunction(
+                    inst,
+                ) => {
+                    let visitable =
+                        IntoResolutionWithSpan::new(inst, register.span);
+                    accept_recursive_symbolic_resolution_visitor(
+                        &visitable,
+                        &mut wf_check_visitor,
+                    )
+                    .await
+                    .map_err(|_| UnrecoverableError::Reported)?;
+                }
             }
+
+            Ok(())
         }
 
         // check for move behind shared reference on non-copy type

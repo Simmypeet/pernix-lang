@@ -187,6 +187,11 @@ impl FunctionCall {
         self.callee.get_symbol_id()
     }
 
+    #[must_use]
+    pub const fn callee(&self) -> &Callee {
+        &self.callee
+    }
+
     pub async fn create_instantiation(
         &self,
         engine: &TrackedEngine,
