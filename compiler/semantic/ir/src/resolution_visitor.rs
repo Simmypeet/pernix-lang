@@ -5,6 +5,7 @@
 use std::{fmt::Write, ops::Deref};
 
 use derive_more::From;
+use pernixc_extend::extend;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::{
@@ -80,6 +81,22 @@ pub enum SymbolicResolution<'a> {
     InstanceAssociated(&'a InstanceAssociated),
 }
 
+/// Extension method for creating a well-formedness check obligation for a
+/// [`Variant`].
+///
+/// The obligation is for the parent enum, not the variant itself.
+#[extend]
+pub async fn create_wf_check_obligation<'a>(
+    self: &'a pernixc_resolution::qualified_identifier::Variant,
+    engine: &pernixc_qbice::TrackedEngine,
+) -> pernixc_type_system::wf_check::WfCheckObligation<'a> {
+    let parent_enum_id = self.parent_enum_id(engine).await;
+    pernixc_type_system::wf_check::WfCheckObligation::new(
+        parent_enum_id,
+        self.enum_generic_arguments().instances(),
+    )
+}
+
 impl SymbolicResolution<'_> {
     /// Creates an instantiation for this symbolic resolution.
     ///
@@ -105,56 +122,80 @@ impl SymbolicResolution<'_> {
         }
     }
 
-    /// Returns the symbol IDs that need to be checked for well-formedness.
+    /// Returns the well-formedness check obligations for this symbolic
+    /// resolution.
     ///
-    /// - For `Symbol`: returns the symbol's own ID.
-    /// - For `Variant`: returns the parent enum ID.
-    /// - For `AssociatedSymbol`: returns both the symbol ID and its parent ID
-    ///   (always checks parent regardless of kind).
-    /// - For `InstanceAssociated`: returns the trait associated symbol ID.
-    pub async fn get_symbol_ids_for_wf_check(
+    /// Each obligation contains a symbol ID and the instances that need to be
+    /// checked.
+    ///
+    /// - For `Symbol`: returns the symbol's own ID with its instances.
+    /// - For `Variant`: returns the parent enum ID with the variant's
+    ///   instances.
+    /// - For `AssociatedSymbol`: returns both the symbol ID with member
+    ///   instances and parent ID with parent instances.
+    /// - For `InstanceAssociated`: returns the trait associated symbol ID with
+    ///   its instances.
+    pub async fn get_wf_check_obligations(
         &self,
         engine: &pernixc_qbice::TrackedEngine,
-    ) -> impl Iterator<Item = pernixc_target::Global<pernixc_symbol::ID>> {
-        use pernixc_symbol::parent::get_parent_global;
+    ) -> impl Iterator<Item = pernixc_type_system::wf_check::WfCheckObligation<'_>>
+    {
+        use pernixc_type_system::wf_check::{
+            CreateWfCheckObligation, create_wf_check_obligation_for_member,
+            create_wf_check_obligation_for_parent,
+        };
 
         match self {
-            Self::Symbol(sym) => {
-                SymbolIdsIterator::Single(std::iter::once(sym.id()))
-            }
-            Self::Variant(variant) => SymbolIdsIterator::Single(
-                std::iter::once(variant.parent_enum_id(engine).await),
+            Self::Symbol(sym) => WfCheckObligationsIterator::Single(
+                std::iter::once(sym.create_wf_check_obligation()),
             ),
+            Self::Variant(variant) => {
+                WfCheckObligationsIterator::Single(std::iter::once(
+                    variant.create_wf_check_obligation(engine).await,
+                ))
+            }
             Self::AssociatedSymbol(assoc) => {
-                let parent_id =
-                    engine.get_parent_global(assoc.id()).await.unwrap();
-                SymbolIdsIterator::Double(
-                    std::iter::once(assoc.id())
-                        .chain(std::iter::once(parent_id)),
+                WfCheckObligationsIterator::Double(
+                    std::iter::once(
+                        assoc.create_wf_check_obligation_for_member(),
+                    )
+                    .chain(std::iter::once(
+                        assoc
+                            .create_wf_check_obligation_for_parent(engine)
+                            .await,
+                    )),
                 )
             }
-            Self::InstanceAssociated(inst) => SymbolIdsIterator::Single(
-                std::iter::once(inst.trait_associated_symbol_id()),
-            ),
+            Self::InstanceAssociated(inst) => {
+                WfCheckObligationsIterator::Single(std::iter::once(
+                    inst.create_wf_check_obligation(),
+                ))
+            }
         }
     }
 }
 
-/// Iterator over symbol IDs for well-formedness checking.
+/// Iterator over well-formedness check obligations.
 ///
-/// This enum is used to avoid heap allocations when iterating over symbol IDs.
-enum SymbolIdsIterator {
-    Single(std::iter::Once<pernixc_target::Global<pernixc_symbol::ID>>),
+/// This enum is used to avoid heap allocations when iterating over obligations.
+enum WfCheckObligationsIterator<'a> {
+    Single(
+        std::iter::Once<pernixc_type_system::wf_check::WfCheckObligation<'a>>,
+    ),
     Double(
         std::iter::Chain<
-            std::iter::Once<pernixc_target::Global<pernixc_symbol::ID>>,
-            std::iter::Once<pernixc_target::Global<pernixc_symbol::ID>>,
+            std::iter::Once<
+                pernixc_type_system::wf_check::WfCheckObligation<'a>,
+            >,
+            std::iter::Once<
+                pernixc_type_system::wf_check::WfCheckObligation<'a>,
+            >,
         >,
     ),
 }
 
-impl Iterator for SymbolIdsIterator {
-    type Item = pernixc_target::Global<pernixc_symbol::ID>;
+impl<'a> Iterator for WfCheckObligationsIterator<'a> {
+    type Item = pernixc_type_system::wf_check::WfCheckObligation<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
@@ -171,7 +212,7 @@ impl Iterator for SymbolIdsIterator {
     }
 }
 
-impl ExactSizeIterator for SymbolIdsIterator {
+impl ExactSizeIterator for WfCheckObligationsIterator<'_> {
     fn len(&self) -> usize {
         match self {
             Self::Single(_) => 1,

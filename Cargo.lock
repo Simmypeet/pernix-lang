@@ -1687,6 +1687,7 @@ dependencies = [
  "linkme",
  "pernixc_arena",
  "pernixc_diagnostic",
+ "pernixc_extend",
  "pernixc_handler",
  "pernixc_hash",
  "pernixc_lexical",

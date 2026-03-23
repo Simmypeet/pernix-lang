@@ -72,13 +72,14 @@ impl<N: Normalizer> RecursiveSymbolicResolutionVisitor
             return Ok(());
         };
 
-        // Get all symbol IDs that need wf_check
-        for symbol_id in resolution.get_symbol_ids_for_wf_check(engine).await {
+        // Get all well-formedness check obligations
+        for obligation in resolution.get_wf_check_obligations(engine).await {
+            // Check well-formedness of the instantiation and instance arguments
             if let Err(err) = self
                 .value_environment
                 .type_environment
-                .wf_check_instantiation(
-                    symbol_id,
+                .wf_check_obligation(
+                    &obligation,
                     &span,
                     &instantiation,
                     &self.handler,

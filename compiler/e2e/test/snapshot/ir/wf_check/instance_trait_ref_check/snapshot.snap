@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: run
+---
+stderr:
+[error]: mismatched trait reference
+   ╭▸ compiler/e2e/test/snapshot/ir/wf_check/instance_trait_ref_check/main.pnx:14:5
+   │
+14 │     Adt[X, Instance[Y]] { value: phantom }
+   ╰╴    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ instance `main::Instance[Y]` implements `main::Test[Y]` but `main::Test[X]` was expected
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

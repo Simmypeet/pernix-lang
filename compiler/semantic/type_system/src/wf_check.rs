@@ -2,6 +2,7 @@
 
 use std::{collections::BTreeSet, ops::Deref};
 
+use pernixc_extend::extend;
 use pernixc_handler::Handler;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
@@ -52,6 +53,87 @@ impl ImplementsCheckResult {
     pub fn into_instantiation(self) -> instantiation::Instantiation {
         self.deduction.instantiation
     }
+}
+
+/// An obligation for well-formedness checking.
+///
+/// Contains the symbol ID to check and the instances that need to be checked
+/// via `check_instantiated_instance_arguments`.
+#[derive(Debug, Clone)]
+pub struct WfCheckObligation<'a> {
+    /// The symbol ID to check.
+    symbol_id: Global<pernixc_symbol::ID>,
+    /// The instances to check via `check_instantiated_instance_arguments`.
+    instances: &'a [Instance],
+}
+
+impl<'a> WfCheckObligation<'a> {
+    /// Creates a new `WfCheckObligation`.
+    #[must_use]
+    pub const fn new(
+        symbol_id: Global<pernixc_symbol::ID>,
+        instances: &'a [Instance],
+    ) -> Self {
+        Self { symbol_id, instances }
+    }
+
+    /// Returns the symbol ID to check.
+    #[must_use]
+    pub const fn symbol_id(&self) -> Global<pernixc_symbol::ID> {
+        self.symbol_id
+    }
+
+    /// Returns the instances to check.
+    #[must_use]
+    pub const fn instances(&self) -> &'a [Instance] { self.instances }
+}
+
+/// A trait for types that can create well-formedness check obligations.
+pub trait CreateWfCheckObligation {
+    /// Creates a well-formedness check obligation for this type.
+    fn create_wf_check_obligation(&self) -> WfCheckObligation<'_>;
+}
+
+impl CreateWfCheckObligation for pernixc_term::generic_arguments::Symbol {
+    fn create_wf_check_obligation(&self) -> WfCheckObligation<'_> {
+        WfCheckObligation::new(self.id(), self.generic_arguments().instances())
+    }
+}
+
+impl CreateWfCheckObligation for pernixc_term::instance::InstanceAssociated {
+    fn create_wf_check_obligation(&self) -> WfCheckObligation<'_> {
+        WfCheckObligation::new(
+            self.trait_associated_symbol_id(),
+            self.associated_instance_generic_arguments().instances(),
+        )
+    }
+}
+
+/// Extension method for creating a well-formedness check obligation for the
+/// member of an [`AssociatedSymbol`].
+#[extend]
+pub fn create_wf_check_obligation_for_member(
+    self: &pernixc_term::generic_arguments::AssociatedSymbol,
+) -> WfCheckObligation<'_> {
+    WfCheckObligation::new(
+        self.id(),
+        self.member_generic_arguments().instances(),
+    )
+}
+
+/// Extension method for creating a well-formedness check obligation for the
+/// parent of an [`AssociatedSymbol`].
+#[extend]
+pub async fn create_wf_check_obligation_for_parent<'a>(
+    self: &'a pernixc_term::generic_arguments::AssociatedSymbol,
+    engine: &TrackedEngine,
+) -> WfCheckObligation<'a> {
+    use pernixc_symbol::parent::get_parent_global;
+    let parent_id = engine.get_parent_global(self.id()).await.unwrap();
+    WfCheckObligation::new(
+        parent_id,
+        self.parent_generic_arguments().instances(),
+    )
 }
 
 impl<N: Normalizer> Environment<'_, N> {
@@ -710,6 +792,43 @@ impl<N: Normalizer> Environment<'_, N> {
         }
 
         handler.receieve_many(diagnostics);
+
+        Ok(lifetime_constraints)
+    }
+
+    /// Checks both the well-formedness of an instantiation and the instance
+    /// arguments.
+    ///
+    /// This is a convenience method that combines
+    /// [`wf_check_instantiation`](Self::wf_check_instantiation) and
+    /// [`check_instantiated_instance_arguments`](Self::check_instantiated_instance_arguments).
+    pub async fn wf_check_obligation(
+        &self,
+        obligation: &WfCheckObligation<'_>,
+        instantiation_span: &RelativeSpan,
+        instantiation: &instantiation::Instantiation,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError> {
+        let mut lifetime_constraints = self
+            .wf_check_instantiation(
+                obligation.symbol_id,
+                instantiation_span,
+                instantiation,
+                handler,
+            )
+            .await?;
+
+        let instance_constraints = self
+            .check_instantiated_instance_arguments(
+                obligation.symbol_id,
+                obligation.instances,
+                instantiation_span,
+                instantiation,
+                handler,
+            )
+            .await?;
+
+        lifetime_constraints.extend(instance_constraints);
 
         Ok(lifetime_constraints)
     }

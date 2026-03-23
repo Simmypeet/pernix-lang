@@ -1,0 +1,14 @@
+public trait Test[T]:
+    pass
+
+
+public struct Adt[T, instance I: Test[T]]:
+    public value: phantom T
+
+
+public instance Instance[T]: Test[T]:
+    pass
+
+
+public function require[X, Y]():
+    Adt[X, Instance[Y]] { value: phantom }
