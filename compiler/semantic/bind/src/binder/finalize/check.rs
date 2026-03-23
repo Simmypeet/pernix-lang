@@ -30,6 +30,30 @@ use crate::{binder::UnrecoverableError, diagnostic::Diagnostic};
 struct WfCheckVisitor<'a, 'b, N> {
     value_environment: &'a ValueEnvironment<'b, N>,
     handler: &'a dyn Handler<Diagnostic>,
+    error: Option<UnrecoverableError>,
+}
+
+impl<N: Normalizer> WfCheckVisitor<'_, '_, N> {
+    /// Entry point for checking well-formedness of a resolution.
+    ///
+    /// This is a helper function that wraps
+    /// `accept_recursive_symbolic_resolution_visitor` and propagates any
+    /// `UnrecoverableError` that occurred during visiting.
+    async fn check_resolution(
+        &mut self,
+        visitable: &impl pernixc_ir::resolution_visitor::ResolutionVisitable,
+    ) -> Result<(), UnrecoverableError> {
+        accept_recursive_symbolic_resolution_visitor(visitable, self)
+            .await
+            .ok();
+
+        // Propagate error if one occurred
+        if let Some(error) = self.error.take() {
+            return Err(error);
+        }
+
+        Ok(())
+    }
 }
 
 impl<N: Normalizer> RecursiveSymbolicResolutionVisitor
@@ -50,7 +74,8 @@ impl<N: Normalizer> RecursiveSymbolicResolutionVisitor
 
         // Get all symbol IDs that need wf_check
         for symbol_id in resolution.get_symbol_ids_for_wf_check(engine).await {
-            self.value_environment
+            if let Err(err) = self
+                .value_environment
                 .type_environment
                 .wf_check_instantiation(
                     symbol_id,
@@ -59,7 +84,11 @@ impl<N: Normalizer> RecursiveSymbolicResolutionVisitor
                     &self.handler,
                 )
                 .await
-                .map_err(|_| Abort)?;
+            {
+                // Store the error and abort
+                self.error = Some(err);
+                return Err(Abort);
+            }
         }
 
         Ok(())
@@ -76,7 +105,8 @@ async fn check_register_assignment<N: Normalizer>(
     let register =
         ir.values.registers.get(register_id).expect("Register not found");
 
-    let mut wf_check_visitor = WfCheckVisitor { value_environment, handler };
+    let mut wf_check_visitor =
+        WfCheckVisitor { value_environment, handler, error: None };
 
     match &register.assignment {
         register::Assignment::Struct(st) => {
@@ -84,12 +114,7 @@ async fn check_register_assignment<N: Normalizer>(
             let visitable =
                 IntoResolutionWithSpan::new(st.symbol(), register.span);
 
-            accept_recursive_symbolic_resolution_visitor(
-                &visitable,
-                &mut wf_check_visitor,
-            )
-            .await
-            .map_err(|_| UnrecoverableError::Reported)?;
+            wf_check_visitor.check_resolution(&visitable).await?;
 
             Ok(())
         }
@@ -98,12 +123,7 @@ async fn check_register_assignment<N: Normalizer>(
             let visitable =
                 IntoResolutionWithSpan::new(variant.symbol(), register.span);
 
-            accept_recursive_symbolic_resolution_visitor(
-                &visitable,
-                &mut wf_check_visitor,
-            )
-            .await
-            .map_err(|_| UnrecoverableError::Reported)?;
+            wf_check_visitor.check_resolution(&visitable).await?;
 
             Ok(())
         }
@@ -114,12 +134,7 @@ async fn check_register_assignment<N: Normalizer>(
                 register.span,
             );
 
-            accept_recursive_symbolic_resolution_visitor(
-                &visitable,
-                &mut wf_check_visitor,
-            )
-            .await
-            .map_err(|_| UnrecoverableError::Reported)?;
+            wf_check_visitor.check_resolution(&visitable).await?;
 
             Ok(())
         }

@@ -129,7 +129,8 @@ impl SymbolicResolution<'_> {
                 let parent_id =
                     engine.get_parent_global(assoc.id()).await.unwrap();
                 SymbolIdsIterator::Double(
-                    std::iter::once(assoc.id()).chain(std::iter::once(parent_id)),
+                    std::iter::once(assoc.id())
+                        .chain(std::iter::once(parent_id)),
                 )
             }
             Self::InstanceAssociated(inst) => SymbolIdsIterator::Single(
