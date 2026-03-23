@@ -1,0 +1,13 @@
+public marker Impossible[T]
+
+
+public struct Test[T: Impossible]:
+    private test: phantom T
+
+
+public function require[T]():
+    pass
+
+
+public function main[T, U]():
+    require[(Test[T], Test[U])]()
