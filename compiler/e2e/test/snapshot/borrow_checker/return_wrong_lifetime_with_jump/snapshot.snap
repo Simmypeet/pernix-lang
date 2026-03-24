@@ -3,11 +3,11 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: run
 ---
 stderr:
-[error]: unsatisfied predicate
+[error]: the predicate `'a: 'b` is not satisfied
   ╭▸ compiler/e2e/test/snapshot/borrow_checker/return_wrong_lifetime_with_jump/main.pnx:7:2
   │
 7 │     return result
-  ╰╴    ━━━━━━━━━━━━━ the predicate `'a: 'b` is not satisfied
+  ╰╴    ━━━━━━━━━━━━━
 
 [error]: Compilation aborted due to 1 error(s)
 

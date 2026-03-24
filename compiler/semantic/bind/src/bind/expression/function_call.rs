@@ -106,11 +106,27 @@ async fn get_function_instantiation(
         Resolution::GenericAssociatedSymbol(member_generic)
             if {
                 let kind = binder.engine().get_kind(member_generic.id()).await;
-                kind.has_function_signature() || kind == Kind::EffectOperation
+                kind.has_function_signature()
+                    || kind == Kind::EffectOperation
+                        && kind != Kind::TraitAssociatedFunction
             } =>
         {
             Ok(CalleeOrVariant::Callee(Callee::AssociatedFunction(
                 member_generic,
+            )))
+        }
+
+        Resolution::InstanceAssociatedSymbol(inst)
+            if {
+                let kind = binder
+                    .engine()
+                    .get_kind(inst.trait_associated_symbol_id())
+                    .await;
+                kind == Kind::TraitAssociatedFunction
+            } =>
+        {
+            Ok(CalleeOrVariant::Callee(Callee::InstanceAssociatedFunction(
+                inst,
             )))
         }
 

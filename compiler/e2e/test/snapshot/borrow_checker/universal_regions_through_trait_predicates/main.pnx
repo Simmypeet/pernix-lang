@@ -5,11 +5,13 @@ public trait Fizz['a, T, U]:
             U: 'a
 
 
-public function test['a, 'b, T, U](t: &'b T, u: &'a mut U):
+public function test['a, 'b, T, U, instance I: Fizz['a, T, U]](
+    t: &'b T,
+    u: &'a mut U
+):
     where:
-        trait Fizz['a, T, U]
         T: 'b
         U: 'a
 
-    Fizz::doSomething(t, u)
-    Fizz::doSomething(t, u)
+    I::doSomething(t, u)
+    I::doSomething(t, u)

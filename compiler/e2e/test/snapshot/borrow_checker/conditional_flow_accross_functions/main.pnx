@@ -97,8 +97,7 @@ implements[K, V] HashMap[K, V]:
 		default: V
 	) -> &'a V:
         where:
-            marker Copy[K]
-            K: 'a
+            K: 'a + Copy
             V: 'a
 
 		match self.get(&key):
