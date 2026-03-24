@@ -3,98 +3,17 @@ use pernixc_handler::Handler;
 use pernixc_ir::{
     FunctionIR,
     ir::IR,
-    resolution_visitor::{
-        Abort, IntoResolutionWithSpan, RecursiveSymbolicResolutionVisitor,
-        SymbolicResolution, accept_recursive_symbolic_resolution_visitor,
-    },
     value::{
-        Environment as ValueEnvironment, TypeOf, Value,
+        Environment as ValueEnvironment,
         register::{self, Register},
     },
 };
-use pernixc_lexical::tree::RelativeSpan;
-use pernixc_symbol::name::get_by_qualified_name;
 use pernixc_target::Global;
-use pernixc_term::{
-    generic_arguments::GenericArguments,
-    predicate::{PositiveMarker, Predicate},
-    r#type::Qualifier,
-};
 use pernixc_type_system::{
     environment::Environment as TypeSystemEnvironment, normalizer::Normalizer,
 };
 
 use crate::{binder::UnrecoverableError, diagnostic::Diagnostic};
-
-/// A visitor that performs well-formedness checks on all symbolic resolutions.
-struct WfCheckVisitor<'a, 'b, N> {
-    value_environment: &'a ValueEnvironment<'b, N>,
-    handler: &'a dyn Handler<Diagnostic>,
-    error: Option<UnrecoverableError>,
-}
-
-impl<N: Normalizer> WfCheckVisitor<'_, '_, N> {
-    /// Entry point for checking well-formedness of a resolution.
-    ///
-    /// This is a helper function that wraps
-    /// `accept_recursive_symbolic_resolution_visitor` and propagates any
-    /// `UnrecoverableError` that occurred during visiting.
-    async fn check_resolution(
-        &mut self,
-        visitable: &impl pernixc_ir::resolution_visitor::ResolutionVisitable,
-    ) -> Result<(), UnrecoverableError> {
-        accept_recursive_symbolic_resolution_visitor(visitable, self)
-            .await
-            .ok();
-
-        // Propagate error if one occurred
-        if let Some(error) = self.error.take() {
-            return Err(error);
-        }
-
-        Ok(())
-    }
-}
-
-impl<N: Normalizer> RecursiveSymbolicResolutionVisitor
-    for WfCheckVisitor<'_, '_, N>
-{
-    async fn visit(
-        &mut self,
-        resolution: SymbolicResolution<'_>,
-        span: RelativeSpan,
-    ) -> Result<(), Abort> {
-        let engine = self.value_environment.tracked_engine();
-
-        // Create instantiation, skip if it fails
-        let Some(instantiation) = resolution.create_instantiation(engine).await
-        else {
-            return Ok(());
-        };
-
-        // Get all well-formedness check obligations
-        for obligation in resolution.get_wf_check_obligations(engine).await {
-            // Check well-formedness of the instantiation and instance arguments
-            if let Err(err) = self
-                .value_environment
-                .type_environment
-                .wf_check_obligation(
-                    &obligation,
-                    &span,
-                    &instantiation,
-                    &self.handler,
-                )
-                .await
-            {
-                // Store the error and abort
-                self.error = Some(err);
-                return Err(Abort);
-            }
-        }
-
-        Ok(())
-    }
-}
 
 #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
 async fn check_register_assignment<N: Normalizer>(
@@ -106,130 +25,52 @@ async fn check_register_assignment<N: Normalizer>(
     let register =
         ir.values.registers.get(register_id).expect("Register not found");
 
-    let mut wf_check_visitor =
-        WfCheckVisitor { value_environment, handler, error: None };
-
     match &register.assignment {
         register::Assignment::Struct(st) => {
-            // Recursively check all symbols within the struct
-            let visitable = IntoResolutionWithSpan::new(st, register.span);
-
-            wf_check_visitor.check_resolution(&visitable).await?;
+            // Use the new wf_check method from pernixc_ir
+            st.wf_check(value_environment, register.span, handler).await?;
 
             Ok(())
         }
         register::Assignment::Variant(variant) => {
-            // Recursively check all symbols within the variant
-            let visitable = IntoResolutionWithSpan::new(variant, register.span);
-
-            wf_check_visitor.check_resolution(&visitable).await?;
+            // Use the new wf_check method from pernixc_ir
+            variant.wf_check(value_environment, register.span, handler).await?;
 
             Ok(())
         }
         register::Assignment::FunctionCall(function_call) => {
-            // Recursively check all symbols within the function call callee
-            let visitable =
-                IntoResolutionWithSpan::new(function_call, register.span);
-
-            wf_check_visitor.check_resolution(&visitable).await?;
+            // Use the new wf_check method from pernixc_ir
+            function_call
+                .wf_check(value_environment, register.span, handler)
+                .await?;
 
             Ok(())
         }
 
         // check for move behind shared reference on non-copy type
         register::Assignment::Load(load) => {
-            if load.address().get_reference_qualifier()
-                == Some(Qualifier::Immutable)
-                || load.address().is_behind_index()
-            {
-                let ty = ir
-                    .values
-                    .type_of(load.address(), value_environment)
-                    .await
-                    .map_err(|x| {
-                        x.report_as_type_calculating_overflow(
-                            *ir.values
-                                .span_of_value(&Value::Register(register_id)),
-                            &handler,
-                        )
-                    })?;
-
-                let copy_marker = value_environment
-                    .tracked_engine()
-                    .get_by_qualified_name(
-                        pernixc_corelib::copy::MARKER_SEQUENCE,
-                    )
-                    .await
-                    .unwrap();
-
-                let predicate = Predicate::PositiveMarker(PositiveMarker::new(
-                    copy_marker,
-                    GenericArguments::new(
-                        Vec::new(),
-                        vec![ty.result.clone()],
-                        Vec::new(),
-                        Vec::new(),
-                    ),
-                ));
-
-                value_environment
-                    .type_environment
-                    .predicate_satisfied(
-                        predicate,
-                        &register.span,
-                        None,
-                        &handler,
-                    )
-                    .await?;
-            }
+            // Use the new wf_check method from pernixc_ir
+            load.wf_check(
+                value_environment,
+                &ir.values,
+                register.span,
+                handler,
+            )
+            .await?;
 
             Ok(())
         }
 
-        // tuple unpacking
         register::Assignment::Tuple(tuple) => {
-            for element in tuple.elements.iter().filter(|x| x.is_unpacked) {
-                let ty = ir
-                    .values
-                    .type_of(&element.value, value_environment)
-                    .await
-                    .map_err(|x| {
-                        x.report_as_type_calculating_overflow(
-                            *ir.values.span_of_value(&element.value),
-                            &handler,
-                        )
-                    })?;
-
-                let predicate = Predicate::TupleType(
-                    pernixc_term::predicate::Tuple(ty.result.clone()),
-                );
-
-                value_environment
-                    .type_environment
-                    .predicate_satisfied(
-                        predicate,
-                        ir.values.span_of_value(&element.value),
-                        None,
-                        &handler,
-                    )
-                    .await?;
-            }
+            // Use the new wf_check method from pernixc_ir
+            tuple.wf_check(value_environment, &ir.values, handler).await?;
 
             Ok(())
         }
 
         register::Assignment::Do(do_with) => {
-            for handler_clause_id in do_with.handler_clause_ids() {
-                let handler_clause =
-                    value_environment.get_handler_clause(handler_clause_id);
-
-                let visitable = IntoResolutionWithSpan::new(
-                    handler_clause,
-                    *handler_clause.qualified_identifier_span(),
-                );
-
-                wf_check_visitor.check_resolution(&visitable).await?;
-            }
+            // Use the new wf_check method from pernixc_ir
+            do_with.wf_check(value_environment, handler).await?;
 
             Ok(())
         }

@@ -1,6 +1,6 @@
 //! Contains the definition of the [`Struct`] register.
 
-use std::ops::Deref;
+use std::{collections::BTreeSet, ops::Deref};
 
 use pernixc_arena::ID;
 use pernixc_hash::HashMap;
@@ -10,7 +10,9 @@ use pernixc_target::Global;
 use pernixc_term::{
     generic_arguments::Symbol, instantiation::Instantiation, r#type::Type,
 };
-use pernixc_type_system::OverflowError;
+use pernixc_type_system::{
+    OverflowError, UnrecoverableError, lifetime_constraint::LifetimeConstraint,
+};
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
@@ -92,6 +94,33 @@ impl Struct {
     #[must_use]
     pub fn get_initializer_by_field_id(&self, field_id: ID<Field>) -> &Value {
         self.initializers_by_field_id.get(&field_id).unwrap()
+    }
+
+    /// Performs well-formedness checking on this struct construction.
+    ///
+    /// This validates that the struct symbol and all its generic arguments
+    /// satisfy well-formedness constraints.
+    pub async fn wf_check<N, D>(
+        &self,
+        environment: &crate::value::Environment<'_, N>,
+        span: pernixc_lexical::tree::RelativeSpan,
+        handler: &dyn pernixc_handler::Handler<D>,
+    ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError>
+    where
+        N: pernixc_type_system::normalizer::Normalizer,
+        D: pernixc_diagnostic::Report
+            + From<pernixc_type_system::diagnostic::Diagnostic>,
+    {
+        use crate::resolution_visitor::IntoResolutionWithSpan;
+
+        let mut wf_check_visitor =
+            crate::wf_check::WfCheckVisitor::new(environment, handler);
+
+        // Recursively check all symbols within the struct
+        let visitable = IntoResolutionWithSpan::new(self, span);
+        wf_check_visitor.check_resolution(&visitable).await?;
+
+        Ok(wf_check_visitor.into_constraints())
     }
 }
 

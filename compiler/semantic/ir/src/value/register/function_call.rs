@@ -1,6 +1,6 @@
 //! Contains the definition of the [`FunctionCall`] register.
 
-use std::ops::Deref;
+use std::{collections::BTreeSet, ops::Deref};
 
 use pernixc_arena::ID;
 use pernixc_hash::HashMap;
@@ -18,7 +18,10 @@ use pernixc_term::{
     lifetime::{ElidedLifetime, ElidedLifetimeID, Lifetime},
     r#type::Type,
 };
-use pernixc_type_system::{OverflowError, Succeeded};
+use pernixc_type_system::{
+    OverflowError, Succeeded, UnrecoverableError,
+    lifetime_constraint::LifetimeConstraint,
+};
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
@@ -232,6 +235,33 @@ impl FunctionCall {
         &self,
     ) -> impl Iterator<Item = (ID<effect::Unit>, &EffectHandlerArgument)> {
         self.effect_arguments.iter().map(|x| (*x.0, x.1))
+    }
+
+    /// Performs well-formedness checking on this function call.
+    ///
+    /// This validates that the function callee and all its generic arguments
+    /// satisfy well-formedness constraints.
+    pub async fn wf_check<N, D>(
+        &self,
+        environment: &crate::value::Environment<'_, N>,
+        span: pernixc_lexical::tree::RelativeSpan,
+        handler: &dyn pernixc_handler::Handler<D>,
+    ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError>
+    where
+        N: pernixc_type_system::normalizer::Normalizer,
+        D: pernixc_diagnostic::Report
+            + From<pernixc_type_system::diagnostic::Diagnostic>,
+    {
+        use crate::resolution_visitor::IntoResolutionWithSpan;
+
+        let mut wf_check_visitor =
+            crate::wf_check::WfCheckVisitor::new(environment, handler);
+
+        // Recursively check all symbols within the function call callee
+        let visitable = IntoResolutionWithSpan::new(self, span);
+        wf_check_visitor.check_resolution(&visitable).await?;
+
+        Ok(wf_check_visitor.into_constraints())
     }
 }
 

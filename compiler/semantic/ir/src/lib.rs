@@ -16,6 +16,7 @@ pub mod scope;
 pub mod typer;
 pub mod value;
 pub mod visitor;
+pub mod wf_check;
 
 // re-exports
 pub use function_ir::{FunctionIR, Key};

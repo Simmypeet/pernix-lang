@@ -1,12 +1,14 @@
 //! Contains the definition of the [`Variant`] register.
 
-use std::ops::Deref;
+use std::{collections::BTreeSet, ops::Deref};
 
 use pernixc_arena::ID;
 use pernixc_qbice::TrackedEngine;
 use pernixc_target::Global;
 use pernixc_term::{instantiation::Instantiation, r#type::Type};
-use pernixc_type_system::OverflowError;
+use pernixc_type_system::{
+    OverflowError, UnrecoverableError, lifetime_constraint::LifetimeConstraint,
+};
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
@@ -96,6 +98,33 @@ impl Variant {
     #[must_use]
     pub const fn associated_value(&self) -> Option<&Value> {
         self.associated_value.as_ref()
+    }
+
+    /// Performs well-formedness checking on this variant construction.
+    ///
+    /// This validates that the variant symbol and all its generic arguments
+    /// satisfy well-formedness constraints.
+    pub async fn wf_check<N, D>(
+        &self,
+        environment: &crate::value::Environment<'_, N>,
+        span: pernixc_lexical::tree::RelativeSpan,
+        handler: &dyn pernixc_handler::Handler<D>,
+    ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError>
+    where
+        N: pernixc_type_system::normalizer::Normalizer,
+        D: pernixc_diagnostic::Report
+            + From<pernixc_type_system::diagnostic::Diagnostic>,
+    {
+        use crate::resolution_visitor::IntoResolutionWithSpan;
+
+        let mut wf_check_visitor =
+            crate::wf_check::WfCheckVisitor::new(environment, handler);
+
+        // Recursively check all symbols within the variant
+        let visitable = IntoResolutionWithSpan::new(self, span);
+        wf_check_visitor.check_resolution(&visitable).await?;
+
+        Ok(wf_check_visitor.into_constraints())
     }
 }
 

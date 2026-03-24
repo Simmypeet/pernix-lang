@@ -1,12 +1,15 @@
 //! Defines the IR structures for representing `do-with` expressions.
 
-use std::ops::Deref;
+use std::{collections::BTreeSet, ops::Deref};
 
 use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
 use pernixc_hash::HashMap;
 use pernixc_term::r#type::Type;
-use pernixc_type_system::{OverflowError, Succeeded, normalizer::Normalizer};
+use pernixc_type_system::{
+    OverflowError, Succeeded, UnrecoverableError,
+    lifetime_constraint::LifetimeConstraint, normalizer::Normalizer,
+};
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
@@ -283,6 +286,40 @@ impl DoWith {
             .keys()
             .copied()
             .map(|x| HandlerClauseID::new(self.handling_scope_id, x))
+    }
+
+    /// Performs well-formedness checking on this do-with expression.
+    ///
+    /// This validates that all handler clauses satisfy well-formedness
+    /// constraints.
+    pub async fn wf_check<N, D>(
+        &self,
+        environment: &crate::value::Environment<'_, N>,
+        handler: &dyn pernixc_handler::Handler<D>,
+    ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError>
+    where
+        N: pernixc_type_system::normalizer::Normalizer,
+        D: pernixc_diagnostic::Report
+            + From<pernixc_type_system::diagnostic::Diagnostic>,
+    {
+        use crate::resolution_visitor::IntoResolutionWithSpan;
+
+        let mut wf_check_visitor =
+            crate::wf_check::WfCheckVisitor::new(environment, handler);
+
+        for handler_clause_id in self.handler_clause_ids() {
+            let handler_clause =
+                environment.get_handler_clause(handler_clause_id);
+
+            let visitable = IntoResolutionWithSpan::new(
+                handler_clause,
+                *handler_clause.qualified_identifier_span(),
+            );
+
+            wf_check_visitor.check_resolution(&visitable).await?;
+        }
+
+        Ok(wf_check_visitor.into_constraints())
     }
 }
 

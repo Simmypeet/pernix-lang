@@ -3,8 +3,11 @@
 use std::{collections::BTreeSet, ops::Deref};
 
 use pernixc_arena::ID;
-use pernixc_term::r#type::Type;
-use pernixc_type_system::{OverflowError, Succeeded};
+use pernixc_term::{predicate::Predicate, r#type::Type};
+use pernixc_type_system::{
+    OverflowError, Succeeded, UnrecoverableError,
+    lifetime_constraint::LifetimeConstraint,
+};
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
@@ -69,6 +72,55 @@ impl Tuple {
             .iter()
             .filter_map(|x| x.value.as_register().copied())
             .collect()
+    }
+}
+
+impl Tuple {
+    /// Performs well-formedness checking on this tuple construction.
+    ///
+    /// It primarily searches for unpacking elements and checks whether their
+    /// type satisfies the `tuple` bound.
+    pub async fn wf_check<N, D>(
+        &self,
+        environment: &crate::value::Environment<'_, N>,
+        values: &crate::value::Values,
+        handler: &dyn pernixc_handler::Handler<D>,
+    ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError>
+    where
+        N: pernixc_type_system::normalizer::Normalizer,
+        D: pernixc_diagnostic::Report
+            + From<pernixc_type_system::diagnostic::Diagnostic>,
+    {
+        let mut lifetime_constraints = BTreeSet::new();
+        for element in self.elements.iter().filter(|x| x.is_unpacked) {
+            let ty = values
+                .type_of(&element.value, environment)
+                .await
+                .map_err(|x| {
+                    x.report_as_type_calculating_overflow(
+                        *values.span_of_value(&element.value),
+                        &handler,
+                    )
+                })?;
+
+            let predicate = Predicate::TupleType(
+                pernixc_term::predicate::Tuple(ty.result.clone()),
+            );
+
+            lifetime_constraints.extend(
+                environment
+                    .type_environment
+                    .predicate_satisfied(
+                        predicate,
+                        values.span_of_value(&element.value),
+                        None,
+                        &handler,
+                    )
+                    .await?,
+            );
+        }
+
+        Ok(lifetime_constraints)
     }
 }
 
