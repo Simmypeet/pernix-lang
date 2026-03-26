@@ -6,7 +6,9 @@ use enum_as_inner::EnumAsInner;
 use pernixc_arena::ID;
 use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
+use pernixc_semantic_element::variance::Variance;
 use pernixc_term::r#type::Qualifier;
+use pernixc_type_system::{OverflowError, normalizer::Normalizer};
 use qbice::{Decode, Encode, StableHash};
 
 use super::{
@@ -19,8 +21,11 @@ use super::{
         register::{Assignment, Register},
     },
 };
-use crate::resolution_visitor::{
-    self, Abort, MutableResolutionVisitor, ResolutionVisitor,
+use crate::{
+    resolution_visitor::{
+        self, Abort, MutableResolutionVisitor, ResolutionVisitor,
+    },
+    value::{Environment, TypeOf, register::subtype::Subtype},
 };
 
 macro_rules! dispatch_jump {
@@ -43,7 +48,9 @@ macro_rules! dispatch_instruction {
             Instruction::TuplePack(tuple_pack) => {
                 tuple_pack.$method($visitor).await?;
             }
-            Instruction::DropUnpackTuple(drop) => drop.$method($visitor).await?,
+            Instruction::DropUnpackTuple(drop) => {
+                drop.$method($visitor).await?
+            }
             Instruction::Drop(drop) => drop.$method($visitor).await?,
 
             Instruction::RegisterAssignment(_)
@@ -325,6 +332,48 @@ pub struct Store {
 }
 
 impl Store {
+    /// Checks subtyping for this store instruction, ensuring the value's type
+    /// is a subtype of the address's type.
+    pub async fn subtypes<N: Normalizer>(
+        &self,
+        values: &Values,
+        environment: &Environment<'_, N>,
+    ) -> Result<Subtype, OverflowError> {
+        let mut constraints =
+            pernixc_type_system::constraints::Constraints::default();
+
+        let val_succeeded = values.type_of(&self.value, environment).await?;
+        constraints.extend(val_succeeded.constraints.into_iter());
+        let val_type = val_succeeded.result;
+
+        let addr_succeeded = values.type_of(&self.address, environment).await?;
+        constraints.extend(addr_succeeded.constraints.into_iter());
+        let addr_type = addr_succeeded.result;
+
+        let result = environment
+            .type_environment
+            .subtypes(addr_type.clone(), val_type.clone(), Variance::Covariant)
+            .await?;
+
+        let Some(succeeded) = result else {
+            return Ok(Subtype::Incompatible {
+                found_type: val_type,
+                expected_type: addr_type,
+            });
+        };
+
+        if !succeeded.result.forall_lifetime_errors.is_empty() {
+            return Ok(Subtype::ForallLifetimeError {
+                found_type: val_type,
+                expected_type: addr_type,
+            });
+        }
+
+        constraints.extend(succeeded.constraints.iter().cloned());
+
+        Ok(Subtype::Succeeded(constraints))
+    }
+
     async fn accept<T: ResolutionVisitor>(
         &self,
         visitor: &mut T,

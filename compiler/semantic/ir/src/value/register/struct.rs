@@ -1,12 +1,13 @@
 //! Contains the definition of the [`Struct`] register.
 use std::ops::Deref;
 
-
-
 use pernixc_arena::ID;
 use pernixc_hash::HashMap;
 use pernixc_qbice::TrackedEngine;
-use pernixc_semantic_element::fields::Field;
+use pernixc_semantic_element::{
+    fields::{Field, get_fields},
+    variance::Variance,
+};
 use pernixc_target::Global;
 use pernixc_term::{
     generic_arguments::Symbol, instantiation::Instantiation, r#type::Type,
@@ -22,7 +23,10 @@ use crate::{
         Abort, MutableResolutionVisitor, Resolution, ResolutionMut,
         ResolutionVisitor,
     },
-    value::{TypeOf, Value, register::Register},
+    value::{
+        TypeOf, Value,
+        register::{Register, subtype::Subtype},
+    },
 };
 
 macro_rules! visit_struct {
@@ -95,6 +99,61 @@ impl Struct {
     #[must_use]
     pub fn get_initializer_by_field_id(&self, field_id: ID<Field>) -> &Value {
         self.initializers_by_field_id.get(&field_id).unwrap()
+    }
+
+    /// Checks subtyping for this struct, ensuring all initializers are expected
+    /// subtypes.
+    pub async fn subtypes<N: pernixc_type_system::normalizer::Normalizer>(
+        &self,
+        values: &Values,
+        environment: &crate::value::Environment<'_, N>,
+    ) -> Result<Subtype, OverflowError> {
+        let mut constraints = Constraints::default();
+
+        let engine = environment.type_environment.tracked_engine();
+
+        let instantiation = self.create_instantiation(engine).await;
+        let fields = engine.get_fields(self.struct_id()).await;
+
+        for field_id in fields.field_declaration_order.iter().copied() {
+            let mut field_ty =
+                fields.fields.get(field_id).unwrap().r#type.clone();
+            instantiation.instantiate(&mut field_ty);
+
+            let initializer = self.get_initializer_by_field_id(field_id);
+
+            let val_succeeded =
+                values.type_of(initializer, environment).await?;
+            constraints.extend(val_succeeded.constraints.into_iter());
+            let val_type = val_succeeded.result;
+
+            let result = environment
+                .type_environment
+                .subtypes(
+                    field_ty.clone(),
+                    val_type.clone(),
+                    Variance::Covariant,
+                )
+                .await?;
+
+            let Some(succeeded) = result else {
+                return Ok(Subtype::Incompatible {
+                    found_type: val_type,
+                    expected_type: field_ty,
+                });
+            };
+
+            if !succeeded.result.forall_lifetime_errors.is_empty() {
+                return Ok(Subtype::ForallLifetimeError {
+                    found_type: val_type,
+                    expected_type: field_ty,
+                });
+            }
+
+            constraints.extend(succeeded.constraints.iter().cloned());
+        }
+
+        Ok(Subtype::Succeeded(constraints))
     }
 
     /// Performs well-formedness checking on this struct construction.

@@ -1,13 +1,12 @@
 //! Contains the definition of the [`FunctionCall`] register.
 use std::ops::Deref;
 
-
-
 use pernixc_arena::ID;
 use pernixc_hash::HashMap;
 use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::{
-    return_type::get_return_type, trait_ref::create_instantiation,
+    parameter::get_parameters, return_type::get_return_type,
+    trait_ref::create_instantiation, variance::Variance,
 };
 use pernixc_target::Global;
 use pernixc_term::{
@@ -20,8 +19,7 @@ use pernixc_term::{
     r#type::Type,
 };
 use pernixc_type_system::{
-    OverflowError, Succeeded, UnrecoverableError,
-    constraints::Constraints,
+    OverflowError, Succeeded, UnrecoverableError, constraints::Constraints,
 };
 use qbice::{Decode, Encode, StableHash};
 
@@ -32,7 +30,10 @@ use crate::{
         Abort, MutableResolutionVisitor, Resolution, ResolutionMut,
         ResolutionVisitor,
     },
-    value::{TypeOf, Value, register::Register},
+    value::{
+        TypeOf, Value,
+        register::{Register, subtype::Subtype},
+    },
 };
 
 macro_rules! visit_function_call {
@@ -236,6 +237,65 @@ impl FunctionCall {
         &self,
     ) -> impl Iterator<Item = (ID<effect::Unit>, &EffectHandlerArgument)> {
         self.effect_arguments.iter().map(|x| (*x.0, x.1))
+    }
+
+    /// Checks subtyping for this function call, ensuring all arguments are
+    /// expected subtypes.
+    pub async fn subtypes<N: pernixc_type_system::normalizer::Normalizer>(
+        &self,
+        values: &Values,
+        environment: &crate::value::Environment<'_, N>,
+    ) -> Result<Subtype, OverflowError> {
+        let engine = environment.type_environment.tracked_engine();
+        let Some(inst) = self.create_instantiation(engine).await else {
+            return Ok(Subtype::Succeeded(Constraints::default()));
+        };
+        let function_signature =
+            engine.get_parameters(self.callee_symbol_id()).await;
+
+        let mut constraints = Constraints::default();
+
+        for (parameter, argument) in function_signature
+            .parameter_order
+            .iter()
+            .copied()
+            .map(|x| function_signature.parameters.get(x).unwrap())
+            .zip(self.arguments.iter())
+        {
+            let mut parameter_ty = parameter.r#type.clone();
+            inst.instantiate(&mut parameter_ty);
+
+            let val_succeeded = values.type_of(argument, environment).await?;
+            constraints.extend(val_succeeded.constraints.into_iter());
+            let val_type = val_succeeded.result;
+
+            let result = environment
+                .type_environment
+                .subtypes(
+                    parameter_ty.clone(),
+                    val_type.clone(),
+                    Variance::Covariant,
+                )
+                .await?;
+
+            let Some(succeeded) = result else {
+                return Ok(Subtype::Incompatible {
+                    found_type: val_type,
+                    expected_type: parameter_ty,
+                });
+            };
+
+            if !succeeded.result.forall_lifetime_errors.is_empty() {
+                return Ok(Subtype::ForallLifetimeError {
+                    found_type: val_type,
+                    expected_type: parameter_ty,
+                });
+            }
+
+            constraints.extend(succeeded.constraints.iter().cloned());
+        }
+
+        Ok(Subtype::Succeeded(constraints))
     }
 
     /// Performs well-formedness checking on this function call.

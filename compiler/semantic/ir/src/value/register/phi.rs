@@ -4,8 +4,11 @@ use std::ops::Deref;
 
 use pernixc_arena::ID;
 use pernixc_hash::HashMap;
+use pernixc_semantic_element::variance::Variance;
 use pernixc_term::r#type::Type;
-use pernixc_type_system::{OverflowError, Succeeded, normalizer::Normalizer};
+use pernixc_type_system::{
+    OverflowError, Succeeded, constraints::Constraints, normalizer::Normalizer,
+};
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
@@ -15,7 +18,10 @@ use crate::{
         Abort, MutableResolutionVisitor, Resolution, ResolutionMut,
         ResolutionVisitor,
     },
-    value::{Environment, TypeOf, Value, register::Register},
+    value::{
+        Environment, TypeOf, Value,
+        register::{Register, subtype::Subtype},
+    },
 };
 
 macro_rules! visit_phi {
@@ -69,6 +75,49 @@ impl Phi {
             .values()
             .filter_map(|x| x.as_register().copied())
             .collect()
+    }
+
+    /// Checks subtyping for this phi node, ensuring all incoming values are
+    /// expected subtypes.
+    pub async fn subtypes<N: Normalizer>(
+        &self,
+        values: &Values,
+        environment: &Environment<'_, N>,
+    ) -> Result<Subtype, OverflowError> {
+        let mut constraints = Constraints::default();
+
+        for value in self.incoming_values.values() {
+            let val_succeeded = values.type_of(value, environment).await?;
+            constraints.extend(val_succeeded.constraints.into_iter());
+            let val_type = val_succeeded.result;
+
+            let result = environment
+                .type_environment
+                .subtypes(
+                    self.r#type.clone(),
+                    val_type.clone(),
+                    Variance::Covariant,
+                )
+                .await?;
+
+            let Some(succeeded) = result else {
+                return Ok(Subtype::Incompatible {
+                    found_type: val_type,
+                    expected_type: self.r#type.clone(),
+                });
+            };
+
+            if !succeeded.result.forall_lifetime_errors.is_empty() {
+                return Ok(Subtype::ForallLifetimeError {
+                    found_type: val_type,
+                    expected_type: self.r#type.clone(),
+                });
+            }
+
+            constraints.extend(succeeded.constraints.iter().cloned());
+        }
+
+        Ok(Subtype::Succeeded(constraints))
     }
 }
 

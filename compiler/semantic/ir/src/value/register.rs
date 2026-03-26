@@ -33,6 +33,7 @@ pub mod phi;
 pub mod prefix;
 pub mod resume_call;
 pub mod r#struct;
+pub mod subtype;
 pub mod tuple;
 pub mod variant;
 pub mod variant_number;

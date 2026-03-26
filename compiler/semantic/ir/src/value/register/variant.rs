@@ -1,10 +1,11 @@
 //! Contains the definition of the [`Variant`] register.
 use std::ops::Deref;
 
-
-
 use pernixc_arena::ID;
 use pernixc_qbice::TrackedEngine;
+use pernixc_semantic_element::{
+    variance::Variance, variant::get_variant_associated_type,
+};
 use pernixc_target::Global;
 use pernixc_term::{instantiation::Instantiation, r#type::Type};
 use pernixc_type_system::{
@@ -18,7 +19,10 @@ use crate::{
         Abort, MutableResolutionVisitor, Resolution, ResolutionMut,
         ResolutionVisitor,
     },
-    value::{TypeOf, Value, register::Register},
+    value::{
+        TypeOf, Value,
+        register::{Register, subtype::Subtype},
+    },
 };
 
 macro_rules! visit_variant {
@@ -99,6 +103,61 @@ impl Variant {
     #[must_use]
     pub const fn associated_value(&self) -> Option<&Value> {
         self.associated_value.as_ref()
+    }
+
+    /// Checks subtyping for this variant, ensuring the associated value is an
+    /// expected subtype.
+    pub async fn subtypes<N: pernixc_type_system::normalizer::Normalizer>(
+        &self,
+        values: &Values,
+        environment: &crate::value::Environment<'_, N>,
+    ) -> Result<Subtype, OverflowError> {
+        if let Some(associated_value) = self.associated_value() {
+            let engine = environment.type_environment.tracked_engine();
+            let variant_sym =
+                engine.get_variant_associated_type(self.variant_id()).await;
+
+            let mut associated_type = (*variant_sym.unwrap()).clone();
+
+            let instantiation = self.create_instantiation(engine).await;
+            instantiation.instantiate(&mut associated_type);
+
+            let mut constraints = Constraints::default();
+
+            let val_succeeded =
+                values.type_of(associated_value, environment).await?;
+            constraints.extend(val_succeeded.constraints.into_iter());
+            let val_type = val_succeeded.result;
+
+            let result = environment
+                .type_environment
+                .subtypes(
+                    associated_type.clone(),
+                    val_type.clone(),
+                    Variance::Covariant,
+                )
+                .await?;
+
+            let Some(succeeded) = result else {
+                return Ok(Subtype::Incompatible {
+                    found_type: val_type,
+                    expected_type: associated_type,
+                });
+            };
+
+            if !succeeded.result.forall_lifetime_errors.is_empty() {
+                return Ok(Subtype::ForallLifetimeError {
+                    found_type: val_type,
+                    expected_type: associated_type,
+                });
+            }
+
+            constraints.extend(succeeded.constraints.iter().cloned());
+
+            Ok(Subtype::Succeeded(constraints))
+        } else {
+            Ok(Subtype::Succeeded(Constraints::default()))
+        }
     }
 
     /// Performs well-formedness checking on this variant construction.
