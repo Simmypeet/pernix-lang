@@ -43,7 +43,7 @@ use crate::ExtraNamespace;
 #[extend(name = get_generic_parameter_namespace, by_val)]
 pub struct Key {
     /// The global ID of the symbol.
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }
 
 /// Gets the [`ExtraNamespace`] that includes all the generic parameters in the

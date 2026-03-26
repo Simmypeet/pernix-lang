@@ -269,9 +269,9 @@ impl<N: Normalizer> Environment<'_, N> {
 #[extend(name = get_implements_order, by_val)]
 pub struct ImplementsOrderKey {
     /// The `this` in the [`Environment::order`]
-    pub this: Global<pernixc_symbol::ID>,
+    pub this: Global<pernixc_symbol::SymbolID>,
     /// The `other` in the [`Environment::order`]
-    pub other: Global<pernixc_symbol::ID>,
+    pub other: Global<pernixc_symbol::SymbolID>,
 }
 
 /// The executor for the [`ImplementsOrderExecutor`] query.
@@ -327,9 +327,9 @@ static IMPLEMENTS_ORDER_EXECUTOR: Registration<Config> =
 #[extend(name = get_instance_order, by_val)]
 pub struct InstanceOrderKey {
     /// The `this` in the [`Environment::order`]
-    pub this: Global<pernixc_symbol::ID>,
+    pub this: Global<pernixc_symbol::SymbolID>,
     /// The `other` in the [`Environment::order`]
-    pub other: Global<pernixc_symbol::ID>,
+    pub other: Global<pernixc_symbol::SymbolID>,
 }
 
 /// The executor for the [`InstanceOrderExecutor`] query.

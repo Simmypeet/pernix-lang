@@ -1,5 +1,5 @@
 //! Contains the definition of [`Variance`] and [`Variances`] query.
-use pernixc_hash::HashMap;
+use pernixc_hash::FxHashMap;
 use pernixc_target::Global;
 use pernixc_term::generic_parameters::{LifetimeParameter, TypeParameter};
 use qbice::{
@@ -111,11 +111,11 @@ impl Variance {
 pub struct Variances {
     /// Maps the lifetime parameter ID to its variance.
     pub variances_by_lifetime_ids:
-        HashMap<pernixc_arena::ID<LifetimeParameter>, Variance>,
+        FxHashMap<pernixc_arena::ID<LifetimeParameter>, Variance>,
 
     /// Maps the type parameter ID to its variance.
     pub variances_by_type_ids:
-        HashMap<pernixc_arena::ID<TypeParameter>, Variance>,
+        FxHashMap<pernixc_arena::ID<TypeParameter>, Variance>,
 }
 
 /// Query key for retrieving the variances of a symbol.
@@ -137,5 +137,5 @@ pub struct Variances {
 #[extend(name = get_variances, by_val)]
 pub struct Key {
     /// The global ID of the struct or enum symbol.
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }

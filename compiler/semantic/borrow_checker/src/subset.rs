@@ -1,12 +1,9 @@
-
 use std::ops::Deref;
-
-use pernixc_type_system::constraints::Constraints;
 
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_arena::ID;
-use pernixc_hash::{HashMap, HashSet};
+use pernixc_hash::{FxHashMap, FxHashSet};
 use pernixc_ir::{
     control_flow_graph::{Block, Point},
     instruction::{Instruction, RegisterAssignment},
@@ -32,7 +29,8 @@ use pernixc_term::{
 };
 use pernixc_transitive_closure::TransitiveClosure;
 use pernixc_type_system::{
-    UnrecoverableError, environment::get_active_premise, normalizer::Normalizer,
+    UnrecoverableError, constraints::Constraints,
+    environment::get_active_premise, normalizer::Normalizer,
 };
 
 use crate::{NonStaticUniversalRegion, Region, UniversalRegion, context};
@@ -151,7 +149,7 @@ impl RegionAt {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RegionChangeLog {
-    pub updated_at_instruction_indices: HashMap<ID<Block>, Vec<usize>>,
+    pub updated_at_instruction_indices: FxHashMap<ID<Block>, Vec<usize>>,
 }
 
 impl RegionChangeLog {
@@ -197,7 +195,7 @@ impl RegionChangeLog {
 pub struct Intermediate {
     /// The accumulated subset relations between regions since the beginning
     /// of the control flow graph.
-    subset_relations: HashSet<(RegionAt, RegionAt, Option<RelativeSpan>)>,
+    subset_relations: FxHashSet<(RegionAt, RegionAt, Option<RelativeSpan>)>,
 
     /// Represents the [`Borrow`] register assignment created so far.
     ///
@@ -205,11 +203,11 @@ pub struct Intermediate {
     /// the region where the borrow is created.
     #[get = "pub"]
     created_borrows:
-        HashMap<ID<Register>, (inference::Variable<Lifetime>, Point)>,
+        FxHashMap<ID<Register>, (inference::Variable<Lifetime>, Point)>,
 
     /// Maps the region to the block ids that the region first appears. (mostly
     /// is the entry block)
-    entry_block_ids_by_universal_regions: HashMap<UniversalRegion, ID<Block>>,
+    entry_block_ids_by_universal_regions: FxHashMap<UniversalRegion, ID<Block>>,
 }
 
 /// A struct used for building a subset relations between regions in the borrow
@@ -230,7 +228,7 @@ pub struct Builder<'a, N: Normalizer> {
     /// The "long-lived" regions (created by allocas or universal regions) will
     /// present in this map. The value is the point in the control flow
     /// graph where the region is most updated.
-    latest_change_points_by_region: HashMap<Region, Option<usize>>,
+    latest_change_points_by_region: FxHashMap<Region, Option<usize>>,
 }
 
 impl<N: Normalizer> Clone for Builder<'_, N> {
@@ -249,7 +247,7 @@ impl<N: Normalizer> Clone for Builder<'_, N> {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Changes {
     /// Creates a new subset relation between two regions.
-    subset_relations: HashSet<(Region, Region, RelativeSpan)>,
+    subset_relations: FxHashSet<(Region, Region, RelativeSpan)>,
 
     /// The borrow is created at the given region.
     borrow_created: Option<(ID<Register>, inference::Variable<Lifetime>)>,
@@ -267,13 +265,13 @@ pub struct Changes {
     ///
     /// The `a = b` will produce an `OverwrittenRegion` change, and the region
     /// that appears here is `'0`.
-    overwritten_regions: HashSet<Region>,
+    overwritten_regions: FxHashSet<Region>,
 }
 
 impl<N: Normalizer> Builder<'_, N> {
     pub async fn get_regions_in_generic_parameters(
         &self,
-        regions: &mut HashSet<Region>,
+        regions: &mut FxHashSet<Region>,
     ) -> Result<(), UnrecoverableError> {
         regions.insert(Region::Universal(UniversalRegion::Static));
 
@@ -334,10 +332,10 @@ impl<N: Normalizer> Builder<'_, N> {
     pub async fn get_new_regions(
         &self,
         instruction: &Instruction,
-    ) -> Result<HashSet<Region>, UnrecoverableError> {
+    ) -> Result<FxHashSet<Region>, UnrecoverableError> {
         match instruction {
             Instruction::ScopePush(scope_push) => {
-                let mut regions = HashSet::default();
+                let mut regions = FxHashSet::default();
 
                 for alloca in
                     self.context.ir().values.allocas.iter().filter_map(|x| {
@@ -373,7 +371,7 @@ impl<N: Normalizer> Builder<'_, N> {
             | Instruction::Store(_)
             | Instruction::RegisterDiscard(_)
             | Instruction::TuplePack(_)
-            | Instruction::Drop(_) => Ok(HashSet::default()),
+            | Instruction::Drop(_) => Ok(FxHashSet::default()),
         }
     }
 
@@ -381,10 +379,10 @@ impl<N: Normalizer> Builder<'_, N> {
     pub async fn get_removing_regions(
         &self,
         instruction: &Instruction,
-    ) -> Result<HashSet<Region>, UnrecoverableError> {
+    ) -> Result<FxHashSet<Region>, UnrecoverableError> {
         match instruction {
             Instruction::ScopePop(scope_pop) => {
-                let mut regions = HashSet::default();
+                let mut regions = FxHashSet::default();
 
                 for alloca in
                     self.context.ir().values.allocas.iter().filter_map(|x| {
@@ -421,7 +419,7 @@ impl<N: Normalizer> Builder<'_, N> {
             | Instruction::DropUnpackTuple(_)
             | Instruction::Store(_)
             | Instruction::TuplePack(_)
-            | Instruction::Drop(_) => Ok(HashSet::default()),
+            | Instruction::Drop(_) => Ok(FxHashSet::default()),
         }
     }
 
@@ -429,7 +427,7 @@ impl<N: Normalizer> Builder<'_, N> {
         &self,
         register_id: ID<Register>,
     ) -> Result<
-        Option<HashSet<(Region, Region, RelativeSpan)>>,
+        Option<FxHashSet<(Region, Region, RelativeSpan)>>,
         UnrecoverableError,
     > {
         if let Some(return_inst) = self
@@ -467,7 +465,7 @@ impl<N: Normalizer> Builder<'_, N> {
 
                         Some((from, to, return_inst.span))
                     })
-                    .collect::<HashSet<_>>(),
+                    .collect::<FxHashSet<_>>(),
             ));
         }
 
@@ -824,12 +822,12 @@ struct Walker<'a, N: Normalizer> {
     /// - `None` value means the block is being processed.
     /// - `Some` value means the block has been processed
     /// - No value means the block has not been explored
-    walk_results_by_block_id: HashMap<ID<Block>, Option<Builder<'a, N>>>,
+    walk_results_by_block_id: FxHashMap<ID<Block>, Option<Builder<'a, N>>>,
 
     /// If the block id appears in this map, it means the block is a looped
     /// block and the value is the starting environment of the looped block.
     target_regions_by_block_id:
-        HashMap<ID<Block>, (ID<Block>, HashSet<Region>)>,
+        FxHashMap<ID<Block>, (ID<Block>, FxHashSet<Region>)>,
 }
 
 impl<'a, N: Normalizer> Walker<'a, N> {
@@ -837,7 +835,7 @@ impl<'a, N: Normalizer> Walker<'a, N> {
         self.context.environment().tracked_engine()
     }
 
-    pub const fn current_site(&self) -> Global<pernixc_symbol::ID> {
+    pub const fn current_site(&self) -> Global<pernixc_symbol::SymbolID> {
         self.context.current_site()
     }
 }
@@ -866,7 +864,7 @@ impl<'a, N: Normalizer> Walker<'a, N> {
 
             let builder = Builder {
                 context: self.context,
-                latest_change_points_by_region: HashMap::default(),
+                latest_change_points_by_region: FxHashMap::default(),
             };
 
             let predicates = self
@@ -874,7 +872,7 @@ impl<'a, N: Normalizer> Walker<'a, N> {
                 .get_active_premise(self.current_site())
                 .await;
 
-            let mut adding_edges = HashSet::default();
+            let mut adding_edges = FxHashSet::default();
 
             for predicate in &predicates.predicates {
                 match predicate {
@@ -1149,32 +1147,32 @@ impl<'a, N: Normalizer> Walker<'a, N> {
 #[derive(Debug, Clone, PartialEq, Eq, Getters)]
 #[allow(clippy::type_complexity)]
 pub struct Subset {
-    indices_by_region_at: HashMap<RegionAt, usize>,
+    indices_by_region_at: FxHashMap<RegionAt, usize>,
     region_ats_by_index: Vec<RegionAt>,
     transitive_closure: TransitiveClosure,
 
     #[get = "pub"]
     direct_subset_relations:
-        HashSet<(RegionAt, RegionAt, Option<RelativeSpan>)>,
+        FxHashSet<(RegionAt, RegionAt, Option<RelativeSpan>)>,
 
     #[get = "pub"]
     created_borrows:
-        HashMap<ID<Register>, (inference::Variable<Lifetime>, Point)>,
+        FxHashMap<ID<Register>, (inference::Variable<Lifetime>, Point)>,
 
     /// Maps the region to the block ids that the region first appears. (mostly
     /// is the entry block)
-    entry_block_ids_by_universal_regions: HashMap<UniversalRegion, ID<Block>>,
+    entry_block_ids_by_universal_regions: FxHashMap<UniversalRegion, ID<Block>>,
 
-    change_logs_by_region: HashMap<Region, RegionChangeLog>,
-    active_region_sets_by_block_id: HashMap<ID<Block>, HashSet<Region>>,
-    location_insensitive_regions: HashSet<inference::Variable<Lifetime>>,
+    change_logs_by_region: FxHashMap<Region, RegionChangeLog>,
+    active_region_sets_by_block_id: FxHashMap<ID<Block>, FxHashSet<Region>>,
+    location_insensitive_regions: FxHashSet<inference::Variable<Lifetime>>,
 }
 
 impl Subset {
     pub fn get_universal_regions_containing(
         &self,
         mut to_region_at: RegionAt,
-    ) -> HashSet<UniversalRegion> {
+    ) -> FxHashSet<UniversalRegion> {
         let to_region = to_region_at.to_region();
         let region_point = match &mut to_region_at {
             RegionAt::Universal(universal) => Some(&mut universal.point),
@@ -1215,7 +1213,7 @@ impl Subset {
         &self,
         borrow_register_id: ID<Register>,
         point: Point,
-    ) -> HashSet<Region> {
+    ) -> FxHashSet<Region> {
         let block_id = point.block_id;
         let borrow_region = RegionAt::new_location_insensitive(
             self.created_borrows.get(&borrow_register_id).unwrap().0,
@@ -1257,7 +1255,7 @@ impl Subset {
                             .then_some(x)
                     }),
             )
-            .collect::<HashSet<_>>()
+            .collect::<FxHashSet<_>>()
     }
 }
 
@@ -1267,17 +1265,17 @@ pub async fn analyze<N: Normalizer>(
 ) -> Result<Subset, UnrecoverableError> {
     let mut context = Walker {
         context,
-        walk_results_by_block_id: HashMap::default(),
-        target_regions_by_block_id: HashMap::default(),
+        walk_results_by_block_id: FxHashMap::default(),
+        target_regions_by_block_id: FxHashMap::default(),
     };
 
     let all_block_ids =
         context.context.control_flow_graph().blocks().ids().collect::<Vec<_>>();
 
     let mut subset_result = Intermediate {
-        subset_relations: HashSet::default(),
-        created_borrows: HashMap::default(),
-        entry_block_ids_by_universal_regions: HashMap::default(),
+        subset_relations: FxHashSet::default(),
+        created_borrows: FxHashMap::default(),
+        entry_block_ids_by_universal_regions: FxHashMap::default(),
     };
 
     for block_id in all_block_ids.iter().copied() {
@@ -1289,13 +1287,13 @@ pub async fn analyze<N: Normalizer>(
 
     // populate the region and assign the index
     let mut region_ats_by_index = Vec::new();
-    let mut indices_by_region_at = HashMap::default();
+    let mut indices_by_region_at = FxHashMap::default();
 
-    let mut all_regions = HashSet::default();
-    let mut location_insensitive_regions = HashSet::default();
+    let mut all_regions = FxHashSet::default();
+    let mut location_insensitive_regions = FxHashSet::default();
     let mut active_region_sets_by_block_id =
-        HashMap::<_, HashSet<_>>::default();
-    let mut change_logs_by_region = HashMap::<_, RegionChangeLog>::default();
+        FxHashMap::<_, FxHashSet<_>>::default();
+    let mut change_logs_by_region = FxHashMap::<_, RegionChangeLog>::default();
 
     for region_at in subset_result
         .subset_relations

@@ -1,0 +1,20 @@
+
+public function create[T]() -> T:
+    panic
+
+
+public function consume[T](x: T):
+    pass
+
+
+public function main[T](mut a: T, cond: bool):
+    while cond:
+        # will be consumed
+        consume(a)
+
+        loop:
+            if cond:
+                break
+
+            # but always restored before the while iteration
+            a = create()

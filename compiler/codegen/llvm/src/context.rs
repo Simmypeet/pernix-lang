@@ -53,7 +53,7 @@ pub struct Context<'i, 'ctx> {
 
     /// The ID of the main function.
     #[get_copy = "pub"]
-    main_function_id: Global<pernixc_symbol::ID>,
+    main_function_id: Global<pernixc_symbol::SymbolID>,
 
     /// The function that is called when a panic occurs.
     #[get_copy = "pub"]
@@ -83,7 +83,7 @@ impl<'i, 'ctx> Context<'i, 'ctx> {
         engine: &'i TrackedEngine,
         handler: &'i dyn Handler<Diagnostic>,
         module: inkwell::module::Module<'ctx>,
-        main_function_id: Global<pernixc_symbol::ID>,
+        main_function_id: Global<pernixc_symbol::SymbolID>,
     ) -> Self {
         let function_map = function::Map::default();
         let type_map = r#type::Map::default();

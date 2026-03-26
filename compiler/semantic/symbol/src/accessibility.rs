@@ -7,7 +7,7 @@ use pernixc_target::{Global, TargetID};
 use qbice::{Decode, Encode, Identifiable, Query, StableHash};
 
 use crate::{
-    ID,
+    SymbolID,
     name::get_qualified_name,
     parent::{
         HierarchyRelationship, get_closest_module_id,
@@ -31,11 +31,11 @@ use crate::{
     Query,
     StableHash,
 )]
-#[value(Accessibility<ID>)]
+#[value(Accessibility<SymbolID>)]
 #[extend(name = get_accessibility, by_val)]
 pub struct Key {
     /// The global ID of the symbol to get the accessibility for.
-    pub symbol_id: Global<ID>,
+    pub symbol_id: Global<SymbolID>,
 }
 
 /// The accessibility defined to a symbol
@@ -64,10 +64,13 @@ pub enum Accessibility<ID> {
     Scoped(ID),
 }
 
-impl Accessibility<ID> {
+impl Accessibility<SymbolID> {
     /// Converts the accessibility into a [`Accessibility<Global<ID>>`].
     #[must_use]
-    pub fn into_global(self, target_id: TargetID) -> Accessibility<Global<ID>> {
+    pub fn into_global(
+        self,
+        target_id: TargetID,
+    ) -> Accessibility<Global<SymbolID>> {
         match self {
             Self::Public => Accessibility::Public,
             Self::Scoped(id) => {
@@ -86,8 +89,8 @@ impl Accessibility<ID> {
 pub async fn accessibility_hierarchy_relationship(
     self: &TrackedEngine,
     target_id: TargetID,
-    first: Accessibility<ID>,
-    second: Accessibility<ID>,
+    first: Accessibility<SymbolID>,
+    second: Accessibility<SymbolID>,
 ) -> HierarchyRelationship {
     match (first, second) {
         (Accessibility::Public, Accessibility::Public) => {
@@ -113,8 +116,8 @@ pub async fn accessibility_hierarchy_relationship(
 #[extend]
 pub async fn symbol_accessible(
     self: &TrackedEngine,
-    referring_site: Global<ID>,
-    referred: Global<ID>,
+    referring_site: Global<SymbolID>,
+    referred: Global<SymbolID>,
 ) -> bool {
     let referred_accessibility = self.get_accessibility(referred).await;
 
@@ -130,7 +133,7 @@ pub async fn symbol_accessible(
 #[extend]
 pub async fn accessibility_description(
     self: &TrackedEngine,
-    accessibility: Accessibility<Global<ID>>,
+    accessibility: Accessibility<Global<SymbolID>>,
 ) -> String {
     match accessibility {
         Accessibility::Public => "publicly accessible".to_owned(),
@@ -149,9 +152,9 @@ pub async fn accessibility_description(
 #[extend]
 pub async fn is_accessible_from(
     self: &TrackedEngine,
-    referring_site: ID,
+    referring_site: SymbolID,
     referred_target_id: TargetID,
-    referred_accessibility: Accessibility<ID>,
+    referred_accessibility: Accessibility<SymbolID>,
 ) -> bool {
     match referred_accessibility {
         Accessibility::Public => true,
@@ -183,8 +186,8 @@ pub async fn is_accessible_from(
 #[extend]
 pub async fn is_accessible_from_globally(
     self: &TrackedEngine,
-    referring_site: Global<crate::ID>,
-    referred_accessibility: Accessibility<Global<crate::ID>>,
+    referring_site: Global<crate::SymbolID>,
+    referred_accessibility: Accessibility<Global<crate::SymbolID>>,
 ) -> bool {
     match referred_accessibility {
         Accessibility::Public => true,

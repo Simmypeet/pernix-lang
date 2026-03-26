@@ -1,7 +1,7 @@
 //! Contains the definition for intrinsic functions in the core library.
 
 use pernixc_arena::{Arena, OrderedArena};
-use pernixc_hash::HashSet;
+use pernixc_hash::FxHashSet;
 use pernixc_semantic_element::{
     effect_annotation, elided_lifetime, fields, implied_predicate,
     parameter::{self, Parameter, Parameters},
@@ -54,15 +54,15 @@ pub const READ_FUNCTION_SEQUENCE: [&str; 2] = ["core", "read"];
 #[derive(Debug, Clone, Copy)]
 pub struct IntrinsicIds {
     /// The ID of the `sizeof` function.
-    pub sizeof_id: pernixc_symbol::ID,
+    pub sizeof_id: pernixc_symbol::SymbolID,
     /// The ID of the `alignof` function.
-    pub alignof_id: pernixc_symbol::ID,
+    pub alignof_id: pernixc_symbol::SymbolID,
     /// The ID of the `dropAt` function.
-    pub drop_at_id: pernixc_symbol::ID,
+    pub drop_at_id: pernixc_symbol::SymbolID,
     /// The ID of the `NoDrop` struct.
-    pub no_drop_id: pernixc_symbol::ID,
+    pub no_drop_id: pernixc_symbol::SymbolID,
     /// The ID of the `read` function.
-    pub read_id: pernixc_symbol::ID,
+    pub read_id: pernixc_symbol::SymbolID,
 }
 
 impl CoreLibInitializer<'_> {
@@ -96,9 +96,9 @@ impl CoreLibInitializer<'_> {
         name: &str,
         is_unsafe: bool,
         build_params_and_return: F,
-    ) -> Global<pernixc_symbol::ID>
+    ) -> Global<pernixc_symbol::SymbolID>
     where
-        F: FnOnce(Global<pernixc_symbol::ID>, Type) -> (Parameters, Type),
+        F: FnOnce(Global<pernixc_symbol::SymbolID>, Type) -> (Parameters, Type),
     {
         let function_id = {
             TargetID::CORE.make_global(
@@ -163,7 +163,7 @@ impl CoreLibInitializer<'_> {
         self.input_session
             .set_input(
                 implied_predicate::Key { symbol_id: function_id },
-                self.input_session.intern(HashSet::default()),
+                self.input_session.intern(FxHashSet::default()),
             )
             .await;
         self.input_session
@@ -205,7 +205,7 @@ impl CoreLibInitializer<'_> {
     /// ```txt
     /// public function sizeof[T]() -> usize
     /// ```
-    async fn initialize_sizeof(&mut self) -> Global<pernixc_symbol::ID> {
+    async fn initialize_sizeof(&mut self) -> Global<pernixc_symbol::SymbolID> {
         self.initialize_generic_function(
             SIZEOF_FUNCTION_SEQUENCE,
             SIZEOF_FUNCTION_NAME,
@@ -228,7 +228,7 @@ impl CoreLibInitializer<'_> {
     /// ```txt
     /// public function alignof[T]() -> usize
     /// ```
-    async fn initialize_alignof(&mut self) -> Global<pernixc_symbol::ID> {
+    async fn initialize_alignof(&mut self) -> Global<pernixc_symbol::SymbolID> {
         self.initialize_generic_function(
             ALIGNOF_FUNCTION_SEQUENCE,
             ALIGNOF_FUNCTION_NAME,
@@ -251,7 +251,7 @@ impl CoreLibInitializer<'_> {
     /// ```txt
     /// public unsafe function dropAt[T](pointer: *mut T)
     /// ```
-    async fn initialize_drop_at(&mut self) -> Global<pernixc_symbol::ID> {
+    async fn initialize_drop_at(&mut self) -> Global<pernixc_symbol::SymbolID> {
         self.initialize_generic_function(
             DROPAT_FUNCTION_SEQUENCE,
             DROPAT_FUNCTION_NAME,
@@ -281,7 +281,7 @@ impl CoreLibInitializer<'_> {
     /// public struct NoDrop[T]:
     ///     public value: T
     /// ```
-    async fn initialize_no_drop(&mut self) -> Global<pernixc_symbol::ID> {
+    async fn initialize_no_drop(&mut self) -> Global<pernixc_symbol::SymbolID> {
         let no_drop_id = {
             TargetID::CORE.make_global(
                 calculate_qualified_name_id_with_given_seed(
@@ -380,7 +380,7 @@ impl CoreLibInitializer<'_> {
     /// ```txt
     /// public unsafe function read[T](pointer: *T) -> T
     /// ```
-    async fn initialize_read(&mut self) -> Global<pernixc_symbol::ID> {
+    async fn initialize_read(&mut self) -> Global<pernixc_symbol::SymbolID> {
         self.initialize_generic_function(
             READ_FUNCTION_SEQUENCE,
             READ_FUNCTION_NAME,

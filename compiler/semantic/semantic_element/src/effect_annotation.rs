@@ -1,7 +1,7 @@
 //! Defines a query for retrieving the effects that a function may perform.
 
 use pernixc_arena::OrderedArena;
-use pernixc_symbol::ID;
+use pernixc_symbol::SymbolID;
 use pernixc_target::Global;
 use pernixc_term::effect;
 use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
@@ -25,5 +25,5 @@ use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 #[extend(name = get_effect_annotation, by_val)]
 pub struct Key {
     /// The global ID of the function symbol.
-    pub symbol_id: Global<ID>,
+    pub symbol_id: Global<SymbolID>,
 }

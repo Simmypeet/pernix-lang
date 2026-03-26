@@ -1,12 +1,12 @@
 use std::{collections::hash_map, sync::Arc};
 
 use pernixc_handler::Storage;
-use pernixc_hash::{DashMap, HashMap, HashSet};
+use pernixc_hash::{FxDashMap, FxHashMap, FxHashSet};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_source_file::SourceFile;
 use pernixc_symbol::{
-    ID, accessibility::Accessibility, calculate_qualified_name_id,
+    SymbolID, accessibility::Accessibility, calculate_qualified_name_id,
     get_target_root_module_id, kind::Kind, linkage, member::Member,
 };
 use pernixc_syntax::AccessModifier;
@@ -24,69 +24,76 @@ pub struct Builder {
     storage: Storage<Diagnostic>,
     target_id: TargetID,
 
-    kinds: DashMap<ID, Kind>,
-    names: DashMap<ID, Interned<str>>,
-    spans: DashMap<ID, Option<RelativeSpan>>,
-    members: DashMap<ID, Interned<Member>>,
-    accessibilities: DashMap<ID, Accessibility<ID>>,
+    kinds: FxDashMap<SymbolID, Kind>,
+    names: FxDashMap<SymbolID, Interned<str>>,
+    spans: FxDashMap<SymbolID, Option<RelativeSpan>>,
+    members: FxDashMap<SymbolID, Interned<Member>>,
+    accessibilities: FxDashMap<SymbolID, Accessibility<SymbolID>>,
 
     implements_access_modifier_syntaxes:
-        DashMap<ID, Option<pernixc_syntax::AccessModifier>>,
+        FxDashMap<SymbolID, Option<pernixc_syntax::AccessModifier>>,
 
-    external_submodules: DashMap<ID, Interned<ExternalSubmodule>>,
+    external_submodules: FxDashMap<SymbolID, Interned<ExternalSubmodule>>,
 
-    generic_parameter_syntaxes: DashMap<
-        ID,
+    generic_parameter_syntaxes: FxDashMap<
+        SymbolID,
         Option<pernixc_syntax::item::generic_parameters::GenericParameters>,
     >,
-    where_clause_syntaxes:
-        DashMap<ID, Option<pernixc_syntax::item::where_clause::Predicates>>,
-    type_alias_syntaxes: DashMap<ID, Option<pernixc_syntax::r#type::Type>>,
+    where_clause_syntaxes: FxDashMap<
+        SymbolID,
+        Option<pernixc_syntax::item::where_clause::Predicates>,
+    >,
+    type_alias_syntaxes:
+        FxDashMap<SymbolID, Option<pernixc_syntax::r#type::Type>>,
     constant_type_annotation_syntaxes:
-        DashMap<ID, Option<pernixc_syntax::r#type::Type>>,
+        FxDashMap<SymbolID, Option<pernixc_syntax::r#type::Type>>,
     constant_expression_syntaxes:
-        DashMap<ID, Option<pernixc_syntax::expression::Expression>>,
-    function_signature_syntaxes: DashMap<
-        ID,
+        FxDashMap<SymbolID, Option<pernixc_syntax::expression::Expression>>,
+    function_signature_syntaxes: FxDashMap<
+        SymbolID,
         (
             Option<pernixc_syntax::item::function::Parameters>,
             Option<pernixc_syntax::item::function::ReturnType>,
         ),
     >,
-    function_linkages: DashMap<ID, linkage::Linkage>,
-    fields_syntaxes: DashMap<
-        ID,
+    function_linkages: FxDashMap<SymbolID, linkage::Linkage>,
+    fields_syntaxes: FxDashMap<
+        SymbolID,
         Option<
             pernixc_syntax::item::Body<pernixc_syntax::item::r#struct::Field>,
         >,
     >,
     variant_associated_type_syntaxes:
-        DashMap<ID, Option<pernixc_syntax::r#type::Type>>,
-    variant_declaration_orders: DashMap<ID, usize>,
+        FxDashMap<SymbolID, Option<pernixc_syntax::r#type::Type>>,
+    variant_declaration_orders: FxDashMap<SymbolID, usize>,
     import_syntaxes:
-        DashMap<ID, Interned<[pernixc_syntax::item::module::Import]>>,
+        FxDashMap<SymbolID, Interned<[pernixc_syntax::item::module::Import]>>,
     implements_qualified_identifier_syntaxes:
-        DashMap<ID, pernixc_syntax::QualifiedIdentifier>,
-    final_keywords: DashMap<ID, Option<pernixc_syntax::Keyword>>,
+        FxDashMap<SymbolID, pernixc_syntax::QualifiedIdentifier>,
+    final_keywords: FxDashMap<SymbolID, Option<pernixc_syntax::Keyword>>,
 
-    instance_trait_ref_syntaxes: DashMap<ID, Option<pernixc_syntax::TraitRef>>,
-    function_body_syntaxes: DashMap<
-        ID,
+    instance_trait_ref_syntaxes:
+        FxDashMap<SymbolID, Option<pernixc_syntax::TraitRef>>,
+    function_body_syntaxes: FxDashMap<
+        SymbolID,
         Option<
             pernixc_syntax::item::Members<pernixc_syntax::statement::Statement>,
         >,
     >,
 
-    function_effect_annotation_syntaxes:
-        DashMap<ID, Option<pernixc_syntax::item::function::EffectAnnotation>>,
+    function_effect_annotation_syntaxes: FxDashMap<
+        SymbolID,
+        Option<pernixc_syntax::item::function::EffectAnnotation>,
+    >,
 
     instance_associated_value_syntaxes:
-        DashMap<ID, Option<pernixc_syntax::InstanceValue>>,
+        FxDashMap<SymbolID, Option<pernixc_syntax::InstanceValue>>,
 
-    function_unsafe_keywords: DashMap<ID, Option<pernixc_syntax::Keyword>>,
+    function_unsafe_keywords:
+        FxDashMap<SymbolID, Option<pernixc_syntax::Keyword>>,
 
-    scope_spans: DashMap<ID, Option<RelativeSpan>>,
-    external_instances: DashMap<ID, bool>,
+    scope_spans: FxDashMap<SymbolID, Option<RelativeSpan>>,
+    external_instances: FxDashMap<SymbolID, bool>,
 
     token_tree: Option<Interned<pernixc_lexical::tree::Tree>>,
     source_file: Option<SourceFile>,
@@ -108,33 +115,33 @@ impl Builder {
             engine,
             storage,
             target_id,
-            kinds: DashMap::default(),
-            names: DashMap::default(),
-            spans: DashMap::default(),
-            members: DashMap::default(),
-            accessibilities: DashMap::default(),
-            implements_access_modifier_syntaxes: DashMap::default(),
-            external_submodules: DashMap::default(),
-            generic_parameter_syntaxes: DashMap::default(),
-            where_clause_syntaxes: DashMap::default(),
-            type_alias_syntaxes: DashMap::default(),
-            constant_type_annotation_syntaxes: DashMap::default(),
-            constant_expression_syntaxes: DashMap::default(),
-            function_signature_syntaxes: DashMap::default(),
-            function_linkages: DashMap::default(),
-            fields_syntaxes: DashMap::default(),
-            variant_associated_type_syntaxes: DashMap::default(),
-            variant_declaration_orders: DashMap::default(),
-            import_syntaxes: DashMap::default(),
-            implements_qualified_identifier_syntaxes: DashMap::default(),
-            final_keywords: DashMap::default(),
-            function_body_syntaxes: DashMap::default(),
-            function_effect_annotation_syntaxes: DashMap::default(),
-            instance_associated_value_syntaxes: DashMap::default(),
-            external_instances: DashMap::default(),
-            scope_spans: DashMap::default(),
-            instance_trait_ref_syntaxes: DashMap::default(),
-            function_unsafe_keywords: DashMap::default(),
+            kinds: FxDashMap::default(),
+            names: FxDashMap::default(),
+            spans: FxDashMap::default(),
+            members: FxDashMap::default(),
+            accessibilities: FxDashMap::default(),
+            implements_access_modifier_syntaxes: FxDashMap::default(),
+            external_submodules: FxDashMap::default(),
+            generic_parameter_syntaxes: FxDashMap::default(),
+            where_clause_syntaxes: FxDashMap::default(),
+            type_alias_syntaxes: FxDashMap::default(),
+            constant_type_annotation_syntaxes: FxDashMap::default(),
+            constant_expression_syntaxes: FxDashMap::default(),
+            function_signature_syntaxes: FxDashMap::default(),
+            function_linkages: FxDashMap::default(),
+            fields_syntaxes: FxDashMap::default(),
+            variant_associated_type_syntaxes: FxDashMap::default(),
+            variant_declaration_orders: FxDashMap::default(),
+            import_syntaxes: FxDashMap::default(),
+            implements_qualified_identifier_syntaxes: FxDashMap::default(),
+            final_keywords: FxDashMap::default(),
+            function_body_syntaxes: FxDashMap::default(),
+            function_effect_annotation_syntaxes: FxDashMap::default(),
+            instance_associated_value_syntaxes: FxDashMap::default(),
+            external_instances: FxDashMap::default(),
+            scope_spans: FxDashMap::default(),
+            instance_trait_ref_syntaxes: FxDashMap::default(),
+            function_unsafe_keywords: FxDashMap::default(),
             token_tree,
             source_file,
             is_root,
@@ -151,7 +158,7 @@ impl Builder {
 
     /// Finiailizes the builder into an immutable [`super::Table`].
     #[must_use]
-    pub fn into_table(self, module_id: ID) -> Interned<super::Table> {
+    pub fn into_table(self, module_id: SymbolID) -> Interned<super::Table> {
         self.engine.intern(Table {
             kinds: self.engine.intern(self.kinds.into_iter().collect()),
             names: self.engine.intern(self.names.into_iter().collect()),
@@ -243,9 +250,9 @@ impl Builder {
     /// Creates an accessibility from an access modifier.
     pub async fn create_accessibility(
         &self,
-        current_module_scope: ID,
+        current_module_scope: SymbolID,
         access_modifier: Option<&AccessModifier>,
-    ) -> Accessibility<ID> {
+    ) -> Accessibility<SymbolID> {
         match access_modifier {
             Some(pernixc_syntax::AccessModifier::Private(_)) => {
                 Accessibility::Scoped(current_module_scope)
@@ -290,14 +297,14 @@ impl Builder {
 
 impl Builder {
     /// Inserts a kind into the builder.
-    pub fn insert_kind(&self, id: pernixc_symbol::ID, kind: Kind) {
+    pub fn insert_kind(&self, id: pernixc_symbol::SymbolID, kind: Kind) {
         assert!(self.kinds.insert(id, kind).is_none());
     }
 
     /// Inserts a member into the builder from the [`MemberBuilder`].
     pub fn insert_member_from_builder(
         &self,
-        id: pernixc_symbol::ID,
+        id: pernixc_symbol::SymbolID,
         member: MemberBuilder,
     ) {
         assert!(
@@ -322,21 +329,25 @@ impl Builder {
 
     pub fn insert_member(
         &self,
-        id: pernixc_symbol::ID,
+        id: pernixc_symbol::SymbolID,
         member: Interned<Member>,
     ) {
         assert!(self.members.insert(id, member).is_none());
     }
 
     /// Inserts a name into the builder.
-    pub fn insert_name(&self, id: pernixc_symbol::ID, name: Interned<str>) {
+    pub fn insert_name(
+        &self,
+        id: pernixc_symbol::SymbolID,
+        name: Interned<str>,
+    ) {
         assert!(self.names.insert(id, name).is_none());
     }
 
     /// Inserts an identifier used as a name and span into the builder.
     pub fn insert_name_identifier(
         &self,
-        id: pernixc_symbol::ID,
+        id: pernixc_symbol::SymbolID,
         identifier: &pernixc_syntax::Identifier,
     ) {
         assert!(self.names.insert(id, identifier.kind.0.clone()).is_none());
@@ -346,7 +357,7 @@ impl Builder {
     /// Inserts a span into the builder.
     pub fn insert_span(
         &self,
-        id: pernixc_symbol::ID,
+        id: pernixc_symbol::SymbolID,
         span: Option<RelativeSpan>,
     ) {
         assert!(self.spans.insert(id, span).is_none());
@@ -355,15 +366,15 @@ impl Builder {
     /// Inserts an accessibility into the builder.
     pub fn insert_accessibility(
         &self,
-        id: pernixc_symbol::ID,
-        accessibility: Accessibility<pernixc_symbol::ID>,
+        id: pernixc_symbol::SymbolID,
+        accessibility: Accessibility<pernixc_symbol::SymbolID>,
     ) {
         assert!(self.accessibilities.insert(id, accessibility).is_none());
     }
 
     pub fn insert_instance_associated_value(
         &self,
-        id: pernixc_symbol::ID,
+        id: pernixc_symbol::SymbolID,
         qualified_identifier: Option<pernixc_syntax::InstanceValue>,
     ) {
         assert!(
@@ -375,7 +386,7 @@ impl Builder {
 
     pub fn insert_instance_trait_ref(
         &self,
-        id: pernixc_symbol::ID,
+        id: pernixc_symbol::SymbolID,
         qualified_identifier: Option<pernixc_syntax::TraitRef>,
     ) {
         assert!(
@@ -387,7 +398,7 @@ impl Builder {
 
     pub fn insert_external_instance(
         &self,
-        id: pernixc_symbol::ID,
+        id: pernixc_symbol::SymbolID,
         is_external: bool,
     ) {
         assert!(self.external_instances.insert(id, is_external).is_none());
@@ -396,8 +407,8 @@ impl Builder {
     /// Inserts an accessibility into the builder from an access modifier.
     pub async fn insert_accessibility_by_access_modifier(
         &self,
-        id: pernixc_symbol::ID,
-        current_module_scope_id: pernixc_symbol::ID,
+        id: pernixc_symbol::SymbolID,
+        current_module_scope_id: pernixc_symbol::SymbolID,
         access_modifier: Option<&pernixc_syntax::AccessModifier>,
     ) {
         let accessibility = self
@@ -409,7 +420,7 @@ impl Builder {
 
     pub fn insert_generic_parameters_syntax(
         &self,
-        id: pernixc_symbol::ID,
+        id: pernixc_symbol::SymbolID,
         generic_parameters: Option<
             pernixc_syntax::item::generic_parameters::GenericParameters,
         >,
@@ -423,7 +434,7 @@ impl Builder {
 
     pub fn insert_where_clause_syntax(
         &self,
-        id: pernixc_symbol::ID,
+        id: pernixc_symbol::SymbolID,
         where_clause: Option<pernixc_syntax::item::where_clause::Predicates>,
     ) {
         assert!(self.where_clause_syntaxes.insert(id, where_clause).is_none());
@@ -431,7 +442,7 @@ impl Builder {
 
     pub fn insert_final_keyword(
         &self,
-        id: pernixc_symbol::ID,
+        id: pernixc_symbol::SymbolID,
         final_keyword: Option<pernixc_syntax::Keyword>,
     ) {
         assert!(self.final_keywords.insert(id, final_keyword).is_none());
@@ -439,7 +450,7 @@ impl Builder {
 
     pub fn insert_implements_qualified_identifier_syntax(
         &self,
-        id: pernixc_symbol::ID,
+        id: pernixc_symbol::SymbolID,
         qualified_identifier: pernixc_syntax::QualifiedIdentifier,
     ) {
         assert!(
@@ -451,7 +462,7 @@ impl Builder {
 
     pub fn insert_implements_access_modifier_syntax(
         &self,
-        id: pernixc_symbol::ID,
+        id: pernixc_symbol::SymbolID,
         access_modifier: Option<pernixc_syntax::AccessModifier>,
     ) {
         assert!(
@@ -463,7 +474,7 @@ impl Builder {
 
     pub fn insert_function_signature_syntax(
         &self,
-        id: pernixc_symbol::ID,
+        id: pernixc_symbol::SymbolID,
         parameters: Option<pernixc_syntax::item::function::Parameters>,
         return_type: Option<pernixc_syntax::item::function::ReturnType>,
     ) {
@@ -476,7 +487,7 @@ impl Builder {
 
     pub fn insert_function_body_syntax(
         &self,
-        id: pernixc_symbol::ID,
+        id: pernixc_symbol::SymbolID,
         body: Option<
             pernixc_syntax::item::Members<pernixc_syntax::statement::Statement>,
         >,
@@ -486,7 +497,7 @@ impl Builder {
 
     pub fn insert_function_effect_annotation_syntax(
         &self,
-        id: pernixc_symbol::ID,
+        id: pernixc_symbol::SymbolID,
         effect_annotation: Option<
             pernixc_syntax::item::function::EffectAnnotation,
         >,
@@ -500,7 +511,7 @@ impl Builder {
 
     pub fn insert_function_unsafe_keyword(
         &self,
-        id: pernixc_symbol::ID,
+        id: pernixc_symbol::SymbolID,
         unsafe_keyword: Option<pernixc_syntax::Keyword>,
     ) {
         assert!(
@@ -510,7 +521,7 @@ impl Builder {
 
     pub fn insert_type_alias_syntax(
         &self,
-        id: pernixc_symbol::ID,
+        id: pernixc_symbol::SymbolID,
         type_alias: Option<pernixc_syntax::r#type::Type>,
     ) {
         assert!(self.type_alias_syntaxes.insert(id, type_alias).is_none());
@@ -518,7 +529,7 @@ impl Builder {
 
     pub fn insert_constant_type_annotation_syntax(
         &self,
-        id: pernixc_symbol::ID,
+        id: pernixc_symbol::SymbolID,
         type_annotation: Option<pernixc_syntax::r#type::Type>,
     ) {
         assert!(
@@ -530,7 +541,7 @@ impl Builder {
 
     pub fn insert_constant_expression_syntax(
         &self,
-        id: pernixc_symbol::ID,
+        id: pernixc_symbol::SymbolID,
         expression: Option<pernixc_syntax::expression::Expression>,
     ) {
         assert!(
@@ -540,7 +551,7 @@ impl Builder {
 
     pub fn insert_struct_field_syntax(
         &self,
-        id: pernixc_symbol::ID,
+        id: pernixc_symbol::SymbolID,
         fields: Option<
             pernixc_syntax::item::Body<pernixc_syntax::item::r#struct::Field>,
         >,
@@ -550,7 +561,7 @@ impl Builder {
 
     pub fn insert_variant_declaration_order(
         &self,
-        id: pernixc_symbol::ID,
+        id: pernixc_symbol::SymbolID,
         order: usize,
     ) {
         assert!(self.variant_declaration_orders.insert(id, order).is_none());
@@ -558,7 +569,7 @@ impl Builder {
 
     pub fn insert_variant_associated_type_syntax(
         &self,
-        id: pernixc_symbol::ID,
+        id: pernixc_symbol::SymbolID,
         associated_type: Option<pernixc_syntax::r#type::Type>,
     ) {
         assert!(
@@ -570,7 +581,7 @@ impl Builder {
 
     pub fn insert_function_linkage(
         &self,
-        id: pernixc_symbol::ID,
+        id: pernixc_symbol::SymbolID,
         linkage: linkage::Linkage,
     ) {
         assert!(self.function_linkages.insert(id, linkage).is_none());
@@ -578,7 +589,7 @@ impl Builder {
 
     pub fn insert_scope_span(
         &self,
-        id: pernixc_symbol::ID,
+        id: pernixc_symbol::SymbolID,
         span: RelativeSpan,
     ) {
         assert!(self.scope_spans.insert(id, Some(span)).is_none());
@@ -586,7 +597,7 @@ impl Builder {
 
     pub fn insert_maybe_scope_span(
         &self,
-        id: pernixc_symbol::ID,
+        id: pernixc_symbol::SymbolID,
         span: Option<RelativeSpan>,
     ) {
         assert!(self.scope_spans.insert(id, span).is_none());
@@ -595,7 +606,7 @@ impl Builder {
     /// Inserts imports into the builder.
     pub fn insert_imports(
         &self,
-        id: pernixc_symbol::ID,
+        id: pernixc_symbol::SymbolID,
         imports: Interned<[pernixc_syntax::item::module::Import]>,
     ) {
         assert!(self.import_syntaxes.insert(id, imports).is_none());
@@ -604,7 +615,7 @@ impl Builder {
     /// Inserts an external submodule into the builder.
     pub fn insert_external_submodule(
         &self,
-        id: pernixc_symbol::ID,
+        id: pernixc_symbol::SymbolID,
         external_submodule: Interned<ExternalSubmodule>,
     ) {
         assert!(
@@ -615,15 +626,15 @@ impl Builder {
 
 /// A builder for building [`pernixc_symbol::member::Member`] instances.
 pub struct MemberBuilder {
-    symbol_id: ID,
+    symbol_id: SymbolID,
     symbol_qualified_name: Arc<[Interned<str>]>,
     target_id: TargetID,
 
-    member_ids_by_name: HashMap<Interned<str>, ID>,
-    name_occurrences: HashMap<Interned<str>, usize>,
-    unnameds: HashSet<ID>,
+    member_ids_by_name: FxHashMap<Interned<str>, SymbolID>,
+    name_occurrences: FxHashMap<Interned<str>, usize>,
+    unnameds: FxHashSet<SymbolID>,
 
-    redefinition_errors: HashSet<ItemRedefinition>,
+    redefinition_errors: FxHashSet<ItemRedefinition>,
 }
 
 impl MemberBuilder {
@@ -635,7 +646,7 @@ impl MemberBuilder {
     /// - `symbol_qualified_name`: The qualified name of the symbol being built.
     /// - `target_id`: The target ID of the member being built.
     pub fn new(
-        symbol_id: ID,
+        symbol_id: SymbolID,
         symbol_qualified_name: Arc<[Interned<str>]>,
         target_id: TargetID,
     ) -> Self {
@@ -646,22 +657,22 @@ impl MemberBuilder {
             symbol_qualified_name,
             target_id,
 
-            member_ids_by_name: HashMap::default(),
-            name_occurrences: HashMap::default(),
-            unnameds: HashSet::default(),
+            member_ids_by_name: FxHashMap::default(),
+            name_occurrences: FxHashMap::default(),
+            unnameds: FxHashSet::default(),
 
-            redefinition_errors: HashSet::default(),
+            redefinition_errors: FxHashSet::default(),
         }
     }
 
     /// Explicitly inserts an unnamed member ID.
-    pub fn insert_unnameds(&mut self, id: ID) {
+    pub fn insert_unnameds(&mut self, id: SymbolID) {
         assert!(self.unnameds.insert(id));
     }
 
     /// Retrieves the symbol ID of the member being built.
     #[must_use]
-    pub const fn current_symbol_id(&self) -> ID { self.symbol_id }
+    pub const fn current_symbol_id(&self) -> SymbolID { self.symbol_id }
 
     /// Retrieves the last name in the qualified name.
     pub fn last_name(&self) -> &Interned<str> {
@@ -687,7 +698,7 @@ impl MemberBuilder {
         &mut self,
         identifier: pernixc_syntax::Identifier,
         engine: &TrackedEngine,
-    ) -> ID {
+    ) -> SymbolID {
         let occurrences =
             self.name_occurrences.entry(identifier.kind.0.clone()).or_default();
 
@@ -732,7 +743,7 @@ impl MemberBuilder {
         &mut self,
         identifier: pernixc_syntax::Identifier,
         engine: &TrackedEngine,
-    ) -> Option<pernixc_symbol::ID> {
+    ) -> Option<pernixc_symbol::SymbolID> {
         let occurrences =
             self.name_occurrences.entry(identifier.kind.0.clone()).or_default();
 

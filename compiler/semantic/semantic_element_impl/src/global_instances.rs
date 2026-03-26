@@ -1,5 +1,5 @@
 use linkme::distributed_slice;
-use pernixc_hash::HashSet;
+use pernixc_hash::FxHashSet;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_semantic_element::{
     global_instances::InTargetKey, trait_ref::get_trait_ref_of_instance_symbol,
@@ -15,7 +15,7 @@ use qbice::{executor, program::Registration, storage::intern::Interned};
 pub async fn in_target_executor(
     key: &InTargetKey,
     engine: &TrackedEngine,
-) -> Interned<HashSet<Global<pernixc_symbol::ID>>> {
+) -> Interned<FxHashSet<Global<pernixc_symbol::SymbolID>>> {
     if key.target_id == TargetID::CORE {
         assert_ne!(
             key.trait_id.target_id,
@@ -26,13 +26,13 @@ pub async fn in_target_executor(
 
         // core library will never implement traits or markers from other
         // targets
-        return engine.intern(HashSet::default());
+        return engine.intern(FxHashSet::default());
     }
 
     let instances = engine.get_all_instance_ids(key.target_id).await;
 
     let mut scoped = JoinSet::new();
-    let mut results = HashSet::default();
+    let mut results = FxHashSet::default();
 
     // PARALLEL: invokes implements calculation in parallel
     unsafe {
@@ -99,9 +99,9 @@ static GLOBAL_INSTANCES_EXECUTOR: Registration<Config> = Registration::new::<
 pub async fn global_instances_executor(
     key: &pernixc_semantic_element::global_instances::Key,
     engine: &TrackedEngine,
-) -> Interned<HashSet<Global<pernixc_symbol::ID>>> {
+) -> Interned<FxHashSet<Global<pernixc_symbol::SymbolID>>> {
     let mut scoped = JoinSet::new();
-    let mut results = HashSet::default();
+    let mut results = FxHashSet::default();
 
     let depedencies = engine.get_linked_targets(key.target_id).await;
 

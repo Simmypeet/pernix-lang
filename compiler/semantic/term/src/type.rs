@@ -290,7 +290,7 @@ impl Type {
     /// generic parameters arena.
     #[must_use]
     pub fn new_parameter(
-        parent_global_id: Global<pernixc_symbol::ID>,
+        parent_global_id: Global<pernixc_symbol::SymbolID>,
         ty_id: pernixc_arena::ID<TypeParameter>,
     ) -> Self {
         Self::Parameter(TypeParameterID::new(parent_global_id, ty_id))
@@ -307,7 +307,7 @@ impl Type {
     #[must_use]
     pub const fn new_instance_associated(
         instance: Box<Instance>,
-        trait_associated_symbol_id: Global<pernixc_symbol::ID>,
+        trait_associated_symbol_id: Global<pernixc_symbol::SymbolID>,
         trait_associated_symbol_generic_arguments: GenericArguments,
     ) -> Self {
         Self::InstanceAssociated(InstanceAssociated::new(
@@ -321,7 +321,7 @@ impl Type {
     /// arguments.
     #[must_use]
     pub const fn new_symbol(
-        symbol_id: Global<pernixc_symbol::ID>,
+        symbol_id: Global<pernixc_symbol::SymbolID>,
         generic_arguments: GenericArguments,
     ) -> Self {
         Self::Symbol(Symbol::new(symbol_id, generic_arguments))

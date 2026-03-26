@@ -303,7 +303,7 @@ pub struct SymbolCongruence {
     constant_properties: Vec<Box<dyn Property<Constant>>>,
     instance_properties: Vec<Box<dyn Property<Instance>>>,
 
-    id: Global<pernixc_symbol::ID>,
+    id: Global<pernixc_symbol::SymbolID>,
 }
 
 impl<T: Term + 'static> Property<T> for SymbolCongruence
@@ -431,7 +431,7 @@ impl Arbitrary for SymbolCongruence {
 pub struct Mapping {
     pub property: Box<dyn Property<Type>>,
     pub instance_parameter_id: InstanceParameterID,
-    pub trait_associated_symbol_id: Global<pernixc_symbol::ID>,
+    pub trait_associated_symbol_id: Global<pernixc_symbol::SymbolID>,
     pub trait_associated_symbol_generic_arguments: GenericArguments,
 }
 

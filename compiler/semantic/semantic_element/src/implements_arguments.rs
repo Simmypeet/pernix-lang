@@ -24,5 +24,5 @@ use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 #[extend(name = get_implements_argument, by_val)]
 pub struct Key {
     /// The global ID of the implements symbol.
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }

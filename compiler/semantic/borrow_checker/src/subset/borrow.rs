@@ -1,5 +1,5 @@
 use pernixc_arena::ID;
-use pernixc_hash::HashSet;
+use pernixc_hash::FxHashSet;
 use pernixc_ir::value::register::{Borrow, Register};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_type_system::{UnrecoverableError, normalizer::Normalizer};
@@ -27,7 +27,7 @@ impl<N: Normalizer> Context<'_, N> {
                     .collect()
             },
             borrow_created: Some((register_id, borrow_local_region)),
-            overwritten_regions: HashSet::default(),
+            overwritten_regions: FxHashSet::default(),
         })
     }
 }

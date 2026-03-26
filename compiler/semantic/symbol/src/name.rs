@@ -7,7 +7,7 @@ use pernixc_target::{Global, get_target_map};
 use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 
 use crate::{
-    ID, get_target_root_module_id, kind::get_kind, member::get_members,
+    SymbolID, get_target_root_module_id, kind::get_kind, member::get_members,
     parent::get_parent,
 };
 
@@ -30,14 +30,14 @@ use crate::{
 #[extend(name = get_name, by_val)]
 pub struct Key {
     /// The global ID of the symbol to get the name for.
-    pub symbol_id: Global<ID>,
+    pub symbol_id: Global<SymbolID>,
 }
 
 /// Gets the qualified name of the symbol such as `module::function`.
 #[extend]
 pub async fn get_qualified_name(
     self: &TrackedEngine,
-    mut id: Global<ID>,
+    mut id: Global<SymbolID>,
 ) -> String {
     let mut qualified_name = String::new();
 
@@ -67,8 +67,8 @@ pub async fn get_qualified_name(
 pub async fn get_by_qualified_name<'a>(
     self: &TrackedEngine,
     qualified_names: impl IntoIterator<Item = &'a str>,
-) -> Option<Global<ID>> {
-    let mut current_id: Option<Global<ID>> = None;
+) -> Option<Global<SymbolID>> {
+    let mut current_id: Option<Global<SymbolID>> = None;
 
     for name in qualified_names {
         match current_id {

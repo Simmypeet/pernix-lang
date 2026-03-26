@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use pernixc_arena::OrderedArena;
 use pernixc_handler::{Handler, Storage};
-use pernixc_hash::HashMap;
+use pernixc_hash::FxHashMap;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_resolution::{
@@ -61,7 +61,7 @@ async fn to_effect(
 
 struct ElidedForallLifetimeProvider {
     count: usize,
-    current_site: Global<pernixc_symbol::ID>,
+    current_site: Global<pernixc_symbol::SymbolID>,
 }
 
 impl pernixc_resolution::ElidedTermProvider<Lifetime>
@@ -82,7 +82,7 @@ impl pernixc_resolution::ElidedTermProvider<Lifetime>
 async fn build_effect_annotation(
     engine: &TrackedEngine,
     effect_unit_syntax: EffectUnit,
-    current_site: Global<pernixc_symbol::ID>,
+    current_site: Global<pernixc_symbol::SymbolID>,
     observer: &mut Occurrences,
     extra_namespace: &ExtraNamespace,
     handler: &Storage<diagnostic::Diagnostic>,
@@ -259,7 +259,7 @@ async fn detect_duplicating_group<
     I: Iterator<Item = (&'a effect::Unit, &'a (RelativeSpan, usize))>,
 >(
     engine: &TrackedEngine,
-    symbol_id: Global<pernixc_symbol::ID>,
+    symbol_id: Global<pernixc_symbol::SymbolID>,
     effects: I,
     handler: &Storage<diagnostic::Diagnostic>,
 ) -> Result<OrderedArena<effect::Unit>, UnrecoverableError> {
@@ -349,7 +349,7 @@ impl Build for effect_annotation::Key {
             engine.get_generic_parameter_namespace(key.symbol_id).await;
 
         let mut observer = Occurrences::default();
-        let mut effect_annotations = HashMap::default();
+        let mut effect_annotations = FxHashMap::default();
         let storage = Storage::<diagnostic::Diagnostic>::default();
 
         // extract the effect units from the do effect syntax

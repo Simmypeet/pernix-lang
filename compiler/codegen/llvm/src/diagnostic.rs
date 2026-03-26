@@ -40,7 +40,7 @@ impl Report for Diagnostic {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MainIsNotAFunction {
     /// The ID of the main function.
-    pub main_function_id: Global<pernixc_symbol::ID>,
+    pub main_function_id: Global<pernixc_symbol::SymbolID>,
 }
 
 impl Report for MainIsNotAFunction {
@@ -66,7 +66,7 @@ impl Report for MainIsNotAFunction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct InvalidMainFunctionSignature {
     /// The ID of the main function.
-    pub main_function_id: Global<pernixc_symbol::ID>,
+    pub main_function_id: Global<pernixc_symbol::SymbolID>,
 }
 
 impl Report for InvalidMainFunctionSignature {
@@ -94,7 +94,7 @@ impl Report for InvalidMainFunctionSignature {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GenericParametersAreNotAllowedInMainFunction {
     /// The ID of the main function
-    pub main_function_id: Global<pernixc_symbol::ID>,
+    pub main_function_id: Global<pernixc_symbol::SymbolID>,
 }
 
 impl Report for GenericParametersAreNotAllowedInMainFunction {
@@ -119,7 +119,7 @@ impl Report for GenericParametersAreNotAllowedInMainFunction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct WhereClausePredicatesAreNotAllowedInMainFunction {
     /// The ID of the main function
-    pub main_function_id: Global<pernixc_symbol::ID>,
+    pub main_function_id: Global<pernixc_symbol::SymbolID>,
 }
 
 impl Report for WhereClausePredicatesAreNotAllowedInMainFunction {

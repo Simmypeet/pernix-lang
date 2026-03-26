@@ -1,4 +1,4 @@
-use pernixc_hash::HashSet;
+use pernixc_hash::FxHashSet;
 use pernixc_ir::{
     address::{Address, Memory},
     value::{Value, register::function_call::Callee},
@@ -828,11 +828,11 @@ async fn attempt_adt_method_call(
 
 async fn find_method_in_implemented(
     binder: &mut crate::binder::Binder<'_>,
-    implemented: &HashSet<Global<pernixc_symbol::ID>>,
-    adt_id: Global<pernixc_symbol::ID>,
+    implemented: &FxHashSet<Global<pernixc_symbol::SymbolID>>,
+    adt_id: Global<pernixc_symbol::SymbolID>,
     method_name: &str,
 ) -> Result<
-    Option<(Global<pernixc_symbol::ID>, MethodReceiverKind)>,
+    Option<(Global<pernixc_symbol::SymbolID>, MethodReceiverKind)>,
     UnrecoverableError,
 > {
     for impl_id in implemented.iter().copied() {

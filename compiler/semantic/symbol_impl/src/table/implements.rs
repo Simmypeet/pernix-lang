@@ -116,7 +116,7 @@ impl Builder {
     #[allow(clippy::too_many_lines)]
     async fn handle_positive_implementation(
         &self,
-        implements_id: pernixc_symbol::ID,
+        implements_id: pernixc_symbol::SymbolID,
         implements_qualified_identifier_sequence: Arc<[Interned<str>]>,
         body: &pernixc_syntax::item::Body<
             pernixc_syntax::item::implements::Member,

@@ -5,7 +5,7 @@ use pernixc_lexical::tree::RelativeSpan;
 use pernixc_target::Global;
 use qbice::{Decode, Encode, Query, StableHash};
 
-use crate::ID;
+use crate::SymbolID;
 
 /// Points to the particular location span in the source code where the given
 /// symbol is defined, typically used for diagnostics and error reporting.
@@ -31,5 +31,5 @@ use crate::ID;
 #[value(Option<RelativeSpan>)]
 pub struct Key {
     /// The global ID of the symbol to get the span for.
-    pub symbol_id: Global<ID>,
+    pub symbol_id: Global<SymbolID>,
 }

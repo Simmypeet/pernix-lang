@@ -6,7 +6,7 @@ use enum_as_inner::EnumAsInner;
 use getset::CopyGetters;
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
-use pernixc_hash::HashMap;
+use pernixc_hash::FxHashMap;
 use pernixc_ir::{
     control_flow_graph::Block,
     scope::Scope,
@@ -33,7 +33,7 @@ use crate::{
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct LoopTracking {
-    incoming_values: HashMap<ID<Block>, Value>,
+    incoming_values: FxHashMap<ID<Block>, Value>,
     break_type: Option<Type>,
 }
 
@@ -82,7 +82,7 @@ impl LoopState {
 /// required to correctly handle `break` and `continue` statements.
 #[derive(Debug, Default)]
 pub struct Context {
-    loop_states_by_scope_id: HashMap<ID<Scope>, LoopState>,
+    loop_states_by_scope_id: FxHashMap<ID<Scope>, LoopState>,
 }
 
 impl Context {
@@ -115,7 +115,7 @@ impl Binder<'_> {
         let kind_state = match kind {
             LoopKind::While => LoopKindState::While,
             LoopKind::Loop => LoopKindState::Loop(LoopTracking {
-                incoming_values: HashMap::default(),
+                incoming_values: FxHashMap::default(),
                 break_type: None,
             }),
         };

@@ -108,7 +108,7 @@ impl GenericArguments {
     pub fn is_identity(
         &self,
         generic_parameters: &GenericParameters,
-        symbol_id: Global<pernixc_symbol::ID>,
+        symbol_id: Global<pernixc_symbol::SymbolID>,
     ) -> bool {
         if !self.param_arity_matches(generic_parameters) {
             return false;
@@ -182,7 +182,7 @@ impl GenericArguments {
     pub fn from_generic_parameters_and_instantiation(
         instantiation: &Instantiation,
         generic_parameters: &GenericParameters,
-        global_id: Global<pernixc_symbol::ID>,
+        global_id: Global<pernixc_symbol::SymbolID>,
     ) -> Self {
         let mut generic_arguments = Self::default();
 
@@ -398,7 +398,7 @@ impl GenericArguments {
     #[must_use]
     pub async fn create_instantiation_for_generic_symbol(
         &self,
-        global_id: Global<pernixc_symbol::ID>,
+        global_id: Global<pernixc_symbol::SymbolID>,
         engine: &TrackedEngine,
     ) -> Instantiation {
         let generic_parameters = engine.get_generic_parameters(global_id).await;
@@ -417,7 +417,7 @@ impl GenericArguments {
 /// as the generic parameters of the symbol.
 #[extend]
 pub async fn create_identity_generic_arguments(
-    self: Global<pernixc_symbol::ID>,
+    self: Global<pernixc_symbol::SymbolID>,
     engine: &TrackedEngine,
 ) -> GenericArguments {
     let generic_params = engine.get_generic_parameters(self).await;
@@ -453,7 +453,7 @@ pub async fn create_identity_generic_arguments(
 pub async fn is_generic_arguments_identity_to(
     self: &GenericArguments,
     engine: &TrackedEngine,
-    symbol_id: Global<pernixc_symbol::ID>,
+    symbol_id: Global<pernixc_symbol::SymbolID>,
 ) -> bool {
     let generic_params = engine.get_generic_parameters(symbol_id).await;
 
@@ -658,7 +658,7 @@ impl Element for Instance {}
 )]
 pub struct Symbol {
     /// The ID of the symbol that is supplied with generic arguments.
-    id: Global<pernixc_symbol::ID>,
+    id: Global<pernixc_symbol::SymbolID>,
 
     /// The generic arguments supplied to the symbol.
     generic_arguments: GenericArguments,
@@ -667,7 +667,7 @@ pub struct Symbol {
 impl Symbol {
     #[must_use]
     pub const fn new(
-        id: Global<pernixc_symbol::ID>,
+        id: Global<pernixc_symbol::SymbolID>,
         generic_arguments: GenericArguments,
     ) -> Self {
         Self { id, generic_arguments }
@@ -675,7 +675,7 @@ impl Symbol {
 
     /// Returns the ID of the symbol.
     #[must_use]
-    pub const fn id(&self) -> Global<pernixc_symbol::ID> { self.id }
+    pub const fn id(&self) -> Global<pernixc_symbol::SymbolID> { self.id }
 
     /// Returns the generic arguments supplied to the symbol.
     #[must_use]
@@ -685,7 +685,9 @@ impl Symbol {
 
     /// Destructures the symbol into its components.
     #[must_use]
-    pub fn destructure(self) -> (Global<pernixc_symbol::ID>, GenericArguments) {
+    pub fn destructure(
+        self,
+    ) -> (Global<pernixc_symbol::SymbolID>, GenericArguments) {
         (self.id, self.generic_arguments)
     }
 
@@ -780,7 +782,7 @@ pub struct AssociatedSymbol {
     ///
     /// By associated symbol, we mean a symbol that is defined in the context
     /// of another symbol, such as a method or an associated type.
-    id: Global<pernixc_symbol::ID>,
+    id: Global<pernixc_symbol::SymbolID>,
 
     /// The generic arguments supplied to the parent of the associated symbol.
     parent_generic_arguments: GenericArguments,
@@ -792,7 +794,7 @@ pub struct AssociatedSymbol {
 impl AssociatedSymbol {
     /// Returns the ID of the associated symbol.
     #[must_use]
-    pub const fn id(&self) -> Global<pernixc_symbol::ID> { self.id }
+    pub const fn id(&self) -> Global<pernixc_symbol::SymbolID> { self.id }
 
     /// Returns the generic arguments supplied to the parent of the associated
     /// symbol.
@@ -842,7 +844,7 @@ impl AssociatedSymbol {
     #[must_use]
     pub fn into_id_and_member_generic_arguments(
         self,
-    ) -> (Global<pernixc_symbol::ID>, GenericArguments) {
+    ) -> (Global<pernixc_symbol::SymbolID>, GenericArguments) {
         (self.id, self.member_generic_arguments)
     }
 
@@ -1056,14 +1058,14 @@ impl GenericArguments {
 /// Implements the [`display::Display`]
 #[derive(Debug)]
 pub struct DisplaySymbolWithGenericArguments<'a> {
-    global_id: Global<pernixc_symbol::ID>,
+    global_id: Global<pernixc_symbol::SymbolID>,
     generic_arguments: &'a GenericArguments,
 }
 
 impl<'a> DisplaySymbolWithGenericArguments<'a> {
     #[must_use]
     pub const fn new(
-        global_id: Global<pernixc_symbol::ID>,
+        global_id: Global<pernixc_symbol::SymbolID>,
         generic_arguments: &'a GenericArguments,
     ) -> Self {
         Self { global_id, generic_arguments }

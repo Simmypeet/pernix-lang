@@ -79,7 +79,7 @@ pub struct SymbolCongruence {
     type_strategies: Vec<Box<dyn Property<Type>>>,
     constant_strategies: Vec<Box<dyn Property<Constant>>>,
 
-    id: Global<pernixc_symbol::ID>,
+    id: Global<pernixc_symbol::SymbolID>,
 }
 
 impl Arbitrary for SymbolCongruence {

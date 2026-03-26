@@ -14,7 +14,7 @@ use crate::{
 #[extend]
 pub async fn format_variant_signature(
     self: &TrackedEngine,
-    variant_id: Global<pernixc_symbol::ID>,
+    variant_id: Global<pernixc_symbol::SymbolID>,
 ) -> String {
     let parent_enum_id = self.get_parent_global(variant_id).await.unwrap();
     let enum_name = self.get_name(variant_id).await;

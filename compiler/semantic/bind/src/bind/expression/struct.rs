@@ -2,7 +2,7 @@ use std::collections::hash_map::Entry;
 
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
-use pernixc_hash::{HashMap, HashSet};
+use pernixc_hash::{FxHashMap, FxHashSet};
 use pernixc_ir::value::{
     Value,
     register::{Assignment, Struct},
@@ -93,7 +93,7 @@ impl Bind<&pernixc_syntax::expression::unit::Struct>
             .fields
             .ids()
             .filter(|field_id| !fields_initializers.contains_key(field_id))
-            .collect::<HashSet<_>>();
+            .collect::<FxHashSet<_>>();
 
         if !uninitialized_fields.is_empty() {
             handler.receive(
@@ -125,19 +125,19 @@ impl Bind<&pernixc_syntax::expression::unit::Struct>
 
 async fn collect_fields(
     binder: &mut Binder<'_>,
-    struct_id: Global<pernixc_symbol::ID>,
+    struct_id: Global<pernixc_symbol::SymbolID>,
     instantiation: &Instantiation,
     fields: &Fields,
     syntax_tree: &pernixc_syntax::expression::unit::Struct,
     handler: &dyn Handler<crate::diagnostic::Diagnostic>,
-) -> Result<HashMap<ID<Field>, (Value, RelativeSpan)>, Error> {
+) -> Result<FxHashMap<ID<Field>, (Value, RelativeSpan)>, Error> {
     let Some(field_initializers) = syntax_tree.field_initializer_body() else {
         // no fields to initialize
-        return Ok(HashMap::default());
+        return Ok(FxHashMap::default());
     };
 
     let mut initializers_by_field_id =
-        HashMap::<ID<Field>, (Value, RelativeSpan)>::default();
+        FxHashMap::<ID<Field>, (Value, RelativeSpan)>::default();
 
     for field_syn in field_initializers.initializers() {
         let (Some(field_ident), Some(field_expr)) =

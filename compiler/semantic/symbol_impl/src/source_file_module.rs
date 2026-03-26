@@ -9,7 +9,7 @@ use crate::table::{self, MapKey, TableKey};
 async fn source_file_module_executor(
     &Key { source_file_id }: &Key,
     engine: &TrackedEngine,
-) -> pernixc_symbol::ID {
+) -> pernixc_symbol::SymbolID {
     let table = engine.query(&MapKey(source_file_id.target_id)).await;
     let (_, external_submodule) =
         table.paths_by_source_id.get(&source_file_id.id).unwrap();

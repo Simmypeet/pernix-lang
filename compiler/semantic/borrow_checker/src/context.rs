@@ -1,6 +1,6 @@
 use getset::{CopyGetters, Getters};
 use pernixc_handler::Handler;
-use pernixc_hash::HashSet;
+use pernixc_hash::FxHashSet;
 use pernixc_ir::{
     IR,
     address::Address,
@@ -97,7 +97,7 @@ impl<'a, N: Normalizer> Context<'a, N> {
 
     /// Gets the current site from the environment
     #[must_use]
-    pub const fn current_site(&self) -> Global<pernixc_symbol::ID> {
+    pub const fn current_site(&self) -> Global<pernixc_symbol::SymbolID> {
         self.environment.current_site
     }
 
@@ -123,7 +123,7 @@ impl<'a, N: Normalizer> Context<'a, N> {
         mut address: &Address,
         address_span: RelativeSpan,
         include_deref: bool,
-    ) -> Result<HashSet<Region>, UnrecoverableError> {
+    ) -> Result<FxHashSet<Region>, UnrecoverableError> {
         let address_ty = self
             .ir
             .values
@@ -140,7 +140,7 @@ impl<'a, N: Normalizer> Context<'a, N> {
         let mut regions = RecursiveIterator::new(&address_ty)
             .filter_map(|x| x.0.into_lifetime().ok())
             .filter_map(|x| Region::try_from(x.clone()).ok())
-            .collect::<HashSet<_>>();
+            .collect::<FxHashSet<_>>();
 
         if include_deref {
             loop {
@@ -205,8 +205,8 @@ impl<'a, N: Normalizer> Context<'a, N> {
         &self,
         mut address: &Address,
         span: &RelativeSpan,
-    ) -> Result<HashSet<Region>, UnrecoverableError> {
-        let mut regions = HashSet::default();
+    ) -> Result<FxHashSet<Region>, UnrecoverableError> {
+        let mut regions = FxHashSet::default();
 
         loop {
             match address {

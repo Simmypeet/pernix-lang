@@ -6,7 +6,7 @@ use std::{
 use drain_filter_polyfill::VecExt;
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
-use pernixc_hash::HashMap;
+use pernixc_hash::FxHashMap;
 use pernixc_ir::{
     address::{Address, Memory},
     control_flow_graph::Block,
@@ -191,7 +191,7 @@ impl Binder<'_> {
     #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
     async fn handle_numeric_pattern(
         &mut self,
-        arm_states_by_value: HashMap<SwitchValue, Vec<ArmState>>,
+        arm_states_by_value: FxHashMap<SwitchValue, Vec<ArmState>>,
         load_address: Address,
         arm_infos: &mut [ArmInfo],
         match_info: &MatchInfo,
@@ -396,7 +396,7 @@ impl Binder<'_> {
     #[allow(clippy::too_many_arguments)]
     async fn handle_boolean_pattern(
         &mut self,
-        arm_states_by_value: HashMap<SwitchValue, Vec<ArmState>>,
+        arm_states_by_value: FxHashMap<SwitchValue, Vec<ArmState>>,
         load_ty: Type,
         load_address: Address,
         arm_infos: &mut [ArmInfo],
@@ -584,7 +584,8 @@ impl Binder<'_> {
         }
 
         let mut free_arms = Vec::new();
-        let mut arm_states_by_value = HashMap::<SwitchValue, Vec<_>>::default();
+        let mut arm_states_by_value =
+            FxHashMap::<SwitchValue, Vec<_>>::default();
 
         for arm_state in arm_states {
             let pattern = main_path
@@ -1142,7 +1143,7 @@ impl Bind<&pernixc_syntax::expression::block::Match> for Binder<'_> {
 
                     (result.end_block_id, result.value)
                 })
-                .collect::<HashMap<_, _>>();
+                .collect::<FxHashMap<_, _>>();
 
             if incoming_values.len() == 1 {
                 // only one arm reaches here

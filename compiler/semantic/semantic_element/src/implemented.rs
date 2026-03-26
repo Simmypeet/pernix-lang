@@ -1,7 +1,7 @@
 //! Defines a query for retrieving all the `implements` IDs that are associated
 //! with a given symbol.
 
-use pernixc_hash::HashSet;
+use pernixc_hash::FxHashSet;
 use pernixc_target::{Global, TargetID};
 use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 
@@ -24,11 +24,11 @@ use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
     Decode,
     Query,
 )]
-#[value(Interned<HashSet<Global<pernixc_symbol::ID>>>)]
+#[value(Interned<FxHashSet<Global<pernixc_symbol::SymbolID>>>)]
 #[extend(name = get_implemented, by_val)]
 pub struct Key {
     /// The global ID of the symbol to get implementations for.
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 
     /// The target ID where the query was made.
     ///
@@ -53,10 +53,10 @@ pub struct Key {
     StableHash,
     Query,
 )]
-#[value(Interned<HashSet<Global<pernixc_symbol::ID>>>)]
+#[value(Interned<FxHashSet<Global<pernixc_symbol::SymbolID>>>)]
 pub struct InTargetKey {
     /// The ID of the implementable (trait or marker).
-    pub implementable_id: Global<pernixc_symbol::ID>,
+    pub implementable_id: Global<pernixc_symbol::SymbolID>,
 
     /// The target ID to search for implementations in.
     pub target_id: pernixc_target::TargetID,

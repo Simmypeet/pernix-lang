@@ -13,7 +13,7 @@ use crate::{
 #[extend]
 pub async fn format_module_signature(
     self: &TrackedEngine,
-    symbol: Global<pernixc_symbol::ID>,
+    symbol: Global<pernixc_symbol::SymbolID>,
 ) -> String {
     let mut markdown = format!("```{PERNIX_FENCE}\n");
     let qualified_name = self.get_qualified_name(symbol).await;

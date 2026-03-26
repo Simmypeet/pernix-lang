@@ -448,7 +448,7 @@ impl Builder {
         scope_span: Option<RelativeSpan>,
         module_kind: ModuleKind,
         join_set: &mut JoinSet<()>,
-    ) -> pernixc_symbol::ID {
+    ) -> pernixc_symbol::SymbolID {
         // extract the information about the module
         let (accessibility, current_module_id, module_qualified_name, span) =
             match module_kind {

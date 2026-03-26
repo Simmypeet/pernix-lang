@@ -219,7 +219,7 @@ impl FunctionIR {
             's,
             N,
         >,
-        current_site: Global<pernixc_symbol::ID>,
+        current_site: Global<pernixc_symbol::SymbolID>,
     ) -> impl Iterator<
         Item = (
             ID<IRWithContext>,
@@ -275,7 +275,7 @@ impl FunctionIR {
             's,
             N,
         >,
-        current_site: Global<pernixc_symbol::ID>,
+        current_site: Global<pernixc_symbol::SymbolID>,
     ) -> impl Iterator<
         Item = (
             ID<IRWithContext>,
@@ -349,5 +349,5 @@ impl FunctionIR {
 #[extend(name = get_function_ir, by_val)]
 pub struct Key {
     /// The global ID of the function symbol.
-    pub function_id: Global<pernixc_symbol::ID>,
+    pub function_id: Global<pernixc_symbol::SymbolID>,
 }

@@ -83,7 +83,7 @@ pub struct Resolver<'i, 'm> {
     consider_adt_implements: bool,
 
     /// Represents the site where the resolution occurred.
-    referring_site: Global<pernixc_symbol::ID>,
+    referring_site: Global<pernixc_symbol::SymbolID>,
 
     /// A stack of logs tracking which forall lifetimes were added at each
     /// level. Used for proper cleanup when popping higher-ranked lifetimes.
@@ -113,7 +113,7 @@ impl<'i, 'm> Resolver<'i, 'm> {
             &'i dyn ResolveInstanceParameterTraitRef,
         >,
         #[builder(default = true)] consider_adt_implements: bool,
-        referring_site: Global<pernixc_symbol::ID>,
+        referring_site: Global<pernixc_symbol::SymbolID>,
     ) -> Self {
         Self {
             tracked_engine,
@@ -149,7 +149,7 @@ impl<'i, 'm> Resolver<'i, 'm> {
 
     /// Returns the referring site where the resolution occurred.
     #[must_use]
-    pub const fn referring_site(&self) -> Global<pernixc_symbol::ID> {
+    pub const fn referring_site(&self) -> Global<pernixc_symbol::SymbolID> {
         self.referring_site
     }
 
@@ -428,7 +428,7 @@ impl<'i, 'm> Resolver<'i, 'm> {
     ) -> Option<
         Pin<
             Box<
-                dyn Future<Output = Option<Global<pernixc_symbol::ID>>>
+                dyn Future<Output = Option<Global<pernixc_symbol::SymbolID>>>
                     + Send
                     + 'a,
             >,

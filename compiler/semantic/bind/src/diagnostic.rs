@@ -311,7 +311,7 @@ impl Report for InvalidTypeInBinaryOperator {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct NotAllFlowPathsReturnAValue {
     /// The ID of the callable that does not return a value on all paths.
-    pub callable_id: Global<pernixc_symbol::ID>,
+    pub callable_id: Global<pernixc_symbol::SymbolID>,
 }
 
 impl Report for NotAllFlowPathsReturnAValue {
@@ -816,7 +816,7 @@ pub struct UnhandledEffects {
     pub effects: Vec<effect::Unit>,
 
     /// The ID of the callable where the unhandled effects occur.
-    pub callable_id: Global<pernixc_symbol::ID>,
+    pub callable_id: Global<pernixc_symbol::SymbolID>,
 
     /// The span of the function call expression.
     pub span: RelativeSpan,
@@ -880,7 +880,7 @@ pub struct EffectExpected {
     pub span: RelativeSpan,
 
     /// The global ID of the resolved qualified identifier.
-    pub global_id: Global<pernixc_symbol::ID>,
+    pub global_id: Global<pernixc_symbol::SymbolID>,
 }
 
 impl Report for EffectExpected {
@@ -920,7 +920,7 @@ impl Report for EffectExpected {
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct DuplicatedEffectHandler {
     /// The ID of the duplicated effect.
-    pub effect_id: Global<pernixc_symbol::ID>,
+    pub effect_id: Global<pernixc_symbol::SymbolID>,
 
     /// The generic arguments used in the first handler.
     pub generic_arguments: GenericArguments,
@@ -989,7 +989,7 @@ impl Report for DuplicatedEffectHandler {
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct UnknownEffectOperation {
     /// The ID of the effect being handled.
-    pub effect_id: Global<pernixc_symbol::ID>,
+    pub effect_id: Global<pernixc_symbol::SymbolID>,
 
     /// The name of the unknown operation.
     pub operation_name: Interned<str>,
@@ -1031,7 +1031,7 @@ impl Report for UnknownEffectOperation {
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct DuplicatedEffectOperationHandler {
     /// The ID of the effect being handled.
-    pub effect_id: Global<pernixc_symbol::ID>,
+    pub effect_id: Global<pernixc_symbol::SymbolID>,
 
     /// The name of the duplicated operation.
     pub operation_name: Interned<str>,
@@ -1092,10 +1092,10 @@ impl Report for DuplicatedEffectOperationHandler {
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct UnhandledEffectOperations {
     /// The effect operations that are not handled.
-    pub unhandled_effect_operations: Vec<Global<pernixc_symbol::ID>>,
+    pub unhandled_effect_operations: Vec<Global<pernixc_symbol::SymbolID>>,
 
     /// The ID of the callable where the unhandled effect operations occur.
-    pub effect_id: Global<pernixc_symbol::ID>,
+    pub effect_id: Global<pernixc_symbol::SymbolID>,
 
     /// The span of the `with` clause.
     pub with_span: RelativeSpan,
@@ -1150,7 +1150,7 @@ pub struct MismatchedArgumentCountInEffectOperationHandler {
     pub found: usize,
 
     /// The ID of the effect being handled.
-    pub operation_id: Global<pernixc_symbol::ID>,
+    pub operation_id: Global<pernixc_symbol::SymbolID>,
 
     /// The span of the operation name in the handler.
     pub span: RelativeSpan,

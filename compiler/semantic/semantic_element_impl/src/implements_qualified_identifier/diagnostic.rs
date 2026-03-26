@@ -247,7 +247,7 @@ impl Report for MarkerImplementsNotFinal {
 )]
 pub struct MemberInMarkerImplementationIsNotAllowed {
     /// The member ID defined in the marker `implements`.
-    pub implements_member_id: Global<pernixc_symbol::ID>,
+    pub implements_member_id: Global<pernixc_symbol::SymbolID>,
 }
 
 impl Report for MemberInMarkerImplementationIsNotAllowed {
@@ -318,10 +318,10 @@ impl Report for MemberInMarkerImplementationIsNotAllowed {
 )]
 pub struct TraitMemberNotImplemented {
     /// The member IDs in the trait that are not implemented.
-    pub unimplemented_trait_member_ids: Vec<Global<pernixc_symbol::ID>>,
+    pub unimplemented_trait_member_ids: Vec<Global<pernixc_symbol::SymbolID>>,
 
     /// The implementation ID where the members should be implemented.
-    pub implementation_id: Global<pernixc_symbol::ID>,
+    pub implementation_id: Global<pernixc_symbol::SymbolID>,
 }
 
 impl Report for TraitMemberNotImplemented {
@@ -399,10 +399,10 @@ impl Report for TraitMemberNotImplemented {
 )]
 pub struct TraitMemberKindMismatch {
     /// The trait member ID.
-    pub trait_member_id: Global<pernixc_symbol::ID>,
+    pub trait_member_id: Global<pernixc_symbol::SymbolID>,
 
     /// The implementation member ID with wrong kind.
-    pub implementation_member_id: Global<pernixc_symbol::ID>,
+    pub implementation_member_id: Global<pernixc_symbol::SymbolID>,
 }
 
 impl Report for TraitMemberKindMismatch {
@@ -473,7 +473,7 @@ impl Report for TraitMemberKindMismatch {
 pub struct ExtraneousImplementationMember {
     /// The implementation member ID that doesn't correspond to any trait
     /// member.
-    pub implementation_member_id: Global<pernixc_symbol::ID>,
+    pub implementation_member_id: Global<pernixc_symbol::SymbolID>,
 }
 
 impl Report for ExtraneousImplementationMember {
@@ -526,11 +526,11 @@ impl Report for ExtraneousImplementationMember {
 )]
 pub struct InaccessibleTraitMember {
     /// The trait member ID that is not accessible.
-    pub trait_member_id: Global<pernixc_symbol::ID>,
+    pub trait_member_id: Global<pernixc_symbol::SymbolID>,
 
     /// The implementation member ID that is trying to implement the
     /// inaccessible trait member.
-    pub implementation_member_id: Global<pernixc_symbol::ID>,
+    pub implementation_member_id: Global<pernixc_symbol::SymbolID>,
 }
 
 impl Report for InaccessibleTraitMember {
@@ -604,7 +604,7 @@ impl Report for InaccessibleTraitMember {
 )]
 pub struct AdtImplementationCannotBeNegative {
     /// The implementation ID that is negative.
-    pub implementation_id: Global<pernixc_symbol::ID>,
+    pub implementation_id: Global<pernixc_symbol::SymbolID>,
 }
 
 impl Report for AdtImplementationCannotBeNegative {
@@ -651,7 +651,7 @@ impl Report for AdtImplementationCannotBeNegative {
 )]
 pub struct AdtImplementationCannotBeFinal {
     /// The implementation ID that is final.
-    pub implementation_id: Global<pernixc_symbol::ID>,
+    pub implementation_id: Global<pernixc_symbol::SymbolID>,
 }
 
 impl Report for AdtImplementationCannotBeFinal {
@@ -700,7 +700,7 @@ impl Report for AdtImplementationCannotBeFinal {
 )]
 pub struct TraitMemberCannotHaveAccessModifier {
     /// The implementation member ID that has an access modifier.
-    pub implementation_member_id: Global<pernixc_symbol::ID>,
+    pub implementation_member_id: Global<pernixc_symbol::SymbolID>,
 }
 
 impl Report for TraitMemberCannotHaveAccessModifier {
@@ -771,7 +771,7 @@ impl Report for TraitMemberCannotHaveAccessModifier {
 )]
 pub struct AdtMemberMissingAccessModifier {
     /// The implementation member ID that is missing an access modifier.
-    pub implementation_member_id: Global<pernixc_symbol::ID>,
+    pub implementation_member_id: Global<pernixc_symbol::SymbolID>,
 }
 
 impl Report for AdtMemberMissingAccessModifier {
@@ -828,7 +828,7 @@ impl Report for AdtMemberMissingAccessModifier {
 )]
 pub struct UnusedGenericParameter {
     /// The implementation ID where the generic parameter is unused.
-    pub implementation_id: Global<pernixc_symbol::ID>,
+    pub implementation_id: Global<pernixc_symbol::SymbolID>,
 
     /// The span of the unused generic parameter.
     pub unused_parameter_span: RelativeSpan,

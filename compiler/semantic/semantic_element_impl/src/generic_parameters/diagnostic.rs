@@ -252,7 +252,7 @@ pub struct EffectOperationCanNotHaveTypeOrConstantParameters {
     pub type_or_constant_parameter_span: Vec<RelativeSpan>,
 
     /// The span of the effect operation.
-    pub effect_operation_id: Global<pernixc_symbol::ID>,
+    pub effect_operation_id: Global<pernixc_symbol::SymbolID>,
 }
 
 impl Report for EffectOperationCanNotHaveTypeOrConstantParameters {

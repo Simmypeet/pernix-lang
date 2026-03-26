@@ -3,7 +3,7 @@
 use pernixc_target::Global;
 use qbice::{Decode, Encode, Identifiable, Query, StableHash};
 
-use crate::ID;
+use crate::SymbolID;
 
 /// Represents the linkage of a function or static variable.
 #[derive(
@@ -65,5 +65,5 @@ pub struct C {
 #[extend(name = get_linkage, by_val)]
 pub struct Key {
     /// The global ID of the symbol to get the linkage for.
-    pub symbol_id: Global<ID>,
+    pub symbol_id: Global<SymbolID>,
 }

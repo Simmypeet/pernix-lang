@@ -3,7 +3,7 @@
 use std::ops::Deref;
 
 use pernixc_arena::ID;
-use pernixc_hash::HashMap;
+use pernixc_hash::FxHashMap;
 use pernixc_semantic_element::variance::Variance;
 use pernixc_term::r#type::Type;
 use pernixc_type_system::{
@@ -57,7 +57,7 @@ macro_rules! visit_phi {
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, StableHash)]
 pub struct Phi {
     /// Maps the incoming block to the value.
-    pub incoming_values: HashMap<ID<Block>, Value>,
+    pub incoming_values: FxHashMap<ID<Block>, Value>,
 
     /// The type of the phi node.
     ///

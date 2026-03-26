@@ -4,7 +4,7 @@ use pernixc_source_file::LocalSourceID;
 use pernixc_target::Global;
 use qbice::{Decode, Encode, Query, StableHash};
 
-use crate::ID;
+use crate::SymbolID;
 
 /// Determines the kinds of module symbol.
 #[derive(
@@ -59,5 +59,5 @@ pub enum ModuleKind {
 #[extend(name = get_module_kind, by_val)]
 pub struct Key {
     /// The global ID of the module symbol to get the kind for.
-    pub module_id: Global<ID>,
+    pub module_id: Global<SymbolID>,
 }

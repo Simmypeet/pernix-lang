@@ -50,7 +50,7 @@ pub struct InstanceResolutionFrame {
 
     /// The instance symbol candidate that was selected at this level of
     /// resolution (the symbol that requires a sub-instance parameter).
-    resolving_symbol: Global<pernixc_symbol::ID>,
+    resolving_symbol: Global<pernixc_symbol::SymbolID>,
 
     /// The ID of the instance parameter (on `resolving_symbol`) that could not
     /// be resolved, triggering the descent to the next level.
@@ -113,7 +113,7 @@ pub struct InstanceResolutionError {
 }
 
 enum SymbolOrParameter {
-    Symbol(Global<pernixc_symbol::ID>),
+    Symbol(Global<pernixc_symbol::SymbolID>),
     Parameter(InstanceParameterID),
 }
 

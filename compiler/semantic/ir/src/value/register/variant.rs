@@ -84,7 +84,7 @@ impl Variant {
     pub async fn parent_enum_id(
         &self,
         engine: &TrackedEngine,
-    ) -> Global<pernixc_symbol::ID> {
+    ) -> Global<pernixc_symbol::SymbolID> {
         self.symbol.parent_enum_id(engine).await
     }
 
@@ -96,7 +96,7 @@ impl Variant {
     }
 
     #[must_use]
-    pub const fn variant_id(&self) -> Global<pernixc_symbol::ID> {
+    pub const fn variant_id(&self) -> Global<pernixc_symbol::SymbolID> {
         self.symbol.variant_id()
     }
 

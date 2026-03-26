@@ -13,7 +13,7 @@ use crate::{
 #[extend]
 pub async fn format_simple_signature_with_where_clause(
     self: &TrackedEngine,
-    symbol: Global<pernixc_symbol::ID>,
+    symbol: Global<pernixc_symbol::SymbolID>,
     signature_string: &str,
 ) -> String {
     let mut string = format!("```{PERNIX_FENCE}\n");

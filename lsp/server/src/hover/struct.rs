@@ -15,7 +15,7 @@ use crate::{
 #[extend]
 pub async fn format_struct_signature(
     self: &TrackedEngine,
-    struct_id: Global<pernixc_symbol::ID>,
+    struct_id: Global<pernixc_symbol::SymbolID>,
 ) -> String {
     let mut string = format!("```{PERNIX_FENCE}\n");
     let mut formatter = Formatter::new(&mut string, self);

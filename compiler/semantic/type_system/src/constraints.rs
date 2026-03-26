@@ -1,6 +1,6 @@
 //! Contains the definition of [`Constraints`].
 
-use pernixc_hash::HashSet;
+use pernixc_hash::FxHashSet;
 use qbice::{Decode, Encode, StableHash};
 
 use crate::lifetime_constraint::LifetimeConstraint;
@@ -10,12 +10,12 @@ use crate::lifetime_constraint::LifetimeConstraint;
 /// This is a wrapper around [`HashSet<LifetimeConstraint>`] that provides
 /// a convenient interface for working with lifetime constraints.
 #[derive(Debug, Clone, PartialEq, Eq, Default, StableHash, Encode, Decode)]
-pub struct Constraints(HashSet<LifetimeConstraint>);
+pub struct Constraints(FxHashSet<LifetimeConstraint>);
 
 impl Constraints {
     /// Creates a new empty [`Constraints`].
     #[must_use]
-    pub fn new() -> Self { Self(HashSet::default()) }
+    pub fn new() -> Self { Self(FxHashSet::default()) }
 
     /// Returns the number of constraints in the collection.
     #[must_use]
@@ -93,6 +93,6 @@ impl<'a> IntoIterator for &'a Constraints {
 
 impl FromIterator<LifetimeConstraint> for Constraints {
     fn from_iter<T: IntoIterator<Item = LifetimeConstraint>>(iter: T) -> Self {
-        Self(HashSet::from_iter(iter))
+        Self(FxHashSet::from_iter(iter))
     }
 }

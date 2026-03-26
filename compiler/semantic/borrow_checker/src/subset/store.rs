@@ -1,4 +1,4 @@
-use pernixc_hash::HashSet;
+use pernixc_hash::FxHashSet;
 use pernixc_ir::{address::Address, instruction::Store, value::TypeOf};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_semantic_element::variance::Variance;
@@ -55,7 +55,7 @@ impl<N: Normalizer> Context<'_, N> {
             overwritten_regions: RecursiveIterator::new(&address_ty)
                 .filter_map(|x| x.0.into_lifetime().ok())
                 .filter_map(|x| Region::try_from(x.clone()).ok())
-                .collect::<HashSet<_>>(),
+                .collect::<FxHashSet<_>>(),
         })
     }
 

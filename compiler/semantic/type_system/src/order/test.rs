@@ -17,11 +17,11 @@ use crate::{
 #[tokio::test]
 async fn ambiguous() {
     let t_parameter = Type::Parameter(TypeParameterID::new(
-        Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(1)),
+        Global::new(TargetID::TEST, pernixc_symbol::SymbolID::from_u128(1)),
         pernixc_arena::ID::new(0),
     ));
     let u_parameter = Type::Parameter(TypeParameterID::new(
-        Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(2)),
+        Global::new(TargetID::TEST, pernixc_symbol::SymbolID::from_u128(2)),
         pernixc_arena::ID::new(0),
     ));
 
@@ -54,7 +54,7 @@ async fn ambiguous() {
 #[tokio::test]
 async fn more_general() {
     let t_parameter = Type::Parameter(TypeParameterID::new(
-        Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(1)),
+        Global::new(TargetID::TEST, pernixc_symbol::SymbolID::from_u128(1)),
         pernixc_arena::ID::new(0),
     ));
 
@@ -93,7 +93,7 @@ async fn more_general() {
 #[tokio::test]
 async fn incompatible() {
     let t_parameter = Type::Parameter(TypeParameterID::new(
-        Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(1)),
+        Global::new(TargetID::TEST, pernixc_symbol::SymbolID::from_u128(1)),
         pernixc_arena::ID::new(0),
     ));
 

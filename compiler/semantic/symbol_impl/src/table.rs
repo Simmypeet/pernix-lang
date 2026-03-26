@@ -3,13 +3,13 @@ use std::{path::Path, sync::Arc};
 use linkme::distributed_slice;
 use pernixc_extend::extend;
 use pernixc_handler::{Handler, Storage};
-use pernixc_hash::{DashMap, HashMap, HashSet};
+use pernixc_hash::{FxDashMap, FxHashMap, FxHashSet};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_source_file::{LocalSourceID, get_stable_path_id};
 use pernixc_symbol::{
-    AllSymbolIDKey, ID, accessibility::Accessibility, kind::Kind, linkage,
-    member::Member,
+    AllSymbolIDKey, SymbolID, accessibility::Accessibility, kind::Kind,
+    linkage, member::Member,
 };
 use pernixc_syntax::QualifiedIdentifier;
 use pernixc_target::{Global, TargetID, get_invocation_arguments};
@@ -79,7 +79,7 @@ pub enum Key {
 )]
 pub struct ExternalSubmodule {
     /// The ID assigned to the submodule.
-    pub submodule_id: ID,
+    pub submodule_id: SymbolID,
 
     /// The qualified name of the submodule.
     pub submodule_qualified_name: Arc<[Interned<str>]>,
@@ -88,7 +88,7 @@ pub struct ExternalSubmodule {
     pub path: Interned<Path>,
 
     /// The accessibility in the `public module subModule` declaration.
-    pub accessibility: Accessibility<ID>,
+    pub accessibility: Accessibility<SymbolID>,
 
     /// The span of the identifier in the `public module subModule`
     /// declaration.
@@ -130,7 +130,7 @@ pub struct TableKey(pub Key);
 pub struct DiagnosticKey(pub Key);
 
 /// A type-alias for a read-only map from symbol ID to value.
-pub type ReadOnlyMap<V> = Interned<HashMap<ID, V>>;
+pub type ReadOnlyMap<V> = Interned<FxHashMap<SymbolID, V>>;
 
 /// A symbol table from parsing a single file.
 ///
@@ -163,7 +163,7 @@ pub struct Table {
     pub members: ReadOnlyMap<Interned<Member>>,
 
     /// Maps the ID of the symbol to its accessibility.
-    pub accessibilities: ReadOnlyMap<Accessibility<ID>>,
+    pub accessibilities: ReadOnlyMap<Accessibility<SymbolID>>,
 
     /// Maps the ID of the implements member (type, function, constant) to its
     /// extracted access modifier syntax.
@@ -285,7 +285,7 @@ pub struct Table {
     pub external_instances: ReadOnlyMap<bool>,
 
     /// The ID of the module that this table represents.
-    pub module_id: pernixc_symbol::ID,
+    pub module_id: pernixc_symbol::SymbolID,
 
     /// The diagnostics that were collected while building the table.
     pub diagnostics: Interned<[Diagnostic]>,
@@ -361,9 +361,9 @@ static EXTERNAL_SUBMODULE_MAP_EXECUTOR: Registration<Config> =
 enum ModuleKind {
     Root,
     Submodule {
-        submodule_id: ID,
+        submodule_id: SymbolID,
         submodule_qualified_name: Arc<[Interned<str>]>,
-        accessibility: Accessibility<ID>,
+        accessibility: Accessibility<SymbolID>,
         span: RelativeSpan,
     },
 }
@@ -545,13 +545,13 @@ pub struct Map {
     /// whereas the `Some` value indicates that the symbol is defined in an
     /// external submodule.
     pub keys_by_symbol_id:
-        Interned<HashMap<ID, Option<Interned<ExternalSubmodule>>>>,
+        Interned<FxHashMap<SymbolID, Option<Interned<ExternalSubmodule>>>>,
 
     /// Maps the source file ID to its path and the external submodule (if it
     /// is).
     #[allow(clippy::type_complexity)]
     pub paths_by_source_id: Interned<
-        HashMap<
+        FxHashMap<
             LocalSourceID,
             (Interned<Path>, Option<Interned<ExternalSubmodule>>),
         >,
@@ -560,7 +560,7 @@ pub struct Map {
     /// Paths that failed to resolve to a source file.
     #[allow(clippy::type_complexity)]
     pub failed_paths: Interned<
-        HashSet<(Interned<Path>, Option<Interned<ExternalSubmodule>>)>,
+        FxHashSet<(Interned<Path>, Option<Interned<ExternalSubmodule>>)>,
     >,
 }
 
@@ -593,16 +593,19 @@ async fn map_executor(key: &MapKey, engine: &TrackedEngine) -> Map {
         engine: &'x TrackedEngine,
         table_key: &'x Key,
         keys_by_symbol_id: Arc<
-            DashMap<ID, Option<Interned<ExternalSubmodule>>>,
+            FxDashMap<SymbolID, Option<Interned<ExternalSubmodule>>>,
         >,
         paths_by_source_id: Arc<
-            DashMap<
+            FxDashMap<
                 LocalSourceID,
                 (Interned<Path>, Option<Interned<ExternalSubmodule>>),
             >,
         >,
         failed_paths: Arc<
-            DashMap<(Interned<Path>, Option<Interned<ExternalSubmodule>>), ()>,
+            FxDashMap<
+                (Interned<Path>, Option<Interned<ExternalSubmodule>>),
+                (),
+            >,
         >,
         current_external_submodule: Option<Interned<ExternalSubmodule>>,
     ) -> impl std::future::Future<Output = ()> + Send + 'x {
@@ -689,9 +692,9 @@ async fn map_executor(key: &MapKey, engine: &TrackedEngine) -> Map {
 
     let MapKey(target_id) = key;
 
-    let keys_by_symbol_id = Arc::new(DashMap::default());
-    let paths_by_source_id = Arc::new(DashMap::default());
-    let failed_paths = Arc::new(DashMap::default());
+    let keys_by_symbol_id = Arc::new(FxDashMap::default());
+    let paths_by_source_id = Arc::new(FxDashMap::default());
+    let failed_paths = Arc::new(FxDashMap::default());
 
     // Start traversal from the root
     traverse_table(
@@ -736,7 +739,7 @@ static MAP_EXECUTOR: Registration<Config> =
 async fn all_symbol_ids_executor(
     key: &AllSymbolIDKey,
     engine: &TrackedEngine,
-) -> Interned<[ID]> {
+) -> Interned<[SymbolID]> {
     let map = engine.query(&MapKey(key.target_id)).await;
 
     engine.intern_unsized(
@@ -764,7 +767,7 @@ static ALL_SYMBOL_ID_EXECUTOR: Registration<Config> =
 )]
 #[value(Option<Key>)]
 pub struct GetTableKeyFromSymbolID {
-    pub symbol_id: Global<ID>,
+    pub symbol_id: Global<SymbolID>,
 }
 
 #[executor(config = Config, style = ExecutionStyle::Projection)]
@@ -794,7 +797,7 @@ static GET_TABLE_KEY_FROM_SYMBOL_ID_EXECUTOR: Registration<Config> =
 #[extend]
 pub async fn get_table_of_symbol(
     self: &TrackedEngine,
-    id: Global<ID>,
+    id: Global<SymbolID>,
 ) -> Option<Interned<Table>> {
     let node_key =
         self.query(&GetTableKeyFromSymbolID { symbol_id: id }).await?;

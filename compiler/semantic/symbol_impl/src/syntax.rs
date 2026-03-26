@@ -33,7 +33,7 @@ use crate::table::get_table_of_symbol;
 )]
 #[value(Option<Interned<[pernixc_syntax::item::module::Import]>>)]
 pub struct ImportProjectionKey {
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }
 
 #[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
@@ -82,7 +82,7 @@ static IMPORT_SYNTAX_EXECUTOR: Registration<Config> =
 )]
 #[value(Option<QualifiedIdentifier>)]
 pub struct ImplementsQualifiedIdentifierProjectionKey {
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }
 
 #[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
@@ -142,7 +142,7 @@ static IMPLEMENTS_QUALIFIED_IDENTIFIER_EXECUTOR: Registration<Config> =
 )]
 #[value(Option<Option<pernixc_syntax::item::generic_parameters::GenericParameters>>)]
 pub struct GenericParametersProjectionKey {
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }
 
 #[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
@@ -195,7 +195,7 @@ static GENERIC_PARAMETERS_EXECUTOR: Registration<Config> =
 )]
 #[value(Option<Option<pernixc_syntax::item::where_clause::Predicates>>)]
 pub struct WhereClauseProjectionKey {
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }
 
 #[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
@@ -245,7 +245,7 @@ static WHERE_CLAUSE_EXECUTOR: Registration<Config> =
 )]
 #[value(Option<Option<pernixc_syntax::r#type::Type>>)]
 pub struct TypeAliasProjectionKey {
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }
 
 #[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
@@ -294,7 +294,7 @@ static TYPE_ALIAS_EXECUTOR: Registration<Config> =
 )]
 #[value(Option<Option<pernixc_syntax::Keyword>>)]
 pub struct ImplementsFinalKeywordProjectionKey {
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }
 
 #[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
@@ -348,7 +348,7 @@ static IMPLEMENTS_FINAL_KEYWORD_EXECUTOR: Registration<Config> =
 )]
 #[value(Option<Option<pernixc_syntax::Keyword>>)]
 pub struct FunctionUnsafeKeywordProjectionKey {
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }
 
 #[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
@@ -400,7 +400,7 @@ static FUNCTION_UNSAFE_KEYWORD_EXECUTOR: Registration<Config> =
 )]
 #[value(Option<Option<pernixc_syntax::AccessModifier>>)]
 pub struct ImplementsMemberAccessModifierProjectionKey {
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }
 
 #[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
@@ -458,7 +458,7 @@ static IMPLEMENTS_MEMBER_ACCESS_MODIFIER_EXECUTOR: Registration<Config> =
 )]
 #[value(Option<Option<pernixc_syntax::r#type::Type>>)]
 pub struct VariantAssociatedTypeProjectionKey {
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }
 
 #[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
@@ -511,7 +511,7 @@ static VARIANT_ASSOCIATED_TYPE_EXECUTOR: Registration<Config> =
 )]
 #[value(Option<Option<pernixc_syntax::item::Body<pernixc_syntax::item::r#struct::Field>>>)]
 pub struct FieldsProjectionKey {
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }
 
 #[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
@@ -562,7 +562,7 @@ static FIELDS_EXECUTOR: Registration<Config> =
 )]
 #[value(Option<(Option<pernixc_syntax::item::function::Parameters>, Option<pernixc_syntax::item::function::ReturnType>)>)]
 pub struct FunctionSignatureProjectionKey {
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }
 
 #[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
@@ -620,7 +620,7 @@ static FUNCTION_SIGNATURE_EXECUTOR: Registration<Config> =
 )]
 #[value(Option<Option<pernixc_syntax::item::Members<pernixc_syntax::statement::Statement>>>)]
 pub struct FunctionBodyProjectionKey {
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }
 
 #[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
@@ -675,7 +675,7 @@ static FUNCTION_BODY_EXECUTOR: Registration<Config> =
 )]
 #[value(Option<Option<pernixc_syntax::item::function::EffectAnnotation>>)]
 pub struct FunctionEffectAnnotationProjectionKey {
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }
 
 #[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
@@ -732,7 +732,7 @@ static FUNCTION_EFFECT_ANNOTATION_EXECUTOR: Registration<Config> =
 )]
 #[value(Option<Option<pernixc_syntax::InstanceValue>>)]
 pub struct InstanceAssociatedValueSyntaxProjectionKey {
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }
 
 #[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
@@ -790,7 +790,7 @@ static INSTANCE_ASSOCIATED_VALUE_SYNTAX_EXECUTOR: Registration<Config> =
 )]
 #[value(Option<Option<pernixc_syntax::TraitRef>>)]
 pub struct InstanceTraitRefSyntaxProjectionKey {
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }
 
 #[executor(config = Config, style = qbice::ExecutionStyle::Projection)]

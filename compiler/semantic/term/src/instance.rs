@@ -55,7 +55,7 @@ impl TraitRef {
     /// arguments.
     #[must_use]
     pub const fn new(
-        id: Global<pernixc_symbol::ID>,
+        id: Global<pernixc_symbol::SymbolID>,
         generic_arguments: GenericArguments,
     ) -> Self {
         Self(Symbol::new(id, generic_arguments))
@@ -67,7 +67,9 @@ impl TraitRef {
 
     /// Retrieves the trait ID of this `TraitRef`.
     #[must_use]
-    pub const fn trait_id(&self) -> Global<pernixc_symbol::ID> { self.0.id() }
+    pub const fn trait_id(&self) -> Global<pernixc_symbol::SymbolID> {
+        self.0.id()
+    }
 
     /// Returns a reference to the generic arguments of the trait associated
     /// with this `TraitRef`.
@@ -114,7 +116,7 @@ impl TraitRef {
 )]
 pub struct InstanceAssociated {
     instance: Box<Instance>,
-    trait_associated_symbol_id: Global<pernixc_symbol::ID>,
+    trait_associated_symbol_id: Global<pernixc_symbol::SymbolID>,
     trait_associated_symbol_generic_arguments: GenericArguments,
 }
 
@@ -123,7 +125,7 @@ impl InstanceAssociated {
     #[must_use]
     pub const fn new(
         instance: Box<Instance>,
-        trait_associated_symbol_id: Global<pernixc_symbol::ID>,
+        trait_associated_symbol_id: Global<pernixc_symbol::SymbolID>,
         trait_associated_symbol_generic_arguments: GenericArguments,
     ) -> Self {
         Self {
@@ -178,7 +180,7 @@ impl InstanceAssociated {
     #[must_use]
     pub const fn trait_associated_symbol_id(
         &self,
-    ) -> Global<pernixc_symbol::ID> {
+    ) -> Global<pernixc_symbol::SymbolID> {
         self.trait_associated_symbol_id
     }
 
@@ -675,19 +677,21 @@ impl InstanceAssociated {
     StableHash,
 )]
 pub struct AnoymousTrait {
-    trait_id: Global<pernixc_symbol::ID>,
+    trait_id: Global<pernixc_symbol::SymbolID>,
 }
 
 impl AnoymousTrait {
     /// Creates a new `AnonymousTrait` with the given trait ID.
     #[must_use]
-    pub const fn new(trait_id: Global<pernixc_symbol::ID>) -> Self {
+    pub const fn new(trait_id: Global<pernixc_symbol::SymbolID>) -> Self {
         Self { trait_id }
     }
 
     /// Returns the trait ID of this `AnonymousTrait`.
     #[must_use]
-    pub const fn trait_id(&self) -> Global<pernixc_symbol::ID> { self.trait_id }
+    pub const fn trait_id(&self) -> Global<pernixc_symbol::SymbolID> {
+        self.trait_id
+    }
 }
 
 /// An instance of a trait implementation.
@@ -755,7 +759,7 @@ impl Instance {
     /// in the generic parameters arena.
     #[must_use]
     pub fn new_parameter(
-        parent_global_id: Global<pernixc_symbol::ID>,
+        parent_global_id: Global<pernixc_symbol::SymbolID>,
         ty_id: pernixc_arena::ID<InstanceParameter>,
     ) -> Self {
         Self::Parameter(InstanceParameterID::new(parent_global_id, ty_id))
@@ -768,7 +772,7 @@ impl Instance {
     /// Creates a new [`Instance::AnonymousTrait`] with the given trait ID.
     #[must_use]
     pub const fn new_anonymous_trait(
-        trait_id: Global<pernixc_symbol::ID>,
+        trait_id: Global<pernixc_symbol::SymbolID>,
     ) -> Self {
         Self::AnonymousTrait(AnoymousTrait::new(trait_id))
     }
@@ -779,7 +783,7 @@ impl Instance {
     #[must_use]
     pub const fn new_instance_associated(
         instance: Box<Self>,
-        trait_associated_symbol_id: Global<pernixc_symbol::ID>,
+        trait_associated_symbol_id: Global<pernixc_symbol::SymbolID>,
         trait_associated_symbol_generic_arguments: GenericArguments,
     ) -> Self {
         Self::InstanceAssociated(InstanceAssociated::new(
@@ -793,7 +797,7 @@ impl Instance {
     /// arguments.
     #[must_use]
     pub const fn new_symbol(
-        instance_symbol_id: Global<pernixc_symbol::ID>,
+        instance_symbol_id: Global<pernixc_symbol::SymbolID>,
         generic_arguments: GenericArguments,
     ) -> Self {
         Self::Symbol(Symbol::new(instance_symbol_id, generic_arguments))

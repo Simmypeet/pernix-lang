@@ -23,9 +23,7 @@ use crate::{
     alloca::Alloca,
     capture::Capture,
     closure_parameters::ClosureParameter,
-    resolution_visitor::{
-        Abort, MutableResolutionVisitor, ResolutionVisitor,
-    },
+    resolution_visitor::{Abort, MutableResolutionVisitor, ResolutionVisitor},
     value::{Environment, TypeOf, Value},
 };
 
@@ -147,7 +145,7 @@ pub struct Variant {
     pub enum_address: Box<Address>,
 
     /// The variant of to interpret the enum address as.
-    pub id: Global<pernixc_symbol::ID>,
+    pub id: Global<pernixc_symbol::SymbolID>,
 }
 
 /// The address points to an element in a tuple.

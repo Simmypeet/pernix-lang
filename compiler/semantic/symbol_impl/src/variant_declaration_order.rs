@@ -26,7 +26,7 @@ use crate::table::get_table_of_symbol;
 )]
 #[value(Option<usize>)]
 pub struct ProjectionKey {
-    pub variant_id: Global<pernixc_symbol::ID>,
+    pub variant_id: Global<pernixc_symbol::SymbolID>,
 }
 
 #[executor(config = Config, style = qbice::ExecutionStyle::Projection)]

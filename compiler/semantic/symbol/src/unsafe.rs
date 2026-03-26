@@ -29,7 +29,7 @@ use crate::syntax::get_function_unsafe_keyword;
 #[extend(name = is_function_unsafe, by_val)]
 pub struct Key {
     /// The global ID of the function symbol.
-    pub symbol_id: Global<crate::ID>,
+    pub symbol_id: Global<crate::SymbolID>,
 }
 
 #[executor(config = Config)]

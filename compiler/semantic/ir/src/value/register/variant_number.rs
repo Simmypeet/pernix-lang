@@ -44,7 +44,7 @@ pub struct VariantNumber {
     pub address: Address,
 
     /// The enum ID of the enum.
-    pub enum_id: Global<pernixc_symbol::ID>,
+    pub enum_id: Global<pernixc_symbol::SymbolID>,
 }
 
 impl crate::visitor::Element for VariantNumber {

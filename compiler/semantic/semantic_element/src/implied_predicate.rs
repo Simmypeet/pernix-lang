@@ -1,7 +1,7 @@
 //! Contains the query definition for retrieving all the "implied predicate"s
 //! that appear on the function signature.
 
-use pernixc_hash::HashSet;
+use pernixc_hash::FxHashSet;
 use pernixc_target::Global;
 use pernixc_term::{
     lifetime::Lifetime,
@@ -61,9 +61,9 @@ impl From<ImpliedPredicate> for Predicate {
     Decode,
     Query,
 )]
-#[value(Interned<HashSet<ImpliedPredicate>>)]
+#[value(Interned<FxHashSet<ImpliedPredicate>>)]
 #[extend(name = get_implied_predicates, by_val)]
 pub struct Key {
     /// The global ID of the function symbol.
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }

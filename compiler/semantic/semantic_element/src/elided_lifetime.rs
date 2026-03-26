@@ -26,5 +26,5 @@ use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 #[extend(name = get_elided_lifetimes, by_val)]
 pub struct Key {
     /// The global ID of the function symbol.
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }

@@ -2,7 +2,7 @@
 
 use std::{borrow::Cow, collections::BTreeSet, pin::Pin, sync::Arc};
 
-use pernixc_hash::HashSet;
+use pernixc_hash::FxHashSet;
 use pernixc_qbice::Engine;
 use pernixc_semantic_element::instance_associated_value;
 use pernixc_symbol::{
@@ -68,10 +68,10 @@ async fn symmetric() {
 
     let instance_associated = InstanceAssociated::new(
         Box::new(Instance::Parameter(InstanceParameterID::new(
-            TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(1)),
+            TargetID::TEST.make_global(pernixc_symbol::SymbolID::from_u128(1)),
             pernixc_arena::ID::new(0),
         ))),
-        TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(2)),
+        TargetID::TEST.make_global(pernixc_symbol::SymbolID::from_u128(2)),
         GenericArguments::default(),
     );
 
@@ -123,10 +123,10 @@ async fn not_equal() {
 
     let instance_associated = InstanceAssociated::new(
         Box::new(Instance::Parameter(InstanceParameterID::new(
-            TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(1)),
+            TargetID::TEST.make_global(pernixc_symbol::SymbolID::from_u128(1)),
             pernixc_arena::ID::new(0),
         ))),
-        TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(2)),
+        TargetID::TEST.make_global(pernixc_symbol::SymbolID::from_u128(2)),
         GenericArguments::default(),
     );
 
@@ -174,18 +174,18 @@ async fn not_equal() {
 async fn transitivity() {
     let first_instance_associated = InstanceAssociated::new(
         Box::new(Instance::Parameter(InstanceParameterID::new(
-            TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(1)),
+            TargetID::TEST.make_global(pernixc_symbol::SymbolID::from_u128(1)),
             pernixc_arena::ID::new(1),
         ))),
-        TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(2)),
+        TargetID::TEST.make_global(pernixc_symbol::SymbolID::from_u128(2)),
         GenericArguments::default(),
     );
     let second_instance_associated = InstanceAssociated::new(
         Box::new(Instance::Parameter(InstanceParameterID::new(
-            TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(1)),
+            TargetID::TEST.make_global(pernixc_symbol::SymbolID::from_u128(1)),
             pernixc_arena::ID::new(2),
         ))),
-        TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(2)),
+        TargetID::TEST.make_global(pernixc_symbol::SymbolID::from_u128(2)),
         GenericArguments::default(),
     );
 
@@ -245,18 +245,18 @@ async fn transitivity() {
 async fn congruence() {
     let first_instance_associated = InstanceAssociated::new(
         Box::new(Instance::Parameter(InstanceParameterID::new(
-            TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(1)),
+            TargetID::TEST.make_global(pernixc_symbol::SymbolID::from_u128(1)),
             pernixc_arena::ID::new(1),
         ))),
-        TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(2)),
+        TargetID::TEST.make_global(pernixc_symbol::SymbolID::from_u128(2)),
         GenericArguments::default(),
     );
     let second_instance_associated = InstanceAssociated::new(
         Box::new(Instance::Parameter(InstanceParameterID::new(
-            TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(1)),
+            TargetID::TEST.make_global(pernixc_symbol::SymbolID::from_u128(1)),
             pernixc_arena::ID::new(2),
         ))),
-        TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(2)),
+        TargetID::TEST.make_global(pernixc_symbol::SymbolID::from_u128(2)),
         GenericArguments::default(),
     );
     let first_equivalence = Type::Primitive(Primitive::Bool);
@@ -283,7 +283,7 @@ async fn congruence() {
     );
 
     let lhs = Type::Symbol(Symbol::new(
-        TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(3)),
+        TargetID::TEST.make_global(pernixc_symbol::SymbolID::from_u128(3)),
         GenericArguments::new(
             Vec::new(),
             vec![
@@ -295,7 +295,7 @@ async fn congruence() {
         ),
     ));
     let rhs = Type::Symbol(Symbol::new(
-        TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(3)),
+        TargetID::TEST.make_global(pernixc_symbol::SymbolID::from_u128(3)),
         GenericArguments::new(
             Vec::new(),
             vec![first_equivalence.clone(), second_equivalence.clone()],
@@ -330,7 +330,7 @@ async fn congruence() {
 #[tokio::test]
 async fn symbol() {
     let symbol = Type::Symbol(Symbol::new(
-        TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(1)),
+        TargetID::TEST.make_global(pernixc_symbol::SymbolID::from_u128(1)),
         GenericArguments::new(
             Vec::new(),
             vec![Type::Primitive(Primitive::Bool)],
@@ -422,9 +422,9 @@ impl<T: Clone + std::fmt::Debug + 'static> Property<T> for Identity<T> {
 
 #[derive(Debug)]
 pub struct InstanceAssociatedInstance {
-    pub instance_id: Global<pernixc_symbol::ID>,
-    pub trait_associated_instance_id: Global<pernixc_symbol::ID>,
-    pub instance_associated_instance_id: pernixc_symbol::ID,
+    pub instance_id: Global<pernixc_symbol::SymbolID>,
+    pub trait_associated_instance_id: Global<pernixc_symbol::SymbolID>,
+    pub instance_associated_instance_id: pernixc_symbol::SymbolID,
     pub inner_instance: Box<dyn Property<Instance>>,
 }
 
@@ -439,7 +439,7 @@ impl Arbitrary for InstanceAssociatedInstance {
         (
             Global::arbitrary(),
             Global::arbitrary(),
-            pernixc_symbol::ID::arbitrary(),
+            pernixc_symbol::SymbolID::arbitrary(),
             strategy,
         )
             .prop_map(
@@ -491,7 +491,7 @@ impl Property<Instance> for InstanceAssociatedInstance {
                                     self.instance_associated_instance_id,
                                 ))
                                 .collect(),
-                                unnameds: HashSet::default(),
+                                unnameds: FxHashSet::default(),
                             }),
                         )
                         .await
@@ -600,7 +600,7 @@ impl Property<Instance> for InstanceAssociatedInstance {
 pub struct Mapping {
     pub property: Box<dyn Property<Type>>,
     pub instance_parameter_id: InstanceParameterID,
-    pub trait_associated_symbol_id: Global<pernixc_symbol::ID>,
+    pub trait_associated_symbol_id: Global<pernixc_symbol::SymbolID>,
     pub trait_associated_symbol_generic_arguments: GenericArguments,
     pub map_at_lhs: bool,
 }
@@ -725,7 +725,7 @@ pub struct SymbolCongruence {
     constant_properties: Vec<Box<dyn Property<Constant>>>,
     instance_properties: Vec<Box<dyn Property<Instance>>>,
 
-    id: Global<pernixc_symbol::ID>,
+    id: Global<pernixc_symbol::SymbolID>,
 }
 
 impl Arbitrary for SymbolCongruence {

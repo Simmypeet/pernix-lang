@@ -20,9 +20,9 @@ use qbice::{Decode, Encode, Query, StableHash};
     Decode,
     Query,
 )]
-#[value(Option<Global<pernixc_symbol::ID>>)]
+#[value(Option<Global<pernixc_symbol::SymbolID>>)]
 #[extend(name = get_implements, by_val)]
 pub struct Key {
     /// The global ID of the implements symbol.
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }

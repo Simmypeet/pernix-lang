@@ -111,7 +111,7 @@ pub struct ConflictingUsing {
     pub name: Interned<str>,
 
     /// The module where the name is already defined.
-    pub module_id: Global<pernixc_symbol::ID>,
+    pub module_id: Global<pernixc_symbol::SymbolID>,
 
     /// The span of the conflicting name.
     ///

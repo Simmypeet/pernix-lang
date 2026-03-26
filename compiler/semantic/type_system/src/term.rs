@@ -7,7 +7,7 @@ use pernixc_semantic_element::{
     type_alias::get_type_alias,
 };
 use pernixc_symbol::{
-    ID,
+    SymbolID,
     instance_associated::{AssociatedKind, get_instance_associated_equivalent},
 };
 use pernixc_target::Global;
@@ -483,7 +483,7 @@ async fn try_normalize_instance_associated(
     instance_associated: &InstanceAssociated,
     environment: &Environment<'_, impl Normalizer>,
     associated_kind: AssociatedKind,
-) -> Option<(Instantiation, Global<ID>)> {
+) -> Option<(Instantiation, Global<SymbolID>)> {
     // the instance itself must be resolved to symbol in order to normalize
     // further.
     let instance_symbol = instance_associated.instance_as_symbol()?;

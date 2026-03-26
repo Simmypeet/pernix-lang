@@ -1,10 +1,6 @@
 //! Contains the the unification logic.
 
-use std::{
-    collections::BTreeMap,
-    hash::Hash,
-    sync::Arc,
-};
+use std::{collections::BTreeMap, hash::Hash, sync::Arc};
 
 use derive_new::new;
 use enum_as_inner::EnumAsInner;

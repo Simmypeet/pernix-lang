@@ -272,7 +272,7 @@ impl Report for PredicateSatisfiabilityOverflow {
     Builder,
 )]
 pub struct RequiredByImplements {
-    resolved_implements_id: Global<pernixc_symbol::ID>,
+    resolved_implements_id: Global<pernixc_symbol::SymbolID>,
     predicate: pernixc_term::predicate::PositiveMarker,
 }
 
@@ -482,7 +482,7 @@ impl Report for UnsatisfiedPredicate {
 )]
 pub struct ImplementationIsNotGeneralEnough {
     /// The ID of the implementation where the predicate is not satisfied.
-    resolvable_implementation_id: Global<pernixc_symbol::ID>,
+    resolvable_implementation_id: Global<pernixc_symbol::SymbolID>,
 
     /// The generic arguments required by the trait predicate.
     generic_arguments: GenericArguments,
@@ -629,7 +629,7 @@ impl OverflowError {
 pub struct MismatchedImplementationArguments {
     /// The ID of the ADT implementation where the generic arguments are
     /// mismatched.
-    pub adt_implementation_id: Global<pernixc_symbol::ID>,
+    pub adt_implementation_id: Global<pernixc_symbol::SymbolID>,
 
     /// The generic arguments found in the implementation.
     pub found_generic_arguments: GenericArguments,
@@ -721,7 +721,7 @@ impl Report for MismatchedImplementationArguments {
 pub struct AdtImplementationIsNotGeneralEnough {
     /// The ADT implementation ID where the generic arguments are not general
     /// enough.
-    pub adt_implementation_id: Global<pernixc_symbol::ID>,
+    pub adt_implementation_id: Global<pernixc_symbol::SymbolID>,
 
     /// The generic arguments supplied to the ADT.
     pub generic_arguments: GenericArguments,
@@ -803,7 +803,7 @@ pub struct FoundNegativeImplementation {
     predicate: pernixc_term::predicate::PositiveMarker,
 
     /// The ID of the negative implementation.
-    negative_implementation_id: Global<pernixc_symbol::ID>,
+    negative_implementation_id: Global<pernixc_symbol::SymbolID>,
 
     /// The span of the instantiation that causes the check.
     instantiation_span: RelativeSpan,

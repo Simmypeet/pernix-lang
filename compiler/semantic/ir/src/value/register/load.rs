@@ -1,6 +1,5 @@
 //! Contains the definition of the [`Load`] register.
 
-
 use getset::{CopyGetters, Getters, MutGetters};
 use pernixc_symbol::name::get_by_qualified_name;
 use pernixc_term::{
@@ -9,8 +8,8 @@ use pernixc_term::{
     r#type::{Qualifier, Type},
 };
 use pernixc_type_system::{
-    OverflowError, Succeeded, UnrecoverableError,
-    constraints::Constraints, normalizer::Normalizer,
+    OverflowError, Succeeded, UnrecoverableError, constraints::Constraints,
+    normalizer::Normalizer,
 };
 use qbice::{Decode, Encode, StableHash};
 

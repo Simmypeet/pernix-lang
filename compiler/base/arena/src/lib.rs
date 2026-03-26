@@ -10,7 +10,7 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use pernixc_hash::HashMap;
+use pernixc_hash::FxHashMap;
 use qbice::{
     Decode, Encode, Identifiable, StableHash, stable_hash::StableHasher,
 };
@@ -123,7 +123,7 @@ impl<T> Decode for ID<T> {
 #[derive(Debug, Clone, PartialEq, Eq, Identifiable)]
 pub struct Arena<T, G: State<T> = state::Serial> {
     generator: G,
-    items: HashMap<G::ID, T>,
+    items: FxHashMap<G::ID, T>,
 }
 
 impl<T: Encode, G: Encode + State<T>> Encode for Arena<T, G>
@@ -153,7 +153,7 @@ where
         session: &mut qbice::serialize::session::Session,
     ) -> std::io::Result<Self> {
         let generator = G::decode(decoder, plugin, session)?;
-        let items = HashMap::<G::ID, T>::decode(decoder, plugin, session)?;
+        let items = FxHashMap::<G::ID, T>::decode(decoder, plugin, session)?;
 
         Ok(Self { generator, items })
     }
@@ -162,7 +162,7 @@ where
 // skipcq: RS-W1111 this doesn't require G::ID to be `Default`
 impl<T, G: State<T> + Default> Default for Arena<T, G> {
     fn default() -> Self {
-        Self { items: HashMap::default(), generator: G::default() }
+        Self { items: FxHashMap::default(), generator: G::default() }
     }
 }
 
@@ -189,7 +189,7 @@ impl<T, G: State<T>> Arena<T, G> {
     /// Creates a new empty [`Arena`] with the given ID generator.
     #[must_use]
     pub fn new_with(generator: G) -> Self {
-        Self { items: HashMap::default(), generator }
+        Self { items: FxHashMap::default(), generator }
     }
 
     /// Returns the number of items in the [`Arena`].

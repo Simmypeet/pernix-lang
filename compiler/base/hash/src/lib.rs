@@ -43,20 +43,20 @@ impl std::hash::Hasher for FxHasher {
 }
 
 /// A type alias for a hash map that uses the `fx` hash function.
-pub type HashMap<T, V> =
+pub type FxHashMap<T, V> =
     std::collections::HashMap<T, V, BuildHasherDefault<FxHasher>>;
 
 /// A type alias for a hash set that uses the `fx` hash function.
-pub type HashSet<T> =
+pub type FxHashSet<T> =
     std::collections::HashSet<T, BuildHasherDefault<FxHasher>>;
 
 /// A type alias for a dash map that uses the `fx` hash function.
-pub type DashMap<T, V> = dashmap::DashMap<T, V, BuildHasherDefault<FxHasher>>;
+pub type FxDashMap<T, V> = dashmap::DashMap<T, V, BuildHasherDefault<FxHasher>>;
 
 /// A type alias for a dash set that uses the `fx` hash function.
-pub type DashSet<T> = dashmap::DashSet<T, BuildHasherDefault<FxHasher>>;
+pub type FxDashSet<T> = dashmap::DashSet<T, BuildHasherDefault<FxHasher>>;
 
 /// A type alias for a read-only view of a dash map that uses the `fx` hash
 /// function.
-pub type ReadOnlyView<K, V> =
+pub type FxReadOnlyView<K, V> =
     dashmap::ReadOnlyView<K, V, BuildHasherDefault<FxHasher>>;

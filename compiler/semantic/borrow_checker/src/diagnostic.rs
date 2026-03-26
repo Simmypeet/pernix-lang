@@ -2,7 +2,7 @@
 
 use enum_as_inner::EnumAsInner;
 use pernixc_diagnostic::{ByteIndex, Highlight, Rendered, Report, Severity};
-use pernixc_hash::HashMap;
+use pernixc_hash::FxHashMap;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::source_map::to_absolute_span;
@@ -121,7 +121,7 @@ async fn format_universal_regions(
         .filter_map(|x| x.as_non_static().and_then(|x| x.as_elided()))
         .copied()
         .zip((0..).map(|x| engine.intern_unsized(format!("'{x}"))))
-        .collect::<HashMap<_, _>>();
+        .collect::<FxHashMap<_, _>>();
 
     let fmt_config =
         Configuration::builder().edlided_lifetimes(&elided_lifetimes).build();

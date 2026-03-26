@@ -84,7 +84,7 @@ pub enum Primitive {
 )]
 pub struct Struct {
     /// The ID to the struct.
-    pub id: Global<pernixc_symbol::ID>,
+    pub id: Global<pernixc_symbol::SymbolID>,
 
     /// The fields of the struct constant value.
     pub fields: Vec<Constant>,
@@ -105,7 +105,7 @@ pub struct Struct {
 )]
 pub struct Enum {
     /// The variant that the enum constant value is.
-    pub variant_id: Global<pernixc_symbol::ID>,
+    pub variant_id: Global<pernixc_symbol::SymbolID>,
 
     /// The associated value of the enum constant value (if any).
     pub associated_value: Option<Box<Constant>>,
@@ -175,7 +175,7 @@ impl Constant {
     /// generic parameters arena.
     #[must_use]
     pub fn new_parameter(
-        parent_global_id: Global<pernixc_symbol::ID>,
+        parent_global_id: Global<pernixc_symbol::SymbolID>,
         ty_id: pernixc_arena::ID<ConstantParameter>,
     ) -> Self {
         Self::Parameter(ConstantParameterID::new(parent_global_id, ty_id))

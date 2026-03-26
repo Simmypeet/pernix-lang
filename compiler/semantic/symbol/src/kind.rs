@@ -5,7 +5,7 @@ use std::{fmt::Debug, hash::Hash};
 use pernixc_target::Global;
 use qbice::{Decode, Encode, Identifiable, Query, StableHash};
 
-use crate::ID;
+use crate::SymbolID;
 
 /// An enumeration used to identify the kind of a symbol in the Pernix. This
 /// value should be set to every symbol that is defined in the compilation
@@ -75,7 +75,7 @@ pub enum Kind {
 #[extend(name = get_kind, by_val)]
 pub struct Key {
     /// The global ID of the symbol to get the kind for.
-    pub symbol_id: Global<ID>,
+    pub symbol_id: Global<SymbolID>,
 }
 
 impl Kind {

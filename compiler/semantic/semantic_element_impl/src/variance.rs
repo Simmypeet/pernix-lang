@@ -1,6 +1,6 @@
 use linkme::distributed_slice;
 use pernixc_arena::ID;
-use pernixc_hash::HashMap;
+use pernixc_hash::FxHashMap;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_semantic_element::{
     fields::get_fields,
@@ -37,9 +37,9 @@ enum VarianceVariable {
     /// The variance is being transformed in the form of `0.xfrom(1)`.
     Transform(Box<Self>, Box<Self>),
     /// The variance of the type parameter is being inferred.
-    InferringType(ID<TypeParameter>, pernixc_symbol::ID),
+    InferringType(ID<TypeParameter>, pernixc_symbol::SymbolID),
     /// The variance of the lifetime parameter is being inferred.
-    InferringLifetime(ID<LifetimeParameter>, pernixc_symbol::ID),
+    InferringLifetime(ID<LifetimeParameter>, pernixc_symbol::SymbolID),
 }
 
 impl VarianceVariable {
@@ -62,9 +62,12 @@ impl VarianceVariable {
 #[derive(Debug, Default, Encode, Decode, StableHash, Identifiable)]
 pub struct Constraints {
     type_parameter_constraints:
-        Vec<(ID<TypeParameter>, pernixc_symbol::ID, VarianceVariable)>,
-    lifetime_parameter_constraints:
-        Vec<(ID<LifetimeParameter>, pernixc_symbol::ID, VarianceVariable)>,
+        Vec<(ID<TypeParameter>, pernixc_symbol::SymbolID, VarianceVariable)>,
+    lifetime_parameter_constraints: Vec<(
+        ID<LifetimeParameter>,
+        pernixc_symbol::SymbolID,
+        VarianceVariable,
+    )>,
 }
 
 #[derive(
@@ -83,7 +86,7 @@ pub struct Constraints {
 )]
 #[value(Interned<Constraints>)]
 pub struct ConstraintsKey {
-    pub adt_id: Global<pernixc_symbol::ID>,
+    pub adt_id: Global<pernixc_symbol::SymbolID>,
 }
 
 #[executor(config = Config)]
@@ -145,7 +148,7 @@ pub async fn constraints_executor(
 
 fn evaluate(
     variance_variable: &VarianceVariable,
-    map: &HashMap<pernixc_symbol::ID, Variances>,
+    map: &FxHashMap<pernixc_symbol::SymbolID, Variances>,
 ) -> Variance {
     match variance_variable {
         VarianceVariable::Constant(variance) => *variance,
@@ -545,7 +548,7 @@ async fn collect_constraints(
     StableHash,
     Query,
 )]
-#[value(Interned<HashMap<pernixc_symbol::ID, Interned<Variances>>>)]
+#[value(Interned<FxHashMap<pernixc_symbol::SymbolID, Interned<Variances>>>)]
 pub struct MapKey {
     pub target_id: TargetID,
 }
@@ -554,11 +557,11 @@ pub struct MapKey {
 pub async fn map_executor(
     &MapKey { target_id }: &MapKey,
     engine: &TrackedEngine,
-) -> Interned<HashMap<pernixc_symbol::ID, Interned<Variances>>> {
+) -> Interned<FxHashMap<pernixc_symbol::SymbolID, Interned<Variances>>> {
     let constraints_list = collect_constraints(target_id, engine).await;
 
     let mut variances_map = {
-        let mut variances_map = HashMap::default();
+        let mut variances_map = FxHashMap::default();
 
         // keep iterating until there's no change in the context
         let mut changed = true;
@@ -676,7 +679,7 @@ static MAP_EXECUTOR: Registration<Config> =
 )]
 #[value(Option<Interned<Variances>>)]
 pub struct ProjectionKey {
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }
 
 #[executor(config = Config, style = qbice::ExecutionStyle::Projection)]

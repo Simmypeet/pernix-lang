@@ -439,7 +439,7 @@ static WF_CHECK_EXECUTOR: Registration<Config> =
 )]
 #[value(Interned<[Diagnostic]>)]
 pub struct Key {
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }
 
 #[executor(config = Config)]

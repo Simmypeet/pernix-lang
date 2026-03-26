@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use linkme::distributed_slice;
-use pernixc_hash::HashMap;
+use pernixc_hash::FxHashMap;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
-use pernixc_symbol::{ID, get_target_root_module_id, parent::Key};
+use pernixc_symbol::{SymbolID, get_target_root_module_id, parent::Key};
 use pernixc_target::{Global, TargetID};
 use pernixc_tokio::{chunk::chunk_for_tasks, join_set::JoinSet};
 use qbice::{
@@ -26,16 +26,16 @@ use crate::table::{self, MapKey, TableKey};
     StableHash,
     Query,
 )]
-#[value(Option<Option<pernixc_symbol::ID>>)]
+#[value(Option<Option<pernixc_symbol::SymbolID>>)]
 pub struct ProjectionKey {
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }
 
 #[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
 async fn projection_executor(
     key: &ProjectionKey,
     engine: &TrackedEngine,
-) -> Option<Option<pernixc_symbol::ID>> {
+) -> Option<Option<pernixc_symbol::SymbolID>> {
     let intermediate =
         engine.query(&IntermediateKey(key.symbol_id.target_id)).await;
 
@@ -48,7 +48,10 @@ static PROJECTION_EXECUTOR: Registration<Config> =
 
 /// The executor for the [`Parent`] component.
 #[executor(config = Config)]
-async fn parent_executor(key: &Key, engine: &TrackedEngine) -> Option<ID> {
+async fn parent_executor(
+    key: &Key,
+    engine: &TrackedEngine,
+) -> Option<SymbolID> {
     let symbol_id = key.symbol_id;
     if symbol_id.id
         == engine.get_target_root_module_id(symbol_id.target_id).await
@@ -77,21 +80,23 @@ static PARENT_EXECUTOR: Registration<Config> =
     StableHash,
     Query,
 )]
-#[value(Arc<HashMap<ID, ID>>)]
+#[value(Arc<FxHashMap<SymbolID, SymbolID>>)]
 pub struct IntermediateKey(pub TargetID);
 
 #[executor(config = Config, style = qbice::ExecutionStyle::Firewall)]
 async fn intermediate_executor(
     key: &IntermediateKey,
     engine: &TrackedEngine,
-) -> Arc<HashMap<ID, ID>> {
+) -> Arc<FxHashMap<SymbolID, SymbolID>> {
     let target_id = key.0;
     let map = engine.query(&MapKey(target_id)).await;
 
     let symbols = map.keys_by_symbol_id.keys().copied().collect::<Vec<_>>();
     let mut handles = JoinSet::default();
 
-    for chunk in symbols.chunk_for_tasks().map(<[pernixc_symbol::ID]>::to_vec) {
+    for chunk in
+        symbols.chunk_for_tasks().map(<[pernixc_symbol::SymbolID]>::to_vec)
+    {
         let target_id = key.0;
         let map = map.clone();
         let engine = engine.clone();
@@ -133,7 +138,7 @@ async fn intermediate_executor(
         });
     }
 
-    let mut parent_map = HashMap::default();
+    let mut parent_map = FxHashMap::default();
 
     while let Some(key_and_members) = handles.next().await {
         for (symbol, members) in key_and_members.into_iter().flatten() {

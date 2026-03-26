@@ -297,7 +297,7 @@ impl Instantiation {
         &mut self,
         terms: impl Iterator<Item = T>,
         term_parameter_order: impl Iterator<Item = ID<U>>,
-        generic_id: Global<pernixc_symbol::ID>,
+        generic_id: Global<pernixc_symbol::SymbolID>,
     ) where
         MemberID<ID<U>>: Into<T>,
     {
@@ -315,7 +315,7 @@ impl Instantiation {
     pub fn append_from_generic_arguments(
         &mut self,
         generic_arguments: &GenericArguments,
-        generic_id: Global<pernixc_symbol::ID>,
+        generic_id: Global<pernixc_symbol::SymbolID>,
         generic_parameters: &GenericParameters,
     ) {
         assert_eq!(
@@ -375,9 +375,9 @@ impl Instantiation {
     /// of `A` to `T`, this function will create {B -> U, C -> V, D -> W}.
     pub fn append_from_generic_parameters_mapping(
         &mut self,
-        from_id: Global<pernixc_symbol::ID>,
+        from_id: Global<pernixc_symbol::SymbolID>,
         from_parameters: &GenericParameters,
-        to_id: Global<pernixc_symbol::ID>,
+        to_id: Global<pernixc_symbol::SymbolID>,
         to_parameters: &GenericParameters,
     ) {
         self.append_from_arguments(
@@ -420,7 +420,7 @@ impl Instantiation {
     #[must_use]
     pub fn create_generic_arguments(
         &self,
-        global_id: Global<pernixc_symbol::ID>,
+        global_id: Global<pernixc_symbol::SymbolID>,
         parameters: &GenericParameters,
     ) -> GenericArguments {
         GenericArguments::new(
@@ -470,7 +470,7 @@ impl Instantiation {
     #[must_use]
     pub fn from_generic_arguments(
         generic_arguments: &GenericArguments,
-        global_id: Global<pernixc_symbol::ID>,
+        global_id: Global<pernixc_symbol::SymbolID>,
         generic_parameters: &GenericParameters,
     ) -> Self {
         let mut substitution = Self::default();
@@ -510,7 +510,7 @@ impl Instantiation {
 #[extend]
 pub async fn create_generic_arguments_from_instantiation(
     self: &TrackedEngine,
-    id: Global<pernixc_symbol::ID>,
+    id: Global<pernixc_symbol::SymbolID>,
     instantiation: Instantiation,
 ) -> GenericArguments {
     let generic_parameters = self.get_generic_parameters(id).await;

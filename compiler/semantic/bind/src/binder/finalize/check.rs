@@ -89,7 +89,7 @@ async fn check_register_assignment<N: Normalizer>(
 pub(super) async fn check_all<N: Normalizer>(
     function_ir: &FunctionIR,
     ty_environment: &TypeSystemEnvironment<'_, N>,
-    current_site: Global<pernixc_symbol::ID>,
+    current_site: Global<pernixc_symbol::SymbolID>,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<(), UnrecoverableError> {
     for (_, ir, value_environment) in

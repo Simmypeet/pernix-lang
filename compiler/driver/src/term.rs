@@ -212,10 +212,10 @@ fn render_group(
     };
 
     // Collect all highlights and group them by source file.
-    let mut highlights_by_file: pernixc_hash::HashMap<
+    let mut highlights_by_file: pernixc_hash::FxHashMap<
         pernixc_source_file::GlobalSourceID,
         Vec<HighlightEntry<'_>>,
-    > = pernixc_hash::HashMap::default();
+    > = pernixc_hash::FxHashMap::default();
 
     // Add primary highlight
     if let Some(primary) = diagnostic.primary_highlight() {

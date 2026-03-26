@@ -86,7 +86,7 @@ impl Variant {
     /// Creates a new [`Variant`]
     #[must_use]
     pub const fn new(
-        variant_id: Global<pernixc_symbol::ID>,
+        variant_id: Global<pernixc_symbol::SymbolID>,
         generic_arguments: GenericArguments,
     ) -> Self {
         Self(Symbol::new(variant_id, generic_arguments))
@@ -94,7 +94,9 @@ impl Variant {
 
     /// Returns the ID of the resolved variant symbol.
     #[must_use]
-    pub const fn variant_id(&self) -> Global<pernixc_symbol::ID> { self.0.id() }
+    pub const fn variant_id(&self) -> Global<pernixc_symbol::SymbolID> {
+        self.0.id()
+    }
 
     /// Returns the generic arguments supplied to the parent enum of the variant
     /// symbol.
@@ -137,7 +139,7 @@ impl Variant {
     pub async fn parent_enum_id(
         &self,
         engine: &TrackedEngine,
-    ) -> Global<pernixc_symbol::ID> {
+    ) -> Global<pernixc_symbol::SymbolID> {
         engine.get_parent_global(self.variant_id()).await.unwrap()
     }
 }
@@ -177,7 +179,7 @@ impl Variant {
 pub struct IntermediateAdtImplSymbol {
     adt_generic_arguments: GenericArguments,
     impl_associated_generic_arguments: GenericArguments,
-    impl_associated_symbol_id: Global<pernixc_symbol::ID>,
+    impl_associated_symbol_id: Global<pernixc_symbol::SymbolID>,
 }
 
 impl IntermediateAdtImplSymbol {
@@ -187,7 +189,7 @@ impl IntermediateAdtImplSymbol {
     pub const fn new(
         adt_generic_arguments: GenericArguments,
         impl_associated_generic_arguments: GenericArguments,
-        impl_associated_symbol_id: Global<pernixc_symbol::ID>,
+        impl_associated_symbol_id: Global<pernixc_symbol::SymbolID>,
     ) -> Self {
         Self {
             adt_generic_arguments,
@@ -200,7 +202,7 @@ impl IntermediateAdtImplSymbol {
     #[must_use]
     pub const fn impl_associated_symbol_id(
         &self,
-    ) -> Global<pernixc_symbol::ID> {
+    ) -> Global<pernixc_symbol::SymbolID> {
         self.impl_associated_symbol_id
     }
 
@@ -208,7 +210,7 @@ impl IntermediateAdtImplSymbol {
     pub async fn get_parent_impl_id(
         &self,
         engine: &TrackedEngine,
-    ) -> Global<pernixc_symbol::ID> {
+    ) -> Global<pernixc_symbol::SymbolID> {
         engine.get_parent_global(self.impl_associated_symbol_id).await.unwrap()
     }
 
@@ -245,7 +247,7 @@ impl IntermediateAdtImplSymbol {
 )]
 pub enum Resolution {
     /// Resolved to a module symbol.
-    Module(Global<pernixc_symbol::ID>),
+    Module(Global<pernixc_symbol::SymbolID>),
 
     /// Resolved to an enum-variant symbol.
     Variant(Variant),
@@ -274,7 +276,7 @@ pub enum Resolution {
 impl Resolution {
     /// Returns the ID of the resolved symbol.
     #[must_use]
-    pub const fn global_id(&self) -> Option<Global<pernixc_symbol::ID>> {
+    pub const fn global_id(&self) -> Option<Global<pernixc_symbol::SymbolID>> {
         match self {
             Self::Module(id) => Some(*id),
             Self::Variant(variant) => Some(variant.variant_id()),
@@ -329,7 +331,7 @@ impl Resolution {
 
 #[allow(clippy::too_many_lines)]
 fn to_resolution(
-    resolved_id: Global<pernixc_symbol::ID>,
+    resolved_id: Global<pernixc_symbol::SymbolID>,
     symbol_kind: Kind,
     generic_arguments: Option<GenericArguments>,
     latest_resolution: Resolution,
@@ -454,8 +456,8 @@ fn to_resolution(
 
 pub(super) async fn search_this(
     tracked_engine: &TrackedEngine,
-    global: Global<pernixc_symbol::ID>,
-) -> Option<(Global<pernixc_symbol::ID>, Kind)> {
+    global: Global<pernixc_symbol::SymbolID>,
+) -> Option<(Global<pernixc_symbol::SymbolID>, Kind)> {
     let mut scope_walker = tracked_engine.scope_walker(global);
 
     while let Some(current) = scope_walker.next().await {
@@ -483,9 +485,9 @@ pub(super) async fn search_this(
 #[extend]
 pub async fn resolve_simple_qualified_identifier_root(
     self: &TrackedEngine,
-    current_site: Global<pernixc_symbol::ID>,
+    current_site: Global<pernixc_symbol::SymbolID>,
     root: &QualifiedIdentifierRoot,
-) -> Option<Global<pernixc_symbol::ID>> {
+) -> Option<Global<pernixc_symbol::SymbolID>> {
     match root {
         QualifiedIdentifierRoot::Target(_) => Some(Global::new(
             current_site.target_id,
@@ -732,7 +734,7 @@ impl Resolver<'_, '_> {
         &mut self,
         latest_resolution: &Resolution,
         identifier: &pernixc_syntax::Identifier,
-    ) -> Result<Global<pernixc_symbol::ID>, Error> {
+    ) -> Result<Global<pernixc_symbol::SymbolID>, Error> {
         let resolved = match latest_resolution {
             normal @ (Resolution::Module(_)
             | Resolution::Variant(_)
@@ -1012,12 +1014,12 @@ impl Resolver<'_, '_> {
 pub async fn resolve_simple_path(
     self: &TrackedEngine,
     simple_path: &SimplePath,
-    referring_site: Global<pernixc_symbol::ID>,
+    referring_site: Global<pernixc_symbol::SymbolID>,
     start_from_root: bool,
     handler: &dyn Handler<Diagnostic>,
-) -> Option<Global<pernixc_symbol::ID>> {
+) -> Option<Global<pernixc_symbol::SymbolID>> {
     // simple path should always have root tough
-    let root: Global<pernixc_symbol::ID> = match simple_path.root()? {
+    let root: Global<pernixc_symbol::SymbolID> = match simple_path.root()? {
         SimplePathRoot::Target(_) => Global::new(
             referring_site.target_id,
             self.get_target_root_module_id(referring_site.target_id).await,
@@ -1102,10 +1104,10 @@ pub async fn resolve_simple_path(
 pub async fn resolve_sequence<'a>(
     self: &TrackedEngine,
     simple_path: impl Iterator<Item = Identifier>,
-    referring_site: Global<pernixc_symbol::ID>,
-    root: Global<pernixc_symbol::ID>,
+    referring_site: Global<pernixc_symbol::SymbolID>,
+    root: Global<pernixc_symbol::SymbolID>,
     handler: &dyn Handler<Diagnostic>,
-) -> Option<Global<pernixc_symbol::ID>> {
+) -> Option<Global<pernixc_symbol::SymbolID>> {
     let mut lastest_resolution = root;
 
     for identifier in simple_path {
@@ -1143,9 +1145,9 @@ pub async fn resolve_sequence<'a>(
 #[extend]
 pub async fn get_member_of(
     self: &TrackedEngine,
-    id: Global<pernixc_symbol::ID>,
+    id: Global<pernixc_symbol::SymbolID>,
     member_name: &str,
-) -> Option<Global<pernixc_symbol::ID>> {
+) -> Option<Global<pernixc_symbol::SymbolID>> {
     let symbol_kind = self.get_kind(id).await;
 
     if symbol_kind.has_member() {
@@ -1167,11 +1169,11 @@ pub async fn get_member_of(
 #[extend]
 pub async fn resolve_in(
     self: &TrackedEngine,
-    symbol_id: Global<pernixc_symbol::ID>,
+    symbol_id: Global<pernixc_symbol::SymbolID>,
     site_target: TargetID,
     identifier: &str,
     consider_adt_implements: bool,
-) -> Option<Global<pernixc_symbol::ID>> {
+) -> Option<Global<pernixc_symbol::SymbolID>> {
     if let Some(resolved_id) = self.get_member_of(symbol_id, identifier).await {
         return Some(resolved_id);
     }

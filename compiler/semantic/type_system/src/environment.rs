@@ -52,7 +52,7 @@ pub struct Premise {
     ///
     /// This can influence the result of resoliving the trait/marker
     /// implementations.
-    pub query_site: Global<pernixc_symbol::ID>,
+    pub query_site: Global<pernixc_symbol::SymbolID>,
 }
 
 /// Retrieves the active premise at the given symbol site.
@@ -77,7 +77,7 @@ pub struct Premise {
 #[extend(name = get_active_premise, by_val)]
 pub struct ActivePremiseKey {
     /// The global ID of the current symbol site.
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }
 
 #[executor(config = Config)]
@@ -127,7 +127,7 @@ static ACTIVE_PREMISE_EXECUTOR: Registration<Config> =
 #[extend]
 pub async fn get_active_premise_predicates_with_span(
     self: &TrackedEngine,
-    current_site: Global<pernixc_symbol::ID>,
+    current_site: Global<pernixc_symbol::SymbolID>,
 ) -> HashMap<Predicate, Vec<RelativeSpan>> {
     let mut spans_by_predicate: HashMap<Predicate, Vec<RelativeSpan>> =
         HashMap::default();

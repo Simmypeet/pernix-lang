@@ -3,7 +3,7 @@
 use std::collections::hash_map::Entry;
 
 use pernixc_arena::ID;
-use pernixc_hash::HashMap;
+use pernixc_hash::FxHashMap;
 use pernixc_term::{lifetime::Lifetime, r#type::Qualifier};
 
 use crate::{
@@ -18,11 +18,11 @@ use crate::{
 /// A structure used for pruning the closure captures.
 #[derive(Debug, Default)]
 struct PruningContext {
-    unsages: HashMap<ID<Capture>, CaptureMode>,
+    unsages: FxHashMap<ID<Capture>, CaptureMode>,
 }
 
 impl PruningContext {
-    fn new() -> Self { Self { unsages: HashMap::default() } }
+    fn new() -> Self { Self { unsages: FxHashMap::default() } }
 
     fn visit_usage(&mut self, capture: ID<Capture>, mode: CaptureMode) {
         let order_capture_mode = |x: &CaptureMode| match x {

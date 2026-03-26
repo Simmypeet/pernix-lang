@@ -4,7 +4,7 @@ use pernixc_diagnostic::{Highlight, Report};
 use pernixc_qbice::TrackedEngine;
 use pernixc_source_file::ByteIndex;
 use pernixc_symbol::{
-    ID,
+    SymbolID,
     accessibility::{accessibility_description, get_accessibility},
     name::{get_name, get_qualified_name},
     source_map::to_absolute_span,
@@ -62,10 +62,10 @@ impl Report for Diagnostic {
 )]
 pub struct SymbolIsMoreAccessibleThanParent {
     /// The ID of the symbol that is more accessible than the parent symbol.
-    pub symbol_id: ID,
+    pub symbol_id: SymbolID,
 
     /// The ID of the parent symbol.
-    pub parent_id: ID,
+    pub parent_id: SymbolID,
 
     /// The target ID of the symbol.
     pub target_id: TargetID,

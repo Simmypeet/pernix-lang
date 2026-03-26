@@ -1,6 +1,6 @@
 //! Contains the query representing the `import` statement.
 
-use pernixc_hash::HashMap;
+use pernixc_hash::FxHashMap;
 use pernixc_lexical::tree::RelativeLocation;
 use pernixc_source_file::Span;
 use pernixc_target::Global;
@@ -25,7 +25,7 @@ use qbice::{
 )]
 pub struct Import {
     /// The ID of the symbol being imported.
-    pub id: Global<pernixc_symbol::ID>,
+    pub id: Global<pernixc_symbol::SymbolID>,
 
     /// The span to the `import ... (as ...)?` statement in the source code.
     pub span: Span<RelativeLocation>,
@@ -46,9 +46,9 @@ pub struct Import {
     StableHash,
     Query,
 )]
-#[value(Interned<HashMap<Interned<str>, Import>>)]
+#[value(Interned<FxHashMap<Interned<str>, Import>>)]
 #[extend(name = get_import_map, by_val)]
 pub struct Key {
     /// The global ID of the module symbol.
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }

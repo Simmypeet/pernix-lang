@@ -2,7 +2,7 @@ use std::num::NonZeroUsize;
 
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
-use pernixc_hash::HashMap;
+use pernixc_hash::FxHashMap;
 use pernixc_ir::{
     control_flow_graph::Block,
     instruction::{ConditionalJump, Jump, Terminator, UnconditionalJump},
@@ -348,7 +348,7 @@ impl Bind<&pernixc_syntax::expression::block::IfElse> for Binder<'_> {
                                 r#type: then_type.unwrap(),
                                 incoming_values: {
                                     let mut incoming_values =
-                                        HashMap::default();
+                                        FxHashMap::default();
 
                                     incoming_values.insert(
                                         successor_then_block_id,

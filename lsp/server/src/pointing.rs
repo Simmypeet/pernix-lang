@@ -97,18 +97,18 @@ pub async fn get_pointing_qualified_identifier(
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SuccessResolution {
     /// The symbol being pointed at.
-    pub pointing_symbol: Global<pernixc_symbol::ID>,
+    pub pointing_symbol: Global<pernixc_symbol::SymbolID>,
 
     /// The parent scope of the pointing symbol (None if the cursor is pointing
     /// to the first root of the qualified identifier).
-    pub parent_scope: Option<Global<pernixc_symbol::ID>>,
+    pub parent_scope: Option<Global<pernixc_symbol::SymbolID>>,
 }
 
 /// The resolution failed before reaching or at the cursor position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Failed {
     /// The prior scope before the failure (None if failed at the first root).
-    pub prior_scope: Option<Global<pernixc_symbol::ID>>,
+    pub prior_scope: Option<Global<pernixc_symbol::SymbolID>>,
 
     /// Whether the failure occurred exactly at the cursor position.
     ///
@@ -124,14 +124,14 @@ pub enum Resolution {
     Failed(Failed),
 
     /// The symbol resolve to the end without matching the cursor position.
-    NoMatchFound(Global<pernixc_symbol::ID>),
+    NoMatchFound(Global<pernixc_symbol::SymbolID>),
 }
 
 /// Resolves a qualified identifier to its symbol ID.
 #[extend]
 pub async fn resolve_qualified_identifier_path(
     self: &TrackedEngine,
-    current_site: Global<pernixc_symbol::ID>,
+    current_site: Global<pernixc_symbol::SymbolID>,
     qualified_identifier: &QualifiedIdentifier,
     pointing_span: Option<Span<ByteIndex>>,
 ) -> Option<Resolution> {
@@ -220,7 +220,7 @@ pub async fn symbol_at(
     position: &lsp_types::Position,
     uri: &lsp_types::Url,
     target_id: pernixc_target::TargetID,
-) -> Option<Global<pernixc_symbol::ID>> {
+) -> Option<Global<pernixc_symbol::SymbolID>> {
     let source_file_path = uri.to_file_path().unwrap();
     let source_file_path: Interned<Path> =
         self.intern_unsized(source_file_path);
@@ -277,10 +277,10 @@ pub async fn symbol_at(
 #[extend]
 pub async fn get_symbol_scope_at_byte_index(
     self: &TrackedEngine,
-    current_scope_id: Global<pernixc_symbol::ID>,
+    current_scope_id: Global<pernixc_symbol::SymbolID>,
     current_souce_file_id: GlobalSourceID,
     byte_index: pernixc_source_file::ByteIndex,
-) -> Global<pernixc_symbol::ID> {
+) -> Global<pernixc_symbol::SymbolID> {
     let Some(members) = self.try_get_members(current_scope_id).await else {
         return current_scope_id;
     };

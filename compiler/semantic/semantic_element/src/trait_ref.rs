@@ -33,7 +33,7 @@ use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 #[extend(name = get_trait_ref_of_instance_symbol, by_val)]
 pub struct Key {
     /// The global ID of the `instance` symbol.
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }
 
 /// Resolves the trait ref ID of the given instance.
@@ -41,7 +41,7 @@ pub struct Key {
 pub async fn get_trait_ref_id_of_instance(
     self: &TrackedEngine,
     instance: &Instance,
-) -> Option<Global<pernixc_symbol::ID>> {
+) -> Option<Global<pernixc_symbol::SymbolID>> {
     match instance {
         Instance::Symbol(symbol) => self
             .get_trait_ref_of_instance_symbol(symbol.id())

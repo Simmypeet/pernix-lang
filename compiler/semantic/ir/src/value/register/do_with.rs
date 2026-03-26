@@ -1,15 +1,13 @@
 //! Defines the IR structures for representing `do-with` expressions.
 use std::ops::Deref;
 
-
-
 use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
-use pernixc_hash::HashMap;
+use pernixc_hash::FxHashMap;
 use pernixc_term::r#type::Type;
 use pernixc_type_system::{
-    OverflowError, Succeeded, UnrecoverableError,
-    constraints::Constraints, normalizer::Normalizer,
+    OverflowError, Succeeded, UnrecoverableError, constraints::Constraints,
+    normalizer::Normalizer,
 };
 use qbice::{Decode, Encode, StableHash};
 
@@ -39,20 +37,20 @@ macro_rules! visit_capture_literals {
     Debug, Clone, PartialEq, Eq, Default, StableHash, Encode, Decode, Getters,
 )]
 pub struct CaptureArguments {
-    arguments: HashMap<pernixc_arena::ID<Capture>, Value>,
+    arguments: FxHashMap<pernixc_arena::ID<Capture>, Value>,
 }
 
 impl CaptureArguments {
     /// Creates a new [`CaptureArguments`] with the given captures and has
     /// empty arguments.
     #[must_use]
-    pub fn new() -> Self { Self { arguments: HashMap::default() } }
+    pub fn new() -> Self { Self { arguments: FxHashMap::default() } }
 
     /// Creates a new [`CaptureArguments`] with the given captures and
     /// arguments.
     #[must_use]
     pub const fn new_with_arguments(
-        arguments: HashMap<pernixc_arena::ID<Capture>, Value>,
+        arguments: FxHashMap<pernixc_arena::ID<Capture>, Value>,
     ) -> Self {
         Self { arguments }
     }
@@ -159,14 +157,14 @@ impl resolution_visitor::ResolutionVisitable for Do {
 pub struct HandlerClause {
     /// The closure for handling each effect operation defined in the `effect`.
     effect_operation_handler_closures:
-        HashMap<pernixc_symbol::ID, OperationHandler>,
+        FxHashMap<pernixc_symbol::SymbolID, OperationHandler>,
 }
 
 impl HandlerClause {
     /// Inserts a new handler closure for a specific effect operation.
     pub fn insert_effect_operation_handler_closure(
         &mut self,
-        effect_operation_id: pernixc_symbol::ID,
+        effect_operation_id: pernixc_symbol::SymbolID,
         closure: OperationHandler,
     ) {
         assert!(
@@ -200,7 +198,7 @@ pub struct HandlerChain {
 
     /// The effect handlers mapped by their unique IDs within the top-level
     /// IR (function-level IR).
-    handler_clauses: HashMap<
+    handler_clauses: FxHashMap<
         pernixc_arena::ID<crate::handling_scope::HandlerClause>,
         HandlerClause,
     >,
@@ -210,7 +208,7 @@ impl HandlerChain {
     /// Creates a new `With` structure with the given capture structure.
     #[must_use]
     pub fn new(capture_arguments: CaptureArguments) -> Self {
-        Self { capture_arguments, handler_clauses: HashMap::default() }
+        Self { capture_arguments, handler_clauses: FxHashMap::default() }
     }
 
     /// Inserts a new effect handler for a specific effect ID.

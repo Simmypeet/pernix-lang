@@ -1,10 +1,10 @@
 //! Setting ups the core library symbols for the compiler.
 
-use pernixc_hash::{HashMap, HashSet};
+use pernixc_hash::{FxHashMap, FxHashSet};
 use pernixc_qbice::InputSession;
 use pernixc_semantic_element::import;
 use pernixc_symbol::{
-    ID, accessibility, calculate_core_root_target_module_id, kind,
+    SymbolID, accessibility, calculate_core_root_target_module_id, kind,
     member::{self, Member},
     name, parent,
 };
@@ -16,7 +16,7 @@ pub mod intrinsics;
 
 struct CoreLibInitializer<'i> {
     input_session: &'i mut InputSession,
-    root_target_module_id: Global<ID>,
+    root_target_module_id: Global<SymbolID>,
     target_seed: u64,
 }
 
@@ -43,7 +43,7 @@ pub async fn initialize_corelib(input_session: &mut InputSession) {
             pernixc_target::LinkKey {
                 target_id: pernixc_target::TargetID::CORE,
             },
-            initializer.input_session.intern(HashSet::default()),
+            initializer.input_session.intern(FxHashSet::default()),
         )
         .await;
 
@@ -79,7 +79,7 @@ pub async fn initialize_corelib(input_session: &mut InputSession) {
         .input_session
         .set_input(
             import::Key { symbol_id: initializer.root_target_module_id },
-            initializer.input_session.intern(HashMap::default()),
+            initializer.input_session.intern(FxHashMap::default()),
         )
         .await;
 
@@ -124,7 +124,7 @@ pub async fn initialize_corelib(input_session: &mut InputSession) {
         ),
     ]
     .into_iter()
-    .collect::<pernixc_hash::HashMap<_, _>>();
+    .collect::<pernixc_hash::FxHashMap<_, _>>();
 
     initializer
         .input_session
@@ -132,7 +132,7 @@ pub async fn initialize_corelib(input_session: &mut InputSession) {
             member::Key { symbol_id: initializer.root_target_module_id },
             initializer.input_session.intern(Member {
                 member_ids_by_name: member_map,
-                unnameds: HashSet::default(),
+                unnameds: FxHashSet::default(),
             }),
         )
         .await;

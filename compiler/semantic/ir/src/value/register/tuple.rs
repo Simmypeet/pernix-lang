@@ -1,13 +1,11 @@
 //! Contains the definition of a [`Tuple`] register assignment.
 
-
 use std::ops::Deref;
 
 use pernixc_arena::ID;
 use pernixc_term::{predicate::Predicate, r#type::Type};
 use pernixc_type_system::{
-    OverflowError, Succeeded, UnrecoverableError,
-    constraints::Constraints,
+    OverflowError, Succeeded, UnrecoverableError, constraints::Constraints,
 };
 use qbice::{Decode, Encode, StableHash};
 

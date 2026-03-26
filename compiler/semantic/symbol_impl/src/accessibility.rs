@@ -1,7 +1,7 @@
 use linkme::distributed_slice;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_symbol::{
-    ID,
+    SymbolID,
     accessibility::{
         Accessibility, Key, accessibility_hierarchy_relationship,
         get_accessibility,
@@ -39,16 +39,16 @@ pub mod diagnostic;
     StableHash,
     Query,
 )]
-#[value(Option<Accessibility<ID>>)]
+#[value(Option<Accessibility<SymbolID>>)]
 pub struct ProjectionKey {
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }
 
 #[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
 async fn projection_executor(
     key: &ProjectionKey,
     engine: &TrackedEngine,
-) -> Option<Accessibility<ID>> {
+) -> Option<Accessibility<SymbolID>> {
     let table = engine.get_table_of_symbol(key.symbol_id).await?;
     table.accessibilities.get(&key.symbol_id.id).copied()
 }
@@ -61,7 +61,7 @@ static PROJECTION_EXECUTOR: Registration<Config> =
 async fn accessibility_executor(
     &Key { symbol_id: id }: &Key,
     engine: &TrackedEngine,
-) -> Accessibility<ID> {
+) -> Accessibility<SymbolID> {
     match engine.get_kind(id).await {
         Kind::Module
         | Kind::Struct
@@ -151,7 +151,7 @@ static ACCESSIBILITY_EXECUTOR: Registration<Config> =
 )]
 #[value(Option<Interned<[diagnostic::Diagnostic]>>)]
 pub struct MemberIsMoreAaccessibleKey {
-    pub trait_id: Global<ID>,
+    pub trait_id: Global<SymbolID>,
 }
 
 #[executor(config = Config)]
@@ -160,7 +160,7 @@ async fn member_is_more_accessible_executor(
     tracked_engine: &TrackedEngine,
 ) -> Option<Interned<[diagnostic::Diagnostic]>> {
     let trait_id = key.trait_id;
-    let trait_accessibility: Accessibility<ID> =
+    let trait_accessibility: Accessibility<SymbolID> =
         tracked_engine.get_accessibility(trait_id).await;
 
     let members = tracked_engine.get_members(trait_id).await;

@@ -1,7 +1,7 @@
 use enum_as_inner::EnumAsInner;
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
-use pernixc_hash::{HashMap, HashSet};
+use pernixc_hash::{FxHashMap, FxHashSet};
 use pernixc_ir::{
     address::{self, Address, Memory},
     control_flow_graph::{Block, ControlFlowGraph, Point},
@@ -39,13 +39,13 @@ pub struct Tuple {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Struct {
-    projections_by_field_id: HashMap<ID<Field>, Assigned>,
+    projections_by_field_id: FxHashMap<ID<Field>, Assigned>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Variant {
     variant_projection: Box<Assigned>,
-    variant_id: Global<pernixc_symbol::ID>,
+    variant_id: Global<pernixc_symbol::SymbolID>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -567,7 +567,7 @@ async fn traverse_block<T: Traverser>(
         point.block_id,
         Some(point.instruction_index),
         exit,
-        &mut HashSet::default(),
+        &mut FxHashSet::default(),
     )
     .await
 }
@@ -579,7 +579,7 @@ async fn traverse_block_internal<T: Traverser>(
     block_id: ID<Block>,
     starting_instruction_index: Option<usize>,
     exit: &mut impl FnMut(&Instruction, Point) -> bool,
-    visited: &mut HashSet<(u64, Option<usize>)>,
+    visited: &mut FxHashSet<(u64, Option<usize>)>,
 ) -> Result<T::Result, T::Error> {
     if starting_instruction_index.is_none()
         && !visited.insert((block_id.index(), None))
@@ -737,12 +737,12 @@ impl<N: Normalizer> Context<'_, N> {
     >(
         &self,
         memories: M,
-        checking_registers: HashSet<ID<Register>>,
-        invalidated_regions: &HashSet<Region>,
+        checking_registers: FxHashSet<ID<Register>>,
+        invalidated_regions: &FxHashSet<Region>,
         invalidated_borrow_register_id: ID<Register>,
         point: Point,
         mut exit: &mut E,
-    ) -> Result<HashSet<Usage>, UnrecoverableError> {
+    ) -> Result<FxHashSet<Usage>, UnrecoverableError> {
         let mut state = LiveBorrowTraverser {
             assigned_states_by_memory: memories
                 .into_iter()
@@ -762,9 +762,9 @@ impl<N: Normalizer> Context<'_, N> {
 
 /// The state struct used for keep tracking the liveness of the addresses.
 struct LiveBorrowTraverser<'a, N: Normalizer> {
-    assigned_states_by_memory: HashMap<Memory, Assigned>,
-    checking_registers: HashSet<ID<Register>>,
-    invalidated_regions: &'a HashSet<Region>,
+    assigned_states_by_memory: FxHashMap<Memory, Assigned>,
+    checking_registers: FxHashSet<ID<Register>>,
+    invalidated_regions: &'a FxHashSet<Region>,
     invalidated_borrow_register_id: ID<Register>,
 
     context: &'a Context<'a, N>,
@@ -786,7 +786,7 @@ impl<N: Normalizer> Clone for LiveBorrowTraverser<'_, N> {
 impl<N: Normalizer> Traverser for LiveBorrowTraverser<'_, N> {
     type Error = UnrecoverableError;
 
-    type Result = HashSet<Usage>;
+    type Result = FxHashSet<Usage>;
 
     #[allow(clippy::too_many_lines)]
     async fn on_instruction(

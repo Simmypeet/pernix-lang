@@ -1,6 +1,6 @@
 //! Defines and implements the `Copy` marker in the core library.
 
-use pernixc_hash::HashSet;
+use pernixc_hash::FxHashSet;
 use pernixc_semantic_element::{
     implemented, implements, implements_arguments,
     where_clause::{self, Predicate},
@@ -46,7 +46,7 @@ impl CoreLibInitializer<'_> {
     ///         T: 'a    
     /// ```
     #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
-    pub async fn initialize_copy_marker(&mut self) -> pernixc_symbol::ID {
+    pub async fn initialize_copy_marker(&mut self) -> pernixc_symbol::SymbolID {
         let copy_marker_id = TargetID::CORE.make_global(
             calculate_qualified_name_id_with_given_seed(
                 MARKER_SEQUENCE.iter().copied(),
@@ -109,7 +109,7 @@ impl CoreLibInitializer<'_> {
             )
             .await;
 
-        let mut implemented = HashSet::default();
+        let mut implemented = FxHashSet::default();
 
         for primitive in [
             Primitive::Int8,
@@ -281,7 +281,7 @@ impl CoreLibInitializer<'_> {
         copy_marker_id.id
     }
 
-    fn get_impl_id(&self, ty_name: &str) -> Global<pernixc_symbol::ID> {
+    fn get_impl_id(&self, ty_name: &str) -> Global<pernixc_symbol::SymbolID> {
         TargetID::CORE.make_global(
             calculate_implements_id_by_unique_name_with_given_seed(
                 &format!("core::Copy[{ty_name}]"),
@@ -294,8 +294,8 @@ impl CoreLibInitializer<'_> {
         &mut self,
         kind: kind::Kind,
         rt: Type,
-        impl_id: Global<pernixc_symbol::ID>,
-        copy_marker_id: Global<pernixc_symbol::ID>,
+        impl_id: Global<pernixc_symbol::SymbolID>,
+        copy_marker_id: Global<pernixc_symbol::SymbolID>,
         generic_parameters: Interned<GenericParameters>,
         where_clause: Interned<[Predicate]>,
     ) {

@@ -249,7 +249,7 @@ struct Checker<'r, N: Normalizer> {
 impl<'r, N: Normalizer> Checker<'r, N> {
     /// Returns the current site of the checker.
     #[must_use]
-    pub const fn current_site(&self) -> Global<pernixc_symbol::ID> {
+    pub const fn current_site(&self) -> Global<pernixc_symbol::SymbolID> {
         self.value_environment.current_site
     }
 
@@ -901,7 +901,7 @@ impl<N: Normalizer> Checker<'_, N> {
 pub async fn memory_check<N: Normalizer>(
     representation: &mut FunctionIR,
     ty_environment: &TyEnvironment<'_, N>,
-    current_site: Global<pernixc_symbol::ID>,
+    current_site: Global<pernixc_symbol::SymbolID>,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<(), UnrecoverableError> {
     for (_, ir_with_context, val_environment) in representation

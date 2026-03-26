@@ -9,7 +9,7 @@ use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_source_file::ByteIndex;
 use pernixc_symbol::{
-    ID,
+    SymbolID,
     kind::Kind,
     name::{get_name, get_qualified_name},
     source_map::to_absolute_span,
@@ -84,13 +84,13 @@ impl Report for Diagnostic {
 )]
 pub struct ItemRedefinition {
     /// The ID of the existing symbol.
-    pub existing_id: Global<ID>,
+    pub existing_id: Global<SymbolID>,
 
     /// The span containing the redefinition.
     pub redefinition_span: RelativeSpan,
 
     /// The scope in which the duplication occurred.
-    pub in_id: Global<ID>,
+    pub in_id: Global<SymbolID>,
 }
 
 impl Report for ItemRedefinition {

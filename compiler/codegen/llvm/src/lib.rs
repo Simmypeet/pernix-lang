@@ -46,7 +46,7 @@ pub struct Input<'i, 'ctx> {
     pub engine: &'i TrackedEngine,
 
     /// The target ID that will be compiled as a binary.
-    pub main_function_id: Global<pernixc_symbol::ID>,
+    pub main_function_id: Global<pernixc_symbol::SymbolID>,
 
     /// The handler used to generate the code.
     pub handler: &'i dyn Handler<Diagnostic>,

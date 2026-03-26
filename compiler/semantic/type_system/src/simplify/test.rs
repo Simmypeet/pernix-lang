@@ -22,10 +22,10 @@ use crate::{
 async fn basic() {
     let instance_associated = InstanceAssociated::new(
         Box::new(Instance::Parameter(InstanceParameterID::new(
-            TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(1)),
+            TargetID::TEST.make_global(pernixc_symbol::SymbolID::from_u128(1)),
             pernixc_arena::ID::new(0),
         ))),
-        TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(2)),
+        TargetID::TEST.make_global(pernixc_symbol::SymbolID::from_u128(2)),
         GenericArguments::default(),
     );
 
@@ -58,10 +58,10 @@ async fn basic() {
 async fn sub_term() {
     let instance_associated = InstanceAssociated::new(
         Box::new(Instance::Parameter(InstanceParameterID::new(
-            TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(1)),
+            TargetID::TEST.make_global(pernixc_symbol::SymbolID::from_u128(1)),
             pernixc_arena::ID::new(0),
         ))),
-        TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(2)),
+        TargetID::TEST.make_global(pernixc_symbol::SymbolID::from_u128(2)),
         GenericArguments::default(),
     );
 
@@ -81,12 +81,12 @@ async fn sub_term() {
 
     let result = environment
         .query(&Simplify(Type::Symbol(Symbol::new(
-            TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(3)),
+            TargetID::TEST.make_global(pernixc_symbol::SymbolID::from_u128(3)),
             GenericArguments::new(
                 Vec::new(),
                 vec![Type::Symbol(Symbol::new(
                     TargetID::TEST
-                        .make_global(pernixc_symbol::ID::from_u128(3)),
+                        .make_global(pernixc_symbol::SymbolID::from_u128(3)),
                     GenericArguments::new(
                         Vec::new(),
                         vec![Type::InstanceAssociated(instance_associated)],
@@ -105,12 +105,12 @@ async fn sub_term() {
     assert_eq!(
         result.result,
         Type::Symbol(Symbol::new(
-            TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(3)),
+            TargetID::TEST.make_global(pernixc_symbol::SymbolID::from_u128(3)),
             GenericArguments::new(
                 Vec::new(),
                 vec![Type::Symbol(Symbol::new(
                     TargetID::TEST
-                        .make_global(pernixc_symbol::ID::from_u128(3)),
+                        .make_global(pernixc_symbol::SymbolID::from_u128(3)),
                     GenericArguments::new(
                         Vec::new(),
                         vec![equivalent],
@@ -131,10 +131,10 @@ async fn sub_term() {
 async fn already_simplified() {
     let instance_associated = InstanceAssociated::new(
         Box::new(Instance::Parameter(InstanceParameterID::new(
-            TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(1)),
+            TargetID::TEST.make_global(pernixc_symbol::SymbolID::from_u128(1)),
             pernixc_arena::ID::new(0),
         ))),
-        TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(2)),
+        TargetID::TEST.make_global(pernixc_symbol::SymbolID::from_u128(2)),
         GenericArguments::default(),
     );
 
@@ -164,20 +164,20 @@ async fn already_simplified() {
 #[tokio::test]
 async fn with_lifetime_matching() {
     let first_lifetime = Lifetime::Parameter(LifetimeParameterID::new(
-        Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(1)),
+        Global::new(TargetID::TEST, pernixc_symbol::SymbolID::from_u128(1)),
         pernixc_arena::ID::new(0),
     ));
     let second_lifetime = Lifetime::Parameter(LifetimeParameterID::new(
-        Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(1)),
+        Global::new(TargetID::TEST, pernixc_symbol::SymbolID::from_u128(1)),
         pernixc_arena::ID::new(1),
     ));
 
     let to_be_simplified = InstanceAssociated::new(
         Box::new(Instance::Parameter(InstanceParameterID::new(
-            TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(1)),
+            TargetID::TEST.make_global(pernixc_symbol::SymbolID::from_u128(1)),
             pernixc_arena::ID::new(0),
         ))),
-        TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(2)),
+        TargetID::TEST.make_global(pernixc_symbol::SymbolID::from_u128(2)),
         GenericArguments::new(
             vec![first_lifetime.clone()],
             Vec::new(),
@@ -188,10 +188,10 @@ async fn with_lifetime_matching() {
 
     let instance_associated = InstanceAssociated::new(
         Box::new(Instance::Parameter(InstanceParameterID::new(
-            TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(1)),
+            TargetID::TEST.make_global(pernixc_symbol::SymbolID::from_u128(1)),
             pernixc_arena::ID::new(0),
         ))),
-        TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(2)),
+        TargetID::TEST.make_global(pernixc_symbol::SymbolID::from_u128(2)),
         GenericArguments::new(
             vec![second_lifetime.clone()],
             Vec::new(),
@@ -240,18 +240,18 @@ async fn with_lifetime_matching() {
 async fn multiple_equivalences() {
     let first_instance_associated = InstanceAssociated::new(
         Box::new(Instance::Parameter(InstanceParameterID::new(
-            TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(1)),
+            TargetID::TEST.make_global(pernixc_symbol::SymbolID::from_u128(1)),
             pernixc_arena::ID::new(0),
         ))),
-        TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(2)),
+        TargetID::TEST.make_global(pernixc_symbol::SymbolID::from_u128(2)),
         GenericArguments::default(),
     );
     let second_instance_associated = InstanceAssociated::new(
         Box::new(Instance::Parameter(InstanceParameterID::new(
-            TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(1)),
+            TargetID::TEST.make_global(pernixc_symbol::SymbolID::from_u128(1)),
             pernixc_arena::ID::new(1),
         ))),
-        TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(2)),
+        TargetID::TEST.make_global(pernixc_symbol::SymbolID::from_u128(2)),
         GenericArguments::default(),
     );
     let equivalent = Type::Primitive(Primitive::Bool);
@@ -307,10 +307,12 @@ async fn transitive() {
     let instance_associated = |idx, lifetime| {
         InstanceAssociated::new(
             Box::new(Instance::Parameter(InstanceParameterID::new(
-                TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(1)),
+                TargetID::TEST
+                    .make_global(pernixc_symbol::SymbolID::from_u128(1)),
                 pernixc_arena::ID::new(0),
             ))),
-            TargetID::TEST.make_global(pernixc_symbol::ID::from_u128(idx)),
+            TargetID::TEST
+                .make_global(pernixc_symbol::SymbolID::from_u128(idx)),
             GenericArguments::new(
                 vec![lifetime],
                 Vec::new(),
@@ -322,7 +324,7 @@ async fn transitive() {
 
     let lt = |idx| {
         Lifetime::Parameter(LifetimeParameterID::new(
-            Global::new(TargetID::TEST, pernixc_symbol::ID::from_u128(1)),
+            Global::new(TargetID::TEST, pernixc_symbol::SymbolID::from_u128(1)),
             pernixc_arena::ID::new(idx),
         ))
     };
@@ -352,7 +354,7 @@ async fn transitive() {
         .into_iter()
         .collect(),
         query_site: TargetID::TEST
-            .make_global(pernixc_symbol::ID::from_u128(4)),
+            .make_global(pernixc_symbol::SymbolID::from_u128(4)),
     };
 
     let environment = Environment::new(

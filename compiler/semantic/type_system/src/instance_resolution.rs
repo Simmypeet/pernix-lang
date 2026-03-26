@@ -67,11 +67,11 @@ use crate::{
 )]
 pub enum LexicalInstance {
     /// The query site is already inside an instance symbol.
-    InInstance(Global<pernixc_symbol::ID>),
+    InInstance(Global<pernixc_symbol::SymbolID>),
 
     /// The query site is currently in the `trait` or `instance`, the associated
     /// instances of the said `trait` or `instance` are also considered.
-    FromAssociatedInstance(Global<pernixc_symbol::ID>),
+    FromAssociatedInstance(Global<pernixc_symbol::SymbolID>),
 
     /// The instance is available from because the instance parameter can be
     /// seen in the current scope.
@@ -114,7 +114,7 @@ pub struct LexicalInstanceCandidates {
 #[value(Interned<LexicalInstanceCandidates>)]
 pub struct LexicalInstanceCandidatesKey {
     /// The site where the lexical instances are being queried.
-    pub current_site: Global<pernixc_symbol::ID>,
+    pub current_site: Global<pernixc_symbol::SymbolID>,
 }
 
 #[executor(config = Config)]
@@ -196,21 +196,21 @@ static LEXICAL_INSTANCE_CANDIDATES_EXECUTOR: Registration<Config> =
     Encode,
     Query,
 )]
-#[value(Interned<[Global<pernixc_symbol::ID>]>)]
+#[value(Interned<[Global<pernixc_symbol::SymbolID>]>)]
 #[extend(name = get_global_instance_candidates, by_val)]
 pub struct GlobalInstanceCandidatesKey {
     /// The site where the global instance candidates are being queried.
-    pub current_site: Global<pernixc_symbol::ID>,
+    pub current_site: Global<pernixc_symbol::SymbolID>,
 
     /// The trait ID in which instance candidates must implement.
-    pub trait_id: Global<pernixc_symbol::ID>,
+    pub trait_id: Global<pernixc_symbol::SymbolID>,
 }
 
 #[executor(config = Config)]
 async fn global_instance_candidates_executor(
     key: &GlobalInstanceCandidatesKey,
     engine: &TrackedEngine,
-) -> Interned<[Global<pernixc_symbol::ID>]> {
+) -> Interned<[Global<pernixc_symbol::SymbolID>]> {
     let mut candidates = Vec::default();
 
     let available_instances = engine
@@ -276,7 +276,7 @@ pub enum ResolveError {
 /// which has failed with the given error.
 #[derive(Debug, Clone)]
 pub struct RecursiveError {
-    resolving_symbol: Global<pernixc_symbol::ID>,
+    resolving_symbol: Global<pernixc_symbol::SymbolID>,
 
     errors: Vec<(ID<InstanceParameter>, ResolveError, TraitRef)>,
 }
@@ -285,7 +285,7 @@ impl RecursiveError {
     /// The global symbol ID that was being resolved (i.e. the instance
     /// candidate that required sub-instance resolution).
     #[must_use]
-    pub const fn resolving_symbol(&self) -> Global<pernixc_symbol::ID> {
+    pub const fn resolving_symbol(&self) -> Global<pernixc_symbol::SymbolID> {
         self.resolving_symbol
     }
 
@@ -362,14 +362,14 @@ pub enum InstanceSource {
 
     /// Comes from the associated instances of the `trait` or `instance` in
     /// which the query site is in.
-    FromAssociatedInstance(Global<pernixc_symbol::ID>),
+    FromAssociatedInstance(Global<pernixc_symbol::SymbolID>),
 
     /// Comes from global instance candidates.
-    FromGlobalInstance(Global<pernixc_symbol::ID>),
+    FromGlobalInstance(Global<pernixc_symbol::SymbolID>),
 
     /// The query site is made inside an instance, so the instance itself is
     /// available.
-    FromInstanceScope(Global<pernixc_symbol::ID>),
+    FromInstanceScope(Global<pernixc_symbol::SymbolID>),
 }
 
 /// Represents an instance that has been choosen as the result of instance
@@ -395,7 +395,7 @@ impl ResolvedInstance {
 
 #[allow(clippy::too_many_lines)]
 async fn resolve_from_lexical_instances<N: Normalizer>(
-    current_site: Global<pernixc_symbol::ID>,
+    current_site: Global<pernixc_symbol::SymbolID>,
     expected_trait_ref: &TraitRef,
     environment: &Environment<'_, N>,
 ) -> Result<Vec<ResolvedInstance>, OverflowError> {
@@ -530,12 +530,12 @@ enum ResolveSymbolError {
 }
 
 enum ResolvedCandidate {
-    Perfect(Global<pernixc_symbol::ID>, Instantiation),
+    Perfect(Global<pernixc_symbol::SymbolID>, Instantiation),
     WithError(Arc<RecursiveError>),
 }
 
 impl ResolvedCandidate {
-    fn symbol_id(&self) -> Global<pernixc_symbol::ID> {
+    fn symbol_id(&self) -> Global<pernixc_symbol::SymbolID> {
         match self {
             Self::Perfect(symbol_id, _) => *symbol_id,
             Self::WithError(err) => err.resolving_symbol,
@@ -587,7 +587,7 @@ impl<N: Normalizer> Environment<'_, N> {
     /// because we can only manipulate the generic parameters of the instance
     /// itself.
     fn check_parent_generic_parameters(
-        parent_symbol_id: Global<pernixc_symbol::ID>,
+        parent_symbol_id: Global<pernixc_symbol::SymbolID>,
         generic_parameters: &GenericParameters,
         deduction: &mut Instantiation,
     ) -> bool {
@@ -637,7 +637,7 @@ impl<N: Normalizer> Environment<'_, N> {
     }
 
     fn verify_instance_deduction(
-        symbol_id: Global<pernixc_symbol::ID>,
+        symbol_id: Global<pernixc_symbol::SymbolID>,
         generic_parameters: &GenericParameters,
         deduction: &Instantiation,
         require_inst_all_deduced: bool,
@@ -689,7 +689,7 @@ impl<N: Normalizer> Environment<'_, N> {
 
     async fn recursive_resolve_instance(
         &self,
-        symbol_id: Global<pernixc_symbol::ID>,
+        symbol_id: Global<pernixc_symbol::SymbolID>,
         symbol_generic_params: &GenericParameters,
         mut deduced: Instantiation,
     ) -> Result<Instantiation, ResolveSymbolError> {
@@ -753,7 +753,7 @@ impl<N: Normalizer> Environment<'_, N> {
 
     async fn deduce_instance_symbol(
         &self,
-        symbol_id: Global<pernixc_symbol::ID>,
+        symbol_id: Global<pernixc_symbol::SymbolID>,
         expected_trait_ref: &TraitRef,
     ) -> Result<Instantiation, ResolveSymbolError> {
         let trait_ref = self
@@ -806,7 +806,7 @@ impl<N: Normalizer> Environment<'_, N> {
 
     async fn deduce_associated_instance_symbol(
         &self,
-        symbol_id: Global<pernixc_symbol::ID>,
+        symbol_id: Global<pernixc_symbol::SymbolID>,
         expected_trait_ref: &TraitRef,
     ) -> Result<Option<Instantiation>, OverflowError> {
         let trait_ref = self
@@ -859,7 +859,7 @@ impl<N: Normalizer> Environment<'_, N> {
 
     async fn handle_lexical_associated_instance(
         &self,
-        associated_instance_id: Global<pernixc_symbol::ID>,
+        associated_instance_id: Global<pernixc_symbol::SymbolID>,
         expected_trait_ref: &TraitRef,
     ) -> Result<Option<ResolvedInstance>, OverflowError> {
         let Some(inst) = self

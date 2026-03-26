@@ -18,8 +18,8 @@ use pernixc_term::{
 
 use crate::{
     OverflowError, Satisfied, Succeeded,
-    constraints::Constraints,
     adt_fields::{FieldType, get_instantiated_adt_fields},
+    constraints::Constraints,
     environment::{BoxedFuture, Call, DynArc, Environment, Query},
     normalizer::Normalizer,
     resolution::{self, Implementation},
@@ -495,7 +495,7 @@ impl Query for NegativeMarker {
 }
 
 async fn is_in_marker(
-    marker_id: Global<pernixc_symbol::ID>,
+    marker_id: Global<pernixc_symbol::SymbolID>,
     generic_arguments: &GenericArguments,
     environment: &Environment<'_, impl Normalizer>,
 ) -> Result<Option<Succeeded<Satisfied>>, OverflowError> {

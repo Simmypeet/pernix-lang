@@ -91,7 +91,7 @@ pub enum FromSemanticElement {
 )]
 pub struct GeneratedForall {
     /// The ID of the symbol from which the forall lifetime was generated.
-    pub from_id: Global<pernixc_symbol::ID>,
+    pub from_id: Global<pernixc_symbol::SymbolID>,
 
     /// From which semantic element the forall lifetime was generated.
     pub from_semantic_element: FromSemanticElement,
@@ -179,7 +179,7 @@ impl Lifetime {
     /// generic parameters arena.
     #[must_use]
     pub fn new_parameter(
-        parent_global_id: Global<pernixc_symbol::ID>,
+        parent_global_id: Global<pernixc_symbol::SymbolID>,
         lt_id: pernixc_arena::ID<LifetimeParameter>,
     ) -> Self {
         Self::Parameter(LifetimeParameterID::new(parent_global_id, lt_id))

@@ -49,5 +49,5 @@ pub struct Predicate {
 #[extend(name = get_where_clause, by_val)]
 pub struct Key {
     /// The global ID of the symbol.
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }

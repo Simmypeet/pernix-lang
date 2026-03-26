@@ -36,7 +36,7 @@ use crate::{
 )]
 #[value(Interned<[pernixc_diagnostic::Rendered<ByteIndex>]>)]
 struct SingleRenderedKey {
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }
 
 #[executor(config = Config)]

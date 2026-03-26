@@ -16,7 +16,7 @@ use crate::{
 #[extend]
 pub async fn format_type_signature(
     self: &TrackedEngine,
-    type_id: Global<pernixc_symbol::ID>,
+    type_id: Global<pernixc_symbol::SymbolID>,
 ) -> String {
     self.format_associate_symbol(type_id, write_type_signature).await
 }
@@ -24,7 +24,7 @@ pub async fn format_type_signature(
 async fn write_type_signature(
     engine: &TrackedEngine,
     formatter: &mut LinedFormatter<'_, '_, '_>,
-    type_id: Global<pernixc_symbol::ID>,
+    type_id: Global<pernixc_symbol::SymbolID>,
 ) {
     let has_definition = match engine.get_kind(type_id).await {
         Kind::Type | Kind::ImplementationAssociatedType => true,

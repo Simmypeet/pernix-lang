@@ -1,5 +1,5 @@
 use pernixc_handler::{Handler, Storage};
-use pernixc_hash::HashMap;
+use pernixc_hash::FxHashMap;
 use pernixc_qbice::TrackedEngine;
 use pernixc_resolution::{
     diagnostic::{
@@ -47,7 +47,7 @@ impl Build for import::Key {
 
         let storage = Storage::<diagnostic::Diagnostic>::new();
 
-        let mut import_map = HashMap::default();
+        let mut import_map = FxHashMap::default();
 
         for import in imports.as_ref() {
             let start_from = if let Some(from_simple_path) =
@@ -120,11 +120,11 @@ crate::build::register_build!(import::Key);
 #[allow(clippy::too_many_lines)]
 async fn process_import_items(
     engine: &TrackedEngine,
-    defined_in_module_id: Global<pernixc_symbol::ID>,
+    defined_in_module_id: Global<pernixc_symbol::SymbolID>,
     import: &pernixc_syntax::item::module::Import,
     import_item: &[pernixc_syntax::item::module::ImportItem],
-    start_from: Option<Global<pernixc_symbol::ID>>,
-    import_component: &mut HashMap<Interned<str>, Import>,
+    start_from: Option<Global<pernixc_symbol::SymbolID>>,
+    import_component: &mut FxHashMap<Interned<str>, Import>,
     handler: &dyn Handler<diagnostic::Diagnostic>,
 ) {
     'item: for import_item in import_item {

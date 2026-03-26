@@ -4,7 +4,7 @@
 use std::pin::Pin;
 
 use bon::Builder;
-use pernixc_hash::HashMap;
+use pernixc_hash::FxHashMap;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_target::Global;
 use pernixc_term::{
@@ -42,17 +42,17 @@ pub use resolver::{ElidedTermProvider, Resolver};
 )]
 #[allow(missing_docs)]
 pub struct ExtraNamespace {
-    #[builder(default = HashMap::default(), into)]
-    lifetimes: HashMap<Interned<str>, Lifetime>,
+    #[builder(default = FxHashMap::default(), into)]
+    lifetimes: FxHashMap<Interned<str>, Lifetime>,
 
-    #[builder(default = HashMap::default(), into)]
-    types: HashMap<Interned<str>, Type>,
+    #[builder(default = FxHashMap::default(), into)]
+    types: FxHashMap<Interned<str>, Type>,
 
-    #[builder(default = HashMap::default(), into)]
-    constants: HashMap<Interned<str>, Constant>,
+    #[builder(default = FxHashMap::default(), into)]
+    constants: FxHashMap<Interned<str>, Constant>,
 
-    #[builder(default = HashMap::default(), into)]
-    instances: HashMap<Interned<str>, Instance>,
+    #[builder(default = FxHashMap::default(), into)]
+    instances: FxHashMap<Interned<str>, Instance>,
 }
 
 impl ExtraNamespace {
@@ -170,7 +170,9 @@ pub trait ResolveInstanceParameterTraitRef: Send + Sync {
         instance_parameter: &'a InstanceParameterID,
     ) -> Pin<
         Box<
-            dyn Future<Output = Option<Global<pernixc_symbol::ID>>> + Send + 'a,
+            dyn Future<Output = Option<Global<pernixc_symbol::SymbolID>>>
+                + Send
+                + 'a,
         >,
     >;
 }

@@ -25,10 +25,10 @@ pub enum AssociatedKind {
 #[extend]
 pub async fn get_instance_associated_equivalent(
     self: &TrackedEngine,
-    instance: Global<crate::ID>,
-    trait_associated: Global<crate::ID>,
+    instance: Global<crate::SymbolID>,
+    trait_associated: Global<crate::SymbolID>,
     associated_kind: AssociatedKind,
-) -> Option<Global<crate::ID>> {
+) -> Option<Global<crate::SymbolID>> {
     let trait_associated_name = self.get_name(trait_associated).await;
     let expected_instance_associated_kind = match associated_kind {
         AssociatedKind::Function => Kind::InstanceAssociatedFunction,

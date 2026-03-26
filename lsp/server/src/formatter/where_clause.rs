@@ -1,4 +1,4 @@
-use pernixc_hash::HashMap;
+use pernixc_hash::FxHashMap;
 use pernixc_symbol::name::get_name;
 use pernixc_target::Global;
 use pernixc_term::{
@@ -17,7 +17,7 @@ impl Formatter<'_, '_> {
             Item = &'a pernixc_term::predicate::Outlives<T>,
         >,
     ) {
-        let mut ty = HashMap::<_, Vec<_>>::default();
+        let mut ty = FxHashMap::<_, Vec<_>>::default();
 
         for predicate in outlives_clause {
             ty.entry(&predicate.operand).or_default().push(&predicate.bound);
@@ -109,7 +109,11 @@ impl Formatter<'_, '_> {
         &mut self,
         ident: &str,
         mut bounds: impl Iterator<
-            Item = (bool, Global<pernixc_symbol::ID>, &'x GenericArguments),
+            Item = (
+                bool,
+                Global<pernixc_symbol::SymbolID>,
+                &'x GenericArguments,
+            ),
         >,
     ) {
         let Some((first_negative, first_id, first_arguments)) = bounds.next()

@@ -1,11 +1,10 @@
-
-use pernixc_hash::HashSet;
-use pernixc_type_system::constraints::Constraints;
-
+use pernixc_hash::FxHashSet;
 use pernixc_ir::value::register::Array;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_semantic_element::variance::Variance;
-use pernixc_type_system::{UnrecoverableError, normalizer::Normalizer};
+use pernixc_type_system::{
+    UnrecoverableError, constraints::Constraints, normalizer::Normalizer,
+};
 
 use crate::{Region, context::Context, subset::Changes};
 
@@ -41,7 +40,7 @@ impl<N: Normalizer> Context<'_, N> {
                 })
                 .collect(),
             borrow_created: None,
-            overwritten_regions: HashSet::default(),
+            overwritten_regions: FxHashSet::default(),
         })
     }
 }

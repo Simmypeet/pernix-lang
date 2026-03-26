@@ -13,7 +13,7 @@ use pernixc_target::Global;
 #[extend]
 pub async fn get_accessiblity_str(
     self: &TrackedEngine,
-    symbol_id: Global<pernixc_symbol::ID>,
+    symbol_id: Global<pernixc_symbol::SymbolID>,
 ) -> String {
     let accessibility = self.get_accessibility(symbol_id).await;
     let root_module_id =

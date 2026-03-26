@@ -150,7 +150,7 @@ pub struct Implementation {
     pub instantiation: Instantiation,
 
     /// The ID of the resolved implementation.
-    pub id: Global<pernixc_symbol::ID>,
+    pub id: Global<pernixc_symbol::SymbolID>,
 }
 
 /// A query for resolving a matching `implements`.
@@ -159,7 +159,7 @@ pub struct Implementation {
 )]
 pub struct Resolve {
     /// The `trait` or `marker` to resolve the `implements` for.
-    pub implemented_id: Global<pernixc_symbol::ID>,
+    pub implemented_id: Global<pernixc_symbol::SymbolID>,
 
     /// The generic arguments supplied to the [`Self::implemented_id`]
     pub generic_arguments: GenericArguments,
@@ -199,7 +199,7 @@ impl Query for Resolve {
             // the current candidate
             #[allow(clippy::type_complexity)]
             let mut candidate: Option<(
-                Global<pernixc_symbol::ID>,
+                Global<pernixc_symbol::SymbolID>,
                 Deduction,
                 Constraints,
                 GenericArguments,
@@ -311,7 +311,7 @@ impl Query for Resolve {
 
 async fn finialize_candidate(
     candidate: Option<(
-        Global<pernixc_symbol::ID>,
+        Global<pernixc_symbol::SymbolID>,
         Deduction,
         Constraints,
         GenericArguments,
@@ -381,7 +381,7 @@ async fn finialize_candidate(
 
 #[allow(clippy::type_complexity)]
 async fn is_in_active_implementation(
-    implemented_id: Global<pernixc_symbol::ID>,
+    implemented_id: Global<pernixc_symbol::SymbolID>,
     generic_arguments: &GenericArguments,
     environment: &Environment<'_, impl Normalizer>,
 ) -> Result<Option<ResolveResult>, OverflowError> {

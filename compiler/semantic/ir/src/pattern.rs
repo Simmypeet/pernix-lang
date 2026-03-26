@@ -4,7 +4,7 @@ use diagnostic::AlreadyBoundName;
 use enum_as_inner::EnumAsInner;
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
-use pernixc_hash::HashMap;
+use pernixc_hash::FxHashMap;
 use pernixc_lexical::tree::{RelativeLocation, RelativeSpan};
 use pernixc_semantic_element::fields::Field;
 use pernixc_source_file::SourceElement;
@@ -57,7 +57,7 @@ pub struct Named {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Enum {
     /// The ID of the variant that the pattern matches.
-    pub variant_id: Global<pernixc_symbol::ID>,
+    pub variant_id: Global<pernixc_symbol::SymbolID>,
 
     /// The pattern binding for the variant.
     pub pattern: Option<Box<Refutable>>,
@@ -105,10 +105,10 @@ pub struct Tuple<T> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Structural<T> {
     /// The ID of the struct that the pattern matches.
-    pub struct_id: Global<pernixc_symbol::ID>,
+    pub struct_id: Global<pernixc_symbol::SymbolID>,
 
     /// Mapping from each field to the pattern that the field must match.
-    pub patterns_by_field_id: HashMap<ID<Field>, T>,
+    pub patterns_by_field_id: FxHashMap<ID<Field>, T>,
 
     /// The span of the whole structural pattern.
     pub span: RelativeSpan,
@@ -190,7 +190,7 @@ pub struct NameBinding {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct NameBindingPoint {
     /// Mapping from the name of the binding to the named pattern.
-    pub named_patterns_by_name: HashMap<Interned<str>, NameBinding>,
+    pub named_patterns_by_name: FxHashMap<Interned<str>, NameBinding>,
 }
 
 impl NameBindingPoint {

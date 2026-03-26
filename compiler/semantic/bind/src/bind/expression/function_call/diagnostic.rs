@@ -100,7 +100,7 @@ impl Report for SymbolIsNotCallable {
 pub struct VariantDoesntHaveAssociatedValue {
     /// The ID of the variant that doesn't have an associated value but was
     /// called as if it did.
-    pub variant_id: Global<pernixc_symbol::ID>,
+    pub variant_id: Global<pernixc_symbol::SymbolID>,
 
     /// The span of the call.
     pub span: RelativeSpan,
@@ -156,7 +156,7 @@ impl Report for VariantDoesntHaveAssociatedValue {
 pub struct VariantAssociatedValueExpected {
     /// The ID of the variant that expects an associated value but was called
     /// without one.
-    pub variant_id: Global<pernixc_symbol::ID>,
+    pub variant_id: Global<pernixc_symbol::SymbolID>,
 
     /// The span of the call.
     pub span: RelativeSpan,
@@ -205,7 +205,7 @@ impl Report for VariantAssociatedValueExpected {
 )]
 pub struct ExtraneousArgumentsToAssociatedValue {
     /// The ID of the variant that was supplied with too many arguments.
-    pub variant_id: Global<pernixc_symbol::ID>,
+    pub variant_id: Global<pernixc_symbol::SymbolID>,
 
     /// The span of the call.
     pub span: RelativeSpan,
@@ -259,7 +259,7 @@ impl Report for ExtraneousArgumentsToAssociatedValue {
 pub struct MismatchedArgumentsCount {
     /// The ID of the function that was called with the wrong number of
     /// arguments.
-    pub function_id: Global<pernixc_symbol::ID>,
+    pub function_id: Global<pernixc_symbol::SymbolID>,
 
     /// The number of arguments the function expects.
     pub expected: usize,
@@ -307,7 +307,7 @@ impl Report for MismatchedArgumentsCount {
 pub struct MismatchedImplementationArguments {
     /// The ID of the ADT implementation where the generic arguments are
     /// mismatched.
-    pub implementation_id: Global<pernixc_symbol::ID>,
+    pub implementation_id: Global<pernixc_symbol::SymbolID>,
 
     /// The generic arguments found in the implementation.
     pub found_generic_arguments: GenericArguments,
@@ -409,7 +409,7 @@ pub struct UnsafeFunctionCallOutsideUnsafeScope {
     pub call_span: RelativeSpan,
 
     /// The ID of the function being called.
-    pub function_id: Global<pernixc_symbol::ID>,
+    pub function_id: Global<pernixc_symbol::SymbolID>,
 }
 
 impl Report for UnsafeFunctionCallOutsideUnsafeScope {

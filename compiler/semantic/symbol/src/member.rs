@@ -1,14 +1,14 @@
 //! Contains the definition of [`Member`] type.
 
 use pernixc_extend::extend;
-use pernixc_hash::{HashMap, HashSet};
+use pernixc_hash::{FxHashMap, FxHashSet};
 use pernixc_qbice::TrackedEngine;
 use pernixc_target::Global;
 use qbice::{
     Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned,
 };
 
-use crate::{ID, kind::get_kind};
+use crate::{SymbolID, kind::get_kind};
 
 /// Stores the members of a symbol in a form of `::Member`
 #[derive(
@@ -27,12 +27,12 @@ pub struct Member {
     ///
     /// In case of the redefinition, the firs encounter is recorded in this
     /// map. The redefinition is recorded in the [`Self::unnameds`] field.
-    pub member_ids_by_name: HashMap<Interned<str>, ID>,
+    pub member_ids_by_name: FxHashMap<Interned<str>, SymbolID>,
 
     /// A set of members that doesn't have a name associated to it.
     ///
     /// These IDs could be redefinitions or implements item the module.
-    pub unnameds: HashSet<ID>,
+    pub unnameds: FxHashSet<SymbolID>,
 }
 
 impl Member {
@@ -40,12 +40,12 @@ impl Member {
     ///
     /// Returns `None` if there is no member with the given name.   
     #[must_use]
-    pub fn get_by_name(&self, name: &str) -> Option<ID> {
+    pub fn get_by_name(&self, name: &str) -> Option<SymbolID> {
         self.member_ids_by_name.get(name).copied()
     }
 
     /// Retrieves all the member IDs of the symbol.
-    pub fn all_ids(&self) -> impl Iterator<Item = ID> + '_ {
+    pub fn all_ids(&self) -> impl Iterator<Item = SymbolID> + '_ {
         self.member_ids_by_name
             .values()
             .copied()
@@ -57,9 +57,9 @@ impl Member {
 #[extend]
 pub async fn get_member_by_name(
     self: &TrackedEngine,
-    symbol_id: Global<ID>,
+    symbol_id: Global<SymbolID>,
     name: &str,
-) -> Option<Global<ID>> {
+) -> Option<Global<SymbolID>> {
     let members = self.get_members(symbol_id).await;
     members.get_by_name(name).map(|id| symbol_id.target_id.make_global(id))
 }
@@ -83,7 +83,7 @@ pub async fn get_member_by_name(
 #[extend(name = get_members, by_val)]
 pub struct Key {
     /// The global ID of the symbol to get the members for.
-    pub symbol_id: Global<ID>,
+    pub symbol_id: Global<SymbolID>,
 }
 
 /// Optionally returns `None` if the given symbol is of a kind that does not
@@ -91,7 +91,7 @@ pub struct Key {
 #[extend]
 pub async fn try_get_members(
     self: &TrackedEngine,
-    id: Global<ID>,
+    id: Global<SymbolID>,
 ) -> Option<Interned<Member>> {
     if !self.get_kind(id).await.has_member() {
         return None;

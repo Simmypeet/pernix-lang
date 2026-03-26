@@ -6,7 +6,7 @@ use proptest::{
     prelude::{Arbitrary, BoxedStrategy, Strategy},
 };
 
-impl Arbitrary for crate::ID {
+impl Arbitrary for crate::SymbolID {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 

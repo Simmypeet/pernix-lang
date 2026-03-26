@@ -67,7 +67,7 @@ impl Report for Diagnostic {
     qbice::Query,
 )]
 #[value((Interned<FunctionIR>, Interned<[Diagnostic]>))]
-pub struct BuildFunctionIRKey(pub Global<pernixc_symbol::ID>);
+pub struct BuildFunctionIRKey(pub Global<pernixc_symbol::SymbolID>);
 
 #[executor(config = Config)]
 #[allow(clippy::too_many_lines)]
@@ -197,7 +197,7 @@ static BUILD_FUNCTION_IR_EXECUTOR: Registration<Config> =
     qbice::Query,
 )]
 #[value(Interned<[Rendered<ByteIndex>]>)]
-struct SingleRenderedKey(pub Global<pernixc_symbol::ID>);
+struct SingleRenderedKey(pub Global<pernixc_symbol::SymbolID>);
 
 #[executor(config = Config)]
 async fn ir_diagnostic_executor(

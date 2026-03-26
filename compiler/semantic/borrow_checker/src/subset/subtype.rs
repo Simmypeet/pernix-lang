@@ -1,4 +1,3 @@
-
 use pernixc_ir::value::{TypeOf, Value};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_semantic_element::variance::Variance;

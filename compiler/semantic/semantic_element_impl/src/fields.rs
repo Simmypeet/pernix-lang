@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use pernixc_arena::Arena;
 use pernixc_handler::{Handler, Storage};
-use pernixc_hash::HashMap;
+use pernixc_hash::FxHashMap;
 use pernixc_qbice::TrackedEngine;
 use pernixc_resolution::{
     ExtraNamespace, Resolver,
@@ -47,7 +47,7 @@ impl build::Build for pernixc_semantic_element::fields::Key {
             return Output {
                 item: engine.intern(Fields {
                     fields: Arena::default(),
-                    field_ids_by_name: HashMap::default(),
+                    field_ids_by_name: FxHashMap::default(),
                     field_declaration_order: Vec::default(),
                 }),
                 diagnostics: engine.intern_unsized([]),
@@ -92,8 +92,8 @@ build::register_build!(pernixc_semantic_element::fields::Key);
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 async fn process_field(
     engine: &TrackedEngine,
-    struct_id: Global<pernixc_symbol::ID>,
-    struct_access: Accessibility<pernixc_symbol::ID>,
+    struct_id: Global<pernixc_symbol::SymbolID>,
+    struct_access: Accessibility<pernixc_symbol::SymbolID>,
     extra_namespace: &ExtraNamespace,
     field_syntax: pernixc_syntax::item::r#struct::Field,
     fields: &mut Fields,
@@ -208,10 +208,10 @@ async fn process_field(
 /// Creates accessibility from an access modifier syntax.
 async fn create_accessibility_from_modifier(
     access_modifier: &pernixc_syntax::AccessModifier,
-    struct_id: pernixc_symbol::ID,
+    struct_id: pernixc_symbol::SymbolID,
     target_id: pernixc_target::TargetID,
     engine: &TrackedEngine,
-) -> Accessibility<pernixc_symbol::ID> {
+) -> Accessibility<pernixc_symbol::SymbolID> {
     match access_modifier {
         pernixc_syntax::AccessModifier::Private(_) => {
             let module_id = engine
@@ -232,8 +232,12 @@ async fn create_accessibility_from_modifier(
 
 /// Checks if the first accessibility is more accessible than the second.
 async fn is_more_accessible(
-    first: pernixc_symbol::accessibility::Accessibility<pernixc_symbol::ID>,
-    second: pernixc_symbol::accessibility::Accessibility<pernixc_symbol::ID>,
+    first: pernixc_symbol::accessibility::Accessibility<
+        pernixc_symbol::SymbolID,
+    >,
+    second: pernixc_symbol::accessibility::Accessibility<
+        pernixc_symbol::SymbolID,
+    >,
     target_id: pernixc_target::TargetID,
     engine: &TrackedEngine,
 ) -> bool {

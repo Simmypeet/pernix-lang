@@ -1,7 +1,7 @@
 use std::collections::hash_map::Entry;
 
 use pernixc_handler::{Handler, Storage};
-use pernixc_hash::HashMap;
+use pernixc_hash::FxHashMap;
 use pernixc_ir::{
     address::{Address, Memory},
     capture::{builder::CapturesWithNameBindingPoint, pruning::PruneMode},
@@ -133,7 +133,7 @@ struct HandlerChain {
 struct HandlerClauseBlock {
     qualified_identifier: QualifiedIdentifier,
     handler_clause_id: pernixc_arena::ID<HandlerClause>,
-    handlers: HashMap<pernixc_symbol::ID, OperationHanderBlock>,
+    handlers: FxHashMap<pernixc_symbol::SymbolID, OperationHanderBlock>,
     unit: effect::Unit,
 }
 
@@ -154,7 +154,7 @@ async fn build_with_blocks(
     captures: CapturesWithNameBindingPoint,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<register::do_with::HandlerChain, Error> {
-    let mut with_irs = HashMap::default();
+    let mut with_irs = FxHashMap::default();
 
     for with_block in with_blocks {
         let instantiation =
@@ -331,13 +331,13 @@ async fn extract_effect_operations<
 >(
     binder: &mut Binder<'_>,
     effect_handlers: I,
-    effect_id: Global<pernixc_symbol::ID>,
+    effect_id: Global<pernixc_symbol::SymbolID>,
     with_span: RelativeSpan,
     handler: &dyn Handler<Diagnostic>,
-) -> Result<HashMap<pernixc_symbol::ID, OperationHanderBlock>, Error> {
+) -> Result<FxHashMap<pernixc_symbol::SymbolID, OperationHanderBlock>, Error> {
     let effect_operations = binder.engine().get_members(effect_id).await;
     let mut handlers =
-        HashMap::<pernixc_symbol::ID, OperationHanderBlock>::default();
+        FxHashMap::<pernixc_symbol::SymbolID, OperationHanderBlock>::default();
 
     for handler_syntax in effect_handlers {
         let (Some(identifier), Some(statements)) =

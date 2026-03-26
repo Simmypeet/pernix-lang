@@ -3,7 +3,7 @@
 //!
 //! This will only include the `instance` IDs that "ARE NOT EXTERNAL".
 
-use pernixc_hash::HashSet;
+use pernixc_hash::FxHashSet;
 use pernixc_target::Global;
 use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 
@@ -25,11 +25,11 @@ use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
     Decode,
     Query,
 )]
-#[value(Interned<HashSet<Global<pernixc_symbol::ID>>>)]
+#[value(Interned<FxHashSet<Global<pernixc_symbol::SymbolID>>>)]
 #[extend(name = get_global_instances_of, by_val)]
 pub struct Key {
     /// The trait symbol to get the instances of.
-    pub trait_id: Global<pernixc_symbol::ID>,
+    pub trait_id: Global<pernixc_symbol::SymbolID>,
 
     /// The target ID to search for implementations in.
     pub target_id: pernixc_target::TargetID,
@@ -51,10 +51,10 @@ pub struct Key {
     StableHash,
     Query,
 )]
-#[value(Interned<HashSet<Global<pernixc_symbol::ID>>>)]
+#[value(Interned<FxHashSet<Global<pernixc_symbol::SymbolID>>>)]
 pub struct InTargetKey {
     /// The trait symbol to get the instances of.
-    pub trait_id: Global<pernixc_symbol::ID>,
+    pub trait_id: Global<pernixc_symbol::SymbolID>,
 
     /// The target ID to search for implementations in.
     pub target_id: pernixc_target::TargetID,

@@ -6,14 +6,14 @@ use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 use linkme::distributed_slice;
 use pernixc_diagnostic::ByteIndex;
 use pernixc_extend::extend;
-use pernixc_hash::HashSet;
+use pernixc_hash::FxHashSet;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_semantic_element::import::get_import_map;
 use pernixc_source_file::{
     GlobalSourceID, SourceElement, Span, get_source_file_by_id,
 };
 use pernixc_symbol::{
-    ID,
+    SymbolID,
     accessibility::symbol_accessible,
     get_target_root_module_id,
     kind::get_kind,
@@ -256,7 +256,7 @@ pub async fn qualified_identifier_completion(
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MemberCompletion {
     /// The completed symbol ID.
-    pub completion: Global<ID>,
+    pub completion: Global<SymbolID>,
 }
 
 /// A completion candidate when completing the root-level qualified identifier
@@ -264,7 +264,7 @@ pub struct MemberCompletion {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ModuleCompletion {
     /// The completed symbol ID.
-    pub completion: Global<ID>,
+    pub completion: Global<SymbolID>,
 }
 
 /// A completion candidate when completing the root-level qualified identifier
@@ -275,7 +275,7 @@ pub struct ImportCompletion {
     pub completion_string: Interned<str>,
 
     /// The symbol ID of the import.
-    pub symbol: Global<ID>,
+    pub symbol: Global<SymbolID>,
 }
 
 /// A completion candidate when completing the root-level qualified identifier
@@ -283,7 +283,7 @@ pub struct ImportCompletion {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GlobalCompletion {
     /// The completed symbol ID.
-    pub completion: Global<ID>,
+    pub completion: Global<SymbolID>,
 }
 
 /// The completion suggestion.
@@ -497,8 +497,8 @@ fn kind_to_completion_item_kind(
 #[allow(clippy::cognitive_complexity)]
 async fn create_completions(
     engine: &TrackedEngine,
-    nearest_module_id: Global<ID>,
-    prior_scope: Option<Global<ID>>,
+    nearest_module_id: Global<SymbolID>,
+    prior_scope: Option<Global<SymbolID>>,
     str: Option<&Interned<str>>,
 ) -> Vec<Completion> {
     let mut completions = Vec::new();
@@ -546,7 +546,7 @@ async fn create_completions(
         let module_imports = engine.get_import_map(nearest_module_id).await;
 
         // avoid duplicate completions from the later global symbol search
-        let mut inserted_ids = HashSet::default();
+        let mut inserted_ids = FxHashSet::default();
 
         for id in module_members.member_ids_by_name.values().copied() {
             let kind = engine
@@ -636,9 +636,9 @@ async fn create_completions(
 async fn create_global_import_candidate(
     engine: &TrackedEngine,
     target_id: TargetID,
-    inserted: HashSet<Global<ID>>,
+    inserted: FxHashSet<Global<SymbolID>>,
     str: &Interned<str>,
-    current_module_id: Global<pernixc_symbol::ID>,
+    current_module_id: Global<pernixc_symbol::SymbolID>,
     completion: Vec<Completion>,
 ) -> Vec<Completion> {
     let candidates = Arc::new(RwLock::new(completion));
@@ -648,8 +648,9 @@ async fn create_global_import_candidate(
         engine.get_global_import_suggestion_ids(target_id).await;
 
     let mut handles = JoinSet::new();
-    for chunk_id in
-        global_import_ids.chunk_for_tasks().map(<[pernixc_symbol::ID]>::to_vec)
+    for chunk_id in global_import_ids
+        .chunk_for_tasks()
+        .map(<[pernixc_symbol::SymbolID]>::to_vec)
     {
         let engine = engine.clone();
         let str = str.clone();
@@ -706,7 +707,7 @@ async fn create_global_import_candidate(
     Decode,
     Query,
 )]
-#[value(Interned<[pernixc_symbol::ID]>)]
+#[value(Interned<[pernixc_symbol::SymbolID]>)]
 #[extend(name = get_global_import_suggestion_ids, by_val)]
 struct GlobalImportSuggestionKey {
     target_id: TargetID,
@@ -716,7 +717,7 @@ struct GlobalImportSuggestionKey {
 async fn global_import_suggestion_executor(
     &GlobalImportSuggestionKey { target_id }: &GlobalImportSuggestionKey,
     engine: &TrackedEngine,
-) -> Interned<[pernixc_symbol::ID]> {
+) -> Interned<[pernixc_symbol::SymbolID]> {
     let root_module_id = engine.get_target_root_module_id(target_id).await;
 
     engine
@@ -747,16 +748,16 @@ static GLOBAL_IMPORT_SUGGESTION_EXECUTOR: Registration<Config> =
     Decode,
     Query,
 )]
-#[value(Interned<[pernixc_symbol::ID]>)]
+#[value(Interned<[pernixc_symbol::SymbolID]>)]
 struct ModuleImportSuggestionKey {
-    module_id: Global<ID>,
+    module_id: Global<SymbolID>,
 }
 
 #[executor(config = Config)]
 async fn module_import_suggestion_executor(
     &ModuleImportSuggestionKey { module_id }: &ModuleImportSuggestionKey,
     engine: &TrackedEngine,
-) -> Interned<[pernixc_symbol::ID]> {
+) -> Interned<[pernixc_symbol::SymbolID]> {
     let members = engine.get_members(module_id).await;
     let mut results = vec![module_id.id];
     let mut handles = JoinSet::new();

@@ -2,7 +2,7 @@
 
 use pernixc_arena::ID;
 use pernixc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
-use pernixc_hash::HashSet;
+use pernixc_hash::FxHashSet;
 use pernixc_lexical::{
     kind,
     tree::{
@@ -36,7 +36,7 @@ use crate::{
 )]
 pub struct Error {
     /// The tokens that are expected at the cursor position.
-    pub expecteds: HashSet<Expected>,
+    pub expecteds: FxHashSet<Expected>,
 
     /// The cursor position where the error occurred.
     pub at: Cursor,

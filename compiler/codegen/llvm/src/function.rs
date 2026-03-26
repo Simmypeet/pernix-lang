@@ -72,7 +72,7 @@ pub struct FunctionSignature {
 #[pernixc_extend::extend]
 pub async fn get_function_signature(
     self: &TrackedEngine,
-    id: Global<pernixc_symbol::ID>,
+    id: Global<pernixc_symbol::SymbolID>,
 ) -> FunctionSignature {
     FunctionSignature {
         parameters: self.get_parameters(id).await,
@@ -155,7 +155,7 @@ pub struct Call {
     ///
     /// - [`Kind::Function`]
     /// - [`Kind::ImplementationFunction`]
-    pub callable_id: Global<pernixc_symbol::ID>,
+    pub callable_id: Global<pernixc_symbol::SymbolID>,
 
     /// The instantiation of the function.
     pub instantiation: Instantiation,
@@ -165,8 +165,10 @@ pub struct Call {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Map<'ctx> {
     llvm_functions_by_key: HashMap<Call, Rc<LlvmFunctionSignature<'ctx>>>,
-    extern_functions_by_global_id:
-        HashMap<Global<pernixc_symbol::ID>, Rc<LlvmFunctionSignature<'ctx>>>,
+    extern_functions_by_global_id: HashMap<
+        Global<pernixc_symbol::SymbolID>,
+        Rc<LlvmFunctionSignature<'ctx>>,
+    >,
 
     tuple_drop: HashMap<Tuple<Type>, Option<FunctionValue<'ctx>>>,
     adt_drop: HashMap<Symbol, Option<FunctionValue<'ctx>>>,
@@ -177,7 +179,7 @@ impl<'ctx> Context<'_, 'ctx> {
     async fn get_function_qualified_name(
         &self,
         symbol_kind: Kind,
-        callable_id: Global<pernixc_symbol::ID>,
+        callable_id: Global<pernixc_symbol::SymbolID>,
         instantiation: &Instantiation,
     ) -> String {
         match symbol_kind {
@@ -531,7 +533,7 @@ impl<'ctx> Context<'_, 'ctx> {
     /// Creates an extern function.
     pub async fn get_extern_function(
         &mut self,
-        callable_id: Global<pernixc_symbol::ID>,
+        callable_id: Global<pernixc_symbol::SymbolID>,
     ) -> Rc<LlvmFunctionSignature<'ctx>> {
         if let Some(llvm_function) = self
             .function_map()

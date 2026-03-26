@@ -26,7 +26,7 @@ pub trait Environment {
     fn tracked_engine(&self) -> &TrackedEngine;
 
     /// The site where the analysis is taking place.
-    fn current_site(&self) -> Global<pernixc_symbol::ID>;
+    fn current_site(&self) -> Global<pernixc_symbol::SymbolID>;
 
     /// Retrieves the scope tree.
     fn scope_tree(&self) -> &scope::Tree;

@@ -1,6 +1,5 @@
-
 use pernixc_arena::ID;
-use pernixc_hash::HashSet;
+use pernixc_hash::FxHashSet;
 use pernixc_ir::value::register::{EffectHandlerArgument, FunctionCall};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_semantic_element::{
@@ -14,8 +13,7 @@ use pernixc_symbol::{
 use pernixc_target::Global;
 use pernixc_term::{effect, instantiation::Instantiation};
 use pernixc_type_system::{
-    UnrecoverableError, constraints::Constraints,
-    normalizer::Normalizer,
+    UnrecoverableError, constraints::Constraints, normalizer::Normalizer,
 };
 
 use crate::{Region, context::Context, subset::Changes};
@@ -28,7 +26,7 @@ impl<N: Normalizer> Context<'_, N> {
             Item = (ID<effect::Unit>, &'a EffectHandlerArgument),
         >,
         instantiation: &Instantiation,
-        callled_id: Global<pernixc_symbol::ID>,
+        callled_id: Global<pernixc_symbol::SymbolID>,
         span: &RelativeSpan,
         lifetime_constraints: &mut Constraints,
     ) -> Result<(), UnrecoverableError> {
@@ -210,7 +208,7 @@ impl<N: Normalizer> Context<'_, N> {
                 })
                 .collect(),
             borrow_created: None,
-            overwritten_regions: HashSet::default(),
+            overwritten_regions: FxHashSet::default(),
         })
     }
 }

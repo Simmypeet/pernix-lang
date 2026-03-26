@@ -257,7 +257,7 @@ impl Binder<'_> {
     /// Search for an effect handler from the handler stack
     pub async fn search_handler_clause(
         &mut self,
-        effect_id: Global<pernixc_symbol::ID>,
+        effect_id: Global<pernixc_symbol::SymbolID>,
         generic_arguments: &GenericArguments,
     ) -> Result<Option<HandlerClauseID>, OverflowError> {
         for (handler_id, handler_group) in self

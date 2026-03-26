@@ -28,7 +28,7 @@ use crate::table::get_table_of_symbol;
 )]
 #[value(Option<ModuleKind>)]
 pub struct ProjectionKey {
-    pub module_id: Global<pernixc_symbol::ID>,
+    pub module_id: Global<pernixc_symbol::SymbolID>,
 }
 
 #[executor(config = Config)]

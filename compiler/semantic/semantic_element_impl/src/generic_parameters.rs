@@ -41,7 +41,7 @@ pub mod diagnostic;
 struct ResolveInstanceParameterTraitRef<'a> {
     engine: &'a TrackedEngine,
     generic_parameters: &'a GenericParameters,
-    symbol_id: Global<pernixc_symbol::ID>,
+    symbol_id: Global<pernixc_symbol::SymbolID>,
 }
 
 impl pernixc_resolution::ResolveInstanceParameterTraitRef
@@ -52,7 +52,9 @@ impl pernixc_resolution::ResolveInstanceParameterTraitRef
         instance_parameter: &'a InstanceParameterID,
     ) -> Pin<
         Box<
-            dyn Future<Output = Option<Global<pernixc_symbol::ID>>> + Send + 'a,
+            dyn Future<Output = Option<Global<pernixc_symbol::SymbolID>>>
+                + Send
+                + 'a,
         >,
     > {
         Box::pin(async move {

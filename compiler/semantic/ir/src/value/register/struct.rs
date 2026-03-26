@@ -2,7 +2,7 @@
 use std::ops::Deref;
 
 use pernixc_arena::ID;
-use pernixc_hash::HashMap;
+use pernixc_hash::FxHashMap;
 use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::{
     fields::{Field, get_fields},
@@ -58,7 +58,7 @@ macro_rules! visit_struct {
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, StableHash)]
 pub struct Struct {
     symbol: Symbol,
-    initializers_by_field_id: HashMap<ID<Field>, Value>,
+    initializers_by_field_id: FxHashMap<ID<Field>, Value>,
 }
 
 impl<'a> From<&'a Struct> for Resolution<'a> {
@@ -69,7 +69,7 @@ impl Struct {
     #[must_use]
     pub const fn new(
         symbol: Symbol,
-        initializers_by_field_id: HashMap<ID<Field>, Value>,
+        initializers_by_field_id: FxHashMap<ID<Field>, Value>,
     ) -> Self {
         Self { symbol, initializers_by_field_id }
     }
@@ -92,7 +92,7 @@ impl Struct {
     }
 
     #[must_use]
-    pub const fn struct_id(&self) -> Global<pernixc_symbol::ID> {
+    pub const fn struct_id(&self) -> Global<pernixc_symbol::SymbolID> {
         self.symbol.id()
     }
 

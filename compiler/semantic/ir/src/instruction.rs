@@ -4,7 +4,7 @@ use std::{borrow::Cow, num::NonZero};
 
 use enum_as_inner::EnumAsInner;
 use pernixc_arena::ID;
-use pernixc_hash::HashMap;
+use pernixc_hash::FxHashMap;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_semantic_element::variance::Variance;
 use pernixc_term::r#type::Qualifier;
@@ -168,7 +168,7 @@ pub struct SwitchJump {
     pub integer: Value,
 
     /// Mapping of the integer value to the target block to jump to.
-    pub branches: HashMap<SwitchValue, ID<Block>>,
+    pub branches: FxHashMap<SwitchValue, ID<Block>>,
 
     /// If none of the branches match, jump to this block.
     pub otherwise: Option<ID<Block>>,

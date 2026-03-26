@@ -62,7 +62,7 @@ pub mod typer;
 #[derive(Debug, Clone, PartialEq, Eq, StableHash)]
 pub struct Environment {
     /// The current site where the binder is operating on.
-    current_site: Global<pernixc_symbol::ID>,
+    current_site: Global<pernixc_symbol::SymbolID>,
 
     /// Gets the active premise at the `current_site`.
     premise: Interned<Premise>,
@@ -74,7 +74,7 @@ impl Environment {
     /// Creates an environment object for the given `current_site`.
     pub async fn new(
         engine: &TrackedEngine,
-        current_site: Global<pernixc_symbol::ID>,
+        current_site: Global<pernixc_symbol::SymbolID>,
     ) -> Self {
         let premise = engine.get_active_premise(current_site).await;
         let generic_parameter_namespace =
@@ -140,7 +140,7 @@ pub struct Binder<'t> {
 impl<'t> Binder<'t> {
     /// Returns the current site where the binder is operating on.
     #[must_use]
-    pub const fn current_site(&self) -> Global<pernixc_symbol::ID> {
+    pub const fn current_site(&self) -> Global<pernixc_symbol::SymbolID> {
         self.environment.current_site
     }
 

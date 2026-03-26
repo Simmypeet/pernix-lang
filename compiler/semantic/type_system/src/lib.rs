@@ -92,7 +92,7 @@ impl<Result> Succeeded<Result> {
     pub fn new(result: Result) -> Self {
         Self { result, constraints: Constraints::new() }
     }
-    
+
     /// Creates a new [`Succeeded`] with the given result and constraints.
     #[must_use]
     pub const fn with_constraints(

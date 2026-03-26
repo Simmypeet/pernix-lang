@@ -1,7 +1,7 @@
 //! Contains the definition for the `Drop` trait in the core library.
 
 use pernixc_arena::{Arena, OrderedArena};
-use pernixc_hash::HashSet;
+use pernixc_hash::FxHashSet;
 use pernixc_semantic_element::{
     effect_annotation, elided_lifetime, implemented, implied_predicate,
     parameter::{self, Parameter, Parameters},
@@ -49,8 +49,8 @@ impl CoreLibInitializer<'_> {
     #[allow(clippy::too_many_lines)]
     pub async fn initialize_drop_trait(
         &mut self,
-        copy_marker_id: pernixc_symbol::ID,
-    ) -> pernixc_symbol::ID {
+        copy_marker_id: pernixc_symbol::SymbolID,
+    ) -> pernixc_symbol::SymbolID {
         let (drop_trait_id, drop_function_id) = {
             let drop_trait_id = TargetID::CORE.make_global(
                 calculate_qualified_name_id_with_given_seed(
@@ -137,7 +137,7 @@ impl CoreLibInitializer<'_> {
                         drop_function_id.id,
                     ))
                     .collect(),
-                    unnameds: HashSet::default(),
+                    unnameds: FxHashSet::default(),
                 }),
             )
             .await;
@@ -177,7 +177,7 @@ impl CoreLibInitializer<'_> {
             self.input_session
                 .set_input(
                     implied_predicate::Key { symbol_id: drop_function_id },
-                    self.input_session.intern(HashSet::default()),
+                    self.input_session.intern(FxHashSet::default()),
                 )
                 .await;
             self.input_session
@@ -272,7 +272,7 @@ impl CoreLibInitializer<'_> {
                     implementable_id: drop_trait_id,
                     target_id: TargetID::CORE,
                 },
-                self.input_session.intern(HashSet::default()),
+                self.input_session.intern(FxHashSet::default()),
             )
             .await;
 

@@ -14,11 +14,11 @@ use crate::{
 #[extend]
 pub async fn format_associate_symbol(
     self: &TrackedEngine,
-    type_id: Global<pernixc_symbol::ID>,
+    type_id: Global<pernixc_symbol::SymbolID>,
     fmt: impl AsyncFnOnce(
         &TrackedEngine,
         &mut crate::formatter::LinedFormatter<'_, '_, '_>,
-        Global<pernixc_symbol::ID>,
+        Global<pernixc_symbol::SymbolID>,
     ),
 ) -> String {
     let mut string = format!("```{PERNIX_FENCE}\n");

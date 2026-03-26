@@ -45,7 +45,7 @@ diagnostic_enum! {
 )]
 pub struct ExpectedAssociatedValue {
     /// The ID of the variant where the associated value is expected.
-    pub variant_id: Global<pernixc_symbol::ID>,
+    pub variant_id: Global<pernixc_symbol::SymbolID>,
 
     /// The span of the variant.
     pub span: RelativeSpan,

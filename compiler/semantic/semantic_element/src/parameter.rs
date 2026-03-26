@@ -77,7 +77,7 @@ impl Parameters {
 #[extend(name = get_parameters, by_val)]
 pub struct Key {
     /// The global ID of the function symbol.
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }
 
 impl Parameters {

@@ -4,7 +4,7 @@ use std::ops::{Not, RangeBounds};
 
 use getset::{CopyGetters, Getters};
 use pernixc_arena::{Arena, ID};
-use pernixc_hash::{HashMap, HashSet};
+use pernixc_hash::{FxHashMap, FxHashSet};
 use pernixc_transitive_closure::TransitiveClosure;
 use qbice::{Decode, Encode, StableHash};
 
@@ -29,7 +29,7 @@ macro_rules! visit_block_items {
 /// reachability in constant time.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Reachability {
-    blocks_to_index: HashMap<ID<Block>, usize>,
+    blocks_to_index: FxHashMap<ID<Block>, usize>,
     index_to_blocks: Vec<ID<Block>>,
 
     transitive_closure: TransitiveClosure,
@@ -87,7 +87,7 @@ pub struct Block {
     terminator: Option<Terminator>,
     /// List of blocks that are predecessors of this block.
     #[get = "pub"]
-    predecessors: HashSet<ID<Self>>,
+    predecessors: FxHashSet<ID<Self>>,
     /// Determines if the block is the entry block.
     #[get_copy = "pub"]
     is_entry: bool,
@@ -219,7 +219,7 @@ pub struct ControlFlowGraph {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Traverser<'a> {
     graph: &'a ControlFlowGraph,
-    visited: HashSet<ID<Block>>,
+    visited: FxHashSet<ID<Block>>,
     stack: Vec<ID<Block>>,
 }
 
@@ -258,7 +258,7 @@ impl<'a> Iterator for Traverser<'a> {
 #[derive(Debug)]
 pub struct MutInstructionTraverser<'a> {
     graph: &'a mut ControlFlowGraph,
-    visited: HashSet<ID<Block>>,
+    visited: FxHashSet<ID<Block>>,
     stack: Vec<ID<Block>>,
 
     current_block: ID<Block>,
@@ -345,7 +345,7 @@ impl ControlFlowGraph {
     pub fn traverse(&self) -> Traverser<'_> {
         Traverser {
             graph: self,
-            visited: HashSet::default(),
+            visited: FxHashSet::default(),
             stack: vec![self.entry_block_id],
         }
     }
@@ -356,7 +356,7 @@ impl ControlFlowGraph {
     /// See [`MutInstructionTraverser`] for more information.
     pub fn traverse_mut_instructions(&mut self) -> MutInstructionTraverser<'_> {
         MutInstructionTraverser {
-            visited: HashSet::default(),
+            visited: FxHashSet::default(),
             stack: self.blocks[self.entry_block_id]
                 .terminator()
                 .and_then(|x| x.as_jump())
@@ -386,7 +386,7 @@ impl ControlFlowGraph {
     /// reachability of particular blocks.
     #[must_use]
     pub fn reachability(&self) -> Reachability {
-        let mut block_ids_to_index = HashMap::default();
+        let mut block_ids_to_index = FxHashMap::default();
         let mut index_to_block_ids = Vec::new();
 
         for (index, id) in self.blocks.ids().enumerate() {
@@ -474,7 +474,7 @@ impl ControlFlowGraph {
             from_instruction_index,
             true,
             &mut predicate,
-            &mut HashSet::default(),
+            &mut FxHashSet::default(),
         )
     }
 
@@ -484,7 +484,7 @@ impl ControlFlowGraph {
         from_instruction_index: usize,
         is_root: bool,
         predicate: &mut impl FnMut(&Instruction) -> bool,
-        visited: &mut HashSet<ID<Block>>,
+        visited: &mut FxHashSet<ID<Block>>,
     ) -> Option<bool> {
         if !is_root && visited.insert(from_block_id) {
             return Some(false);
@@ -593,7 +593,7 @@ impl ControlFlowGraph {
     pub fn new_block(&mut self) -> ID<Block> {
         self.blocks.insert(Block {
             instructions: Vec::new(),
-            predecessors: HashSet::default(),
+            predecessors: FxHashSet::default(),
             terminator: None,
             is_entry: false,
         })
@@ -608,7 +608,7 @@ impl ControlFlowGraph {
         self.blocks
             .insert_with_id(id, Block {
                 instructions: Vec::new(),
-                predecessors: HashSet::default(),
+                predecessors: FxHashSet::default(),
                 terminator: None,
                 is_entry: false,
             })
@@ -629,7 +629,7 @@ impl ControlFlowGraph {
         self.is_reachable_from_internal(
             from_block_id,
             to_block_id,
-            &mut HashSet::default(),
+            &mut FxHashSet::default(),
         )
     }
 
@@ -637,7 +637,7 @@ impl ControlFlowGraph {
         &self,
         from_block_id: ID<Block>,
         to_block_id: ID<Block>,
-        visited: &mut HashSet<ID<Block>>,
+        visited: &mut FxHashSet<ID<Block>>,
     ) -> Option<bool> {
         if from_block_id == to_block_id {
             return Some(true);
@@ -754,7 +754,11 @@ impl resolution_visitor::MutableResolutionVisitable for ControlFlowGraph {
         &mut self,
         visitor: &mut T,
     ) -> Result<(), Abort> {
-        visit_block_items!(self.blocks.iter_mut().map(|(_, x)| x), visitor, accept_mut)
+        visit_block_items!(
+            self.blocks.iter_mut().map(|(_, x)| x),
+            visitor,
+            accept_mut
+        )
     }
 }
 
@@ -774,7 +778,7 @@ impl Default for ControlFlowGraph {
         // create an entry block
         let entry_block_id = blocks.insert(Block {
             instructions: Vec::new(),
-            predecessors: HashSet::default(),
+            predecessors: FxHashSet::default(),
             terminator: None,
             is_entry: true,
         });

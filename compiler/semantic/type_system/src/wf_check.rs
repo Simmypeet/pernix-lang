@@ -63,7 +63,7 @@ impl ImplementsCheckResult {
 #[derive(Debug, Clone)]
 pub struct WfCheckObligation<'a> {
     /// The symbol ID to check.
-    symbol_id: Global<pernixc_symbol::ID>,
+    symbol_id: Global<pernixc_symbol::SymbolID>,
     /// The instances to check via `check_instantiated_instance_arguments`.
     instances: &'a [Instance],
 }
@@ -72,7 +72,7 @@ impl<'a> WfCheckObligation<'a> {
     /// Creates a new `WfCheckObligation`.
     #[must_use]
     pub const fn new(
-        symbol_id: Global<pernixc_symbol::ID>,
+        symbol_id: Global<pernixc_symbol::SymbolID>,
         instances: &'a [Instance],
     ) -> Self {
         Self { symbol_id, instances }
@@ -80,7 +80,7 @@ impl<'a> WfCheckObligation<'a> {
 
     /// Returns the symbol ID to check.
     #[must_use]
-    pub const fn symbol_id(&self) -> Global<pernixc_symbol::ID> {
+    pub const fn symbol_id(&self) -> Global<pernixc_symbol::SymbolID> {
         self.symbol_id
     }
 
@@ -181,10 +181,7 @@ impl<N: Normalizer> Environment<'_, N> {
         instantiation_span: &RelativeSpan,
         predicate_declaration_span: Option<&RelativeSpan>,
         handler: &dyn Handler<Diagnostic>,
-    ) -> Result<
-        (Vec<Diagnostic>, Constraints),
-        UnrecoverableError,
-    > {
+    ) -> Result<(Vec<Diagnostic>, Constraints), UnrecoverableError> {
         let mut diagnostics = Vec::new();
 
         let constraints = self
@@ -465,7 +462,7 @@ impl<N: Normalizer> Environment<'_, N> {
     #[allow(clippy::type_complexity)]
     async fn get_all_predicates(
         table: &TrackedEngine,
-        global_id: Global<pernixc_symbol::ID>,
+        global_id: Global<pernixc_symbol::SymbolID>,
         instantiation: Option<&Instantiation>,
     ) -> Vec<(Predicate, Option<RelativeSpan>)> {
         let symbol_kind = table.get_kind(global_id).await;
@@ -508,7 +505,7 @@ impl<N: Normalizer> Environment<'_, N> {
     /// lifetime constraints in the Ok result.
     pub async fn wf_check_implementation(
         &self,
-        impl_id: Global<pernixc_symbol::ID>,
+        impl_id: Global<pernixc_symbol::SymbolID>,
         instantiation_span: &RelativeSpan,
         generic_arguments: &GenericArguments,
         handler: &dyn Handler<Diagnostic>,
@@ -708,7 +705,7 @@ impl<N: Normalizer> Environment<'_, N> {
     /// generic with the given `generic_id`.
     pub async fn check_instantiated_instance_arguments(
         &self,
-        generic_id: Global<pernixc_symbol::ID>,
+        generic_id: Global<pernixc_symbol::SymbolID>,
         instance_arguments: &[Instance],
         instantiation_span: &RelativeSpan,
         instantiation: &Instantiation,
@@ -763,7 +760,7 @@ impl<N: Normalizer> Environment<'_, N> {
     /// as lifetime constraints in the Ok result.
     pub async fn wf_check_instantiation(
         &self,
-        generic_id: Global<pernixc_symbol::ID>,
+        generic_id: Global<pernixc_symbol::SymbolID>,
         instantiation_span: &RelativeSpan,
         instantiation: &instantiation::Instantiation,
         handler: &dyn Handler<Diagnostic>,

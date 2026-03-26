@@ -1,5 +1,5 @@
 use pernixc_diagnostic::{Highlight, Report, Severity};
-use pernixc_hash::HashSet;
+use pernixc_hash::FxHashSet;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::{name::get_qualified_name, source_map::to_absolute_span};
@@ -100,7 +100,7 @@ pub struct AmbiguousMethodCall {
     pub receiver_span: RelativeSpan,
 
     /// The candidates that were found.
-    pub candidates: HashSet<Global<pernixc_symbol::ID>>,
+    pub candidates: FxHashSet<Global<pernixc_symbol::SymbolID>>,
 
     /// The rendering map for inference variables.
     pub rendering_map: RenderingMap,

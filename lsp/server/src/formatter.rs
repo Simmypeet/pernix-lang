@@ -141,7 +141,7 @@ impl LinedFormatter<'_, '_, '_> {
     /// options.
     pub async fn write_signature(
         &mut self,
-        symbol: Global<pernixc_symbol::ID>,
+        symbol: Global<pernixc_symbol::SymbolID>,
         options: &WriteSignatureOptions<'_>,
     ) {
         if options.format_accessibility == FormatAccessiblity::Yes {
@@ -173,8 +173,8 @@ impl LinedFormatter<'_, '_, '_> {
     /// Formats the accessibility to the buffer.
     pub async fn format_accessibility(
         &mut self,
-        accessibility: Accessibility<pernixc_symbol::ID>,
-        current_site: Global<pernixc_symbol::ID>,
+        accessibility: Accessibility<pernixc_symbol::SymbolID>,
+        current_site: Global<pernixc_symbol::SymbolID>,
     ) {
         let root_module_id =
             self.engine.get_target_root_module_id(current_site.target_id).await;
@@ -201,7 +201,7 @@ impl LinedFormatter<'_, '_, '_> {
     /// Writes the implements signature for the given implementation ID.
     pub async fn write_implements_signature(
         &mut self,
-        implementation_id: Global<pernixc_symbol::ID>,
+        implementation_id: Global<pernixc_symbol::SymbolID>,
     ) -> bool {
         let (Some(implements_id), Some(implements_arguments)) = (
             self.engine.get_implements(implementation_id).await,

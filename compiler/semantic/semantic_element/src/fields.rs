@@ -1,7 +1,7 @@
 //! Contains the definition of [`Field`] and [`Fields`].
 
 use pernixc_arena::{Arena, ID};
-use pernixc_hash::HashMap;
+use pernixc_hash::FxHashMap;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_symbol::accessibility::Accessibility;
 use pernixc_target::Global;
@@ -27,7 +27,7 @@ use qbice::{
 )]
 pub struct Field {
     /// The accessibility of the field.
-    pub accessibility: Accessibility<pernixc_symbol::ID>,
+    pub accessibility: Accessibility<pernixc_symbol::SymbolID>,
 
     /// The name of the field.
     pub name: Interned<str>,
@@ -56,7 +56,7 @@ pub struct Fields {
     pub fields: Arena<Field>,
 
     /// Maps the field name to its ID.
-    pub field_ids_by_name: HashMap<Interned<str>, pernixc_arena::ID<Field>>,
+    pub field_ids_by_name: FxHashMap<Interned<str>, pernixc_arena::ID<Field>>,
 
     /// The order in which the fields are declared.
     pub field_declaration_order: Vec<pernixc_arena::ID<Field>>,
@@ -81,7 +81,7 @@ pub struct Fields {
 #[extend(name = get_fields, by_val)]
 pub struct Key {
     /// The global ID of the struct symbol.
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }
 
 impl Fields {

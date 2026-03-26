@@ -129,7 +129,7 @@ pub struct TaggedUnion<'ctx> {
     /// `type { tag_ty, payload } or type { tag_ty }` depending on whether the
     /// variant's associated type is ZST or not.
     pub llvm_variant_types:
-        HashMap<Global<pernixc_symbol::ID>, StructType<'ctx>>,
+        HashMap<Global<pernixc_symbol::SymbolID>, StructType<'ctx>>,
 
     /// The layout of the tagged union of the most aligned variant.
     pub most_alignment_type: StructType<'ctx>,

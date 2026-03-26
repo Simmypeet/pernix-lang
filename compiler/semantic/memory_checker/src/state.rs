@@ -4,7 +4,7 @@ use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
-use pernixc_hash::HashMap;
+use pernixc_hash::FxHashMap;
 use pernixc_ir::{
     address::{self, Address, Offset},
     instruction::{Drop, DropUnpackTuple, Instruction},
@@ -31,10 +31,10 @@ use crate::diagnostic::Diagnostic;
 pub struct Struct {
     /// The state of each field in the struct.
     #[get = "pub"]
-    states_by_field_id: HashMap<ID<fields::Field>, State>,
+    states_by_field_id: FxHashMap<ID<fields::Field>, State>,
 
     #[get_copy = "pub"]
-    struct_id: Global<pernixc_symbol::ID>,
+    struct_id: Global<pernixc_symbol::SymbolID>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
@@ -62,7 +62,7 @@ pub struct Enum {
     state: Box<State>,
 
     #[get_copy = "pub"]
-    variant_id: Global<pernixc_symbol::ID>,
+    variant_id: Global<pernixc_symbol::SymbolID>,
 }
 
 /// The state of value behind a mutable reference.
@@ -938,7 +938,7 @@ pub struct Scope {
     scope_id: ID<scope::Scope>,
 
     #[get = "pub"]
-    memories_by_address: HashMap<address::Memory, Memory>,
+    memories_by_address: FxHashMap<address::Memory, Memory>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
@@ -1016,7 +1016,7 @@ enum SetState {
 
 impl Scope {
     pub fn new(scope_id: ID<scope::Scope>) -> Self {
-        Self { scope_id, memories_by_address: HashMap::default() }
+        Self { scope_id, memories_by_address: FxHashMap::default() }
     }
 
     /// Merges the state of the memory with the other memory.

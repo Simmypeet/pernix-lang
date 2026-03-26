@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: run
+---
+stderr:
+[warning]: the value has been moved inside the loop, which could be used in the subsequent iteration
+   ╭▸ compiler/e2e/test/snapshot/memory_checker/restore_in_inner_loop_but_not_really/main.pnx:13:17
+   │
+13 │         consume(a)
+   ╰╴                ━
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

@@ -1,7 +1,7 @@
 use enum_as_inner::EnumAsInner;
 use pernixc_arena::{ID, OrderedArena};
 use pernixc_handler::Handler;
-use pernixc_hash::HashMap;
+use pernixc_hash::FxHashMap;
 use pernixc_ir::value::{
     Value,
     register::{
@@ -60,8 +60,8 @@ use crate::{
 // the elided lifetimes) must be specified
 async fn map_elided_lifetimes_to_erased(
     binder: &mut Binder<'_>,
-    id: Global<pernixc_symbol::ID>,
-) -> HashMap<ID<ElidedLifetime>, Lifetime> {
+    id: Global<pernixc_symbol::SymbolID>,
+) -> FxHashMap<ID<ElidedLifetime>, Lifetime> {
     let elided_lts = binder.engine().get_elided_lifetimes(id).await;
 
     elided_lts.ids().map(|x| (x, Lifetime::Erased)).collect()
@@ -613,13 +613,13 @@ impl Binder<'_> {
 
     async fn effect_check(
         &mut self,
-        callee_id: Global<pernixc_symbol::ID>,
+        callee_id: Global<pernixc_symbol::SymbolID>,
         instantiation: Option<Instantiation>,
         span: RelativeSpan,
         available_capabilities: &OrderedArena<effect::Unit>,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
     ) -> Result<
-        HashMap<ID<effect::Unit>, EffectHandlerArgument>,
+        FxHashMap<ID<effect::Unit>, EffectHandlerArgument>,
         UnrecoverableError,
     > {
         let required_capabilities =
@@ -652,13 +652,13 @@ impl Binder<'_> {
         required_capabilities: &OrderedArena<effect::Unit>,
         instantiation: &Instantiation,
         span: RelativeSpan,
-        callable_id: Global<pernixc_symbol::ID>,
+        callable_id: Global<pernixc_symbol::SymbolID>,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
     ) -> Result<
-        HashMap<ID<effect::Unit>, EffectHandlerArgument>,
+        FxHashMap<ID<effect::Unit>, EffectHandlerArgument>,
         UnrecoverableError,
     > {
-        let mut effect_arguments = HashMap::default();
+        let mut effect_arguments = FxHashMap::default();
 
         // First, we'll traverse the capability handlers stack first, then we'll
 

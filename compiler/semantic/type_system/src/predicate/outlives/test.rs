@@ -87,7 +87,7 @@ impl Arbitrary for ByEquality {
 
 #[derive(Debug)]
 pub struct LifetimeMatching {
-    pub struct_id: Global<pernixc_symbol::ID>,
+    pub struct_id: Global<pernixc_symbol::SymbolID>,
     pub lifetime_properties: Vec<Box<dyn Property<Lifetime>>>,
     pub bound: Lifetime,
 }

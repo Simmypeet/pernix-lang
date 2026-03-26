@@ -78,7 +78,7 @@ pub struct Environment<'s> {
     closure_parameters:
         Option<&'s pernixc_ir::closure_parameters::ClosureParameters>,
     tracked_engine: &'s TrackedEngine,
-    current_site: pernixc_target::Global<pernixc_symbol::ID>,
+    current_site: pernixc_target::Global<pernixc_symbol::SymbolID>,
     scope_tree: &'s pernixc_ir::scope::Tree,
     values: &'s pernixc_ir::Values,
 }
@@ -98,7 +98,7 @@ impl pernixc_ir::typer::Environment for Environment<'_> {
 
     fn tracked_engine(&self) -> &TrackedEngine { self.tracked_engine }
 
-    fn current_site(&self) -> pernixc_target::Global<pernixc_symbol::ID> {
+    fn current_site(&self) -> pernixc_target::Global<pernixc_symbol::SymbolID> {
         self.current_site
     }
 

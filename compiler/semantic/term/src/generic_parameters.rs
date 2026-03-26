@@ -5,7 +5,7 @@ use derive_new::new;
 use getset::Getters;
 use paste::paste;
 use pernixc_arena::Arena;
-use pernixc_hash::HashMap;
+use pernixc_hash::FxHashMap;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_symbol::MemberID;
 use pernixc_target::Global;
@@ -40,7 +40,7 @@ use crate::{
 #[extend(name = get_generic_parameters, by_val)]
 pub struct Key {
     /// The global symbol ID to get the generic parameters for.
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }
 
 /// Represents the generic parameters (e.g. `['a, T, const C: TYPE]`).
@@ -71,13 +71,13 @@ pub struct GenericParameters {
     instance_order: Vec<pernixc_arena::ID<InstanceParameter>>,
 
     lifetime_parameter_ids_by_name:
-        HashMap<Interned<str>, pernixc_arena::ID<LifetimeParameter>>,
+        FxHashMap<Interned<str>, pernixc_arena::ID<LifetimeParameter>>,
     type_parameter_ids_by_name:
-        HashMap<Interned<str>, pernixc_arena::ID<TypeParameter>>,
+        FxHashMap<Interned<str>, pernixc_arena::ID<TypeParameter>>,
     constant_parameter_ids_by_name:
-        HashMap<Interned<str>, pernixc_arena::ID<ConstantParameter>>,
+        FxHashMap<Interned<str>, pernixc_arena::ID<ConstantParameter>>,
     instance_parameter_ids_by_name:
-        HashMap<Interned<str>, pernixc_arena::ID<InstanceParameter>>,
+        FxHashMap<Interned<str>, pernixc_arena::ID<InstanceParameter>>,
 
     default_type_parameters: Vec<Type>,
     default_constant_parameters: Vec<Constant>,
@@ -85,7 +85,7 @@ pub struct GenericParameters {
 
 mod sealed {
     use pernixc_arena::Arena;
-    use pernixc_hash::HashMap;
+    use pernixc_hash::FxHashMap;
     use qbice::storage::intern::Interned;
 
     pub trait Sealed {
@@ -97,7 +97,7 @@ mod sealed {
 
         fn get_parameter_ids_by_name(
             generic_parameters: &super::GenericParameters,
-        ) -> &HashMap<Interned<str>, pernixc_arena::ID<Self>>
+        ) -> &FxHashMap<Interned<str>, pernixc_arena::ID<Self>>
         where
             Self: Sized;
 
@@ -167,7 +167,7 @@ impl sealed::Sealed for LifetimeParameter {
 
     fn get_parameter_ids_by_name(
         generic_parameters: &self::GenericParameters,
-    ) -> &HashMap<Interned<str>, pernixc_arena::ID<Self>>
+    ) -> &FxHashMap<Interned<str>, pernixc_arena::ID<Self>>
     where
         Self: Sized,
     {
@@ -224,7 +224,7 @@ impl sealed::Sealed for TypeParameter {
 
     fn get_parameter_ids_by_name(
         generic_parameters: &self::GenericParameters,
-    ) -> &HashMap<Interned<str>, pernixc_arena::ID<Self>>
+    ) -> &FxHashMap<Interned<str>, pernixc_arena::ID<Self>>
     where
         Self: Sized,
     {
@@ -284,7 +284,7 @@ impl sealed::Sealed for ConstantParameter {
 
     fn get_parameter_ids_by_name(
         generic_parameters: &self::GenericParameters,
-    ) -> &HashMap<Interned<str>, pernixc_arena::ID<Self>>
+    ) -> &FxHashMap<Interned<str>, pernixc_arena::ID<Self>>
     where
         Self: Sized,
     {
@@ -358,7 +358,7 @@ impl sealed::Sealed for InstanceParameter {
 
     fn get_parameter_ids_by_name(
         generic_parameters: &self::GenericParameters,
-    ) -> &HashMap<Interned<str>, pernixc_arena::ID<Self>>
+    ) -> &FxHashMap<Interned<str>, pernixc_arena::ID<Self>>
     where
         Self: Sized,
     {
@@ -639,7 +639,7 @@ impl GenericParameters {
     #[must_use]
     pub fn create_identity_generic_arguments(
         &self,
-        global_id: Global<pernixc_symbol::ID>,
+        global_id: Global<pernixc_symbol::SymbolID>,
     ) -> GenericArguments {
         GenericArguments::new(
             self.lifetime_order

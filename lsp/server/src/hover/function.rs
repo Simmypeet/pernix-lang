@@ -21,7 +21,7 @@ use crate::{
 #[extend]
 pub async fn format_function_signature(
     self: &TrackedEngine,
-    function_id: Global<pernixc_symbol::ID>,
+    function_id: Global<pernixc_symbol::SymbolID>,
     is_local: bool,
 ) -> String {
     self.format_associate_symbol(
@@ -37,7 +37,7 @@ pub async fn format_function_signature(
 async fn write_function_signature(
     engine: &TrackedEngine,
     formatter: &mut LinedFormatter<'_, '_, '_>,
-    function_id: Global<pernixc_symbol::ID>,
+    function_id: Global<pernixc_symbol::SymbolID>,
     is_local: bool,
 ) {
     formatter

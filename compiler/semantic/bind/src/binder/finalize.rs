@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use pernixc_handler::Handler;
-use pernixc_hash::HashSet;
+use pernixc_hash::FxHashSet;
 use pernixc_ir::{
     FunctionIR, IRWithContext,
     instruction::{Instruction, ScopePop},
@@ -22,7 +22,7 @@ mod transform_inference;
 
 #[allow(dead_code)]
 fn check_all_register_assigned(ir: &IR) {
-    let mut assigned = HashSet::default();
+    let mut assigned = FxHashSet::default();
     for (_, block) in ir.control_flow_graph.blocks().iter() {
         for inst in block.instructions() {
             if let Some(reg) = inst.as_register_assignment() {
@@ -39,7 +39,7 @@ fn check_all_register_assigned(ir: &IR) {
         .registers
         .ids()
         .filter(|id| !assigned.contains(id))
-        .collect::<HashSet<_>>();
+        .collect::<FxHashSet<_>>();
 
     if !unassigned_registers.is_empty() {
         for reg in unassigned_registers {

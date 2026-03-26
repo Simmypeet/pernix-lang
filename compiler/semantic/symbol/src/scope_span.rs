@@ -29,5 +29,5 @@ use qbice::{Decode, Encode, Query, StableHash};
 #[value(Option<RelativeSpan>)]
 pub struct Key {
     /// The global ID of the symbol to get the scope span for.
-    pub symbol_id: Global<crate::ID>,
+    pub symbol_id: Global<crate::SymbolID>,
 }

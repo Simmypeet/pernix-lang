@@ -3,7 +3,7 @@
 use pernixc_target::Global;
 use qbice::{Decode, Encode, Query, StableHash};
 
-use crate::ID;
+use crate::SymbolID;
 
 /// The query used for determining whether the `instance` is external or not.
 ///
@@ -27,5 +27,5 @@ use crate::ID;
 #[extend(name = is_external_instance, by_val)]
 pub struct Key {
     /// The global ID of the symbol to get the accessibility for.
-    pub symbol_id: Global<ID>,
+    pub symbol_id: Global<SymbolID>,
 }

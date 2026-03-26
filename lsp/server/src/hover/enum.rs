@@ -19,7 +19,7 @@ use crate::{
 #[extend]
 pub async fn format_enum_signature(
     self: &TrackedEngine,
-    enum_id: Global<pernixc_symbol::ID>,
+    enum_id: Global<pernixc_symbol::SymbolID>,
 ) -> String {
     let mut string = format!("```{PERNIX_FENCE}\n");
     let mut formatter = Formatter::new(&mut string, self);

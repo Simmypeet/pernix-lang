@@ -70,7 +70,7 @@ pub struct FieldRedefinition {
     pub original_span: Option<RelativeSpan>,
 
     /// The ID of the struct containing the field.
-    pub struct_id: pernixc_target::Global<pernixc_symbol::ID>,
+    pub struct_id: pernixc_target::Global<pernixc_symbol::SymbolID>,
 }
 
 impl pernixc_diagnostic::Report for FieldRedefinition {
@@ -133,16 +133,16 @@ pub struct FieldMoreAccessibleThanStruct {
     pub field_span: RelativeSpan,
 
     /// The accessibility of the field.
-    pub field_accessibility: Accessibility<pernixc_symbol::ID>,
+    pub field_accessibility: Accessibility<pernixc_symbol::SymbolID>,
 
     /// The name of the field.
     pub field_name: Interned<str>,
 
     /// The accessibility of the struct.
-    pub struct_accessibility: Accessibility<pernixc_symbol::ID>,
+    pub struct_accessibility: Accessibility<pernixc_symbol::SymbolID>,
 
     /// The ID of the struct.
-    pub struct_id: pernixc_target::Global<pernixc_symbol::ID>,
+    pub struct_id: pernixc_target::Global<pernixc_symbol::SymbolID>,
 }
 
 impl pernixc_diagnostic::Report for FieldMoreAccessibleThanStruct {

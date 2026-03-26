@@ -3,7 +3,7 @@
 
 use bon::Builder;
 use getset::{CopyGetters, Getters};
-use pernixc_hash::HashMap;
+use pernixc_hash::FxHashMap;
 use pernixc_qbice::TrackedEngine;
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
@@ -40,7 +40,7 @@ pub enum InferenceRendering<T> {
 
 /// Maps inference variables to their rendering strategy.
 pub type InferenceRenderingMap<T> =
-    HashMap<inference::Variable<T>, InferenceRendering<T>>;
+    FxHashMap<inference::Variable<T>, InferenceRendering<T>>;
 
 /// Configuration object for formatting terms.
 #[derive(Debug, Builder, CopyGetters)]
@@ -60,7 +60,7 @@ pub struct Configuration<'y> {
 
     /// Mapping for elided lifetime IDs to their names.
     #[get_copy = "pub"]
-    edlided_lifetimes: Option<&'y HashMap<ElidedLifetimeID, Interned<str>>>,
+    edlided_lifetimes: Option<&'y FxHashMap<ElidedLifetimeID, Interned<str>>>,
 
     /// Whether to only display the last segment of qualified identifiers.
     #[get_copy = "pub"]
@@ -111,7 +111,7 @@ impl Configuration<'_> {
 pub struct Formatter<'x, 'y> {
     buffer: &'x mut (dyn std::fmt::Write + Send),
 
-    forall_lifetime_names: HashMap<Forall, usize>,
+    forall_lifetime_names: FxHashMap<Forall, usize>,
 
     /// Configuration for formatting.
     #[get = "pub"]
@@ -161,7 +161,7 @@ pub trait Display: Send + Sync {
         async move {
             let mut formatter = Formatter {
                 buffer,
-                forall_lifetime_names: HashMap::default(),
+                forall_lifetime_names: FxHashMap::default(),
                 configuration: &Configuration::builder().build(),
             };
 
@@ -180,7 +180,7 @@ pub trait Display: Send + Sync {
         async move {
             let mut formatter = Formatter {
                 buffer,
-                forall_lifetime_names: HashMap::default(),
+                forall_lifetime_names: FxHashMap::default(),
                 configuration,
             };
 
@@ -214,7 +214,7 @@ pub trait Display: Send + Sync {
             let mut string = String::new();
             let mut formatter = Formatter {
                 buffer: &mut string,
-                forall_lifetime_names: HashMap::default(),
+                forall_lifetime_names: FxHashMap::default(),
                 configuration,
             };
 

@@ -2,7 +2,7 @@ use std::collections::hash_map::Entry;
 
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
-use pernixc_hash::{HashMap, HashSet};
+use pernixc_hash::{FxHashMap, FxHashSet};
 use pernixc_ir::{
     IR,
     control_flow_graph::Point,
@@ -23,7 +23,7 @@ use crate::{Region, UniversalRegion, diagnostic::Diagnostic};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RegisterInfo {
     pub r#type: Type,
-    pub regions: HashSet<Region>,
+    pub regions: FxHashSet<Region>,
     pub assigned_at: Point,
 }
 
@@ -31,7 +31,7 @@ pub struct RegisterInfo {
 #[derive(
     Debug, Clone, PartialEq, Eq, derive_more::Deref, derive_more::DerefMut,
 )]
-pub struct RegisterInfos(HashMap<ID<Register>, RegisterInfo>);
+pub struct RegisterInfos(FxHashMap<ID<Register>, RegisterInfo>);
 
 impl RegisterInfos {
     /// Creates a new register info cache for all register assignments in the
@@ -41,7 +41,7 @@ impl RegisterInfos {
         environment: &Environment<'_, N>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<Self, UnrecoverableError> {
-        let mut cache = HashMap::default();
+        let mut cache = FxHashMap::default();
 
         for (block_id, block) in ir.control_flow_graph.blocks().iter() {
             for (point, inst) in block
@@ -87,7 +87,7 @@ impl RegisterInfos {
 #[derive(
     Debug, Clone, PartialEq, Eq, derive_more::Deref, derive_more::DerefMut,
 )]
-pub struct RegionVariances(HashMap<Region, Variance>);
+pub struct RegionVariances(FxHashMap<Region, Variance>);
 
 impl RegionVariances {
     /// Create a new region variance cache for all regions appearing in the
@@ -95,10 +95,10 @@ impl RegionVariances {
     #[allow(clippy::uninhabited_references)]
     pub async fn new(
         ir: &IR,
-        current_site: Global<pernixc_symbol::ID>,
+        current_site: Global<pernixc_symbol::SymbolID>,
         tracked_engine: &TrackedEngine,
     ) -> Result<Self, UnrecoverableError> {
-        let mut region_cache = HashMap::<_, Variance>::default();
+        let mut region_cache = FxHashMap::<_, Variance>::default();
 
         for alloca in ir.values.allocas.items() {
             for (region, term_locations) in

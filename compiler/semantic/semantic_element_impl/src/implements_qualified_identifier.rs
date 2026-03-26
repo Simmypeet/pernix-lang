@@ -1,7 +1,7 @@
 use linkme::distributed_slice;
 use pernixc_arena::ID;
 use pernixc_handler::{Handler, Storage};
-use pernixc_hash::HashSet;
+use pernixc_hash::FxHashSet;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::{PERNIX_PROGRAM, TrackedEngine};
 use pernixc_resolution::{
@@ -65,7 +65,7 @@ pub mod diagnostic;
 )]
 #[value(Option<Interned<Resolution>>)]
 pub struct Key {
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }
 
 build::register_build!(Key);
@@ -229,7 +229,7 @@ async fn is_adt_type(engine: &TrackedEngine, sym_ty: &Symbol) -> bool {
 
 async fn check_marker(
     engine: &TrackedEngine,
-    implements: Global<pernixc_symbol::ID>,
+    implements: Global<pernixc_symbol::SymbolID>,
     qualified_identifier: RelativeSpan,
     storage: &Storage<diagnostic::Diagnostic>,
 ) {
@@ -270,7 +270,7 @@ async fn check_marker(
 
 async fn check_adt(
     engine: &TrackedEngine,
-    implements: Global<pernixc_symbol::ID>,
+    implements: Global<pernixc_symbol::SymbolID>,
     storage: &Storage<diagnostic::Diagnostic>,
 ) {
     let kind = engine.get_kind(implements).await;
@@ -333,11 +333,11 @@ async fn check_adt(
 /// types.
 #[derive(Debug, Default)]
 struct UsedParameterCollector {
-    used_lifetime_ids: HashSet<ID<LifetimeParameter>>,
-    used_type_ids: HashSet<ID<TypeParameter>>,
-    used_constant_ids: HashSet<ID<ConstantParameter>>,
-    used_instance_ids: HashSet<ID<InstanceParameter>>,
-    current_symbol_id: Global<pernixc_symbol::ID>,
+    used_lifetime_ids: FxHashSet<ID<LifetimeParameter>>,
+    used_type_ids: FxHashSet<ID<TypeParameter>>,
+    used_constant_ids: FxHashSet<ID<ConstantParameter>>,
+    used_instance_ids: FxHashSet<ID<InstanceParameter>>,
+    current_symbol_id: Global<pernixc_symbol::SymbolID>,
 }
 
 impl UsedParameterCollector {
@@ -449,7 +449,7 @@ impl visitor::Visitor<'_, Instance> for UsedParameterCollector {
 /// Check for unused generic parameters in the implements declaration.
 async fn check_unused_generic_parameters(
     engine: &TrackedEngine,
-    implements_id: Global<pernixc_symbol::ID>,
+    implements_id: Global<pernixc_symbol::SymbolID>,
     generic_arguments: &GenericArguments,
     storage: &Storage<diagnostic::Diagnostic>,
 ) {
@@ -553,7 +553,7 @@ impl Executor<pernixc_semantic_element::implements::Key, pernixc_qbice::Config>
         &self,
         key: &pernixc_semantic_element::implements::Key,
         engine: &TrackedEngine,
-    ) -> Option<Global<pernixc_symbol::ID>> {
+    ) -> Option<Global<pernixc_symbol::SymbolID>> {
         let resolution =
             engine.query(&Key { symbol_id: key.symbol_id }).await?;
 

@@ -1,6 +1,6 @@
 use pernixc_arena::ID;
 use pernixc_diagnostic::{Highlight, Report, Severity};
-use pernixc_hash::HashSet;
+use pernixc_hash::FxHashSet;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_resolution::qualified_identifier::Resolution;
@@ -96,7 +96,7 @@ pub struct FieldNotFound {
     pub identifier_span: RelativeSpan,
 
     /// The struct ID where the field is not found.
-    pub struct_id: Global<pernixc_symbol::ID>,
+    pub struct_id: Global<pernixc_symbol::SymbolID>,
 
     /// The name of the field that was not found.
     pub field_name: Interned<str>,
@@ -147,10 +147,10 @@ pub struct FieldIsNotAccessible {
     pub field_id: ID<Field>,
 
     /// The struct in which the field is not accessible.
-    pub struct_id: Global<pernixc_symbol::ID>,
+    pub struct_id: Global<pernixc_symbol::SymbolID>,
 
     /// The ID to the scope where the field is not accessible.
-    pub referring_site: Global<pernixc_symbol::ID>,
+    pub referring_site: Global<pernixc_symbol::SymbolID>,
 
     /// The span where the field is referred from.
     pub referring_identifier_span: RelativeSpan,
@@ -220,7 +220,7 @@ pub struct DuplicatedFieldInitialization {
     pub field_id: ID<Field>,
 
     /// The ID of the struct where the field is initialized.
-    pub struct_id: Global<pernixc_symbol::ID>,
+    pub struct_id: Global<pernixc_symbol::SymbolID>,
 
     /// The span of the first initialization.
     pub prior_initialization_span: RelativeSpan,
@@ -271,10 +271,10 @@ impl Report for DuplicatedFieldInitialization {
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
 pub struct UninitializedFields {
     /// The ID of the struct where the fields are uninitialized.
-    pub struct_id: Global<pernixc_symbol::ID>,
+    pub struct_id: Global<pernixc_symbol::SymbolID>,
 
     /// The set of uninitialized fields.
-    pub uninitialized_fields: HashSet<ID<Field>>,
+    pub uninitialized_fields: FxHashSet<ID<Field>>,
 
     /// The span of the struct expression.
     pub struct_expression_span: RelativeSpan,

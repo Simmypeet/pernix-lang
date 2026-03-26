@@ -7,9 +7,7 @@
 use pernixc_handler::Handler;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_type_system::{
-    UnrecoverableError,
-    constraints::Constraints,
-    normalizer::Normalizer,
+    UnrecoverableError, constraints::Constraints, normalizer::Normalizer,
 };
 
 use crate::{

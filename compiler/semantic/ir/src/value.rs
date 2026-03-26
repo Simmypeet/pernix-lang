@@ -62,7 +62,7 @@ pub struct Environment<'e, N> {
     pub handling_scopes: &'e crate::handling_scope::HandlingScopes,
 
     /// The site where the IR binding is being taken place in.
-    pub current_site: Global<pernixc_symbol::ID>,
+    pub current_site: Global<pernixc_symbol::SymbolID>,
 }
 
 impl<'e, N: Normalizer> Environment<'e, N> {

@@ -41,7 +41,7 @@ use qbice::{
 #[extend(name = get_adt_fields, by_val)]
 pub struct Key {
     /// The global ID of the ADT (struct or enum) symbol.
-    pub adt_id: Global<pernixc_symbol::ID>,
+    pub adt_id: Global<pernixc_symbol::SymbolID>,
 }
 
 /// The type of each field in the ADT, along with the span of the field if

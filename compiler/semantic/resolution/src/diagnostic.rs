@@ -169,7 +169,7 @@ pub struct LifetimeParameterNotFound {
     pub name: Interned<str>,
 
     /// The site where the search occurred.
-    pub referring_site: Global<pernixc_symbol::ID>,
+    pub referring_site: Global<pernixc_symbol::SymbolID>,
 }
 
 impl Report for LifetimeParameterNotFound {
@@ -523,7 +523,7 @@ impl Report for MismatchedGenericArgumentCount {
 )]
 pub struct NoGenericArgumentsRequired {
     /// The symbol that  was supplied with generic arguments.
-    pub global_id: Global<pernixc_symbol::ID>,
+    pub global_id: Global<pernixc_symbol::SymbolID>,
 
     /// The span where the generic arguments were supplied.
     pub generic_argument_span: RelativeSpan,
@@ -568,7 +568,7 @@ impl Report for NoGenericArgumentsRequired {
 pub struct SymbolNotFound {
     /// The [`GlobalID`] where the symbol was searched in. If `None`, the root
     /// module was searched.
-    pub searched_item_id: Option<Global<pernixc_symbol::ID>>,
+    pub searched_item_id: Option<Global<pernixc_symbol::SymbolID>>,
 
     /// The span where the symbol was searched from.
     pub resolution_span: RelativeSpan,
@@ -710,10 +710,10 @@ impl Report for SymbolNotFound {
 )]
 pub struct SymbolIsNotAccessible {
     /// [`Global`] ID where the [`Self::referred`] is referred.
-    pub referring_site: Global<pernixc_symbol::ID>,
+    pub referring_site: Global<pernixc_symbol::SymbolID>,
 
     /// The symbol that was referred and is not accessible.
-    pub referred: Global<pernixc_symbol::ID>,
+    pub referred: Global<pernixc_symbol::SymbolID>,
 
     /// The span where the [`Self::referred`] is referred from.
     pub referred_span: RelativeSpan,
@@ -761,7 +761,7 @@ pub struct ExpectModule {
     pub module_path: RelativeSpan,
 
     /// The ID of the symbol that was found instead of a module.
-    pub found_id: Global<pernixc_symbol::ID>,
+    pub found_id: Global<pernixc_symbol::SymbolID>,
 }
 
 impl Report for ExpectModule {
@@ -890,7 +890,7 @@ impl Report for NoMemberInType {
 )]
 pub struct NoMemberInSymbol {
     resolution_span: RelativeSpan,
-    symbol_id: Global<pernixc_symbol::ID>,
+    symbol_id: Global<pernixc_symbol::SymbolID>,
 }
 
 impl Report for NoMemberInSymbol {

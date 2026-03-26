@@ -319,7 +319,7 @@ pub struct AlreadyBoundFieldPattern {
     pub first_bound_span: RelativeSpan,
 
     /// The ID of the struct where the field is already bound.
-    pub struct_id: Global<pernixc_symbol::ID>,
+    pub struct_id: Global<pernixc_symbol::SymbolID>,
 
     /// The ID of the field that is already bound.
     pub field_id: ID<Field>,
@@ -386,7 +386,7 @@ pub struct UnboundFields {
     pub field_ids: Vec<ID<Field>>,
 
     /// The ID of the struct where the fields are unbound.
-    pub struct_id: Global<pernixc_symbol::ID>,
+    pub struct_id: Global<pernixc_symbol::SymbolID>,
 
     /// The span of the pattern where the fields are unbound.
     pub pattern_span: RelativeSpan,
@@ -443,7 +443,7 @@ impl Report for UnboundFields {
 )]
 pub struct ExpectedAssociatedPattern {
     /// The ID of the variant where the associated pattern is expected.
-    pub variant_id: Global<pernixc_symbol::ID>,
+    pub variant_id: Global<pernixc_symbol::SymbolID>,
 
     /// The span of the variant pattern where the associated pattern is
     /// expected.
@@ -497,7 +497,7 @@ impl Report for ExpectedAssociatedPattern {
 )]
 pub struct UnexpectedAssociatedPattern {
     /// The variant ID that the pattern matches.
-    pub variant_id: Global<pernixc_symbol::ID>,
+    pub variant_id: Global<pernixc_symbol::SymbolID>,
 
     /// The span of the pattern with the associated pattern.
     pub associated_pattern_span: RelativeSpan,

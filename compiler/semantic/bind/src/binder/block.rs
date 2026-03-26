@@ -6,7 +6,7 @@ use bon::bon;
 use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
-use pernixc_hash::HashMap;
+use pernixc_hash::FxHashMap;
 use pernixc_ir::{
     control_flow_graph::Block,
     instruction::{
@@ -33,7 +33,7 @@ use crate::{
 
 #[derive(Debug, Default)]
 pub(super) struct Context {
-    block_states_by_scope_id: HashMap<ID<Scope>, BlockState>,
+    block_states_by_scope_id: FxHashMap<ID<Scope>, BlockState>,
 }
 
 impl Context {
@@ -47,7 +47,7 @@ impl Context {
 #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
 pub struct BlockState {
     label: Option<Interned<str>>,
-    incoming_values: HashMap<ID<Block>, Value>,
+    incoming_values: FxHashMap<ID<Block>, Value>,
 
     /// The block ID to jump to after the block is finished executing.
     #[get_copy = "pub"]
@@ -101,7 +101,7 @@ impl Binder<'_> {
                     label: label
                         .and_then(pernixc_syntax::Label::identifier)
                         .map(|x| x.kind.0),
-                    incoming_values: HashMap::default(),
+                    incoming_values: FxHashMap::default(),
                     successor_block_id,
                     express_type: None,
                     span,

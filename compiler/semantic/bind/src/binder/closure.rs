@@ -3,7 +3,7 @@
 
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
-use pernixc_hash::HashMap;
+use pernixc_hash::FxHashMap;
 use pernixc_ir::{
     capture::{self, Captures, builder::CapturesWithNameBindingPoint},
     closure_parameters::ClosureParameters,
@@ -237,7 +237,7 @@ impl Binder<'_> {
         captures: Captures,
         capture_span: RelativeSpan,
     ) -> (ID<Captures>, CaptureArguments) {
-        let mut capture_arguments = HashMap::default();
+        let mut capture_arguments = FxHashMap::default();
 
         for (capture_id, capture) in captures.captures_as_order() {
             // load or borrow the address based on the capture mode

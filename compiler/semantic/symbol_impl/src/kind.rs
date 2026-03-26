@@ -5,7 +5,7 @@ use pernixc_extend::extend;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_symbol::{
     AllAdtIDKey, AllFunctionWithBodyIDKey, AllImplementsIDKey,
-    AllInstanceIDKey, ID,
+    AllInstanceIDKey, SymbolID,
     kind::{Key, Kind},
 };
 use pernixc_target::{Global, TargetID};
@@ -33,7 +33,7 @@ use crate::table::{self, MapKey, get_table_of_symbol};
 )]
 #[value(Option<Kind>)]
 pub struct ProjectionKey {
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }
 
 #[executor(config = Config, style = qbice::ExecutionStyle::Projection)]
@@ -108,7 +108,7 @@ impl<
         + 'static,
 > Query for FilterKey<T>
 {
-    type Value = Arc<[ID]>;
+    type Value = Arc<[SymbolID]>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, StableHash, Default)]
@@ -133,14 +133,14 @@ impl<
         &self,
         query: &FilterKey<T>,
         engine: &TrackedEngine,
-    ) -> Arc<[ID]> {
+    ) -> Arc<[SymbolID]> {
         let map = engine.query(&MapKey(query.target_id)).await;
 
         let ids = map.keys_by_symbol_id.keys().copied().collect::<Vec<_>>();
         let mut handles = JoinSet::new();
 
         for id_chunk in
-            ids.chunk_for_tasks().map(<[pernixc_symbol::ID]>::to_vec)
+            ids.chunk_for_tasks().map(<[pernixc_symbol::SymbolID]>::to_vec)
         {
             let map = map.clone();
             let engine = engine.clone();
@@ -230,7 +230,7 @@ pub async fn get_all_symbols_of_kind(
     self: &TrackedEngine,
     target_id: TargetID,
     kind: Kind,
-) -> Arc<[ID]> {
+) -> Arc<[SymbolID]> {
     self.query(&FilterKey { target_id, filter: EqualsFilter(kind) }).await
 }
 
@@ -262,7 +262,7 @@ static ADT_FILTER_EXECUTOR: Registration<Config> =
 async fn all_adt_ids_executor(
     key: &AllAdtIDKey,
     engine: &TrackedEngine,
-) -> Arc<[ID]> {
+) -> Arc<[SymbolID]> {
     engine
         .query(&FilterKey { target_id: key.target_id, filter: AdtFilter })
         .await
@@ -302,7 +302,7 @@ static IMPLEMENTATION_FILTER_EXECUTOR: Registration<Config> =
 async fn all_implements_ids_executor(
     key: &AllImplementsIDKey,
     engine: &TrackedEngine,
-) -> Arc<[ID]> {
+) -> Arc<[SymbolID]> {
     engine
         .query(&FilterKey {
             target_id: key.target_id,
@@ -345,7 +345,7 @@ static FUNCTION_WITH_BODY_FILTER_EXECUTOR: Registration<Config> =
 async fn all_function_ids_executor(
     key: &AllFunctionWithBodyIDKey,
     engine: &TrackedEngine,
-) -> Arc<[ID]> {
+) -> Arc<[SymbolID]> {
     engine
         .query(&FilterKey {
             target_id: key.target_id,
@@ -388,7 +388,7 @@ static INSTANCE_FILTER_EXECUTOR: Registration<Config> =
 async fn all_instance_ids_executor(
     key: &AllInstanceIDKey,
     engine: &TrackedEngine,
-) -> Arc<[ID]> {
+) -> Arc<[SymbolID]> {
     engine
         .query(&FilterKey { target_id: key.target_id, filter: InstanceFilter })
         .await

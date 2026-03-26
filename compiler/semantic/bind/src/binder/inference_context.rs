@@ -969,7 +969,7 @@ impl Binder<'_> {
     pub async fn resolve_generic_arguments_with_inference(
         &mut self,
         generic_arguments: &pernixc_syntax::GenericIdentifier,
-        id: Global<pernixc_symbol::ID>,
+        id: Global<pernixc_symbol::SymbolID>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<GenericArguments, UnrecoverableError> {
         let extra_namespace = &self.environment.extra_namespace;
@@ -1128,7 +1128,7 @@ impl Binder<'_> {
 impl InferenceContext {
     pub async fn resolve_inferring_instance_variable(
         &mut self,
-        symbol_id: Global<pernixc_symbol::ID>,
+        symbol_id: Global<pernixc_symbol::SymbolID>,
         instantiation_usage: &Instantiation,
         span: &RelativeSpan,
         engine: &TrackedEngine,

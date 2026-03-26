@@ -3,7 +3,7 @@
 use std::{num::NonZero, ops::Deref};
 
 use pernixc_handler::Handler;
-use pernixc_hash::HashMap;
+use pernixc_hash::FxHashMap;
 use pernixc_ir::{
     instruction::SwitchValue,
     pattern::{
@@ -544,7 +544,7 @@ impl Binder<'_> {
         let instantiation = symbol.create_instantiation(self.engine()).await;
         let fields = self.engine().get_fields(symbol.id()).await;
 
-        let mut patterns_by_field_id = HashMap::<_, T>::default();
+        let mut patterns_by_field_id = FxHashMap::<_, T>::default();
 
         let mut found_wildcard = false;
         // iterate to each field

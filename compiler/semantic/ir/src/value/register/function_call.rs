@@ -2,7 +2,7 @@
 use std::ops::Deref;
 
 use pernixc_arena::ID;
-use pernixc_hash::HashMap;
+use pernixc_hash::FxHashMap;
 use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::{
     parameter::get_parameters, return_type::get_return_type,
@@ -157,7 +157,7 @@ impl Callee {
 
     /// Returns the symbol ID of this callee.
     #[must_use]
-    pub const fn get_symbol_id(&self) -> Global<pernixc_symbol::ID> {
+    pub const fn get_symbol_id(&self) -> Global<pernixc_symbol::SymbolID> {
         match self {
             Self::Function(symbol) => symbol.id(),
             Self::AssociatedFunction(associated_symbol) => {
@@ -175,8 +175,8 @@ impl Callee {
 pub struct FunctionCall {
     callee: Callee,
     arguments: Vec<Value>,
-    elided_lifetimes_instantiation: HashMap<ID<ElidedLifetime>, Lifetime>,
-    effect_arguments: HashMap<ID<effect::Unit>, EffectHandlerArgument>,
+    elided_lifetimes_instantiation: FxHashMap<ID<ElidedLifetime>, Lifetime>,
+    effect_arguments: FxHashMap<ID<effect::Unit>, EffectHandlerArgument>,
 }
 
 impl FunctionCall {
@@ -184,8 +184,8 @@ impl FunctionCall {
     pub const fn new(
         callee: Callee,
         arguments: Vec<Value>,
-        elided_lifetimes_instantiation: HashMap<ID<ElidedLifetime>, Lifetime>,
-        effect_arguments: HashMap<ID<effect::Unit>, EffectHandlerArgument>,
+        elided_lifetimes_instantiation: FxHashMap<ID<ElidedLifetime>, Lifetime>,
+        effect_arguments: FxHashMap<ID<effect::Unit>, EffectHandlerArgument>,
     ) -> Self {
         Self {
             callee,
@@ -202,7 +202,7 @@ impl FunctionCall {
     }
 
     #[must_use]
-    pub const fn callee_symbol_id(&self) -> Global<pernixc_symbol::ID> {
+    pub const fn callee_symbol_id(&self) -> Global<pernixc_symbol::SymbolID> {
         self.callee.get_symbol_id()
     }
 

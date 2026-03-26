@@ -54,12 +54,12 @@ pub mod arbitrary;
     StableHash,
     Identifiable,
 )]
-pub struct ID {
+pub struct SymbolID {
     lo: u64,
     hi: u64,
 }
 
-impl ID {
+impl SymbolID {
     /// Creates a new ID from the given u128 value.
     #[allow(clippy::cast_possible_truncation)]
     #[must_use]
@@ -71,6 +71,9 @@ impl ID {
     #[must_use]
     pub const fn from_lo_hi(lo: u64, hi: u64) -> Self { Self { lo, hi } }
 }
+
+/// A global symbol ID that uniquely identifies a symbol across all targets.
+pub type GlobalSymbolID = Global<SymbolID>;
 
 /// A kind of ID used to unique identify a symbol inside a particular global
 /// symbol.
@@ -96,7 +99,7 @@ impl ID {
 pub struct MemberID<InnerID> {
     /// The parent ID of the member, which is the ID of the symbol that
     /// contains this member.
-    parent_id: Global<ID>,
+    parent_id: Global<SymbolID>,
 
     /// The ID of the member.
     id: InnerID,
@@ -106,7 +109,7 @@ impl<InnerID> MemberID<InnerID> {
     /// Returns the parent ID of the member, which is the ID of the symbol that
     /// contains this member.
     #[must_use]
-    pub const fn parent_id(&self) -> Global<ID> { self.parent_id }
+    pub const fn parent_id(&self) -> Global<SymbolID> { self.parent_id }
 
     /// Returns the ID of the member.
     #[must_use]
@@ -133,9 +136,9 @@ pub async fn calculate_qualified_name_id<'a>(
     self: &TrackedEngine,
     qualified_name_sequence: impl IntoIterator<Item = &'a str>,
     target_id: TargetID,
-    parent_id: Option<ID>,
+    parent_id: Option<SymbolID>,
     declaration_order: usize,
-) -> ID {
+) -> SymbolID {
     let target_seed = self.get_target_seed(target_id).await;
 
     calculate_qualified_name_id_with_given_seed(
@@ -148,7 +151,7 @@ pub async fn calculate_qualified_name_id<'a>(
 
 /// Calculates the ID of the core root module symbol.
 #[must_use]
-pub fn calculate_core_root_target_module_id() -> ID {
+pub fn calculate_core_root_target_module_id() -> SymbolID {
     calculate_qualified_name_id_with_given_seed(
         std::iter::once("core"),
         None,
@@ -161,10 +164,10 @@ pub fn calculate_core_root_target_module_id() -> ID {
 /// and the target ID, using the given target seed.
 pub fn calculate_qualified_name_id_with_given_seed<'a>(
     qualified_name_sequence: impl IntoIterator<Item = &'a str>,
-    parent_id: Option<ID>,
+    parent_id: Option<SymbolID>,
     declaration_order: usize,
     target_seed: u64,
-) -> ID {
+) -> SymbolID {
     let mut hasher = siphasher::sip128::SipHasher24::default();
     target_seed.hash(&mut hasher);
 
@@ -179,7 +182,7 @@ pub fn calculate_qualified_name_id_with_given_seed<'a>(
 
     declaration_order.hash(&mut hasher);
 
-    ID::from_u128(hasher.finish128().into())
+    SymbolID::from_u128(hasher.finish128().into())
 }
 
 /// Calculates a symbol [`ID`] for the implements at the given qualified
@@ -189,7 +192,7 @@ pub async fn calculate_implements_id(
     self: &TrackedEngine,
     qualified_identifier_span: &RelativeSpan,
     target_id: TargetID,
-) -> ID {
+) -> SymbolID {
     let mut hasher = siphasher::sip128::SipHasher24::default();
     let target_seed = self.get_target_seed(target_id).await;
 
@@ -202,7 +205,7 @@ pub async fn calculate_implements_id(
     // is unique for each implements
     qualified_identifier_span.hash(&mut hasher);
 
-    ID::from_u128(hasher.finish128().into())
+    SymbolID::from_u128(hasher.finish128().into())
 }
 
 /// Calculates a symbol [`ID`] for the implements with the given unique name.
@@ -211,7 +214,7 @@ pub async fn calculate_implements_id_by_unique_name(
     self: &TrackedEngine,
     unique_name: &str,
     target_id: TargetID,
-) -> ID {
+) -> SymbolID {
     let target_seed = self.get_target_seed(target_id).await;
 
     calculate_implements_id_by_unique_name_with_given_seed(
@@ -226,7 +229,7 @@ pub async fn calculate_implements_id_by_unique_name(
 pub fn calculate_implements_id_by_unique_name_with_given_seed(
     unique_name: &str,
     target_seed: u64,
-) -> ID {
+) -> SymbolID {
     let mut hasher = siphasher::sip128::SipHasher24::default();
 
     target_seed.hash(&mut hasher);
@@ -235,7 +238,7 @@ pub fn calculate_implements_id_by_unique_name_with_given_seed(
     false.hash(&mut hasher);
     unique_name.hash(&mut hasher);
 
-    ID::from_u128(hasher.finish128().into())
+    SymbolID::from_u128(hasher.finish128().into())
 }
 
 /// Returns the root module ID for the given target ID.
@@ -243,7 +246,7 @@ pub fn calculate_implements_id_by_unique_name_with_given_seed(
 pub async fn get_target_root_module_id(
     self: &TrackedEngine,
     target_id: TargetID,
-) -> ID {
+) -> SymbolID {
     if target_id == TargetID::CORE {
         self.calculate_qualified_name_id(
             std::iter::once("core"),
@@ -282,7 +285,7 @@ pub async fn get_target_root_module_id(
     StableHash,
     Query,
 )]
-#[value(Interned<[ID]>)]
+#[value(Interned<[SymbolID]>)]
 #[extend(name = get_all_symbol_ids, by_val)]
 pub struct AllSymbolIDKey {
     /// The target ID to get all symbol IDs for.
@@ -304,7 +307,7 @@ pub struct AllSymbolIDKey {
     StableHash,
     Query,
 )]
-#[value(Arc<[ID]>)]
+#[value(Arc<[SymbolID]>)]
 #[extend(name = get_all_adt_ids, by_val)]
 pub struct AllAdtIDKey {
     /// The target ID to get all ADT symbol IDs for.
@@ -327,7 +330,7 @@ pub struct AllAdtIDKey {
     StableHash,
     Query,
 )]
-#[value(Arc<[ID]>)]
+#[value(Arc<[SymbolID]>)]
 #[extend(name = get_all_implements_ids, by_val)]
 pub struct AllImplementsIDKey {
     /// The target ID to get all implements symbol IDs for.
@@ -349,7 +352,7 @@ pub struct AllImplementsIDKey {
     StableHash,
     Query,
 )]
-#[value(Arc<[ID]>)]
+#[value(Arc<[SymbolID]>)]
 #[extend(name = get_all_instance_ids, by_val)]
 pub struct AllInstanceIDKey {
     /// The target ID to get all instance symbol IDs for.
@@ -371,7 +374,7 @@ pub struct AllInstanceIDKey {
     StableHash,
     Query,
 )]
-#[value(Arc<[ID]>)]
+#[value(Arc<[SymbolID]>)]
 #[extend(name = get_all_function_with_body_ids, by_val)]
 pub struct AllFunctionWithBodyIDKey {
     /// The target ID to get all function having body symbol IDs for.

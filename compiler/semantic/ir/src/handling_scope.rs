@@ -225,7 +225,7 @@ impl HandlingScope {
     /// arguments.
     pub async fn search_handler_clause(
         &self,
-        effect_id: Global<pernixc_symbol::ID>,
+        effect_id: Global<pernixc_symbol::SymbolID>,
         generic_arguments: &GenericArguments,
         matcher: &mut impl HandlerClauseMatcher,
     ) -> Result<Option<pernixc_arena::ID<HandlerClause>>, OverflowError> {
@@ -278,7 +278,7 @@ impl<'a> From<&'a HandlerClause> for Resolution<'a> {
 impl HandlerClause {
     #[must_use]
     pub const fn new(
-        effect_id: Global<pernixc_symbol::ID>,
+        effect_id: Global<pernixc_symbol::SymbolID>,
         generic_arguments: GenericArguments,
         span: RelativeSpan,
     ) -> Self {
@@ -289,7 +289,7 @@ impl HandlerClause {
     }
 
     #[must_use]
-    pub const fn effect_id(&self) -> Global<pernixc_symbol::ID> {
+    pub const fn effect_id(&self) -> Global<pernixc_symbol::SymbolID> {
         self.symbol.id()
     }
 
@@ -355,7 +355,7 @@ pub struct OperationHandlerID {
 
     /// The operation ID that this operation handler handles.
     #[get_copy = "pub"]
-    operation_id: pernixc_symbol::ID,
+    operation_id: pernixc_symbol::SymbolID,
 }
 
 impl OperationHandlerID {
@@ -363,7 +363,7 @@ impl OperationHandlerID {
     #[must_use]
     pub const fn new(
         handler_clause_id: HandlerClauseID,
-        operation_id: pernixc_symbol::ID,
+        operation_id: pernixc_symbol::SymbolID,
     ) -> Self {
         Self { handler_clause_id, operation_id }
     }

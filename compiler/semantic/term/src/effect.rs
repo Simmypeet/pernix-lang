@@ -32,7 +32,7 @@ impl Unit {
     /// Creates a new `Unit` with the given effect ID and generic arguments.
     #[must_use]
     pub const fn new(
-        effect_id: Global<pernixc_symbol::ID>,
+        effect_id: Global<pernixc_symbol::SymbolID>,
         generic_arguments: GenericArguments,
     ) -> Self {
         Self(Symbol::new(effect_id, generic_arguments))
@@ -44,7 +44,9 @@ impl Unit {
 
     /// Returns the ID of the effect that this `Unit` represents.
     #[must_use]
-    pub const fn effect_id(&self) -> Global<pernixc_symbol::ID> { self.0.id() }
+    pub const fn effect_id(&self) -> Global<pernixc_symbol::SymbolID> {
+        self.0.id()
+    }
 
     /// Returns the generic arguments supplied to this effect.
     #[must_use]

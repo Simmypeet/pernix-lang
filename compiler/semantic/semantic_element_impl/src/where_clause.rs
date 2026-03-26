@@ -37,7 +37,7 @@ pub mod diagnostic;
 
 async fn create_trait_member_predicates(
     engine: &TrackedEngine,
-    global_id: Global<pernixc_symbol::ID>,
+    global_id: Global<pernixc_symbol::SymbolID>,
     syntax_tree: &pernixc_syntax::predicate::TraitTypeEquality,
     extra_namespace: &ExtraNamespace,
     where_clause: &mut Vec<where_clause::Predicate>,
@@ -93,7 +93,7 @@ async fn create_trait_member_predicates(
 #[allow(clippy::too_many_lines)]
 fn create_outlives_predicates(
     engine: &TrackedEngine,
-    global_id: Global<pernixc_symbol::ID>,
+    global_id: Global<pernixc_symbol::SymbolID>,
     syntax_tree: &pernixc_syntax::predicate::LifetimeOutlives,
     extra_namespace: &ExtraNamespace,
     where_clause: &mut Vec<where_clause::Predicate>,
@@ -146,7 +146,7 @@ fn create_outlives_predicates(
 
 async fn create_type_bound_predicates(
     engine: &TrackedEngine,
-    global_id: Global<pernixc_symbol::ID>,
+    global_id: Global<pernixc_symbol::SymbolID>,
     syntax_tree: &pernixc_syntax::predicate::Type,
     extra_namespace: &ExtraNamespace,
     where_clause: &mut Vec<where_clause::Predicate>,

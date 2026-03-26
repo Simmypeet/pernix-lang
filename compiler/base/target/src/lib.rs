@@ -6,7 +6,7 @@ use clap::{Args, Subcommand, builder::styling};
 use derive_new::new;
 use enum_as_inner::EnumAsInner;
 use linkme::distributed_slice;
-use pernixc_hash::HashSet;
+use pernixc_hash::FxHashSet;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use qbice::{
     Decode, Encode, Identifiable, StableHash, program::Registration,
@@ -537,7 +537,7 @@ pub struct MapKey;
     StableHash,
     qbice::Query,
 )]
-#[value(Interned<HashSet<TargetID>>)]
+#[value(Interned<FxHashSet<TargetID>>)]
 #[extend(name = get_linked_targets, by_val)]
 pub struct LinkKey {
     /// The target ID to retrieve the linked targets for.
@@ -620,6 +620,6 @@ pub struct LocalTargetIDKey;
     Decode,
     qbice::Query,
 )]
-#[value(Interned<HashSet<TargetID>>)]
+#[value(Interned<FxHashSet<TargetID>>)]
 #[extend(name = get_all_target_ids, by_val)]
 pub struct AllTargetIDsKey;

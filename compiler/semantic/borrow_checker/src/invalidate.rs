@@ -1,7 +1,7 @@
 use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
-use pernixc_hash::HashSet;
+use pernixc_hash::FxHashSet;
 use pernixc_ir::{
     address::{Address, Memory},
     control_flow_graph::{ControlFlowGraph, Point},
@@ -34,7 +34,7 @@ use crate::{
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Contains<'a> {
-    regions: &'a HashSet<Region>,
+    regions: &'a FxHashSet<Region>,
     contains: bool,
 }
 
@@ -85,11 +85,11 @@ impl Recursive<'_, Instance> for Contains<'_> {
 }
 
 impl<'a> Contains<'a> {
-    pub const fn new(regions: &'a HashSet<Region>) -> Self {
+    pub const fn new(regions: &'a FxHashSet<Region>) -> Self {
         Self { regions, contains: false }
     }
 
-    pub fn contains(ty: &Type, regions: &'a HashSet<Region>) -> bool {
+    pub fn contains(ty: &Type, regions: &'a FxHashSet<Region>) -> bool {
         let mut contains = Self::new(regions);
         visitor::accept_recursive(ty, &mut contains);
         contains.contains
@@ -116,7 +116,7 @@ impl<'a, N: Normalizer> Checker<'a, N> {
         self.context.values()
     }
 
-    pub const fn current_site(&self) -> Global<pernixc_symbol::ID> {
+    pub const fn current_site(&self) -> Global<pernixc_symbol::SymbolID> {
         self.context.current_site()
     }
 
@@ -178,7 +178,7 @@ impl<'a, N: Normalizer> Checker<'a, N> {
         }
 
         // get the invalidated local regions
-        let mut invalidated_local_regions = HashSet::default();
+        let mut invalidated_local_regions = FxHashSet::default();
         let mut invalidated_universal_regions = Vec::new();
 
         for x in

@@ -3,7 +3,7 @@ use std::{borrow::Cow, ops::Deref};
 use linkme::distributed_slice;
 use pernixc_arena::{Arena, ID};
 use pernixc_handler::Storage;
-use pernixc_hash::HashSet;
+use pernixc_hash::FxHashSet;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_resolution::{
@@ -55,10 +55,10 @@ pub mod diagnostic;
 pub struct FunctionSignature {
     pub parameters: Interned<Parameters>,
     pub return_type: Interned<Type>,
-    pub implied_predicates: Interned<HashSet<ImpliedPredicate>>,
+    pub implied_predicates: Interned<FxHashSet<ImpliedPredicate>>,
     pub elided_lifetimes: Interned<Arena<ElidedLifetime>>,
     pub late_bound_lifetime_parameters:
-        Interned<HashSet<ID<LifetimeParameter>>>,
+        Interned<FxHashSet<ID<LifetimeParameter>>>,
 }
 
 #[derive(
@@ -66,14 +66,14 @@ pub struct FunctionSignature {
 )]
 #[value(FunctionSignature)]
 pub struct Key {
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub symbol_id: Global<pernixc_symbol::SymbolID>,
 }
 
 async fn create_parameters<
     T: Iterator<Item = pernixc_syntax::item::function::Parameter>,
 >(
     engine: &TrackedEngine,
-    id: Global<pernixc_symbol::ID>,
+    id: Global<pernixc_symbol::SymbolID>,
     extra_namespace: &ExtraNamespace,
     elided_lifetimes_provider: &mut ParametersElidedLifetimeProvider<'_>,
     occurrences: &mut Occurrences,
@@ -240,7 +240,7 @@ impl Build for Key {
             }
         }
 
-        let mut implied_predicates = HashSet::default();
+        let mut implied_predicates = FxHashSet::default();
 
         for (implied_predicate, declared_span, inst_span) in
             implied_predicate_candidates
@@ -358,7 +358,7 @@ impl Build for Key {
 build::register_build!(Key);
 
 struct ParametersElidedLifetimeProvider<'a> {
-    global_id: Global<pernixc_symbol::ID>,
+    global_id: Global<pernixc_symbol::SymbolID>,
     elided_lifetimes: &'a mut Arena<ElidedLifetime>,
     counter: usize,
 }
@@ -384,8 +384,8 @@ impl ElidedTermProvider<Lifetime> for ReturnElidedLifetimeProvider {
 
 struct AllLifetimeParameters {
     // list of lifetimes that will be checked if they are late bound
-    lifetimes: HashSet<ID<LifetimeParameter>>,
-    current_function_id: Global<pernixc_symbol::ID>,
+    lifetimes: FxHashSet<ID<LifetimeParameter>>,
+    current_function_id: Global<pernixc_symbol::SymbolID>,
 }
 
 impl AllLifetimeParameters {
@@ -543,7 +543,7 @@ static RETURN_TYPE_EXECUTOR: Registration<Config> =
 pub async fn implied_predicates_executor(
     &implied_predicate::Key { symbol_id }: &implied_predicate::Key,
     engine: &TrackedEngine,
-) -> Interned<HashSet<ImpliedPredicate>> {
+) -> Interned<FxHashSet<ImpliedPredicate>> {
     let signature = engine.query(&Key { symbol_id }).await;
     signature.implied_predicates
 }
@@ -573,7 +573,7 @@ static ELIDED_LIFETIMES_EXECUTOR: Registration<Config> =
 pub async fn late_bound_lifetimes_executor(
     &late_bound_lifetime::Key { symbol_id }: &late_bound_lifetime::Key,
     engine: &TrackedEngine,
-) -> Interned<HashSet<ID<LifetimeParameter>>> {
+) -> Interned<FxHashSet<ID<LifetimeParameter>>> {
     let signature = engine.query(&Key { symbol_id }).await;
     signature.late_bound_lifetime_parameters
 }

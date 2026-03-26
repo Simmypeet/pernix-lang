@@ -32,7 +32,7 @@ impl Positive {
     /// Creates a new [`Positive`] predicate
     #[must_use]
     pub const fn new(
-        marker_id: Global<pernixc_symbol::ID>,
+        marker_id: Global<pernixc_symbol::SymbolID>,
         generic_arguments: GenericArguments,
     ) -> Self {
         Self(Symbol::new(marker_id, generic_arguments))
@@ -51,7 +51,9 @@ impl Positive {
 
     /// Returns the ID of the marker that this predicate represents.
     #[must_use]
-    pub const fn marker_id(&self) -> Global<pernixc_symbol::ID> { self.0.id() }
+    pub const fn marker_id(&self) -> Global<pernixc_symbol::SymbolID> {
+        self.0.id()
+    }
 
     /// Returns the generic arguments supplied to this marker.
     #[must_use]
@@ -110,7 +112,7 @@ impl Negative {
     /// Creates a new [`Negative`] predicate
     #[must_use]
     pub const fn new(
-        marker_id: Global<pernixc_symbol::ID>,
+        marker_id: Global<pernixc_symbol::SymbolID>,
         generic_arguments: GenericArguments,
     ) -> Self {
         Self(Symbol::new(marker_id, generic_arguments))
@@ -129,7 +131,9 @@ impl Negative {
 
     /// Returns the ID of the marker that this predicate represents.
     #[must_use]
-    pub const fn marker_id(&self) -> Global<pernixc_symbol::ID> { self.0.id() }
+    pub const fn marker_id(&self) -> Global<pernixc_symbol::SymbolID> {
+        self.0.id()
+    }
 
     /// Returns the generic arguments supplied to this marker.
     #[must_use]

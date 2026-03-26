@@ -142,7 +142,7 @@ impl<'i, 'm> Resolver<'i, 'm> {
     fn resolve_type_argument<'s, 'g>(
         &'s mut self,
         syn: &'g pernixc_syntax::GenericArgument,
-        symbol_id: Global<pernixc_symbol::ID>,
+        symbol_id: Global<pernixc_symbol::SymbolID>,
         param_id: pernixc_arena::ID<TypeParameter>,
     ) -> impl Future<Output = Type> + use<'s, 'g, 'i, 'm> + Send {
         async move {
@@ -230,7 +230,7 @@ impl<'i, 'm> Resolver<'i, 'm> {
     fn resolve_instance_argument<'s, 'g>(
         &'s mut self,
         syn: &'g pernixc_syntax::GenericArgument,
-        symbol_id: Global<pernixc_symbol::ID>,
+        symbol_id: Global<pernixc_symbol::SymbolID>,
         param_id: pernixc_arena::ID<InstanceParameter>,
     ) -> impl Future<Output = Instance> + use<'s, 'g, 'i, 'm> + Send {
         async move {
@@ -320,7 +320,7 @@ impl<'i, 'm> Resolver<'i, 'm> {
     /// generic arguments count with the generic parameters of the given symbol.
     pub async fn resolve_generic_arguments_for(
         &mut self,
-        symbol_id: Global<pernixc_symbol::ID>,
+        symbol_id: Global<pernixc_symbol::SymbolID>,
         generic_identifier: &GenericIdentifier,
     ) -> GenericArguments {
         self.resolve_generic_arguments_for_internal(
@@ -339,7 +339,7 @@ impl<'i, 'm> Resolver<'i, 'm> {
     )]
     pub(crate) async fn resolve_generic_arguments_for_internal(
         &mut self,
-        symbol_id: Global<pernixc_symbol::ID>,
+        symbol_id: Global<pernixc_symbol::SymbolID>,
         bound_type: Option<&Type>,
         generic_identifier: &GenericIdentifier,
     ) -> GenericArguments {

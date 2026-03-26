@@ -7,7 +7,7 @@ use pernixc_target::{Global, TargetID};
 use qbice::{Decode, Encode, Query, StableHash};
 
 use crate::{
-    ID,
+    SymbolID,
     kind::{Kind, get_kind},
 };
 
@@ -46,19 +46,19 @@ pub enum HierarchyRelationship {
     StableHash,
     Query,
 )]
-#[value(Option<ID>)]
+#[value(Option<SymbolID>)]
 #[extend(name = get_parent, by_val)]
 pub struct Key {
     /// The global ID of the symbol to get the parent for.
-    pub symbol_id: Global<ID>,
+    pub symbol_id: Global<SymbolID>,
 }
 
 /// A helper function returning the parent symbol ID wrapped in a [`Global`].
 #[extend]
 pub async fn get_parent_global(
     self: &TrackedEngine,
-    id: Global<ID>,
-) -> Option<Global<ID>> {
+    id: Global<SymbolID>,
+) -> Option<Global<SymbolID>> {
     self.get_parent(id).await.map(|parent| id.target_id.make_global(parent))
 }
 
@@ -70,13 +70,13 @@ pub async fn get_parent_global(
 #[derive(Debug, Clone)]
 pub struct ScopeWalker<'a> {
     engine: &'a TrackedEngine,
-    current_id: Option<ID>,
+    current_id: Option<SymbolID>,
     target_id: TargetID,
 }
 
 impl ScopeWalker<'_> {
     /// Iterates through the scope of the given symbol.
-    pub async fn next(&mut self) -> Option<ID> {
+    pub async fn next(&mut self) -> Option<SymbolID> {
         match self.current_id {
             Some(current_id) => {
                 let next = self
@@ -98,7 +98,10 @@ impl ScopeWalker<'_> {
 ///
 /// See [`ScopeWalker`] for more information.
 #[extend]
-pub fn scope_walker(self: &TrackedEngine, id: Global<ID>) -> ScopeWalker<'_> {
+pub fn scope_walker(
+    self: &TrackedEngine,
+    id: Global<SymbolID>,
+) -> ScopeWalker<'_> {
     ScopeWalker {
         engine: self,
         current_id: Some(id.id),
@@ -113,8 +116,8 @@ pub fn scope_walker(self: &TrackedEngine, id: Global<ID>) -> ScopeWalker<'_> {
 pub async fn symbol_hierarchy_relationship(
     self: &TrackedEngine,
     target_id: TargetID,
-    first: ID,
-    second: ID,
+    first: SymbolID,
+    second: SymbolID,
 ) -> HierarchyRelationship {
     // the two symbols are the same.
     if first == second {
@@ -144,8 +147,8 @@ pub async fn symbol_hierarchy_relationship(
 #[extend]
 pub async fn get_closest_module_id(
     self: &TrackedEngine,
-    mut id: Global<ID>,
-) -> ID {
+    mut id: Global<SymbolID>,
+) -> SymbolID {
     loop {
         if self.get_kind(id).await == Kind::Module {
             return id.id;
