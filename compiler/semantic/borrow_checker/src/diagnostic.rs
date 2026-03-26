@@ -9,6 +9,7 @@ use pernixc_symbol::source_map::to_absolute_span;
 use pernixc_term::{
     display::{Configuration, Display},
     lifetime::Lifetime,
+    r#type::Type,
 };
 use pernixc_type_system::diagnostic::{
     PredicateSatisfiabilityOverflow, UnsatisfiedPredicate,
@@ -39,6 +40,8 @@ pub enum Diagnostic {
     VariableDoesNotLiveLongEnough(VariableDoesNotLiveLongEnough),
     MutablyAccessWhileImmutablyBorrowed(MutablyAccessWhileImmutablyBorrowed),
     AccessWhileMutablyBorrowed(AccessWhileMutablyBorrowed),
+    SubtypeIncompatible(SubtypeIncompatible),
+    SubtypeForallLifetimeError(SubtypeForallLifetimeError),
 }
 
 impl Report for Diagnostic {
@@ -51,6 +54,8 @@ impl Report for Diagnostic {
                 x.report(engine).await
             }
             Self::AccessWhileMutablyBorrowed(x) => x.report(engine).await,
+            Self::SubtypeIncompatible(x) => x.report(engine).await,
+            Self::SubtypeForallLifetimeError(x) => x.report(engine).await,
         }
     }
 }
@@ -413,6 +418,122 @@ impl Report for AccessWhileMutablyBorrowed {
                     "the borrow is used in the drop implementation".to_string(),
                 ),
             })
+            .build()
+    }
+}
+
+/// The subtyping failed due to incompatible types.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+)]
+pub struct SubtypeIncompatible {
+    /// The span where the expected type and found type are mismatched.
+    pub span: RelativeSpan,
+    /// The actual value type.
+    pub found_type: Type,
+    /// The type that was expected.
+    pub expected_type: Type,
+}
+
+impl Report for SubtypeIncompatible {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let found_type_str = self
+            .found_type
+            .write_to_string_with_configuration(
+                engine,
+                &Configuration::builder().build(),
+            )
+            .await
+            .unwrap();
+
+        let expected_type_str = self
+            .expected_type
+            .write_to_string_with_configuration(
+                engine,
+                &Configuration::builder().build(),
+            )
+            .await
+            .unwrap();
+
+        pernixc_diagnostic::Rendered::builder()
+            .message("mismatched types")
+            .severity(Severity::Error)
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .message(format!(
+                        "expected `{expected_type_str}`, found \
+                         `{found_type_str}`"
+                    ))
+                    .build(),
+            )
+            .build()
+    }
+}
+
+/// The subtyping failed due to constraints on forall lifetimes.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+)]
+pub struct SubtypeForallLifetimeError {
+    /// The span where the mismatch occurred.
+    pub span: RelativeSpan,
+    /// The actual value type.
+    pub found_type: Type,
+    /// The type that was expected.
+    pub expected_type: Type,
+}
+
+impl Report for SubtypeForallLifetimeError {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let found_type_str = self
+            .found_type
+            .write_to_string_with_configuration(
+                engine,
+                &Configuration::builder().build(),
+            )
+            .await
+            .unwrap();
+
+        let expected_type_str = self
+            .expected_type
+            .write_to_string_with_configuration(
+                engine,
+                &Configuration::builder().build(),
+            )
+            .await
+            .unwrap();
+
+        pernixc_diagnostic::Rendered::builder()
+            .message("mismatched types due to forall lifetimes constraints")
+            .severity(Severity::Error)
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .message(format!(
+                        "expected `{expected_type_str}`, found \
+                         `{found_type_str}` (cannot satisfy forall lifetimes)"
+                    ))
+                    .build(),
+            )
             .build()
     }
 }
