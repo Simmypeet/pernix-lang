@@ -1,11 +1,12 @@
 //! Contains the definition of [`Definite`].
 
-use std::{collections::BTreeSet, sync::Arc};
+use std::sync::Arc;
 
 use pernixc_term::{generic_arguments::GenericArguments, visitor};
 
 use crate::{
     OverflowError, Satisfiability, Satisfied, Succeeded,
+    constraints::Constraints,
     environment::{BoxedFuture, Environment, Query, QueryResult},
     normalizer::Normalizer,
     term::Term,
@@ -137,7 +138,7 @@ impl<N: Normalizer> Environment<'_, N> {
         &self,
         generic_arguments: &GenericArguments,
     ) -> QueryResult<Option<Succeeded<Satisfied>>> {
-        let mut constraints = BTreeSet::new();
+        let mut constraints = Constraints::new();
 
         for lifetime in generic_arguments.lifetimes() {
             let Some(result) =

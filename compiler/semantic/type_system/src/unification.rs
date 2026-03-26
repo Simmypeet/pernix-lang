@@ -1,7 +1,7 @@
 //! Contains the the unification logic.
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     hash::Hash,
     sync::Arc,
 };
@@ -18,6 +18,7 @@ use pernixc_term::{
 
 use crate::{
     Satisfied, Succeeded,
+    constraints::Constraints,
     environment::{BoxedFuture, Environment, Query, QueryResult},
     normalizer::Normalizer,
     term::Term,
@@ -269,7 +270,7 @@ async fn substructural_unify<T: Term>(
     };
 
     let mut result = Substructural::default();
-    let mut constraints = BTreeSet::new();
+    let mut constraints = Constraints::new();
 
     let (lifetimes, types, constants, instances) = substructural.destructure();
 

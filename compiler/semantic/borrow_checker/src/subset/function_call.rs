@@ -1,4 +1,3 @@
-use std::collections::BTreeSet;
 
 use pernixc_arena::ID;
 use pernixc_hash::HashSet;
@@ -15,7 +14,7 @@ use pernixc_symbol::{
 use pernixc_target::Global;
 use pernixc_term::{effect, instantiation::Instantiation};
 use pernixc_type_system::{
-    UnrecoverableError, lifetime_constraint::LifetimeConstraint,
+    UnrecoverableError, constraints::Constraints,
     normalizer::Normalizer,
 };
 
@@ -31,7 +30,7 @@ impl<N: Normalizer> Context<'_, N> {
         instantiation: &Instantiation,
         callled_id: Global<pernixc_symbol::ID>,
         span: &RelativeSpan,
-        lifetime_constraints: &mut BTreeSet<LifetimeConstraint>,
+        lifetime_constraints: &mut Constraints,
     ) -> Result<(), UnrecoverableError> {
         let called_capabilities =
             self.tracked_engine().get_effect_annotation(callled_id).await;
@@ -113,7 +112,7 @@ impl<N: Normalizer> Context<'_, N> {
             .get_parameters(function_call.callee_symbol_id())
             .await;
 
-        let mut lifetime_constraints = BTreeSet::new();
+        let mut lifetime_constraints = Constraints::new();
 
         for (parameter, argument) in function_signature
             .parameter_order

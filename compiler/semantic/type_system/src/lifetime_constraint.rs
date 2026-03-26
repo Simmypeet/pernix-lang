@@ -8,6 +8,7 @@ use pernixc_term::{
     predicate::{Outlives, Predicate},
     r#type::Type,
 };
+use qbice::{Decode, Encode, StableHash};
 
 use crate::{
     diagnostic::{Diagnostic, UnsatisfiedPredicate},
@@ -16,7 +17,19 @@ use crate::{
 };
 
 /// Contains constraints related to lifetimes.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    StableHash,
+    Encode,
+    Decode,
+)]
 #[allow(missing_docs)]
 pub enum LifetimeConstraint {
     LifetimeOutlives(Outlives<Lifetime>),

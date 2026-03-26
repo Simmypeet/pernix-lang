@@ -1,6 +1,7 @@
-use std::collections::BTreeSet;
 
 use pernixc_hash::HashSet;
+use pernixc_type_system::constraints::Constraints;
+
 use pernixc_ir::value::register::Variant;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_semantic_element::{
@@ -27,7 +28,7 @@ impl<N: Normalizer> Context<'_, N> {
         let instantiation =
             variant.create_instantiation(self.tracked_engine()).await;
 
-        let mut lifetime_constraints = BTreeSet::new();
+        let mut lifetime_constraints = Constraints::new();
 
         // compare each values in the field to the struct's field type
         if let Some(variant_sym) = variant_sym {

@@ -1,6 +1,6 @@
 //! Contains the logic for simplifying the type term.
 
-use std::{collections::BTreeSet, sync::Arc};
+use std::sync::Arc;
 
 use pernixc_handler::Handler;
 use pernixc_lexical::tree::RelativeSpan;
@@ -9,16 +9,16 @@ use pernixc_term::{r#type::Type, visitor::AsyncMutable};
 
 use crate::{
     OverflowError, Succeeded,
+    constraints::Constraints,
     diagnostic::Diagnostic,
     environment::{BoxedFuture, Environment, Query},
-    lifetime_constraint::LifetimeConstraint,
     normalizer::Normalizer,
     term::Term,
 };
 
 struct Visitor<'e, N: Normalizer> {
     environment: &'e Environment<'e, N>,
-    lifetime_constraints: BTreeSet<LifetimeConstraint>,
+    lifetime_constraints: Constraints,
     abrupt_error: Option<OverflowError>,
 }
 
@@ -66,7 +66,7 @@ impl<T: Term> Query for Simplify<T> {
             let mut new_term = self.0.clone();
             let mut visitor = Visitor {
                 environment,
-                lifetime_constraints: BTreeSet::new(),
+                lifetime_constraints: Constraints::new(),
                 abrupt_error: None,
             };
 

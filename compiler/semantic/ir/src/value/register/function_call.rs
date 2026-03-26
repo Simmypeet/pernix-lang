@@ -1,6 +1,7 @@
 //! Contains the definition of the [`FunctionCall`] register.
+use std::ops::Deref;
 
-use std::{collections::BTreeSet, ops::Deref};
+
 
 use pernixc_arena::ID;
 use pernixc_hash::HashMap;
@@ -20,7 +21,7 @@ use pernixc_term::{
 };
 use pernixc_type_system::{
     OverflowError, Succeeded, UnrecoverableError,
-    lifetime_constraint::LifetimeConstraint,
+    constraints::Constraints,
 };
 use qbice::{Decode, Encode, StableHash};
 
@@ -246,7 +247,7 @@ impl FunctionCall {
         environment: &crate::value::Environment<'_, N>,
         span: pernixc_lexical::tree::RelativeSpan,
         handler: &dyn pernixc_handler::Handler<D>,
-    ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError>
+    ) -> Result<Constraints, UnrecoverableError>
     where
         N: pernixc_type_system::normalizer::Normalizer,
         D: pernixc_diagnostic::Report

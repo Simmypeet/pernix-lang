@@ -1,12 +1,13 @@
 //! Contains the definition of a [`Tuple`] register assignment.
 
-use std::{collections::BTreeSet, ops::Deref};
+
+use std::ops::Deref;
 
 use pernixc_arena::ID;
 use pernixc_term::{predicate::Predicate, r#type::Type};
 use pernixc_type_system::{
     OverflowError, Succeeded, UnrecoverableError,
-    lifetime_constraint::LifetimeConstraint,
+    constraints::Constraints,
 };
 use qbice::{Decode, Encode, StableHash};
 
@@ -85,13 +86,13 @@ impl Tuple {
         environment: &crate::value::Environment<'_, N>,
         values: &crate::value::Values,
         handler: &dyn pernixc_handler::Handler<D>,
-    ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError>
+    ) -> Result<Constraints, UnrecoverableError>
     where
         N: pernixc_type_system::normalizer::Normalizer,
         D: pernixc_diagnostic::Report
             + From<pernixc_type_system::diagnostic::Diagnostic>,
     {
-        let mut lifetime_constraints = BTreeSet::new();
+        let mut lifetime_constraints = Constraints::new();
         for element in self.elements.iter().filter(|x| x.is_unpacked) {
             let ty = values
                 .type_of(&element.value, environment)
@@ -157,7 +158,7 @@ impl TypeOf<&Tuple> for Values {
         value: &Tuple,
         environment: &crate::value::Environment<'_, N>,
     ) -> Result<pernixc_type_system::Succeeded<Type>, OverflowError> {
-        let mut constraints = BTreeSet::new();
+        let mut constraints = Constraints::new();
         let mut elements = Vec::new();
 
         for element in &value.elements {

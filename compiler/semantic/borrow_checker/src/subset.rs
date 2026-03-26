@@ -1,4 +1,7 @@
-use std::{collections::BTreeSet, ops::Deref};
+
+use std::ops::Deref;
+
+use pernixc_type_system::constraints::Constraints;
 
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
@@ -443,7 +446,7 @@ impl<N: Normalizer> Builder<'_, N> {
                 .get_return_type(self.context.current_site())
                 .await;
 
-            let mut constraints = BTreeSet::new();
+            let mut constraints = Constraints::new();
             self.context
                 .subtypes_value(
                     return_ty.deref().clone(),

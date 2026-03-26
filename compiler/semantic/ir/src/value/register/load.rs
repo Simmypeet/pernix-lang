@@ -1,6 +1,5 @@
 //! Contains the definition of the [`Load`] register.
 
-use std::collections::BTreeSet;
 
 use getset::{CopyGetters, Getters, MutGetters};
 use pernixc_symbol::name::get_by_qualified_name;
@@ -11,7 +10,7 @@ use pernixc_term::{
 };
 use pernixc_type_system::{
     OverflowError, Succeeded, UnrecoverableError,
-    lifetime_constraint::LifetimeConstraint, normalizer::Normalizer,
+    constraints::Constraints, normalizer::Normalizer,
 };
 use qbice::{Decode, Encode, StableHash};
 
@@ -90,7 +89,7 @@ impl Load {
         values: &crate::value::Values,
         register_span: pernixc_lexical::tree::RelativeSpan,
         handler: &dyn pernixc_handler::Handler<D>,
-    ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError>
+    ) -> Result<Constraints, UnrecoverableError>
     where
         N: pernixc_type_system::normalizer::Normalizer,
         D: pernixc_diagnostic::Report
@@ -131,7 +130,7 @@ impl Load {
                 .predicate_satisfied(predicate, &register_span, None, &handler)
                 .await
         } else {
-            Ok(BTreeSet::new())
+            Ok(Constraints::new())
         }
     }
 }

@@ -1,11 +1,10 @@
-use std::collections::BTreeSet;
 
 use pernixc_ir::value::{TypeOf, Value};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_semantic_element::variance::Variance;
 use pernixc_term::r#type::Type;
 use pernixc_type_system::{
-    Succeeded, UnrecoverableError, lifetime_constraint::LifetimeConstraint,
+    Succeeded, UnrecoverableError, constraints::Constraints,
     normalizer::Normalizer,
 };
 
@@ -18,7 +17,7 @@ impl<N: Normalizer> Context<'_, N> {
         source: Type,
         variance: Variance,
         span: RelativeSpan,
-        set: &mut BTreeSet<LifetimeConstraint>,
+        set: &mut Constraints,
     ) -> Result<(), UnrecoverableError> {
         let result = self
             .type_environment()
@@ -51,7 +50,7 @@ impl<N: Normalizer> Context<'_, N> {
         target: Type,
         source_value: &Value,
         variance: Variance,
-        set: &mut BTreeSet<LifetimeConstraint>,
+        set: &mut Constraints,
     ) -> Result<(), UnrecoverableError> {
         let span = *self.values().span_of_value(source_value);
         let Succeeded { result: source, constraints } = self

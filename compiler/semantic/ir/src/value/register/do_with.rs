@@ -1,6 +1,7 @@
 //! Defines the IR structures for representing `do-with` expressions.
+use std::ops::Deref;
 
-use std::{collections::BTreeSet, ops::Deref};
+
 
 use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
@@ -8,7 +9,7 @@ use pernixc_hash::HashMap;
 use pernixc_term::r#type::Type;
 use pernixc_type_system::{
     OverflowError, Succeeded, UnrecoverableError,
-    lifetime_constraint::LifetimeConstraint, normalizer::Normalizer,
+    constraints::Constraints, normalizer::Normalizer,
 };
 use qbice::{Decode, Encode, StableHash};
 
@@ -296,7 +297,7 @@ impl DoWith {
         &self,
         environment: &crate::value::Environment<'_, N>,
         handler: &dyn pernixc_handler::Handler<D>,
-    ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError>
+    ) -> Result<Constraints, UnrecoverableError>
     where
         N: pernixc_type_system::normalizer::Normalizer,
         D: pernixc_diagnostic::Report

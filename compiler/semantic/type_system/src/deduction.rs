@@ -14,6 +14,7 @@ use pernixc_term::{
 
 use crate::{
     OverflowError, Satisfied, Succeeded,
+    constraints::Constraints,
     environment::Environment,
     lifetime_constraint::LifetimeConstraint,
     mapping::Mapping,
@@ -172,7 +173,7 @@ async fn mapping_equals<T: Term, N: Normalizer, P: CompatiblePredicate<T>>(
     environment: &Environment<'_, N>,
     mut compatible: P,
 ) -> Result<Option<Succeeded<Satisfied>>, OverflowError> {
-    let mut constraints = BTreeSet::new();
+    let mut constraints = Constraints::new();
 
     for (mut key, values) in unification {
         substitution.instantiate(&mut key);
@@ -201,7 +202,7 @@ async fn from_unification_to_substitution<T: Term, N: Normalizer>(
 ) -> Result<Option<Succeeded<BTreeMap<T, T>>>, OverflowError> {
     let mut result = BTreeMap::new();
 
-    let mut constraints = BTreeSet::new();
+    let mut constraints = Constraints::new();
 
     for (key, values) in unification {
         let mut values = values.into_iter();

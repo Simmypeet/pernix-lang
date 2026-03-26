@@ -1,6 +1,7 @@
-use std::collections::BTreeSet;
 
 use pernixc_hash::HashSet;
+use pernixc_type_system::constraints::Constraints;
+
 use pernixc_ir::value::register::Struct;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_semantic_element::{fields::get_fields, variance::Variance};
@@ -21,7 +22,7 @@ impl<N: Normalizer> Context<'_, N> {
         let fields =
             self.tracked_engine().get_fields(struct_lit.struct_id()).await;
 
-        let mut lifetime_constraints = BTreeSet::new();
+        let mut lifetime_constraints = Constraints::new();
 
         // compare each values in the field to the struct's field type
         for field_id in fields.field_declaration_order.iter().copied() {

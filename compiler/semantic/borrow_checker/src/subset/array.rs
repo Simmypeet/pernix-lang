@@ -1,6 +1,7 @@
-use std::collections::BTreeSet;
 
 use pernixc_hash::HashSet;
+use pernixc_type_system::constraints::Constraints;
+
 use pernixc_ir::value::register::Array;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_semantic_element::variance::Variance;
@@ -15,7 +16,7 @@ impl<N: Normalizer> Context<'_, N> {
         span: &RelativeSpan,
     ) -> Result<Changes, UnrecoverableError> {
         let array_ty = array.element_type.clone();
-        let mut lifetime_constraints = BTreeSet::new();
+        let mut lifetime_constraints = Constraints::new();
 
         for value in &array.elements {
             self.subtypes_value(

@@ -1,6 +1,7 @@
 //! Contains the definition of the [`Struct`] register.
+use std::ops::Deref;
 
-use std::{collections::BTreeSet, ops::Deref};
+
 
 use pernixc_arena::ID;
 use pernixc_hash::HashMap;
@@ -11,7 +12,7 @@ use pernixc_term::{
     generic_arguments::Symbol, instantiation::Instantiation, r#type::Type,
 };
 use pernixc_type_system::{
-    OverflowError, UnrecoverableError, lifetime_constraint::LifetimeConstraint,
+    OverflowError, UnrecoverableError, constraints::Constraints,
 };
 use qbice::{Decode, Encode, StableHash};
 
@@ -105,7 +106,7 @@ impl Struct {
         environment: &crate::value::Environment<'_, N>,
         span: pernixc_lexical::tree::RelativeSpan,
         handler: &dyn pernixc_handler::Handler<D>,
-    ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError>
+    ) -> Result<Constraints, UnrecoverableError>
     where
         N: pernixc_type_system::normalizer::Normalizer,
         D: pernixc_diagnostic::Report

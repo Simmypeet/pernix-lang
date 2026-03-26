@@ -1,12 +1,11 @@
 //! Contains the type-system logic of the complier.
 
-use std::collections::BTreeSet;
-
 use qbice::{Decode, Encode, StableHash};
 
-use crate::lifetime_constraint::LifetimeConstraint;
+use crate::constraints::Constraints;
 
 pub mod adt_fields;
+pub mod constraints;
 pub mod deduction;
 pub mod definite;
 pub mod diagnostic;
@@ -72,33 +71,33 @@ pub struct UnsatisfiedError;
 pub struct Satisfied;
 
 /// The result of the semantic logic in the success case.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Succeeded<Result> {
     /// The result of the query in the success case.
     pub result: Result,
     /// The additional constraints related to lifetimes that must be satisfied
     /// for the query to be considered successful.
-    pub constraints: BTreeSet<LifetimeConstraint>,
+    pub constraints: Constraints,
 }
 
 impl<Result: Default> Default for Succeeded<Result> {
     fn default() -> Self {
-        Self { result: Default::default(), constraints: BTreeSet::new() }
+        Self { result: Default::default(), constraints: Constraints::new() }
     }
 }
 
 impl<Result> Succeeded<Result> {
     /// Creates a new [`Succeeded`] with the given result and no constraints.
     #[must_use]
-    pub const fn new(result: Result) -> Self {
-        Self { result, constraints: BTreeSet::new() }
+    pub fn new(result: Result) -> Self {
+        Self { result, constraints: Constraints::new() }
     }
-
+    
     /// Creates a new [`Succeeded`] with the given result and constraints.
     #[must_use]
     pub const fn with_constraints(
         result: Result,
-        constraints: BTreeSet<LifetimeConstraint>,
+        constraints: Constraints,
     ) -> Self {
         Self { result, constraints }
     }
@@ -125,14 +124,12 @@ impl<Result> Succeeded<Result> {
 impl Succeeded<Satisfied> {
     /// Creates a new [`Succeeded`] with the [`Satisfied`] result.
     #[must_use]
-    pub const fn satisfied() -> Self { Self::new(Satisfied) }
+    pub fn satisfied() -> Self { Self::new(Satisfied) }
 
     /// Creates a new [`Succeeded`] with the [`Satisfied`] result and
     /// constraints.
     #[must_use]
-    pub const fn satisfied_with(
-        constraints: BTreeSet<LifetimeConstraint>,
-    ) -> Self {
+    pub const fn satisfied_with(constraints: Constraints) -> Self {
         Self::with_constraints(Satisfied, constraints)
     }
 

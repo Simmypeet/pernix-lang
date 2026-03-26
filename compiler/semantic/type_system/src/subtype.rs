@@ -20,6 +20,7 @@ use pernixc_term::{
 
 use crate::{
     Succeeded,
+    constraints::Constraints,
     environment::{BoxedFuture, Environment, Query, QueryResult},
     lifetime_constraint::LifetimeConstraint,
     normalizer::Normalizer,
@@ -248,7 +249,7 @@ impl Impl for Lifetime {
             _ => {}
         }
 
-        let constraints: BTreeSet<_> = match subtype.variance {
+        let constraints: Constraints = match subtype.variance {
             Variance::Covariant => std::iter::once(
                 LifetimeConstraint::LifetimeOutlives(Outlives {
                     operand: subtype.target.clone(),
@@ -263,7 +264,7 @@ impl Impl for Lifetime {
                 }),
             )
             .collect(),
-            Variance::Bivariant => BTreeSet::new(),
+            Variance::Bivariant => Constraints::new(),
             Variance::Invariant => [
                 LifetimeConstraint::LifetimeOutlives(Outlives::new(
                     subtype.target.clone(),
@@ -698,7 +699,7 @@ impl<N: Normalizer> Environment<'_, N> {
 
         let mut result = Succeeded::with_constraints(
             Subtypable::default(),
-            BTreeSet::default(),
+            Constraints::new(),
         );
 
         for (target_lt, source_lt) in

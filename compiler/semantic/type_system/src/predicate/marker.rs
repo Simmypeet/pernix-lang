@@ -1,6 +1,6 @@
 //! Implements the [`Query`] for the [`PositiveMarker`] and [`NegativeMarker`].
 
-use std::{collections::BTreeSet, ops::Deref, sync::Arc};
+use std::{ops::Deref, sync::Arc};
 
 use enum_as_inner::EnumAsInner;
 use pernixc_qbice::TrackedEngine;
@@ -18,6 +18,7 @@ use pernixc_term::{
 
 use crate::{
     OverflowError, Satisfied, Succeeded,
+    constraints::Constraints,
     adt_fields::{FieldType, get_instantiated_adt_fields},
     environment::{BoxedFuture, Call, DynArc, Environment, Query},
     normalizer::Normalizer,
@@ -45,7 +46,7 @@ pub enum PositiveSatisfied {
 }
 
 /// An error when trying to structural derive a positive marker.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructuralError {
     /// The field that failed to be satisfied.
     sub_predicate: PositiveMarker,
@@ -65,7 +66,7 @@ impl StructuralError {
 }
 
 /// An error type indiciating that the positive marker failed to be satisfied.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PositiveError {
     /// Failed to utilize the `implements` matching the marker.
     ImplementationResolution(resolution::Error),
@@ -358,7 +359,7 @@ async fn substructural_derive(
         return Ok(None);
     };
 
-    let mut constraints = BTreeSet::new();
+    let mut constraints = Constraints::new();
     let mut structural_errors = Vec::new();
 
     for ty in field_types {

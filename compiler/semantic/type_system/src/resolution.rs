@@ -1,6 +1,6 @@
 //! Contains the logic for resolving implementation for traits and markers.
 
-use std::{collections::BTreeSet, ops::Deref, sync::Arc};
+use std::{ops::Deref, sync::Arc};
 
 use enum_as_inner::EnumAsInner;
 use pernixc_lexical::tree::RelativeSpan;
@@ -25,6 +25,7 @@ use qbice::storage::intern::Interned;
 
 use crate::{
     OverflowError, Succeeded,
+    constraints::Constraints,
     deduction::Deduction,
     environment::{BoxedFuture, Environment, Query},
     lifetime_constraint::LifetimeConstraint,
@@ -34,7 +35,7 @@ use crate::{
 };
 
 /// The cause of an unsatisfied predicate.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+#[derive(Debug, Clone, PartialEq, Eq, EnumAsInner)]
 pub enum UnsatisfiedCause {
     /// No additional information to elaborate further.
     NoInformation,
@@ -46,7 +47,7 @@ pub enum UnsatisfiedCause {
 }
 
 /// Failed to satisfy a predicate define in the `implements` where clause.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnsatisfiedPredicate {
     predicate: Predicate,
     predicate_declaration_span: Option<RelativeSpan>,
@@ -81,7 +82,7 @@ impl UnsatisfiedPredicate {
 
 /// Failed to satisfy one or more predicates defined in the `implements` where
 /// clause.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnsatisfiedPredicates {
     implementation: Arc<Implementation>,
     unsatisfied_predicate: Arc<[UnsatisfiedPredicate]>,
@@ -101,7 +102,7 @@ impl UnsatisfiedPredicates {
 }
 
 /// An error that can occur during implementation resolution.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+#[derive(Debug, Clone, PartialEq, Eq, EnumAsInner)]
 pub enum Error {
     /// Found no implementation for the given symbol and generic arguments.
     NotFound,
@@ -200,7 +201,7 @@ impl Query for Resolve {
             let mut candidate: Option<(
                 Global<pernixc_symbol::ID>,
                 Deduction,
-                BTreeSet<LifetimeConstraint>,
+                Constraints,
                 GenericArguments,
             )> = None;
 
@@ -312,7 +313,7 @@ async fn finialize_candidate(
     candidate: Option<(
         Global<pernixc_symbol::ID>,
         Deduction,
-        BTreeSet<LifetimeConstraint>,
+        Constraints,
         GenericArguments,
     )>,
     environment: &Environment<'_, impl Normalizer>,
@@ -460,7 +461,7 @@ enum PredicateSatisfyError {
 
 // check for any forall lifetimes in the predicates.
 fn extend_constraints(
-    constraints: &mut BTreeSet<LifetimeConstraint>,
+    constraints: &mut Constraints,
     new_constraints: impl IntoIterator<Item = LifetimeConstraint>,
 ) -> Result<(), PredicateSatisfyError> {
     for constraint in new_constraints {
@@ -505,10 +506,7 @@ async fn predicate_satisfies(
     predicates: Interned<[where_clause::Predicate]>,
     substitution: &Instantiation,
     environment: &Environment<'_, impl Normalizer>,
-) -> Result<
-    Result<BTreeSet<LifetimeConstraint>, PredicateSatisfyError>,
-    OverflowError,
-> {
+) -> Result<Result<Constraints, PredicateSatisfyError>, OverflowError> {
     macro_rules! extend_constraints {
         ($constraints:expr, $constraints_to_extend:expr) => {
             if let Err(err) =
@@ -520,7 +518,7 @@ async fn predicate_satisfies(
     }
     // check if satisfies all the predicate
     let mut unsatisfied_predicates = Vec::new();
-    let mut constraints = BTreeSet::new();
+    let mut constraints = Constraints::new();
 
     for (mut predicate, span) in
         predicates.iter().map(|x| (x.predicate.clone(), x.span))

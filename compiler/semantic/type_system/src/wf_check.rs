@@ -1,6 +1,6 @@
 //! Contains the well-formedness check implementation.
 
-use std::{collections::BTreeSet, ops::Deref};
+use std::ops::Deref;
 
 use pernixc_extend::extend;
 use pernixc_handler::Handler;
@@ -25,6 +25,7 @@ use pernixc_term::{
 
 use crate::{
     UnrecoverableError,
+    constraints::Constraints,
     deduction::Deduction,
     diagnostic::{
         AdtImplementationIsNotGeneralEnough, Diagnostic,
@@ -44,7 +45,7 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImplementsCheckResult {
     deduction: Deduction,
-    constraints: BTreeSet<LifetimeConstraint>,
+    constraints: Constraints,
 }
 
 impl ImplementsCheckResult {
@@ -150,7 +151,7 @@ impl<N: Normalizer> Environment<'_, N> {
         instantiation_span: &RelativeSpan,
         predicate_declaration_span: Option<&RelativeSpan>,
         handler: &dyn Handler<Diagnostic>,
-    ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError> {
+    ) -> Result<Constraints, UnrecoverableError> {
         let mut diagnostics = Vec::new();
 
         let result = self
@@ -181,7 +182,7 @@ impl<N: Normalizer> Environment<'_, N> {
         predicate_declaration_span: Option<&RelativeSpan>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<
-        (Vec<Diagnostic>, BTreeSet<LifetimeConstraint>),
+        (Vec<Diagnostic>, Constraints),
         UnrecoverableError,
     > {
         let mut diagnostics = Vec::new();
@@ -207,7 +208,7 @@ impl<N: Normalizer> Environment<'_, N> {
         predicate_declaration_span: Option<&RelativeSpan>,
         diagnostics: &mut Vec<Diagnostic>,
         handler: &dyn Handler<Diagnostic>,
-    ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError> {
+    ) -> Result<Constraints, UnrecoverableError> {
         let result = match &predicate {
             Predicate::InstanceAssociatedTypeEquality(equality) => {
                 let result = self
@@ -241,7 +242,7 @@ impl<N: Normalizer> Environment<'_, N> {
             Predicate::LifetimeOutlives(outlives) => {
                 if self.do_outlives_check() {
                     match self.query(outlives).await {
-                        Ok(true) => return Ok(BTreeSet::new()),
+                        Ok(true) => return Ok(Constraints::new()),
 
                         Ok(false) => {
                             diagnostics.push(Diagnostic::UnsatisfiedPredicate(
@@ -254,7 +255,7 @@ impl<N: Normalizer> Environment<'_, N> {
                                     .build(),
                             ));
 
-                            return Ok(BTreeSet::new());
+                            return Ok(Constraints::new());
                         }
                         Err(overflow_error) => {
                             handler.receive(
@@ -285,7 +286,7 @@ impl<N: Normalizer> Environment<'_, N> {
             Predicate::TypeOutlives(outlives) => {
                 if self.do_outlives_check() {
                     match self.query(outlives).await {
-                        Ok(true) => return Ok(BTreeSet::new()),
+                        Ok(true) => return Ok(Constraints::new()),
 
                         Ok(false) => {
                             diagnostics.push(Diagnostic::UnsatisfiedPredicate(
@@ -298,7 +299,7 @@ impl<N: Normalizer> Environment<'_, N> {
                                     .build(),
                             ));
 
-                            return Ok(BTreeSet::new());
+                            return Ok(Constraints::new());
                         }
 
                         Err(overflow_error) => {
@@ -358,7 +359,7 @@ impl<N: Normalizer> Environment<'_, N> {
                             ],
                         );
 
-                        return Ok(BTreeSet::new());
+                        return Ok(Constraints::new());
                     }
 
                     Err(overflow_error) => Err(overflow_error),
@@ -397,7 +398,7 @@ impl<N: Normalizer> Environment<'_, N> {
                         .build(),
                 ));
 
-                Ok(BTreeSet::new())
+                Ok(Constraints::new())
             }
 
             Err(overflow_error) => {
@@ -411,19 +412,19 @@ impl<N: Normalizer> Environment<'_, N> {
                     },
                 ));
 
-                Ok(BTreeSet::new())
+                Ok(Constraints::new())
             }
         }
     }
 
     async fn handle_satisfy(
         &self,
-        constraints: BTreeSet<LifetimeConstraint>,
+        constraints: Constraints,
         instantiation_span: &RelativeSpan,
         predicate_declaration_span: Option<&RelativeSpan>,
         diagnostics: &mut Vec<Diagnostic>,
         handler: &dyn Handler<Diagnostic>,
-    ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError> {
+    ) -> Result<Constraints, UnrecoverableError> {
         // if do_outlives_check is false, then we don't need to check
         if !self.do_outlives_check() {
             return Ok(constraints);
@@ -458,7 +459,7 @@ impl<N: Normalizer> Environment<'_, N> {
             }
         }
 
-        Ok(BTreeSet::new())
+        Ok(Constraints::new())
     }
 
     #[allow(clippy::type_complexity)]
@@ -606,7 +607,7 @@ impl<N: Normalizer> Environment<'_, N> {
         instance_trait_ref: &TraitRef,
         expected_trait_ref: &TraitRef,
         instantiation_span: &RelativeSpan,
-        lifetime_constraints: &mut BTreeSet<LifetimeConstraint>,
+        lifetime_constraints: &mut Constraints,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<(), UnrecoverableError> {
         if instance_trait_ref.trait_id() != expected_trait_ref.trait_id() {
@@ -682,14 +683,14 @@ impl<N: Normalizer> Environment<'_, N> {
         expected_trait_ref: &TraitRef,
         instantiation_span: &RelativeSpan,
         handler: &dyn Handler<Diagnostic>,
-    ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError> {
+    ) -> Result<Constraints, UnrecoverableError> {
         let Some(instance_trait_ref) =
             instance.get_trait_ref(self.tracked_engine()).await
         else {
-            return Ok(BTreeSet::new()); // can't continue
+            return Ok(Constraints::new()); // can't continue
         };
 
-        let mut lifetime_constraints = BTreeSet::new();
+        let mut lifetime_constraints = Constraints::new();
         self.check_instance_trait_ref_internal(
             instance,
             &instance_trait_ref,
@@ -712,11 +713,11 @@ impl<N: Normalizer> Environment<'_, N> {
         instantiation_span: &RelativeSpan,
         instantiation: &Instantiation,
         handler: &dyn Handler<Diagnostic>,
-    ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError> {
+    ) -> Result<Constraints, UnrecoverableError> {
         let generic_parameters =
             self.tracked_engine().get_generic_parameters(generic_id).await;
 
-        let mut lifetime_constraints = BTreeSet::new();
+        let mut lifetime_constraints = Constraints::new();
 
         for ((_, instance_parameter), instance_arg) in generic_parameters
             .instance_parameters_as_order()
@@ -766,7 +767,7 @@ impl<N: Normalizer> Environment<'_, N> {
         instantiation_span: &RelativeSpan,
         instantiation: &instantiation::Instantiation,
         handler: &dyn Handler<Diagnostic>,
-    ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError> {
+    ) -> Result<Constraints, UnrecoverableError> {
         let predicates = Self::get_all_predicates(
             self.tracked_engine(),
             generic_id,
@@ -774,7 +775,7 @@ impl<N: Normalizer> Environment<'_, N> {
         )
         .await;
 
-        let mut lifetime_constraints = BTreeSet::new();
+        let mut lifetime_constraints = Constraints::new();
         let mut diagnostics = Vec::new();
 
         for (predicate, span) in predicates {
@@ -808,7 +809,7 @@ impl<N: Normalizer> Environment<'_, N> {
         instantiation_span: &RelativeSpan,
         instantiation: &instantiation::Instantiation,
         handler: &dyn Handler<Diagnostic>,
-    ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError> {
+    ) -> Result<Constraints, UnrecoverableError> {
         let mut lifetime_constraints = self
             .wf_check_instantiation(
                 obligation.symbol_id,

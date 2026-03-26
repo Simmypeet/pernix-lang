@@ -4,12 +4,11 @@
 //! performing well-formedness checks on symbolic resolutions within IR
 //! assignments.
 
-use std::collections::BTreeSet;
-
 use pernixc_handler::Handler;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_type_system::{
-    UnrecoverableError, lifetime_constraint::LifetimeConstraint,
+    UnrecoverableError,
+    constraints::Constraints,
     normalizer::Normalizer,
 };
 
@@ -29,7 +28,7 @@ use crate::{
 pub(crate) struct WfCheckVisitor<'a, 'b, N, D> {
     value_environment: &'a Environment<'b, N>,
     handler: &'a dyn Handler<D>,
-    lifetime_constraints: BTreeSet<LifetimeConstraint>,
+    lifetime_constraints: Constraints,
     error: Option<UnrecoverableError>,
 }
 
@@ -47,13 +46,13 @@ impl<N, D> std::fmt::Debug for WfCheckVisitor<'_, '_, N, D> {
 impl<'a, 'b, N, D> WfCheckVisitor<'a, 'b, N, D> {
     /// Creates a new well-formedness check visitor.
     #[must_use]
-    pub(crate) const fn new(
+    pub(crate) fn new(
         value_environment: &'a Environment<'b, N>,
         handler: &'a dyn Handler<D>,
     ) -> Self {
         Self {
             value_environment,
-            lifetime_constraints: BTreeSet::new(),
+            lifetime_constraints: Constraints::new(),
             handler,
             error: None,
         }
@@ -87,7 +86,7 @@ where
     }
 
     #[must_use]
-    pub(crate) fn into_constraints(self) -> BTreeSet<LifetimeConstraint> {
+    pub(crate) fn into_constraints(self) -> Constraints {
         self.lifetime_constraints
     }
 }

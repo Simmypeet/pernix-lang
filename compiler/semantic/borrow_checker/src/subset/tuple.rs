@@ -1,6 +1,7 @@
-use std::collections::BTreeSet;
 
 use pernixc_hash::HashSet;
+use pernixc_type_system::constraints::Constraints;
+
 use pernixc_ir::value::{TypeOf, register::tuple::Tuple};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_term::predicate::{self, Predicate};
@@ -17,7 +18,7 @@ impl<N: Normalizer> Context<'_, N> {
         tuple: &Tuple,
         span: &RelativeSpan,
     ) -> Result<Changes, UnrecoverableError> {
-        let mut lifetime_constraints = BTreeSet::new();
+        let mut lifetime_constraints = Constraints::new();
         for element in tuple.elements.iter().filter(|x| x.is_unpacked) {
             let Succeeded { result: ty, constraints } = self
                 .values()
