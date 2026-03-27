@@ -578,22 +578,68 @@ impl<N: Normalizer> Builder<'_, N> {
                         )
                     })?;
 
-                self.context
-                    .get_changes_of_store(
+                let mut value_type = tuple_ty.map(|x| {
+                    x.into_tuple()
+                        .unwrap()
+                        .into_elements()
+                        .into_iter()
+                        .find_map(|x| x.is_unpacked().then_some(x.into_term()))
+                        .unwrap()
+                });
+
+                let pernixc_type_system::Succeeded {
+                    result: address_ty,
+                    constraints: address_constraints,
+                } = self
+                    .context
+                    .values()
+                    .type_of(
                         &tuple_pack.store_address,
-                        tuple_ty.map(|x| {
-                            x.into_tuple()
-                                .unwrap()
-                                .into_elements()
-                                .into_iter()
-                                .find_map(|x| {
-                                    x.is_unpacked().then_some(x.into_term())
-                                })
-                                .unwrap()
-                        }),
-                        &tuple_pack.packed_tuple_span,
+                        self.context.environment(),
                     )
                     .await
+                    .map_err(|x| {
+                        x.report_as_type_calculating_overflow(
+                            tuple_pack.packed_tuple_span,
+                            &self.context.handler(),
+                        )
+                    })?;
+
+                // get the compatibility constraints between the value and the
+                // address
+                self.context
+                    .subtypes(
+                        value_type.result,
+                        address_ty.clone(),
+                        pernixc_semantic_element::variance::Variance::Covariant,
+                        tuple_pack.packed_tuple_span,
+                        &mut value_type.constraints,
+                    )
+                    .await?;
+
+                Ok(Changes {
+                    subset_relations: value_type
+                        .constraints
+                        .into_iter()
+                        .chain(address_constraints)
+                        .filter_map(|x| {
+                            let x = x.into_lifetime_outlives().ok()?;
+
+                            let from = Region::try_from(x.operand).ok()?;
+                            let to = Region::try_from(x.bound).ok()?;
+
+                            Some((from, to, tuple_pack.packed_tuple_span))
+                        })
+                        .collect(),
+                    borrow_created: None,
+                    overwritten_regions:
+                        pernixc_term::visitor::RecursiveIterator::new(
+                            &address_ty,
+                        )
+                        .filter_map(|x| x.0.into_lifetime().ok())
+                        .filter_map(|x| Region::try_from(x.clone()).ok())
+                        .collect::<pernixc_hash::FxHashSet<_>>(),
+                })
             }
             Instruction::RegisterDiscard(_)
             | Instruction::ScopePush(_)

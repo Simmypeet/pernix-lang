@@ -1,14 +1,16 @@
 use pernixc_hash::FxHashSet;
-use pernixc_ir::value::register::Variant;
+use pernixc_ir::value::register::{Variant, subtype::Subtype};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_semantic_element::{
-    variance::Variance, variant::get_variant_associated_type,
-};
 use pernixc_type_system::{
     UnrecoverableError, constraints::Constraints, normalizer::Normalizer,
 };
 
-use crate::{Region, context::Context, subset::Changes};
+use crate::{
+    Region,
+    context::Context,
+    diagnostic::{Diagnostic, SubtypeForallLifetimeError},
+    subset::Changes,
+};
 
 impl<N: Normalizer> Context<'_, N> {
     #[allow(clippy::too_many_lines)]
@@ -17,48 +19,48 @@ impl<N: Normalizer> Context<'_, N> {
         variant: &Variant,
         span: &RelativeSpan,
     ) -> Result<Changes, UnrecoverableError> {
-        let enum_id = variant.parent_enum_id(self.tracked_engine()).await;
-
-        let variant_sym = self
-            .tracked_engine()
-            .get_variant_associated_type(variant.variant_id())
-            .await;
-
-        let instantiation =
-            variant.create_instantiation(self.tracked_engine()).await;
-
         let mut lifetime_constraints = Constraints::new();
 
-        // compare each values in the field to the struct's field type
-        if let Some(variant_sym) = variant_sym {
-            let mut associated_type = (*variant_sym).clone();
-            instantiation.instantiate(&mut associated_type);
-
-            self.subtypes_value(
-                associated_type,
-                variant.associated_value().unwrap(),
-                Variance::Covariant,
-                &mut lifetime_constraints,
-            )
-            .await?;
-        }
-
-        // handle the constraints introduced by the outlive predicates of the
-        // struct
-        let well_fromed_lifetime_constraints = self
-            .type_environment()
-            .wf_check_instantiation(
-                enum_id,
-                span,
-                &instantiation,
+        // Get well-formedness constraints
+        let wf_constraints = variant
+            .wf_check::<_, Diagnostic>(
+                self.environment(),
+                *span,
                 &self.handler(),
             )
             .await?;
+        lifetime_constraints.extend(wf_constraints);
+
+        // Get subtyping constraints and handle forall lifetime errors
+        let subtype_result =
+            variant.subtypes(self.values(), self.environment()).await.map_err(
+                |x| x.report_as_type_check_overflow(*span, &self.handler()),
+            )?;
+
+        match subtype_result {
+            Subtype::Succeeded(constraints) => {
+                lifetime_constraints.extend(constraints);
+            }
+            Subtype::Incompatible { found_type, expected_type } => {
+                panic!(
+                    "in borrow checking, all subtyping should be valid: found \
+                     {found_type:?}, expected {expected_type:?}"
+                );
+            }
+            Subtype::ForallLifetimeError { found_type, expected_type } => {
+                self.handler().receive(Diagnostic::SubtypeForallLifetimeError(
+                    SubtypeForallLifetimeError {
+                        span: *span,
+                        found_type,
+                        expected_type,
+                    },
+                ));
+            }
+        }
 
         Ok(Changes {
             subset_relations: lifetime_constraints
                 .into_iter()
-                .chain(well_fromed_lifetime_constraints)
                 .filter_map(|x| {
                     let x = x.into_lifetime_outlives().ok()?;
 

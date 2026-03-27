@@ -252,15 +252,15 @@ impl Impl for Lifetime {
         let constraints: Constraints = match subtype.variance {
             Variance::Covariant => std::iter::once(
                 LifetimeConstraint::LifetimeOutlives(Outlives {
-                    operand: subtype.target.clone(),
-                    bound: subtype.source.clone(),
+                    operand: subtype.source.clone(),
+                    bound: subtype.target.clone(),
                 }),
             )
             .collect(),
             Variance::Contravariant => std::iter::once(
                 LifetimeConstraint::LifetimeOutlives(Outlives {
-                    operand: subtype.source.clone(),
-                    bound: subtype.target.clone(),
+                    operand: subtype.target.clone(),
+                    bound: subtype.source.clone(),
                 }),
             )
             .collect(),

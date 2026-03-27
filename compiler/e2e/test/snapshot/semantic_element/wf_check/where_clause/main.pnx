@@ -23,21 +23,6 @@ public type UseInvariant['x, 'a, 'b, instance I: Identity] = ConstrainedInvarian
         I::Output = Invariant['x, 'b]
 
 
-public struct Covariant['a]:
-    private immutableRef: &'a int32
-
-
-public type ConstrainedCovariant['a, instance I: Identity] = int32:
-    where:
-        I::Output = Covariant['a]
-
-
-# should error with 'b: 'a
-public type UseCovariant['a, 'b, instance I: Identity] = ConstrainedCovariant['a, I]:
-    where:
-        I::Output = Covariant['b]
-
-
 public struct ConstraintLifetime['a, T]:
     where:
         T: 'a

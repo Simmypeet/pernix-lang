@@ -7,7 +7,10 @@ use pernixc_type_system::{
     normalizer::Normalizer,
 };
 
-use crate::context::Context;
+use crate::{
+    context::Context,
+    diagnostic::{Diagnostic, SubtypeForallLifetimeError},
+};
 
 impl<N: Normalizer> Context<'_, N> {
     pub async fn subtypes(
@@ -20,7 +23,7 @@ impl<N: Normalizer> Context<'_, N> {
     ) -> Result<(), UnrecoverableError> {
         let result = self
             .type_environment()
-            .subtypes(target, source, variance)
+            .subtypes(target.clone(), source.clone(), variance)
             .await
             .map_err(|x| {
                 x.report_as_type_check_overflow(span, &self.handler())
@@ -30,7 +33,17 @@ impl<N: Normalizer> Context<'_, N> {
             panic!("in borrow checking, all subtyping should be valid");
         };
 
-        assert!(succeeded.result.forall_lifetime_errors.is_empty());
+        // Report forall lifetime errors to the handler
+        for _ in &succeeded.result.forall_lifetime_errors {
+            self.handler().receive(Diagnostic::SubtypeForallLifetimeError(
+                SubtypeForallLifetimeError {
+                    span,
+                    found_type: source.clone(),
+                    expected_type: target.clone(),
+                },
+            ));
+        }
+
         assert!(
             succeeded
                 .result
@@ -62,6 +75,6 @@ impl<N: Normalizer> Context<'_, N> {
 
         set.extend(constraints);
 
-        self.subtypes(source, target, variance, span, set).await
+        self.subtypes(target, source, variance, span, set).await
     }
 }

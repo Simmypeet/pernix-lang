@@ -1,54 +1,90 @@
 use pernixc_hash::FxHashSet;
-use pernixc_ir::{address::Address, instruction::Store, value::TypeOf};
-use pernixc_lexical::tree::RelativeSpan;
-use pernixc_semantic_element::variance::Variance;
-use pernixc_term::{r#type::Type, visitor::RecursiveIterator};
+use pernixc_ir::{
+    instruction::Store,
+    value::{TypeOf, register::subtype::Subtype},
+};
+use pernixc_term::visitor::RecursiveIterator;
 use pernixc_type_system::{
-    Succeeded, UnrecoverableError, normalizer::Normalizer,
+    Succeeded, UnrecoverableError, constraints::Constraints,
+    normalizer::Normalizer,
 };
 
-use crate::{Region, context::Context, subset::Changes};
+use crate::{
+    Region,
+    context::Context,
+    diagnostic::{Diagnostic, SubtypeForallLifetimeError},
+    subset::Changes,
+};
 
 impl<N: Normalizer> Context<'_, N> {
-    pub(super) async fn get_changes_of_store(
+    pub(super) async fn get_changes_of_store_inst(
         &self,
-        store_address: &Address,
-        mut value_type: Succeeded<Type>,
-        span: &RelativeSpan,
+        store_inst: &Store,
     ) -> Result<Changes, UnrecoverableError> {
-        let Succeeded { result: address_ty, constraints: address_constraints } =
-            self.values()
-                .type_of(store_address, self.environment())
-                .await
-                .map_err(|x| {
-                    x.report_as_type_calculating_overflow(
-                        *span,
-                        &self.handler(),
-                    )
-                })?;
+        let subtype_result = store_inst
+            .subtypes(self.values(), self.environment())
+            .await
+            .map_err(|x| {
+                x.report_as_type_check_overflow(
+                    store_inst.span,
+                    &self.handler(),
+                )
+            })?;
 
-        // get the compatibility constraints between the value and the address
-        self.subtypes(
-            value_type.result,
-            address_ty.clone(),
-            Variance::Covariant,
-            *span,
-            &mut value_type.constraints,
-        )
-        .await?;
+        let (constraints, address_ty) = match subtype_result {
+            Subtype::Succeeded(constraints) => {
+                // Get address type for overwritten regions
+                let Succeeded { result: address_ty, .. } = self
+                    .values()
+                    .type_of(&store_inst.address, self.environment())
+                    .await
+                    .map_err(|x| {
+                        x.report_as_type_calculating_overflow(
+                            store_inst.span,
+                            &self.handler(),
+                        )
+                    })?;
+                (constraints, address_ty)
+            }
+            Subtype::Incompatible { found_type, expected_type } => {
+                panic!(
+                    "in borrow checking, all subtyping should be valid: found \
+                     {found_type:?}, expected {expected_type:?}"
+                );
+            }
+            Subtype::ForallLifetimeError { found_type, expected_type } => {
+                self.handler().receive(Diagnostic::SubtypeForallLifetimeError(
+                    SubtypeForallLifetimeError {
+                        span: store_inst.span,
+                        found_type,
+                        expected_type,
+                    },
+                ));
+                // Get address type for overwritten regions even on error
+                let Succeeded { result: address_ty, .. } = self
+                    .values()
+                    .type_of(&store_inst.address, self.environment())
+                    .await
+                    .map_err(|x| {
+                        x.report_as_type_calculating_overflow(
+                            store_inst.span,
+                            &self.handler(),
+                        )
+                    })?;
+                (Constraints::default(), address_ty)
+            }
+        };
 
         Ok(Changes {
-            subset_relations: value_type
-                .constraints
+            subset_relations: constraints
                 .into_iter()
-                .chain(address_constraints)
                 .filter_map(|x| {
                     let x = x.into_lifetime_outlives().ok()?;
 
                     let from = Region::try_from(x.operand).ok()?;
                     let to = Region::try_from(x.bound).ok()?;
 
-                    Some((from, to, *span))
+                    Some((from, to, store_inst.span))
                 })
                 .collect(),
             borrow_created: None,
@@ -57,28 +93,5 @@ impl<N: Normalizer> Context<'_, N> {
                 .filter_map(|x| Region::try_from(x.clone()).ok())
                 .collect::<FxHashSet<_>>(),
         })
-    }
-
-    pub(super) async fn get_changes_of_store_inst(
-        &self,
-        store_inst: &Store,
-    ) -> Result<Changes, UnrecoverableError> {
-        let value_ty = self
-            .values()
-            .type_of(&store_inst.value, self.environment())
-            .await
-            .map_err(|x| {
-                x.report_as_type_calculating_overflow(
-                    store_inst.span,
-                    &self.handler(),
-                )
-            })?;
-
-        self.get_changes_of_store(
-            &store_inst.address,
-            value_ty,
-            &store_inst.span,
-        )
-        .await
     }
 }

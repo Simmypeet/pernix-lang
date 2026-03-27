@@ -1,13 +1,9 @@
 use pernixc_hash::FxHashSet;
-use pernixc_ir::value::{TypeOf, register::tuple::Tuple};
+use pernixc_ir::value::register::tuple::Tuple;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_term::predicate::{self, Predicate};
-use pernixc_type_system::{
-    Succeeded, UnrecoverableError, constraints::Constraints,
-    normalizer::Normalizer,
-};
+use pernixc_type_system::{UnrecoverableError, normalizer::Normalizer};
 
-use crate::{Region, context::Context, subset::Changes};
+use crate::{Region, context::Context, diagnostic::Diagnostic, subset::Changes};
 
 impl<N: Normalizer> Context<'_, N> {
     #[allow(clippy::too_many_lines)]
@@ -16,33 +12,9 @@ impl<N: Normalizer> Context<'_, N> {
         tuple: &Tuple,
         span: &RelativeSpan,
     ) -> Result<Changes, UnrecoverableError> {
-        let mut lifetime_constraints = Constraints::new();
-        for element in tuple.elements.iter().filter(|x| x.is_unpacked) {
-            let Succeeded { result: ty, constraints } = self
-                .values()
-                .type_of(&element.value, self.environment())
-                .await
-                .map_err(|x| {
-                    x.report_as_type_calculating_overflow(
-                        *span,
-                        &self.handler(),
-                    )
-                })?;
-
-            lifetime_constraints.extend(constraints);
-
-            let predicate = Predicate::TupleType(predicate::Tuple(ty));
-            lifetime_constraints.extend(
-                self.type_environment()
-                    .predicate_satisfied(
-                        predicate,
-                        self.values().span_of_value(&element.value),
-                        None,
-                        &self.handler(),
-                    )
-                    .await?,
-            );
-        }
+        let lifetime_constraints = tuple
+            .wf_check::<_, Diagnostic>(self.environment(), self.values(), &self.handler())
+            .await?;
 
         Ok(Changes {
             subset_relations: lifetime_constraints

@@ -1,199 +1,64 @@
-use pernixc_arena::ID;
 use pernixc_hash::FxHashSet;
-use pernixc_ir::value::register::{EffectHandlerArgument, FunctionCall};
+use pernixc_ir::value::register::{FunctionCall, subtype::Subtype};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_semantic_element::{
-    effect_annotation::get_effect_annotation, parameter::get_parameters,
-    variance::Variance,
-};
-use pernixc_symbol::{
-    kind::{Kind, get_kind},
-    parent::get_parent_global,
-};
-use pernixc_target::Global;
-use pernixc_term::{effect, instantiation::Instantiation};
 use pernixc_type_system::{
     UnrecoverableError, constraints::Constraints, normalizer::Normalizer,
 };
 
-use crate::{Region, context::Context, subset::Changes};
+use crate::{
+    Region,
+    context::Context,
+    diagnostic::{Diagnostic, SubtypeForallLifetimeError},
+    subset::Changes,
+};
 
 impl<N: Normalizer> Context<'_, N> {
-    #[allow(clippy::too_many_lines)]
-    pub(super) async fn get_subset_of_effect_operations<'a>(
-        &self,
-        capability_arguments: impl Iterator<
-            Item = (ID<effect::Unit>, &'a EffectHandlerArgument),
-        >,
-        instantiation: &Instantiation,
-        callled_id: Global<pernixc_symbol::SymbolID>,
-        span: &RelativeSpan,
-        lifetime_constraints: &mut Constraints,
-    ) -> Result<(), UnrecoverableError> {
-        let called_capabilities =
-            self.tracked_engine().get_effect_annotation(callled_id).await;
-
-        let current_capabilities = self
-            .tracked_engine()
-            .get_effect_annotation(self.current_site())
-            .await;
-
-        for (required_id, argument) in capability_arguments {
-            let mut required_capability =
-                called_capabilities[required_id].clone();
-
-            // instantiate the generic arguments of the required capability
-            required_capability.instantiate(instantiation);
-
-            match argument {
-                EffectHandlerArgument::FromEffectAnnotation(
-                    capability_unit,
-                ) => {
-                    // no need to instantiate, as the capability unit is
-                    // already instantiated from the call site
-                    let available_capability =
-                        &current_capabilities[*capability_unit];
-
-                    let subtypable = self
-                        .type_environment()
-                        .subtypes_generic_arguments(
-                            required_capability.generic_arguments(),
-                            available_capability.generic_arguments(),
-                        )
-                        .await
-                        .map_err(|x| {
-                            x.report_as_type_check_overflow(
-                                *span,
-                                &self.handler(),
-                            )
-                        })?;
-
-                    let subtypable =
-                        subtypable.expect("should've been checked");
-
-                    assert!(
-                        subtypable.result.forall_lifetime_errors.is_empty()
-                    );
-
-                    lifetime_constraints
-                        .extend(subtypable.constraints.iter().cloned());
-                }
-
-                #[allow(clippy::match_same_arms)]
-                EffectHandlerArgument::FromEffectHandler(_) => {
-                    // TODO: extract the lifetimme constraints
-                }
-
-                EffectHandlerArgument::Unhandled => {
-                    // error should've been reported
-                }
-            }
-        }
-
-        Ok(())
-    }
-
     #[allow(clippy::too_many_lines)]
     pub(super) async fn get_changes_of_function_call(
         &self,
         function_call: &FunctionCall,
         span: &RelativeSpan,
     ) -> Result<Changes, UnrecoverableError> {
-        let Some(inst) =
-            function_call.create_instantiation(self.tracked_engine()).await
-        else {
-            return Ok(Changes::default());
-        };
-
-        let function_signature = self
-            .tracked_engine()
-            .get_parameters(function_call.callee_symbol_id())
-            .await;
-
         let mut lifetime_constraints = Constraints::new();
 
-        for (parameter, argument) in function_signature
-            .parameter_order
-            .iter()
-            .copied()
-            .map(|x| function_signature.parameters.get(x).unwrap())
-            .zip(function_call.arguments())
-        {
-            /*
-            The c-varargs will break this assertion
-            assert_eq!(
-                function_signature.parameter_order.len(),
-                function_call.arguments.len()
-            );
-            */
-
-            let mut parameter_ty = parameter.r#type.clone();
-            inst.instantiate(&mut parameter_ty);
-
-            self.subtypes_value(
-                parameter_ty,
-                argument,
-                Variance::Covariant,
-                &mut lifetime_constraints,
+        // Get well-formedness constraints
+        let wf_constraints = function_call
+            .wf_check::<_, Diagnostic>(
+                self.environment(),
+                *span,
+                &self.handler(),
             )
             .await?;
-        }
+        lifetime_constraints.extend(wf_constraints);
 
-        lifetime_constraints.extend(
-            self.type_environment()
-                .wf_check_instantiation(
-                    function_call.callee_symbol_id(),
-                    span,
-                    &inst,
-                    &self.handler(),
-                )
-                .await?,
-        );
+        // Get subtyping constraints and handle forall lifetime errors
+        let subtype_result = function_call
+            .subtypes(self.values(), self.environment())
+            .await
+            .map_err(|x| {
+                x.report_as_type_check_overflow(*span, &self.handler())
+            })?;
 
-        let kind = self
-            .tracked_engine()
-            .get_kind(function_call.callee_symbol_id())
-            .await;
-
-        match kind {
-            Kind::Function | Kind::ExternFunction => {}
-
-            Kind::EffectOperation | Kind::ImplementationAssociatedFunction => {
-                let parent_implementation_id = self
-                    .tracked_engine()
-                    .get_parent_global(function_call.callee_symbol_id())
-                    .await
-                    .unwrap();
-
-                lifetime_constraints.extend(
-                    self.type_environment()
-                        .wf_check_instantiation(
-                            parent_implementation_id,
-                            span,
-                            &inst,
-                            &self.handler(),
-                        )
-                        .await?,
+        match subtype_result {
+            Subtype::Succeeded(constraints) => {
+                lifetime_constraints.extend(constraints);
+            }
+            Subtype::Incompatible { found_type, expected_type } => {
+                panic!(
+                    "in borrow checking, all subtyping should be valid: found \
+                     {found_type:?}, expected {expected_type:?}"
                 );
             }
-
-            _ => unreachable!(
-                "function call to non-function kind: {}",
-                self.tracked_engine()
-                    .get_kind(function_call.callee_symbol_id())
-                    .await
-                    .kind_str()
-            ),
+            Subtype::ForallLifetimeError { found_type, expected_type } => {
+                self.handler().receive(Diagnostic::SubtypeForallLifetimeError(
+                    SubtypeForallLifetimeError {
+                        span: *span,
+                        found_type,
+                        expected_type,
+                    },
+                ));
+            }
         }
-
-        self.get_subset_of_effect_operations(
-            function_call.effect_arguments(),
-            &inst,
-            function_call.callee_symbol_id(),
-            span,
-            &mut lifetime_constraints,
-        )
-        .await?;
 
         Ok(Changes {
             subset_relations: lifetime_constraints

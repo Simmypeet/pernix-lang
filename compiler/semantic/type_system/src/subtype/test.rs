@@ -73,14 +73,14 @@ fn basic_subtyping(#[case] variance: Variance) {
         let expected_constraints = match variance {
             Variance::Covariant => {
                 vec![LifetimeConstraint::LifetimeOutlives(Outlives {
-                    operand: a_lt.clone(),
-                    bound: static_lt.clone(),
+                    operand: static_lt.clone(),
+                    bound: a_lt.clone(),
                 })]
             }
             Variance::Contravariant => {
                 vec![LifetimeConstraint::LifetimeOutlives(Outlives {
-                    operand: static_lt.clone(),
-                    bound: a_lt.clone(),
+                    operand: a_lt.clone(),
+                    bound: static_lt.clone(),
                 })]
             }
             Variance::Invariant => {
@@ -216,14 +216,14 @@ fn subtyping_with_adt(#[case] variance: Variance) {
         let expected_constraint = match variance {
             Variance::Covariant => {
                 vec![LifetimeConstraint::LifetimeOutlives(Outlives {
-                    operand: a_lt.clone(),
-                    bound: b_lt.clone(),
+                    operand: b_lt.clone(),
+                    bound: a_lt.clone(),
                 })]
             }
             Variance::Contravariant => {
                 vec![LifetimeConstraint::LifetimeOutlives(Outlives {
-                    operand: b_lt,
-                    bound: a_lt,
+                    operand: a_lt,
+                    bound: b_lt,
                 })]
             }
             Variance::Invariant => vec![
@@ -288,8 +288,8 @@ async fn subtyping_with_inner_tuple() {
     assert_eq!(result.constraints.len(), 1);
 
     let a_and_b = LifetimeConstraint::LifetimeOutlives(Outlives {
-        operand: a_lt,
-        bound: b_lt,
+        operand: b_lt,
+        bound: a_lt,
     });
 
     assert!(result.constraints.contains(&a_and_b));
@@ -350,9 +350,9 @@ async fn subtyping_with_mutable_reference() {
 
     assert_eq!(result.constraints.len(), 3);
 
-    let a_and_c = LifetimeConstraint::LifetimeOutlives(Outlives {
-        operand: a_lt,
-        bound: c_lt,
+    let c_and_a = LifetimeConstraint::LifetimeOutlives(Outlives {
+        operand: c_lt,
+        bound: a_lt,
     });
     let b_and_d = LifetimeConstraint::LifetimeOutlives(Outlives::new(
         b_lt.clone(),
@@ -361,7 +361,7 @@ async fn subtyping_with_mutable_reference() {
     let d_and_b =
         LifetimeConstraint::LifetimeOutlives(Outlives::new(d_lt, b_lt));
 
-    assert!(result.constraints.contains(&a_and_c));
+    assert!(result.constraints.contains(&c_and_a));
     assert!(result.constraints.contains(&b_and_d));
     assert!(result.constraints.contains(&d_and_b));
 }

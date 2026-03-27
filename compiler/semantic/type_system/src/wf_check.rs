@@ -212,7 +212,7 @@ impl<N: Normalizer> Environment<'_, N> {
                     .subtypes(
                         Type::InstanceAssociated(equality.lhs.clone()),
                         equality.rhs.clone(),
-                        Variance::Covariant,
+                        Variance::Invariant,
                     )
                     .await;
 
