@@ -5,8 +5,9 @@ use pernixc_arena::ID;
 use pernixc_hash::FxHashMap;
 use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::{
-    parameter::get_parameters, return_type::get_return_type,
-    trait_ref::create_instantiation, variance::Variance,
+    effect_annotation::get_effect_annotation, parameter::get_parameters,
+    return_type::get_return_type, trait_ref::create_instantiation,
+    variance::Variance,
 };
 use pernixc_target::Global;
 use pernixc_term::{
@@ -293,6 +294,62 @@ impl FunctionCall {
             }
 
             constraints.extend(succeeded.constraints.iter().cloned());
+        }
+
+        // Check effect handler subtyping
+        let called_capabilities =
+            engine.get_effect_annotation(self.callee_symbol_id()).await;
+
+        let current_capabilities =
+            engine.get_effect_annotation(environment.current_site).await;
+
+        for (required_id, argument) in self.effect_arguments() {
+            let mut required_capability = called_capabilities[required_id].clone();
+
+            // instantiate the generic arguments of the required capability
+            required_capability.instantiate(&inst);
+
+            match argument {
+                EffectHandlerArgument::FromEffectAnnotation(capability_unit) => {
+                    // no need to instantiate, as the capability unit is
+                    // already instantiated from the call site
+                    let available_capability =
+                        &current_capabilities[*capability_unit];
+
+                    let subtypable = environment
+                        .type_environment
+                        .subtypes_generic_arguments(
+                            required_capability.generic_arguments(),
+                            available_capability.generic_arguments(),
+                        )
+                        .await?;
+
+                    let Some(subtypable) = subtypable else {
+                        // If the generic arguments are not subtypes, we should
+                        // return an incompatible error. However, we don't have
+                        // a good way to represent this in the current error
+                        // structure. For now, we'll skip this case as the
+                        // error should have been reported during semantic
+                        // analysis.
+                        continue;
+                    };
+
+                    assert!(
+                        subtypable.result.forall_lifetime_errors.is_empty()
+                    );
+
+                    constraints.extend(subtypable.constraints.iter().cloned());
+                }
+
+                #[allow(clippy::match_same_arms)]
+                EffectHandlerArgument::FromEffectHandler(_) => {
+                    // TODO: extract the lifetime constraints
+                }
+
+                EffectHandlerArgument::Unhandled => {
+                    // error should've been reported
+                }
+            }
         }
 
         Ok(Subtype::Succeeded(constraints))
