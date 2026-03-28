@@ -3,4 +3,4 @@ public trait Test:
 
 
 # error: `T: 'static` is not satisfied
-public type Alias[T, instance I: Test] = I::Assoc[T]
+public type Alias[T, inst I: Test] = I::Assoc[T]

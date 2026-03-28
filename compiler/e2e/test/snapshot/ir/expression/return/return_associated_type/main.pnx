@@ -5,7 +5,7 @@ public trait Fizz[T]:
     public function fizz(x: T) -> this::Output
 
 
-public instance Test[T]: Fizz[T]:
+public inst Test[T]: Fizz[T]:
     type Output = T
 
 

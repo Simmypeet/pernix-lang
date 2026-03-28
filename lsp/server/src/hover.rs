@@ -62,7 +62,7 @@ pub async fn handle_hover(
         pernixc_symbol::kind::Kind::TraitAssociatedInstance
         | pernixc_symbol::kind::Kind::InstanceAssociatedInstance
         | pernixc_symbol::kind::Kind::Instance => {
-            self.format_simple_signature_with_where_clause(symbol, "instance")
+            self.format_simple_signature_with_where_clause(symbol, "inst")
                 .await
         }
 

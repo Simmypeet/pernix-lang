@@ -7,16 +7,16 @@ public struct Test[T, U]:
     public other: U
 
 
-public instance TestInst[
+public inst TestInst[
     T, 
     U, 
-    instance X: Require[T], 
-    instance Y: Require[U]
+    inst X: Require[T], 
+    inst Y: Require[U]
 ]: Require[Test[T, U]]:
     pass
 
 
-public function require[T, instance I: Require[T]](value: T):
+public function require[T, inst I: Require[T]](value: T):
     pass
 
 

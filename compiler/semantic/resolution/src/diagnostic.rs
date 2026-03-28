@@ -230,7 +230,7 @@ impl Report for UnexpectedInference {
                         GenericKind::Type => "type",
                         GenericKind::Lifetime => "lifetime",
                         GenericKind::Constant => "constant",
-                        GenericKind::Instance => "instance",
+                        GenericKind::Instance => "inst",
                     }
                 )),
             ))
@@ -240,7 +240,7 @@ impl Report for UnexpectedInference {
                 GenericKind::Type => "type",
                 GenericKind::Lifetime => "lifetime",
                 GenericKind::Constant => "constant",
-                GenericKind::Instance => "instance",
+                GenericKind::Instance => "inst",
             }))
             .build()
     }
@@ -497,7 +497,7 @@ impl Report for MismatchedGenericArgumentCount {
                         GenericKind::Type => "type",
                         GenericKind::Lifetime => "lifetime",
                         GenericKind::Constant => "constant",
-                        GenericKind::Instance => "instance",
+                        GenericKind::Instance => "inst",
                     },
                     self.supplied_count,
                 )),

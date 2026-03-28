@@ -16,7 +16,7 @@ public marker FirstMarker[T]
 public marker SecondMarker[T]
 
 
-public type Test['a, 'b, 'c, T, U, V, instance I: FirstTrait[T]] = usize:
+public type Test['a, 'b, 'c, T, U, V, inst I: FirstTrait[T]] = usize:
     where:
         I::Member[U] = usize
         T: FirstMarker

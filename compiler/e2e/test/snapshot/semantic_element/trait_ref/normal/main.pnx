@@ -3,12 +3,12 @@ public trait Inner:
 
 
 public trait Outer:
-    public instance I: Inner
+    public inst I: Inner
 
 
-private instance MyInnerI: Inner:
+private inst MyInnerI: Inner:
     pass
 
 
-private instance MyInstance: Outer:
-    instance I: Inner = MyInnerI
+private inst MyInstance: Outer:
+    inst I: Inner = MyInnerI

@@ -6,7 +6,7 @@ public struct Box[T]:
     private fake: phantom T
 
 
-public instance BoxInst[T, instance X: Require[T]]: Require[Box[T]]:
+public inst BoxInst[T, inst X: Require[T]]: Require[Box[T]]:
     pass
 
 
@@ -15,7 +15,7 @@ public enum Option[T]:
     None
 
 
-public instance OptionInst[T, instance X: Require[T]]: Require[Option[T]]:
+public inst OptionInst[T, inst X: Require[T]]: Require[Option[T]]:
     pass
 
 
@@ -24,20 +24,20 @@ public struct LinkedList[T]:
     public tail: Option[Box[LinkedList[T]]]
 
 
-public instance LinkedListInst[
+public inst LinkedListInst[
     T,
-    instance H: Require[T],
-    # error: this should cause a cyclic instance resolution error
-    instance T: Require[Option[Box[LinkedList[T]]]],
+    inst H: Require[T],
+    # error: this should cause a cyclic inst resolution error
+    inst T: Require[Option[Box[LinkedList[T]]]],
 ]: Require[LinkedList[T]]:
     pass
 
 
-public instance Int32Inst: Require[int32]:
+public inst Int32Inst: Require[int32]:
     pass
 
 
-public function require[T, instance I: Require[T]](value: T):
+public function require[T, inst I: Require[T]](value: T):
     pass
 
 

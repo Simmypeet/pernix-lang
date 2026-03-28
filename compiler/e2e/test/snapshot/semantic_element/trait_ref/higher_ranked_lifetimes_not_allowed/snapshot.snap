@@ -4,16 +4,16 @@ expression: run
 ---
 stderr:
 [error]: instance cannot implement a trait with higher-ranked lifetimes
-  ╭▸ compiler/e2e/test/snapshot/semantic_element/trait_ref/higher_ranked_lifetimes_not_allowed/main.pnx:6:27
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/trait_ref/higher_ranked_lifetimes_not_allowed/main.pnx:6:23
   │
-6 │ private instance MyTestI: for['x] Test['x]:
-  ╰╴                          ━━━━━━━
+6 │ private inst MyTestI: for['x] Test['x]:
+  ╰╴                      ━━━━━━━
 
 [error]: cannot find the lifetime parameter
-  ╭▸ compiler/e2e/test/snapshot/semantic_element/trait_ref/higher_ranked_lifetimes_not_allowed/main.pnx:6:41
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/trait_ref/higher_ranked_lifetimes_not_allowed/main.pnx:6:37
   │
-6 │ private instance MyTestI: for['x] Test['x]:
-  ╰╴                                        ━ the lifetime parameter `x` was not found in `main::MyTestI`
+6 │ private inst MyTestI: for['x] Test['x]:
+  ╰╴                                    ━ the lifetime parameter `x` was not found in `main::MyTestI`
 
 [error]: Compilation aborted due to 2 error(s)
 

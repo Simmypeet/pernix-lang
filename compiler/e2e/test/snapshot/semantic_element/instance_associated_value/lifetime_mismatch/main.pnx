@@ -2,14 +2,14 @@ public trait Test['a]:
     pass
 
 
-public instance MyTest['a]: Test['a]:
+public inst MyTest['a]: Test['a]:
     pass
 
 
 public trait ExpectInstance['a]:
-    public instance I: Test['a]
+    public inst I: Test['a]
 
 
-public instance MyExpectInstance['a, 'b]: ExpectInstance['a]:
+public inst MyExpectInstance['a, 'b]: ExpectInstance['a]:
     # error: should error like 'a: 'b and 'b: 'a aren't satisfied
-    instance I: Test['a] = MyTest['b] 
+    inst I: Test['a] = MyTest['b] 

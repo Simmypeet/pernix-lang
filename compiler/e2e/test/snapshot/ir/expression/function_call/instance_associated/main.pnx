@@ -3,7 +3,7 @@ public trait Test[T]:
 
 
 public function callInstanceAssociated[
-    T, U, instance I: Test[T]
+    T, U, inst I: Test[T]
 ](t: T, u: U):
 
     # fine

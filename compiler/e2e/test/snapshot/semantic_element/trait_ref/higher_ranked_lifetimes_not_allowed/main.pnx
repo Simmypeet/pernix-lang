@@ -3,10 +3,10 @@ public trait Test['x]:
 
 
 # this is not fine
-private instance MyTestI: for['x] Test['x]:
+private inst MyTestI: for['x] Test['x]:
     pass
 
 
 public trait WithAssoc:
     # this is fine
-    public instance Assoc: for['x] Test['x]
+    public inst Assoc: for['x] Test['x]

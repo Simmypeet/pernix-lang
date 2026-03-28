@@ -4,16 +4,16 @@ expression: run
 ---
 stderr:
 [error]: the predicate `'a: 'b` is not satisfied
-  ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/instance_check_mismatch_lifetime/main.pnx:8:49
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/instance_check_mismatch_lifetime/main.pnx:8:45
   │
-8 │ public type Use['a, 'b, instance I: Test['b]] = Require['a, I]
-  ╰╴                                                ━━━━━━━━━━━━━━
+8 │ public type Use['a, 'b, inst I: Test['b]] = Require['a, I]
+  ╰╴                                            ━━━━━━━━━━━━━━
 
 [error]: the predicate `'b: 'a` is not satisfied
-  ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/instance_check_mismatch_lifetime/main.pnx:8:49
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/instance_check_mismatch_lifetime/main.pnx:8:45
   │
-8 │ public type Use['a, 'b, instance I: Test['b]] = Require['a, I]
-  ╰╴                                                ━━━━━━━━━━━━━━
+8 │ public type Use['a, 'b, inst I: Test['b]] = Require['a, I]
+  ╰╴                                            ━━━━━━━━━━━━━━
 
 [error]: Compilation aborted due to 2 error(s)
 

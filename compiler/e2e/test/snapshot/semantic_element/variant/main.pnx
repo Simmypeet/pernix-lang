@@ -6,7 +6,7 @@ public struct MyStruct:
     pass
 
 
-public enum Test['a, 'b, T, U, instance I: Fizz]:
+public enum Test['a, 'b, T, U, inst I: Fizz]:
     where:
         I::Output['a, T] = int32
         

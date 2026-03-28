@@ -19,7 +19,7 @@ public trait Iterator:
 
 
 # error T and I is not inferrable
-implements[T, instance I: Iterator] Option[I::Item[T]]:
+implements[T, inst I: Iterator] Option[I::Item[T]]:
     pass
 
 

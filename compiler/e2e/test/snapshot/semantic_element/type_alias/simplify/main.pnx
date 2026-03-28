@@ -2,6 +2,6 @@ public trait Fizz:
     public type Output['a]
 
 
-public type Test['a, 'b, instance I: Fizz] = I::Output['a]:
+public type Test['a, 'b, inst I: Fizz] = I::Output['a]:
     where:
         I::Output['b] = int32

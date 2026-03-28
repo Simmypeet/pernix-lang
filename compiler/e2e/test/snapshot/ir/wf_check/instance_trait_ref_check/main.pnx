@@ -2,11 +2,11 @@ public trait Test[T]:
     pass
 
 
-public struct Adt[T, instance I: Test[T]]:
+public struct Adt[T, inst I: Test[T]]:
     public value: phantom T
 
 
-public instance Instance[T]: Test[T]:
+public inst Instance[T]: Test[T]:
     pass
 
 

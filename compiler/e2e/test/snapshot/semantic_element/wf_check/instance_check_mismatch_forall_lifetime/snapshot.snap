@@ -4,10 +4,10 @@ expression: run
 ---
 stderr:
 [error]: mismatched trait reference
-  ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/instance_check_mismatch_forall_lifetime/main.pnx:9:50
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/instance_check_mismatch_forall_lifetime/main.pnx:9:46
   │
-9 │ public type UseError['a, instance I: Test['a]] = RequireForall[I]
-  ╰╴                                                 ━━━━━━━━━━━━━━━━ instance `I` implements `main::Test['a]` but `main::Test['∀0]` was expected
+9 │ public type UseError['a, inst I: Test['a]] = RequireForall[I]
+  ╰╴                                             ━━━━━━━━━━━━━━━━ instance `I` implements `main::Test['a]` but `main::Test['∀0]` was expected
 
 [error]: Compilation aborted due to 1 error(s)
 

@@ -5,7 +5,7 @@ public trait Fizz['a, T, U]:
             U: 'a
 
 
-public function test['a, 'b, T, U, instance I: Fizz['a, T, U]](
+public function test['a, 'b, T, U, inst I: Fizz['a, T, U]](
     t: &'b T,
     u: &'a mut U
 ):

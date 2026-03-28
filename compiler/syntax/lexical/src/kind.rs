@@ -174,7 +174,7 @@ pub enum Keyword {
     Resume,
     /// `given` keyword.
     Given,
-    /// `instance` keyword.
+    /// `inst` keyword.
     Instance,
 }
 
@@ -292,7 +292,7 @@ impl Keyword {
             Self::Scope => "scope",
             Self::Resume => "resume",
             Self::Given => "given",
-            Self::Instance => "instance",
+            Self::Instance => "inst",
         }
     }
 }

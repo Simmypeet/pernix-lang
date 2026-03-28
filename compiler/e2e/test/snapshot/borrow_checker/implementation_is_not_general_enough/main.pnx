@@ -27,7 +27,7 @@ public trait DoSomething['a, T]:
             T: 'b
 
 
-public instance DoSomethingVec['a, 'c]: DoSomething['a, Vector[&'c mut int32]]:
+public inst DoSomethingVec['a, 'c]: DoSomething['a, Vector[&'c mut int32]]:
     where:
         'a: 'c
 
@@ -48,7 +48,7 @@ public instance DoSomethingVec['a, 'c]: DoSomething['a, Vector[&'c mut int32]]:
 public function use[
 	'a, 
 	T: 'a, 
-	instance I: for['x] DoSomething['x, T]
+	inst I: for['x] DoSomething['x, T]
 ](object: &'a mut T):
 	let mut number = 32
 	

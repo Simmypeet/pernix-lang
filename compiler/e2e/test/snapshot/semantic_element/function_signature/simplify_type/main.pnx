@@ -2,7 +2,7 @@ public trait Identity:
     public type Output['x]
 
 
-public function simplifyType['x, 'y, 'z, instance I: Identity](
+public function simplifyType['x, 'y, 'z, inst I: Identity](
     first: I::Output['x],
     second: I::Output['y],
     third: I::Output['z],

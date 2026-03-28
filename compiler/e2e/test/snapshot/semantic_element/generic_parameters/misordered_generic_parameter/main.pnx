@@ -11,4 +11,4 @@ public type Fourth[const N: usize, T] = bool
 public trait Test[T]:
     pass
 
-public type Fifth[T, instance I: Test[T], 'a] = int32
+public type Fifth[T, inst I: Test[T], 'a] = int32

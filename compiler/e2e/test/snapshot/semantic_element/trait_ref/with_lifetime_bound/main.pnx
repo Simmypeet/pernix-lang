@@ -2,5 +2,5 @@ public trait Test[I: 'static]:
     pass
 
 
-private instance MyTestI[I]: Test[I]:
+private inst MyTestI[I]: Test[I]:
     pass

@@ -2,10 +2,10 @@ public trait Require[T]:
     pass
 
 
-public struct Test[T, instance I: Require[T]]:
+public struct Test[T, inst I: Require[T]]:
     public value: T
 
 
 public function useTest[T](a: T):
-    # error: can't find an instance for `I: Require[T]`
+    # error: can't find an inst for `I: Require[T]`
     Test { value: a } 

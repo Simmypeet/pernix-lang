@@ -11,15 +11,15 @@ stderr:
    │
    ╰ help: consider adding an `instance` parameter or importing a suitable instance implementation into scope
 [note]: required because resolving instance parameter `I` for `main::Require[main::Test[T, U]]`
-   ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/multiple_not_found/main.pnx:19:37
+   ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/multiple_not_found/main.pnx:19:33
    │
-19 │ public function require[T, instance I: Require[T]](value: T):
-   ╰╴                                    ━ this function requires the parameter to be resolved
+19 │ public function require[T, inst I: Require[T]](value: T):
+   ╰╴                                ━ this function requires the parameter to be resolved
 [note]: required because resolving instance parameter `X` for `main::Require[T]`
-   ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/multiple_not_found/main.pnx:13:14
+   ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/multiple_not_found/main.pnx:13:10
    │
-13 │     instance X: Require[T], 
-   ╰╴             ━ this instance requires the parameter to be resolved
+13 │     inst X: Require[T], 
+   ╰╴         ━ this inst requires the parameter to be resolved
 
 [error]: no instance found for `main::Require[U]`
    ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/multiple_not_found/main.pnx:24:5
@@ -29,15 +29,15 @@ stderr:
    │
    ╰ help: consider adding an `instance` parameter or importing a suitable instance implementation into scope
 [note]: required because resolving instance parameter `I` for `main::Require[main::Test[T, U]]`
-   ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/multiple_not_found/main.pnx:19:37
+   ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/multiple_not_found/main.pnx:19:33
    │
-19 │ public function require[T, instance I: Require[T]](value: T):
-   ╰╴                                    ━ this function requires the parameter to be resolved
+19 │ public function require[T, inst I: Require[T]](value: T):
+   ╰╴                                ━ this function requires the parameter to be resolved
 [note]: required because resolving instance parameter `Y` for `main::Require[U]`
-   ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/multiple_not_found/main.pnx:14:14
+   ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/multiple_not_found/main.pnx:14:10
    │
-14 │     instance Y: Require[U]
-   ╰╴             ━ this instance requires the parameter to be resolved
+14 │     inst Y: Require[U]
+   ╰╴         ━ this inst requires the parameter to be resolved
 
 [error]: Compilation aborted due to 2 error(s)
 

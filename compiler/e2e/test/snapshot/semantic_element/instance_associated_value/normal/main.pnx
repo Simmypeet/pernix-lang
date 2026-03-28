@@ -2,13 +2,13 @@ public trait Test[T]:
     pass
 
 
-public instance MyTest[T]: Test[T]:
+public inst MyTest[T]: Test[T]:
     pass
 
 
 public trait ExpectInstance[T]:
-    public instance I: Test[T]
+    public inst I: Test[T]
 
 
-public instance MyExpectInstance: ExpectInstance[int32]:
-    instance I: Test[int32] = MyTest[int32]
+public inst MyExpectInstance: ExpectInstance[int32]:
+    inst I: Test[int32] = MyTest[int32]

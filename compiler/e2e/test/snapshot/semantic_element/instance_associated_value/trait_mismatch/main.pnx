@@ -2,7 +2,7 @@ public trait First:
     pass
 
 
-public instance MyFirst: First:
+public inst MyFirst: First:
     pass
 
 
@@ -10,15 +10,15 @@ public trait Second:
     pass
 
 
-public instance MySecond: Second:
+public inst MySecond: Second:
     pass
 
 
 public trait ExpectInstance:
-    public instance I: First
+    public inst I: First
 
 
-public instance MyExpectInstance: ExpectInstance:
-    instance I: First = MySecond # error: should've been MyFirst
+public inst MyExpectInstance: ExpectInstance:
+    inst I: First = MySecond # error: should've been MyFirst
 
 

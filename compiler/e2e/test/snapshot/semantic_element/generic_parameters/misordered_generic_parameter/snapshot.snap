@@ -28,10 +28,10 @@ stderr:
   ╰╴                                   ━ can't be declared after constant or instance parameters
 
 [error]: the generic parameter was declared in the wrong order
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/generic_parameters/misordered_generic_parameter/main.pnx:14:43
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/generic_parameters/misordered_generic_parameter/main.pnx:14:39
    │
-14 │ public type Fifth[T, instance I: Test[T], 'a] = int32
-   ╰╴                                          ━━ can't be declared after type, constant, or instance parameters
+14 │ public type Fifth[T, inst I: Test[T], 'a] = int32
+   ╰╴                                      ━━ can't be declared after type, constant, or instance parameters
 
 [error]: Compilation aborted due to 5 error(s)
 

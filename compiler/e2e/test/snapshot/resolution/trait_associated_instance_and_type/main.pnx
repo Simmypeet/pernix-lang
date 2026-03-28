@@ -3,10 +3,10 @@ public trait Another:
 
 
 public trait Test:
-    public type AssocType[instance I: Another]
+    public type AssocType[inst I: Another]
 
 
-    public instance AssocInst: Another
+    public inst AssocInst: Another
 
 
     public function test(a: this::AssocType[this::AssocInst])

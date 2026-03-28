@@ -9,14 +9,14 @@ public trait Identity:
     public type Output
 
 
-public type ConstrainedInvariant['x, 'a, instance I: Identity] = int32:
+public type ConstrainedInvariant['x, 'a, inst I: Identity] = int32:
     where:
         'a: 'x
         I::Output = Invariant['x, 'a]
 
 
 # should error with 'b: 'a and 'a: 'b
-public type UseInvariant['x, 'a, 'b, instance I: Identity] = ConstrainedInvariant['x, 'a, I]:
+public type UseInvariant['x, 'a, 'b, inst I: Identity] = ConstrainedInvariant['x, 'a, I]:
     where:
         'a: 'x
         'b: 'x
@@ -42,13 +42,13 @@ public struct Bivariant['a]:
     pass
 
 
-public type ConstraintBivariant['a, instance I: Identity] = int32:
+public type ConstraintBivariant['a, inst I: Identity] = int32:
     where:
         I::Output = Bivariant['a]
 
 
 # should have no lifetime errors, since the lifetime 'a  of `Bivariant` is
 # bivariant
-public type UseConstraintBivariant['a, 'b, instance I: Identity] = ConstraintBivariant['a, I]:
+public type UseConstraintBivariant['a, 'b, inst I: Identity] = ConstraintBivariant['a, I]:
     where:
         I::Output = Bivariant['b]

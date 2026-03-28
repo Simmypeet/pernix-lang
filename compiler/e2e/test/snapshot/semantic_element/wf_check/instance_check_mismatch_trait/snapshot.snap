@@ -4,16 +4,16 @@ expression: run
 ---
 stderr:
 [error]: mismatched trait reference
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/instance_check_mismatch_trait/main.pnx:13:59
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/instance_check_mismatch_trait/main.pnx:13:51
    │
-13 │ public type Use[instance I: TraitB, instance J: TraitA] = Require[I, J]
-   ╰╴                                                          ━━━━━━━━━━━━━ instance `I` implements `main::TraitB` but `main::TraitA` was expected
+13 │ public type Use[inst I: TraitB, inst J: TraitA] = Require[I, J]
+   ╰╴                                                  ━━━━━━━━━━━━━ instance `I` implements `main::TraitB` but `main::TraitA` was expected
 
 [error]: mismatched trait reference
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/instance_check_mismatch_trait/main.pnx:13:59
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/instance_check_mismatch_trait/main.pnx:13:51
    │
-13 │ public type Use[instance I: TraitB, instance J: TraitA] = Require[I, J]
-   ╰╴                                                          ━━━━━━━━━━━━━ instance `J` implements `main::TraitA` but `main::TraitB` was expected
+13 │ public type Use[inst I: TraitB, inst J: TraitA] = Require[I, J]
+   ╰╴                                                  ━━━━━━━━━━━━━ instance `J` implements `main::TraitA` but `main::TraitB` was expected
 
 [error]: Compilation aborted due to 2 error(s)
 

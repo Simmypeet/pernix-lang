@@ -3,7 +3,7 @@ public trait Require[T]:
     pass
 
 
-public struct Test[T, instance I: Require[T]]:
+public struct Test[T, inst I: Require[T]]:
     public value: T
 
 
