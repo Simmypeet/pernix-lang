@@ -1,5 +1,6 @@
 from core import Copy, Drop
 
+
 public struct Vector[T]:
 	private x: phantom T
 
@@ -17,6 +18,7 @@ implements[T] Vector[T]:
 public trait DoSomething['a, T]:
 	public type Output
 
+
 	public function doSomething['b](
 		self: &'b mut T, 
 		object: &'a mut int32
@@ -25,11 +27,13 @@ public trait DoSomething['a, T]:
             T: 'b
 
 
-implements['a, 'c] DoSomething['a, Vector[&'c mut int32]]:
+public instance DoSomethingVec['a, 'c]: DoSomething['a, Vector[&'c mut int32]]:
     where:
         'a: 'c
 
+
 	type Output = int32
+
 
 	function doSomething['b](
 		self: &'b mut Vector[&'c mut int32], 
@@ -41,11 +45,11 @@ implements['a, 'c] DoSomething['a, Vector[&'c mut int32]]:
         self.push(object)
 
 
-public function use['a, T](object: &'a mut T):
-    where:
-        trait for['x] DoSomething['x, T]
-        T: 'a
-
+public function use[
+	'a, 
+	T: 'a, 
+	instance I: for['x] DoSomething['x, T]
+](object: &'a mut T):
 	let mut number = 32
 	
     # Call the method twice with the same mutable reference

@@ -40,7 +40,7 @@ use pernixc_symbol::{
     kind::{Kind, get_kind},
     linkage::get_linkage,
     name::{get_name, get_qualified_name},
-    parent::get_parent,
+    parent::{get_parent, get_parent_global},
 };
 use pernixc_target::{Global, TargetID};
 use pernixc_term::{
@@ -176,6 +176,7 @@ pub struct Map<'ctx> {
 }
 
 impl<'ctx> Context<'_, 'ctx> {
+    #[allow(clippy::cognitive_complexity, clippy::too_many_lines)]
     async fn get_function_qualified_name(
         &self,
         symbol_kind: Kind,
@@ -200,6 +201,56 @@ impl<'ctx> Context<'_, 'ctx> {
                 self.normalize_generic_arguments(&mut generic_arguments).await;
 
                 generic_arguments
+                    .write_async(self.engine(), &mut qualified_name)
+                    .await
+                    .unwrap();
+
+                qualified_name
+            }
+
+            Kind::InstanceAssociatedFunction => {
+                let parent_inst_id =
+                    self.engine().get_parent_global(callable_id).await.unwrap();
+
+                let parent_generic_params =
+                    self.engine().get_generic_parameters(parent_inst_id).await;
+
+                let mut parent_generic_args = instantiation
+                    .create_generic_arguments(
+                        parent_inst_id,
+                        &parent_generic_params,
+                    );
+
+                self.normalize_generic_arguments(&mut parent_generic_args)
+                    .await;
+
+                let function_generic_params =
+                    self.engine().get_generic_parameters(callable_id).await;
+
+                let mut function_generic_args = instantiation
+                    .create_generic_arguments(
+                        callable_id,
+                        &function_generic_params,
+                    );
+                self.normalize_generic_arguments(&mut function_generic_args)
+                    .await;
+
+                let mut qualified_name =
+                    self.engine().get_qualified_name(parent_inst_id).await;
+
+                parent_generic_args
+                    .write_async(self.engine(), &mut qualified_name)
+                    .await
+                    .unwrap();
+
+                write!(
+                    qualified_name,
+                    "::{}",
+                    self.engine().get_name(callable_id).await.as_ref()
+                )
+                .unwrap();
+
+                function_generic_args
                     .write_async(self.engine(), &mut qualified_name)
                     .await
                     .unwrap();

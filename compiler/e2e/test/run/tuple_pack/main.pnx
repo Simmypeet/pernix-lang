@@ -11,7 +11,7 @@ public trait Add[T]:
     public function add(a: T, b: T) -> T
 
 
-implements Add[int32]:
+public instance Int32Add: Add[int32]:
     function add(a: int32, b: int32) -> int32:
         return a + b
 
@@ -22,26 +22,26 @@ public trait SumTuple[T: tuple]:
     public function sum(elements: T) -> this::Output
 
 
-implements[T] SumTuple[(T,)]:
-    where:
-        trait Add[T]
-
+public instance BaseCase[T, instance A: Add[T]]: SumTuple[(T,)]:
     type Output = T
 
     function sum(elements: (T,)) -> this::Output:
         return elements.0
 
 
-implements[T, Rest] SumTuple[(T, ...Rest)]:
+public instance RecursiveCase[
+    T,
+    Rest: tuple,
+    instance A: Add[T],
+    instance S: SumTuple[Rest]
+]: SumTuple[(T, ...Rest)]:
     where:
-        trait Add[T] + SumTuple[Rest]
-        Rest: tuple
-        SumTuple[Rest]::Output = T
+        S::Output = T
 
     type Output = T
 
     function sum((first, ...rest): (T, ...Rest)) -> this::Output:
-        return Add::add(first, SumTuple::sum(rest))
+        return A::add(first, S::sum(rest))
 
 
 public function main():
@@ -63,4 +63,4 @@ public function main():
         &mut nums.5,
     )
 
-    printf(&"%d\0".[0], SumTuple::sum(nums))
+    printf(&"%d\0".[0], RecursiveCase::sum(nums))

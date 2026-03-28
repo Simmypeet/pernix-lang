@@ -174,8 +174,8 @@ impl Impl for Type {
         {
             let Some(result) = environment
                 .subtypes(
-                    query.operand.clone(),
                     next_operand.clone(),
+                    query.operand.clone(),
                     Variance::Covariant,
                 )
                 .await?

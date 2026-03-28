@@ -18,21 +18,17 @@ public unsafe function anotherDangerous():
 public trait MyTrait[T]:
     public unsafe function traitDangerous()
 
-    public unsafe function traitDangerousMethod(self: &T)
 
-
-public function main[T: MyTrait](t: T):
+public function main[T, instance I: MyTrait[T]]():
     MyType::dangerous()
     anotherDangerous()
     MyType{}.dangerousMethod()
-    MyTrait[T]::traitDangerous()
-    t.traitDangerousMethod()
+    I::traitDangerous()
 
 
-public function safeMain[T: MyTrait](t: T):
+public function safeMain[T, instance I: MyTrait[T]](t: T):
     unsafe scope:
         MyType::dangerous()
         anotherDangerous()
         MyType{}.dangerousMethod()
-        MyTrait[T]::traitDangerous()
-        t.traitDangerousMethod()
+        I::traitDangerous()

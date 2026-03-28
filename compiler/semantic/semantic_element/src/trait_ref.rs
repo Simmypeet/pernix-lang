@@ -140,6 +140,10 @@ pub async fn create_instantiation(
             .get_generic_parameters(self.trait_associated_symbol_id())
             .await,
     );
+    instantiation.insert_instance_mapping(
+        Instance::new_anonymous_trait(parent_trait_ref.trait_id()),
+        self.instance().clone(),
+    );
 
     Some(instantiation)
 }

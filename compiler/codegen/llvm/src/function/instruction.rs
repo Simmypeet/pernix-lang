@@ -21,7 +21,10 @@ use pernixc_ir::{
     },
 };
 use pernixc_semantic_element::fields::get_fields;
-use pernixc_symbol::variant_declaration_order::get_variant_declaration_order;
+use pernixc_symbol::{
+    kind::{Kind, get_kind},
+    variant_declaration_order::get_variant_declaration_order,
+};
 use pernixc_term::r#type::{Primitive, Type};
 
 use super::{
@@ -268,17 +271,24 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         function_call: &register::FunctionCall,
         reg_id: ID<Register>,
     ) -> Result<Option<LlvmValue<'ctx>>, Error> {
-        let mut instantiation =
-            function_call.create_instantiation(self.engine()).await.unwrap();
+        let (callee_symbol_id, mut inst) = function_call
+            .create_monomorphization(self.engine(), self.instantiation)
+            .await
+            .destruct();
 
-        instantiation.instantiate_values(self.instantiation);
-        self.context.normalize_instantiation(&mut instantiation).await;
+        let kind = self.engine().get_kind(callee_symbol_id).await;
 
-        let llvm_function = Box::pin(self.context.get_function(&Call {
-            callable_id: function_call.callee_symbol_id(),
-            instantiation,
-        }))
-        .await;
+        self.context.normalize_instantiation(&mut inst).await;
+
+        let llvm_function = if kind == Kind::ExternFunction {
+            self.context.get_extern_function(callee_symbol_id).await
+        } else {
+            Box::pin(self.context.get_function(&Call {
+                callable_id: callee_symbol_id,
+                instantiation: inst,
+            }))
+            .await
+        };
 
         self.create_function_call(
             &llvm_function,

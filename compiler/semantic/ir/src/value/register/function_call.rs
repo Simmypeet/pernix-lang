@@ -9,11 +9,15 @@ use pernixc_semantic_element::{
     return_type::get_return_type, trait_ref::create_instantiation,
     variance::Variance,
 };
+use pernixc_symbol::instance_associated::{
+    AssociatedKind, get_instance_associated_equivalent,
+};
 use pernixc_target::Global;
 use pernixc_term::{
     effect,
     error::MakeError,
     generic_arguments::{AssociatedSymbol, Symbol},
+    generic_parameters::get_generic_parameters,
     instance::InstanceAssociated,
     instantiation::Instantiation,
     lifetime::{ElidedLifetime, ElidedLifetimeID, Lifetime},
@@ -180,6 +184,19 @@ pub struct FunctionCall {
     effect_arguments: FxHashMap<ID<effect::Unit>, EffectHandlerArgument>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, StableHash)]
+pub struct Monomorphization {
+    callee_symbol_id: Global<pernixc_symbol::SymbolID>,
+    instantiation: Instantiation,
+}
+
+impl Monomorphization {
+    #[must_use]
+    pub fn destruct(self) -> (Global<pernixc_symbol::SymbolID>, Instantiation) {
+        (self.callee_symbol_id, self.instantiation)
+    }
+}
+
 impl FunctionCall {
     #[must_use]
     pub const fn new(
@@ -205,6 +222,75 @@ impl FunctionCall {
     #[must_use]
     pub const fn callee_symbol_id(&self) -> Global<pernixc_symbol::SymbolID> {
         self.callee.get_symbol_id()
+    }
+
+    #[must_use]
+    pub async fn create_monomorphization(
+        &self,
+        engine: &TrackedEngine,
+        parent_monomorphization: &Instantiation,
+    ) -> Monomorphization {
+        match &self.callee {
+            Callee::Function(symbol) => {
+                let id = symbol.id();
+                let mut inst = symbol.create_instantiation(engine).await;
+                inst.instantiate_values(parent_monomorphization);
+
+                Monomorphization { callee_symbol_id: id, instantiation: inst }
+            }
+
+            Callee::AssociatedFunction(associated_symbol) => {
+                let id = associated_symbol.id();
+                let mut inst =
+                    associated_symbol.create_instantiation(engine).await;
+                inst.instantiate_values(parent_monomorphization);
+
+                Monomorphization { callee_symbol_id: id, instantiation: inst }
+            }
+
+            Callee::InstanceAssociatedFunction(instance_associated) => {
+                let mut instance_associated = instance_associated.clone();
+                instance_associated.instantiate(parent_monomorphization);
+
+                let instance_symbol = instance_associated
+                    .instance()
+                    .as_symbol()
+                    .expect("should've been monomorphized to a symbol vairant");
+
+                let mut instantiation =
+                    instance_symbol.create_instantiation(engine).await;
+
+                let equiv_instance_associated = engine
+                    .get_instance_associated_equivalent(
+                        instance_symbol.id(),
+                        instance_associated.trait_associated_symbol_id(),
+                        AssociatedKind::Function,
+                    )
+                    .await
+                    .expect("should've found the equivalent");
+
+                {
+                    let instance_associated_instance_generic_parameters =
+                        engine
+                            .get_generic_parameters(equiv_instance_associated)
+                            .await;
+
+                    instantiation.append_from_generic_arguments(
+                        instance_associated
+                            .associated_instance_generic_arguments(),
+                        equiv_instance_associated,
+                        &instance_associated_instance_generic_parameters,
+                    );
+                }
+
+                instantiation.instantiate_values(parent_monomorphization);
+
+                Monomorphization {
+                    callee_symbol_id: equiv_instance_associated,
+                    instantiation,
+                }
+            }
+        }
     }
 
     pub async fn create_instantiation(
@@ -304,13 +390,16 @@ impl FunctionCall {
             engine.get_effect_annotation(environment.current_site).await;
 
         for (required_id, argument) in self.effect_arguments() {
-            let mut required_capability = called_capabilities[required_id].clone();
+            let mut required_capability =
+                called_capabilities[required_id].clone();
 
             // instantiate the generic arguments of the required capability
             required_capability.instantiate(&inst);
 
             match argument {
-                EffectHandlerArgument::FromEffectAnnotation(capability_unit) => {
+                EffectHandlerArgument::FromEffectAnnotation(
+                    capability_unit,
+                ) => {
                     // no need to instantiate, as the capability unit is
                     // already instantiated from the call site
                     let available_capability =
