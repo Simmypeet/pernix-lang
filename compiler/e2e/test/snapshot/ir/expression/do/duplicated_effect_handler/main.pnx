@@ -1,12 +1,12 @@
-public effect UseLifetime['x]:
+pub effect UseLifetime['x]:
     useLifetime()
 
 
-public effect UseTypeParameter[T]:
+pub effect UseTypeParameter[T]:
     useTypeParameter()
 
 
-public function main['x, 'y]():
+pub def main['x, 'y]():
     do:
         pass
 

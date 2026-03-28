@@ -1,8 +1,8 @@
-public function takeUint32(x: uint32):
+pub def takeUint32(x: uint32):
     pass
 
 
-public function prefixOperatorTest():
+pub def prefixOperatorTest():
     not 43
     takeUint32(-53)
     -64u32

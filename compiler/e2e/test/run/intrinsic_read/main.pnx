@@ -1,11 +1,11 @@
 from core import read, Copy
 
 extern "C":
-    public function printf(format: &uint8, ...) -> int32
+    pub def printf(format: &uint8, ...) -> int32
 
 
 # Test scalar type
-public function testScalar():
+pub def testScalar():
     unsafe scope:
         let x = 42 as int32
         let ptr = (&x) as *int32
@@ -14,15 +14,15 @@ public function testScalar():
 
 
 # Test aggregate type
-public struct Point:
-    public x: int32
-    public y: int32
+pub struct Point:
+    pub x: int32
+    pub y: int32
 
 
-final implements Copy[Point] delete
+final impl Copy[Point] delete
 
 
-public function testAggregate():
+pub def testAggregate():
     unsafe scope:
         let p = Point { x: 10, y: 20 }
         let ptr = (&p) as *Point
@@ -31,14 +31,14 @@ public function testAggregate():
 
 
 # Test ZST
-public struct Empty:
+pub struct Empty:
     pass
 
 
-final implements Copy[Empty] delete
+final impl Copy[Empty] delete
 
 
-public function testZst():
+pub def testZst():
     unsafe scope:
         let e = Empty {}
         let ptr = (&e) as *Empty
@@ -46,7 +46,7 @@ public function testZst():
         printf(&"ZST read complete\n\0".[0])
 
 
-public function main():
+pub def main():
     testScalar()
     testAggregate()
     testZst()

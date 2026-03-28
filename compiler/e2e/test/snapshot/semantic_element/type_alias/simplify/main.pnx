@@ -1,7 +1,7 @@
-public trait Fizz:
-    public type Output['a]
+pub trait Fizz:
+    pub type Output['a]
 
 
-public type Test['a, 'b, inst I: Fizz] = I::Output['a]:
+pub type Test['a, 'b, inst I: Fizz] = I::Output['a]:
     where:
         I::Output['b] = int32

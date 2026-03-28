@@ -1,42 +1,42 @@
-public struct Pair:
-    public first: int32
-    public second: int32
+pub struct Pair:
+    pub first: int32
+    pub second: int32
 
 
-implements Pair:
-    public function getFirstMut(self: &mut this) -> &mut int32:
+impl Pair:
+    pub def getFirstMut(self: &mut this) -> &mut int32:
         return &mut self.first
 
     
-    public function getSecondMut(self: &mut this) -> &mut int32:
+    pub def getSecondMut(self: &mut this) -> &mut int32:
         return &mut self.second
 
 
-public function getPair() -> Pair:
+pub def getPair() -> Pair:
     return Pair { first: 32, second: 64 }
 
 
-public function main():
+pub def main():
     let p = getPair()
     let first = p.getFirstMut()   # expect mut
     let second = p.getSecondMut() # expect mut
 
 
-public struct Ref['a, T]:
+pub struct Ref['a, T]:
     where:
         T: 'a
 
-    public reference: &'a T
+    pub reference: &'a T
 
 
-public struct RefMut['a, T]:
+pub struct RefMut['a, T]:
     where:
         T: 'a
 
-    public reference: &'a mut T
+    pub reference: &'a mut T
 
 
-public function test(
+pub def test(
     mutPair: &mut Pair, 
     refPair: &Pair, 
     mutRefPair: &mut Ref[Pair],

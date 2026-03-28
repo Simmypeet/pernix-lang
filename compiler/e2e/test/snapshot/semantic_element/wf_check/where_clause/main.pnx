@@ -1,54 +1,54 @@
-public struct Invariant['x, 'a]:
+pub struct Invariant['x, 'a]:
     where:
         'a: 'x
 
-    private mutableRef: &'x mut &'a int32
+    priv mutableRef: &'x mut &'a int32
 
 
-public trait Identity:
-    public type Output
+pub trait Identity:
+    pub type Output
 
 
-public type ConstrainedInvariant['x, 'a, inst I: Identity] = int32:
+pub type ConstrainedInvariant['x, 'a, inst I: Identity] = int32:
     where:
         'a: 'x
         I::Output = Invariant['x, 'a]
 
 
 # should error with 'b: 'a and 'a: 'b
-public type UseInvariant['x, 'a, 'b, inst I: Identity] = ConstrainedInvariant['x, 'a, I]:
+pub type UseInvariant['x, 'a, 'b, inst I: Identity] = ConstrainedInvariant['x, 'a, I]:
     where:
         'a: 'x
         'b: 'x
         I::Output = Invariant['x, 'b]
 
 
-public struct ConstraintLifetime['a, T]:
+pub struct ConstraintLifetime['a, T]:
     where:
         T: 'a
 
 
 # should have no error since T: 'static
-public type UseConstraintLifetimeWithStatic['a, T] = ConstraintLifetime['a, T]:
+pub type UseConstraintLifetimeWithStatic['a, T] = ConstraintLifetime['a, T]:
     where:
         T: 'static 
 
 
 # should error with T: 'a
-public type UseConstraintLifetime['a, T] = ConstraintLifetime['a, T]
+pub type UseConstraintLifetime['a, T] = ConstraintLifetime['a, T]
 
 
-public struct Bivariant['a]:
+pub struct Bivariant['a]:
     pass
 
 
-public type ConstraintBivariant['a, inst I: Identity] = int32:
+pub type ConstraintBivariant['a, inst I: Identity] = int32:
     where:
         I::Output = Bivariant['a]
 
 
 # should have no lifetime errors, since the lifetime 'a  of `Bivariant` is
 # bivariant
-public type UseConstraintBivariant['a, 'b, inst I: Identity] = ConstraintBivariant['a, I]:
+pub type UseConstraintBivariant['a, 'b, inst I: Identity] = ConstraintBivariant['a, I]:
     where:
         I::Output = Bivariant['b]

@@ -1,58 +1,58 @@
-public module math:
+pub module math:
     pass
 
 
-public enum Direction:
+pub enum Direction:
     North
     South
     East
     West
 
 
-public trait Identity[T]:
-    public type Output
+pub trait Identity[T]:
+    pub type Output
 
 
-implements Direction::North:
+impl Direction::North:
     pass
 
 
-implements math:
+impl math:
     pass
 
 
 
-public type Reference['a, T] = &'a T:
+pub type Reference['a, T] = &'a T:
     where:
         T: 'a
 
 
-public type MutableReference['a, T] = &'a mut T:
+pub type MutableReference['a, T] = &'a mut T:
     where:
         T: 'a
 
 
-implements['a, T] Reference['a, T]:
-    where:
-        T: 'a
-
-    pass
-
-
-implements['a, T] MutableReference['a, T]:
+impl['a, T] Reference['a, T]:
     where:
         T: 'a
 
     pass
 
 
-public struct Vector2D[T]:
-    public x: T
-    public y: T
+impl['a, T] MutableReference['a, T]:
+    where:
+        T: 'a
+
+    pass
 
 
-public type Vector2DAlias[T] = Vector2D[T]
+pub struct Vector2D[T]:
+    pub x: T
+    pub y: T
 
 
-implements[T] Vector2DAlias[T]:
+pub type Vector2DAlias[T] = Vector2D[T]
+
+
+impl[T] Vector2DAlias[T]:
     pass

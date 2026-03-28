@@ -4,20 +4,20 @@ expression: run
 ---
 stderr:
 [error]: member in marker implementation is not allowed
-  ╭▸ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/marker/main.pnx:5:21
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/marker/main.pnx:5:13
   │
-4 │ final implements Test[int32]:
-  │                  ─────────── this is a marker `implements`
-5 │     public function someFunction():
-  │                     ━━━━━━━━━━━━ `main::[implements Test[int32]]::someFunction` cannot be declared in this `implements`
+4 │ final impl Test[int32]:
+  │            ─────────── this is a marker `implements`
+5 │     pub def someFunction():
+  │             ━━━━━━━━━━━━ `main::[implements Test[int32]]::someFunction` cannot be declared in this `implements`
   │
   ╰ help: marker implementations cannot have members
 
 [error]: the marker implements is not final
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/marker/main.pnx:10:12
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/marker/main.pnx:10:6
    │
-10 │ implements Test[float32]
-   │            ━━━━━━━━━━━━━
+10 │ impl Test[float32]
+   │      ━━━━━━━━━━━━━
    │
    ╰ help: add the `final` keyword to the `implements`
 

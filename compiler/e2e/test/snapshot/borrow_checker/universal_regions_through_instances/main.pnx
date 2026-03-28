@@ -1,11 +1,11 @@
-public trait Fizz['a, T, U]:
-    public function doSomething['b](self: &'b T, t: &'a mut U):
+pub trait Fizz['a, T, U]:
+    pub def doSomething['b](self: &'b T, t: &'a mut U):
         where:
             T: 'b
             U: 'a
 
 
-public function test['a, 'b, T, U, inst I: Fizz['a, T, U]](
+pub def test['a, 'b, T, U, inst I: Fizz['a, T, U]](
     t: &'b T,
     u: &'a mut U
 ):

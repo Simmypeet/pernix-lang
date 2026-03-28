@@ -1,11 +1,11 @@
-public marker Test[T]
+pub marker Test[T]
 
 
-public effect RequireTest[T: Test]:
+pub effect RequireTest[T: Test]:
     operation()
 
 
-public function main():
+pub def main():
     do:
         pass
     

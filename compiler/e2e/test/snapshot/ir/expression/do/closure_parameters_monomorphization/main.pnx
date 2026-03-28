@@ -1,16 +1,16 @@
-public effect Test[T]:
+pub effect Test[T]:
     doSomething(a: T)
 
 
-public function takesInt(a: int32):
+pub def takesInt(a: int32):
     pass
 
 
-public function takesBool(a: bool):
+pub def takesBool(a: bool):
     pass
 
 
-public function test():
+pub def test():
     do:
         pass
 

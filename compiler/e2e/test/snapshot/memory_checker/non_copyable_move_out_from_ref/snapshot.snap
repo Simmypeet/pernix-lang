@@ -6,8 +6,8 @@ stderr:
 [error]: found negative implementation
    ╭▸ compiler/e2e/test/snapshot/memory_checker/non_copyable_move_out_from_ref/main.pnx:16:10
    │
- 8 │ final implements Copy[NonCopyable] delete
-   │                  ───────────────── this negative implementation explicitly marks the predicate as unsatisfiable
+ 8 │ final impl Copy[NonCopyable] delete
+   │            ───────────────── this negative implementation explicitly marks the predicate as unsatisfiable
    ‡
 16 │     drop(*nonCopyable)
    ╰╴         ━━━━━━━━━━━━ the predicate `marker core::Copy[main::NonCopyable]` is explicitly marked as unsatisfiable by a negative implementation

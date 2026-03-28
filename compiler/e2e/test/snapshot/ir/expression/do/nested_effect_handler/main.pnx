@@ -1,8 +1,8 @@
-public effect Effect[T]:
+pub effect Effect[T]:
     op()
 
 
-public function error():
+pub def error():
     do:
         Effect[int32]::op() # effect is handled
 
@@ -15,7 +15,7 @@ public function error():
             pass
 
 
-public function valid():
+pub def valid():
     do:
         let something = do:
             Effect[int32]::op() # effect is handled by inner do

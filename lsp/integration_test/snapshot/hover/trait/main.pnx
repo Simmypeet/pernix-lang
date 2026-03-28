@@ -1,6 +1,6 @@
-public trait Test[T: 'static]:
+pub trait Test[T: 'static]:
     pass
 
 
-public function test():
+pub def test():
     Tes<cursor>t[int32]

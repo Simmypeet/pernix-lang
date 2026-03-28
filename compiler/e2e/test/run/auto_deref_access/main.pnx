@@ -3,16 +3,16 @@
 
 
 extern "C":
-    public function printf(format: &uint8, ...) -> int32
-    public function scanf(format: &uint8, ...) -> int32
+    pub def printf(format: &uint8, ...) -> int32
+    pub def scanf(format: &uint8, ...) -> int32
 
 
-public struct Pair[T, U]:
-    public first: T
-    public second: U
+pub struct Pair[T, U]:
+    pub first: T
+    pub second: U
 
 
-public function main():
+pub def main():
     let mut pair = Pair {
         first: 0,
         second: 0,

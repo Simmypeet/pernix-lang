@@ -1,11 +1,11 @@
-public struct A:
+pub struct A:
     pass
 
 
-implements A:
-    public function implementedFunction[T: 'static]() -> int32:
+impl A:
+    pub def implementedFunction[T: 'static]() -> int32:
         return 42
 
 
-public function testFunction():
+pub def testFunction():
     A::implementedFunct<cursor>ion()

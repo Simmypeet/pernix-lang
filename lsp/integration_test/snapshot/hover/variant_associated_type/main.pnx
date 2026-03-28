@@ -1,7 +1,7 @@
-public enum Option[T]:
+pub enum Option[T]:
     Some(T)
     None    
 
 
-public function test():
+pub def test():
     Option::Som<cursor>e(32)

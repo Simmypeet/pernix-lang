@@ -1,4 +1,4 @@
-public function main():
+pub def main():
     let mut a = 64
     let b = &mut a
     let c: int32 = *b

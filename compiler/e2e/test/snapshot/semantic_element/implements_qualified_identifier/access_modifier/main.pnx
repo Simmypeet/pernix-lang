@@ -1,42 +1,42 @@
-public trait Displayable[T]:
-    public function display()
+pub trait Displayable[T]:
+    pub def display()
 
 
-public struct MyStruct:
+pub struct MyStruct:
     pass
 
 
-public enum MyEnum:
+pub enum MyEnum:
     Variant
 
 
 # ADT implementation - members SHOULD have access modifiers
-implements MyStruct:
+impl MyStruct:
     # This should generate an error: ADT members must have access modifiers
-    function helper():
+    def helper():
         pass
     
 
     # This is correct: ADT member with access modifier
-    public function publicMethod():
+    pub def publicMethod():
         pass
 
     
-    private function privateMethod():
+    priv def privateMethod():
         pass
 
     
-    internal function internalMethod():
+    internal def internalMethod():
         pass
 
 
 # ADT implementation with access modifiers on enum
-implements MyEnum:
+impl MyEnum:
     # This should generate an error: ADT members must have access modifiers
-    function enumHelper():
+    def enumHelper():
         pass
     
 
     # This is correct: ADT member with access modifier
-    public function enumMethod():
+    pub def enumMethod():
         pass

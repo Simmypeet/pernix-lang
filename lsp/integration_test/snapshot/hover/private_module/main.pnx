@@ -1,6 +1,6 @@
-public module outer:
-    private module inner:
+pub module outer:
+    priv module inner:
         type Test = int32
 
 
-public type Test = outer::inn<cursor>er::Test
+pub type Test = outer::inn<cursor>er::Test

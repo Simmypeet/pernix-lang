@@ -5,18 +5,18 @@
 
 
 extern "C":
-    public function printf(format: &uint8, ...) -> int32
-    public function scanf(format: &uint8, ...) -> int32
+    pub def printf(format: &uint8, ...) -> int32
+    pub def scanf(format: &uint8, ...) -> int32
 
 
-public function max['a](a: &'a int32, b: &'a int32) -> &'a int32:
+pub def max['a](a: &'a int32, b: &'a int32) -> &'a int32:
     if *a > *b:
         return a
 
     return b
 
 
-public function main():
+pub def main():
     let mut a: int32 = 0
     let mut b: int32 = 0
 

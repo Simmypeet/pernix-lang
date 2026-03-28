@@ -1,6 +1,6 @@
-public module inlineModule:
-    public marker Test[T]
+pub module inlineModule:
+    pub marker Test[T]
 
 
-implements inlineMo<cursor>dule::Test[int32]
+impl inlineMo<cursor>dule::Test[int32]
 

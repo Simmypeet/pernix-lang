@@ -1,8 +1,8 @@
-public effect Test:
+pub effect Test:
     op()
 
 
-public function main():
+pub def main():
     do:
         # return int32 first
         return 32

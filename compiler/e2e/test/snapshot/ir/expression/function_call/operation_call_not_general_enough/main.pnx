@@ -1,10 +1,10 @@
-public effect Test['x]:
+pub effect Test['x]:
     op()
 
 
-public function useForallTest() do for['x] Test['x]: # forall lifetime x
+pub def useForallTest() do for['x] Test['x]: # forall lifetime x
     pass
 
 
-public function main['x]() do Test['x]: # Test['x] for specific 'x
+pub def main['x]() do Test['x]: # Test['x] for specific 'x
     useForallTest() 

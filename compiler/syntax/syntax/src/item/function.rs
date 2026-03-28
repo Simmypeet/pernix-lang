@@ -114,7 +114,7 @@ abstract_tree::abstract_tree! {
     )]
     pub struct Signature {
         pub unsafe_keyword: Keyword = expect::Keyword::Unsafe.optional(),
-        pub function_keyword: Keyword = expect::Keyword::Function,
+        pub function_keyword: Keyword = expect::Keyword::Def,
         pub identifier: Identifier = expect::Identifier,
         pub generic_parameters: GenericParameters
             = ast::<GenericParameters>().optional(),

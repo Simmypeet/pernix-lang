@@ -1,20 +1,20 @@
-public marker Fizz[T]
-public marker Buzz[T]
+pub marker Fizz[T]
+pub marker Buzz[T]
 
 
-final implements Fizz[int32]:
+final impl Fizz[int32]:
     pass
 
 
-final implements[T: Fizz] Buzz[(T,)]
+final impl[T: Fizz] Buzz[(T,)]
 
 
-public struct MyStruct:
-    public a: (int32,)
-    public b: (bool,)
+pub struct MyStruct:
+    pub a: (int32,)
+    pub b: (bool,)
 
 
-public type WithRequirement[T: Buzz] = T
+pub type WithRequirement[T: Buzz] = T
 
 
-public type InstMyStruct = WithRequirement[MyStruct]
+pub type InstMyStruct = WithRequirement[MyStruct]

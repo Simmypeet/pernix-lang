@@ -1,10 +1,10 @@
-public struct Ref['a, T: 'a]:
-    public value: &'a T
+pub struct Ref['a, T: 'a]:
+    pub value: &'a T
 
 
-public struct Test['a, 'b, T]:
+pub struct Test['a, 'b, T]:
     where:
         T: 'a + 'b 
         'b: 'a
 
-    public test: &'a mut Ref['b, T]
+    pub test: &'a mut Ref['b, T]

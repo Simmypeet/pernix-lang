@@ -1,11 +1,11 @@
-public function one['a, 'b](
+pub def one['a, 'b](
     first: &'a int32,
     second: &'b int32,
 ) -> &'a int32:
     return &*second
 
 
-public function two['a, 'b](
+pub def two['a, 'b](
     first: &'a int32,
     second: &'b int32,
 ) -> &'a int32:

@@ -1,25 +1,25 @@
 from core import Drop, Copy
 
 
-public struct DropWrapper[T]:
-    private value: T
+pub struct DropWrapper[T]:
+    priv value: T
 
 
-implements[T] DropWrapper[T]:
-    public function new(value: T) -> this:
+impl[T] DropWrapper[T]:
+    pub def new(value: T) -> this:
         return this { value: value }
 
 
-implements[T] Drop[DropWrapper[T]]:
-    function drop['b](self: &'b mut DropWrapper[T]):
+impl[T] Drop[DropWrapper[T]]:
+    def drop['b](self: &'b mut DropWrapper[T]):
         where:
             DropWrapper[T]: 'b 
 
 
-final implements[T] Copy[DropWrapper[T]] delete
+final impl[T] Copy[DropWrapper[T]] delete
 
 
-public function main():
+pub def main():
     let mut number = 32
     let wrapper = DropWrapper::new(&number)
 

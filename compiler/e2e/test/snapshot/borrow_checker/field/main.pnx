@@ -1,4 +1,4 @@
-public function main():
+pub def main():
     let mut outer = 32
     let pair = (&outer,)
     

@@ -1,8 +1,8 @@
-public function consume[T](x: T):
+pub def consume[T](x: T):
     pass
 
 
-public function assign['a, T] (
+pub def assign['a, T] (
     reference: &'a mut T,
     value: T
 ):
@@ -12,7 +12,7 @@ public function assign['a, T] (
     *reference = value
 
 
-public function test():
+pub def test():
     let outer =  32
     let mut ref = &outer
 

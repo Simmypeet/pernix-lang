@@ -1,18 +1,18 @@
 # fake vector
-public struct Vector[T]:
-    private _marker: phantom T
+pub struct Vector[T]:
+    priv _marker: phantom T
 
 
-implements[T] Vector[T]:
-    public function new() -> this:
+impl[T] Vector[T]:
+    pub def new() -> this:
         return this { _marker: phantom }
 
     
-    public function push(self: &mut this, value: T):
+    pub def push(self: &mut this, value: T):
         pass
     
 
-public function main():
+pub def main():
     let mut vec = Vector::new()
     vec.push(true)
     vec.push(false)

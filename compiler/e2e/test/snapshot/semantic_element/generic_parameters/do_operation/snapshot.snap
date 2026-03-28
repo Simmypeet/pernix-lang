@@ -6,8 +6,8 @@ stderr:
 [error]: effect operation symbol cannot have type or constant parameters
   ╭▸ compiler/e2e/test/snapshot/semantic_element/generic_parameters/do_operation/main.pnx:2:5
   │
-1 │ public effect Test[T]:
-  │               ──── or consider moving generic parameters to the effect `main::Test` symbol instead
+1 │ pub effect Test[T]:
+  │            ──── or consider moving generic parameters to the effect `main::Test` symbol instead
 2 │     doInner[A, const U: int32]():
   │     ┯━━━━━━ ┬        ─ defined here
   │     │       │

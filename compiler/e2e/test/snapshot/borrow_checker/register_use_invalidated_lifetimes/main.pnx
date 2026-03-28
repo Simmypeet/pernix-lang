@@ -1,4 +1,4 @@
-public function test['a](
+pub def test['a](
     ref: &'a mut int32
 ): 
     let a =  (&mut *ref, &mut *ref)

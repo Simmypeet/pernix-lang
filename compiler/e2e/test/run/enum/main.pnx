@@ -11,37 +11,37 @@
 
 
 extern "C":
-    public function printf(format: &uint8, ...) -> int32
-    public function scanf(format: &uint8, ...) -> int32
+    pub def printf(format: &uint8, ...) -> int32
+    pub def scanf(format: &uint8, ...) -> int32
 
 
-public struct Pair:
-    public first: int32
-    public second: int32
+pub struct Pair:
+    pub first: int32
+    pub second: int32
 
 
-public struct Triplet:
-    public first: int32
-    public second: int32
-    public third: int32
+pub struct Triplet:
+    pub first: int32
+    pub second: int32
+    pub third: int32
 
 
-public struct Quaduplet:
-    public first: int32
-    public second: int32
-    public third: int32
-    public fourth: int32
+pub struct Quaduplet:
+    pub first: int32
+    pub second: int32
+    pub third: int32
+    pub fourth: int32
 
 
-public enum Fizz:
+pub enum Fizz:
     Single(int32)
     Pair(Pair)
     Triplet(Triplet)
     Quaduplet(Quaduplet)
 
 
-implements Fizz:
-    public function printSum(self: &this):
+impl Fizz:
+    pub def printSum(self: &this):
         let sum = match self:
             case Single(num): *num
 
@@ -63,7 +63,7 @@ implements Fizz:
         printf(&"%d\0".[0], sum)
 
 
-public function main():
+pub def main():
     let mut mode: int32 = 0
     let format = &"%d\0".[0]
 

@@ -1,4 +1,4 @@
-public function main(cond: bool):
+pub def main(cond: bool):
     let test = if cond: 420.0 else: 0
     
     let typeMismatched = if cond: -420 else: 64u32 # error {signed} != int32

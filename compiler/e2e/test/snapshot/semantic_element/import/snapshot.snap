@@ -9,8 +9,8 @@ stderr:
  2 │ import main::First
    │        ━━━━━━━━━━━ the using `First` conflicts with the existing name in the module `main`
    ‡
-38 │ public struct First:
-   ╰╴              ───── this symbol already defined the name `First`
+38 │ pub struct First:
+   ╰╴           ───── this symbol already defined the name `First`
 
 [error]: the using statement conflicts with an existing name in the module
   ╭▸ compiler/e2e/test/snapshot/semantic_element/import/main.pnx:6:8

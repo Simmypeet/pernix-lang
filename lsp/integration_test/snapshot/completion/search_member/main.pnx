@@ -1,4 +1,4 @@
-public module inner
+pub module inner
 
 
-implements inner::<cursor>
+impl inner::<cursor>

@@ -1,9 +1,9 @@
-public struct XomeStruct:
+pub struct XomeStruct:
     pass
 
 
-public struct Test:
-    private test: target::<cursor>
+pub struct Test:
+    priv test: target::<cursor>
 
 
 something

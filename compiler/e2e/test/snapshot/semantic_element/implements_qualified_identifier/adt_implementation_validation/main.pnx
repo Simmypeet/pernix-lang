@@ -1,23 +1,23 @@
-public struct MyStruct:
+pub struct MyStruct:
     pass
 
-public enum MyEnum:
+pub enum MyEnum:
     pass
 
-implements MyStruct delete
+impl MyStruct delete
 
-final implements MyStruct delete
+final impl MyStruct delete
 
-final implements MyStruct:
-    public function test():
+final impl MyStruct:
+    pub def test():
         pass
 
-implements MyEnum delete
+impl MyEnum delete
 
-final implements MyEnum delete
+final impl MyEnum delete
 
-final implements MyEnum:
-    public function test():
+final impl MyEnum:
+    pub def test():
         pass
 
 

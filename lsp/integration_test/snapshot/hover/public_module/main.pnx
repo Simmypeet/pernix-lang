@@ -1,5 +1,5 @@
-public module something:
-    public type Test
+pub module something:
+    pub type Test
 
 
-public type Test = som<cursor>ething::Test
+pub type Test = som<cursor>ething::Test

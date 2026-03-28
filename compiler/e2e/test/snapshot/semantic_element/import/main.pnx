@@ -28,12 +28,12 @@ from target::inner5 import NotFound
 import unknown
 import main::unknown
 
-public module inner1
-public module inner2
-public module inner3
-public module inner4
-public module inner5
+pub module inner1
+pub module inner2
+pub module inner3
+pub module inner4
+pub module inner5
 
 
-public struct First:
+pub struct First:
     pass

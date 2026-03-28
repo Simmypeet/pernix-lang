@@ -1,12 +1,12 @@
-public function consume[T](x: T):
+pub def consume[T](x: T):
     pass
 
 
-public function cond() -> bool:
+pub def cond() -> bool:
     panic
 
 
-public function main():
+pub def main():
     let mut test = 32
     let r = &test
 

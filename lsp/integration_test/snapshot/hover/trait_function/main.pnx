@@ -1,7 +1,7 @@
-public trait SomeTrait[T]:
-    public function traitFunction[U](arg: T) -> U:
+pub trait SomeTrait[T]:
+    pub def traitFunction[U](arg: T) -> U:
         pass
 
 
-public function testFunction():
+pub def testFunction():
     SomeTrait::traitFunct<cursor>ion()

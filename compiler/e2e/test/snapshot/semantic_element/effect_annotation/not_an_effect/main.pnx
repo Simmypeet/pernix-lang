@@ -1,6 +1,6 @@
-public struct TotallyNotAnEffect:
+pub struct TotallyNotAnEffect:
     pass
 
 
-public function test() do TotallyNotAnEffect:
+pub def test() do TotallyNotAnEffect:
     pass

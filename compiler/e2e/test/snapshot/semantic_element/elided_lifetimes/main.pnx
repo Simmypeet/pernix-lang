@@ -1,22 +1,22 @@
-public effect Fizz:
+pub effect Fizz:
     fizz(a: &int32) -> &int32
 
 
-public effect Buzz:
+pub effect Buzz:
     buzz(b: &int32, c: &int32)
 
 
-public effect FizzBuzz:
+pub effect FizzBuzz:
     fizzBuzz(d: &int32, e: &int32) -> &int32
 
 
-public struct Ref['a, T: 'a]:
-    private value: &'a T
+pub struct Ref['a, T: 'a]:
+    priv value: &'a T
 
 
-public effect FizzBuzzRef:
+pub effect FizzBuzzRef:
     fizzBuzzRef(f: Ref[int32]) -> Ref[int32]
 
 
-public effect FizzBuzzRefError:
+pub effect FizzBuzzRefError:
     fizzBuzzRefError(f: Ref[int32], g: Ref[int32]) -> Ref[int32]

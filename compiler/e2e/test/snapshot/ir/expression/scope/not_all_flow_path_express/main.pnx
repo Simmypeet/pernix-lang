@@ -1,4 +1,4 @@
-public function main(cond: bool):
+pub def main(cond: bool):
     let a = scope 'result:
         if cond:
             express 'result 420
@@ -6,17 +6,17 @@ public function main(cond: bool):
         # error scope 'result does not express on all flow paths
 
 
-public function anotherMain(cond: bool):
+pub def anotherMain(cond: bool):
     let a = scope 'result:
         if cond:
             express 'result 420
 
         return 
         
-        # fine, return exits the function, no need to express on this path 
+        # fine, return exits the def, no need to express on this path 
         
 
-public function yetAnotherMain(cond: bool):
+pub def yetAnotherMain(cond: bool):
     let a = scope 'result:
         if cond:
             express 'result 420
@@ -26,11 +26,11 @@ public function yetAnotherMain(cond: bool):
         # fine, all flow paths express
 
 
-public function lastMain(cond: bool):
+pub def lastMain(cond: bool):
     let a = scope 'result:
         if cond:
             express 'result 420
         else:
             return
         
-        # fine, return exits the function, no need to express on this path
+        # fine, return exits the def, no need to express on this path

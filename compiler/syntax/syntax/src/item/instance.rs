@@ -21,7 +21,7 @@ mod test;
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Signature {
-        pub instance_keyword: Keyword = expect::Keyword::Instance,
+        pub instance_keyword: Keyword = expect::Keyword::Inst,
         pub identifier: Identifier = expect::Identifier,
         pub generic_parameters: GenericParameters
             = ast::<GenericParameters>().optional(),

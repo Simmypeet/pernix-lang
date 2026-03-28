@@ -1,8 +1,8 @@
-public trait Identity:
-    public type Output['x]
+pub trait Identity:
+    pub type Output['x]
 
 
-public function simplifyType['x, 'y, 'z, inst I: Identity](
+pub def simplifyType['x, 'y, 'z, inst I: Identity](
     first: I::Output['x],
     second: I::Output['y],
     third: I::Output['z],

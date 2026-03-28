@@ -97,7 +97,7 @@ abstract_tree::abstract_tree! {
         StableHash,
     )]
     pub struct InstanceParameter {
-        pub instance_keyword: Keyword = expect::Keyword::Instance,
+        pub instance_keyword: Keyword = expect::Keyword::Inst,
         pub identifier: Identifier = expect::Identifier,
         pub colon: Punctuation = ':',
         pub trait_ref: TraitRef = ast::<TraitRef>(),

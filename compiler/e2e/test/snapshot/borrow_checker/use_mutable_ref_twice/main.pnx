@@ -1,8 +1,8 @@
-public function print[T](value: T):
+pub def print[T](value: T):
     pass
 
 
-public function main():
+pub def main():
     let mut x = 1
     let ref = &mut x
 

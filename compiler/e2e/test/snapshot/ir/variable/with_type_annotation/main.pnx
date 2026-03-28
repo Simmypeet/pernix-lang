@@ -1,4 +1,4 @@
-public function main():
+pub def main():
     let myVar: int32 = 42
     let myVarMismatched: float32 = myVar
     let myVarWithInference: (.., int32) = (true, 42)

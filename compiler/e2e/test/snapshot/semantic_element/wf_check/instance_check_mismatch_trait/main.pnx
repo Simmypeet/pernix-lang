@@ -1,13 +1,13 @@
-public trait TraitA:
+pub trait TraitA:
     pass
 
 
-public trait TraitB:
+pub trait TraitB:
     pass
 
 
-public type Require[inst I: TraitA, inst J: TraitB] = int32
+pub type Require[inst I: TraitA, inst J: TraitB] = int32
 
 
 # should error with two instances that are not the same
-public type Use[inst I: TraitB, inst J: TraitA] = Require[I, J]
+pub type Use[inst I: TraitB, inst J: TraitA] = Require[I, J]

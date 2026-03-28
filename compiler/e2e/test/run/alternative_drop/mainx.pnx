@@ -8,25 +8,25 @@ from core import Drop, Copy
 
 
 extern "C":
-    public function printf(format: &uint8, ...) -> int32
-    public function scanf(format: &uint8, ...) -> int32
+    pub def printf(format: &uint8, ...) -> int32
+    pub def scanf(format: &uint8, ...) -> int32
 
 
-public struct LoudDrop['a]:
-    private value: &'a mut int32
+pub struct LoudDrop['a]:
+    priv value: &'a mut int32
 
 
-final implements['x] Drop[LoudDrop['x]]:
-    function drop(self: &mut LoudDrop['x]):
+final impl['x] Drop[LoudDrop['x]]:
+    def drop(self: &mut LoudDrop['x]):
         unsafe scope:
             printf(&"Dropping %d\n\0".[0], *self.value)
 
 
-public function drop[T](..: T):
+pub def drop[T](..: T):
     pass
 
 
-public function main():
+pub def main():
     unsafe scope:
         let mut flag = 0
         let mut value = 0

@@ -1,14 +1,14 @@
-public trait Test[T]:
+pub trait Test[T]:
     pass
 
 
-public inst MyTest[T]: Test[T]:
+pub inst MyTest[T]: Test[T]:
     pass
 
 
-public trait ExpectInstance[T]:
-    public inst I: Test[T]
+pub trait ExpectInstance[T]:
+    pub inst I: Test[T]
 
 
-public inst MyExpectInstance: ExpectInstance[int32]:
+pub inst MyExpectInstance: ExpectInstance[int32]:
     inst I: Test[int32] = MyTest[int32]

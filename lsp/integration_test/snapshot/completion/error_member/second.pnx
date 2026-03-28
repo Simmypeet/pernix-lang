@@ -1,1 +1,1 @@
-implements second::<cursor>
+impl second::<cursor>

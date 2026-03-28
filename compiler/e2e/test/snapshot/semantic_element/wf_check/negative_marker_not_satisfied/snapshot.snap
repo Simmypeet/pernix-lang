@@ -4,10 +4,10 @@ expression: run
 ---
 stderr:
 [error]: the predicate `not marker main::Marker[main::MyStruct]` is not satisfied
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/negative_marker_not_satisfied/main.pnx:22:28
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/negative_marker_not_satisfied/main.pnx:22:25
    │
-22 │ public type InstMyStruct = WithRequirement[MyStruct]
-   ╰╴                           ━━━━━━━━━━━━━━━━━━━━━━━━━
+22 │ pub type InstMyStruct = WithRequirement[MyStruct]
+   ╰╴                        ━━━━━━━━━━━━━━━━━━━━━━━━━
 [note]: the required predicate is declared here
    ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/negative_marker_not_satisfied/main.pnx:19:12
    │

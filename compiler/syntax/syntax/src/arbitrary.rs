@@ -436,11 +436,11 @@ reference! {
     #[derive(Debug, Clone, Copy, derive_more::Display)]
     pub enum AccessModifier for super::AccessModifier {
         #[display("public")]
-        #{prop_assert(|output| output.kind == expect::Keyword::Public)}
+        #{prop_assert(|output| output.kind == expect::Keyword::Pub)}
         Public,
 
         #[display("private")]
-        #{prop_assert(|output| output.kind == expect::Keyword::Private)}
+        #{prop_assert(|output| output.kind == expect::Keyword::Priv)}
         Private,
 
         #[display("internal")]

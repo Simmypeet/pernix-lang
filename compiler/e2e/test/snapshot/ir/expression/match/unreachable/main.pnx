@@ -1,17 +1,17 @@
-public function first():
+pub def first():
     let .. = match true:
         true:  1
         true:  2  # unreachable
         false: 3 
 
 
-public enum Order:
+pub enum Order:
     First
     Second
     Third
 
 
-public function second(order: Order):
+pub def second(order: Order):
     let .. = match order:
         case First:  1
         case Second: 2
@@ -19,7 +19,7 @@ public function second(order: Order):
         case Third:  4
 
 
-public function third(order: Order):
+pub def third(order: Order):
     let .. = match order:
         case First:  1
         name:        3 

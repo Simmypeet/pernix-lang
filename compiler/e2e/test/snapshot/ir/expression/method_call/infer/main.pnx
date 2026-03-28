@@ -1,22 +1,22 @@
-public enum Option[T]:
+pub enum Option[T]:
     Some(T)
     None
 
 
-implements Option[phantom int32]:
-    public function doSomething(self: this):
+impl Option[phantom int32]:
+    pub def doSomething(self: this):
         pass
 
 
-public function expectOptionInt32(x: &Option[int32]):
+pub def expectOptionInt32(x: &Option[int32]):
     pass
 
 
-public function expectOptionPhantomInt32(x: &Option[phantom int32]):
+pub def expectOptionPhantomInt32(x: &Option[phantom int32]):
     pass
 
 
-public function main():
+pub def main():
     # currently, `a` has a type of `Option[?T]`
     let a = Option::None
 

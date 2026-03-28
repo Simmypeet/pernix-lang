@@ -1,15 +1,15 @@
-public trait Test['a]:
+pub trait Test['a]:
     pass
 
 
-public inst MyTest['a]: Test['a]:
+pub inst MyTest['a]: Test['a]:
     pass
 
 
-public trait ExpectInstance['a]:
-    public inst I: Test['a]
+pub trait ExpectInstance['a]:
+    pub inst I: Test['a]
 
 
-public inst MyExpectInstance['a, 'b]: ExpectInstance['a]:
+pub inst MyExpectInstance['a, 'b]: ExpectInstance['a]:
     # error: should error like 'a: 'b and 'b: 'a aren't satisfied
     inst I: Test['a] = MyTest['b] 

@@ -153,11 +153,11 @@ impl Kind {
             Self::Marker => "marker",
             Self::Effect => "effect",
             Self::EffectOperation => "effect operation",
-            Self::Instance => "inst",
-            Self::InstanceAssociatedType => "inst associated type",
-            Self::InstanceAssociatedFunction => "inst associated function",
-            Self::InstanceAssociatedConstant => "inst associated constant",
-            Self::InstanceAssociatedInstance => "inst associated inst",
+            Self::Instance => "instance",
+            Self::InstanceAssociatedType => "instance associated type",
+            Self::InstanceAssociatedFunction => "instance associated function",
+            Self::InstanceAssociatedConstant => "instance associated constant",
+            Self::InstanceAssociatedInstance => "instance associated inst",
         }
     }
 

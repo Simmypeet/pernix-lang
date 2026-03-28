@@ -4,10 +4,10 @@ expression: run
 ---
 stderr:
 [error]: general IO error (os error 2)
-  ╭▸ compiler/e2e/test/snapshot/symbol/module_not_found/main.pnx:1:15
+  ╭▸ compiler/e2e/test/snapshot/symbol/module_not_found/main.pnx:1:12
   │
-1 │ public module notFound
-  │               ━━━━━━━━ submodule declaration here
+1 │ pub module notFound
+  │            ━━━━━━━━ submodule declaration here
   │
   ╰ help: check if the file exists and is accessible
 

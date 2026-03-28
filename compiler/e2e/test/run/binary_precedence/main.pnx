@@ -5,11 +5,11 @@
 
 
 extern "C":
-    public function printf(fmt: &uint8, ...) -> int32
-    public function scanf(fmt: &uint8, ...) -> int32
+    pub def printf(fmt: &uint8, ...) -> int32
+    pub def scanf(fmt: &uint8, ...) -> int32
 
 
-public function main():
+pub def main():
     let mut a: int32 = 0
     let mut b: int32 = 0
     let mut c: int32 = 0

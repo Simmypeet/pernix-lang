@@ -1,13 +1,13 @@
-public effect Test[T]:
+pub effect Test[T]:
     operation(test: T) -> int32
 
 
 
-public function expectInt32(..: int32):
+pub def expectInt32(..: int32):
     pass
 
 
-public function main():
+pub def main():
     do:
         return true
     with Test[int32]:

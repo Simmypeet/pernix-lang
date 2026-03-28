@@ -1,14 +1,14 @@
-public marker Fizz[T]
+pub marker Fizz[T]
 
 
-final implements[T] Fizz[T]:
+final impl[T] Fizz[T]:
     where:
         T: 'static
 
 
-public struct RequiresFizz[T]:
+pub struct RequiresFizz[T]:
     where:
         T: Fizz
 
 
-public type UseFizz[T] = RequiresFizz[T]
+pub type UseFizz[T] = RequiresFizz[T]

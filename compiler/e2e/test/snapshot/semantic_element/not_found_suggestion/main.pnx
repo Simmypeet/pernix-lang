@@ -2,7 +2,7 @@ import target::inner::Firsts # extra character
 import target::inner::Secand # incorrect spelling
 import target::inner::Thir   # incomplete name
 
-public module inner:
-    public type First = int32
-    public type Second = int32
-    public type Third = int32
+pub module inner:
+    pub type First = int32
+    pub type Second = int32
+    pub type Third = int32

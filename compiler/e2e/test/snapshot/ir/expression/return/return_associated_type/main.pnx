@@ -1,15 +1,15 @@
-public trait Fizz[T]:
-    public type Output
+pub trait Fizz[T]:
+    pub type Output
 
 
-    public function fizz(x: T) -> this::Output
+    pub def fizz(x: T) -> this::Output
 
 
-public inst Test[T]: Fizz[T]:
+pub inst Test[T]: Fizz[T]:
     type Output = T
 
 
-    function fizz(x: T) -> this::Output:
+    def fizz(x: T) -> this::Output:
         if true:
             return x # should be fine
         else:

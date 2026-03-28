@@ -1,4 +1,4 @@
-public function returnBool[T]() -> T:
+pub def returnBool[T]() -> T:
     if true:
         return true
     else:

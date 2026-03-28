@@ -4,15 +4,15 @@ expression: run
 ---
 stderr:
 [error]: the predicate `T: 'static` is not satisfied
-  ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/instance_associated_type/main.pnx:6:41
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/instance_associated_type/main.pnx:6:38
   │
-6 │ public type Alias[T, inst I: Test] = I::Assoc[T]
-  ╰╴                                        ━━━━━━━━
+6 │ pub type Alias[T, inst I: Test] = I::Assoc[T]
+  ╰╴                                     ━━━━━━━━
 [note]: the required predicate is declared here
-  ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/instance_associated_type/main.pnx:2:26
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/instance_associated_type/main.pnx:2:23
   │
-2 │     public type Assoc[T: 'static]
-  ╰╴                         ━━━━━━━
+2 │     pub type Assoc[T: 'static]
+  ╰╴                      ━━━━━━━
 
 [error]: Compilation aborted due to 1 error(s)
 

@@ -4,18 +4,18 @@ expression: run
 ---
 stderr:
 [error]: struct or enum implementation members must have access modifiers
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/access_modifier/main.pnx:16:14
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/access_modifier/main.pnx:16:9
    │
-16 │     function helper():
-   │              ━━━━━━ implementation associated function `main::[implements MyStruct]::helper` is missing an access modifier
+16 │     def helper():
+   │         ━━━━━━ implementation associated function `main::[implements MyStruct]::helper` is missing an access modifier
    │
    ╰ help: add an access modifier (`public`, `private`, or `internal`) to this member
 
 [error]: struct or enum implementation members must have access modifiers
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/access_modifier/main.pnx:36:14
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/access_modifier/main.pnx:36:9
    │
-36 │     function enumHelper():
-   │              ━━━━━━━━━━ implementation associated function `main::[implements MyEnum]::enumHelper` is missing an access modifier
+36 │     def enumHelper():
+   │         ━━━━━━━━━━ implementation associated function `main::[implements MyEnum]::enumHelper` is missing an access modifier
    │
    ╰ help: add an access modifier (`public`, `private`, or `internal`) to this member
 

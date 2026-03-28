@@ -1,2 +1,2 @@
-public function main():
+pub def main():
     resume(32)

@@ -1,8 +1,8 @@
-private module inner
+priv module inner
 
 
-public struct XomeStruct:
+pub struct XomeStruct:
     pass
 
 
-implements Xo<cursor>
+impl Xo<cursor>

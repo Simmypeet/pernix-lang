@@ -7,11 +7,11 @@
 
 
 extern "C":
-    public function printf(fmt: &uint8, ...) -> int32
-    public function scanf(fmt: &uint8, ...) -> int32
+    pub def printf(fmt: &uint8, ...) -> int32
+    pub def scanf(fmt: &uint8, ...) -> int32
 
 
-public function main():
+pub def main():
     let minLimit = 40
     let maxLimit = 100
 

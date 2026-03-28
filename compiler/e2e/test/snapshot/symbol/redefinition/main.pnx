@@ -1,67 +1,67 @@
-public module inner
+pub module inner
 
-public module first:
+pub module first:
     pass
 
-public module first:
+pub module first:
     pass
 
-public trait Second:
+pub trait Second:
     pass
 
-public trait Second:
+pub trait Second:
     pass
 
-public trait Inner:
+pub trait Inner:
 
-    public type First
+    pub type First
 
-    public type First
+    pub type First
     
-    public const Second: usize
+    pub const Second: usize
     
-    public function Second() 
+    pub def Second() 
 
-public struct Third:
+pub struct Third:
     pass
 
-public struct Third:
-    public field1: int32
-    public field2: int32
+pub struct Third:
+    pub field1: int32
+    pub field2: int32
 
-public enum Fourth:
+pub enum Fourth:
     FirstVariant
     SecondVariant
     SecondVariant
 
-public enum Fourth:
+pub enum Fourth:
     ThirdVariant
     FourthVariant
     FourthVariant
 
-public marker Fifth
+pub marker Fifth
 
-public marker Fifth
+pub marker Fifth
 
-public enum Sixth:
+pub enum Sixth:
     Inner
 
-public enum Sixth:
+pub enum Sixth:
     Inner
 
-public enum Test[T]:
+pub enum Test[T]:
     Test
 
-implements Test[int32]:
-    public function test():
+impl Test[int32]:
+    pub def test():
         pass
 
-    public function test():
+    pub def test():
         pass
 
-implements Test[float32]:
+impl Test[float32]:
     pass
 
-public function main():
+pub def main():
     pass
 

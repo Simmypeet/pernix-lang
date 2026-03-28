@@ -1,6 +1,6 @@
-public trait Test[I: 'static]:
+pub trait Test[I: 'static]:
     pass
 
 
-private inst MyTestI[I]: Test[I]:
+priv inst MyTestI[I]: Test[I]:
     pass

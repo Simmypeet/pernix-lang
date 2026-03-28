@@ -1,30 +1,30 @@
-public trait Require[T]:
+pub trait Require[T]:
     pass
 
 
-public struct Box[T]:
-    private fake: phantom T
+pub struct Box[T]:
+    priv fake: phantom T
 
 
-public inst BoxInst[T, inst X: Require[T]]: Require[Box[T]]:
+pub inst BoxInst[T, inst X: Require[T]]: Require[Box[T]]:
     pass
 
 
-public enum Option[T]:
+pub enum Option[T]:
     Some(T)
     None
 
 
-public inst OptionInst[T, inst X: Require[T]]: Require[Option[T]]:
+pub inst OptionInst[T, inst X: Require[T]]: Require[Option[T]]:
     pass
 
 
-public struct LinkedList[T]:
-    public head: T
-    public tail: Option[Box[LinkedList[T]]]
+pub struct LinkedList[T]:
+    pub head: T
+    pub tail: Option[Box[LinkedList[T]]]
 
 
-public inst LinkedListInst[
+pub inst LinkedListInst[
     T,
     inst H: Require[T],
     # error: this should cause a cyclic inst resolution error
@@ -33,13 +33,13 @@ public inst LinkedListInst[
     pass
 
 
-public inst Int32Inst: Require[int32]:
+pub inst Int32Inst: Require[int32]:
     pass
 
 
-public function require[T, inst I: Require[T]](value: T):
+pub def require[T, inst I: Require[T]](value: T):
     pass
 
 
-public function useLinkedList():
+pub def useLinkedList():
     require(LinkedList { head: 1i32, tail: Option::None })

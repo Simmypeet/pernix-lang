@@ -3,15 +3,15 @@
 
 
 extern "C":
-    public function scanf(format: &uint8, ...) -> int32
-    public function exit(code: int32)
+    pub def scanf(format: &uint8, ...) -> int32
+    pub def exit(code: int32)
 
 
-public function add[T: tuple](a: T) -> (int32, ...T, int32):
+pub def add[T: tuple](a: T) -> (int32, ...T, int32):
     return (1, ...a, 5)
 
 
-public function main():
+pub def main():
     unsafe scope:
         let mut nums = (0i32, 0i32, 0i32)
 

@@ -11,10 +11,10 @@ stderr:
    │
    ╰ help: consider adding an `instance` parameter or importing a suitable instance implementation into scope
 [note]: required because resolving instance parameter `I` for `main::Require[main::Test[T, U]]`
-   ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/multiple_not_found/main.pnx:19:33
+   ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/multiple_not_found/main.pnx:19:25
    │
-19 │ public function require[T, inst I: Require[T]](value: T):
-   ╰╴                                ━ this function requires the parameter to be resolved
+19 │ pub def require[T, inst I: Require[T]](value: T):
+   ╰╴                        ━ this function requires the parameter to be resolved
 [note]: required because resolving instance parameter `X` for `main::Require[T]`
    ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/multiple_not_found/main.pnx:13:10
    │
@@ -29,10 +29,10 @@ stderr:
    │
    ╰ help: consider adding an `instance` parameter or importing a suitable instance implementation into scope
 [note]: required because resolving instance parameter `I` for `main::Require[main::Test[T, U]]`
-   ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/multiple_not_found/main.pnx:19:33
+   ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/multiple_not_found/main.pnx:19:25
    │
-19 │ public function require[T, inst I: Require[T]](value: T):
-   ╰╴                                ━ this function requires the parameter to be resolved
+19 │ pub def require[T, inst I: Require[T]](value: T):
+   ╰╴                        ━ this function requires the parameter to be resolved
 [note]: required because resolving instance parameter `Y` for `main::Require[U]`
    ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/multiple_not_found/main.pnx:14:10
    │

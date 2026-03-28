@@ -1,14 +1,14 @@
-public struct Pair[T, U]:
-    public first: T
-    public second: U
+pub struct Pair[T, U]:
+    pub first: T
+    pub second: U
 
 
-implements Pair[int32, float32]:
-    public function add(self: &mut this, first: int32, second: float32):
+impl Pair[int32, float32]:
+    pub def add(self: &mut this, first: int32, second: float32):
         pass
 
 
-public function main():
+pub def main():
     let mut p = Pair { first: 32, second: 64.0 }
     p.add(1, 2.0)
     p.add(1, 2)          # expect error

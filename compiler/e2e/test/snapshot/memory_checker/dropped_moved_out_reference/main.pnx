@@ -1,8 +1,8 @@
-public function consume[T](x: T):
+pub def consume[T](x: T):
     pass
 
 
-public function movedOutOfReference[T](mut x: T):
+pub def movedOutOfReference[T](mut x: T):
     scope:
         let y = &mut x
         consume(*y)

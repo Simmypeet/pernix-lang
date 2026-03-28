@@ -1,9 +1,9 @@
 from core import sizeof
 
 extern "C":
-    public function printf(format: &uint8, ...) -> int32
+    pub def printf(format: &uint8, ...) -> int32
 
-public function main():
+pub def main():
     unsafe scope:
         printf(&"sizeof[int32] = %zu\n\0".[0], sizeof[int32]())
         printf(&"sizeof[int64] = %zu\n\0".[0], sizeof[int64]())

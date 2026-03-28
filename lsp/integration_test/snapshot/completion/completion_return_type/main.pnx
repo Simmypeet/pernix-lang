@@ -1,9 +1,9 @@
-public struct XomeStruct:
+pub struct XomeStruct:
     pass
 
 
-public function main() -> target::<cursor>
+pub def main() -> target::<cursor>
 
 
-public function anotherFunction():
+pub def anotherFunction():
     pass

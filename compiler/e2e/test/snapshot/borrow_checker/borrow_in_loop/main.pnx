@@ -1,4 +1,4 @@
-public function main():
+pub def main():
     let outer = 32
     let mut test = &outer
 

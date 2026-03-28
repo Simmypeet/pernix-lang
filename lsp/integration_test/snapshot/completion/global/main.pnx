@@ -1,9 +1,9 @@
-private module innerFirst
-private module innerSecond
+priv module innerFirst
+priv module innerSecond
 
 
-public struct XomeStructThird:
+pub struct XomeStructThird:
     pass
 
 
-implements Xo<cursor>
+impl Xo<cursor>

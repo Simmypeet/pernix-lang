@@ -1,10 +1,10 @@
-public struct Test:
-    public first: int32
-    public second: float32
-    public third: bool
+pub struct Test:
+    pub first: int32
+    pub second: float32
+    pub third: bool
 
 
-public function main():
+pub def main():
     # valid instantiation
     Test { first: 32, second: 0.12f32, third: true }
 

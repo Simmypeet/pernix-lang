@@ -1,21 +1,21 @@
 from target::inner import Normal, Inaccessible, Fields
 
 
-public module inner:
-    public struct Normal:
+pub module inner:
+    pub struct Normal:
         pass
 
 
-    private struct Inaccessible:
+    priv struct Inaccessible:
         pass
 
 
-    public struct Fields:
-        public accessible: int32
-        private inaccessible: int32
+    pub struct Fields:
+        pub accessible: int32
+        priv inaccessible: int32
 
 
-public function main():
+pub def main():
     Normal {}
     Inaccessible {}
     Fields { accessible: 32, inaccessible: 54 }

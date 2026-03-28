@@ -11,10 +11,10 @@ stderr:
    │
    ╰ help: consider adding an `instance` parameter or importing a suitable instance implementation into scope
 [note]: required because resolving instance parameter `I` for `main::Require[T]`
-  ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/inner_term_resolution/main.pnx:6:28
+  ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/inner_term_resolution/main.pnx:6:25
   │
-6 │ public struct Test[T, inst I: Require[T]]:
-  ╰╴                           ━ this struct requires the parameter to be resolved
+6 │ pub struct Test[T, inst I: Require[T]]:
+  ╰╴                        ━ this struct requires the parameter to be resolved
 
 [error]: no instance found for `main::Require[U]`
    ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/inner_term_resolution/main.pnx:16:5
@@ -24,10 +24,10 @@ stderr:
    │
    ╰ help: consider adding an `instance` parameter or importing a suitable instance implementation into scope
 [note]: required because resolving instance parameter `I` for `main::Require[U]`
-  ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/inner_term_resolution/main.pnx:6:28
+  ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/inner_term_resolution/main.pnx:6:25
   │
-6 │ public struct Test[T, inst I: Require[T]]:
-  ╰╴                           ━ this struct requires the parameter to be resolved
+6 │ pub struct Test[T, inst I: Require[T]]:
+  ╰╴                        ━ this struct requires the parameter to be resolved
 
 [error]: Compilation aborted due to 2 error(s)
 

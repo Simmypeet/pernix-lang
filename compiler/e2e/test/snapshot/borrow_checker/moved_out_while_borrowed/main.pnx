@@ -1,8 +1,8 @@
-public function consume[T](x: T):
+pub def consume[T](x: T):
     pass
 
 
-public function test[T](mut x: (T, T)):
+pub def test[T](mut x: (T, T)):
     let y = &x
 
     consume(x.0)

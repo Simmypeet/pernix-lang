@@ -1,8 +1,8 @@
-public function test[T](first: &T) -> &T:
+pub def test[T](first: &T) -> &T:
     return first
 
 
-public function max(lhs: &int32, rhs: &int32) -> &int32:
+pub def max(lhs: &int32, rhs: &int32) -> &int32:
     if *lhs > *rhs:
         return lhs
 

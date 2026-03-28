@@ -1,24 +1,24 @@
-public trait First:
+pub trait First:
     pass
 
 
-public inst MyFirst: First:
+pub inst MyFirst: First:
     pass
 
 
-public trait Second:
+pub trait Second:
     pass
 
 
-public inst MySecond: Second:
+pub inst MySecond: Second:
     pass
 
 
-public trait ExpectInstance:
-    public inst I: First
+pub trait ExpectInstance:
+    pub inst I: First
 
 
-public inst MyExpectInstance: ExpectInstance:
+pub inst MyExpectInstance: ExpectInstance:
     inst I: First = MySecond # error: should've been MyFirst
 
 

@@ -1,2 +1,2 @@
-public struct XomeStructTwo:
+pub struct XomeStructTwo:
     pass

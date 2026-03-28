@@ -1,16 +1,16 @@
-public struct MyStruct:
+pub struct MyStruct:
     pass
 
 
-public enum MyEnum:
+pub enum MyEnum:
     pass
 
 
-public effect MyEffect:
+pub effect MyEffect:
     myEffectOp()
 
 
-public function main():
+pub def main():
     do:
         pass
 

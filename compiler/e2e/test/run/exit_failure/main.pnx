@@ -1,6 +1,6 @@
 extern "C":
-    public function exit(code: int32)
+    pub def exit(code: int32)
 
 
-public function main():
+pub def main():
     exit(1)

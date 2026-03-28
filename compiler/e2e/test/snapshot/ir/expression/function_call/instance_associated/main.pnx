@@ -1,8 +1,8 @@
-public trait Test[T]:
-    public function doSomething(self: T)
+pub trait Test[T]:
+    pub def doSomething(self: T)
 
 
-public function callInstanceAssociated[
+pub def callInstanceAssociated[
     T, U, inst I: Test[T]
 ](t: T, u: U):
 

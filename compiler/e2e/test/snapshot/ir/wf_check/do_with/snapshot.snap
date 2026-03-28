@@ -9,10 +9,10 @@ stderr:
 14 │     with RequireTest[int32]:
    ╰╴         ━━━━━━━━━━━━━━━━━━
 [note]: the required predicate is declared here
-  ╭▸ compiler/e2e/test/snapshot/ir/wf_check/do_with/main.pnx:4:30
+  ╭▸ compiler/e2e/test/snapshot/ir/wf_check/do_with/main.pnx:4:27
   │
-4 │ public effect RequireTest[T: Test]:
-  ╰╴                             ━━━━
+4 │ pub effect RequireTest[T: Test]:
+  ╰╴                          ━━━━
 
 [error]: Compilation aborted due to 1 error(s)
 

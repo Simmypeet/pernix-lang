@@ -1,11 +1,11 @@
-public trait Require[T]:
+pub trait Require[T]:
     pass
 
 
-public struct Test[T, inst I: Require[T]]:
-    public value: T
+pub struct Test[T, inst I: Require[T]]:
+    pub value: T
 
 
-public function useTest[T](a: T):
+pub def useTest[T](a: T):
     # error: can't find an inst for `I: Require[T]`
     Test { value: a } 

@@ -1,5 +1,5 @@
-private module inner:
-    private trait Test:
-        internal function internalIsMoreAccessible()
+priv module inner:
+    priv trait Test:
+        internal def internalIsMoreAccessible()
 
-        public function publicIsMoreAccessible()
+        pub def publicIsMoreAccessible()

@@ -4,15 +4,15 @@ expression: run
 ---
 stderr:
 [error]: the predicate `I: 'static` is not satisfied
-  ╭▸ compiler/e2e/test/snapshot/semantic_element/trait_ref/with_lifetime_bound/main.pnx:5:26
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/trait_ref/with_lifetime_bound/main.pnx:5:23
   │
-5 │ private inst MyTestI[I]: Test[I]:
-  ╰╴                         ━━━━━━━
+5 │ priv inst MyTestI[I]: Test[I]:
+  ╰╴                      ━━━━━━━
 [note]: the required predicate is declared here
-  ╭▸ compiler/e2e/test/snapshot/semantic_element/trait_ref/with_lifetime_bound/main.pnx:1:22
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/trait_ref/with_lifetime_bound/main.pnx:1:19
   │
-1 │ public trait Test[I: 'static]:
-  ╰╴                     ━━━━━━━
+1 │ pub trait Test[I: 'static]:
+  ╰╴                  ━━━━━━━
 
 [error]: Compilation aborted due to 1 error(s)
 

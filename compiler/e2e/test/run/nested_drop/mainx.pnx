@@ -9,45 +9,45 @@ from core import Drop, Copy
 
 
 extern "C":
-    public function printf(format: &uint8, ...) -> int32
-    public function scanf(format: &uint8, ...) -> int32
+    pub def printf(format: &uint8, ...) -> int32
+    pub def scanf(format: &uint8, ...) -> int32
 
 
-public struct LoudDrop:
-    private value: int32
+pub struct LoudDrop:
+    priv value: int32
 
 
-final implements Drop[LoudDrop]:
-    function drop(self: &mut LoudDrop):
+final impl Drop[LoudDrop]:
+    def drop(self: &mut LoudDrop):
         unsafe scope:
             printf(&"Dropping %d\n\0".[0], self.value)
 
 
-final implements Copy[LoudDrop] delete
+final impl Copy[LoudDrop] delete
 
 
-public struct Pair[T, U]:
-    private first: T
-    private second: U
+pub struct Pair[T, U]:
+    priv first: T
+    priv second: U
 
 
-implements[T, U] Drop[Pair[T, U]]:
-    function drop(self: &mut Pair[T, U]):
+impl[T, U] Drop[Pair[T, U]]:
+    def drop(self: &mut Pair[T, U]):
         unsafe scope:
             printf(&"Dropping Pair\n\0".[0])
 
 
-final implements[T, U] Copy[Pair[T, U]] delete
+final impl[T, U] Copy[Pair[T, U]] delete
 
 
-public enum LoudEnum:
+pub enum LoudEnum:
     GtZero(LoudDrop)
     LtZero(LoudDrop)
     Zero
 
 
-implements Drop[LoudEnum]:
-    function drop(self: &mut LoudEnum):
+impl Drop[LoudEnum]:
+    def drop(self: &mut LoudEnum):
         match (self):
             case GtZero(..): 
                 printf(&"Dropping GtZero\n\0".[0])
@@ -59,10 +59,10 @@ implements Drop[LoudEnum]:
                 printf(&"Dropping Zero\n\0".[0])
 
 
-final implements Copy[LoudEnum] delete
+final impl Copy[LoudEnum] delete
 
 
-public function createLoudEnum() -> LoudEnum:
+pub def createLoudEnum() -> LoudEnum:
     let mut value = 0
 
     scanf(&"%d\0".[0], &mut value)
@@ -77,7 +77,7 @@ public function createLoudEnum() -> LoudEnum:
         return LoudEnum::Zero
 
 
-public function main():
+pub def main():
     let mut pair = Pair {
         first: LoudDrop { value: 0 },
         second: LoudDrop { value: 0 },

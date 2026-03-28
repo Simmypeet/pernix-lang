@@ -4,46 +4,46 @@ expression: run
 ---
 stderr:
 [error]: the predicate `T: 'a` is not satisfied
-  ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/type_occurrences/main.pnx:2:23
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/type_occurrences/main.pnx:2:20
   │
-2 │     public reference: &'a T
-  ╰╴                      ━━━━━
+2 │     pub reference: &'a T
+  ╰╴                   ━━━━━
 
 [error]: the predicate `U: 'a` is not satisfied
-  ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/type_occurrences/main.pnx:3:30
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/type_occurrences/main.pnx:3:27
   │
-3 │     public mutableReference: &'a mut U
-  ╰╴                             ━━━━━━━━━
+3 │     pub mutableReference: &'a mut U
+  ╰╴                          ━━━━━━━━━
 
 [error]: the predicate `W: tuple` is not satisfied
-  ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/type_occurrences/main.pnx:5:36
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/type_occurrences/main.pnx:5:33
   │
-5 │     public tupleWithUnpacking: (V, ...W, X)
-  ╰╴                                   ━━━━
+5 │     pub tupleWithUnpacking: (V, ...W, X)
+  ╰╴                                ━━━━
 
 [error]: the tuple type cannot contain more than one unpacked type
-  ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/type_occurrences/main.pnx:6:30
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/type_occurrences/main.pnx:6:27
   │
-6 │     public multipleUnpacking: (...V, ...W, ...X)
-  ╰╴                             ━━━━━━━━━━━━━━━━━━━
+6 │     pub multipleUnpacking: (...V, ...W, ...X)
+  ╰╴                          ━━━━━━━━━━━━━━━━━━━
 
 [error]: the predicate `V: tuple` is not satisfied
-  ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/type_occurrences/main.pnx:6:32
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/type_occurrences/main.pnx:6:29
   │
-6 │     public multipleUnpacking: (...V, ...W, ...X)
-  ╰╴                               ━━━━
+6 │     pub multipleUnpacking: (...V, ...W, ...X)
+  ╰╴                            ━━━━
 
 [error]: the predicate `W: tuple` is not satisfied
-  ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/type_occurrences/main.pnx:6:38
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/type_occurrences/main.pnx:6:35
   │
-6 │     public multipleUnpacking: (...V, ...W, ...X)
-  ╰╴                                     ━━━━
+6 │     pub multipleUnpacking: (...V, ...W, ...X)
+  ╰╴                                  ━━━━
 
 [error]: the predicate `X: tuple` is not satisfied
-  ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/type_occurrences/main.pnx:6:44
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/type_occurrences/main.pnx:6:41
   │
-6 │     public multipleUnpacking: (...V, ...W, ...X)
-  ╰╴                                           ━━━━
+6 │     pub multipleUnpacking: (...V, ...W, ...X)
+  ╰╴                                        ━━━━
 
 [error]: Compilation aborted due to 7 error(s)
 

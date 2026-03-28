@@ -1,9 +1,9 @@
-public trait Trait[A]:
+pub trait Trait[A]:
     pass
 
 
-public type Require[inst I: Trait[int32], inst J: Trait[bool]] = int32
+pub type Require[inst I: Trait[int32], inst J: Trait[bool]] = int32
 
 
 # should error with two instances that are not the same
-public type Use[inst I: Trait[bool], inst J: Trait[int32]] = Require[I, J]
+pub type Use[inst I: Trait[bool], inst J: Trait[int32]] = Require[I, J]

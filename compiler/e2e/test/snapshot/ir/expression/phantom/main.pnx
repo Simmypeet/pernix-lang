@@ -1,10 +1,10 @@
-public struct TestPhantom:
-    public phantomInt32: phantom int32
-    public phantomBool: phantom bool
-    public notPhantom: int32
+pub struct TestPhantom:
+    pub phantomInt32: phantom int32
+    pub phantomBool: phantom bool
+    pub notPhantom: int32
 
 
-public function main():
+pub def main():
     TestPhantom {
         phantomInt32: phantom, # fine
         phantomBool: phantom,  # fine

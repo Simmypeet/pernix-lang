@@ -1,22 +1,22 @@
-public trait FirstTrait[T]:
-    public type Member[U]
+pub trait FirstTrait[T]:
+    pub type Member[U]
 
 
-public trait SecondTrait[T]:
-    public type Member[U]
+pub trait SecondTrait[T]:
+    pub type Member[U]
 
 
-public trait ThirdTrait[T]:
-    public type Member[U]
+pub trait ThirdTrait[T]:
+    pub type Member[U]
 
 
-public marker FirstMarker[T]
+pub marker FirstMarker[T]
 
 
-public marker SecondMarker[T]
+pub marker SecondMarker[T]
 
 
-public type Test['a, 'b, 'c, T, U, V, inst I: FirstTrait[T]] = usize:
+pub type Test['a, 'b, 'c, T, U, V, inst I: FirstTrait[T]] = usize:
     where:
         I::Member[U] = usize
         T: FirstMarker

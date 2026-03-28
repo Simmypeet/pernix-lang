@@ -1,2 +1,2 @@
-private struct XomePrivateStruct:
+priv struct XomePrivateStruct:
     pass

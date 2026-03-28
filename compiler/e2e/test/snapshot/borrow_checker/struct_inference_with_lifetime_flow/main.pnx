@@ -1,18 +1,18 @@
-public struct MyPair['a, 'b, T, U]:
+pub struct MyPair['a, 'b, T, U]:
     where:
         T: 'a
         U: 'b
         'a: 'b # 'a flows into 'b
 
-    public first: &'a T
-    public second: &'b U
+    pub first: &'a T
+    pub second: &'b U
 
 
-public function print[T](value: T):
+pub def print[T](value: T):
     pass
 
 
-public function main():
+pub def main():
     let mut outer = 32
 
     scope:

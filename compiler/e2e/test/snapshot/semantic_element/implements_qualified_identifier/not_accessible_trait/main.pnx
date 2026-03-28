@@ -1,5 +1,5 @@
-public module inner:
-    private marker InAccessible[T]
+pub module inner:
+    priv marker InAccessible[T]
 
 
-final implements inner::InAccessible[int32]
+final impl inner::InAccessible[int32]
