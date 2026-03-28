@@ -117,7 +117,7 @@ pub async fn run(
     {
         let mut input_session = engine.input_session().await;
 
-        pernixc_corelib::initialize_corelib(&mut input_session).await;
+        pernixc_corelib_impl::initialize_corelib(&mut input_session).await;
 
         input_session
             .set_input(

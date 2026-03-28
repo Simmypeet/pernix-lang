@@ -22,7 +22,7 @@ pernixc_hash = { path = "../../base/hash" }
 pernixc_qbice = { path = "../../base/qbice" }
 pernixc_resolution = { path = "../resolution" }
 pernixc_extend.path = "../../base/extend/"
-pernixc_corelib.path = "../corelib/"
+pernixc_corelib_impl.path = "../corelib_impl/"
 qbice = { workspace = true }
 linkme = { workspace = true }
 derive-new = { workspace = true }

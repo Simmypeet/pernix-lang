@@ -1440,7 +1440,7 @@ dependencies = [
  "getset",
  "linkme",
  "pernixc_check",
- "pernixc_corelib",
+ "pernixc_corelib_impl",
  "pernixc_diagnostic",
  "pernixc_extend",
  "pernixc_hash",
@@ -1509,7 +1509,7 @@ dependencies = [
  "getset",
  "linkme",
  "pernixc_arena",
- "pernixc_corelib",
+ "pernixc_corelib_impl",
  "pernixc_diagnostic",
  "pernixc_extend",
  "pernixc_handler",
@@ -1543,7 +1543,7 @@ dependencies = [
  "getset",
  "linkme",
  "pernixc_arena",
- "pernixc_corelib",
+ "pernixc_corelib_impl",
  "pernixc_diagnostic",
  "pernixc_handler",
  "pernixc_hash",
@@ -1576,7 +1576,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "pernixc_corelib"
+name = "pernixc_corelib_impl"
 version = "0.1.0-beta.2"
 dependencies = [
  "pernixc_arena",
@@ -1613,7 +1613,7 @@ dependencies = [
  "inkwell",
  "linkme",
  "pernixc_check",
- "pernixc_corelib",
+ "pernixc_corelib_impl",
  "pernixc_diagnostic",
  "pernixc_handler",
  "pernixc_hash",
@@ -1687,7 +1687,7 @@ dependencies = [
  "getset",
  "linkme",
  "pernixc_arena",
- "pernixc_corelib",
+ "pernixc_corelib_impl",
  "pernixc_diagnostic",
  "pernixc_extend",
  "pernixc_handler",
@@ -1797,7 +1797,7 @@ dependencies = [
  "getset",
  "linkme",
  "pernixc_arena",
- "pernixc_corelib",
+ "pernixc_corelib_impl",
  "pernixc_diagnostic",
  "pernixc_handler",
  "pernixc_hash",

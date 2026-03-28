@@ -1,5 +1,5 @@
 [package]
-name = "pernixc_corelib"
+name = "pernixc_corelib_impl"
 version.workspace = true
 authors.workspace = true
 description.workspace = true

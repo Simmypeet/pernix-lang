@@ -76,7 +76,7 @@ async fn simplify_drop<N: Normalizer>(
 
     let drop_trait_id = environment
         .tracked_engine()
-        .get_by_qualified_name(pernixc_corelib::drop::DROP_TRAIT_SEQUENCE)
+        .get_by_qualified_name(pernixc_corelib_impl::drop::DROP_TRAIT_SEQUENCE)
         .await
         .unwrap();
 

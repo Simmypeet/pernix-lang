@@ -29,13 +29,9 @@ pub inst BaseCase[T, inst A: Add[T]]: SumTuple[(T,)]:
         return elements.0
 
 
-pub inst RecursiveCase[
-    T,
-    Rest: tuple,
-    inst A: Add[T],
-    inst S: SumTuple[Rest]
-]: SumTuple[(T, ...Rest)]:
+pub inst RecursiveCase[T, Rest, inst A: Add[T], inst S: SumTuple[Rest]]: SumTuple[(T, ...Rest)]:
     where:
+        Rest: tuple
         S::Output = T
 
     type Output = T

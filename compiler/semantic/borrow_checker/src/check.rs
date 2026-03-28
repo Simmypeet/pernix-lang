@@ -67,7 +67,7 @@ impl<N: Normalizer> Checker<'_, N> {
                 let copy_marker = self
                     .tracked_engine()
                     .get_by_qualified_name(
-                        pernixc_corelib::copy::MARKER_SEQUENCE,
+                        pernixc_corelib_impl::copy::MARKER_SEQUENCE,
                     )
                     .await
                     .unwrap();
