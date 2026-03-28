@@ -1,7 +1,7 @@
-public struct Struct[T]:
-    public x: T
+pub struct Struct[T]:
+    pub x: T
 
 
-public type Test[T] = T:
+pub type Test[T] = T:
     where:
         Struct[(T, T, T)] = usize

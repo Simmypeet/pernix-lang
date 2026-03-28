@@ -1,29 +1,29 @@
-public marker ImpossibleMarker[T]
+pub marker ImpossibleMarker[T]
 
 
-public struct MyStruct[T: ImpossibleMarker]:
-    public field: T
+pub struct MyStruct[T: ImpossibleMarker]:
+    pub field: T
 
 
-public enum MyEnum[T: ImpossibleMarker]:
+pub enum MyEnum[T: ImpossibleMarker]:
     Variant(T)
 
 
-public function main[T](a: T):
+pub def main[T](a: T):
     let x = MyStruct { field: 5 }
     let y = MyEnum::Variant(10)
     let b = (true, ...a, false)
 
 
-public struct StructImmutableRef['a]:
-    public field: &'a int32
+pub struct StructImmutableRef['a]:
+    pub field: &'a int32
 
 
-public struct StructMutableRef['a]:
-    public field: &'a mut int32
+pub struct StructMutableRef['a]:
+    pub field: &'a mut int32
 
 
-public function copyBehindRef(
+pub def copyBehindRef(
     x: &StructImmutableRef,
     y: &StructMutableRef,
 ):

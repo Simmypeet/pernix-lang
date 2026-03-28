@@ -1,12 +1,12 @@
-public trait Test['x]:
+pub trait Test['x]:
     pass
 
 
 # this is not fine
-private instance MyTestI: for['x] Test['x]:
+priv inst MyTestI: for['x] Test['x]:
     pass
 
 
-public trait WithAssoc:
+pub trait WithAssoc:
     # this is fine
-    public instance Assoc: for['x] Test['x]
+    pub inst Assoc: for['x] Test['x]

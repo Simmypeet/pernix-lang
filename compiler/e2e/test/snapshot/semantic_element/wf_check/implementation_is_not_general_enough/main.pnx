@@ -1,12 +1,12 @@
-public marker Fizz['a, 'b, T]
+pub marker Fizz['a, 'b, T]
 
 
-final implements['a, T] Fizz['a, 'a, T]
+final impl['a, T] Fizz['a, 'a, T]
 
 
-public type Qux[T] = T:
+pub type Qux[T] = T:
     where:
         for['x, 'y] T: Fizz['x, 'y]
 
 
-public type Instantiate = Qux[int32]
+pub type Instantiate = Qux[int32]

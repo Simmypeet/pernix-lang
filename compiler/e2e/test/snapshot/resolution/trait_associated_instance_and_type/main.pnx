@@ -1,14 +1,14 @@
-public trait Another:
+pub trait Another:
     pass
 
 
-public trait Test:
-    public type AssocType[instance I: Another]
+pub trait Test:
+    pub type AssocType[inst I: Another]
 
 
-    public instance AssocInst: Another
+    pub inst AssocInst: Another
 
 
-    public function test(a: this::AssocType[this::AssocInst])
+    pub def test(a: this::AssocType[this::AssocInst])
 
 

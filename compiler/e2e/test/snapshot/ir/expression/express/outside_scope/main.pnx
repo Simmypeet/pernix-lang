@@ -1,7 +1,7 @@
-public function main():
+pub def main():
     express
 
 
-public function anotherMain():
+pub def anotherMain():
     scope:
         express 'notFound

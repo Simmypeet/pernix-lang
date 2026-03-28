@@ -1,18 +1,18 @@
-public struct Point:
-    public x: int32
-    public y: int32
+pub struct Point:
+    pub x: int32
+    pub y: int32
 
-public struct WithGeneric[T, U]:
-    public first: T
-    public second: T
-    public third: T
+pub struct WithGeneric[T, U]:
+    pub first: T
+    pub second: T
+    pub third: T
 
-    public fourth: U
-    public fifth: U
-    public sixth: U
+    pub fourth: U
+    pub fifth: U
+    pub sixth: U
 
 
-public function main():
+pub def main():
     # y is {{float}} but should be int32
     Point { x: 32, y: 64.0 }
 

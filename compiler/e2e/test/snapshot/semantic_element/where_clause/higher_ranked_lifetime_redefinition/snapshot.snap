@@ -4,10 +4,10 @@ expression: run
 ---
 stderr:
 [error]: forall lifetime redefinition
-  ╭▸ compiler/e2e/test/snapshot/semantic_element/where_clause/higher_ranked_lifetime_redefinition/main.pnx:3:30
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/where_clause/higher_ranked_lifetime_redefinition/main.pnx:3:27
   │
-3 │ public type Test[T: for['x, 'x] SomeTrait['x]] = T
-  ╰╴                             ━ lifetime with the same name is already defined
+3 │ pub type Test[T: for['x, 'x] SomeTrait['x]] = T
+  ╰╴                          ━ lifetime with the same name is already defined
 
 [error]: Compilation aborted due to 1 error(s)
 

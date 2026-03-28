@@ -1,7 +1,7 @@
-public trait Iterator[T: 'static]:
-    public type Item[U: 'static]
+pub trait Iterator[T: 'static]:
+    pub type Item[U: 'static]
 
 
-public function getIteratorItem[T](a: Iterator[T]::I<cursor>tem):
+pub def getIteratorItem[T](a: Iterator[T]::I<cursor>tem):
     pass
 

@@ -9,10 +9,10 @@ stderr:
 13 │     require[(Test[T], Test[U])]()
    ╰╴    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [note]: the required predicate is declared here
-  ╭▸ compiler/e2e/test/snapshot/ir/wf_check/inner_term_wf_check/main.pnx:4:23
+  ╭▸ compiler/e2e/test/snapshot/ir/wf_check/inner_term_wf_check/main.pnx:4:20
   │
-4 │ public struct Test[T: Impossible]:
-  ╰╴                      ━━━━━━━━━━
+4 │ pub struct Test[T: Impossible]:
+  ╰╴                   ━━━━━━━━━━
 
 [error]: the predicate `marker main::Impossible[U]` is not satisfied
    ╭▸ compiler/e2e/test/snapshot/ir/wf_check/inner_term_wf_check/main.pnx:13:5
@@ -20,10 +20,10 @@ stderr:
 13 │     require[(Test[T], Test[U])]()
    ╰╴    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [note]: the required predicate is declared here
-  ╭▸ compiler/e2e/test/snapshot/ir/wf_check/inner_term_wf_check/main.pnx:4:23
+  ╭▸ compiler/e2e/test/snapshot/ir/wf_check/inner_term_wf_check/main.pnx:4:20
   │
-4 │ public struct Test[T: Impossible]:
-  ╰╴                      ━━━━━━━━━━
+4 │ pub struct Test[T: Impossible]:
+  ╰╴                   ━━━━━━━━━━
 
 [error]: Compilation aborted due to 2 error(s)
 

@@ -1,6 +1,6 @@
-public struct XomeInnerPublicStruct:
+pub struct XomeInnerPublicStruct:
     pass
 
 
-private struct XomeInnerPrivateStruct:
+priv struct XomeInnerPrivateStruct:
     pass

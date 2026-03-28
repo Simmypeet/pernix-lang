@@ -1,22 +1,22 @@
-public marker Marker[T]
+pub marker Marker[T]
 
 
-final implements Marker[int32]:
+final impl Marker[int32]:
     pass
 
 
-final implements Marker[bool]:
+final impl Marker[bool]:
     pass
 
 
-public struct MyStruct:
-    public a: int32
-    public b: bool
+pub struct MyStruct:
+    pub a: int32
+    pub b: bool
 
 
-public type WithRequirement[T] = T:
+pub type WithRequirement[T] = T:
     where:
         T: not Marker
 
 
-public type InstMyStruct = WithRequirement[MyStruct]
+pub type InstMyStruct = WithRequirement[MyStruct]

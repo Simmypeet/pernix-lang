@@ -1,10 +1,10 @@
-public function first():
+pub def first():
     let .. = match true: 
         true:  1
         name: 2
 
 
-public function second(a: bool, b: bool):
+pub def second(a: bool, b: bool):
     let .. = match (a, b): 
         (true, true):   1
         (true, false):  2
@@ -12,7 +12,7 @@ public function second(a: bool, b: bool):
         (false, false): 4
 
 
-public function third(a: uint8):
+pub def third(a: uint8):
     let .. = match a: 
         0: 1
         1: 2
@@ -20,14 +20,14 @@ public function third(a: uint8):
         name: 4
 
 
-public enum Direction:
+pub enum Direction:
     North
     East
     South
     West
 
 
-public function fourth(a: bool, direction: Direction):
+pub def fourth(a: bool, direction: Direction):
     let .. = match (a, direction): # missing (false, West) arm
         (true, case North): 1
         (true, case East):  2
@@ -39,12 +39,12 @@ public function fourth(a: bool, direction: Direction):
         (false, name):       7
 
 
-public enum FakeBool:
+pub enum FakeBool:
     True
     False
 
 
-public function fifth(a: FakeBool, direction: Direction):
+pub def fifth(a: FakeBool, direction: Direction):
     let .. = match (a, direction):
         (case True,  case North): 1
         (case True,  case East):  2

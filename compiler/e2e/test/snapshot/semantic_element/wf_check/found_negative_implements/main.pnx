@@ -1,22 +1,22 @@
-public marker Marker[T]
+pub marker Marker[T]
 
 
-final implements Marker[int32] delete
+final impl Marker[int32] delete
 
 
-public marker Outer[T]
+pub marker Outer[T]
 
 
-public marker Inner[T]
+pub marker Inner[T]
 
 
-final implements[T: Marker] Inner[T]
+final impl[T: Marker] Inner[T]
 
 
-final implements[T: Inner] Outer[T]
+final impl[T: Inner] Outer[T]
 
 
-public type RequireOuter[T: Outer] = T
+pub type RequireOuter[T: Outer] = T
 
 
-public type Failed = RequireOuter[int32]
+pub type Failed = RequireOuter[int32]

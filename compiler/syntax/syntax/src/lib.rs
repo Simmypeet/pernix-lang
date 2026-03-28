@@ -66,8 +66,8 @@ abstract_tree::abstract_tree! {
         StableHash
     )]
     pub enum AccessModifier {
-        Public(Keyword = expect::Keyword::Public),
-        Private(Keyword = expect::Keyword::Private),
+        Public(Keyword = expect::Keyword::Pub),
+        Private(Keyword = expect::Keyword::Priv),
         Internal(Keyword = expect::Keyword::Internal)
     }
 }

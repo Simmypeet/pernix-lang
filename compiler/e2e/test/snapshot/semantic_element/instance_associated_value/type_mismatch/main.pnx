@@ -1,14 +1,14 @@
-public trait Test[T]:
+pub trait Test[T]:
     pass
 
 
-public instance MyTest[T]: Test[T]:
+pub inst MyTest[T]: Test[T]:
     pass
 
 
-public trait ExpectInstance[T]:
-    public instance I: Test[T]
+pub trait ExpectInstance[T]:
+    pub inst I: Test[T]
 
 
-public instance MyExpectInstance[T, U]: ExpectInstance[T]:
-    instance I: Test[T] = MyTest[U] # error: should've been MyTest[T]
+pub inst MyExpectInstance[T, U]: ExpectInstance[T]:
+    inst I: Test[T] = MyTest[U] # error: should've been MyTest[T]

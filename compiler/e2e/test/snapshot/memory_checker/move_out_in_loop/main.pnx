@@ -1,7 +1,7 @@
-public function consume[T](x: T):
+pub def consume[T](x: T):
     pass
 
 
-public function test[T](mut x: T, cond: bool):
+pub def test[T](mut x: T, cond: bool):
     while cond:
         consume(x)

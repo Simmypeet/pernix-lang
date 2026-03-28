@@ -4,29 +4,29 @@ expression: run
 ---
 stderr:
 [error]: the predicate `marker main::None[int32]` is not satisfied
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/impl_chain/main.pnx:19:31
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/impl_chain/main.pnx:19:28
    │
-19 │ public type UseRequireOuter = RequireOuter[int32]
-   ╰╴                              ━━━━━━━━━━━━━━━━━━━
+19 │ pub type UseRequireOuter = RequireOuter[int32]
+   ╰╴                           ━━━━━━━━━━━━━━━━━━━
 [note]: the required predicate is declared here
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/impl_chain/main.pnx:16:29
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/impl_chain/main.pnx:16:26
    │
-16 │ public type RequireOuter[T: Outer] = T
-   ╰╴                            ━━━━━
+16 │ pub type RequireOuter[T: Outer] = T
+   ╰╴                         ━━━━━
 [note]: required for predicate marker main::Outer[int32] to be implemented
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/impl_chain/main.pnx:13:21
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/impl_chain/main.pnx:13:15
    │
-13 │ final implements[T: Inner] Outer[T]
-   │                     ┯━━━━  ────────
-   │                     │
-   ╰╴                    the required predicate is declared here
+13 │ final impl[T: Inner] Outer[T]
+   │               ┯━━━━  ────────
+   │               │
+   ╰╴              the required predicate is declared here
 [note]: required for predicate marker main::Inner[int32] to be implemented
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/impl_chain/main.pnx:10:21
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/impl_chain/main.pnx:10:15
    │
-10 │ final implements[T: None] Inner[T]
-   │                     ┯━━━  ────────
-   │                     │
-   ╰╴                    the required predicate is declared here
+10 │ final impl[T: None] Inner[T]
+   │               ┯━━━  ────────
+   │               │
+   ╰╴              the required predicate is declared here
 
 [error]: Compilation aborted due to 1 error(s)
 

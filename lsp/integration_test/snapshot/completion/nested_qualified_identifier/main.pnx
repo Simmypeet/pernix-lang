@@ -1,8 +1,8 @@
-public enum Option[T]:
+pub enum Option[T]:
     Some(T)
     None
 
 
-public struct XomeType:
-    private test: Option[target::<cursor>]
+pub struct XomeType:
+    priv test: Option[target::<cursor>]
 

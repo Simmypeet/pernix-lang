@@ -1,18 +1,18 @@
-public trait Order[T]:
+pub trait Order[T]:
     pass
 
 
-public struct MaxHeap[T, instance O: Order[T]]:
+pub struct MaxHeap[T, inst O: Order[T]]:
     pass
 
 
 
-public function requireOrder[T, instance O: Order[T]](value: T):
+pub def requireOrder[T, inst O: Order[T]](value: T):
     pass
 
 
-implements[T, instance O: Order[T]] MaxHeap[T, O]:
-    public function withOrder[instance O2: Order[T]](value: T):
+impl[T, inst O: Order[T]] MaxHeap[T, O]:
+    pub def withOrder[inst O2: Order[T]](value: T):
         # both `O` and `O2` are valid instances for `Order[T]`, so this should 
-        # cause an ambiguous instance resolution error
+        # cause an ambiguous inst resolution error
         requireOrder(value)

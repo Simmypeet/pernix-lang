@@ -4,15 +4,15 @@ expression: run
 ---
 stderr:
 [error]: the predicate `marker main::Marker[bool]` is not satisfied
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/marker_not_satisfied/main.pnx:16:28
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/marker_not_satisfied/main.pnx:16:25
    │
-16 │ public type InstMyStruct = WithRequirement[MyStruct]
-   ╰╴                           ━━━━━━━━━━━━━━━━━━━━━━━━━
+16 │ pub type InstMyStruct = WithRequirement[MyStruct]
+   ╰╴                        ━━━━━━━━━━━━━━━━━━━━━━━━━
 [note]: the required predicate is declared here
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/marker_not_satisfied/main.pnx:13:32
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/marker_not_satisfied/main.pnx:13:29
    │
-13 │ public type WithRequirement[T: Marker] = T
-   ╰╴                               ━━━━━━
+13 │ pub type WithRequirement[T: Marker] = T
+   ╰╴                            ━━━━━━
 
 [error]: Compilation aborted due to 1 error(s)
 

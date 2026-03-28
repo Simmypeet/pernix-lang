@@ -1,4 +1,4 @@
-public function test(cond: bool):
+pub def test(cond: bool):
     let outer = 1
     let mut numberRef = &outer
 

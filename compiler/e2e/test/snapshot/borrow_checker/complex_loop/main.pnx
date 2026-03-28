@@ -1,27 +1,27 @@
-public function consume[T](..: T):
+pub def consume[T](..: T):
     panic
 
 
-public function create['a]() -> &'a mut int32:
+pub def create['a]() -> &'a mut int32:
     panic
 
 
-public function test(cond: bool):
+pub def test(cond: bool):
 	let mut a = 32
 	let mut x = &mut a
 	let mut q = create()    # create() No.1
 
 	loop:
 		# first iteration -> p refers to the `a` variable
-		# second iteration -> p refers to the `create() No.2` function
+		# second iteration -> p refers to the `create() No.2` def
 		let p = &mut *x
 
 		if cond:
             break
 	
-		# before loop -> q refers to the `create() No.1` function
+		# before loop -> q refers to the `create() No.1` def
 		# first iteration -> q refers to the `a` variable
-		# second iteration -> q refers to the `create() No.2` function
+		# second iteration -> q refers to the `create() No.2` def
 		q = p
 
 		x = create() # create() No.2

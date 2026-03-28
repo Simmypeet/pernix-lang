@@ -21,7 +21,7 @@ abstract_tree::abstract_tree! {
     pub struct Signature {
         pub final_keyword: Keyword = expect::Keyword::Final.optional(),
         pub const_keyword: Keyword = expect::Keyword::Const.optional(),
-        pub implements_keyword: Keyword = expect::Keyword::Implements,
+        pub implements_keyword: Keyword = expect::Keyword::Impl,
         pub generic_parameters: GenericParameters
             = ast::<GenericParameters>().optional(),
         pub qualified_identifier: QualifiedIdentifier

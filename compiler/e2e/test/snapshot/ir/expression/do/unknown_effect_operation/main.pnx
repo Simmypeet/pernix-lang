@@ -1,8 +1,8 @@
-public effect Test:
+pub effect Test:
     test()
 
 
-public function main():
+pub def main():
     do:
         pass
     

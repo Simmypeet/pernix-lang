@@ -1,16 +1,16 @@
 
-public trait Require[T]:
+pub trait Require[T]:
     pass
 
 
-public struct Test[T, instance I: Require[T]]:
-    public value: T
+pub struct Test[T, inst I: Require[T]]:
+    pub value: T
 
 
 
-public function require[T]():
+pub def require[T]():
     pass
 
 
-public function useTest[T, U]():
+pub def useTest[T, U]():
     require[(Test[T, ..], Test[U, ..])]()

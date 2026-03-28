@@ -1,10 +1,10 @@
-public struct Pair[T, U]:
-    public first: T
-    public second: U
+pub struct Pair[T, U]:
+    pub first: T
+    pub second: U
 
 
-public struct Fizz:
+pub struct Fizz:
     pass
 
 
-public type Test = Pair[Fi<cursor>zz, int32]
+pub type Test = Pair[Fi<cursor>zz, int32]

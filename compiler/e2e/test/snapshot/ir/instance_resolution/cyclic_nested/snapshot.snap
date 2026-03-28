@@ -11,25 +11,25 @@ stderr:
    │
    ╰ help: instance resolution encountered a cycle; try restructuring the instance hierarchy to break the cycle
 [note]: required because resolving instance parameter `I` for `main::Require[main::LinkedList[int32]]`
-   ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/cyclic_nested/main.pnx:40:37
+   ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/cyclic_nested/main.pnx:40:25
    │
-40 │ public function require[T, instance I: Require[T]](value: T):
-   ╰╴                                    ━ this function requires the parameter to be resolved
+40 │ pub def require[T, inst I: Require[T]](value: T):
+   ╰╴                        ━ this function requires the parameter to be resolved
 [note]: required because resolving instance parameter `T` for `main::Require[main::Option[main::Box[main::LinkedList[int32]]]]`
-   ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/cyclic_nested/main.pnx:31:14
+   ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/cyclic_nested/main.pnx:31:10
    │
-31 │     instance T: Require[Option[Box[LinkedList[T]]]],
-   ╰╴             ━ this instance requires the parameter to be resolved
+31 │     inst T: Require[Option[Box[LinkedList[T]]]],
+   ╰╴         ━ this inst requires the parameter to be resolved
 [note]: required because resolving instance parameter `X` for `main::Require[main::Box[main::LinkedList[int32]]]`
-   ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/cyclic_nested/main.pnx:18:40
+   ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/cyclic_nested/main.pnx:18:29
    │
-18 │ public instance OptionInst[T, instance X: Require[T]]: Require[Option[T]]:
-   ╰╴                                       ━ this instance requires the parameter to be resolved
+18 │ pub inst OptionInst[T, inst X: Require[T]]: Require[Option[T]]:
+   ╰╴                            ━ this inst requires the parameter to be resolved
 [note]: required because resolving instance parameter `X` for `main::Require[main::LinkedList[int32]]`
-  ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/cyclic_nested/main.pnx:9:37
+  ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/cyclic_nested/main.pnx:9:26
   │
-9 │ public instance BoxInst[T, instance X: Require[T]]: Require[Box[T]]:
-  ╰╴                                    ━ this instance requires the parameter to be resolved
+9 │ pub inst BoxInst[T, inst X: Require[T]]: Require[Box[T]]:
+  ╰╴                         ━ this inst requires the parameter to be resolved
 
 [error]: Compilation aborted due to 1 error(s)
 

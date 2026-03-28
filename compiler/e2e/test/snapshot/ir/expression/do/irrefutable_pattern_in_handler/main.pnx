@@ -1,13 +1,13 @@
-public effect Test[T]:
+pub effect Test[T]:
     test(a: T, b: (T, T))
 
 
-public struct Vector2:
-    public x: int32
-    public y: int32
+pub struct Vector2:
+    pub x: int32
+    pub y: int32
 
 
-public function main():
+pub def main():
     do:
         pass
 

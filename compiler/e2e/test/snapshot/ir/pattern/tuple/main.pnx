@@ -1,62 +1,62 @@
-public function expectedTupleType(
+pub def expectedTupleType(
     (first, second): int32 # expected tuple type
 ):
     pass
 
 
-public function moreThanOnceUnpack(
+pub def moreThanOnceUnpack(
     (...first, ...second): (int32, int32) # more than one unpack
 ):
     pass
 
 
-public function mismatchedTuplePatternLengthWithUnpack(
+pub def mismatchedTuplePatternLengthWithUnpack(
     (first, ...second, third): (int32) # mismatched tuple pattern length with unpack
 ):
     pass
 
 
-public function expectedTuplePackPattern[T: tuple](
+pub def expectedTuplePackPattern[T: tuple](
     (a, b, c): (int32, ...T, int32)
 ):
     pass
 
 
-public function mismatchedTuplePackPosition[T: tuple](
+pub def mismatchedTuplePackPosition[T: tuple](
     (...a, b, c): (int32, ...T, int32)
 ):
     pass
 
 
-public function moreThanOnceUnpack2[T: tuple](
+pub def moreThanOnceUnpack2[T: tuple](
     (...a, ...b, c): (int32, ...T, int32)
 ):
     pass
 
 
-public function mismatchedTuplePatternLength(
+pub def mismatchedTuplePatternLength(
     (a, b, c): (int32, int32) # mismatched tuple
 ):
     pass
 
 
-public function packTuplePattern(
+pub def packTuplePattern(
     (a, ...b, c): (int32, int32, int32, int32)
 ):
     pass
 
 
-public struct Empty:
+pub struct Empty:
     pass
 
 
-public function packImmediatelyWithTuple(
+pub def packImmediatelyWithTuple(
     (a, ...({}, {}), b): (int32, Empty, Empty, int32)
 ):
     pass
 
 
-public function packImmediatelyWithTupleButLengthMismatched(
+pub def packImmediatelyWithTupleButLengthMismatched(
     (a, ...({}, {}, {}), b): (int32, Empty, Empty, int32)
 ):
     pass

@@ -1,11 +1,11 @@
-public effect Test:
+pub effect Test:
     handled()   
     
     unhandledOne()
     unhandledTwo()
 
 
-public function main():
+pub def main():
     do:
         pass
     

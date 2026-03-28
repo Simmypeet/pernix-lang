@@ -4,10 +4,10 @@ expression: run
 ---
 stderr:
 [error]: the predicate `'a: 'b` is not satisfied
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:19:62
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:19:55
    │
-19 │ public type UseInvariant['x, 'a, 'b, instance I: Identity] = ConstrainedInvariant['x, 'a, I]:
-   ╰╴                                                             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+19 │ pub type UseInvariant['x, 'a, 'b, inst I: Identity] = ConstrainedInvariant['x, 'a, I]:
+   ╰╴                                                      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [note]: the required predicate is declared here
    ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:15:9
    │
@@ -15,10 +15,10 @@ stderr:
    ╰╴        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 [error]: the predicate `'b: 'a` is not satisfied
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:19:62
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:19:55
    │
-19 │ public type UseInvariant['x, 'a, 'b, instance I: Identity] = ConstrainedInvariant['x, 'a, I]:
-   ╰╴                                                             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+19 │ pub type UseInvariant['x, 'a, 'b, inst I: Identity] = ConstrainedInvariant['x, 'a, I]:
+   ╰╴                                                      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [note]: the required predicate is declared here
    ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:15:9
    │
@@ -26,10 +26,10 @@ stderr:
    ╰╴        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 [error]: the predicate `T: 'a` is not satisfied
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:38:44
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:38:41
    │
-38 │ public type UseConstraintLifetime['a, T] = ConstraintLifetime['a, T]
-   ╰╴                                           ━━━━━━━━━━━━━━━━━━━━━━━━━
+38 │ pub type UseConstraintLifetime['a, T] = ConstraintLifetime['a, T]
+   ╰╴                                        ━━━━━━━━━━━━━━━━━━━━━━━━━
 [note]: the required predicate is declared here
    ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:28:12
    │
@@ -37,10 +37,10 @@ stderr:
    ╰╴           ━━
 
 [error]: the predicate `'a: 'b` is not satisfied
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:52:68
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:52:61
    │
-52 │ public type UseConstraintBivariant['a, 'b, instance I: Identity] = ConstraintBivariant['a, I]:
-   ╰╴                                                                   ━━━━━━━━━━━━━━━━━━━━━━━━━━
+52 │ pub type UseConstraintBivariant['a, 'b, inst I: Identity] = ConstraintBivariant['a, I]:
+   ╰╴                                                            ━━━━━━━━━━━━━━━━━━━━━━━━━━
 [note]: the required predicate is declared here
    ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:47:9
    │
@@ -48,10 +48,10 @@ stderr:
    ╰╴        ━━━━━━━━━━━━━━━━━━━━━━━━━
 
 [error]: the predicate `'b: 'a` is not satisfied
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:52:68
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:52:61
    │
-52 │ public type UseConstraintBivariant['a, 'b, instance I: Identity] = ConstraintBivariant['a, I]:
-   ╰╴                                                                   ━━━━━━━━━━━━━━━━━━━━━━━━━━
+52 │ pub type UseConstraintBivariant['a, 'b, inst I: Identity] = ConstraintBivariant['a, I]:
+   ╰╴                                                            ━━━━━━━━━━━━━━━━━━━━━━━━━━
 [note]: the required predicate is declared here
    ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:47:9
    │

@@ -1,8 +1,8 @@
-public effect Test[T]:
+pub effect Test[T]:
     operation(a: T) -> T
 
 
-public function main():
+pub def main():
     do:
         return Test[int32]::operation(12)
 

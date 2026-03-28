@@ -1,4 +1,4 @@
-public function test(myTuple: (int32, (float32, int32), float32)):
+pub def test(myTuple: (int32, (float32, int32), float32)):
     # basic, existing fields
     myTuple.0 
     myTuple.1.0 
@@ -18,7 +18,7 @@ public function test(myTuple: (int32, (float32, int32), float32)):
     # very large index
     myTuple.12345678901234567890123456789012345678901234567890
 
-public function testUnpacked[T](myTuple: (int32, bool, ...T, float32, float64)):
+pub def testUnpacked[T](myTuple: (int32, bool, ...T, float32, float64)):
     where:
         T: tuple
 

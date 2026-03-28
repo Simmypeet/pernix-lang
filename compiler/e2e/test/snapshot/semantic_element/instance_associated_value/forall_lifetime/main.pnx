@@ -1,19 +1,19 @@
-public trait Test['a]:
+pub trait Test['a]:
     pass
 
 
-public instance MyTest['a]: Test['a]:
+pub inst MyTest['a]: Test['a]:
     pass
 
 
-public trait ExpectInstance:
-    public instance I: for['a] Test['a]
+pub trait ExpectInstance:
+    pub inst I: for['a] Test['a]
 
 
-public instance WfExpectedInstance: ExpectInstance:
-    instance I: for['a] Test['a] = for['x] MyTest['x] 
+pub inst WfExpectedInstance: ExpectInstance:
+    inst I: for['a] Test['a] = for['x] MyTest['x] 
 
 
-public instance NotWfExpectedInstance['x]: ExpectInstance:
+pub inst NotWfExpectedInstance['x]: ExpectInstance:
     # error: because MyTest['x] impl for Test['x] for specific 'x
-    instance I: for['a] Test['a] = MyTest['x]
+    inst I: for['a] Test['a] = MyTest['x]

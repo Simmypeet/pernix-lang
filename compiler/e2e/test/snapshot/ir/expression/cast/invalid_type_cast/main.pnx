@@ -1,8 +1,8 @@
-public struct Adt:
+pub struct Adt:
     pass
 
 
-public function main():
+pub def main():
     let a = 2
     let b = a as Adt
     

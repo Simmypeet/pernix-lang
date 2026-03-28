@@ -1,10 +1,10 @@
-public struct TestCharacter:
-    public asU8: uint8
-    public asInt32: int32
-    public asFloat32: float32
+pub struct TestCharacter:
+    pub asU8: uint8
+    pub asInt32: int32
+    pub asFloat32: float32
 
 
-public function main():
+pub def main():
     TestCharacter {
         asU8: 'a',
         asInt32: 'a',

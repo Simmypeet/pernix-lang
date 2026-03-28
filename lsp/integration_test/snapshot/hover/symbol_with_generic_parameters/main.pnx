@@ -1,9 +1,9 @@
-public trait Another[T]:
+pub trait Another[T]:
     pass
 
 
-public struct Test['a, T, instance I: Another[T]]:
-    public a: T
+pub struct Test['a, T, inst I: Another[T]]:
+    pub a: T
 
 
-public type AliasType['a, T, instance I: Another[T]] = Te<cursor>st['a, T, I]
+pub type AliasType['a, T, inst I: Another[T]] = Te<cursor>st['a, T, I]

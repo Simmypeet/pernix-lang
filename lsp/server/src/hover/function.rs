@@ -43,9 +43,7 @@ async fn write_function_signature(
     formatter
         .write_signature(
             function_id,
-            &WriteSignatureOptions::builder()
-                .signature_string("function")
-                .build(),
+            &WriteSignatureOptions::builder().signature_string("def").build(),
         )
         .await;
 

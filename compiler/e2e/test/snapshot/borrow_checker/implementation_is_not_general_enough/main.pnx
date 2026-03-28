@@ -1,25 +1,25 @@
 from core import Copy, Drop
 
 
-public struct Vector[T]:
-	private x: phantom T
+pub struct Vector[T]:
+	priv x: phantom T
 
 
-implements[T] Vector[T]:
-	public function new() -> this:
+impl[T] Vector[T]:
+	pub def new() -> this:
 		return this { x: phantom }
 
 
-	public function push['a](self: &'a mut this, value: T):
+	pub def push['a](self: &'a mut this, value: T):
         where:
             T: 'a
 
 
-public trait DoSomething['a, T]:
-	public type Output
+pub trait DoSomething['a, T]:
+	pub type Output
 
 
-	public function doSomething['b](
+	pub def doSomething['b](
 		self: &'b mut T, 
 		object: &'a mut int32
 	):
@@ -27,7 +27,7 @@ public trait DoSomething['a, T]:
             T: 'b
 
 
-public instance DoSomethingVec['a, 'c]: DoSomething['a, Vector[&'c mut int32]]:
+pub inst DoSomethingVec['a, 'c]: DoSomething['a, Vector[&'c mut int32]]:
     where:
         'a: 'c
 
@@ -35,7 +35,7 @@ public instance DoSomethingVec['a, 'c]: DoSomething['a, Vector[&'c mut int32]]:
 	type Output = int32
 
 
-	function doSomething['b](
+	def doSomething['b](
 		self: &'b mut Vector[&'c mut int32], 
 		object: &'a mut int32
 	):
@@ -45,10 +45,10 @@ public instance DoSomethingVec['a, 'c]: DoSomething['a, Vector[&'c mut int32]]:
         self.push(object)
 
 
-public function use[
+pub def use[
 	'a, 
 	T: 'a, 
-	instance I: for['x] DoSomething['x, T]
+	inst I: for['x] DoSomething['x, T]
 ](object: &'a mut T):
 	let mut number = 32
 	
@@ -57,7 +57,7 @@ public function use[
     DoSomething::doSomething(object, &mut number)
 
 
-public function main():
+pub def main():
 	let mut vector = Vector[&mut int32]::new()
 
 	use(&mut vector)

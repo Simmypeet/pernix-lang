@@ -3,15 +3,15 @@
 
 
 extern "C":
-    public function printf(format: &uint8, ...) ->int32 
-    public function scanf(format: &uint8, ...) -> int32
+    pub def printf(format: &uint8, ...) ->int32 
+    pub def scanf(format: &uint8, ...) -> int32
 
 
-public struct Zst:
+pub struct Zst:
     pass
 
 
-public function annoyingSum(
+pub def annoyingSum(
     a: int32,
     emptyTuple: (),
     b: int32,
@@ -21,7 +21,7 @@ public function annoyingSum(
     return a + b + c
 
 
-public function main():
+pub def main():
     let mut a = 0i32
     let mut b = 0i32
     let mut c = 0i32

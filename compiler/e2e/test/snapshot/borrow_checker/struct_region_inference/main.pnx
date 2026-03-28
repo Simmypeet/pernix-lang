@@ -1,11 +1,11 @@
-public struct RefWrapper['a, T]:
+pub struct RefWrapper['a, T]:
     where:
         T: 'a
 
-    public ref: &'a T
+    pub ref: &'a T
 
 
-public function test['a, 'b](
+pub def test['a, 'b](
     ref: &'a int32
 ) -> RefWrapper['b, int32]:
     let test = 32

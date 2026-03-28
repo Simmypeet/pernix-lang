@@ -4,16 +4,16 @@ expression: run
 ---
 stderr:
 [error]: the predicate `&'b float32: 'a` is not satisfied
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/predicate_requirements/main.pnx:17:35
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/predicate_requirements/main.pnx:17:32
    │
-17 │ public type Instantiate['a, 'b] = Qux['a, &'b float32]
-   ╰╴                                  ━━━━━━━━━━━━━━━━━━━━
+17 │ pub type Instantiate['a, 'b] = Qux['a, &'b float32]
+   ╰╴                               ━━━━━━━━━━━━━━━━━━━━
 
 [error]: the predicate `&'b float32: 'a` is not satisfied
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/predicate_requirements/main.pnx:17:35
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/predicate_requirements/main.pnx:17:32
    │
-17 │ public type Instantiate['a, 'b] = Qux['a, &'b float32]
-   ╰╴                                  ━━━━━━━━━━━━━━━━━━━━
+17 │ pub type Instantiate['a, 'b] = Qux['a, &'b float32]
+   ╰╴                               ━━━━━━━━━━━━━━━━━━━━
 [note]: the required predicate is declared here
    ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/predicate_requirements/main.pnx:13:12
    │
@@ -21,10 +21,10 @@ stderr:
    ╰╴           ━━
 
 [error]: the predicate `&'b float32: const` is not satisfied
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/predicate_requirements/main.pnx:17:35
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/predicate_requirements/main.pnx:17:32
    │
-17 │ public type Instantiate['a, 'b] = Qux['a, &'b float32]
-   ╰╴                                  ━━━━━━━━━━━━━━━━━━━━
+17 │ pub type Instantiate['a, 'b] = Qux['a, &'b float32]
+   ╰╴                               ━━━━━━━━━━━━━━━━━━━━
 [note]: the required predicate is declared here
    ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/predicate_requirements/main.pnx:13:17
    │
@@ -32,10 +32,10 @@ stderr:
    ╰╴                ━━━━━
 
 [error]: the predicate `&'b float32: tuple` is not satisfied
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/predicate_requirements/main.pnx:17:35
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/predicate_requirements/main.pnx:17:32
    │
-17 │ public type Instantiate['a, 'b] = Qux['a, &'b float32]
-   ╰╴                                  ━━━━━━━━━━━━━━━━━━━━
+17 │ pub type Instantiate['a, 'b] = Qux['a, &'b float32]
+   ╰╴                               ━━━━━━━━━━━━━━━━━━━━
 [note]: the required predicate is declared here
    ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/predicate_requirements/main.pnx:13:25
    │
@@ -43,10 +43,10 @@ stderr:
    ╰╴                        ━━━━━
 
 [error]: the predicate `'a: 'static` is not satisfied
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/predicate_requirements/main.pnx:17:35
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/predicate_requirements/main.pnx:17:32
    │
-17 │ public type Instantiate['a, 'b] = Qux['a, &'b float32]
-   ╰╴                                  ━━━━━━━━━━━━━━━━━━━━
+17 │ pub type Instantiate['a, 'b] = Qux['a, &'b float32]
+   ╰╴                               ━━━━━━━━━━━━━━━━━━━━
 [note]: the required predicate is declared here
    ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/predicate_requirements/main.pnx:14:9
    │
@@ -54,10 +54,10 @@ stderr:
    ╰╴        ━━━━━━━━━━━
 
 [error]: the predicate `marker main::Fizz['a, float32]` is not satisfied
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/predicate_requirements/main.pnx:17:35
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/predicate_requirements/main.pnx:17:32
    │
-17 │ public type Instantiate['a, 'b] = Qux['a, &'b float32]
-   ╰╴                                  ━━━━━━━━━━━━━━━━━━━━
+17 │ pub type Instantiate['a, 'b] = Qux['a, &'b float32]
+   ╰╴                               ━━━━━━━━━━━━━━━━━━━━
 [note]: the required predicate is declared here
    ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/predicate_requirements/main.pnx:12:12
    │

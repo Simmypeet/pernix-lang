@@ -1,9 +1,9 @@
-public struct Test:
-    public justNumber: int32
-    public singleTupleElement: (int32,)
+pub struct Test:
+    pub justNumber: int32
+    pub singleTupleElement: (int32,)
 
 
-public function main():
+pub def main():
     Test {
         justNumber: (32),
         singleTupleElement: (32,),

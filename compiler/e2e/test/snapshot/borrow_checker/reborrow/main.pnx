@@ -1,5 +1,5 @@
 
-public function test['a, 'b, T](
+pub def test['a, 'b, T](
     mut x: &'a T,
     y: &'b (T, T)
 ):

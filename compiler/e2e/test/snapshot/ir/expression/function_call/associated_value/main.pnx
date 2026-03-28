@@ -1,9 +1,9 @@
-public enum Option[T]:
+pub enum Option[T]:
     Some(T)
     None
 
 
-public function main():
+pub def main():
     Option[int32]::Some()              # expected 1 value
     Option[int32]::Some(53, 42)        # expected 1 value
     Option[int32]::None()       # can't call

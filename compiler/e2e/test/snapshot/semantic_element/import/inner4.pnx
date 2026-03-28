@@ -1,10 +1,10 @@
-public struct InnerFirst:
+pub struct InnerFirst:
     pass
 
 
-public struct InnerSecond:
+pub struct InnerSecond:
     pass
 
     
-public struct InnerThird:
+pub struct InnerThird:
     pass

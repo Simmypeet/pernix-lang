@@ -1,16 +1,16 @@
 from core import alignof
 
 extern "C":
-    public function printf(format: &uint8, ...) -> int32
+    pub def printf(format: &uint8, ...) -> int32
 
 
-public function isPowerOfTwo(value: usize) -> bool:
+pub def isPowerOfTwo(value: usize) -> bool:
     if value == 0:
         return false
     return (value & (value - 1)) == 0
 
 
-public function main():
+pub def main():
     unsafe scope:
         # Test that alignments are power of 2 and greater than 0
         let align_int32 = alignof[int32]()

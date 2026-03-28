@@ -1,14 +1,14 @@
-public type First['x, T, 'a] = &'x T:
+pub type First['x, T, 'a] = &'x T:
     where:
         T: 'x
 
-public type Second[const N: usize, 'a] = int32
+pub type Second[const N: usize, 'a] = int32
 
-public type Third[T, const N: usize, 'a] = float32
+pub type Third[T, const N: usize, 'a] = float32
 
-public type Fourth[const N: usize, T] = bool
+pub type Fourth[const N: usize, T] = bool
 
-public trait Test[T]:
+pub trait Test[T]:
     pass
 
-public type Fifth[T, instance I: Test[T], 'a] = int32
+pub type Fifth[T, inst I: Test[T], 'a] = int32

@@ -1,19 +1,19 @@
 extern "C":
-    public function printf(fmt: &uint8, ...) -> int32
-    public function scanf(fmt: &uint8, ...) -> int32
+    pub def printf(fmt: &uint8, ...) -> int32
+    pub def scanf(fmt: &uint8, ...) -> int32
 
 
-public function evalutesTrue() -> bool:
+pub def evalutesTrue() -> bool:
     printf(&"evalutesTrue called\n\0".[0])
     return true
 
 
-public function evaluatesFalse() -> bool:
+pub def evaluatesFalse() -> bool:
     printf(&"evaluatesFalse called\n\0".[0])
     return false
 
 
-public function main():
+pub def main():
     let firstResult = evalutesTrue() or evaluatesFalse()
     printf(&"firstResult: %d\n\0".[0], if firstResult: 1 else: 0)
 

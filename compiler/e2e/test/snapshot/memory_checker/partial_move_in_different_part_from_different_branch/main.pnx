@@ -1,8 +1,8 @@
-public function consume[T](x: T):
+pub def consume[T](x: T):
     pass
 
 
-public function partialMove[T](x: (T, T, T, T), cond: bool):
+pub def partialMove[T](x: (T, T, T, T), cond: bool):
     match (cond, cond):
         (true, false): 
             consume(x.0)

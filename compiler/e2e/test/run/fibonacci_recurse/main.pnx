@@ -4,18 +4,18 @@
 ## 10
 
 extern "C":
-    public function printf(format: &uint8, ...) -> int32
-    public function scanf(format: &uint8, ...) -> int32
+    pub def printf(format: &uint8, ...) -> int32
+    pub def scanf(format: &uint8, ...) -> int32
 
 
-public function fibonacci(n: int32) -> int32:
+pub def fibonacci(n: int32) -> int32:
     if n <= 1:
         return 1
     
     return fibonacci(n - 1) + fibonacci(n - 2)
     
 
-public function main():
+pub def main():
     printf(&"Enter the number: \0".[0])
 
     let mut number = 0

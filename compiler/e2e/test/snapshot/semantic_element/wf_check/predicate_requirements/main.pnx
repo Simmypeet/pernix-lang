@@ -1,17 +1,17 @@
-public marker Fizz['a, T]
+pub marker Fizz['a, T]
 
 
-public marker Identity[T]
+pub marker Identity[T]
 
 
-final implements[T] Identity[T]
+final impl[T] Identity[T]
 
 
-public type Qux['a, T] = &'a T:
+pub type Qux['a, T] = &'a T:
     where:
         T: Fizz['a] + Identity
         T: 'a + const + tuple
         'a: 'static
 
 
-public type Instantiate['a, 'b] = Qux['a, &'b float32]
+pub type Instantiate['a, 'b] = Qux['a, &'b float32]

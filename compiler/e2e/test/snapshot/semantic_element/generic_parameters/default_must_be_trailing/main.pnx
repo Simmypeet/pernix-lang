@@ -1,2 +1,2 @@
-public type Test[T, U = int32, V] = int32
+pub type Test[T, U = int32, V] = int32
 

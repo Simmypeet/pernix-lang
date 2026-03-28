@@ -1,20 +1,20 @@
-public struct MyStruct:
+pub struct MyStruct:
     pass
 
 
-public enum MyEnum:
+pub enum MyEnum:
     pass
 
 
-public module myModule:
+pub module myModule:
     pass
 
 
-public trait MyTrait[T]:
+pub trait MyTrait[T]:
     pass
 
 
-public function main[instance I: MyTrait[int32]]():
+pub def main[inst I: MyTrait[int32]]():
     MyStruct()
     MyEnum()
     myModule()

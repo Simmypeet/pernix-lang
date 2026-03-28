@@ -1,13 +1,13 @@
 
-public function create[T]() -> T:
+pub def create[T]() -> T:
     panic
 
 
-public function consume[T](x: T):
+pub def consume[T](x: T):
     pass
 
 
-public function main[T](mut a: T, cond: bool):
+pub def main[T](mut a: T, cond: bool):
     while cond:
         # will be consumed
         consume(a)

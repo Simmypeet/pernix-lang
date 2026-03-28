@@ -1,8 +1,8 @@
-public function consume[T](x: T):
+pub def consume[T](x: T):
     pass
 
 # only (D) is an error
-public function main():
+pub def main():
     let mut x = 22
     let mut y = 44
     let mut p = &x  # Loan L0, borrowing `x`

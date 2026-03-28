@@ -4,16 +4,16 @@ expression: run
 ---
 stderr:
 [error]: mismatched trait reference
-  ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/instance_check_mismatch_type/main.pnx:9:70
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/instance_check_mismatch_type/main.pnx:9:59
   │
-9 │ public type Use[instance I: Trait[bool], instance J: Trait[int32]] = Require[I, J]
-  ╰╴                                                                     ━━━━━━━━━━━━━ instance `I` implements `main::Trait[bool]` but `main::Trait[int32]` was expected
+9 │ pub type Use[inst I: Trait[bool], inst J: Trait[int32]] = Require[I, J]
+  ╰╴                                                          ━━━━━━━━━━━━━ instance `I` implements `main::Trait[bool]` but `main::Trait[int32]` was expected
 
 [error]: mismatched trait reference
-  ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/instance_check_mismatch_type/main.pnx:9:70
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/instance_check_mismatch_type/main.pnx:9:59
   │
-9 │ public type Use[instance I: Trait[bool], instance J: Trait[int32]] = Require[I, J]
-  ╰╴                                                                     ━━━━━━━━━━━━━ instance `J` implements `main::Trait[int32]` but `main::Trait[bool]` was expected
+9 │ pub type Use[inst I: Trait[bool], inst J: Trait[int32]] = Require[I, J]
+  ╰╴                                                          ━━━━━━━━━━━━━ instance `J` implements `main::Trait[int32]` but `main::Trait[bool]` was expected
 
 [error]: Compilation aborted due to 2 error(s)
 

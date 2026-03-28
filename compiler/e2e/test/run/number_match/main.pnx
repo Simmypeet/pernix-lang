@@ -13,11 +13,11 @@
 
 
 extern "C":
-    public function printf(format: &uint8, ...) -> int32
-    public function scanf(format: &uint8, ...) -> int32
+    pub def printf(format: &uint8, ...) -> int32
+    pub def scanf(format: &uint8, ...) -> int32
 
 
-public function main():
+pub def main():
     let mut input = 0i32
 
     scanf(&"%d\0".[0], &input)

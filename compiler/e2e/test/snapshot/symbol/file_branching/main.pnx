@@ -1,6 +1,6 @@
-public module sub1
-public module sub2
+pub module sub1
+pub module sub2
 
 
-public function main():
+pub def main():
     pass

@@ -1,12 +1,12 @@
-public trait Fizz:
-    public type Output['a, T]
+pub trait Fizz:
+    pub type Output['a, T]
 
 
-public struct MyStruct:
+pub struct MyStruct:
     pass
 
 
-public enum Test['a, 'b, T, U, instance I: Fizz]:
+pub enum Test['a, 'b, T, U, inst I: Fizz]:
     where:
         I::Output['a, T] = int32
         

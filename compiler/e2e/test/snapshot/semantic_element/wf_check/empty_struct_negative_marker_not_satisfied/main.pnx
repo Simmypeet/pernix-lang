@@ -1,22 +1,22 @@
-public marker Marker[T]
+pub marker Marker[T]
 
 
-final implements Marker[int32]:
+final impl Marker[int32]:
     pass
 
 
-public struct EmptyStruct:
+pub struct EmptyStruct:
     pass
     
 
-public enum EmptyEnum:
+pub enum EmptyEnum:
     pass
 
 
-public type WithRequirement[T] = T:
+pub type WithRequirement[T] = T:
     where:
         T: not Marker
 
 
-public type InstEmptyStruct = WithRequirement[EmptyStruct]
-public type InstEmptyEnum   = WithRequirement[EmptyEnum]
+pub type InstEmptyStruct = WithRequirement[EmptyStruct]
+pub type InstEmptyEnum   = WithRequirement[EmptyEnum]

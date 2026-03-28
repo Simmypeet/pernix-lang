@@ -1,4 +1,4 @@
-public module externalModule
+pub module externalModule
 
 
-implements externalMo<cursor>dule::Test[int32]
+impl externalMo<cursor>dule::Test[int32]

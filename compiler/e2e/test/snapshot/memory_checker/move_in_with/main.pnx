@@ -1,22 +1,22 @@
 from core import Copy
 
 
-public effect Test[T]:
+pub effect Test[T]:
     operation(value: T)
 
 
-public struct NonCopyable:
+pub struct NonCopyable:
     pass
 
 
-final implements Copy[NonCopyable] delete
+final impl Copy[NonCopyable] delete
 
 
-public function drop[T](..: T):
+pub def drop[T](..: T):
     pass
 
 
-public function main():
+pub def main():
     let nonCopyableOuter = NonCopyable{}
 
     do:

@@ -1,7 +1,7 @@
-public function create[T]() -> T:
+pub def create[T]() -> T:
     panic
 
 
-public function test[T]() -> T:
+pub def test[T]() -> T:
     let value = create[T]()
     return value

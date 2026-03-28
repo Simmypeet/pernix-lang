@@ -1,13 +1,13 @@
-public function expect[T](..: T):
+pub def expect[T](..: T):
     pass
 
 
-public function pointerArithmetic(a: *int32):
+pub def pointerArithmetic(a: *int32):
     expect[*..](a + 1)
     expect[*..](a + 1.2) # error, expect isize
     
 
-public function numericArithmetic(a: int32, b: bool):
+pub def numericArithmetic(a: int32, b: bool):
     expect[int32](a + 1)
     expect[int32](a + 1.2) # error, expect int32
     expect[int32](a + true) # error, expect int32
@@ -16,11 +16,11 @@ public function numericArithmetic(a: int32, b: bool):
     expect[bool](b - false) # error, bool is not numeric
 
 
-public struct Adt:
+pub struct Adt:
     pass
 
 
-public function comparison(a: int32, b: bool):
+pub def comparison(a: int32, b: bool):
     expect[bool](a < 1)
     expect[bool](a < 1.2) # error, expect int32
     expect[bool](a < true) # error, expect int32
@@ -31,7 +31,7 @@ public function comparison(a: int32, b: bool):
     expect[bool](Adt{} == Adt{}) # error, adt is not comparable
 
 
-public function bitwiseAndOrXor():
+pub def bitwiseAndOrXor():
     expect[int32](1 & 2)
     expect[int32](1 & 2.0) # error, expect int32
     expect[int32](1 & true) # error, expect int32
@@ -40,7 +40,7 @@ public function bitwiseAndOrXor():
     expect[float32](1.0 | 2.0) # error, float can't be used
 
 
-public function bitshift():
+pub def bitshift():
     expect[int32](1 << 2)
     expect[int32](1 << -2) # error, negative shift
     expect[int32](1i32 << 2.0) # error

@@ -1,7 +1,7 @@
-public struct Test:
-    private a: int32
+pub struct Test:
+    priv a: int32
 
 
-public function test(self: &Test):
+pub def test(self: &Test):
     (*self).a = 10
     self.a += 15

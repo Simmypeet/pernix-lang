@@ -1,8 +1,8 @@
-public function addOne(x: &mut uint32):
+pub def addOne(x: &mut uint32):
     *x = *x + 1
 
 
-public function test():
+pub def test():
     let mut num = 64
     let r = &mut num
 

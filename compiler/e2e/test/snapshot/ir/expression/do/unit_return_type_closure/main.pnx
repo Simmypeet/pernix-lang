@@ -1,8 +1,8 @@
-public effect Test:
+pub effect Test:
     op()
 
 
-public function main():
+pub def main():
     do:
         # `do` closure block doesn't return anything, returns `unit`
         pass
@@ -13,7 +13,7 @@ public function main():
             return 32
 
 
-public function main2():
+pub def main2():
     do:
         # `do` closure block returns `int32`
         return 32

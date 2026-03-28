@@ -1,7 +1,7 @@
-public enum Result[T: 'static, E: 'static]:
+pub enum Result[T: 'static, E: 'static]:
     Ok(T)
     Error(E)
 
 
-public function test():
+pub def test():
     Resu<cursor>lt::Ok()

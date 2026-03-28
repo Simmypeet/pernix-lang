@@ -157,7 +157,7 @@ impl Kind {
             Self::InstanceAssociatedType => "instance associated type",
             Self::InstanceAssociatedFunction => "instance associated function",
             Self::InstanceAssociatedConstant => "instance associated constant",
-            Self::InstanceAssociatedInstance => "instance associated instance",
+            Self::InstanceAssociatedInstance => "instance associated inst",
         }
     }
 

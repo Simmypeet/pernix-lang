@@ -1,9 +1,9 @@
-public effect Test:
+pub effect Test:
     op()
 
 
 # no error here
-public function main():
+pub def main():
     let cond = true
 
     do:
@@ -16,7 +16,7 @@ public function main():
 
 
 # error here, not all flow paths return a value
-public function main2():
+pub def main2():
     let cond = true
 
     do:

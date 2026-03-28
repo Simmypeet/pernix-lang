@@ -1,14 +1,14 @@
-public effect Test['a]:
+pub effect Test['a]:
     firstOperation(x: &'a int32)
 
 
-public effect Unhandled:
+pub effect Unhandled:
     unhandledOperation()
 
 
-public function test['a](x: &'a int32) do Test['a]:
+pub def test['a](x: &'a int32) do Test['a]:
     Test::firstOperation(x)
 
 
-public function doUnhandled():
+pub def doUnhandled():
     Unhandled::unhandledOperation()

@@ -1,6 +1,6 @@
-public struct Test['a, T, U, V, W, X]:
-    public reference: &'a T
-    public mutableReference: &'a mut U
-    public regularTuple: (V, W, X)
-    public tupleWithUnpacking: (V, ...W, X)
-    public multipleUnpacking: (...V, ...W, ...X)
+pub struct Test['a, T, U, V, W, X]:
+    pub reference: &'a T
+    pub mutableReference: &'a mut U
+    pub regularTuple: (V, W, X)
+    pub tupleWithUnpacking: (V, ...W, X)
+    pub multipleUnpacking: (...V, ...W, ...X)

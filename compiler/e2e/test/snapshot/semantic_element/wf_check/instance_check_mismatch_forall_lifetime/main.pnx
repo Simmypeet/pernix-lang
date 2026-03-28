@@ -1,20 +1,20 @@
-public trait Test['a]:
+pub trait Test['a]:
     pass
 
 
-public type RequireForall[instance I: for['x] Test['x]] = int32
+pub type RequireForall[inst I: for['x] Test['x]] = int32
 
 
 # error, lifetime is not general enough
-public type UseError['a, instance I: Test['a]] = RequireForall[I]
+pub type UseError['a, inst I: Test['a]] = RequireForall[I]
 
 
 # good, lifetime is general enough
-public type UseOk[instance I: for['x] Test['x]] = RequireForall[I]
+pub type UseOk[inst I: for['x] Test['x]] = RequireForall[I]
 
 
-public type RequireSpecific['a, instance I: Test['a]] = int32
+pub type RequireSpecific['a, inst I: Test['a]] = int32
 
 
 # good, I can accept any lifetime, including 'static
-public type UseOkSpecific[instance I: for['x] Test['x]] = RequireSpecific['static, I]
+pub type UseOkSpecific[inst I: for['x] Test['x]] = RequireSpecific['static, I]

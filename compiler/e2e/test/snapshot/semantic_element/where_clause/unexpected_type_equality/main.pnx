@@ -1,7 +1,7 @@
-public trait Identity[T]:
-    public type Output
+pub trait Identity[T]:
+    pub type Output
 
 
-public type Test[T] = T:
+pub type Test[T] = T:
     where:
         T = Identity[T]::Output

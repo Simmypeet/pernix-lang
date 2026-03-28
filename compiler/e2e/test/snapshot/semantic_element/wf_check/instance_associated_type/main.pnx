@@ -1,6 +1,6 @@
-public trait Test:
-    public type Assoc[T: 'static]
+pub trait Test:
+    pub type Assoc[T: 'static]
 
 
 # error: `T: 'static` is not satisfied
-public type Alias[T, instance I: Test] = I::Assoc[T]
+pub type Alias[T, inst I: Test] = I::Assoc[T]

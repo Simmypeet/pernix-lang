@@ -1,10 +1,10 @@
-public trait variable:
+pub trait variable:
     pass
 
 
-public function test(variable: int32):
+pub def test(variable: int32):
     variable # should refer to parameter
 
 
-public function notParameter():
+pub def notParameter():
     variable # should refer to trait `variable`

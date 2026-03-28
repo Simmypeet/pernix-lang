@@ -1,7 +1,7 @@
-public enum Option[T]:
+pub enum Option[T]:
     Some(T)
     None
 
 
-public function test(arg: Optio<cursor>n[int32]):
+pub def test(arg: Optio<cursor>n[int32]):
     pass

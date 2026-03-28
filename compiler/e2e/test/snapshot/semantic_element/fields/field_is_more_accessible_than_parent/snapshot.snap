@@ -6,8 +6,8 @@ stderr:
 [error]: field `notFine` is more accessible than struct `main::inner::NotFine`
   ╭▸ compiler/e2e/test/snapshot/semantic_element/fields/field_is_more_accessible_than_parent/main.pnx:3:9
   │
-3 │         public notFine: int32
-  │         ━━━━━━━━━━━━━━━━━━━━━ field `notFine` is publicly accessible but struct is accessible in `main::inner`
+3 │         pub notFine: int32
+  │         ━━━━━━━━━━━━━━━━━━ field `notFine` is publicly accessible but struct is accessible in `main::inner`
   │
   ╰ help: consider making the field accessible in `main::inner` or making the struct publicly accessible
 
@@ -22,8 +22,8 @@ stderr:
 [error]: field `notFineAsWell` is more accessible than struct `main::inner::NotFine2`
   ╭▸ compiler/e2e/test/snapshot/semantic_element/fields/field_is_more_accessible_than_parent/main.pnx:7:9
   │
-7 │         public notFineAsWell: int32
-  │         ━━━━━━━━━━━━━━━━━━━━━━━━━━━ field `notFineAsWell` is publicly accessible but struct is accessible in `main::inner`
+7 │         pub notFineAsWell: int32
+  │         ━━━━━━━━━━━━━━━━━━━━━━━━ field `notFineAsWell` is publicly accessible but struct is accessible in `main::inner`
   │
   ╰ help: consider making the field accessible in `main::inner` or making the struct publicly accessible
 

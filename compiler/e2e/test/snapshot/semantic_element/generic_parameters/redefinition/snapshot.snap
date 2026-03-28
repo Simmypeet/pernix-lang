@@ -4,28 +4,28 @@ expression: run
 ---
 stderr:
 [error]: generic parameter `a` is already defined in the `main::First`
-  ╭▸ compiler/e2e/test/snapshot/semantic_element/generic_parameters/redefinition/main.pnx:1:24
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/generic_parameters/redefinition/main.pnx:1:21
   │
-1 │ public type First['a, 'a, 'b] = &'a int32
-  │                    ┬   ━ redefinition here
-  │                    │
-  ╰╴                   previously defined here
+1 │ pub type First['a, 'a, 'b] = &'a int32
+  │                 ┬   ━ redefinition here
+  │                 │
+  ╰╴                previously defined here
 
 [error]: generic parameter `T` is already defined in the `main::Second`
-  ╭▸ compiler/e2e/test/snapshot/semantic_element/generic_parameters/redefinition/main.pnx:3:23
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/generic_parameters/redefinition/main.pnx:3:20
   │
-3 │ public type Second[T, T, U] = T
-  │                    ┬  ━ redefinition here
-  │                    │
-  ╰╴                   previously defined here
+3 │ pub type Second[T, T, U] = T
+  │                 ┬  ━ redefinition here
+  │                 │
+  ╰╴                previously defined here
 
 [error]: generic parameter `N` is already defined in the `main::Third`
-  ╭▸ compiler/e2e/test/snapshot/semantic_element/generic_parameters/redefinition/main.pnx:5:41
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/generic_parameters/redefinition/main.pnx:5:38
   │
-5 │ public type Third[const N: usize, const N: usize, const M: float32] = int32
-  │                         ┬               ━ redefinition here
-  │                         │
-  ╰╴                        previously defined here
+5 │ pub type Third[const N: usize, const N: usize, const M: float32] = int32
+  │                      ┬               ━ redefinition here
+  │                      │
+  ╰╴                     previously defined here
 
 [error]: generic parameter `a` is already defined in the `main::Fourth`
   ╭▸ compiler/e2e/test/snapshot/semantic_element/generic_parameters/redefinition/main.pnx:8:10
@@ -52,12 +52,12 @@ stderr:
    ╰╴          previously defined here
 
 [error]: generic parameter `I` is already defined in the `main::Fifth`
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/generic_parameters/redefinition/main.pnx:20:52
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/generic_parameters/redefinition/main.pnx:20:41
    │
-20 │ public type Fifth[T, instance I: Test[T], instance I: Test[int32]] = int32
-   │                               ┬                    ━ redefinition here
-   │                               │
-   ╰╴                              previously defined here
+20 │ pub type Fifth[T, inst I: Test[T], inst I: Test[int32]] = int32
+   │                        ┬                ━ redefinition here
+   │                        │
+   ╰╴                       previously defined here
 
 [error]: Compilation aborted due to 7 error(s)
 

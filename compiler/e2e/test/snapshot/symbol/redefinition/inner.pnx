@@ -1,5 +1,5 @@
-public module duplicateInner:
+pub module duplicateInner:
     pass
 
-public module duplicateInner:
+pub module duplicateInner:
     pass

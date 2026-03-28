@@ -1,4 +1,4 @@
-public enum Direction:
+pub enum Direction:
     Up
     Down
     Left

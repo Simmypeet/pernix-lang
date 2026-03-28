@@ -32,7 +32,7 @@ use crate::{
 abstract_tree! {
     struct BasicSequence {
         public_keyword: token::Keyword<RelativeLocation>
-            = expect::Keyword::Public,
+            = expect::Keyword::Pub,
 
         struct_keyword: token::Keyword<RelativeLocation>
             = expect::Keyword::Struct,
@@ -73,7 +73,7 @@ fn parse_token_tree(
 fn check_basic_sequence(basic_sequence: &BasicSequence, expected_name: &str) {
     assert_eq!(
         basic_sequence.public_keyword().map(|x| x.kind),
-        Some(expect::Keyword::Public)
+        Some(expect::Keyword::Pub)
     );
 
     assert_eq!(
@@ -118,7 +118,7 @@ fn basic_sequence_missing_semicolon() {
 
     assert_eq!(
         tree.public_keyword().map(|x| x.kind),
-        Some(expect::Keyword::Public)
+        Some(expect::Keyword::Pub)
     );
 
     assert_eq!(
@@ -164,7 +164,7 @@ abstract_tree! {
     #{fragment = expect::Fragment::Indentation}
     struct Body {
         private_keyword: token::Keyword<RelativeLocation>
-            = expect::Keyword::Private,
+            = expect::Keyword::Priv,
         identifier: token::Identifier<RelativeLocation>
             = expect::Identifier,
         colon: token::Punctuation<RelativeLocation>
@@ -177,7 +177,7 @@ abstract_tree! {
 abstract_tree! {
     struct SequenceWithFragment {
         public_keyword: token::Keyword<RelativeLocation>
-            = expect::Keyword::Public,
+            = expect::Keyword::Pub,
         struct_keyword: token::Keyword<RelativeLocation>
             = expect::Keyword::Struct,
         identifier: token::Identifier<RelativeLocation>
@@ -205,7 +205,7 @@ fn sequence_with_fragment() {
 
     assert_eq!(
         tree.public_keyword().map(|x| x.kind),
-        Some(expect::Keyword::Public)
+        Some(expect::Keyword::Pub)
     );
 
     assert_eq!(
@@ -222,7 +222,7 @@ fn sequence_with_fragment() {
 
     assert_eq!(
         body.private_keyword().map(|x| x.kind),
-        Some(expect::Keyword::Private)
+        Some(expect::Keyword::Priv)
     );
 
     assert_eq!(

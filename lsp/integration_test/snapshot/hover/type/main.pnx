@@ -1,6 +1,6 @@
-public type A = int32
-public type Another[T: 'static] = int32
+pub type A = int32
+pub type Another[T: 'static] = int32
 
 
-public function useAnother(a: An<cursor>other):
+pub def useAnother(a: An<cursor>other):
     pass

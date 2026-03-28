@@ -1,34 +1,34 @@
-public marker Marker[T]
+pub marker Marker[T]
 
 
-final implements Marker[int32]
+final impl Marker[int32]
 
 
-final implements Marker[bool]
+final impl Marker[bool]
 
 
-public struct MyStruct:
-    public a: int32
-    public b: bool
+pub struct MyStruct:
+    pub a: int32
+    pub b: bool
 
 
-public struct EmptyStruct:
+pub struct EmptyStruct:
     pass
 
 
-public enum MyEnum:
+pub enum MyEnum:
     A(int32)
     B(bool)
 
 
-public enum EmptyEnum:
+pub enum EmptyEnum:
     pass
 
 
-public type WithRequirement[T: Marker] = T
+pub type WithRequirement[T: Marker] = T
 
 
-public type InstMyStruct    = WithRequirement[MyStruct]
-public type InstEmptyStruct = WithRequirement[EmptyStruct]
-public type InstMyEnum      = WithRequirement[MyEnum]
-public type InstEmptyEnum   = WithRequirement[EmptyEnum]
+pub type InstMyStruct    = WithRequirement[MyStruct]
+pub type InstEmptyStruct = WithRequirement[EmptyStruct]
+pub type InstMyEnum      = WithRequirement[MyEnum]
+pub type InstEmptyEnum   = WithRequirement[EmptyEnum]

@@ -11,20 +11,20 @@ stderr:
    │
    ╰ help: consider adding an `instance` parameter or importing a suitable instance implementation into scope
 [note]: required because resolving instance parameter `I` for `main::Require[main::Test[main::Test[T]]]`
-   ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/nested_not_found/main.pnx:17:37
+   ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/nested_not_found/main.pnx:17:25
    │
-17 │ public function require[T, instance I: Require[T]](test: T):
-   ╰╴                                    ━ this function requires the parameter to be resolved
+17 │ pub def require[T, inst I: Require[T]](test: T):
+   ╰╴                        ━ this function requires the parameter to be resolved
 [note]: required because resolving instance parameter `X` for `main::Require[main::Test[T]]`
-  ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/nested_not_found/main.pnx:5:35
+  ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/nested_not_found/main.pnx:5:24
   │
-5 │ public instance Outer[T, instance X: Require[Test[T]]]: Require[Test[Test[T]]]:
-  ╰╴                                  ━ this instance requires the parameter to be resolved
+5 │ pub inst Outer[T, inst X: Require[Test[T]]]: Require[Test[Test[T]]]:
+  ╰╴                       ━ this inst requires the parameter to be resolved
 [note]: required because resolving instance parameter `Y` for `main::Require[T]`
-  ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/nested_not_found/main.pnx:9:35
+  ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/nested_not_found/main.pnx:9:24
   │
-9 │ public instance Inner[T, instance Y: Require[T]]: Require[Test[T]]:
-  ╰╴                                  ━ this instance requires the parameter to be resolved
+9 │ pub inst Inner[T, inst Y: Require[T]]: Require[Test[T]]:
+  ╰╴                       ━ this inst requires the parameter to be resolved
 
 [error]: Compilation aborted due to 1 error(s)
 

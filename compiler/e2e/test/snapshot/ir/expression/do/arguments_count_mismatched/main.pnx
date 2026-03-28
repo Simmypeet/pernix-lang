@@ -1,9 +1,9 @@
-public effect Test:
+pub effect Test:
     matched(one: int32, two: int32)
     mismatched(one: int32)
 
 
-public function main():
+pub def main():
     do:
         pass
     

@@ -1,29 +1,29 @@
-public struct Adt:
+pub struct Adt:
     pass
 
 
-implements Adt:
+impl Adt:
     pass
 
 
-public struct AdtWithGenerics[T]:
+pub struct AdtWithGenerics[T]:
     pass
 
 
-implements[T] AdtWithGenerics[T]:
+impl[T] AdtWithGenerics[T]:
     pass
 
 
-implements AdtWithGenerics[int32]:
+impl AdtWithGenerics[int32]:
     pass
 
 
-implements AdtWithGenerics[U]:
+impl AdtWithGenerics[U]:
     pass
 
 
-public type BehindType[T] = AdtWithGenerics[(T, T)]
+pub type BehindType[T] = AdtWithGenerics[(T, T)]
 
 
-implements BehindType[int32]:
+impl BehindType[int32]:
     pass

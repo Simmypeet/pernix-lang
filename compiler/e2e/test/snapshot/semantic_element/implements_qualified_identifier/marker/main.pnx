@@ -1,10 +1,10 @@
-public marker Test[T]
+pub marker Test[T]
 
 
-final implements Test[int32]:
-    public function someFunction():
+final impl Test[int32]:
+    pub def someFunction():
         pass
 
 
 # marker implementations must always be final
-implements Test[float32]
+impl Test[float32]

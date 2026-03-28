@@ -1,6 +1,6 @@
-private struct InAccessible:
+priv struct InAccessible:
     pass
     
 
-private struct AnotherInAccessible:
+priv struct AnotherInAccessible:
     pass

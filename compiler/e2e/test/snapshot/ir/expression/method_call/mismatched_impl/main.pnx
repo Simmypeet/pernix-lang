@@ -1,17 +1,17 @@
-public struct Pair[T, U]:
-    public first: T
-    public second: U
+pub struct Pair[T, U]:
+    pub first: T
+    pub second: U
 
 
-implements[T] Pair[T, T]:
-    public function swap(self: this) -> this:
+impl[T] Pair[T, T]:
+    pub def swap(self: this) -> this:
         return this {
             first: self.second,
             second: self.first,
         }
 
 
-public function main():
+pub def main():
     let a = Pair { first: true, second: 32 }
     let b = a.swap()
     

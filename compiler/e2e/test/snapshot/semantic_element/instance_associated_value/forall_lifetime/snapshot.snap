@@ -4,10 +4,10 @@ expression: run
 ---
 stderr:
 [error]: mismatched trait reference
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/instance_associated_value/forall_lifetime/main.pnx:19:36
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/instance_associated_value/forall_lifetime/main.pnx:19:32
    │
-19 │     instance I: for['a] Test['a] = MyTest['x]
-   ╰╴                                   ━━━━━━━━━━ instance `main::MyTest['x]` implements `main::Test['x]` but `main::Test['∀0]` was expected
+19 │     inst I: for['a] Test['a] = MyTest['x]
+   ╰╴                               ━━━━━━━━━━ instance `main::MyTest['x]` implements `main::Test['x]` but `main::Test['∀0]` was expected
 
 [error]: Compilation aborted due to 1 error(s)
 

@@ -4,34 +4,34 @@ expression: run
 ---
 stderr:
 [error]: the symbol cannot be implemented
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/invalid_symbol/main.pnx:16:12
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/invalid_symbol/main.pnx:16:6
    │
-16 │ implements Direction::North:
-   │            ━━━━━━━━━━━━━━━━ `variant main::Direction::North` cannot be implemented
+16 │ impl Direction::North:
+   │      ━━━━━━━━━━━━━━━━ `variant main::Direction::North` cannot be implemented
    │
    ╰ help: only `marker`, `enum`, or `struct` can be implemented
 
 [error]: the symbol cannot be implemented
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/invalid_symbol/main.pnx:20:12
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/invalid_symbol/main.pnx:20:6
    │
-20 │ implements math:
-   │            ━━━━ `module main::math` cannot be implemented
+20 │ impl math:
+   │      ━━━━ `module main::math` cannot be implemented
    │
    ╰ help: only `marker`, `enum`, or `struct` can be implemented
 
 [error]: the type cannot be implemented
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/invalid_symbol/main.pnx:35:19
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/invalid_symbol/main.pnx:35:13
    │
-35 │ implements['a, T] Reference['a, T]:
-   │                   ━━━━━━━━━━━━━━━━ the type `&'a T` cannot be implemented
+35 │ impl['a, T] Reference['a, T]:
+   │             ━━━━━━━━━━━━━━━━ the type `&'a T` cannot be implemented
    │
    ╰ help: only `enum`, or `struct` can be implemented
 
 [error]: the type cannot be implemented
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/invalid_symbol/main.pnx:42:19
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/invalid_symbol/main.pnx:42:13
    │
-42 │ implements['a, T] MutableReference['a, T]:
-   │                   ━━━━━━━━━━━━━━━━━━━━━━━ the type `&'a mut T` cannot be implemented
+42 │ impl['a, T] MutableReference['a, T]:
+   │             ━━━━━━━━━━━━━━━━━━━━━━━ the type `&'a mut T` cannot be implemented
    │
    ╰ help: only `enum`, or `struct` can be implemented
 

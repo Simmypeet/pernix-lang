@@ -1,4 +1,4 @@
-public function main():
+pub def main():
     let .. = loop 'outer:
         break 'outer 32
         

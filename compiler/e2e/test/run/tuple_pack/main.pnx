@@ -3,48 +3,48 @@
 
 
 extern "C":
-    public function printf(format: &uint8, ...) -> int32
-    public function scanf(format: &uint8, ...) -> int32
+    pub def printf(format: &uint8, ...) -> int32
+    pub def scanf(format: &uint8, ...) -> int32
 
 
-public trait Add[T]:
-    public function add(a: T, b: T) -> T
+pub trait Add[T]:
+    pub def add(a: T, b: T) -> T
 
 
-public instance Int32Add: Add[int32]:
-    function add(a: int32, b: int32) -> int32:
+pub inst Int32Add: Add[int32]:
+    def add(a: int32, b: int32) -> int32:
         return a + b
 
 
-public trait SumTuple[T: tuple]:
-    public type Output
+pub trait SumTuple[T: tuple]:
+    pub type Output
 
-    public function sum(elements: T) -> this::Output
+    pub def sum(elements: T) -> this::Output
 
 
-public instance BaseCase[T, instance A: Add[T]]: SumTuple[(T,)]:
+pub inst BaseCase[T, inst A: Add[T]]: SumTuple[(T,)]:
     type Output = T
 
-    function sum(elements: (T,)) -> this::Output:
+    def sum(elements: (T,)) -> this::Output:
         return elements.0
 
 
-public instance RecursiveCase[
+pub inst RecursiveCase[
     T,
     Rest: tuple,
-    instance A: Add[T],
-    instance S: SumTuple[Rest]
+    inst A: Add[T],
+    inst S: SumTuple[Rest]
 ]: SumTuple[(T, ...Rest)]:
     where:
         S::Output = T
 
     type Output = T
 
-    function sum((first, ...rest): (T, ...Rest)) -> this::Output:
+    def sum((first, ...rest): (T, ...Rest)) -> this::Output:
         return A::add(first, S::sum(rest))
 
 
-public function main():
+pub def main():
     let mut nums = (
         0i32,
         0i32,

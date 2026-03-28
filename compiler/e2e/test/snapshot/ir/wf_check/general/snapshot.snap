@@ -9,10 +9,10 @@ stderr:
 13 │     let x = MyStruct { field: 5 }
    ╰╴            ━━━━━━━━━━━━━━━━━━━━━
 [note]: the required predicate is declared here
-  ╭▸ compiler/e2e/test/snapshot/ir/wf_check/general/main.pnx:4:27
+  ╭▸ compiler/e2e/test/snapshot/ir/wf_check/general/main.pnx:4:24
   │
-4 │ public struct MyStruct[T: ImpossibleMarker]:
-  ╰╴                          ━━━━━━━━━━━━━━━━
+4 │ pub struct MyStruct[T: ImpossibleMarker]:
+  ╰╴                       ━━━━━━━━━━━━━━━━
 
 [error]: the predicate `marker main::ImpossibleMarker[int32]` is not satisfied
    ╭▸ compiler/e2e/test/snapshot/ir/wf_check/general/main.pnx:14:13
@@ -20,10 +20,10 @@ stderr:
 14 │     let y = MyEnum::Variant(10)
    ╰╴            ━━━━━━━━━━━━━━━━━━━
 [note]: the required predicate is declared here
-  ╭▸ compiler/e2e/test/snapshot/ir/wf_check/general/main.pnx:8:23
+  ╭▸ compiler/e2e/test/snapshot/ir/wf_check/general/main.pnx:8:20
   │
-8 │ public enum MyEnum[T: ImpossibleMarker]:
-  ╰╴                      ━━━━━━━━━━━━━━━━
+8 │ pub enum MyEnum[T: ImpossibleMarker]:
+  ╰╴                   ━━━━━━━━━━━━━━━━
 
 [error]: the predicate `T: tuple` is not satisfied
    ╭▸ compiler/e2e/test/snapshot/ir/wf_check/general/main.pnx:15:23

@@ -1,13 +1,13 @@
 extern "C":
-    public function printf(format: &uint8, ...) -> int32
+    pub def printf(format: &uint8, ...) -> int32
 
 
-public enum Option[T]:
+pub enum Option[T]:
     Some(T)
     None
 
 
-public function main():
+pub def main():
     let value = ()
     let option = Option::Some(&value)
 

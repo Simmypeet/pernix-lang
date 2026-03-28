@@ -42,12 +42,12 @@ pub mod arbitrary;
 pub enum Keyword {
     /// `match` keyword.
     Match,
-    /// `public` keyword.
-    Public,
+    /// `pub` keyword.
+    Pub,
     /// `struct` keyword.
     Struct,
-    /// `implements` keyword.
-    Implements,
+    /// `impl` keyword.
+    Impl,
     /// `let` keyword.
     Let,
     /// `const` keyword.
@@ -108,8 +108,8 @@ pub enum Keyword {
     Express,
     /// `enum` keyword.
     Enum,
-    /// `private` keyword.
-    Private,
+    /// `priv` keyword.
+    Priv,
     /// `internal` keyword.
     Internal,
     /// `module` keyword.
@@ -126,8 +126,8 @@ pub enum Keyword {
     Trait,
     /// `import` keyword.
     Import,
-    /// `function` keyword.
-    Function,
+    /// `def` keyword.
+    Def,
     /// `unsafe` keyword.
     Unsafe,
     /// `for` keyword
@@ -174,8 +174,8 @@ pub enum Keyword {
     Resume,
     /// `given` keyword.
     Given,
-    /// `instance` keyword.
-    Instance,
+    /// `inst` keyword.
+    Inst,
 }
 
 /// A static map that maps a string representation of a keyword to its
@@ -226,14 +226,14 @@ impl Keyword {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::For => "for",
-            Self::Function => "function",
+            Self::Def => "def",
             Self::As => "as",
             Self::Enum => "enum",
             Self::Struct => "struct",
             Self::Express => "express",
             Self::Loop => "loop",
-            Self::Public => "public",
-            Self::Implements => "implements",
+            Self::Pub => "pub",
+            Self::Impl => "impl",
             Self::Let => "let",
             Self::Const => "const",
             Self::If => "if",
@@ -260,7 +260,7 @@ impl Keyword {
             Self::Isize => "isize",
             Self::And => "and",
             Self::Or => "or",
-            Self::Private => "private",
+            Self::Priv => "priv",
             Self::Internal => "internal",
             Self::Module => "module",
             Self::Delete => "delete",
@@ -292,7 +292,7 @@ impl Keyword {
             Self::Scope => "scope",
             Self::Resume => "resume",
             Self::Given => "given",
-            Self::Instance => "instance",
+            Self::Inst => "inst",
         }
     }
 }

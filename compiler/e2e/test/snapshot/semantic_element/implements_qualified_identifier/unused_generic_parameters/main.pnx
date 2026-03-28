@@ -1,34 +1,34 @@
-public enum Option[T]:
+pub enum Option[T]:
     pass
 
 
-implements[T, U] Option[T]:  # U is unused
+impl[T, U] Option[T]:  # U is unused
     pass
 
 
-implements[T, U] Option[(T,)]: # U is unused
+impl[T, U] Option[(T,)]: # U is unused
     pass
 
 
-implements[T, U] Option[(Option[T], U)]: # all used
+impl[T, U] Option[(Option[T], U)]: # all used
     pass
 
 
-public trait Iterator:
-    public type Item[T]
+pub trait Iterator:
+    pub type Item[T]
 
 
 # error T and I is not inferrable
-implements[T, instance I: Iterator] Option[I::Item[T]]:
+impl[T, inst I: Iterator] Option[I::Item[T]]:
     pass
 
 
-implements['a, 'b, T: 'b] Option[&'a &'b T]: # all used
+impl['a, 'b, T: 'b] Option[&'a &'b T]: # all used
     where:
         'b: 'a
 
     pass
 
 
-implements['a, 'b, T: 'a] Option[&'a T]: # 'b is unused
+impl['a, 'b, T: 'a] Option[&'a T]: # 'b is unused
     pass

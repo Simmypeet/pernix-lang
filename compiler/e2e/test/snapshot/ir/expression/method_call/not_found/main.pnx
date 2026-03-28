@@ -1,3 +1,3 @@
-public function test():
+pub def test():
     let a = 64
     let b = a.nonExistingMethod()

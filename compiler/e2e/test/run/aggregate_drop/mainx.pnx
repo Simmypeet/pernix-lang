@@ -4,53 +4,53 @@
 from core import Drop, Copy
 
 extern "C":
-    public function printf(format: &uint8, ...) -> int32
-    public function scanf(format: &uint8, ...) -> int32
+    pub def printf(format: &uint8, ...) -> int32
+    pub def scanf(format: &uint8, ...) -> int32
 
 
-public struct LoudDrop:
-    private value: int32
+pub struct LoudDrop:
+    priv value: int32
 
 
-final implements Drop[LoudDrop]:
-    function drop(self: &mut LoudDrop):
+final impl Drop[LoudDrop]:
+    def drop(self: &mut LoudDrop):
         unsafe scope:
             printf(&"Dropping %d\n\0".[0], self.value)
     
 
-final implements Copy[LoudDrop] delete
+final impl Copy[LoudDrop] delete
 
 
-public struct Pair[T, U]:
-    private first: T
-    private second: U
+pub struct Pair[T, U]:
+    priv first: T
+    priv second: U
 
 
-public enum Option[T]:
+pub enum Option[T]:
     Some(T)
     None
 
 
-implements[T] Option[T]:
-    public function unwrap(self: this) -> T:
+impl[T] Option[T]:
+    pub def unwrap(self: this) -> T:
         match self:
             case Some(value): return value
             case None: panic
     
 
-    public function asRef(self: &this) -> Option[&T]:
+    pub def asRef(self: &this) -> Option[&T]:
         match self:
             case Some(value): return Option::Some(value)
             case None: return Option::None
 
 
-    public function asMutable(self: &mut this) -> Option[&mut T]:
+    pub def asMutable(self: &mut this) -> Option[&mut T]:
         match self:
             case Some(value): return Option::Some(value)
             case None: return Option::None
 
 
-public function main():
+pub def main():
     let mut inTuple = (LoudDrop { value: 0 }, LoudDrop { value: 0 })
     let mut inArray = [LoudDrop { value: 0 }, LoudDrop { value: 0 }]
     let mut inStruct = Pair {

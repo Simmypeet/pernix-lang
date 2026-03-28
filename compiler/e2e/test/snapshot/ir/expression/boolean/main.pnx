@@ -1,4 +1,4 @@
 # what could go wrong
-public function main():
+pub def main():
     true
     false

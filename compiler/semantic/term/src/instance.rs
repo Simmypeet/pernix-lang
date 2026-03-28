@@ -31,10 +31,10 @@ use crate::{
 #[cfg(any(test, feature = "arbitrary"))]
 pub mod arbitrary;
 
-/// The `TraitRef` refers to a trait that an instance implements.
+/// The `TraitRef` refers to a trait that an inst implements.
 ///
 /// This is analogous to "expression" has a specific "type". In this case, the
-/// "instance" implements a specific "trait".
+/// "inst" implements a specific "trait".
 #[derive(
     Debug,
     Clone,
@@ -98,10 +98,10 @@ impl TraitRef {
     }
 }
 
-/// Refers to a terrm that is associated with an instance.
+/// Refers to a terrm that is associated with an inst.
 ///
-/// This could be any term that is associated with an instance, such as "type"
-/// or even "instance" associated with an instance.
+/// This could be any term that is associated with an inst, such as "type"
+/// or even "inst" associated with an inst.
 #[derive(
     Debug,
     Clone,

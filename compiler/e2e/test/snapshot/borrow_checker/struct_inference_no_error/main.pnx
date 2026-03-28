@@ -1,13 +1,13 @@
-public struct MyPair[T, U]:
-    public first: T
-    public second: U
+pub struct MyPair[T, U]:
+    pub first: T
+    pub second: U
 
 
-public function print[T](value: T):
+pub def print[T](value: T):
     pass
 
 
-public function main():
+pub def main():
     let mut outer = 32
 
     scope: 

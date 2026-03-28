@@ -1,23 +1,23 @@
-public module moduleSymbol:
+pub module moduleSymbol:
     pass
 
 
-public type MyType = int32
+pub type MyType = int32
 
 
-public struct MyStruct:
-    public field: int32
+pub struct MyStruct:
+    pub field: int32
 
 
-public function myFunction():
+pub def myFunction():
     pass
 
 
-public enum MyEnum:
+pub enum MyEnum:
     Simple
 
 
-public function main():
+pub def main():
     moduleSymbol
     MyStruct
     myFunction

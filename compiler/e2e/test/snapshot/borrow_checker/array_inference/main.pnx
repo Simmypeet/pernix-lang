@@ -1,7 +1,7 @@
-public function consume[T](..: T):
+pub def consume[T](..: T):
     pass
 
 
-public function test():
+pub def test():
     let mut x = 0
     let array = [&mut x, &mut x]
