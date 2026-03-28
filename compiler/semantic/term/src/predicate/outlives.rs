@@ -41,6 +41,12 @@ impl<T> Outlives<T> {
         contains_error(&self.operand)
     }
 
+    pub fn replace_forall_bound_with_static(&mut self) {
+        if self.bound.is_forall() {
+            self.bound = Lifetime::Static;
+        }
+    }
+
     /// Applies a instantiation to the [`Outlives::operand`] and
     /// [`Outlives::bound`].
     pub fn instantiate(&mut self, instantiation: &Instantiation)

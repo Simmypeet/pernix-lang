@@ -42,6 +42,7 @@ pub enum Diagnostic {
     AccessWhileMutablyBorrowed(AccessWhileMutablyBorrowed),
     SubtypeIncompatible(SubtypeIncompatible),
     SubtypeForallLifetimeError(SubtypeForallLifetimeError),
+    FroalLifetimeError(ForallLifetimeError),
 }
 
 impl Report for Diagnostic {
@@ -56,6 +57,7 @@ impl Report for Diagnostic {
             Self::AccessWhileMutablyBorrowed(x) => x.report(engine).await,
             Self::SubtypeIncompatible(x) => x.report(engine).await,
             Self::SubtypeForallLifetimeError(x) => x.report(engine).await,
+            Self::FroalLifetimeError(x) => x.report(engine).await,
         }
     }
 }
@@ -547,5 +549,45 @@ impl From<UnsatisfiedPredicate> for Diagnostic {
 impl From<PredicateSatisfiabilityOverflow> for Diagnostic {
     fn from(value: PredicateSatisfiabilityOverflow) -> Self {
         Self::TypeSystem(value.into())
+    }
+}
+
+/// The subtyping failed due to constraints on forall lifetimes.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+)]
+pub struct ForallLifetimeError {
+    /// The span where the mismatch occurred.
+    pub span: RelativeSpan,
+}
+
+impl Report for ForallLifetimeError {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        Rendered::builder()
+            .message("found errors related to forall lifetimes")
+            .severity(Severity::Error)
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .build(),
+            )
+            .help_message(
+                "we're very sorry, but the error message related to forall \
+                 lifetimes is not very user-friendly yet. Please check the \
+                 diagnostics for the type system for more details on the \
+                 error."
+                    .to_string(),
+            )
+            .build()
     }
 }

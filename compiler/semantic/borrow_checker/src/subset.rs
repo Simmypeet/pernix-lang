@@ -1,15 +1,17 @@
 use std::ops::Deref;
 
+use bon::bon;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_arena::ID;
+use pernixc_handler::Handler;
 use pernixc_hash::{FxHashMap, FxHashSet};
 use pernixc_ir::{
     control_flow_graph::{Block, Point},
     instruction::{Instruction, RegisterAssignment},
     value::{
         TypeOf, Value,
-        register::{Assignment, Register},
+        register::{Assignment, Register, subtype::Subtype},
     },
 };
 use pernixc_lexical::tree::RelativeSpan;
@@ -25,15 +27,20 @@ use pernixc_term::{
     inference,
     lifetime::{ElidedLifetimeID, Lifetime},
     predicate::Predicate,
+    r#type::Type,
     visitor::RecursiveIterator,
 };
 use pernixc_transitive_closure::TransitiveClosure;
 use pernixc_type_system::{
     UnrecoverableError, constraints::Constraints,
-    environment::get_active_premise, normalizer::Normalizer,
+    environment::get_active_premise, lifetime_constraint::LifetimeConstraint,
+    normalizer::Normalizer,
 };
 
-use crate::{NonStaticUniversalRegion, Region, UniversalRegion, context};
+use crate::{
+    NonStaticUniversalRegion, Region, UniversalRegion, context,
+    diagnostic::{Diagnostic, ForallLifetimeError, SubtypeForallLifetimeError},
+};
 
 mod array;
 mod borrow;
@@ -266,6 +273,117 @@ pub struct Changes {
     /// The `a = b` will produce an `OverwrittenRegion` change, and the region
     /// that appears here is `'0`.
     overwritten_regions: FxHashSet<Region>,
+}
+
+#[bon]
+impl Changes {
+    #[builder(finish_fn = build)]
+    pub fn builder(
+        subtype_result: Option<Subtype>,
+        lifetime_constraints: Option<Constraints>,
+        overwritten_address_type: Option<&Type>,
+        borrow_created: Option<(ID<Register>, inference::Variable<Lifetime>)>,
+        instantiation_span: RelativeSpan,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Self {
+        let subtype_constraints = subtype_result.map_or_else(
+            || None,
+            |subtype| match subtype {
+                Subtype::Succeeded(constraints) => Some(constraints),
+
+                Subtype::Incompatible { found_type, expected_type } => panic!(
+                    "in borrow checking, all subtyping should be valid: found \
+                     {found_type:?}, expected {expected_type:?}"
+                ),
+
+                Subtype::ForallLifetimeError { found_type, expected_type } => {
+                    handler.receive(Diagnostic::SubtypeForallLifetimeError(
+                        SubtypeForallLifetimeError {
+                            span: instantiation_span,
+                            found_type,
+                            expected_type,
+                        },
+                    ));
+
+                    None
+                }
+            },
+        );
+
+        let mut subset_relations = FxHashSet::default();
+
+        for x in lifetime_constraints
+            .into_iter()
+            .flatten()
+            .chain(subtype_constraints.into_iter().flatten())
+        {
+            match x {
+                LifetimeConstraint::LifetimeOutlives(mut outlives) => {
+                    outlives.replace_forall_bound_with_static();
+
+                    if outlives.operand.is_forall() {
+                        handler.receive(Diagnostic::FroalLifetimeError(
+                            ForallLifetimeError { span: instantiation_span },
+                        ));
+                        continue;
+                    }
+
+                    let (Some(from), Some(to)) = (
+                        Region::try_from(outlives.operand).ok(),
+                        Region::try_from(outlives.bound).ok(),
+                    ) else {
+                        continue;
+                    };
+
+                    subset_relations.insert((from, to, instantiation_span));
+                }
+
+                LifetimeConstraint::TypeOutlives(mut outlives) => {
+                    outlives.replace_forall_bound_with_static();
+
+                    let Some(to) = Region::try_from(outlives.bound).ok() else {
+                        continue;
+                    };
+
+                    for operand_region in
+                        RecursiveIterator::new(&outlives.operand)
+                            .filter_map(|x| x.0.into_lifetime().ok())
+                    {
+                        if operand_region.is_forall() {
+                            handler.receive(Diagnostic::FroalLifetimeError(
+                                ForallLifetimeError {
+                                    span: instantiation_span,
+                                },
+                            ));
+                            continue;
+                        }
+
+                        let Some(from) =
+                            Region::try_from(operand_region.clone()).ok()
+                        else {
+                            continue;
+                        };
+
+                        subset_relations.insert((from, to, instantiation_span));
+                    }
+                }
+            }
+        }
+
+        Self {
+            subset_relations,
+            borrow_created,
+            overwritten_regions: overwritten_address_type.map_or_else(
+                FxHashSet::default,
+                |address_ty| {
+                    RecursiveIterator::new(address_ty)
+                        .filter_map(|x| x.0.into_lifetime().ok())
+                        .filter_map(|x| Region::try_from(x.clone()).ok())
+                        .collect::<FxHashSet<_>>()
+                },
+            ),
+        }
+    }
 }
 
 impl<N: Normalizer> Builder<'_, N> {

@@ -32,7 +32,6 @@ pub struct Context<'a, N> {
     #[get = "pub"]
     reachability: pernixc_ir::control_flow_graph::Reachability,
 
-    /// Cached information about registers
     #[get = "pub"]
     register_infos: RegisterInfos,
 
