@@ -23,7 +23,6 @@ pernixc_ir = { path = "../ir" }
 pernixc_semantic_element = { path = "../semantic_element" }
 pernixc_hash = { path = "../../base/hash" }
 pernixc_parser = { path = "../../syntax/parser" }
-pernixc_corelib_impl = { path = "../corelib_impl" }
 pernixc_qbice.path = "../../base/qbice"
 qbice.workspace = true
 linkme.workspace = true

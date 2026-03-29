@@ -7,6 +7,7 @@ use diagnostic::{
     UseBeforeInitialization,
 };
 use pernixc_arena::ID;
+use pernixc_corelib::get_copy_marker_id;
 use pernixc_handler::{Handler, Storage};
 use pernixc_ir::{
     FunctionIR, Values,
@@ -26,7 +27,7 @@ use pernixc_ir::{
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::parameter::get_parameters;
-use pernixc_symbol::{kind::get_kind, name::get_by_qualified_name};
+use pernixc_symbol::kind::get_kind;
 use pernixc_target::Global;
 use pernixc_term::{
     generic_arguments::GenericArguments,
@@ -139,11 +140,8 @@ async fn handle_load<N: Normalizer>(
                 })
                 .get_state_summary()
         } else {
-            let copy_marker = val_environment
-                .tracked_engine()
-                .get_by_qualified_name(pernixc_corelib_impl::copy::MARKER_SEQUENCE)
-                .await
-                .unwrap();
+            let copy_marker =
+                val_environment.tracked_engine().get_copy_marker_id().await;
 
             // no need to move
             let storage =

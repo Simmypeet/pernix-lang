@@ -33,8 +33,34 @@ pub async fn initialize_corelib(input_session: &mut InputSession) {
     };
 
     let copy_marker_id = initializer.initialize_copy_marker().await;
-    let drop_trait_id = initializer.initialize_drop_trait(copy_marker_id).await;
+    let (drop_trait_id, drop_function_id) =
+        initializer.initialize_drop_trait(copy_marker_id).await;
     let intrinsic_ids = initializer.initialize_intrinsics().await;
+
+    // Set up the pernixc_corelib query values
+    initializer
+        .input_session
+        .set_input(
+            pernixc_corelib::CopyMarkerKey,
+            Global::new(pernixc_target::TargetID::CORE, copy_marker_id),
+        )
+        .await;
+
+    initializer
+        .input_session
+        .set_input(
+            pernixc_corelib::DropTraitKey,
+            Global::new(pernixc_target::TargetID::CORE, drop_trait_id),
+        )
+        .await;
+
+    initializer
+        .input_session
+        .set_input(
+            pernixc_corelib::DropFunctionKey,
+            Global::new(pernixc_target::TargetID::CORE, drop_function_id),
+        )
+        .await;
 
     // corelib doesn't link to any other target.
     initializer

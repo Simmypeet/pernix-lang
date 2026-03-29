@@ -39,6 +39,8 @@ pub const DROP_FUNCTION_SEQUENCE: [&str; 3] = ["core", "Drop", "drop"];
 impl CoreLibInitializer<'_> {
     /// Creates a `Drop` trait in the core library.
     ///
+    /// Returns a tuple of `(drop_trait_id, drop_function_id)`.
+    ///
     /// ```txt
     /// public trait Drop[T]:
     ///     public function drop['a](self: &'a mut T):
@@ -50,7 +52,7 @@ impl CoreLibInitializer<'_> {
     pub async fn initialize_drop_trait(
         &mut self,
         copy_marker_id: pernixc_symbol::SymbolID,
-    ) -> pernixc_symbol::SymbolID {
+    ) -> (pernixc_symbol::SymbolID, pernixc_symbol::SymbolID) {
         let (drop_trait_id, drop_function_id) = {
             let drop_trait_id = TargetID::CORE.make_global(
                 calculate_qualified_name_id_with_given_seed(
@@ -276,6 +278,6 @@ impl CoreLibInitializer<'_> {
             )
             .await;
 
-        drop_trait_id.id
+        (drop_trait_id.id, drop_function_id.id)
     }
 }

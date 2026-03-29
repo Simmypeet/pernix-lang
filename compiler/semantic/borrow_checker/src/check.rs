@@ -1,3 +1,4 @@
+use pernixc_corelib::get_copy_marker_id;
 use pernixc_ir::{
     address::{Address, Memory, Offset, Tuple},
     control_flow_graph::Point,
@@ -9,7 +10,7 @@ use pernixc_ir::{
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_semantic_element::parameter::get_parameters;
-use pernixc_symbol::{kind::get_kind, name::get_by_qualified_name};
+use pernixc_symbol::kind::get_kind;
 use pernixc_term::{
     generic_arguments::GenericArguments,
     lifetime::Lifetime,
@@ -64,13 +65,8 @@ impl<N: Normalizer> Checker<'_, N> {
             {
                 // TODO: check copy marker
             } else {
-                let copy_marker = self
-                    .tracked_engine()
-                    .get_by_qualified_name(
-                        pernixc_corelib_impl::copy::MARKER_SEQUENCE,
-                    )
-                    .await
-                    .unwrap();
+                let copy_marker =
+                    self.tracked_engine().get_copy_marker_id().await;
 
                 if self
                     .context()

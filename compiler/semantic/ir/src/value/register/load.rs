@@ -1,7 +1,7 @@
 //! Contains the definition of the [`Load`] register.
 
 use getset::{CopyGetters, Getters, MutGetters};
-use pernixc_symbol::name::get_by_qualified_name;
+use pernixc_corelib::get_copy_marker_id;
 use pernixc_term::{
     generic_arguments::GenericArguments,
     predicate::{PositiveMarker, Predicate},
@@ -108,11 +108,8 @@ impl Load {
                     )
                 })?;
 
-            let copy_marker = environment
-                .tracked_engine()
-                .get_by_qualified_name(pernixc_corelib_impl::copy::MARKER_SEQUENCE)
-                .await
-                .unwrap();
+            let copy_marker =
+                environment.tracked_engine().get_copy_marker_id().await;
 
             let predicate = Predicate::PositiveMarker(PositiveMarker::new(
                 copy_marker,

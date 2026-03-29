@@ -48,6 +48,9 @@ pub(super) async fn simplify_drops<
 }
 
 /*
+// Import will be needed when this function is uncommented
+use pernixc_corelib::get_drop_trait_id;
+
 #[allow(
     clippy::uninhabited_references,
     clippy::too_many_lines,
@@ -74,11 +77,8 @@ async fn simplify_drop<N: Normalizer>(
         return Ok(Vec::new());
     }
 
-    let drop_trait_id = environment
-        .tracked_engine()
-        .get_by_qualified_name(pernixc_corelib_impl::drop::DROP_TRAIT_SEQUENCE)
-        .await
-        .unwrap();
+    let drop_trait_id =
+        environment.tracked_engine().get_drop_trait_id().await;
 
     match &ty {
         Type::Symbol(symbol) => {
