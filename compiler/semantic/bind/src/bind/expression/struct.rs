@@ -1,4 +1,4 @@
-use std::collections::hash_map::Entry;
+use std::{collections::hash_map::Entry, ops::Deref};
 
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
@@ -164,7 +164,7 @@ async fn collect_fields(
             };
 
             let field = &fields.fields[field_id];
-            let mut field_ty = field.r#type.clone();
+            let mut field_ty = field.r#type.deref().clone();
 
             instantiation.instantiate(&mut field_ty);
 

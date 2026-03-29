@@ -341,7 +341,8 @@ impl Binder<'_> {
 
                 let fields = self.engine().get_fields(symbol.id()).await;
 
-                let mut field_ty = fields.fields[path.field_id].r#type.clone();
+                let mut field_ty =
+                    fields.fields[path.field_id].r#type.deref().clone();
 
                 instantiation.instantiate(&mut field_ty);
 

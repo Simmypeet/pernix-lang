@@ -192,7 +192,7 @@ async fn process_field(
     let field = Field {
         accessibility: field_accessibility,
         name: field_name.clone(),
-        r#type: field_type,
+        r#type: engine.intern(field_type),
         span: Some(field_syntax.span()),
     };
 

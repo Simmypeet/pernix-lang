@@ -1321,7 +1321,8 @@ impl Scope {
                         .get_mut(&field.id)
                         .unwrap(),
                     {
-                        let mut ty = fields.fields[field.id].r#type.clone();
+                        let mut ty =
+                            fields.fields[field.id].r#type.deref().clone();
 
                         instantiation.instantiate(&mut ty);
 

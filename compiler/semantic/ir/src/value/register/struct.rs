@@ -117,7 +117,8 @@ impl Struct {
 
         for field_id in fields.field_declaration_order.iter().copied() {
             let mut field_ty =
-                fields.fields.get(field_id).unwrap().r#type.clone();
+                fields.fields.get(field_id).unwrap().r#type.deref().clone();
+
             instantiation.instantiate(&mut field_ty);
 
             let initializer = self.get_initializer_by_field_id(field_id);

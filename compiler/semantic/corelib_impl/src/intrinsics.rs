@@ -352,7 +352,7 @@ impl CoreLibInitializer<'_> {
             name: self
                 .input_session
                 .intern_unsized(NODROP_VALUE_FIELD_NAME.to_owned()),
-            r#type: t_ty,
+            r#type: self.input_session.intern(t_ty),
             span: None,
         });
 

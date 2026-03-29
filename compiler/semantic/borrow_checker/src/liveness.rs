@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use enum_as_inner::EnumAsInner;
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
@@ -295,8 +297,13 @@ impl Assigned {
                         .get_mut(&field.id)
                         .unwrap(),
                     {
-                        let mut field_ty =
-                            fields.fields.get(field.id).unwrap().r#type.clone();
+                        let mut field_ty = fields
+                            .fields
+                            .get(field.id)
+                            .unwrap()
+                            .r#type
+                            .deref()
+                            .clone();
 
                         inst.instantiate(&mut field_ty);
 

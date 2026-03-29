@@ -120,12 +120,9 @@ async fn adt_fields_executor(
 
         Kind::Struct => {
             results.extend(
-                engine
-                    .get_fields(adt_id)
-                    .await
-                    .fields
-                    .iter()
-                    .map(|x| FieldType::new(x.1.r#type.clone(), x.1.span)),
+                engine.get_fields(adt_id).await.fields.iter().map(|x| {
+                    FieldType::new(x.1.r#type.deref().clone(), x.1.span)
+                }),
             );
         }
 

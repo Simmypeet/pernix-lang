@@ -3,6 +3,7 @@
 use std::{
     borrow::Cow,
     collections::{BTreeSet, HashMap},
+    ops::Deref,
     rc::Rc,
 };
 
@@ -372,7 +373,7 @@ impl<'ctx> Context<'_, 'ctx> {
             let llvm_field_ty = Box::pin(
                 self.get_type(
                     self.monomorphize_term(
-                        field.r#type.clone(),
+                        field.r#type.deref().clone(),
                         &instantiation,
                     )
                     .await,

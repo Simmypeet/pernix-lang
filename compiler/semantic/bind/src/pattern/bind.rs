@@ -603,7 +603,7 @@ impl Binder<'_> {
             };
 
             // instantiation the type
-            let mut field_ty = field_sym.r#type.clone();
+            let mut field_ty = field_sym.r#type.deref().clone();
 
             instantiation.instantiate(&mut field_ty);
 

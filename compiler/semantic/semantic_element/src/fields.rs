@@ -33,7 +33,7 @@ pub struct Field {
     pub name: Interned<str>,
 
     /// The type of the field.
-    pub r#type: Type,
+    pub r#type: Interned<Type>,
 
     /// Location of where the field is declared.
     pub span: Option<RelativeSpan>,

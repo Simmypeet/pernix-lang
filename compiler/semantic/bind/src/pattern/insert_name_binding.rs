@@ -1,5 +1,7 @@
 //! Contains the logic for collecting name bindings from patterns
 
+use std::ops::Deref;
+
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
 use pernixc_ir::{
@@ -303,7 +305,7 @@ impl Binder<'_> {
         for field_id in fields.field_declaration_order.iter().copied() {
             let mut binding_cloned = binding.clone();
             let mut field_ty =
-                fields.fields.get(field_id).unwrap().r#type.clone();
+                fields.fields.get(field_id).unwrap().r#type.deref().clone();
 
             instantiation.instantiate(&mut field_ty);
 

@@ -589,7 +589,7 @@ impl TypeOf<&Address> for Values {
                     environment.tracked_engine().get_fields(symbol.id()).await;
 
                 let mut field_ty =
-                    fields.fields[field_address.id].r#type.clone();
+                    fields.fields[field_address.id].r#type.deref().clone();
 
                 inst.instantiate(&mut field_ty);
 
