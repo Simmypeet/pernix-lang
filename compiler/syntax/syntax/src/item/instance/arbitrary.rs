@@ -54,7 +54,7 @@ impl IndentDisplay for Signature {
         formatter: &mut std::fmt::Formatter<'_>,
         indent: usize,
     ) -> std::fmt::Result {
-        write!(formatter, "instance {}", self.identifier)?;
+        write!(formatter, "inst {}", self.identifier)?;
 
         if let Some(generic_parameters) = &self.generic_parameters {
             generic_parameters.indent_fmt(formatter, indent)?;

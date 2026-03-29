@@ -68,7 +68,7 @@ impl IndentDisplay for Signature {
             write!(f, "const ")?;
         }
 
-        write!(f, "implements")?;
+        write!(f, "impl")?;
 
         if let Some(generic_parameters) = &self.generic_parameters {
             generic_parameters.indent_fmt(f, indent)?;

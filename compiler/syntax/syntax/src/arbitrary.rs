@@ -435,11 +435,11 @@ use crate::{expression::arbitrary::Expression, r#type::arbitrary::Type};
 reference! {
     #[derive(Debug, Clone, Copy, derive_more::Display)]
     pub enum AccessModifier for super::AccessModifier {
-        #[display("public")]
+        #[display("pub")]
         #{prop_assert(|output| output.kind == expect::Keyword::Pub)}
         Public,
 
-        #[display("private")]
+        #[display("priv")]
         #{prop_assert(|output| output.kind == expect::Keyword::Priv)}
         Private,
 

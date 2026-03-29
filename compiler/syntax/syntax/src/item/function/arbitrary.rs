@@ -77,7 +77,7 @@ impl IndentDisplay for Signature {
             write!(formatter, "unsafe ")?;
         }
 
-        write!(formatter, "function {}", self.identifier)?;
+        write!(formatter, "def {}", self.identifier)?;
 
         if let Some(generic_parameters) = &self.generic_parameters {
             generic_parameters.indent_fmt(formatter, indent)?;
