@@ -4,7 +4,7 @@ expression: string
 ---
 ```pernix
 implements A:
-    public function implementedFunction[T]() -> int32:
+    public def implementedFunction[T]() -> int32:
         where:
             T: 'static
 ```

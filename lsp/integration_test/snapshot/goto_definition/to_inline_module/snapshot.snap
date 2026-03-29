@@ -7,11 +7,11 @@ expression: string
   "range": {
     "start": {
       "line": 0,
-      "character": 14
+      "character": 11
     },
     "end": {
       "line": 0,
-      "character": 26
+      "character": 23
     }
   }
 }

@@ -24,6 +24,7 @@ members = [
     "compiler/semantic/term",
     "compiler/semantic/type_system",
     "compiler/semantic/resolution",
+    "compiler/semantic/corelib",
     "compiler/semantic/corelib_impl",
     "compiler/semantic/semantic_element",
     "compiler/semantic/semantic_element_impl",

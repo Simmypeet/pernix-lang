@@ -182,12 +182,12 @@ impl LinedFormatter<'_, '_, '_> {
             self.engine.get_closest_module_id(current_site).await;
 
         let accessibility_str = match accessibility {
-            pernixc_symbol::accessibility::Accessibility::Public => "public",
+            pernixc_symbol::accessibility::Accessibility::Public => "pub",
             pernixc_symbol::accessibility::Accessibility::Scoped(id) => {
                 if id == root_module_id {
                     "internal"
                 } else if id == nearest_moodule_id {
-                    "private"
+                    "priv"
                 } else {
                     // should not happen
                     ""

@@ -12,7 +12,7 @@ public struct Test['a, 'b, T, U]:
         tuple T + U
         marker Another[T] + Fizz[U]
 
-    public publicField: T
+    pub publicField: T
     internal privateField: U
     internal internalField: &'a int32
 ```

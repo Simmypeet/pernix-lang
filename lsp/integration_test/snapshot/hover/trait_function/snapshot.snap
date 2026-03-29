@@ -4,5 +4,5 @@ expression: string
 ---
 ```pernix
 public trait SomeTrait[T]:
-    public function traitFunction[U](arg: T) -> U
+    public def traitFunction[U](arg: T) -> U
 ```
