@@ -19,17 +19,17 @@ stderr:
    ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/cyclic_nested/main.pnx:31:10
    │
 31 │     inst T: Require[Option[Box[LinkedList[T]]]],
-   ╰╴         ━ this inst requires the parameter to be resolved
+   ╰╴         ━ this instance requires the parameter to be resolved
 [note]: required because resolving instance parameter `X` for `main::Require[main::Box[main::LinkedList[int32]]]`
    ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/cyclic_nested/main.pnx:18:29
    │
 18 │ pub inst OptionInst[T, inst X: Require[T]]: Require[Option[T]]:
-   ╰╴                            ━ this inst requires the parameter to be resolved
+   ╰╴                            ━ this instance requires the parameter to be resolved
 [note]: required because resolving instance parameter `X` for `main::Require[main::LinkedList[int32]]`
   ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/cyclic_nested/main.pnx:9:26
   │
 9 │ pub inst BoxInst[T, inst X: Require[T]]: Require[Box[T]]:
-  ╰╴                         ━ this inst requires the parameter to be resolved
+  ╰╴                         ━ this instance requires the parameter to be resolved
 
 [error]: Compilation aborted due to 1 error(s)
 

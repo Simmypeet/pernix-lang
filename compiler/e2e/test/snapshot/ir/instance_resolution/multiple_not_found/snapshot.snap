@@ -19,7 +19,7 @@ stderr:
    ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/multiple_not_found/main.pnx:13:10
    │
 13 │     inst X: Require[T], 
-   ╰╴         ━ this inst requires the parameter to be resolved
+   ╰╴         ━ this instance requires the parameter to be resolved
 
 [error]: no instance found for `main::Require[U]`
    ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/multiple_not_found/main.pnx:24:5
@@ -37,7 +37,7 @@ stderr:
    ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/multiple_not_found/main.pnx:14:10
    │
 14 │     inst Y: Require[U]
-   ╰╴         ━ this inst requires the parameter to be resolved
+   ╰╴         ━ this instance requires the parameter to be resolved
 
 [error]: Compilation aborted due to 2 error(s)
 

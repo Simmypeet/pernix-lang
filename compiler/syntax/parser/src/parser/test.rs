@@ -92,7 +92,7 @@ fn check_basic_sequence(basic_sequence: &BasicSequence, expected_name: &str) {
 #[test]
 fn basic_sequence() {
     let mut source_map = SimpleSourceMap::new();
-    let (tree, _) = parse_token_tree(&mut source_map, "public struct Foo;");
+    let (tree, _) = parse_token_tree(&mut source_map, "pub struct Foo;");
 
     let interner = DuplicatingInterner;
     let (tree, errors) = BasicSequence::parse(&tree, &interner);
@@ -107,7 +107,7 @@ fn basic_sequence() {
 #[test]
 fn basic_sequence_missing_semicolon() {
     let mut source_map = SimpleSourceMap::new();
-    let (tree, _) = parse_token_tree(&mut source_map, "public struct Foo");
+    let (tree, _) = parse_token_tree(&mut source_map, "pub struct Foo");
 
     let interner = DuplicatingInterner;
     let (tree, errors) = BasicSequence::parse(&tree, &interner);
@@ -144,10 +144,8 @@ abstract_tree! {
 #[test]
 fn two_basic_sequences() {
     let mut source_map = SimpleSourceMap::new();
-    let (tree, _) = parse_token_tree(
-        &mut source_map,
-        "public struct Foo; public struct Bar;",
-    );
+    let (tree, _) =
+        parse_token_tree(&mut source_map, "pub struct Foo; pub struct Bar;");
 
     let interner = DuplicatingInterner;
     let (tree, errors) = TwoBasicSequences::parse(&tree, &interner);
@@ -187,8 +185,8 @@ abstract_tree! {
 }
 
 const SEQUENCE_WITH_FRAGMENT: &str = "
-public struct Foo: 
-    private bar: int32
+pub struct Foo: 
+    priv bar: int32
 ";
 
 #[test]
