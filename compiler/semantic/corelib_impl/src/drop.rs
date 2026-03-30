@@ -3,7 +3,7 @@
 use pernixc_arena::{Arena, OrderedArena};
 use pernixc_hash::FxHashSet;
 use pernixc_semantic_element::{
-    effect_annotation, elided_lifetime, implemented, implied_predicate,
+    effect_annotation, elided_lifetime, global_instances, implied_predicate,
     parameter::{self, Parameter, Parameters},
     return_type, where_clause,
 };
@@ -270,8 +270,8 @@ impl CoreLibInitializer<'_> {
 
         self.input_session
             .set_input(
-                implemented::InTargetKey {
-                    implementable_id: drop_trait_id,
+                global_instances::Key {
+                    trait_id: drop_trait_id,
                     target_id: TargetID::CORE,
                 },
                 self.input_session.intern(FxHashSet::default()),
