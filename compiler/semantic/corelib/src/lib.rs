@@ -69,3 +69,23 @@ pub struct DropTraitKey;
 #[value(Global<SymbolID>)]
 #[extend(name = get_drop_function_id, by_val)]
 pub struct DropFunctionKey;
+
+/// The key type used with [`TrackedEngine`] to access the `NoDrop` struct
+/// wrapper.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    Query,
+)]
+#[value(Global<SymbolID>)]
+#[extend(name = get_no_drop_struct_id, by_val)]
+pub struct NoDropKey;

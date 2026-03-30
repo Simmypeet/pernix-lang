@@ -61,6 +61,16 @@ pub async fn initialize_corelib(input_session: &mut InputSession) {
             Global::new(pernixc_target::TargetID::CORE, drop_function_id),
         )
         .await;
+    initializer
+        .input_session
+        .set_input(
+            pernixc_corelib::NoDropKey,
+            Global::new(
+                pernixc_target::TargetID::CORE,
+                intrinsic_ids.no_drop_id,
+            ),
+        )
+        .await;
 
     // corelib doesn't link to any other target.
     initializer
