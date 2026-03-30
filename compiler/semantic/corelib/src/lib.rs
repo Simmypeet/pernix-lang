@@ -1,9 +1,9 @@
 //! Provides a clean interface for accessing core library intrinsic symbols.
 //!
 //! This crate exposes queries that allow clients to retrieve symbol IDs for
-//! frequently used intrinsic symbols such as the `Copy` marker and `Drop` trait.
-//! This eliminates the need for clients to manually resolve qualified identifier
-//! sequences, which is fragile and ad-hoc.
+//! frequently used intrinsic symbols such as the `Copy` marker and `Drop`
+//! trait. This eliminates the need for clients to manually resolve qualified
+//! identifier sequences, which is fragile and ad-hoc.
 
 use pernixc_extend::extend;
 use pernixc_symbol::SymbolID;
