@@ -145,6 +145,18 @@ impl<Term> Tuple<Term> {
     pub fn push(&mut self, element: Element<Term>) {
         self.elements.push(element);
     }
+
+    /// Returns the position of the first unpacked element in the tuple, if any.
+    #[must_use]
+    pub fn unpacked_position(&self) -> Option<usize> {
+        self.elements.iter().position(|x| x.is_unpacked)
+    }
+
+    #[must_use]
+    pub const fn len(&self) -> usize { self.elements.len() }
+
+    #[must_use]
+    pub const fn is_empty(&self) -> bool { self.elements.is_empty() }
 }
 
 impl<Term> Default for Tuple<Term> {

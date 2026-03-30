@@ -7,7 +7,29 @@
 //! the product type itself does not implement the `Drop` trait.
 
 use pernixc_handler::Handler;
-use pernixc_ir::{Values, instruction::Instruction, value::Environment};
+use pernixc_hash::FxHashSet;
+use pernixc_ir::{
+    Values,
+    address::{self, Address, Field, Index, Variant},
+    instruction::{Drop, DropUnpackTuple, Instruction},
+    value::{
+        Environment, TypeOf, Value,
+        literal::{Literal, Unreachable},
+    },
+};
+use pernixc_semantic_element::{
+    fields::get_fields, variant::get_variant_associated_type,
+};
+use pernixc_symbol::{
+    kind::{Kind, get_kind},
+    member::get_members,
+};
+use pernixc_target::Global;
+use pernixc_term::{
+    generic_arguments::GenericArguments,
+    instance::TraitRef,
+    r#type::{Primitive, Type},
+};
 use pernixc_type_system::{UnrecoverableError, normalizer::Normalizer};
 
 use crate::diagnostic::Diagnostic;
@@ -17,22 +39,19 @@ pub(super) async fn simplify_drops<
     T: IntoIterator<Item = Instruction>,
     N: Normalizer,
 >(
-    _drop_instructions: T,
-    _values: &Values,
-    _environment: &Environment<'_, N>,
-    _handler: &dyn Handler<Diagnostic>,
+    drop_instructions: T,
+    values: &Values,
+    environment: &Environment<'_, N>,
+    handler: &dyn Handler<Diagnostic>,
 ) -> Result<Vec<Instruction>, UnrecoverableError> {
-    let results = Vec::new();
-    // TODO: implement the logic for simplifying the drop instructions
-
-    /*
+    let mut results = Vec::new();
     for instruction in drop_instructions {
         if let Instruction::Drop(drop) = instruction {
             results.extend(
                 simplify_drop(
                     &drop,
                     values,
-                    &mut HashSet::default(),
+                    &mut FxHashSet::default(),
                     environment,
                     handler,
                 )
@@ -42,14 +61,12 @@ pub(super) async fn simplify_drops<
             results.push(instruction);
         }
     }
-    */
 
     Ok(results)
 }
 
-/*
 // Import will be needed when this function is uncommented
-use pernixc_corelib::get_drop_trait_id;
+use pernixc_corelib::{get_drop_trait_id, get_no_drop_struct_id};
 
 #[allow(
     clippy::uninhabited_references,
@@ -59,7 +76,7 @@ use pernixc_corelib::get_drop_trait_id;
 async fn simplify_drop<N: Normalizer>(
     drop: &Drop,
     values: &Values,
-    visited_types: &mut HashSet<Type>,
+    visited_types: &mut FxHashSet<Type>,
     environment: &Environment<'_, N>,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<Vec<Instruction>, UnrecoverableError> {
@@ -77,52 +94,42 @@ async fn simplify_drop<N: Normalizer>(
         return Ok(Vec::new());
     }
 
-    let drop_trait_id =
-        environment.tracked_engine().get_drop_trait_id().await;
-
     match &ty {
         Type::Symbol(symbol) => {
             let symbol_kind =
-                environment.tracked_engine().get_kind(symbol.id).await;
+                environment.tracked_engine().get_kind(symbol.id()).await;
 
             match symbol_kind {
                 Kind::Struct => {
                     // the `core::NoDrop` intrinsic type never requires drop
-                    if symbol.id.target_id == TargetID::CORE
-                        && symbol.id
-                            == environment
-                                .tracked_engine()
-                                .get_by_qualified_name(["core", "NoDrop"])
-                                .await
-                                .unwrap()
+                    if symbol.id()
+                        == environment
+                            .tracked_engine()
+                            .get_no_drop_struct_id()
+                            .await
                     {
                         visited_types.remove(&ty);
                         return Ok(Vec::new());
                     }
 
-                    let predicate = PositiveTrait::new(
-                        drop_trait_id,
-                        false, /* TODO: use correct boolean value */
-                        GenericArguments {
-                            lifetimes: Vec::new(),
-                            types: vec![ty.clone()],
-                            constants: Vec::new(),
-                        },
+                    let trait_ref = TraitRef::new(
+                        environment.tracked_engine().get_drop_trait_id().await,
+                        GenericArguments::new(
+                            Vec::new(),
+                            vec![ty.clone()],
+                            Vec::new(),
+                            Vec::new(),
+                        ),
                     );
 
                     if environment
                         .type_environment
-                        .query(&predicate)
+                        .resolve_instance(&trait_ref)
                         .await
                         .map_err(|x| {
-                            x.report_as_undecidable_predicate(
-                                Predicate::PositiveTrait(predicate.clone()),
-                                None,
-                                span_of,
-                                &handler,
-                            )
+                            x.report_as_type_check_overflow(span_of, &handler)
                         })?
-                        .is_some()
+                        .is_ok()
                     {
                         visited_types.remove(&ty);
                         return Ok(vec![Instruction::Drop(drop.clone())]);
@@ -130,7 +137,7 @@ async fn simplify_drop<N: Normalizer>(
 
                     let fields = environment
                         .tracked_engine()
-                        .get_fields(symbol.id)
+                        .get_fields(symbol.id())
                         .await;
 
                     let mut instructions = Vec::new();
@@ -161,36 +168,30 @@ async fn simplify_drop<N: Normalizer>(
 
                     Ok(instructions)
                 }
+
                 Kind::Enum => {
                     // if any of the variant requires drop, then we should drop
                     // the entire enum
 
-                    let predicate = PositiveTrait::new(
-                        drop_trait_id,
-                        false, /* TODO: use correct boolean value */
-                        GenericArguments {
-                            lifetimes: Vec::new(),
-                            types: vec![ty.clone()],
-                            constants: Vec::new(),
-                        },
+                    let trait_ref = TraitRef::new(
+                        environment.tracked_engine().get_drop_trait_id().await,
+                        GenericArguments::new(
+                            Vec::new(),
+                            vec![ty.clone()],
+                            Vec::new(),
+                            Vec::new(),
+                        ),
                     );
 
                     if environment
                         .type_environment
-                        .query(&predicate)
+                        .resolve_instance(&trait_ref)
                         .await
                         .map_err(|x| {
-                            x.report_as_undecidable_predicate(
-                                Predicate::PositiveTrait(predicate.clone()),
-                                None,
-                                span_of,
-                                &handler,
-                            )
+                            x.report_as_type_check_overflow(span_of, &handler)
                         })?
-                        .is_none()
+                        .is_ok()
                     {
-                        // continue breaking if any variants requires drop
-                    } else {
                         visited_types.remove(&ty);
                         return Ok(vec![Instruction::Drop(drop.clone())]);
                     }
@@ -198,14 +199,14 @@ async fn simplify_drop<N: Normalizer>(
                     let mut should_drop = false;
                     let member = environment
                         .tracked_engine()
-                        .get_members(symbol.id)
+                        .get_members(symbol.id())
                         .await;
 
                     for variant_id in member
                         .member_ids_by_name
                         .values()
                         .copied()
-                        .map(|x| Global::new(symbol.id.target_id, x))
+                        .map(|x| Global::new(symbol.id().target_id, x))
                     {
                         // recursively simplify the drop instructions
                         let Some(_variant_sym) = environment
@@ -252,8 +253,7 @@ async fn simplify_drop<N: Normalizer>(
         }
 
         Type::Tuple(tuple) => {
-            let unpacked_position =
-                tuple.elements.iter().position(|x| x.is_unpacked);
+            let unpacked_position = tuple.unpacked_position();
 
             let mut instructions = Vec::new();
 
@@ -283,13 +283,13 @@ async fn simplify_drop<N: Normalizer>(
                         DropUnpackTuple {
                             tuple_address: drop.address.clone(),
                             before_unpacked_element_count: packed_position,
-                            after_unpacked_element_count: tuple.elements.len()
+                            after_unpacked_element_count: tuple.len()
                                 - packed_position
                                 - 1,
                         },
                     ));
 
-                    for i in packed_position + 1..tuple.elements.len() {
+                    for i in packed_position + 1..tuple.len() {
                         instructions.extend(
                             Box::pin(simplify_drop(
                                 &Drop {
@@ -298,7 +298,7 @@ async fn simplify_drop<N: Normalizer>(
                                             drop.address.clone(),
                                         ),
                                         offset: address::Offset::FromEnd(
-                                            tuple.elements.len() - i - 1,
+                                            tuple.len() - i - 1,
                                         ),
                                     }),
                                 },
@@ -313,7 +313,7 @@ async fn simplify_drop<N: Normalizer>(
                 }
 
                 None => {
-                    for (index, _) in tuple.elements.iter().enumerate() {
+                    for index in 0..tuple.len() {
                         instructions.extend(
                             Box::pin(simplify_drop(
                                 &Drop {
@@ -381,7 +381,7 @@ async fn simplify_drop<N: Normalizer>(
             }
         }
 
-        Type::TraitMember(_) | Type::Parameter(_) => {
+        Type::InstanceAssociated(_) | Type::Parameter(_) => {
             visited_types.remove(&ty);
             Ok(vec![Instruction::Drop(drop.clone())])
         }
@@ -391,4 +391,3 @@ async fn simplify_drop<N: Normalizer>(
         }
     }
 }
-*/
