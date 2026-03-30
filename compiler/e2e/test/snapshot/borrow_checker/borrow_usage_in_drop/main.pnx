@@ -10,7 +10,7 @@ impl[T] DropWrapper[T]:
         return this { value: value }
 
 
-impl[T] Drop[DropWrapper[T]]:
+priv inst DropWrapperDrop[T]: Drop[DropWrapper[T]]:
     def drop['b](self: &'b mut DropWrapper[T]):
         where:
             DropWrapper[T]: 'b 
