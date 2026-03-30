@@ -70,6 +70,16 @@ pub enum ZipRef<'a> {
 }
 
 impl GenericArguments {
+    #[must_use]
+    pub fn new_single_type(ty: Type) -> Self {
+        Self {
+            lifetimes: Vec::new(),
+            types: vec![ty],
+            constants: Vec::new(),
+            instancces: Vec::new(),
+        }
+    }
+
     /// Returns the lifetimes supplied to the term.
     #[must_use]
     pub fn lifetimes(&self) -> &[Lifetime] { &self.lifetimes }

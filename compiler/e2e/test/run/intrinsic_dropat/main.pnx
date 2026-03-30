@@ -1,17 +1,22 @@
 from core import Drop, Copy, dropAt
 
+
 extern "C":
     pub def printf(format: &uint8, ...) -> int32
+
 
 pub struct TestDrop:
     priv value: int32
 
-final impl Drop[TestDrop]:
+
+pub inst DropTestDrop: Drop[TestDrop]:
     def drop(self: &mut TestDrop):
         unsafe scope:
             printf(&"Dropping %d\n\0".[0], self.value)
 
+
 final impl Copy[TestDrop] delete
+
 
 pub def main():
     unsafe scope:

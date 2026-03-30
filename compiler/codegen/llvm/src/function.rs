@@ -57,6 +57,7 @@ use qbice::storage::intern::Interned;
 use crate::{context::Context, r#type::IsAggregateTypeExt, zst::Zst};
 
 mod address;
+mod drop;
 mod instruction;
 mod literal;
 
@@ -364,23 +365,22 @@ impl<'ctx> Context<'_, 'ctx> {
             }
 
             "dropAt" => {
-                todo!("restore the dropAt intrinsic")
-                // let ty = key.instantiation.type_mappings().next().unwrap().1;
+                let ty = key.instantiation.type_mappings().next().unwrap().1;
 
-                // let drop = self.get_drop(ty.clone()).await;
+                let drop = self.get_drop(ty.clone()).await;
 
-                // if let Some(drop) = drop {
-                //     let param_value = llvm_function_signature
-                //         .llvm_function_value
-                //         .get_nth_param(0)
-                //         .unwrap();
+                if let Some(drop) = drop {
+                    let param_value = llvm_function_signature
+                        .llvm_function_value
+                        .get_nth_param(0)
+                        .unwrap();
 
-                //     builder
-                //         .build_call(drop, &[param_value.into()], "call_drop")
-                //         .unwrap();
-                // }
+                    builder
+                        .build_call(drop, &[param_value.into()], "call_drop")
+                        .unwrap();
+                }
 
-                // builder.build_return(None).unwrap();
+                builder.build_return(None).unwrap();
             }
 
             "read" => {

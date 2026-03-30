@@ -301,6 +301,7 @@ impl Kind {
             Self::Function
                 | Self::TraitAssociatedFunction
                 | Self::ImplementationAssociatedFunction
+                | Self::InstanceAssociatedFunction
                 | Self::ExternFunction
                 | Self::EffectOperation
         )

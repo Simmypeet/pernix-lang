@@ -17,7 +17,7 @@ pub struct LoudDrop:
     priv value: int32
 
 
-final impl Drop[LoudDrop]:
+pub inst DropLoudDrop: Drop[LoudDrop]:
     def drop(self: &mut LoudDrop):
         unsafe scope:
             printf(&"Dropping %d\n\0".[0], self.value)
@@ -31,7 +31,7 @@ pub struct Pair[T, U]:
     priv second: U
 
 
-impl[T, U] Drop[Pair[T, U]]:
+pub inst DropPair[T, U]: Drop[Pair[T, U]]:
     def drop(self: &mut Pair[T, U]):
         unsafe scope:
             printf(&"Dropping Pair\n\0".[0])
@@ -46,7 +46,7 @@ pub enum LoudEnum:
     Zero
 
 
-impl Drop[LoudEnum]:
+pub inst DropLoudEnum: Drop[LoudEnum]:
     def drop(self: &mut LoudEnum):
         match (self):
             case GtZero(..): 

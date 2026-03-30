@@ -13,7 +13,7 @@ pub struct TestDrop:
     priv value: int32
 
 
-final impl Drop[TestDrop]:
+pub inst DropTestDrop: Drop[TestDrop]:
     def drop(self: &mut TestDrop):
         unsafe scope:
             printf(&"Dropping %d\n\0".[0], self.value)

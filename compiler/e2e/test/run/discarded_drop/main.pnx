@@ -15,7 +15,7 @@ pub struct LoudDrop:
     priv value: int32
 
 
-final impl Drop[LoudDrop]:
+pub inst DropLoudDrop: Drop[LoudDrop]:
     def drop(self: &mut LoudDrop):
         printf(&"Dropping %d\n\0".[0], self.value)
 
@@ -27,7 +27,7 @@ pub struct ZstLoudDrop:
     pass
 
 
-final impl Drop[ZstLoudDrop]:
+pub inst DropZstLoudDrop: Drop[ZstLoudDrop]:
     def drop(self: &mut ZstLoudDrop):
         printf(&"Dropping ZST\n\0".[0])
 

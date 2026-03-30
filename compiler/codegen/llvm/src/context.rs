@@ -75,6 +75,12 @@ impl std::fmt::Debug for Context<'_, '_> {
     }
 }
 
+impl Context<'_, '_> {
+    pub fn target_id(&self) -> pernixc_target::TargetID {
+        self.main_function_id().target_id
+    }
+}
+
 impl<'i, 'ctx> Context<'i, 'ctx> {
     /// Creates a new context.
     pub fn new(

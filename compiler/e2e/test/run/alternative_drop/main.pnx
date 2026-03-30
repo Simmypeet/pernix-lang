@@ -16,7 +16,7 @@ pub struct LoudDrop['a]:
     priv value: &'a mut int32
 
 
-final impl['x] Drop[LoudDrop['x]]:
+pub inst DropLoudDrop['x]: Drop[LoudDrop['x]]:
     def drop(self: &mut LoudDrop['x]):
         unsafe scope:
             printf(&"Dropping %d\n\0".[0], *self.value)

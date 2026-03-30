@@ -1790,9 +1790,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     self.build_tuple_pack(tuple_pack).await
                 }
 
-                Instruction::DropUnpackTuple(_) => {
-                    // TODO: restore this
-                    /*
+                Instruction::DropUnpackTuple(drop_unpack_tuple) => 'ext: {
                     let tuple_ty_pnx = self
                         .type_of_address_pnx(&drop_unpack_tuple.tuple_address)
                         .await
@@ -1808,6 +1806,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                         .get_tuple_type(tuple_ty_pnx.clone())
                         .await
                         .ok();
+
                     let tuple_address = match self
                         .get_address(&drop_unpack_tuple.tuple_address)
                         .await
@@ -1860,12 +1859,9 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     }
 
                     Ok(())
-                    */
-                    Ok(())
                 }
 
-                Instruction::Drop(_) => {
-                    /*
+                Instruction::Drop(drop) => 'ext: {
                     let address = match self.get_address(&drop.address).await {
                         Ok(address) => address,
                         Err(error) => break 'ext Err(error),
@@ -1880,37 +1876,32 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
 
                     self.build_drop(pointer, adress_pnx_type).await;
 
-                    */
-                    // TODO: restore this
                     Ok(())
                 }
 
-                Instruction::RegisterDiscard(_) => {
-                    // let value = self.register_map[&reg_dis.id];
+                Instruction::RegisterDiscard(reg_dis) => {
+                    let value = self.register_map[&reg_dis.id];
 
-                    // match value {
-                    //     // scalar values (primitives) never need to be
-                    // dropped
-                    //     Some(LlvmValue::Scalar(_)) => {}
+                    match value {
+                        // scalar values (primitives) never need to be dropped
+                        Some(LlvmValue::Scalar(_)) => {}
 
-                    //     Some(LlvmValue::TmpAggregate(_)) | None => {
-                    //         let pnx_type =
-                    //             self.type_of_register_pnx(reg_dis.id).await;
+                        Some(LlvmValue::TmpAggregate(_)) | None => {
+                            let pnx_type =
+                                self.type_of_register_pnx(reg_dis.id).await;
 
-                    //         let ptr_value = value.map_or_else(
-                    //             || self.build_non_null_dangling(),
-                    //             |x| {
-                    //                 x.into_tmp_aggregate()
-                    //                     .map(|x| x.address)
-                    //                     .unwrap()
-                    //             },
-                    //         );
+                            let ptr_value = value.map_or_else(
+                                || self.build_non_null_dangling(),
+                                |x| {
+                                    x.into_tmp_aggregate()
+                                        .map(|x| x.address)
+                                        .unwrap()
+                                },
+                            );
 
-                    //         self.build_drop(ptr_value, pnx_type).await;
-                    //     }
-                    // }
-
-                    // TODO: restore this
+                            self.build_drop(ptr_value, pnx_type).await;
+                        }
+                    }
 
                     Ok(())
                 }

@@ -18,6 +18,7 @@ pernixc_ir = { path = "../../semantic/ir" }
 pernixc_arena = { path = "../../base/arena" }
 pernixc_diagnostic = { path = "../../base/diagnostic" }
 pernixc_qbice.path = "../../base/qbice"
+pernixc_corelib.path = "../../semantic/corelib"
 qbice.workspace = true
 linkme.workspace = true
 inkwell = { workspace = true }

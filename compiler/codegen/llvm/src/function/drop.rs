@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::ops::Deref;
 
 use inkwell::{
     AddressSpace,
@@ -6,19 +6,20 @@ use inkwell::{
     types::BasicType,
     values::{FunctionValue, PointerValue},
 };
+use pernixc_corelib::{get_drop_trait_id, get_no_drop_struct_id};
 use pernixc_semantic_element::{
     elided_lifetime::get_elided_lifetimes, fields::get_fields,
-    implemented::get_implemented,
-    implements_arguments::get_implements_argument,
+    global_instances::get_global_instances_of,
+    trait_ref::get_trait_ref_of_instance_symbol,
     variant::get_variant_associated_type,
 };
 use pernixc_symbol::{
+    GlobalSymbolID,
     kind::{Kind, get_kind},
     member::get_members,
-    name::get_by_qualified_name,
     variant_declaration_order::get_variant_declaration_order,
 };
-use pernixc_target::{Global, TargetID};
+use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
     display::Display,
@@ -29,22 +30,17 @@ use pernixc_term::{
     tuple::Tuple,
     r#type::{Array, Type},
 };
-use pernixc_type_system::{
-    environment::{Environment, Premise},
-    normalizer,
-};
 
 use crate::{
     context::Context, function::Builder, r#type::LlvmEnumSignature, zst::Zst,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum AdtDropKind {
     MembersHaveDrop(Instantiation),
-    DropImplementation(Global<pernixc_symbol::ID>),
+    DropImplementation(GlobalSymbolID),
 }
 
-/*
 impl<'ctx> Context<'_, 'ctx> {
     /// Gets the drop function for the given type.
     pub async fn get_drop(&mut self, ty: Type) -> Option<FunctionValue<'ctx>> {
@@ -98,7 +94,7 @@ impl<'ctx> Context<'_, 'ctx> {
         symbol_ty: Symbol,
         function_value: FunctionValue<'ctx>,
     ) -> FunctionValue<'ctx> {
-        let symbol_kind = self.engine().get_kind(symbol_ty.id).await;
+        let symbol_kind = self.engine().get_kind(symbol_ty.id()).await;
 
         let entry_block =
             self.context().append_basic_block(function_value, "entry");
@@ -110,14 +106,14 @@ impl<'ctx> Context<'_, 'ctx> {
 
         match symbol_kind {
             Kind::Struct => {
-                let fields = self.engine().get_fields(symbol_ty.id).await;
+                let fields = self.engine().get_fields(symbol_ty.id()).await;
                 let llvm_struct_signature =
                     self.get_struct_type(symbol_ty).await;
 
                 for field_id in fields.field_declaration_order.iter().copied() {
                     let field_type = self
                         .monomorphize_term(
-                            fields.fields[field_id].r#type.clone(),
+                            fields.fields[field_id].r#type.deref().clone(),
                             inst,
                         )
                         .await;
@@ -180,7 +176,7 @@ impl<'ctx> Context<'_, 'ctx> {
             }
 
             Kind::Enum => {
-                let variants = self.engine().get_members(symbol_ty.id).await;
+                let variants = self.engine().get_members(symbol_ty.id()).await;
                 let llvm_enum_signature =
                     self.get_enum_type(symbol_ty.clone()).await;
                 let mut blocks_by_variant_order = Vec::new();
@@ -189,7 +185,7 @@ impl<'ctx> Context<'_, 'ctx> {
                     .member_ids_by_name
                     .values()
                     .copied()
-                    .map(|x| Global::new(symbol_ty.id.target_id, x))
+                    .map(|x| Global::new(symbol_ty.id().target_id, x))
                 {
                     let declaration_order = self
                         .engine()
@@ -424,50 +420,34 @@ impl<'ctx> Context<'_, 'ctx> {
                 )
             }
 
-            AdtDropKind::DropImplementation(impl_id) => {
-                let implementation = self
-                    .engine()
-                    .get_implements_argument(impl_id)
-                    .await
-                    .unwrap()
-                    .types[0]
-                    .as_symbol()
-                    .unwrap()
-                    .generic_arguments
-                    .clone();
-
+            AdtDropKind::DropImplementation(inst_id) => {
                 let impl_func_id = Global::new(
-                    impl_id.target_id,
+                    inst_id.target_id,
                     self.engine()
-                        .get_members(impl_id)
+                        .get_members(inst_id)
                         .await
                         .member_ids_by_name
                         .get("drop")
                         .copied()
                         .unwrap(),
                 );
+
                 let impl_func_generic_params =
                     self.engine().get_generic_parameters(impl_func_id).await;
                 let impl_funcs_elided_params =
                     self.engine().get_elided_lifetimes(impl_func_id).await;
 
-                let env = Environment::new(
-                    std::borrow::Cow::Owned(Premise {
-                        predicates: BTreeSet::new(),
-                        query_site: None,
-                    }),
-                    std::borrow::Cow::Borrowed(self.engine()),
-                    normalizer::NO_OP,
+                let mut inst = Instantiation::from_generic_arguments(
+                    symbol_ty.generic_arguments(),
+                    inst_id,
+                    // NOTE: we use the generic parameter of the instance
+                    // directly. Since there's an earlier check that ensures
+                    // the generic parameters of the instance and the adt much
+                    // match exactly, it is safe to use either of them.
+                    &*self.engine().get_generic_parameters(inst_id).await,
                 );
 
-                let mut inst = env
-                    .deduce(&implementation, &symbol_ty.generic_arguments)
-                    .await
-                    .unwrap()
-                    .result
-                    .instantiation;
-
-                inst.lifetimes.extend(
+                inst.extend_lifetimes_mappings(
                     impl_func_generic_params
                         .lifetime_parameters_as_order()
                         .map(|x| {
@@ -513,21 +493,11 @@ impl<'ctx> Context<'_, 'ctx> {
                         .is_none()
                 );
 
-                let member_drop = Box::pin(
-                    self.build_member_drop_adt(
-                        &Instantiation::from_generic_arguments(
-                            symbol_ty.generic_arguments.clone(),
-                            symbol_ty.id,
-                            &*self
-                                .engine()
-                                .get_generic_parameters(symbol_ty.id)
-                                .await,
-                        )
-                        .unwrap(),
-                        symbol_ty,
-                        member_drop_function_value,
-                    ),
-                )
+                let member_drop = Box::pin(self.build_member_drop_adt(
+                    &symbol_ty.create_instantiation(self.engine()).await,
+                    symbol_ty,
+                    member_drop_function_value,
+                ))
                 .await;
 
                 let impl_func = Box::pin(self.get_function(&super::Call {
@@ -739,10 +709,10 @@ impl<'ctx> Context<'_, 'ctx> {
         }
 
         let has_drop = 'result: {
-            for element in &tuple_ty.elements {
-                assert!(!element.is_unpacked, "found unpacked tuple");
+            for element in tuple_ty.elements() {
+                assert!(!element.is_unpacked(), "found unpacked tuple");
 
-                if Box::pin(self.has_drop(&element.term)).await {
+                if Box::pin(self.has_drop(element.term())).await {
                     break 'result true;
                 }
             }
@@ -782,8 +752,9 @@ impl<'ctx> Context<'_, 'ctx> {
         let ptr_address =
             function_value.get_first_param().unwrap().into_pointer_value();
 
-        for (index, elem) in tuple_ty.elements.into_iter().enumerate() {
-            let Some(drop_function) = Box::pin(self.get_drop(elem.term)).await
+        for (index, elem) in tuple_ty.into_elements().into_iter().enumerate() {
+            let Some(drop_function) =
+                Box::pin(self.get_drop(elem.into_term())).await
             else {
                 // has no drop function
                 continue;
@@ -840,36 +811,34 @@ impl<'ctx> Context<'_, 'ctx> {
 
     async fn get_adt_drop_kind(&self, symbol: &Symbol) -> Option<AdtDropKind> {
         // check if the symbol is a NoDrop struct
-        if symbol.id.target_id == TargetID::CORE
-            && Some(symbol.id)
-                == self.engine().get_by_qualified_name(["core", "NoDrop"]).await
-        {
+        if symbol.id() == self.engine().get_no_drop_struct_id().await {
             return None;
         }
 
-        let current_symbol_id = symbol.id;
-
         // check for the explict drop implementation
-        let drop_trait_id = self
-            .engine()
-            .get_by_qualified_name(["core", "Drop"])
-            .await
-            .unwrap();
+        let drop_trait_id = self.engine().get_drop_trait_id().await;
 
-        let implemented = self.engine().get_implemented(drop_trait_id).await;
+        let implemented = self
+            .engine()
+            .get_global_instances_of(drop_trait_id, self.target_id())
+            .await;
 
         let implementation_id = 'result: {
             for impl_id in implemented.iter().copied() {
-                let Some(implementation) =
-                    self.engine().get_implements_argument(impl_id).await
+                let Some(implementation) = self
+                    .engine()
+                    .get_trait_ref_of_instance_symbol(impl_id)
+                    .await
                 else {
                     continue;
                 };
 
                 // drop only allows struct/enum to be implemented.
-                let symbol = implementation.types[0].as_symbol().unwrap();
+                let drop_symbol = implementation.generic_arguments().types()[0]
+                    .as_symbol()
+                    .unwrap();
 
-                if symbol.id == current_symbol_id {
+                if drop_symbol.id() == symbol.id() {
                     break 'result Some(impl_id);
                 }
             }
@@ -881,26 +850,17 @@ impl<'ctx> Context<'_, 'ctx> {
             return Some(AdtDropKind::DropImplementation(impl_id));
         }
 
-        let inst = Instantiation::from_generic_arguments(
-            symbol.generic_arguments.clone(),
-            current_symbol_id,
-            &*self.engine().get_generic_parameters(current_symbol_id).await,
-        )
-        .unwrap();
+        let inst = symbol.create_instantiation(self.engine()).await;
 
-        let symbol_kind = self.engine().get_kind(current_symbol_id).await;
+        let symbol_kind = self.engine().get_kind(symbol.id()).await;
 
         match symbol_kind {
             Kind::Struct => {
-                for field in self
-                    .engine()
-                    .get_fields(current_symbol_id)
-                    .await
-                    .fields
-                    .items()
+                for field in
+                    self.engine().get_fields(symbol.id()).await.fields.items()
                 {
                     let ty = self
-                        .monomorphize_term(field.r#type.clone(), &inst)
+                        .monomorphize_term(field.r#type.deref().clone(), &inst)
                         .await;
 
                     if Box::pin(self.has_drop(&ty)).await {
@@ -914,12 +874,12 @@ impl<'ctx> Context<'_, 'ctx> {
             Kind::Enum => {
                 for variant in self
                     .engine()
-                    .get_members(current_symbol_id)
+                    .get_members(symbol.id())
                     .await
                     .member_ids_by_name
                     .values()
                     .copied()
-                    .map(|x| Global::new(current_symbol_id.target_id, x))
+                    .map(|x| Global::new(symbol.id().target_id, x))
                 {
                     let variant = self
                         .engine()
@@ -954,10 +914,10 @@ impl<'ctx> Context<'_, 'ctx> {
             Type::Array(array) => Box::pin(self.has_drop(&array.r#type)).await,
 
             Type::Tuple(tuple) => {
-                for element in &tuple.elements {
-                    assert!(!element.is_unpacked, "found unpacked tuple");
+                for element in tuple.elements() {
+                    assert!(!element.is_unpacked(), "found unpacked tuple");
 
-                    if Box::pin(self.has_drop(&element.term)).await {
+                    if Box::pin(self.has_drop(element.term())).await {
                         return true;
                     }
                 }
@@ -974,7 +934,7 @@ impl<'ctx> Context<'_, 'ctx> {
             | Type::Primitive(_)
             | Type::Phantom(_) => false,
 
-            Type::AssociatedSymbol(_) | Type::TraitMember(_) => {
+            Type::InstanceAssociated(_) | Type::AssociatedSymbol(_) => {
                 panic!("unsupported type {ty:?}")
             }
 
@@ -1003,7 +963,4 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             .build_call(drop, &[address.into()], "call_drop")
             .unwrap();
     }
-
 }
-
-*/
