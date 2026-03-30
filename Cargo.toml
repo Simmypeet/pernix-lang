@@ -12,6 +12,7 @@ members = [
     "compiler/base/tokio",
     "compiler/base/qbice",
     "compiler/base/transitive_closure",
+    "compiler/base/source_file_impl",
 
     "compiler/syntax/lexical",
     "compiler/syntax/lexical_impl",
@@ -44,7 +45,6 @@ members = [
     "compiler/driver",
     "compiler/main",
     "compiler/e2e",
-    "compiler/base/source_file_impl",
 
 
     # tidy-alphabetical-end
