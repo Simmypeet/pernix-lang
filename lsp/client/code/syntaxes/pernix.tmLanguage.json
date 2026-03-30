@@ -11,6 +11,15 @@
             "include": "#keywords"
         },
         {
+            "include": "#attributes"
+        },
+        {
+            "include": "#generics"
+        },
+        {
+            "include": "#lifetime"
+        },
+        {
             "include": "#strings"
         },
         {
@@ -35,12 +44,6 @@
             "include": "#functions"
         },
         {
-            "include": "#generics"
-        },
-        {
-            "include": "#attributes"
-        },
-        {
             "include": "#identifiers"
         }
     ],
@@ -57,87 +60,283 @@
             "patterns": [
                 {
                     "name": "meta.struct.pernix",
-                    "match": "\\b(struct)\\s+([A-Z][a-zA-Z0-9_]*)\\b",
-                    "captures": {
+                    "begin": "\\b(struct)\\s+([A-Z][a-zA-Z0-9_]*)\\b",
+                    "end": "(?=[:{]|$)",
+                    "beginCaptures": {
                         "1": {
                             "name": "storage.type.pernix"
                         },
                         "2": {
                             "name": "entity.name.type.struct.pernix"
                         }
-                    }
+                    },
+                    "patterns": [
+                        {
+                            "name": "meta.generic.declaration.pernix",
+                            "begin": "\\[",
+                            "end": "\\]",
+                            "patterns": [
+                                {
+                                    "include": "#lifetime"
+                                },
+                                {
+                                    "include": "#types"
+                                },
+                                {
+                                    "include": "#keywords"
+                                },
+                                {
+                                    "include": "#operators"
+                                },
+                                {
+                                    "include": "#punctuation"
+                                },
+                                {
+                                    "include": "#identifiers"
+                                }
+                            ]
+                        }
+                    ]
                 },
                 {
                     "name": "meta.enum.pernix",
-                    "match": "\\b(enum)\\s+([A-Z][a-zA-Z0-9_]*)\\b",
-                    "captures": {
+                    "begin": "\\b(enum)\\s+([A-Z][a-zA-Z0-9_]*)\\b",
+                    "end": "(?=[:{]|$)",
+                    "beginCaptures": {
                         "1": {
                             "name": "storage.type.pernix"
                         },
                         "2": {
                             "name": "entity.name.type.enum.pernix"
                         }
-                    }
+                    },
+                    "patterns": [
+                        {
+                            "name": "meta.generic.declaration.pernix",
+                            "begin": "\\[",
+                            "end": "\\]",
+                            "patterns": [
+                                {
+                                    "include": "#lifetime"
+                                },
+                                {
+                                    "include": "#types"
+                                },
+                                {
+                                    "include": "#keywords"
+                                },
+                                {
+                                    "include": "#operators"
+                                },
+                                {
+                                    "include": "#punctuation"
+                                },
+                                {
+                                    "include": "#identifiers"
+                                }
+                            ]
+                        }
+                    ]
                 },
                 {
                     "name": "meta.trait.pernix",
-                    "match": "\\b(trait)\\s+([A-Z][a-zA-Z0-9_]*)\\b",
-                    "captures": {
+                    "begin": "\\b(trait)\\s+([A-Z][a-zA-Z0-9_]*)\\b",
+                    "end": "(?=[:{]|$)",
+                    "beginCaptures": {
                         "1": {
                             "name": "storage.type.pernix"
                         },
                         "2": {
                             "name": "entity.name.type.trait.pernix"
                         }
-                    }
+                    },
+                    "patterns": [
+                        {
+                            "name": "meta.generic.declaration.pernix",
+                            "begin": "\\[",
+                            "end": "\\]",
+                            "patterns": [
+                                {
+                                    "include": "#lifetime"
+                                },
+                                {
+                                    "include": "#types"
+                                },
+                                {
+                                    "include": "#keywords"
+                                },
+                                {
+                                    "include": "#operators"
+                                },
+                                {
+                                    "include": "#punctuation"
+                                },
+                                {
+                                    "include": "#identifiers"
+                                }
+                            ]
+                        }
+                    ]
                 },
                 {
                     "name": "meta.type.pernix",
-                    "match": "\\b(type)\\s+([A-Z][a-zA-Z0-9_]*)\\b",
-                    "captures": {
+                    "begin": "\\b(type)\\s+([A-Z][a-zA-Z0-9_]*)\\b",
+                    "end": "(?=[=:{]|$)",
+                    "beginCaptures": {
                         "1": {
                             "name": "storage.type.pernix"
                         },
                         "2": {
                             "name": "entity.name.type.alias.pernix"
                         }
-                    }
+                    },
+                    "patterns": [
+                        {
+                            "name": "meta.generic.declaration.pernix",
+                            "begin": "\\[",
+                            "end": "\\]",
+                            "patterns": [
+                                {
+                                    "include": "#lifetime"
+                                },
+                                {
+                                    "include": "#types"
+                                },
+                                {
+                                    "include": "#keywords"
+                                },
+                                {
+                                    "include": "#operators"
+                                },
+                                {
+                                    "include": "#punctuation"
+                                },
+                                {
+                                    "include": "#identifiers"
+                                }
+                            ]
+                        }
+                    ]
                 },
                 {
                     "name": "meta.effect.pernix",
-                    "match": "\\b(effect)\\s+([A-Z][a-zA-Z0-9_]*)\\b",
-                    "captures": {
+                    "begin": "\\b(effect)\\s+([A-Z][a-zA-Z0-9_]*)\\b",
+                    "end": "(?=[:{]|$)",
+                    "beginCaptures": {
                         "1": {
                             "name": "storage.type.pernix"
                         },
                         "2": {
                             "name": "entity.name.type.effect.pernix"
                         }
-                    }
+                    },
+                    "patterns": [
+                        {
+                            "name": "meta.generic.declaration.pernix",
+                            "begin": "\\[",
+                            "end": "\\]",
+                            "patterns": [
+                                {
+                                    "include": "#lifetime"
+                                },
+                                {
+                                    "include": "#types"
+                                },
+                                {
+                                    "include": "#keywords"
+                                },
+                                {
+                                    "include": "#operators"
+                                },
+                                {
+                                    "include": "#punctuation"
+                                },
+                                {
+                                    "include": "#identifiers"
+                                }
+                            ]
+                        }
+                    ]
                 },
                 {
                     "name": "meta.marker.pernix",
-                    "match": "\\b(marker)\\s+([A-Z][a-zA-Z0-9_]*)\\b",
-                    "captures": {
+                    "begin": "\\b(marker)\\s+([A-Z][a-zA-Z0-9_]*)\\b",
+                    "end": "(?=[:{]|$)",
+                    "beginCaptures": {
                         "1": {
                             "name": "storage.type.pernix"
                         },
                         "2": {
                             "name": "entity.name.type.marker.pernix"
                         }
-                    }
+                    },
+                    "patterns": [
+                        {
+                            "name": "meta.generic.declaration.pernix",
+                            "begin": "\\[",
+                            "end": "\\]",
+                            "patterns": [
+                                {
+                                    "include": "#lifetime"
+                                },
+                                {
+                                    "include": "#types"
+                                },
+                                {
+                                    "include": "#keywords"
+                                },
+                                {
+                                    "include": "#operators"
+                                },
+                                {
+                                    "include": "#punctuation"
+                                },
+                                {
+                                    "include": "#identifiers"
+                                }
+                            ]
+                        }
+                    ]
                 },
                 {
                     "name": "meta.instance.pernix",
-                    "match": "\\b(inst)\\s+([A-Z][a-zA-Z0-9_]*)\\b",
-                    "captures": {
+                    "begin": "\\b(inst)\\s+([A-Z][a-zA-Z0-9_]*)\\b",
+                    "end": "(?=[:{]|$)",
+                    "beginCaptures": {
                         "1": {
                             "name": "keyword.other.pernix"
                         },
                         "2": {
                             "name": "entity.name.type.instance.pernix"
                         }
-                    }
+                    },
+                    "patterns": [
+                        {
+                            "name": "meta.generic.declaration.pernix",
+                            "begin": "\\[",
+                            "end": "\\]",
+                            "patterns": [
+                                {
+                                    "include": "#lifetime"
+                                },
+                                {
+                                    "include": "#types"
+                                },
+                                {
+                                    "include": "#keywords"
+                                },
+                                {
+                                    "include": "#operators"
+                                },
+                                {
+                                    "include": "#punctuation"
+                                },
+                                {
+                                    "include": "#identifiers"
+                                }
+                            ]
+                        }
+                    ]
                 },
                 {
                     "name": "keyword.control.pernix",
@@ -330,16 +529,44 @@
         "functions": {
             "patterns": [
                 {
-                    "name": "entity.name.function.pernix",
-                    "match": "\\b(def|express)\\s+([a-z_][a-zA-Z0-9_]*)\\b",
-                    "captures": {
+                    "name": "meta.function.declaration.pernix",
+                    "begin": "\\b(def|express)\\s+([a-z_][a-zA-Z0-9_]*)\\b",
+                    "end": "(?=[:(]|$)",
+                    "beginCaptures": {
                         "1": {
                             "name": "keyword.other.pernix"
                         },
                         "2": {
                             "name": "entity.name.function.pernix"
                         }
-                    }
+                    },
+                    "patterns": [
+                        {
+                            "name": "meta.generic.declaration.pernix",
+                            "begin": "\\[",
+                            "end": "\\]",
+                            "patterns": [
+                                {
+                                    "include": "#lifetime"
+                                },
+                                {
+                                    "include": "#types"
+                                },
+                                {
+                                    "include": "#keywords"
+                                },
+                                {
+                                    "include": "#operators"
+                                },
+                                {
+                                    "include": "#punctuation"
+                                },
+                                {
+                                    "include": "#identifiers"
+                                }
+                            ]
+                        }
+                    ]
                 },
                 {
                     "name": "meta.function.call.generic.pernix",
@@ -374,6 +601,9 @@
                     },
                     "patterns": [
                         {
+                            "include": "#lifetime"
+                        },
+                        {
                             "include": "#types"
                         },
                         {
@@ -392,31 +622,6 @@
                             "include": "#generics"
                         }
                     ]
-                },
-                {
-                    "name": "meta.generic.declaration.pernix",
-                    "begin": "(?<=struct|enum|trait|type|def|impl|inst|express)\\s+[a-zA-Z0-9_]+\\s*\\[",
-                    "end": "\\]",
-                    "patterns": [
-                        {
-                            "include": "#lifetime"
-                        },
-                        {
-                            "include": "#types"
-                        },
-                        {
-                            "include": "#keywords"
-                        },
-                        {
-                            "include": "#operators"
-                        },
-                        {
-                            "include": "#punctuation"
-                        },
-                        {
-                            "include": "#identifiers"
-                        }
-                    ]
                 }
             ]
         },
@@ -424,7 +629,7 @@
             "patterns": [
                 {
                     "name": "storage.modifier.lifetime.pernix",
-                    "match": "'[a-z_][a-zA-Z0-9_]*\\b"
+                    "match": "'[a-z_][a-zA-Z0-9_]*\\b(?!')"
                 }
             ]
         },
