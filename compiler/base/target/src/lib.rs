@@ -433,7 +433,7 @@ pub enum TargetKind {
     Identifiable,
     clap::Parser,
 )]
-#[command(styles = get_styles())]
+#[command(styles = get_styles(), about = "The Pernix compiler")]
 pub struct Arguments {
     /// The subcommand to run.
     #[clap(subcommand, flatten = true)]
