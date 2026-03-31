@@ -1,0 +1,19 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: run
+---
+stderr:
+[error]: mismatched kind for member `expectFunction`: expected instance associated function, found instance associated type
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/instance_coherence/mismatched_instance_kind/main.pnx:7:10
+  │
+2 │     pub def expectFunction()
+  │             ────────────── trait member `expectFunction` defined here
+  ‡
+7 │     type expectFunction = int32
+  ╰╴         ━━━━━━━━━━━━━━ expected instance associated function, found instance associated type
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

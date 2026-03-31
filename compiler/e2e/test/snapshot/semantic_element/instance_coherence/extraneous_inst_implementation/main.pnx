@@ -1,0 +1,11 @@
+pub trait Test:
+    pub def run()
+
+
+pub inst TestImpl: Test:
+    def run():
+        pass
+
+    
+    # error: extraneous member 'Extra' in instance implementation
+    type Extra = int32
