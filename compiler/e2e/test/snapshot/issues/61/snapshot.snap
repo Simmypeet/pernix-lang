@@ -1,0 +1,22 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: run
+---
+stderr:
+[error]: unexpected `DefinitelyIdentifier` identifier, expected `:` punctuation
+  ╭▸ compiler/e2e/test/snapshot/issues/61/main.pnx:2:13
+  │
+2 │     priv x: DefinitelyIdentifier
+  ╰╴            ━━━━━━━━━━━━━━━━━━━━
+
+[error]: the symbol could not be found
+  ╭▸ compiler/e2e/test/snapshot/issues/61/main.pnx:2:13
+  │
+2 │     priv x: DefinitelyIdentifier
+  ╰╴            ━━━━━━━━━━━━━━━━━━━━ the symbol named `DefinitelyIdentifier` does not exist in `main`
+
+[error]: Compilation aborted due to 2 error(s)
+
+
+
+stdout:
