@@ -70,7 +70,7 @@ fn transform_lifetime(
     region_gen: &mut LocalRegionGenerator,
 ) {
     match lt {
-        Lifetime::Inference(_) => {
+        Lifetime::Closure(_) | Lifetime::Inference(_) => {
             panic!("should have no prior inference lifetime")
         }
         Lifetime::Error(_)
