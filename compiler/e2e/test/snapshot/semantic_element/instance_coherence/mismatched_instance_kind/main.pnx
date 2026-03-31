@@ -1,0 +1,8 @@
+pub trait Test:
+    pub def expectFunction()
+
+
+pub inst TestImpl: Test:
+    # error: should've been a def
+    type expectFunction = int32
+
