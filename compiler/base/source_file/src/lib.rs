@@ -104,8 +104,11 @@ impl SourceFile {
     /// Creates a new source file with replacing the content in the given byte
     /// range with the new text.
     pub fn replace_range(&mut self, range: Range<ByteIndex>, new_text: &str) {
-        self.rope.remove(range.clone());
-        self.rope.insert(range.start, new_text);
+        let char_start = self.rope.byte_to_char(range.start);
+        let char_end = self.rope.byte_to_char(range.end);
+
+        self.rope.remove(char_start..char_end);
+        self.rope.insert(char_start, new_text);
     }
 
     /// Gets the content of the source file as a string.

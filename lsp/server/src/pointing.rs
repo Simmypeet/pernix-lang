@@ -22,7 +22,7 @@ use pernixc_target::{Global, TargetID};
 use qbice::storage::intern::Interned;
 use tower_lsp::lsp_types;
 
-use crate::conversion::to_pernix_editor_location;
+use crate::conversion::lsp_position_to_editor_location;
 
 /// Returns a tuple of the qualified identifier and its span that points to the
 /// given byte index in the source file.
@@ -239,7 +239,7 @@ pub async fn symbol_at(
     // determine the byte position
     let byte_index = source_file
         .get_byte_index_from_editor_location(
-            &position.to_pernix_editor_location(),
+            &source_file.lsp_position_to_editor_location(position),
         )
         .unwrap();
 

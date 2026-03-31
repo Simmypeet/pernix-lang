@@ -10,7 +10,7 @@ use tower_lsp::lsp_types::{CompletionParams, CompletionResponse};
 
 use crate::{
     completion::qualified_identifier::qualified_identifier_completion,
-    conversion::to_pernix_editor_location, test_config::is_testing_lsp,
+    conversion::lsp_position_to_editor_location, test_config::is_testing_lsp,
 };
 
 pub mod keyword;
@@ -51,8 +51,9 @@ pub async fn handle_completion(
         return None;
     };
 
-    let pernix_editor_location =
-        params.text_document_position.position.to_pernix_editor_location();
+    let pernix_editor_location = source_file.lsp_position_to_editor_location(
+        &params.text_document_position.position,
+    );
     let byte_index = source_file
         .get_byte_index_from_editor_location(&pernix_editor_location)
         .unwrap();

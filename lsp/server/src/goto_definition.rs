@@ -14,7 +14,7 @@ use tower_lsp::lsp_types::{
     GotoDefinitionParams, GotoDefinitionResponse, Location, Range, Url,
 };
 
-use crate::{conversion::to_lsp_position, pointing::symbol_at};
+use crate::{conversion::editor_location_to_lsp_position, pointing::symbol_at};
 
 /// Handles "go to definition" requests from the LSP client.
 #[extend]
@@ -70,8 +70,8 @@ pub async fn handle_goto_definition(
         )
         .unwrap(),
         range: Range {
-            start: start.to_lsp_position(),
-            end: end.to_lsp_position(),
+            start: source_file.editor_location_to_lsp_position(&start),
+            end: source_file.editor_location_to_lsp_position(&end),
         },
     }))
 }

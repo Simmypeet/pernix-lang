@@ -25,6 +25,7 @@ use tower_lsp::lsp_types::{DidChangeTextDocumentParams, Url};
 use tracing::info;
 
 use crate::{
+    conversion::{editor_location_to_lsp_position, lsp_position_to_byte_index},
     test_config::TestConfig,
     workspace::{self, NewWorkspaceError, Workspace},
 };
@@ -310,30 +311,21 @@ impl Analyzer {
         text: &str,
         range: tower_lsp::lsp_types::Range,
     ) {
-        let pernix_location_start = EditorLocation::new(
-            range.start.line as usize,
-            range.start.character as usize,
-        );
-        let pernix_location_end = EditorLocation::new(
-            range.end.line as usize,
-            range.end.character as usize,
-        );
-
         let start = source_file
-            .get_byte_index_from_editor_location(&pernix_location_start)
+            .lsp_position_to_byte_index(&range.start)
             .unwrap_or_else(|| {
                 panic!(
-                    "the given range {pernix_location_start:?} is invalid to \
-                     the source file"
+                    "the given range {:?} is invalid to the source file",
+                    range.start
                 )
             });
 
         let end = source_file
-            .get_byte_index_from_editor_location(&pernix_location_end)
+            .lsp_position_to_byte_index(&range.end)
             .unwrap_or_else(|| {
                 panic!(
-                    "the given range {pernix_location_end:?} is invalid to \
-                     the source file"
+                    "the given range {:?} is invalid to the source file",
+                    range.end
                 )
             });
 
@@ -416,7 +408,7 @@ async fn to_lsp_range(
         .get_editor_location_from_byte_index(span.start)
         .unwrap_or_else(|| {
             let line = source_file.line_coount() - 1;
-            let column = source_file.get_line(line).unwrap().len();
+            let column = source_file.get_line(line).unwrap().chars().count();
 
             EditorLocation::new(line, column)
         });
@@ -425,20 +417,14 @@ async fn to_lsp_range(
         .get_editor_location_from_byte_index(span.end)
         .unwrap_or_else(|| {
             let line = source_file.line_coount() - 1;
-            let column = source_file.get_line(line).unwrap().len();
+            let column = source_file.get_line(line).unwrap().chars().count();
 
             EditorLocation::new(line, column)
         });
 
     tower_lsp::lsp_types::Range {
-        start: tower_lsp::lsp_types::Position {
-            line: start.line as u32,
-            character: start.column as u32,
-        },
-        end: tower_lsp::lsp_types::Position {
-            line: end.line as u32,
-            character: end.column as u32,
-        },
+        start: source_file.editor_location_to_lsp_position(&start),
+        end: source_file.editor_location_to_lsp_position(&end),
     }
 }
 

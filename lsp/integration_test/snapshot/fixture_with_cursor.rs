@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use pernix_server::conversion::to_lsp_position;
+use pernix_server::conversion::editor_location_to_lsp_position;
 use pernixc_qbice::TrackedEngine;
 use pernixc_source_file::{EditorLocation, SourceFile};
 use qbice::{Executor, storage::intern::Interned};
@@ -136,11 +136,14 @@ impl FixtureWithCursor {
     pub fn cursor_text_document_position_params(
         &self,
     ) -> TextDocumentPositionParams {
+        let source_file = self.contents.get(&self.cursor_file).unwrap();
+
         TextDocumentPositionParams {
             text_document: TextDocumentIdentifier {
                 uri: Url::from_file_path(&self.cursor_file).unwrap(),
             },
-            position: self.cursor_location.to_lsp_position(),
+            position: source_file
+                .editor_location_to_lsp_position(&self.cursor_location),
         }
     }
 }
