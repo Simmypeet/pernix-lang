@@ -1,0 +1,33 @@
+pub module good:
+    pub trait Good:
+        pub def firstFunction()
+
+        pub def secondFunction()
+        
+
+
+pub module bad:
+    pub trait Bad:
+        pub def firstFunction()
+
+        priv def secondFunction()
+        
+
+
+# good, all trait members are accessible at this module level
+pub inst GoodImpl: good::Good:
+    def firstFunction():
+        pass
+
+    def secondFunction():
+        pass
+
+
+# error: the member `bad::Bad::secondFunction` is private and thus not accessible 
+# in the instance implementation
+pub inst BadImpl: bad::Bad:
+    def firstFunction():
+        pass
+
+    def secondFunction():
+        pass

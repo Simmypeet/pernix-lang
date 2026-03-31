@@ -10,6 +10,7 @@ use pernixc_hash::{FxHashMap, FxHashSet};
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_semantic_element::trait_ref::get_trait_ref_of_instance_symbol;
 use pernixc_symbol::{
+    accessibility::{get_accessibility, is_accessible_from_globally},
     kind::{Kind, get_kind},
     member::get_members,
 };
@@ -21,6 +22,7 @@ use qbice::{
 
 use crate::instance_coherence::diagnostic::{
     Diagnostic, ExtraneousMember, MismatchedMemberKind, MissingMember,
+    TraitMemberInvisible,
 };
 
 pub mod diagnostic;
@@ -76,6 +78,46 @@ async fn instance_coherence_executor(
     }
 
     // Track which instance members we've seen
+    let checked_instance_members = check_trait_members_coherence(
+        engine,
+        instance_id,
+        trait_id,
+        &trait_members,
+        &instance_members_map,
+        &mut diagnostics,
+    )
+    .await;
+
+    // Check for extraneous members in the instance
+    for (instance_member_name, &instance_member_id) in
+        &instance_members.member_ids_by_name
+    {
+        if !checked_instance_members.contains(instance_member_name) {
+            // This member is not in the trait
+            diagnostics.push(Diagnostic::ExtraneousMember(ExtraneousMember {
+                instance_member_id: instance_id
+                    .target_id
+                    .make_global(instance_member_id),
+                member_name: instance_member_name.clone(),
+                trait_id,
+            }));
+        }
+    }
+
+    engine.intern_unsized(diagnostics)
+}
+
+async fn check_trait_members_coherence(
+    engine: &TrackedEngine,
+    instance_id: Global<pernixc_symbol::SymbolID>,
+    trait_id: Global<pernixc_symbol::SymbolID>,
+    trait_members: &pernixc_symbol::member::Member,
+    instance_members_map: &FxHashMap<
+        Interned<str>,
+        Global<pernixc_symbol::SymbolID>,
+    >,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> FxHashSet<Interned<str>> {
     let mut checked_instance_members = FxHashSet::default();
 
     // Check that all trait members are implemented
@@ -84,6 +126,26 @@ async fn instance_coherence_executor(
     {
         let trait_member_global_id =
             trait_id.target_id.make_global(trait_member_id);
+
+        let is_visible = engine
+            .is_accessible_from_globally(
+                instance_id,
+                engine
+                    .get_accessibility(trait_member_global_id)
+                    .await
+                    .into_global(trait_member_global_id.target_id),
+            )
+            .await;
+
+        if !is_visible {
+            diagnostics.push(Diagnostic::TraitMemberInvisible(
+                TraitMemberInvisible {
+                    instance_id,
+                    trait_member_id: trait_member_global_id,
+                },
+            ));
+        }
+
         let trait_member_kind = engine.get_kind(trait_member_global_id).await;
 
         if let Some(&instance_member_id) =
@@ -120,23 +182,7 @@ async fn instance_coherence_executor(
         }
     }
 
-    // Check for extraneous members in the instance
-    for (instance_member_name, &instance_member_id) in
-        &instance_members.member_ids_by_name
-    {
-        if !checked_instance_members.contains(instance_member_name) {
-            // This member is not in the trait
-            diagnostics.push(Diagnostic::ExtraneousMember(ExtraneousMember {
-                instance_member_id: instance_id
-                    .target_id
-                    .make_global(instance_member_id),
-                member_name: instance_member_name.clone(),
-                trait_id,
-            }));
-        }
-    }
-
-    engine.intern_unsized(diagnostics)
+    checked_instance_members
 }
 
 /// Checks if the kinds of trait and instance members match.

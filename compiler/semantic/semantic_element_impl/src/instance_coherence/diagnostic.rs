@@ -38,6 +38,9 @@ pub enum Diagnostic {
     /// The kind of the instance member does not match the kind of the trait
     /// member.
     MismatchedMemberKind(MismatchedMemberKind),
+
+    /// A trait member is not visible where the instance is implemented.
+    TraitMemberInvisible(TraitMemberInvisible),
 }
 
 impl Report for Diagnostic {
@@ -48,6 +51,9 @@ impl Report for Diagnostic {
                 diagnostic.report(engine).await
             }
             Self::MismatchedMemberKind(diagnostic) => {
+                diagnostic.report(engine).await
+            }
+            Self::TraitMemberInvisible(diagnostic) => {
                 diagnostic.report(engine).await
             }
         }
@@ -273,6 +279,81 @@ impl Report for MismatchedMemberKind {
             ))
             .maybe_primary_highlight(primary_highlight)
             .related(related_highlights)
+            .build()
+    }
+}
+
+/// A trait member is not visible where the instance is implemented.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+pub struct TraitMemberInvisible {
+    /// The global ID of the instance symbol.
+    pub instance_id: Global<pernixc_symbol::SymbolID>,
+
+    /// The global ID of the trait member that is invisible.
+    pub trait_member_id: Global<pernixc_symbol::SymbolID>,
+}
+
+impl Report for TraitMemberInvisible {
+    async fn report(&self, engine: &TrackedEngine) -> Rendered<ByteIndex> {
+        let instance_span = engine.get_span(self.instance_id).await;
+        let trait_member_name =
+            engine.get_qualified_name(self.trait_member_id).await;
+
+        let primary_highlight = if let Some(span) = instance_span {
+            let abs_span = engine.to_absolute_span(&span).await;
+            Some(
+                Highlight::builder()
+                    .span(abs_span)
+                    .message(format!(
+                        "the trait member `{trait_member_name}` is not \
+                         visible here"
+                    ))
+                    .build(),
+            )
+        } else {
+            None
+        };
+
+        let mut related_highlights = Vec::new();
+        if let Some(trait_member_span) =
+            engine.get_span(self.trait_member_id).await
+        {
+            let abs_span = engine.to_absolute_span(&trait_member_span).await;
+            related_highlights.push(
+                Highlight::builder()
+                    .span(abs_span)
+                    .message(format!(
+                        "the trait member `{trait_member_name}` was declared \
+                         here"
+                    ))
+                    .build(),
+            );
+        }
+
+        Rendered::builder()
+            .severity(Severity::Error)
+            .message(format!(
+                "the trait member `{trait_member_name}` is not visible and \
+                 thus cannot be implemented"
+            ))
+            .maybe_primary_highlight(primary_highlight)
+            .related(related_highlights)
+            .help_message(
+                "to implement an instance for a trait, all of the trait \
+                 members must be visible to the instance",
+            )
             .build()
     }
 }
