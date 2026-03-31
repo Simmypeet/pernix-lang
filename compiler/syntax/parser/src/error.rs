@@ -172,7 +172,8 @@ impl Cursor {
                                 })
                                 .unwrap();
 
-                            let node = branch.nodes.get(node_index);
+                            let node =
+                                parent_branch.nodes.get(node_index + 1);
 
                             if let Some(node) = node {
                                 break match node {
@@ -330,7 +331,7 @@ async fn found_string(
                             })
                             .unwrap();
 
-                        let node = branch.nodes.get(node_index);
+                        let node = parent_branch.nodes.get(node_index + 1);
 
                         if let Some(node) = node {
                             break found_node_string(
