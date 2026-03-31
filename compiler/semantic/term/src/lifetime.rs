@@ -162,12 +162,12 @@ pub type ElidedLifetimeID = MemberID<pernixc_arena::ID<ElidedLifetime>>;
     Encode,
     Decode,
 )]
-pub struct ClosureLifetime(usize);
+pub struct ClosureLifetime(u64);
 
 impl ClosureLifetime {
     /// Creates a new closure lifetime with the given unique counter.
     #[must_use]
-    pub const fn new(counter: usize) -> Self { Self(counter) }
+    pub const fn new(counter: u64) -> Self { Self(counter) }
 }
 
 /// Represents a lifetime term.

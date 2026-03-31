@@ -155,7 +155,7 @@ async fn ir_with_diagnostic_executor(
 
     // do borrow checking analysis
     match pernixc_borrow_checker::borrow_check(
-        ir.root_ir(),
+        &ir,
         &value::Environment::builder()
             .current_site(id)
             .type_environment(&ty_env)

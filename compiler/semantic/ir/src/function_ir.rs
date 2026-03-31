@@ -14,6 +14,9 @@ use crate::{
     closure_parameters::{ClosureParameters, ClosureParametersMap},
     handling_scope::HandlingScopes,
     ir::{IR, IRMap},
+    resolution_visitor::{
+        Abort, MutableResolutionVisitable, MutableResolutionVisitor,
+    },
     value::Environment as ValueEnvironment,
 };
 
@@ -73,6 +76,25 @@ impl FunctionIR {
         id: ID<ClosureParameters>,
     ) -> &ClosureParameters {
         &self.closure_parameters_map[id]
+    }
+
+    /// Accepts a visitor and invoke it on the closure parameters and captures
+    /// of all IRs in the function.
+    pub async fn accept_visitor_for_closure_and_capture<
+        T: MutableResolutionVisitor,
+    >(
+        &mut self,
+        visitor: &mut T,
+    ) -> Result<(), Abort> {
+        self.closure_parameters_map.accept_mut(visitor).await?;
+        self.captures_map.accept_mut(visitor).await
+    }
+
+    pub async fn accept_visitor_for_ir<T: MutableResolutionVisitor>(
+        &mut self,
+        visitor: &mut T,
+    ) -> Result<(), Abort> {
+        self.ir_map.accept_mut(visitor).await
     }
 }
 
