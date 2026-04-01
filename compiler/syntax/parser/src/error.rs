@@ -172,8 +172,7 @@ impl Cursor {
                                 })
                                 .unwrap();
 
-                            let node =
-                                parent_branch.nodes.get(node_index + 1);
+                            let node = parent_branch.nodes.get(node_index + 1);
 
                             if let Some(node) = node {
                                 break match node {
