@@ -11,9 +11,7 @@ use pernixc_term::{
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
-    IR,
     address::Address,
-    capture::pruning::PruneMode,
     resolution_visitor::{
         self, Abort, MutableResolutionVisitor, Resolution, ResolutionMut,
         ResolutionVisitor,
@@ -141,13 +139,6 @@ impl Captures {
         capture_id: pernixc_arena::ID<Capture>,
     ) -> usize {
         self.capture_order.iter().position(|id| *id == capture_id).unwrap()
-    }
-
-    #[must_use]
-    pub fn capture_ids_as_order(
-        &self,
-    ) -> impl ExactSizeIterator<Item = pernixc_arena::ID<Capture>> + '_ {
-        self.capture_order.iter().copied()
     }
 
     /// Returns an iterator over all captures in the capturing structure in
@@ -285,18 +276,6 @@ impl CapturesMap {
         captures: Captures,
     ) -> pernixc_arena::ID<Captures> {
         self.arena.insert(captures)
-    }
-
-    /// Prunes the IRs in the captures with the given IDs using the provided
-    /// pruning mode.
-    pub fn prune_capture_ir<'x, I: Iterator<Item = &'x mut IR>>(
-        &mut self,
-        capture_id: pernixc_arena::ID<Captures>,
-        irs: I,
-        mode: PruneMode,
-    ) {
-        let captures = &mut self.arena[capture_id];
-        captures.prune_capture_ir(irs, mode);
     }
 }
 

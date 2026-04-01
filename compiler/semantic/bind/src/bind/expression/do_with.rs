@@ -4,7 +4,7 @@ use pernixc_handler::{Handler, Storage};
 use pernixc_hash::FxHashMap;
 use pernixc_ir::{
     address::{Address, Memory},
-    capture::pruning::PruneMode,
+    capture::{builder::CapturesWithNameBindingPoint, pruning::PruneMode},
     closure_parameters::ClosureParameters,
     handling_scope::{
         HandlerClause, HandlerClauseID, HandlingScope, OperationHandlerID,
@@ -31,8 +31,7 @@ use pernixc_type_system::UnrecoverableError;
 use crate::{
     bind::{Bind, Expression, Guidance},
     binder::{
-        Binder, BindingError, Error, closure::CapturesForDoWith,
-        inference_context::ErasedLifetimeProvider,
+        Binder, BindingError, Error, inference_context::ErasedLifetimeProvider,
     },
     diagnostic::{
         Diagnostic, DuplicatedEffectHandler, DuplicatedEffectOperationHandler,
@@ -71,16 +70,10 @@ impl Bind<&pernixc_syntax::expression::block::DoWith> for Binder<'_> {
             return Err(Error::Binding(BindingError(syntax_tree.span())));
         };
 
-        let captures_for_do_with =
-            self.create_captures_for_do_with(handler).await?;
+        let captures = self.create_captures(handler).await?;
 
-        let effect_handlers = extract_handler_chain(
-            self,
-            syntax_tree,
-            &captures_for_do_with,
-            handler,
-        )
-        .await?;
+        let effect_handlers =
+            extract_handler_chain(self, syntax_tree, handler).await?;
 
         let mut do_ir = Box::pin(self.new_closure_binder(
             async |x| {
@@ -89,28 +82,21 @@ impl Bind<&pernixc_syntax::expression::block::DoWith> for Binder<'_> {
             },
             effect_handlers.return_type.clone(),
             do_statements.span(),
-            captures_for_do_with.do_captures_id(),
-            captures_for_do_with.clone_name_binding_point(),
+            &captures,
             None,
             handler,
         ))
         .await?;
+        let mut do_captures = captures.captures().clone();
 
         // prune the captures
-        self.prune_captures_ir(
-            captures_for_do_with.do_captures_id(),
-            std::iter::once(&mut do_ir),
-            PruneMode::Once,
-        );
+        do_captures
+            .prune_capture_ir(std::iter::once(&mut do_ir), PruneMode::Once);
 
         // pop the closure from the stack
         self.pop_handling_scope(effect_handlers.handling_scope_id);
 
-        let do_part = self.new_do(
-            do_ir,
-            captures_for_do_with.do_captures_id(),
-            do_kw.span(),
-        );
+        let do_part = self.new_do(do_ir, do_captures, do_kw.span());
 
         let with = build_with_blocks(
             self,
@@ -118,7 +104,7 @@ impl Bind<&pernixc_syntax::expression::block::DoWith> for Binder<'_> {
             effect_handlers.handling_scope_id,
             &effect_handlers.return_type,
             span_of_multi_syntax(syntax_tree.with()).unwrap_or(do_kw.span),
-            captures_for_do_with,
+            captures,
             handler,
         )
         .await?;
@@ -165,7 +151,7 @@ async fn build_with_blocks(
     handling_scope_id: pernixc_arena::ID<HandlingScope>,
     expected_type: &Type,
     with_span: RelativeSpan,
-    captures: CapturesForDoWith,
+    captures: CapturesWithNameBindingPoint,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<register::do_with::HandlerChain, Error> {
     let mut with_irs = FxHashMap::default();
@@ -218,8 +204,7 @@ async fn build_with_blocks(
                     },
                     expected_type.clone(),
                     statements_span,
-                    captures.handler_clauses_captures_id(),
-                    captures.clone_name_binding_point(),
+                    &captures,
                     Some(&closure_parameters),
                     handler,
                 )
@@ -236,17 +221,16 @@ async fn build_with_blocks(
         }
     }
 
+    let mut underlying_captures = captures.into_captures();
+
     // prune the captures
-    binder.prune_captures_ir(
-        captures.handler_clauses_captures_id(),
+    underlying_captures.prune_capture_ir(
         with_irs.values_mut().map(|(ir, _)| ir),
         PruneMode::Multiple,
     );
 
-    let with_capture_arguments = binder.bind_capture_arguments(
-        captures.handler_clauses_captures_id(),
-        with_span,
-    );
+    let (with_capture_id, with_capture_arguments) =
+        binder.bind_capture_arguments(underlying_captures, with_span);
 
     let mut with = register::do_with::HandlerChain::new(with_capture_arguments);
 
@@ -256,7 +240,7 @@ async fn build_with_blocks(
         let effect_handler = with.insert_handler_clause(effect_handler_id);
         let operation_handler = binder.new_operation_handler(
             ir,
-            captures.handler_clauses_captures_id(),
+            with_capture_id,
             closure_parameters,
         );
 
@@ -449,12 +433,11 @@ async fn extract_effect_operations<
 async fn extract_handler_chain(
     binder: &mut Binder<'_>,
     syntax_tree: &pernixc_syntax::expression::block::DoWith,
-    captures: &CapturesForDoWith,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<HandlerChain, Error> {
     // create a new handler group for this one
     let (handling_scope_id, return_type) =
-        binder.insert_handling_scope(syntax_tree.span(), captures);
+        binder.insert_handling_scope(syntax_tree.span());
 
     let mut with_handlers = Vec::<HandlerClauseBlock>::new();
 

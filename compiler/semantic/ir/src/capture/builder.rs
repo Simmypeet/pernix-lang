@@ -199,11 +199,6 @@ impl CapturesWithNameBindingPoint {
     /// Deconstructs the structure and returns the captures.
     #[must_use]
     pub fn into_captures(self) -> Captures { self.captures }
-
-    #[must_use]
-    pub fn deconstruct(self) -> (NameBindingPoint, Captures) {
-        (self.name_binding_point, self.captures)
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

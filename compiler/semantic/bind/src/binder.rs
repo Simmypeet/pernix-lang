@@ -8,7 +8,7 @@ use pernixc_handler::Handler;
 use pernixc_ir::{
     address::{Address, Memory},
     alloca::Alloca,
-    capture::{Captures, CapturesMap},
+    capture::CapturesMap,
     closure_parameters::ClosureParametersMap,
     control_flow_graph::Block,
     instruction::{self, Instruction, ScopePop, ScopePush, Terminator},
@@ -99,7 +99,8 @@ pub struct Binder<'t> {
     environment: &'t Environment,
 
     /// The optional captures that the binder may use when building closures.
-    captures: Option<ID<Captures>>,
+    #[get_copy = "pub"]
+    captures: Option<&'t pernixc_ir::capture::Captures>,
 
     /// The optional closure parameters that the binder may use when building
     /// closures.
@@ -536,9 +537,7 @@ impl Binder<'_> {
                 register_id,
                 &ValueEnvironment::builder()
                     .type_environment(&self.create_environment())
-                    .maybe_captures(
-                        self.captures.map(|x| &self.captures_map[x]),
-                    )
+                    .maybe_captures(self.captures)
                     .maybe_closure_parameters(self.closure_parameters)
                     .handling_scopes(self.handling_scopes())
                     .current_site(self.current_site())
@@ -713,7 +712,7 @@ impl Binder<'_> {
         let ty_environment = self.create_environment();
         let environment = ValueEnvironment::builder()
             .type_environment(&ty_environment)
-            .maybe_captures(self.captures.map(|x| &self.captures_map[x]))
+            .maybe_captures(self.captures)
             .maybe_closure_parameters(self.closure_parameters)
             .handling_scopes(self.handling_scopes())
             .current_site(self.current_site())

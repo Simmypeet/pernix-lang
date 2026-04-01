@@ -22,7 +22,6 @@ use pernixc_type_system::{OverflowError, environment::Premise};
 use crate::{
     binder::{
         Binder,
-        closure::CapturesForDoWith,
         inference_context::{InferenceContext, Unifiable, UnifyError},
     },
     infer::constraint,
@@ -132,10 +131,11 @@ impl Binder<'_> {
     pub fn new_do(
         &mut self,
         ir: IR,
-        capture_id: ID<Captures>,
+        captures: Captures,
         do_span: RelativeSpan,
     ) -> Do {
-        let captures_args = self.bind_capture_arguments(capture_id, do_span);
+        let (capture_id, captures_args) =
+            self.bind_capture_arguments(captures, do_span);
 
         let ir_id = self.ir_map.new_ir(IRWithContext::new(
             ir,
@@ -217,19 +217,15 @@ impl Binder<'_> {
     pub fn insert_handling_scope(
         &mut self,
         do_with_span: RelativeSpan,
-        captures_for_do_with: &CapturesForDoWith,
     ) -> (pernixc_arena::ID<HandlingScope>, Type) {
         // create a fresh type variable for the return type
         let return_type =
             self.create_type_inference(constraint::Type::All(true));
 
-        let handler_group =
-            self.effect_handler_context.handling_scopes.insert_handler_scope(
-                do_with_span,
-                captures_for_do_with.do_captures_id(),
-                captures_for_do_with.handler_clauses_captures_id(),
-                Type::Inference(return_type),
-            );
+        let handler_group = self
+            .effect_handler_context
+            .handling_scopes
+            .insert_handler_scope(do_with_span, Type::Inference(return_type));
 
         self.effect_handler_context.handler_gruop_stack.push(handler_group);
 

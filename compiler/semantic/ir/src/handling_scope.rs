@@ -14,12 +14,9 @@ use pernixc_term::{
 use pernixc_type_system::OverflowError;
 use qbice::{Decode, Encode, StableHash};
 
-use crate::{
-    capture::Captures,
-    resolution_visitor::{
-        self, Abort, MutableResolutionVisitor, Resolution, ResolutionMut,
-        ResolutionVisitor,
-    },
+use crate::resolution_visitor::{
+    self, Abort, MutableResolutionVisitor, Resolution, ResolutionMut,
+    ResolutionVisitor,
 };
 
 macro_rules! visit_handling_scopes {
@@ -128,16 +125,9 @@ impl HandlingScopes {
     pub fn insert_handler_scope(
         &mut self,
         do_with_span: RelativeSpan,
-        do_captures_id: ID<Captures>,
-        handler_clauses_captures_id: ID<Captures>,
         return_type: Type,
     ) -> pernixc_arena::ID<HandlingScope> {
-        self.0.insert(HandlingScope::new(
-            do_with_span,
-            do_captures_id,
-            handler_clauses_captures_id,
-            return_type,
-        ))
+        self.0.insert(HandlingScope::new(do_with_span, return_type))
     }
 
     /// Inserts a new [`HandlerClause`] into the [`HandlingScope`] with the
@@ -173,14 +163,6 @@ pub struct HandlingScope {
     /// handling scope.
     #[get_copy = "pub"]
     do_with_span: RelativeSpan,
-
-    /// The captures of the `do` part of the `do ... with ...` expression.
-    #[get_copy = "pub"]
-    do_captures_id: ID<Captures>,
-
-    /// The captures of the `with` part of the `do ... with ...` expression.
-    #[get_copy = "pub"]
-    handler_clauses_captures_id: ID<Captures>,
 
     /// The return type of the whole handling scope.
     #[get = "pub"]
@@ -226,19 +208,8 @@ pub trait HandlerClauseMatcher {
 impl HandlingScope {
     /// Creates a new [`HandlingScope`] with the given return type.
     #[must_use]
-    pub fn new(
-        do_with_span: RelativeSpan,
-        do_captures_id: ID<Captures>,
-        handler_clauses_captures_id: ID<Captures>,
-        return_type: Type,
-    ) -> Self {
-        Self {
-            handler_clauses: Arena::new(),
-            do_with_span,
-            do_captures_id,
-            handler_clauses_captures_id,
-            return_type,
-        }
+    pub fn new(do_with_span: RelativeSpan, return_type: Type) -> Self {
+        Self { handler_clauses: Arena::new(), do_with_span, return_type }
     }
 
     /// Adds a handler clause to this scope.

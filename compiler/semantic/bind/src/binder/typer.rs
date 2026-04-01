@@ -123,7 +123,7 @@ impl Binder<'_> {
     #[must_use]
     pub fn typer_environment(&self) -> Environment<'_> {
         Environment {
-            captures: self.captures.map(|x| &self.captures_map[x]),
+            captures: self.captures(),
             tracked_engine: self.engine(),
             current_site: self.current_site(),
             scope_tree: self.scope_tree(),

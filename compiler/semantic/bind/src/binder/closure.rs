@@ -9,7 +9,6 @@ use pernixc_ir::{
     closure_parameters::ClosureParameters,
     instruction::{self, ScopePush},
     ir::IR,
-    pattern::NameBindingPoint,
     value::{
         Value,
         register::{
@@ -30,33 +29,6 @@ use crate::{
         NotAllFlowPathsReturnAValueInClosure,
     },
 };
-
-#[derive(Debug, Clone)]
-pub struct CapturesForDoWith {
-    do_captures_id: ID<Captures>,
-    handler_clauses_captures_id: ID<Captures>,
-    name_binding_point: NameBindingPoint,
-}
-
-impl CapturesForDoWith {
-    #[must_use]
-    pub const fn do_captures_id(&self) -> ID<Captures> { self.do_captures_id }
-
-    #[must_use]
-    pub const fn handler_clauses_captures_id(&self) -> ID<Captures> {
-        self.handler_clauses_captures_id
-    }
-
-    #[must_use]
-    pub fn clone_name_binding_point(&self) -> NameBindingPoint {
-        self.name_binding_point.clone()
-    }
-
-    #[must_use]
-    pub fn into_name_binding_point(self) -> NameBindingPoint {
-        self.name_binding_point
-    }
-}
 
 impl Binder<'_> {
     /// Creates a capturing structure representing all the captures available
@@ -94,44 +66,13 @@ impl Binder<'_> {
         builder.build(&typer_env, &typer).await
     }
 
-    pub fn prune_captures_ir<'x, I: Iterator<Item = &'x mut IR>>(
-        &mut self,
-        capture_id: ID<Captures>,
-        irs: I,
-        mode: capture::pruning::PruneMode,
-    ) {
-        self.captures_map.prune_capture_ir(capture_id, irs, mode);
-    }
-
-    pub async fn create_captures_for_do_with(
-        &mut self,
-        handler: &dyn Handler<Diagnostic>,
-    ) -> Result<CapturesForDoWith, UnrecoverableError> {
-        let captures = self.create_captures(handler).await?;
-
-        // we'll have to create two captures for the handling scope, one for the
-        // `do` part and one for the `with` part.
-        let (name_binding_point, captures) = captures.deconstruct();
-
-        let do_captures_id = self.captures_map.insert(captures.clone());
-        let handler_clauses_captures_id = self.captures_map.insert(captures);
-
-        Ok(CapturesForDoWith {
-            do_captures_id,
-            handler_clauses_captures_id,
-            name_binding_point,
-        })
-    }
-
     /// Creates a nested binder that can be used to produce a nested IR.
-    #[allow(clippy::too_many_arguments)]
     pub async fn new_closure_binder(
         &mut self,
         f: impl AsyncFnOnce(&mut Binder<'_>) -> Result<(), UnrecoverableError>,
         expected_type: Type,
         closure_span: RelativeSpan,
-        capture_id: ID<Captures>,
-        name_binding_point: NameBindingPoint,
+        captures: &CapturesWithNameBindingPoint,
         closure_parameters: Option<
             &pernixc_ir::closure_parameters::ClosureParameters,
         >,
@@ -143,12 +84,14 @@ impl Binder<'_> {
         let current_block_id = ir.control_flow_graph.entry_block_id();
 
         let mut stack = Stack::new(ir.scope_tree.root_scope_id(), false);
-        stack.current_scope_mut().add_named_binding_point(name_binding_point);
+        stack
+            .current_scope_mut()
+            .add_named_binding_point(captures.name_binding_point().clone());
 
         let mut binder = Binder {
             engine: self.engine,
             environment: self.environment,
-            captures: Some(capture_id),
+            captures: Some(captures.captures()),
             closure_parameters,
             ir,
             current_block_id,
@@ -291,20 +234,12 @@ impl Binder<'_> {
     /// ID of the inserted captures.
     pub fn bind_capture_arguments(
         &mut self,
-        captures_id: ID<Captures>,
+        captures: Captures,
         capture_span: RelativeSpan,
-    ) -> CaptureArguments {
+    ) -> (ID<Captures>, CaptureArguments) {
         let mut capture_arguments = FxHashMap::default();
 
-        // NOTE: due to the borrow checker constraints, we have to clone the
-        // capture id vec here.
-        let captures_ids = self.captures_map[captures_id]
-            .capture_ids_as_order()
-            .collect::<Vec<_>>();
-
-        for capture_id in captures_ids {
-            let capture = &self.captures_map[captures_id][capture_id];
-
+        for (capture_id, capture) in captures.captures_as_order() {
             // load or borrow the address based on the capture mode
             let value = match &capture.capture_mode {
                 capture::CaptureMode::ByValue => self
@@ -334,6 +269,8 @@ impl Binder<'_> {
             );
         }
 
-        CaptureArguments::new_with_arguments(capture_arguments)
+        let capture_id = self.captures_map.insert(captures);
+
+        (capture_id, CaptureArguments::new_with_arguments(capture_arguments))
     }
 }
