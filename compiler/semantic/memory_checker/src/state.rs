@@ -860,17 +860,10 @@ impl State {
                     // history.
                 }
             }
-            Self::Projection(Projection::MutableReference(
-                MutableReference { state },
-            )) => {
-                state.simplify();
-
-                if **state == Self::Total(Initialized::True) {
-                    *self = Self::Total(Initialized::True);
-                }
-            }
-
-            Self::Projection(Projection::Enum(Enum { state, .. })) => {
+            Self::Projection(
+                Projection::MutableReference(MutableReference { state })
+                | Projection::Enum(Enum { state, .. }),
+            ) => {
                 state.simplify();
 
                 if **state == Self::Total(Initialized::True) {
