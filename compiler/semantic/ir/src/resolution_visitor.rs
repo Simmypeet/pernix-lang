@@ -473,21 +473,20 @@ pub trait MutableResolutionVisitor {
 }
 
 /// A trait for inspecting the [`Resolution`]s in an object.
-pub trait ResolutionVisitor {
+pub trait ResolutionVisitor: Send + Sync {
     /// Visits the given resolution `resolution`, using the provided `source`
     /// for error reporting if necessary.
     ///
     /// Returns `Err(Abort)` to short-circuit the entire visitation process.
-    #[allow(async_fn_in_trait)]
-    async fn visit(
-        &mut self,
-        resolution: Resolution<'_>,
+    fn visit<'s, 'r>(
+        &'s mut self,
+        resolution: Resolution<'r>,
         span: RelativeSpan,
-    ) -> Result<(), Abort>;
+    ) -> impl Future<Output = Result<(), Abort>> + Send + use<'s, 'r, Self>;
 }
 
 /// A trait for recursively inspecting symbolic resolutions within terms.
-pub trait RecursiveSymbolicResolutionVisitor: Send {
+pub trait RecursiveSymbolicResolutionVisitor: Send + Sync {
     /// Visits the given symbolic resolution `resolution`, using the provided
     /// `span` for error reporting if necessary.
     ///
@@ -517,16 +516,16 @@ pub trait MutableResolutionVisitable {
 
 /// A trait for an object that can have [`ResolutionVisitor`] elements visited
 /// within it.
-pub trait ResolutionVisitable {
+pub trait ResolutionVisitable: Send + Sync {
     /// Visits the types, lifetimes, and constants in self using the given
     /// visitor.
     ///
     /// Returns `Err(Abort)` if the visitor aborts the visitation process.
     #[allow(async_fn_in_trait)]
-    async fn accept<T: ResolutionVisitor>(
-        &self,
-        visitor: &mut T,
-    ) -> Result<(), Abort>;
+    fn accept<'s, 'v, T: ResolutionVisitor>(
+        &'s self,
+        visitor: &'v mut T,
+    ) -> impl Future<Output = Result<(), Abort>> + Send + use<'s, 'v, Self, T>;
 }
 
 /// Accepts a recursive symbolic resolution visitor on a visitable element.
@@ -676,7 +675,7 @@ impl<'a, T> IntoResolutionWithSpan<'a, T> {
     }
 }
 
-impl<'a, T> ResolutionVisitable for IntoResolutionWithSpan<'a, T>
+impl<'a, T: Send + Sync> ResolutionVisitable for IntoResolutionWithSpan<'a, T>
 where
     &'a T: Into<Resolution<'a>>,
 {

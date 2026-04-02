@@ -680,9 +680,6 @@ impl Binder<'_> {
         let _ = self.effect_handler_context.accept_mut(&mut visitor).await;
         visitor.bail()?;
 
-        let _ = self.closure_parameters_map.accept_mut(&mut visitor).await;
-        visitor.bail()?;
-
         let _ = self.captures_map.accept_mut(&mut visitor).await;
         visitor.bail()?;
 

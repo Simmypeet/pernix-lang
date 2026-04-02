@@ -266,8 +266,16 @@ impl<N: Normalizer> Checker<'_, N> {
         let function_signature =
             self.engine().get_parameters(self.current_site()).await;
 
+        let operation_symbol_parameters = self
+            .value_environment
+            .try_get_current_operation_handler_parameters()
+            .await;
+
         addresses.sort_by(|x, y| match (x, y) {
-            (Memory::Parameter(x_id), Memory::Parameter(y_id)) => {
+            (
+                Memory::FunctionParameter(x_id),
+                Memory::FunctionParameter(y_id),
+            ) => {
                 let x = function_signature
                     .parameter_order
                     .iter()
@@ -303,17 +311,16 @@ impl<N: Normalizer> Checker<'_, N> {
                 x.cmp(&y)
             }
             (
-                Memory::ClosureParameter(x_id),
-                Memory::ClosureParameter(y_id),
+                Memory::OperationHandlerParameter(x_id),
+                Memory::OperationHandlerParameter(y_id),
             ) => {
-                let x = self
-                    .value_environment
-                    .closure_parameters()
+                let operation_symbol_parameters =
+                    operation_symbol_parameters.as_ref().unwrap();
+
+                let x = operation_symbol_parameters
                     .get_parameter_declaration_order(*x_id);
 
-                let y = self
-                    .value_environment
-                    .closure_parameters()
+                let y = operation_symbol_parameters
                     .get_parameter_declaration_order(*y_id);
 
                 x.cmp(&y).reverse()
@@ -350,7 +357,7 @@ impl<N: Normalizer> Checker<'_, N> {
                 .map(|x| (x, &function_signature.parameters[x]))
             {
                 assert!(stack.current_mut().new_state(
-                    Memory::Parameter(parameter_id),
+                    Memory::FunctionParameter(parameter_id),
                     true,
                     parameter.r#type.clone(),
                 ));
@@ -358,16 +365,23 @@ impl<N: Normalizer> Checker<'_, N> {
         }
 
         // if we have closure parameters, initialize them
-        if let Some(closure_parameters) =
-            self.value_environment.closure_parameters
+        if let Some(parameters) = self
+            .value_environment
+            .try_get_current_operation_handler_parameters()
+            .await
         {
+            let inst = self
+                .value_environment
+                .get_current_operation_handler_instantiation()
+                .await;
+
             for (closure_parameter_id, closure_parameter) in
-                closure_parameters.parameters_as_order()
+                parameters.parameters_as_order()
             {
                 assert!(stack.current_mut().new_state(
-                    Memory::ClosureParameter(closure_parameter_id),
+                    Memory::OperationHandlerParameter(closure_parameter_id),
                     true,
-                    closure_parameter.r#type.clone(),
+                    inst.clone_and_instantiate(&closure_parameter.r#type)
                 ));
             }
         }

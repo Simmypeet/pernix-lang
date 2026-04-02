@@ -11,8 +11,7 @@ use qbice::{
 use crate::{
     IRWithContext,
     capture::{Captures, CapturesMap},
-    closure_parameters::{ClosureParameters, ClosureParametersMap},
-    handling_scope::HandlingScopes,
+    handling_scope::{HandlingScopes, OperationHandlerID},
     ir::{IR, IRMap},
     resolution_visitor::{
         Abort, MutableResolutionVisitable, MutableResolutionVisitor,
@@ -41,9 +40,6 @@ pub struct FunctionIR {
     /// The collection of all IRs defined in the function.
     ir_map: IRMap,
 
-    /// The collection of all closure parameters defined in the function.
-    closure_parameters_map: ClosureParametersMap,
-
     /// The collection of all captures defined in the function.
     captures_map: CapturesMap,
 
@@ -69,15 +65,6 @@ impl FunctionIR {
         &self.captures_map[id]
     }
 
-    /// Gets the closure parameters with the given ID.
-    #[must_use]
-    pub fn get_closure_parameters(
-        &self,
-        id: ID<ClosureParameters>,
-    ) -> &ClosureParameters {
-        &self.closure_parameters_map[id]
-    }
-
     /// Accepts a visitor and invoke it on the closure parameters and captures
     /// of all IRs in the function.
     pub async fn accept_visitor_for_closure_and_capture<
@@ -86,8 +73,8 @@ impl FunctionIR {
         &mut self,
         visitor: &mut T,
     ) -> Result<(), Abort> {
-        self.closure_parameters_map.accept_mut(visitor).await?;
-        self.captures_map.accept_mut(visitor).await
+        self.captures_map.accept_mut(visitor).await?;
+        self.handling_scopes.accept_mut(visitor).await
     }
 
     pub async fn accept_visitor_for_ir<T: MutableResolutionVisitor>(
@@ -114,12 +101,7 @@ impl FunctionIR {
     CopyGetters,
 )]
 pub struct OperationHandlerContext {
-    /// The ID of the closure parameters that the operation handler uses.
-    #[get_copy = "pub"]
-    closure_parameters_id: ID<ClosureParameters>,
-
-    /// The ID of the captures that the operation handler uses.
-    #[get_copy = "pub"]
+    operation_handler_id: OperationHandlerID,
     captures_id: ID<Captures>,
 }
 
@@ -127,10 +109,10 @@ impl OperationHandlerContext {
     /// Creates a new operation handler context.
     #[must_use]
     pub const fn new(
-        closure_parameters_id: ID<ClosureParameters>,
+        operation_handler_id: OperationHandlerID,
         captures_id: ID<Captures>,
     ) -> Self {
-        Self { closure_parameters_id, captures_id }
+        Self { operation_handler_id, captures_id }
     }
 }
 
@@ -192,11 +174,11 @@ impl IRContext {
     /// Creates an operation handler IR context.
     #[must_use]
     pub const fn new_operation_handler_context(
-        closure_parameters_id: ID<ClosureParameters>,
+        operation_handler_id: OperationHandlerID,
         captures_id: ID<Captures>,
     ) -> Self {
         Self::OperationHandler(OperationHandlerContext::new(
-            closure_parameters_id,
+            operation_handler_id,
             captures_id,
         ))
     }
@@ -206,19 +188,12 @@ impl FunctionIR {
     /// Creates a new function IR.
     #[must_use]
     pub const fn new(
-        handler_groups: HandlingScopes,
+        handling_scopes: HandlingScopes,
         ir_map: IRMap,
-        closure_parameters_map: ClosureParametersMap,
         captures_map: CapturesMap,
         root_ir_id: ID<IRWithContext>,
     ) -> Self {
-        Self {
-            handling_scopes: handler_groups,
-            ir_map,
-            closure_parameters_map,
-            captures_map,
-            root_ir_id,
-        }
+        Self { handling_scopes, ir_map, captures_map, root_ir_id }
     }
 
     /// Gets the root IR representing the main body of the function.
@@ -258,17 +233,16 @@ impl FunctionIR {
                     .build(),
 
                 IRContext::OperationHandler(operation_handler_context) => {
-                    let captures = self
-                        .get_capture(operation_handler_context.captures_id());
-                    let closure_parameters = self.get_closure_parameters(
-                        operation_handler_context.closure_parameters_id(),
-                    );
+                    let captures =
+                        self.get_capture(operation_handler_context.captures_id);
 
                     ValueEnvironment::builder()
                         .type_environment(ty_environment)
                         .current_site(current_site)
                         .captures(captures)
-                        .closure_parameters(closure_parameters)
+                        .current_operation_handler_id(
+                            operation_handler_context.operation_handler_id,
+                        )
                         .handling_scopes(&self.handling_scopes)
                         .build()
                 }
@@ -306,7 +280,6 @@ impl FunctionIR {
         ),
     > + 's {
         let captures_map = &self.captures_map;
-        let closure_parameters_map = &self.closure_parameters_map;
         let handling_scopes = &self.handling_scopes;
 
         self.ir_map.ir_with_contexts_mut().map(
@@ -320,16 +293,15 @@ impl FunctionIR {
 
                     IRContext::OperationHandler(operation_handler_context) => {
                         let captures = &captures_map
-                            [operation_handler_context.captures_id()];
-
-                        let closure_parameters = &closure_parameters_map
-                            [operation_handler_context.closure_parameters_id()];
+                            [operation_handler_context.captures_id];
 
                         ValueEnvironment::builder()
                             .type_environment(ty_environment)
                             .current_site(current_site)
                             .captures(captures)
-                            .closure_parameters(closure_parameters)
+                            .current_operation_handler_id(
+                                operation_handler_context.operation_handler_id,
+                            )
                             .handling_scopes(handling_scopes)
                             .build()
                     }

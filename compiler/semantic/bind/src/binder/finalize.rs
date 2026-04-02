@@ -138,7 +138,6 @@ impl Binder<'_> {
         let function_ir = FunctionIR::new(
             self.effect_handler_context.into_handler_groups(),
             self.ir_map,
-            self.closure_parameters_map,
             self.captures_map,
             root_ir_id,
         );

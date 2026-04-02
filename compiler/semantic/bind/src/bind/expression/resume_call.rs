@@ -38,16 +38,12 @@ impl Bind<&pernixc_syntax::expression::unit::ResumeCall> for Binder<'_> {
             return Err(Error::Binding(BindingError(syntax_tree.span())));
         };
 
-        let handler_clause =
-            self.get_handler_clause(operation_handler_id.handler_clause_id());
+        let operation_symbol_id =
+            self.get_global_operation_symbol_id(operation_handler_id);
 
-        let operation_symbol_id = handler_clause
-            .effect_id()
-            .target_id
-            .make_global(operation_handler_id.operation_id());
-
-        let mut handler_instantiation =
-            handler_clause.create_instantiation(self.engine()).await;
+        let mut handler_instantiation = self
+            .get_handler_instantiation(operation_handler_id.handler_clause_id())
+            .await;
 
         // erase the lifetime of the operation generic parameters
         let operation_generic_parameters =

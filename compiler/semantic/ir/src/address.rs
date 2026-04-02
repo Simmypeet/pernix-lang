@@ -22,7 +22,6 @@ use crate::{
     Values,
     alloca::Alloca,
     capture::Capture,
-    closure_parameters::ClosureParameter,
     resolution_visitor::{Abort, MutableResolutionVisitor, ResolutionVisitor},
     value::{Environment, TypeOf, Value},
 };
@@ -221,9 +220,14 @@ pub struct Reference {
 )]
 #[allow(missing_docs)]
 pub enum Memory {
-    Parameter(ID<Parameter>),
+    /// Refers to a function parameter
+    FunctionParameter(ID<Parameter>),
+
     Alloca(ID<Alloca>),
-    ClosureParameter(ID<ClosureParameter>),
+
+    /// Refers to a parameter declared in the operation handler (in the do-with
+    /// expression.)
+    OperationHandlerParameter(ID<Parameter>),
 
     /// A captured variable from the parent closure/function.
     Capture(ID<Capture>),
@@ -237,8 +241,8 @@ impl Memory {
     pub const fn drop_priority(&self) -> usize {
         match self {
             Self::Capture(_) => 0,
-            Self::ClosureParameter(_) => 1,
-            Self::Parameter(_) => 2,
+            Self::OperationHandlerParameter(_) => 1,
+            Self::FunctionParameter(_) => 2,
             Self::Alloca(_) => 3,
         }
     }
@@ -270,6 +274,13 @@ pub enum Address {
 }
 
 impl Address {
+    #[must_use]
+    pub const fn new_operation_handler_parameter(
+        parameter_id: ID<Parameter>,
+    ) -> Self {
+        Self::Memory(Memory::OperationHandlerParameter(parameter_id))
+    }
+
     /// Gets the number of dereference operations found in the address.
     #[must_use]
     pub const fn get_dereference_count(mut self: &Self) -> usize {
@@ -468,7 +479,7 @@ impl Values {
         envionment: &Environment<'_, impl Normalizer>,
     ) -> Type {
         match address {
-            Memory::Parameter(id) => {
+            Memory::FunctionParameter(id) => {
                 let function_signature = envionment
                     .tracked_engine()
                     .get_parameters(envionment.current_site)
@@ -483,11 +494,12 @@ impl Values {
                 alloca.r#type.clone()
             }
 
-            Memory::ClosureParameter(id) => {
-                let closure_parameter = &envionment.closure_parameters()[*id];
-
-                closure_parameter.r#type.clone()
+            Memory::OperationHandlerParameter(id) => {
+                envionment
+                    .get_instantiated_operation_handler_parameter_type(*id)
+                    .await
             }
+
             Memory::Capture(id) => {
                 let capture = &envionment.captures()[*id];
 
@@ -505,7 +517,7 @@ impl TypeOf<&Address> for Values {
         environment: &Environment<'_, N>,
     ) -> Result<Succeeded<Type>, OverflowError> {
         match address {
-            Address::Memory(Memory::Parameter(parameter)) => {
+            Address::Memory(Memory::FunctionParameter(parameter)) => {
                 let function_signature = environment
                     .tracked_engine()
                     .get_parameters(environment.current_site)
@@ -548,13 +560,14 @@ impl TypeOf<&Address> for Values {
                 }
             }
 
-            Address::Memory(Memory::ClosureParameter(parameter)) => {
-                let closure_parameter =
-                    &environment.closure_parameters()[*parameter];
+            Address::Memory(Memory::OperationHandlerParameter(id)) => {
+                let parameter_ty = environment
+                    .get_instantiated_operation_handler_parameter_type(*id)
+                    .await;
 
                 Ok(environment
                     .type_environment
-                    .simplify(closure_parameter.r#type.clone())
+                    .simplify(parameter_ty)
                     .await?
                     .deref()
                     .clone())
@@ -742,7 +755,7 @@ impl Values {
         environment: &Environment<'_, N>,
     ) -> RelativeSpan {
         match address {
-            Memory::Parameter(id) => {
+            Memory::FunctionParameter(id) => {
                 let parameters = environment
                     .tracked_engine()
                     .get_parameters(environment.current_site)
@@ -757,9 +770,9 @@ impl Values {
 
             Memory::Capture(id) => environment.captures()[*id].span,
 
-            Memory::ClosureParameter(id) => {
-                environment.closure_parameters()[*id].span
-            }
+            Memory::OperationHandlerParameter(id) => *environment
+                .get_current_operation_handler()
+                .get_span_of_parameter(*id),
         }
     }
 }

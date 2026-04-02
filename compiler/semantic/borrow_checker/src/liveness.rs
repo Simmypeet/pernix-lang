@@ -1072,8 +1072,8 @@ impl<N: Normalizer> Traverser for LiveLenderTraverser<'_, N> {
             Instruction::ScopePop(scope_pop) => {
                 let scope_of_memory = match self.root_memory {
                     Memory::Capture(_)
-                    | Memory::ClosureParameter(_)
-                    | Memory::Parameter(_) => {
+                    | Memory::OperationHandlerParameter(_)
+                    | Memory::FunctionParameter(_) => {
                         self.context.ir().scope_tree.root_scope_id()
                     }
 

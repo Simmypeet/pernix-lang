@@ -4,7 +4,6 @@ use pernixc_arena::ID;
 use pernixc_ir::{
     IRWithContext,
     capture::Captures,
-    closure_parameters::ClosureParameters,
     function_ir::IRContext,
     handling_scope::{
         self, HandlerClause, HandlerClauseID, HandlingScope, HandlingScopes,
@@ -15,8 +14,12 @@ use pernixc_ir::{
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
+use pernixc_semantic_element::parameter::Parameter;
 use pernixc_target::Global;
-use pernixc_term::{generic_arguments::GenericArguments, r#type::Type};
+use pernixc_term::{
+    generic_arguments::GenericArguments, instantiation::Instantiation,
+    r#type::Type,
+};
 use pernixc_type_system::{OverflowError, environment::Premise};
 
 use crate::{
@@ -181,28 +184,19 @@ impl Binder<'_> {
         );
     }
 
-    /// Gets the [`HandlerClause`] with the [`HandlerClauseID`].
-    #[must_use]
-    pub fn get_handler_clause(&self, id: HandlerClauseID) -> &HandlerClause {
-        self.effect_handler_context.handling_scopes.get_handler_clause(id)
-    }
-
     /// Creates a new operation handler with the given IR, captures, and
     /// closure parameters.
     #[must_use]
-    pub fn new_operation_handler(
+    pub fn new_operation_handler_ir(
         &mut self,
         ir: IR,
         captures_id: ID<Captures>,
-        closure_parameters: ClosureParameters,
+        operation_handler_id: OperationHandlerID,
     ) -> OperationHandler {
-        let closure_parameters_id =
-            self.insert_closure_parameters(closure_parameters);
-
         let ir_id = self.ir_map.new_ir(IRWithContext::new(
             ir,
             IRContext::new_operation_handler_context(
-                closure_parameters_id,
+                operation_handler_id,
                 captures_id,
             ),
         ));
@@ -230,6 +224,22 @@ impl Binder<'_> {
         self.effect_handler_context.handler_gruop_stack.push(handler_group);
 
         (handler_group, Type::Inference(return_type))
+    }
+
+    pub fn insert_operation_handler_to_handler_clause(
+        &mut self,
+        handler_clause_id: HandlerClauseID,
+        effect_operation_symbol_id: pernixc_symbol::SymbolID,
+    ) -> OperationHandlerID {
+        let id = self
+            .effect_handler_context
+            .handling_scopes
+            .insert_operation_handler_to_handler_clause(
+                handler_clause_id,
+                effect_operation_symbol_id,
+            );
+
+        OperationHandlerID::new(handler_clause_id, id)
     }
 
     /// Insert a new effect handler into an existing handler group
@@ -288,6 +298,41 @@ impl Binder<'_> {
         }
 
         Ok(None)
+    }
+
+    #[must_use]
+    pub fn get_global_operation_symbol_id(
+        &self,
+        operation_handler_id: OperationHandlerID,
+    ) -> Global<pernixc_symbol::SymbolID> {
+        self.effect_handler_context
+            .handling_scopes
+            .get_global_operation_symbol_id(operation_handler_id)
+    }
+
+    pub fn add_operation_parameter_span(
+        &mut self,
+        operation_handler_id: OperationHandlerID,
+        parameter_id: ID<Parameter>,
+        span: RelativeSpan,
+    ) {
+        self.effect_handler_context
+            .handling_scopes
+            .add_operation_parameter_span(
+                operation_handler_id,
+                parameter_id,
+                span,
+            );
+    }
+
+    pub async fn get_handler_instantiation(
+        &self,
+        handler_clause_id: HandlerClauseID,
+    ) -> Instantiation {
+        self.effect_handler_context
+            .handling_scopes
+            .get_handler_instantiation(handler_clause_id, self.engine)
+            .await
     }
 }
 

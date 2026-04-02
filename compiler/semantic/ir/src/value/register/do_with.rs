@@ -301,19 +301,13 @@ impl DoWith {
         D: pernixc_diagnostic::Report
             + From<pernixc_type_system::diagnostic::Diagnostic>,
     {
-        use crate::resolution_visitor::IntoResolutionWithSpan;
-
         let mut wf_check_visitor =
             crate::wf_check::WfCheckVisitor::new(environment, handler);
 
         for handler_clause_id in self.handler_clause_ids() {
-            let handler_clause =
-                environment.get_handler_clause(handler_clause_id);
-
-            let visitable = IntoResolutionWithSpan::new(
-                handler_clause,
-                *handler_clause.qualified_identifier_span(),
-            );
+            let visitable = environment
+                .handling_scopes
+                .get_visitable_handler_clause(handler_clause_id);
 
             wf_check_visitor.check_resolution(&visitable).await?;
         }

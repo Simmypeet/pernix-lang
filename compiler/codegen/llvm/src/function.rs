@@ -872,7 +872,7 @@ impl<'rctx, 'ctx, 'i, 'k> Builder<'rctx, 'ctx, 'i, 'k> {
                 }
             };
 
-            address_map.insert(Memory::Parameter(param_id), address);
+            address_map.insert(Memory::FunctionParameter(param_id), address);
         }
 
         // create allocas for all the local variables

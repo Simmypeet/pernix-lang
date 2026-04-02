@@ -3,21 +3,19 @@
 use std::ops::Deref;
 
 use pernixc_qbice::TrackedEngine;
+use pernixc_semantic_element::parameter::Parameters;
 use pernixc_target::Global;
+use qbice::storage::intern::Interned;
 
 use crate::{
-    Values, capture::Captures, closure_parameters::ClosureParameters, scope,
+    Values, capture::Captures, handling_scope::OperationHandlerID, scope,
 };
 
 /// Represents the environment in which the analysis takes place.
-pub trait Environment {
+pub trait Environment: Send + Sync {
     /// Retrieves the captures associated with the environment (the analysis is
     /// taking place in a closure).
     fn captures(&self) -> Option<&Captures>;
-
-    /// Retrieves the closure parameters associated with the environment (the
-    /// analysis is taking place in a closure).
-    fn closure_parameters(&self) -> Option<&ClosureParameters>;
 
     /// Retrieves the [`Values`]. The central repository for retrieving values.
     fn values(&self) -> &Values;
@@ -28,8 +26,31 @@ pub trait Environment {
     /// The site where the analysis is taking place.
     fn current_site(&self) -> Global<pernixc_symbol::SymbolID>;
 
+    /// Retrieves the current operation handler ID, if it exists (the analysis
+    /// is taking place in a handling scope).
+    fn current_operation_handler_id(&self) -> Option<&OperationHandlerID>;
+
+    /// Retrieves the handling scopes associated with the environment.
+    fn handling_scopes(&self) -> &crate::handling_scope::HandlingScopes;
+
     /// Retrieves the scope tree.
     fn scope_tree(&self) -> &scope::Tree;
+
+    fn current_operation_parameters(
+        &self,
+    ) -> impl Future<Output = Interned<Parameters>> + Send + '_ {
+        async move {
+            let operation_handler_id =
+                self.current_operation_handler_id().unwrap();
+
+            self.handling_scopes()
+                .get_operation_handler_parameters(
+                    *operation_handler_id,
+                    self.tracked_engine(),
+                )
+                .await
+        }
+    }
 }
 
 /// An interface for retrieving types of values.

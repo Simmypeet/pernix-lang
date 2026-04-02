@@ -6,7 +6,7 @@ use pernixc_handler::Handler;
 use pernixc_hash::FxHashMap;
 use pernixc_ir::{
     capture::{self, Captures, builder::CapturesWithNameBindingPoint},
-    closure_parameters::ClosureParameters,
+    handling_scope::OperationHandlerID,
     instruction::{self, ScopePush},
     ir::IR,
     value::{
@@ -73,9 +73,7 @@ impl Binder<'_> {
         expected_type: Type,
         closure_span: RelativeSpan,
         captures: &CapturesWithNameBindingPoint,
-        closure_parameters: Option<
-            &pernixc_ir::closure_parameters::ClosureParameters,
-        >,
+        current_operation_handler_id: Option<OperationHandlerID>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<IR, UnrecoverableError> {
         // temporary move out the inference context for the inner binder
@@ -92,7 +90,7 @@ impl Binder<'_> {
             engine: self.engine,
             environment: self.environment,
             captures: Some(captures.captures()),
-            closure_parameters,
+            current_operation_handler_id,
             ir,
             current_block_id,
             stack,
@@ -102,9 +100,6 @@ impl Binder<'_> {
             // temporarily move the states that presist across binders
             inference_context: std::mem::take(&mut self.inference_context),
             ir_map: std::mem::take(&mut self.ir_map),
-            closure_parameters_map: std::mem::take(
-                &mut self.closure_parameters_map,
-            ),
             captures_map: std::mem::take(&mut self.captures_map),
             effect_handler_context: std::mem::take(
                 &mut self.effect_handler_context,
@@ -132,7 +127,6 @@ impl Binder<'_> {
         self.inference_context = binder.inference_context;
         self.effect_handler_context = binder.effect_handler_context;
         self.ir_map = binder.ir_map;
-        self.closure_parameters_map = binder.closure_parameters_map;
         self.captures_map = binder.captures_map;
 
         result.map(|()| binder.ir)
@@ -219,14 +213,6 @@ impl Binder<'_> {
         }
 
         Ok(())
-    }
-
-    /// Insert the given closure parameters and return its ID.
-    pub fn insert_closure_parameters(
-        &mut self,
-        closure_parameters: ClosureParameters,
-    ) -> ID<ClosureParameters> {
-        self.closure_parameters_map.insert(closure_parameters)
     }
 
     /// Given the captures, bind all the load/borrow operations for each capture

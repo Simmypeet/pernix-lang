@@ -3,8 +3,13 @@
 use derive_more::Index;
 use getset::{CopyGetters, Getters};
 use pernixc_arena::{Arena, ID};
+use pernixc_hash::FxHashMap;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
+use pernixc_semantic_element::parameter::{
+    Parameter, Parameters, get_parameters,
+};
+use pernixc_symbol::SymbolID;
 use pernixc_target::Global;
 use pernixc_term::{
     generic_arguments::{GenericArguments, Symbol},
@@ -12,11 +17,11 @@ use pernixc_term::{
     r#type::Type,
 };
 use pernixc_type_system::OverflowError;
-use qbice::{Decode, Encode, StableHash};
+use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
 use crate::resolution_visitor::{
-    self, Abort, MutableResolutionVisitor, Resolution, ResolutionMut,
-    ResolutionVisitor,
+    self, Abort, IntoResolutionWithSpan, MutableResolutionVisitor, Resolution,
+    ResolutionMut, ResolutionVisitable, ResolutionVisitor,
 };
 
 macro_rules! visit_handling_scopes {
@@ -101,15 +106,49 @@ impl resolution_visitor::ResolutionVisitable for HandlingScopes {
 }
 
 impl HandlingScopes {
-    /// Gets the [`HandlerClause`] with the [`HandlerClauseID`].
     #[must_use]
-    pub fn get_handler_clause(&self, id: HandlerClauseID) -> &HandlerClause {
+    fn get_handler_clause(&self, id: HandlerClauseID) -> &HandlerClause {
         self.0
             .get(id.handler_group_id)
             .unwrap()
             .handler_clauses
             .get(id.effect_handler_id)
             .unwrap()
+    }
+
+    #[must_use]
+    pub fn get_visitable_handler_clause(
+        &self,
+        id: HandlerClauseID,
+    ) -> impl ResolutionVisitable {
+        let handler_clause = self.get_handler_clause(id);
+
+        IntoResolutionWithSpan::new(
+            handler_clause,
+            *handler_clause.qualified_identifier_span(),
+        )
+    }
+
+    pub async fn get_handler_instantiation(
+        &self,
+        handler_clause_id: HandlerClauseID,
+        tracked_engine: &TrackedEngine,
+    ) -> Instantiation {
+        let handler_clause = self.get_handler_clause(handler_clause_id);
+
+        handler_clause.create_instantiation(tracked_engine).await
+    }
+
+    #[must_use]
+    pub async fn get_operation_handler_parameters(
+        &self,
+        operation_handler_id: OperationHandlerID,
+        tracked_engine: &TrackedEngine,
+    ) -> Interned<Parameters> {
+        let operation_symbol_id =
+            self.get_global_operation_symbol_id(operation_handler_id);
+
+        tracked_engine.get_parameters(operation_symbol_id).await
     }
 
     /// Gets the [`HandlingScope`] with the given ID.
@@ -130,6 +169,26 @@ impl HandlingScopes {
         self.0.insert(HandlingScope::new(do_with_span, return_type))
     }
 
+    /// Adds a new operation handler to the handler clause with the given ID.
+    pub fn insert_operation_handler_to_handler_clause(
+        &mut self,
+        handler_clause_id: HandlerClauseID,
+        operation_symbol: SymbolID,
+    ) -> ID<OperationHandler> {
+        let handler_clause = self
+            .0
+            .get_mut(handler_clause_id.handler_group_id)
+            .unwrap()
+            .handler_clauses
+            .get_mut(handler_clause_id.effect_handler_id)
+            .unwrap();
+
+        handler_clause.operation_handlers.insert(OperationHandler {
+            operation_symbol_id: operation_symbol,
+            span_by_operation_parameter_id: FxHashMap::default(),
+        })
+    }
+
     /// Inserts a new [`HandlerClause`] into the [`HandlingScope`] with the
     /// [`pernixc_arena::ID<HandlingScope>`].
     pub fn insert_handler_clause_to_handling_scope(
@@ -139,6 +198,88 @@ impl HandlingScopes {
     ) -> pernixc_arena::ID<HandlerClause> {
         let handling_scope = self.0.get_mut(handling_scope_id).unwrap();
         handling_scope.handler_clauses.insert(effect_handler)
+    }
+
+    #[must_use]
+    pub fn get_operation_handler(
+        &self,
+        operation_handler_id: OperationHandlerID,
+    ) -> &OperationHandler {
+        let handler_clause =
+            self.get_handler_clause(operation_handler_id.handler_clause_id());
+
+        handler_clause
+            .get_operation_handler(operation_handler_id.operation_handler_id())
+    }
+
+    #[must_use]
+    pub fn get_global_operation_symbol_id(
+        &self,
+        operation_handler_id: OperationHandlerID,
+    ) -> Global<pernixc_symbol::SymbolID> {
+        let handler_clause =
+            self.get_handler_clause(operation_handler_id.handler_clause_id());
+
+        let target_id = handler_clause.effect_id().target_id;
+
+        Global::new(
+            target_id,
+            handler_clause
+                .get_operation_handler(
+                    operation_handler_id.operation_handler_id(),
+                )
+                .operation_symbol_id(),
+        )
+    }
+
+    pub async fn get_instantiated_operation_handler_parameter_type(
+        &self,
+        operation_handler_id: OperationHandlerID,
+        parameter_id: ID<Parameter>,
+        tracked_engine: &TrackedEngine,
+    ) -> Type {
+        let handler_clause =
+            self.get_handler_clause(operation_handler_id.handler_clause_id());
+
+        let inst = handler_clause.create_instantiation(tracked_engine).await;
+
+        let operation_symbol_id =
+            handler_clause.effect_id().target_id.make_global(
+                handler_clause
+                    .get_operation_handler(
+                        operation_handler_id.operation_handler_id(),
+                    )
+                    .operation_symbol_id(),
+            );
+
+        let parameters =
+            tracked_engine.get_parameters(operation_symbol_id).await;
+
+        inst.clone_and_instantiate(&parameters.parameters[parameter_id].r#type)
+    }
+
+    pub fn add_operation_parameter_span(
+        &mut self,
+        operation_handler_id: OperationHandlerID,
+        parameter_id: ID<Parameter>,
+        span: RelativeSpan,
+    ) {
+        let handler_clause = self
+            .0
+            .get_mut(operation_handler_id.handler_clause_id().handler_group_id)
+            .unwrap()
+            .handler_clauses
+            .get_mut(operation_handler_id.handler_clause_id().effect_handler_id)
+            .unwrap();
+
+        let operation_handler = handler_clause
+            .operation_handlers
+            .get_mut(operation_handler_id.operation_handler_id)
+            .unwrap();
+
+        operation_handler
+            .span_by_operation_parameter_id
+            .insert(parameter_id, span);
     }
 }
 
@@ -257,9 +398,6 @@ impl HandlingScope {
     Clone,
     PartialEq,
     Eq,
-    PartialOrd,
-    Ord,
-    Hash,
     StableHash,
     Encode,
     Decode,
@@ -269,6 +407,8 @@ impl HandlingScope {
 pub struct HandlerClause {
     symbol: Symbol,
     qualified_identifier_span: RelativeSpan,
+
+    operation_handlers: Arena<OperationHandler>,
 }
 
 impl<'a> From<&'a HandlerClause> for Resolution<'a> {
@@ -277,7 +417,7 @@ impl<'a> From<&'a HandlerClause> for Resolution<'a> {
 
 impl HandlerClause {
     #[must_use]
-    pub const fn new(
+    pub fn new(
         effect_id: Global<pernixc_symbol::SymbolID>,
         generic_arguments: GenericArguments,
         span: RelativeSpan,
@@ -285,6 +425,7 @@ impl HandlerClause {
         Self {
             symbol: Symbol::new(effect_id, generic_arguments),
             qualified_identifier_span: span,
+            operation_handlers: Arena::new(),
         }
     }
 
@@ -309,6 +450,14 @@ impl HandlerClause {
     #[must_use]
     pub const fn qualified_identifier_span(&self) -> &RelativeSpan {
         &self.qualified_identifier_span
+    }
+
+    #[must_use]
+    pub fn get_operation_handler(
+        &self,
+        id: ID<OperationHandler>,
+    ) -> &OperationHandler {
+        self.operation_handlers.get(id).unwrap()
     }
 }
 
@@ -355,7 +504,7 @@ pub struct OperationHandlerID {
 
     /// The operation ID that this operation handler handles.
     #[get_copy = "pub"]
-    operation_id: pernixc_symbol::SymbolID,
+    operation_handler_id: ID<OperationHandler>,
 }
 
 impl OperationHandlerID {
@@ -363,9 +512,9 @@ impl OperationHandlerID {
     #[must_use]
     pub const fn new(
         handler_clause_id: HandlerClauseID,
-        operation_id: pernixc_symbol::SymbolID,
+        operation_handler_id: ID<OperationHandler>,
     ) -> Self {
-        Self { handler_clause_id, operation_id }
+        Self { handler_clause_id, operation_handler_id }
     }
 
     /// Returns the handling scope ID where this operation handler is located.
@@ -374,5 +523,40 @@ impl OperationHandlerID {
         &self,
     ) -> pernixc_arena::ID<crate::handling_scope::HandlingScope> {
         self.handler_clause_id.handler_group_id
+    }
+}
+
+#[derive(
+    Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, CopyGetters,
+)]
+pub struct OperationHandler {
+    operation_symbol_id: SymbolID,
+    span_by_operation_parameter_id: FxHashMap<ID<Parameter>, RelativeSpan>,
+}
+
+impl OperationHandler {
+    #[must_use]
+    pub const fn operation_symbol_id(&self) -> SymbolID {
+        self.operation_symbol_id
+    }
+
+    pub fn add_operation_parameter_span(
+        &mut self,
+        parameter_id: ID<Parameter>,
+        span: RelativeSpan,
+    ) {
+        assert!(
+            self.span_by_operation_parameter_id
+                .insert(parameter_id, span)
+                .is_none()
+        );
+    }
+
+    #[must_use]
+    pub fn get_span_of_parameter(
+        &self,
+        parameter_id: ID<Parameter>,
+    ) -> &RelativeSpan {
+        self.span_by_operation_parameter_id.get(&parameter_id).unwrap()
     }
 }

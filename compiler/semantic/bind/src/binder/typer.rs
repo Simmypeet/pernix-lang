@@ -3,7 +3,10 @@
 use std::ops::Deref;
 
 use pernixc_handler::Handler;
-use pernixc_ir::{address::Address, typer::Typer, value::TypeOf};
+use pernixc_ir::{
+    address::Address, handling_scope::OperationHandlerID, typer::Typer,
+    value::TypeOf,
+};
 use pernixc_qbice::TrackedEngine;
 use pernixc_type_system::UnrecoverableError;
 use qbice::StableHash;
@@ -75,23 +78,17 @@ impl Typer<Address> for BinderTyper<'_> {
 #[derive(Debug, Clone, Copy)]
 pub struct Environment<'s> {
     captures: Option<&'s pernixc_ir::capture::Captures>,
-    closure_parameters:
-        Option<&'s pernixc_ir::closure_parameters::ClosureParameters>,
     tracked_engine: &'s TrackedEngine,
     current_site: pernixc_target::Global<pernixc_symbol::SymbolID>,
     scope_tree: &'s pernixc_ir::scope::Tree,
     values: &'s pernixc_ir::Values,
+    handling_scopes: &'s pernixc_ir::handling_scope::HandlingScopes,
+    current_operation_handler_id: Option<OperationHandlerID>,
 }
 
 impl pernixc_ir::typer::Environment for Environment<'_> {
     fn captures(&self) -> Option<&pernixc_ir::capture::Captures> {
         self.captures
-    }
-
-    fn closure_parameters(
-        &self,
-    ) -> Option<&pernixc_ir::closure_parameters::ClosureParameters> {
-        self.closure_parameters
     }
 
     fn values(&self) -> &pernixc_ir::Values { self.values }
@@ -103,6 +100,14 @@ impl pernixc_ir::typer::Environment for Environment<'_> {
     }
 
     fn scope_tree(&self) -> &pernixc_ir::scope::Tree { self.scope_tree }
+
+    fn current_operation_handler_id(&self) -> Option<&OperationHandlerID> {
+        self.current_operation_handler_id.as_ref()
+    }
+
+    fn handling_scopes(&self) -> &pernixc_ir::handling_scope::HandlingScopes {
+        self.handling_scopes
+    }
 }
 
 impl Binder<'_> {
@@ -128,7 +133,8 @@ impl Binder<'_> {
             current_site: self.current_site(),
             scope_tree: self.scope_tree(),
             values: self.values(),
-            closure_parameters: self.closure_parameters(),
+            handling_scopes: self.handling_scopes(),
+            current_operation_handler_id: self.current_operation_handler_id,
         }
     }
 }

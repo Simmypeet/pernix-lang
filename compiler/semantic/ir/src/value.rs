@@ -5,17 +5,23 @@ use literal::Literal;
 use pernixc_arena::ID;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
+use pernixc_semantic_element::parameter::{
+    Parameter, Parameters, get_parameters,
+};
 use pernixc_target::Global;
-use pernixc_term::r#type::Type;
+use pernixc_term::{instantiation::Instantiation, r#type::Type};
 use pernixc_type_system::{
     OverflowError, Succeeded, environment::Environment as TyEnvironment,
     normalizer::Normalizer,
 };
-use qbice::{Decode, Encode, StableHash};
+use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
 use crate::{
-    Values, capture::Captures, closure_parameters::ClosureParameters,
-    handling_scope::HandlerClauseID, value::register::Register,
+    Values,
+    capture::Captures,
+    handling_scope::{HandlerClauseID, HandlingScopes, OperationHandlerID},
+    resolution_visitor::ResolutionVisitable,
+    value::register::Register,
 };
 pub mod literal;
 pub mod register;
@@ -54,12 +60,12 @@ pub struct Environment<'e, N> {
     /// accessing the captured values.
     pub captures: Option<&'e Captures>,
 
-    /// If the IR was built with closure parameters, the closure parameters
-    /// here is used for accessing the closure parameters.
-    pub closure_parameters: Option<&'e ClosureParameters>,
+    /// If the IR was built inside an operation handler, this is used for
+    /// accessing the closure parameters.
+    current_operation_handler_id: Option<OperationHandlerID>,
 
     /// The handling scopes in the current context.
-    pub handling_scopes: &'e crate::handling_scope::HandlingScopes,
+    handling_scopes: &'e HandlingScopes,
 
     /// The site where the IR binding is being taken place in.
     pub current_site: Global<pernixc_symbol::SymbolID>,
@@ -77,19 +83,92 @@ impl<'e, N: Normalizer> Environment<'e, N> {
     #[must_use]
     pub const fn captures(&self) -> &'e Captures { self.captures.unwrap() }
 
-    /// Gets the closure parameters, unwrapping the option. Panics if there
-    /// are no closure parameters.
+    /// Gets the current operation handler ID, unwrapping the option. Panics if
+    /// there is no current operation handler ID.
     #[must_use]
-    pub const fn closure_parameters(&self) -> &'e ClosureParameters {
-        self.closure_parameters.unwrap()
+    pub const fn current_operation_handler_id(&self) -> &OperationHandlerID {
+        self.current_operation_handler_id.as_ref().unwrap()
     }
 
     #[must_use]
-    pub fn get_handler_clause(
+    pub const fn try_current_operation_handler_id(
         &self,
-        handler_clause_id: HandlerClauseID,
-    ) -> &'e crate::handling_scope::HandlerClause {
-        self.handling_scopes.get_handler_clause(handler_clause_id)
+    ) -> Option<&OperationHandlerID> {
+        self.current_operation_handler_id.as_ref()
+    }
+
+    #[must_use]
+    pub fn get_current_operation_handler(
+        &self,
+    ) -> &'e crate::handling_scope::OperationHandler {
+        self.handling_scopes
+            .get_operation_handler(*self.current_operation_handler_id())
+    }
+
+    #[must_use]
+    pub async fn get_current_operation_handler_parameters(
+        &self,
+    ) -> Interned<Parameters> {
+        let operation_symbol_id =
+            self.handling_scopes.get_global_operation_symbol_id(
+                *self.current_operation_handler_id(),
+            );
+
+        self.tracked_engine().get_parameters(operation_symbol_id).await
+    }
+
+    #[must_use]
+    pub async fn try_get_current_operation_handler_parameters(
+        &self,
+    ) -> Option<Interned<Parameters>> {
+        let operation_handler_id = self.try_current_operation_handler_id()?;
+
+        Some(
+            self.handling_scopes
+                .get_operation_handler_parameters(
+                    *operation_handler_id,
+                    self.tracked_engine(),
+                )
+                .await,
+        )
+    }
+
+    #[must_use]
+    pub async fn get_instantiated_operation_handler_parameter_type(
+        &self,
+        parameter_id: ID<Parameter>,
+    ) -> Type {
+        let operation_handler = self.current_operation_handler_id();
+
+        self.handling_scopes
+            .get_instantiated_operation_handler_parameter_type(
+                *operation_handler,
+                parameter_id,
+                self.tracked_engine(),
+            )
+            .await
+    }
+
+    #[must_use]
+    pub fn get_visitable_handler_clause(
+        &self,
+        id: HandlerClauseID,
+    ) -> impl ResolutionVisitable {
+        self.handling_scopes.get_visitable_handler_clause(id)
+    }
+
+    #[must_use]
+    pub async fn get_current_operation_handler_instantiation(
+        &self,
+    ) -> Instantiation {
+        let operation_handler_id = self.current_operation_handler_id();
+
+        self.handling_scopes
+            .get_handler_instantiation(
+                operation_handler_id.handler_clause_id(),
+                self.tracked_engine(),
+            )
+            .await
     }
 }
 

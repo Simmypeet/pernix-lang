@@ -9,8 +9,8 @@ use pernixc_ir::{
     address::{Address, Memory},
     alloca::Alloca,
     capture::CapturesMap,
-    closure_parameters::ClosureParametersMap,
     control_flow_graph::Block,
+    handling_scope::OperationHandlerID,
     instruction::{self, Instruction, ScopePop, ScopePush, Terminator},
     ir::{IR, IRMap},
     pattern::{Irrefutable, NameBindingPoint, Wildcard},
@@ -102,11 +102,7 @@ pub struct Binder<'t> {
     #[get_copy = "pub"]
     captures: Option<&'t pernixc_ir::capture::Captures>,
 
-    /// The optional closure parameters that the binder may use when building
-    /// closures.
-    #[get_copy = "pub"]
-    closure_parameters:
-        Option<&'t pernixc_ir::closure_parameters::ClosureParameters>,
+    current_operation_handler_id: Option<OperationHandlerID>,
 
     /// The intermediate representation that is being built.
     #[get = "pub"]
@@ -130,7 +126,6 @@ pub struct Binder<'t> {
     expected_closure_return_type: Option<Type>,
 
     ir_map: IRMap,
-    closure_parameters_map: ClosureParametersMap,
     captures_map: CapturesMap,
     effect_handler_context: effect_handler::Context,
     block_context: block::Context,
@@ -191,7 +186,7 @@ impl<'t> Binder<'t> {
             environment,
 
             captures: None,
-            closure_parameters: None,
+            current_operation_handler_id: None,
 
             inference_context: InferenceContext::default(),
 
@@ -200,7 +195,6 @@ impl<'t> Binder<'t> {
             expected_closure_return_type: None,
 
             ir_map: IRMap::default(),
-            closure_parameters_map: ClosureParametersMap::default(),
             captures_map: CapturesMap::default(),
             effect_handler_context: effect_handler::Context::default(),
             block_context: block::Context::default(),
@@ -248,7 +242,9 @@ impl<'t> Binder<'t> {
                         &mut name_binding_point,
                         &pattern,
                         &parameter_sym.r#type,
-                        Address::Memory(Memory::Parameter(parameter_id)),
+                        Address::Memory(Memory::FunctionParameter(
+                            parameter_id,
+                        )),
                         Qualifier::Mutable,
                         &insert_name_binding::Config {
                             must_copy: false,
@@ -538,7 +534,9 @@ impl Binder<'_> {
                 &ValueEnvironment::builder()
                     .type_environment(&self.create_environment())
                     .maybe_captures(self.captures)
-                    .maybe_closure_parameters(self.closure_parameters)
+                    .maybe_current_operation_handler_id(
+                        self.current_operation_handler_id,
+                    )
                     .handling_scopes(self.handling_scopes())
                     .current_site(self.current_site())
                     .build(),
@@ -654,9 +652,9 @@ impl Binder<'_> {
             match address {
                 Address::Memory(
                     Memory::Alloca(_)
-                    | Memory::Parameter(_)
+                    | Memory::FunctionParameter(_)
                     | Memory::Capture(_)
-                    | Memory::ClosureParameter(_),
+                    | Memory::OperationHandlerParameter(_),
                 ) => return Ok(None),
 
                 Address::Field(ad) => {
@@ -713,7 +711,9 @@ impl Binder<'_> {
         let environment = ValueEnvironment::builder()
             .type_environment(&ty_environment)
             .maybe_captures(self.captures)
-            .maybe_closure_parameters(self.closure_parameters)
+            .maybe_current_operation_handler_id(
+                self.current_operation_handler_id,
+            )
             .handling_scopes(self.handling_scopes())
             .current_site(self.current_site())
             .build();
