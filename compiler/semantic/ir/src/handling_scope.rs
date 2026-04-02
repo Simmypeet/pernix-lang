@@ -33,35 +33,6 @@ macro_rules! visit_handling_scopes {
     }};
 }
 
-macro_rules! visit_scope_return_type {
-    (
-        $this:expr,
-        $visitor:expr,
-        $visit_method:ident,
-        $resolution_ctor:ident,
-        $type_ref:ident
-    ) => {{
-        $visitor
-            .$visit_method(
-                $resolution_ctor::Type($type_ref!($this.return_type)),
-                $this.do_with_span,
-            )
-            .await
-    }};
-}
-
-macro_rules! immut_ref {
-    ($field:expr) => {
-        &$field
-    };
-}
-
-macro_rules! mut_ref {
-    ($field:expr) => {
-        &mut $field
-    };
-}
-
 /// A collection of all the effect handler groups in a function body.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, Default)]
 pub struct HandlingScopes(Arena<HandlingScope>);
@@ -315,13 +286,18 @@ impl resolution_visitor::MutableResolutionVisitable for HandlingScope {
         &mut self,
         visitor: &mut T,
     ) -> Result<(), Abort> {
-        visit_scope_return_type!(
-            self,
-            visitor,
-            visit_mut,
-            ResolutionMut,
-            mut_ref
-        )
+        visitor
+            .visit_mut(
+                ResolutionMut::Type(&mut self.return_type),
+                self.do_with_span,
+            )
+            .await?;
+
+        for handler_clause in self.handler_clauses.items_mut() {
+            handler_clause.accept_mut(visitor).await?;
+        }
+
+        Ok(())
     }
 }
 
@@ -330,7 +306,15 @@ impl resolution_visitor::ResolutionVisitable for HandlingScope {
         &self,
         visitor: &mut T,
     ) -> Result<(), Abort> {
-        visit_scope_return_type!(self, visitor, visit, Resolution, immut_ref)
+        visitor
+            .visit(Resolution::Type(&self.return_type), self.do_with_span)
+            .await?;
+
+        for handler_clause in self.handler_clauses.items() {
+            handler_clause.accept(visitor).await?;
+        }
+
+        Ok(())
     }
 }
 
@@ -409,6 +393,34 @@ pub struct HandlerClause {
     qualified_identifier_span: RelativeSpan,
 
     operation_handlers: Arena<OperationHandler>,
+}
+
+impl resolution_visitor::MutableResolutionVisitable for HandlerClause {
+    async fn accept_mut<T: MutableResolutionVisitor>(
+        &mut self,
+        visitor: &mut T,
+    ) -> Result<(), Abort> {
+        visitor
+            .visit_mut(
+                ResolutionMut::Symbol(&mut self.symbol),
+                self.qualified_identifier_span,
+            )
+            .await
+    }
+}
+
+impl resolution_visitor::ResolutionVisitable for HandlerClause {
+    async fn accept<T: ResolutionVisitor>(
+        &self,
+        visitor: &mut T,
+    ) -> Result<(), Abort> {
+        visitor
+            .visit(
+                Resolution::Symbol(&self.symbol),
+                self.qualified_identifier_span,
+            )
+            .await
+    }
 }
 
 impl<'a> From<&'a HandlerClause> for Resolution<'a> {
