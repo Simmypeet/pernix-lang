@@ -1,0 +1,14 @@
+pub struct First:
+    pub next: Second
+
+
+pub enum Second:
+    Link(Third)
+
+
+pub struct Third:
+    pub next: First
+
+
+pub def main():
+    pass

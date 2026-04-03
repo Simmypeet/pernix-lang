@@ -1,0 +1,21 @@
+pub struct RefCons['a]:
+    pub rest: &'a RefList['a]
+
+
+pub enum RefList['a]:
+    Nil
+    Cons(RefCons['a])
+
+
+pub struct PtrCons:
+    pub rest: *PtrList
+
+
+pub enum PtrList:
+    Nil
+    Cons(PtrCons)
+
+
+pub def main():
+    let .. = RefList['static]::Nil
+    let .. = PtrList::Nil

@@ -28,7 +28,7 @@ use crate::{
     build::DiagnosticKey as BuildDiagnosticKey,
     function_signature::Key as FunctionSignatureKey,
     implements_qualified_identifier::Key as ImplementsQualifiedIdentifierKey,
-    instance_coherence, wf_check,
+    instance_coherence, recursive_adt_check, wf_check,
 };
 
 #[derive(
@@ -156,6 +156,14 @@ async fn single_rendered_executor(
                 symbol_id,
             }))
             .await;
+
+        for diag in diags.iter() {
+            final_diagnostics.push(diag.report(engine).await);
+        }
+    }
+
+    if kind.is_adt() {
+        let diags = engine.query(&recursive_adt_check::Key { symbol_id }).await;
 
         for diag in diags.iter() {
             final_diagnostics.push(diag.report(engine).await);

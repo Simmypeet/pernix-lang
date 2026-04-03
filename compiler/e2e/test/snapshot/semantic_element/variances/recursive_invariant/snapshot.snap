@@ -1,8 +1,39 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: clean_run
+expression: run
 ---
 stderr:
+[error]: struct `main::B` is infinitely sized because it recursively contains itself
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/variances/recursive_invariant/main.pnx:3:5
+  │
+3 │     Covariant(B['a, T])
+  │     ━━━━━━━━━ this member closes the recursive expansion `main::B['a, T] -> main::A['a, T] -> main::B['a, T]`
+  ‡
+6 │ pub struct B['a, T: 'a]:
+  │            ─ `main::B` is declared here
+7 │     pub a: A['a, T]
+  │     ─────────────── `main::B['a, T]` expands to `main::A['a, T]` here
+  │
+  ╰ help: consider introducing indirection in the recursive path so the ADT no longer stores itself by value
+[note]: recursive expansion path: main::B['a, T] -> main::A['a, T] -> main::B['a, T]
+
+[error]: enum `main::A` is infinitely sized because it recursively contains itself
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/variances/recursive_invariant/main.pnx:7:5
+  │
+1 │ pub enum A['a, T: 'a]: 
+  │          ─ `main::A` is declared here
+2 │     Invariant(&'a mut T)
+3 │     Covariant(B['a, T])
+  │     ───────── `main::A['a, T]` expands to `main::B['a, T]` here
+  ‡
+7 │     pub a: A['a, T]
+  │     ━━━━━━━━━━━━━━━ this member closes the recursive expansion `main::A['a, T] -> main::B['a, T] -> main::A['a, T]`
+  │
+  ╰ help: consider introducing indirection in the recursive path so the ADT no longer stores itself by value
+[note]: recursive expansion path: main::A['a, T] -> main::B['a, T] -> main::A['a, T]
+
+[error]: Compilation aborted due to 2 error(s)
+
 
 
 stdout:
