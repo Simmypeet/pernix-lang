@@ -54,19 +54,27 @@ pub async fn recursive_adt_check_executor(
     );
 
     let mut symbol_stack = vec![root_symbol.clone()];
+    let mut path_links = Vec::new();
 
-    find_recursive_adt(&root_symbol, symbol_id, &mut symbol_stack, engine)
-        .await
-        .map_or_else(
-            || engine.intern_unsized([]),
-            |diagnostic| engine.intern_unsized([diagnostic]),
-        )
+    find_recursive_adt(
+        &root_symbol,
+        symbol_id,
+        &mut symbol_stack,
+        &mut path_links,
+        engine,
+    )
+    .await
+    .map_or_else(
+        || engine.intern_unsized([]),
+        |diagnostic| engine.intern_unsized([diagnostic]),
+    )
 }
 
 async fn find_recursive_adt(
     symbol: &Symbol,
     root_adt_id: Global<pernixc_symbol::SymbolID>,
     symbol_stack: &mut Vec<Symbol>,
+    path_links: &mut Vec<diagnostic::PathLink>,
     engine: &TrackedEngine,
 ) -> Option<Diagnostic> {
     for field in engine.get_instantiated_adt_fields(symbol).await {
@@ -75,6 +83,7 @@ async fn find_recursive_adt(
             field.span().copied(),
             root_adt_id,
             symbol_stack,
+            path_links,
             engine,
         ))
         .await
@@ -91,6 +100,7 @@ async fn find_recursive_in_type(
     declaration_span: Option<pernixc_lexical::tree::RelativeSpan>,
     root_adt_id: Global<pernixc_symbol::SymbolID>,
     symbol_stack: &mut Vec<Symbol>,
+    path_links: &mut Vec<diagnostic::PathLink>,
     engine: &TrackedEngine,
 ) -> Option<Diagnostic> {
     match ty {
@@ -115,6 +125,7 @@ async fn find_recursive_in_type(
                 declaration_span,
                 root_adt_id,
                 symbol_stack,
+                path_links,
                 engine,
             ))
             .await
@@ -127,6 +138,7 @@ async fn find_recursive_in_type(
                     declaration_span,
                     root_adt_id,
                     symbol_stack,
+                    path_links,
                     engine,
                 ))
                 .await
@@ -143,31 +155,41 @@ async fn find_recursive_in_type(
                 return None;
             }
 
-            if let Some(cycle_start) = symbol_stack
-                .iter()
-                .position(|existing| existing.id() == symbol.id())
+            let source_symbol = symbol_stack.last().unwrap().clone();
+            let next_link = diagnostic::PathLink::new(
+                source_symbol,
+                declaration_span,
+                symbol.clone(),
+            );
+
+            if symbol_stack.iter().any(|existing| existing.id() == symbol.id())
             {
-                let mut cycle_path = symbol_stack[cycle_start..].to_vec();
-                cycle_path.push(symbol.clone());
+                let mut expansion_path = symbol_stack.clone();
+                expansion_path.push(symbol.clone());
+                let mut expansion_links = path_links.clone();
+                expansion_links.push(next_link);
 
                 return Some(Diagnostic::RecursiveAdt(
                     diagnostic::RecursiveAdt::new(
                         root_adt_id,
-                        declaration_span,
-                        cycle_path,
+                        expansion_links,
+                        expansion_path,
                     ),
                 ));
             }
 
+            path_links.push(next_link);
             symbol_stack.push(symbol.clone());
             let result = Box::pin(find_recursive_adt(
                 symbol,
                 root_adt_id,
                 symbol_stack,
+                path_links,
                 engine,
             ))
             .await;
             symbol_stack.pop();
+            path_links.pop();
 
             result
         }
