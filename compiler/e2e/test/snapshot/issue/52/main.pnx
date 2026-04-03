@@ -1,0 +1,8 @@
+pub def useValue[T](..: T):
+    pass
+
+
+pub def moveOut[T](value: (T, T)):
+    useValue(value.0)
+    useValue(value.1)
+    useValue(value.0)

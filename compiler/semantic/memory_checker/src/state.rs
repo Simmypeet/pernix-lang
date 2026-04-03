@@ -143,37 +143,6 @@ pub enum State {
     Projection(Projection),
 }
 
-fn try_simplify_to_uninitialized<'a>(
-    iterator: impl IntoIterator<Item = &'a State>,
-) -> Option<(&'a Move, usize)> {
-    let mut iterator = iterator.into_iter();
-
-    let mut current = iterator
-        .next()
-        .expect("should have at least one element")
-        .as_total()
-        .and_then(|x| x.as_false())
-        .map(|x| (x.latest_move.as_ref().unwrap(), x.version))?;
-
-    for state in iterator {
-        let Some(next) = state
-            .as_total()
-            .and_then(|x| x.as_false())
-            .map(|x| (x.latest_move.as_ref().unwrap(), x.version))
-        else {
-            // it's a mix of initialized and uninitialized, leave
-            // it as is
-            return None;
-        };
-
-        if next.1 > current.1 {
-            current = next;
-        }
-    }
-
-    Some(current)
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 enum LatestLoad<'a> {
     Uninitialized,
@@ -873,17 +842,8 @@ impl State {
                     .all(|x| x.as_total().is_some_and(Initialized::is_true))
                 {
                     *self = Self::Total(Initialized::True);
-                    // empty struct should always be initialized
-                    return;
-                }
-
-                if let Some((latest_accessor, version)) =
-                    try_simplify_to_uninitialized(states_by_field_id.values())
-                {
-                    *self = Self::Total(Initialized::False(Uninitialized {
-                        latest_move: Some(*latest_accessor),
-                        version,
-                    }));
+                    // Empty structs and fully-restored structs can be treated
+                    // as initialized without losing field-level move history.
                 }
             }
             Self::Projection(Projection::Tuple(Tuple { elements })) => {
@@ -895,36 +855,19 @@ impl State {
                     x.state.as_total().is_some_and(Initialized::is_true)
                 }) {
                     *self = Self::Total(Initialized::True);
-                    // empty tuple should always be initialized
-                    return;
-                }
-
-                if let Some((latest_accessor, version)) =
-                    try_simplify_to_uninitialized(
-                        elements.iter().map(|x| &x.state),
-                    )
-                {
-                    *self = Self::Total(Initialized::False(Uninitialized {
-                        latest_move: Some(*latest_accessor),
-                        version,
-                    }));
+                    // Empty tuples and fully-restored tuples can be treated
+                    // as initialized without losing element-level move
+                    // history.
                 }
             }
-            Self::Projection(Projection::MutableReference(
-                MutableReference { state },
-            )) => {
+            Self::Projection(
+                Projection::MutableReference(MutableReference { state })
+                | Projection::Enum(Enum { state, .. }),
+            ) => {
                 state.simplify();
 
                 if **state == Self::Total(Initialized::True) {
                     *self = Self::Total(Initialized::True);
-                }
-            }
-
-            Self::Projection(Projection::Enum(Enum { state, .. })) => {
-                state.simplify();
-
-                if let Some(initialized) = state.as_total() {
-                    *self = Self::Total(initialized.clone());
                 }
             }
         }
