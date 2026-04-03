@@ -1,0 +1,12 @@
+pub struct Cons[T]:
+    pub value: T
+    pub rest: List[T]
+
+
+pub enum List[T]:
+    Nil
+    Cons(Cons[T])
+
+
+pub def main():
+    let .. = List[int32]::Nil
