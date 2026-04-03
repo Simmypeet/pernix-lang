@@ -3,7 +3,9 @@
 use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
 use pernixc_target::Global;
-use pernixc_type_system::normalizer::Normalizer;
+use pernixc_type_system::{
+    environment::Environment as TyEnvironment, normalizer::Normalizer,
+};
 use qbice::{
     Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
 };
@@ -16,7 +18,7 @@ use crate::{
     resolution_visitor::{
         Abort, MutableResolutionVisitable, MutableResolutionVisitor,
     },
-    value::Environment as ValueEnvironment,
+    value::ValueEnvironment,
 };
 
 /// An intermediate representation of a function.
@@ -61,7 +63,7 @@ impl FunctionIR {
 
     /// Gets the captures with the given ID.
     #[must_use]
-    pub fn get_capture(&self, id: ID<Captures>) -> &Captures {
+    pub fn get_captures(&self, id: ID<Captures>) -> &Captures {
         &self.captures_map[id]
     }
 
@@ -82,6 +84,14 @@ impl FunctionIR {
         visitor: &mut T,
     ) -> Result<(), Abort> {
         self.ir_map.accept_mut(visitor).await
+    }
+}
+
+impl std::ops::Index<ID<IRWithContext>> for FunctionIR {
+    type Output = IRWithContext;
+
+    fn index(&self, index: ID<IRWithContext>) -> &Self::Output {
+        &self.ir_map[index]
     }
 }
 
@@ -212,10 +222,55 @@ impl FunctionIR {
     #[must_use]
     pub fn root_ir(&self) -> &IR { self.ir_map[self.root_ir_id].ir() }
 
+    /// Retrieves the ID of the root IR representing the main body of the
+    /// function.
+    #[must_use]
+    pub const fn root_ir_id(&self) -> ID<IRWithContext> { self.root_ir_id }
+
     /// Gets a mutable reference to the IR with the given ID.
     #[must_use]
     pub fn get_ir_mut(&mut self, id: ID<IRWithContext>) -> &mut IRWithContext {
         &mut self.ir_map[id]
+    }
+
+    #[must_use]
+    pub fn create_value_environment_from_ir_id<'s, N: Normalizer>(
+        &'s self,
+        ir_id: ID<IRWithContext>,
+        ty_environment: &'s TyEnvironment<'s, N>,
+    ) -> ValueEnvironment<'s, N> {
+        let context = self.ir_map[ir_id].context();
+
+        match context {
+            IRContext::Root => ValueEnvironment::builder()
+                .type_environment(ty_environment)
+                .handling_scopes(&self.handling_scopes)
+                .build(),
+
+            IRContext::OperationHandler(operation_handler_context) => {
+                let captures =
+                    self.get_captures(operation_handler_context.captures_id);
+
+                ValueEnvironment::builder()
+                    .type_environment(ty_environment)
+                    .captures(captures)
+                    .current_operation_handler_id(
+                        operation_handler_context.operation_handler_id,
+                    )
+                    .handling_scopes(&self.handling_scopes)
+                    .build()
+            }
+
+            IRContext::Do(do_context) => {
+                let captures = self.get_captures(do_context.captures_id());
+
+                ValueEnvironment::builder()
+                    .type_environment(ty_environment)
+                    .captures(captures)
+                    .handling_scopes(&self.handling_scopes)
+                    .build()
+            }
+        }
     }
 }
 
@@ -228,29 +283,26 @@ impl FunctionIR {
             's,
             N,
         >,
-        current_site: Global<pernixc_symbol::SymbolID>,
     ) -> impl Iterator<
         Item = (
             ID<IRWithContext>,
             &'s IRWithContext,
-            crate::value::Environment<'s, N>,
+            crate::value::ValueEnvironment<'s, N>,
         ),
     > + 's {
         self.ir_map.ir_with_contexts().map(move |(ir_id, ir_with_context)| {
             let environment = match ir_with_context.context() {
                 IRContext::Root => ValueEnvironment::builder()
                     .type_environment(ty_environment)
-                    .current_site(current_site)
                     .handling_scopes(&self.handling_scopes)
                     .build(),
 
                 IRContext::OperationHandler(operation_handler_context) => {
-                    let captures =
-                        self.get_capture(operation_handler_context.captures_id);
+                    let captures = self
+                        .get_captures(operation_handler_context.captures_id);
 
                     ValueEnvironment::builder()
                         .type_environment(ty_environment)
-                        .current_site(current_site)
                         .captures(captures)
                         .current_operation_handler_id(
                             operation_handler_context.operation_handler_id,
@@ -260,11 +312,10 @@ impl FunctionIR {
                 }
 
                 IRContext::Do(do_context) => {
-                    let captures = self.get_capture(do_context.captures_id());
+                    let captures = self.get_captures(do_context.captures_id());
 
                     ValueEnvironment::builder()
                         .type_environment(ty_environment)
-                        .current_site(current_site)
                         .captures(captures)
                         .handling_scopes(&self.handling_scopes)
                         .build()
@@ -283,12 +334,11 @@ impl FunctionIR {
             's,
             N,
         >,
-        current_site: Global<pernixc_symbol::SymbolID>,
     ) -> impl Iterator<
         Item = (
             ID<IRWithContext>,
             &'s mut IRWithContext,
-            crate::value::Environment<'s, N>,
+            crate::value::ValueEnvironment<'s, N>,
         ),
     > + 's {
         let captures_map = &self.captures_map;
@@ -299,7 +349,6 @@ impl FunctionIR {
                 let environment = match ir_with_context.context() {
                     IRContext::Root => ValueEnvironment::builder()
                         .type_environment(ty_environment)
-                        .current_site(current_site)
                         .handling_scopes(handling_scopes)
                         .build(),
 
@@ -309,7 +358,6 @@ impl FunctionIR {
 
                         ValueEnvironment::builder()
                             .type_environment(ty_environment)
-                            .current_site(current_site)
                             .captures(captures)
                             .current_operation_handler_id(
                                 operation_handler_context.operation_handler_id,
@@ -323,7 +371,6 @@ impl FunctionIR {
 
                         ValueEnvironment::builder()
                             .type_environment(ty_environment)
-                            .current_site(current_site)
                             .captures(captures)
                             .handling_scopes(handling_scopes)
                             .build()

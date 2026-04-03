@@ -6,7 +6,7 @@ use pernixc_hash::{FxHashMap, FxHashSet};
 use pernixc_ir::{
     IR,
     control_flow_graph::Point,
-    value::{Environment, TypeOf, register::Register},
+    value::{ValueEnvironment, TypeOf, register::Register},
 };
 use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::{parameter::get_parameters, variance::Variance};
@@ -38,7 +38,7 @@ impl RegisterInfos {
     /// IR.
     pub async fn new<N: Normalizer>(
         ir: &IR,
-        environment: &Environment<'_, N>,
+        environment: &ValueEnvironment<'_, N>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<Self, UnrecoverableError> {
         let mut cache = FxHashMap::default();

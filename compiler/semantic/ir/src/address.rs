@@ -23,7 +23,7 @@ use crate::{
     alloca::Alloca,
     capture::Capture,
     resolution_visitor::{Abort, MutableResolutionVisitor, ResolutionVisitor},
-    value::{Environment, TypeOf, Value},
+    value::{TypeOf, Value, ValueEnvironment},
 };
 
 /// The address points to a field in a struct.
@@ -476,13 +476,13 @@ impl Values {
     pub async fn simple_type_of_memory(
         &self,
         address: &Memory,
-        envionment: &Environment<'_, impl Normalizer>,
+        envionment: &ValueEnvironment<'_, impl Normalizer>,
     ) -> Type {
         match address {
             Memory::FunctionParameter(id) => {
                 let function_signature = envionment
                     .tracked_engine()
-                    .get_parameters(envionment.current_site)
+                    .get_parameters(envionment.current_site())
                     .await;
 
                 function_signature.parameters[*id].r#type.clone()
@@ -514,20 +514,20 @@ impl TypeOf<&Address> for Values {
     async fn type_of<N: Normalizer>(
         &self,
         address: &Address,
-        environment: &Environment<'_, N>,
+        environment: &ValueEnvironment<'_, N>,
     ) -> Result<Succeeded<Type>, OverflowError> {
         match address {
             Address::Memory(Memory::FunctionParameter(parameter)) => {
                 let function_signature = environment
                     .tracked_engine()
-                    .get_parameters(environment.current_site)
+                    .get_parameters(environment.current_site())
                     .await;
 
                 let ty =
                     function_signature.parameters[*parameter].r#type.clone();
 
                 Ok(environment
-                    .type_environment
+                    .type_environment()
                     .simplify(ty)
                     .await?
                     .deref()
@@ -538,7 +538,7 @@ impl TypeOf<&Address> for Values {
                 let capture = &environment.captures()[*parameter];
 
                 let mut ty = environment
-                    .type_environment
+                    .type_environment()
                     .simplify(capture.address_type.clone())
                     .await?
                     .deref()
@@ -566,7 +566,7 @@ impl TypeOf<&Address> for Values {
                     .await;
 
                 Ok(environment
-                    .type_environment
+                    .type_environment()
                     .simplify(parameter_ty)
                     .await?
                     .deref()
@@ -577,7 +577,7 @@ impl TypeOf<&Address> for Values {
                 let alloca = &self.allocas[*parameter];
 
                 Ok(environment
-                    .type_environment
+                    .type_environment()
                     .simplify(alloca.r#type.clone())
                     .await?
                     .deref()
@@ -607,7 +607,7 @@ impl TypeOf<&Address> for Values {
                 inst.instantiate(&mut field_ty);
 
                 let simplification =
-                    environment.type_environment.simplify(field_ty).await?;
+                    environment.type_environment().simplify(field_ty).await?;
 
                 constraints.extend(simplification.constraints.iter().cloned());
 
@@ -695,7 +695,8 @@ impl TypeOf<&Address> for Values {
                 instantiation.instantiate(&mut variant_ty);
 
                 let simplification =
-                    environment.type_environment.simplify(variant_ty).await?;
+                    environment.type_environment().simplify(variant_ty).await?;
+
                 constraints.extend(simplification.constraints.iter().cloned());
 
                 Ok(Succeeded::with_constraints(
@@ -752,13 +753,13 @@ impl Values {
     pub async fn span_of_memory<N: Normalizer>(
         &self,
         address: &Memory,
-        environment: &Environment<'_, N>,
+        environment: &ValueEnvironment<'_, N>,
     ) -> RelativeSpan {
         match address {
             Memory::FunctionParameter(id) => {
                 let parameters = environment
                     .tracked_engine()
-                    .get_parameters(environment.current_site)
+                    .get_parameters(environment.current_site())
                     .await;
 
                 parameters.parameters[*id]

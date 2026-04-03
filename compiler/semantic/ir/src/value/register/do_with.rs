@@ -19,7 +19,7 @@ use crate::{
         self, Abort, MutableResolutionVisitable, MutableResolutionVisitor,
         ResolutionVisitable, ResolutionVisitor,
     },
-    value::{Environment, TypeOf, Value, register::Register},
+    value::{ValueEnvironment, TypeOf, Value, register::Register},
 };
 
 macro_rules! visit_capture_literals {
@@ -264,6 +264,9 @@ impl DoWith {
     ) -> Self {
         Self { handling_scope_id, do_block: closure, handleer_chain: with }
     }
+
+    #[must_use]
+    pub const fn do_ir_id(&self) -> ID<IRWithContext> { self.do_block.ir_id }
 }
 
 impl DoWith {
@@ -293,7 +296,7 @@ impl DoWith {
     /// constraints.
     pub async fn wf_check<N, D>(
         &self,
-        environment: &crate::value::Environment<'_, N>,
+        environment: &crate::value::ValueEnvironment<'_, N>,
         handler: &dyn pernixc_handler::Handler<D>,
     ) -> Result<Constraints, UnrecoverableError>
     where
@@ -358,7 +361,7 @@ impl TypeOf<&DoWith> for Values {
     async fn type_of<N: Normalizer>(
         &self,
         do_with: &DoWith,
-        environment: &Environment<'_, N>,
+        environment: &ValueEnvironment<'_, N>,
     ) -> Result<Succeeded<Type>, OverflowError> {
         let handling_scope =
             &environment.handling_scopes[do_with.handling_scope_id];

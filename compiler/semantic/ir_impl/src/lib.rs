@@ -6,7 +6,7 @@ use linkme::distributed_slice;
 use pernixc_bind::binder::{self, Binder, UnrecoverableError};
 use pernixc_diagnostic::{ByteIndex, Rendered, Report};
 use pernixc_handler::Storage;
-use pernixc_ir::{FunctionIR, value};
+use pernixc_ir::FunctionIR;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_symbol::{
     get_all_function_with_body_ids, syntax::get_function_body_syntax,
@@ -136,8 +136,7 @@ async fn ir_with_diagnostic_executor(
     );
 
     // do memory checking analysis
-    match pernixc_memory_checker::memory_check(&mut ir, &ty_env, id, &storage)
-        .await
+    match pernixc_memory_checker::memory_check(&mut ir, &ty_env, &storage).await
     {
         Ok(()) => {}
         Err(UnrecoverableError::Reported) => {
@@ -154,17 +153,7 @@ async fn ir_with_diagnostic_executor(
     }
 
     // do borrow checking analysis
-    match pernixc_borrow_checker::borrow_check(
-        &ir,
-        &value::Environment::builder()
-            .current_site(id)
-            .type_environment(&ty_env)
-            .handling_scopes(ir.handling_scopes())
-            .build(),
-        &storage,
-    )
-    .await
-    {
+    match pernixc_borrow_checker::borrow_check(&ir, &ty_env, &storage).await {
         Ok(()) => {}
         Err(UnrecoverableError::Reported) => {
             return (

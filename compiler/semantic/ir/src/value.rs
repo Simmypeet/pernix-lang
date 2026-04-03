@@ -8,7 +8,7 @@ use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::parameter::{
     Parameter, Parameters, get_parameters,
 };
-use pernixc_target::Global;
+use pernixc_symbol::GlobalSymbolID;
 use pernixc_term::{instantiation::Instantiation, r#type::Type};
 use pernixc_type_system::{
     OverflowError, Succeeded, environment::Environment as TyEnvironment,
@@ -52,13 +52,13 @@ pub enum Value {
 /// Representing an environment that the [`Values`] is in. This is primarily
 /// used for type checking and retrieving the type of a [`Value`].
 #[derive(Debug, Clone, Copy, Builder)]
-pub struct Environment<'e, N> {
+pub struct ValueEnvironment<'e, N> {
     /// The environment for type system operations.
-    pub type_environment: &'e TyEnvironment<'e, N>,
+    type_environment: &'e TyEnvironment<'e, N>,
 
     /// If the IR was built with captures, the captures here is used for
     /// accessing the captured values.
-    pub captures: Option<&'e Captures>,
+    captures: Option<&'e Captures>,
 
     /// If the IR was built inside an operation handler, this is used for
     /// accessing the closure parameters.
@@ -66,22 +66,32 @@ pub struct Environment<'e, N> {
 
     /// The handling scopes in the current context.
     handling_scopes: &'e HandlingScopes,
-
-    /// The site where the IR binding is being taken place in.
-    pub current_site: Global<pernixc_symbol::SymbolID>,
 }
 
-impl<'e, N: Normalizer> Environment<'e, N> {
+impl<'e, N: Normalizer> ValueEnvironment<'e, N> {
     /// Gets the tracked engine from the type environment.
     #[must_use]
     pub fn tracked_engine(&self) -> &'e TrackedEngine {
         self.type_environment.tracked_engine()
     }
 
+    #[must_use]
+    pub fn current_site(&self) -> GlobalSymbolID {
+        self.type_environment.current_site()
+    }
+
+    #[must_use]
+    pub const fn type_environment(&self) -> &'e TyEnvironment<'e, N> {
+        self.type_environment
+    }
+
     /// Gets the captures, unwrapping the option. Panics if there are no
     /// captures.
     #[must_use]
     pub const fn captures(&self) -> &'e Captures { self.captures.unwrap() }
+
+    #[must_use]
+    pub const fn try_captures(&self) -> Option<&'e Captures> { self.captures }
 
     /// Gets the current operation handler ID, unwrapping the option. Panics if
     /// there is no current operation handler ID.
@@ -189,7 +199,7 @@ pub trait TypeOf<V> {
     fn type_of<'s, 'e, 'n, N: Normalizer>(
         &'s self,
         value: V,
-        environment: &'e Environment<'n, N>,
+        environment: &'e ValueEnvironment<'n, N>,
     ) -> impl std::future::Future<
         Output = Result<Succeeded<Type>, OverflowError>,
     > + use<'s, 'e, 'n, Self, V, N>;
@@ -199,7 +209,7 @@ impl TypeOf<&Value> for Values {
     async fn type_of<N: Normalizer>(
         &self,
         value: &Value,
-        environment: &Environment<'_, N>,
+        environment: &ValueEnvironment<'_, N>,
     ) -> Result<Succeeded<Type>, OverflowError> {
         match value {
             Value::Register(id) => self.type_of(*id, environment).await,

@@ -331,7 +331,7 @@ impl FunctionCall {
     pub async fn subtypes<N: pernixc_type_system::normalizer::Normalizer>(
         &self,
         values: &Values,
-        environment: &crate::value::Environment<'_, N>,
+        environment: &crate::value::ValueEnvironment<'_, N>,
     ) -> Result<Subtype, OverflowError> {
         let engine = environment.type_environment.tracked_engine();
         let Some(inst) = self.create_instantiation(engine).await else {
@@ -387,7 +387,7 @@ impl FunctionCall {
             engine.get_effect_annotation(self.callee_symbol_id()).await;
 
         let current_capabilities =
-            engine.get_effect_annotation(environment.current_site).await;
+            engine.get_effect_annotation(environment.current_site()).await;
 
         for (required_id, argument) in self.effect_arguments() {
             let mut required_capability =
@@ -450,7 +450,7 @@ impl FunctionCall {
     /// satisfy well-formedness constraints.
     pub async fn wf_check<N, D>(
         &self,
-        environment: &crate::value::Environment<'_, N>,
+        environment: &crate::value::ValueEnvironment<'_, N>,
         span: pernixc_lexical::tree::RelativeSpan,
         handler: &dyn pernixc_handler::Handler<D>,
     ) -> Result<Constraints, UnrecoverableError>
@@ -530,7 +530,7 @@ impl TypeOf<&FunctionCall> for Values {
     async fn type_of<N: pernixc_type_system::normalizer::Normalizer>(
         &self,
         value: &FunctionCall,
-        environment: &crate::value::Environment<'_, N>,
+        environment: &crate::value::ValueEnvironment<'_, N>,
     ) -> Result<pernixc_type_system::Succeeded<Type>, OverflowError> {
         let Some(mut instantiation) = value
             .callee

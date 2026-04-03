@@ -17,7 +17,7 @@ use crate::{
     Values,
     address::Address,
     resolution_visitor::{Abort, MutableResolutionVisitor, ResolutionVisitor},
-    value::{Environment, TypeOf},
+    value::{ValueEnvironment, TypeOf},
 };
 
 macro_rules! visit_load_address {
@@ -84,7 +84,7 @@ impl Load {
     /// type satisfies the `tuple` bound.
     pub async fn wf_check<N, D>(
         &self,
-        environment: &crate::value::Environment<'_, N>,
+        environment: &crate::value::ValueEnvironment<'_, N>,
         values: &crate::value::Values,
         register_span: pernixc_lexical::tree::RelativeSpan,
         handler: &dyn pernixc_handler::Handler<D>,
@@ -169,7 +169,7 @@ impl TypeOf<&Load> for Values {
     async fn type_of<N: Normalizer>(
         &self,
         load: &Load,
-        environment: &Environment<'_, N>,
+        environment: &ValueEnvironment<'_, N>,
     ) -> Result<Succeeded<Type>, OverflowError> {
         self.type_of(&load.address, environment).await
     }

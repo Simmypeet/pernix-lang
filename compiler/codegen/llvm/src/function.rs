@@ -25,9 +25,7 @@ use pernixc_ir::{
     address::{Address, Memory},
     control_flow_graph::Block,
     function_ir::get_function_ir,
-    value::{
-        Environment as ValueEnvironment, TypeOf, Value, register::Register,
-    },
+    value::{TypeOf, Value, ValueEnvironment, register::Register},
 };
 use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::{
@@ -681,7 +679,6 @@ impl<'ctx> Context<'_, 'ctx> {
                 normalizer::NO_OP,
             );
             let value_environment = ValueEnvironment::builder()
-                .current_site(key.callable_id)
                 .type_environment(&environment)
                 .handling_scopes(pernix_ir.handling_scopes())
                 .build();

@@ -17,7 +17,7 @@ use pernixc_ir::{
     ir::IR,
     scope,
     value::{
-        Environment as ValueEnvironment, TypeOf,
+        TypeOf, ValueEnvironment,
         register::{
             Assignment, Borrow,
             load::{self, Load},
@@ -148,7 +148,7 @@ async fn handle_load<N: Normalizer>(
                 Storage::<pernixc_type_system::diagnostic::Diagnostic>::new();
 
             val_environment
-                .type_environment
+                .type_environment()
                 .predicate_satisfied(
                     Predicate::PositiveMarker(PositiveMarker::new(
                         copy_marker,
@@ -178,7 +178,7 @@ async fn handle_load<N: Normalizer>(
                     load.address(),
                     register_span,
                     load.purpose(),
-                    val_environment.type_environment,
+                    val_environment.type_environment(),
                     handler,
                 )
                 .await?;
@@ -247,14 +247,18 @@ struct Checker<'r, N: Normalizer> {
 impl<'r, N: Normalizer> Checker<'r, N> {
     /// Returns the current site of the checker.
     #[must_use]
-    pub const fn current_site(&self) -> Global<pernixc_symbol::SymbolID> {
-        self.value_environment.current_site
+    pub fn current_site(&self) -> Global<pernixc_symbol::SymbolID> {
+        self.value_environment.current_site()
     }
 
     /// Returns the engine of the checker.
     #[must_use]
     pub fn engine(&self) -> &'r TrackedEngine {
         self.value_environment.tracked_engine()
+    }
+
+    pub const fn type_environment(&self) -> &'r TyEnvironment<'r, N> {
+        self.value_environment.type_environment()
     }
 }
 
@@ -387,7 +391,7 @@ impl<N: Normalizer> Checker<'_, N> {
         }
 
         // if we have captures, initialize them
-        if let Some(captures) = self.value_environment.captures {
+        if let Some(captures) = self.value_environment.try_captures() {
             for (capture_id, capture) in captures.captures_as_order() {
                 assert!(stack.current_mut().new_state(
                     Memory::Capture(capture_id),
@@ -504,7 +508,7 @@ impl<N: Normalizer> Checker<'_, N> {
                         &store.address,
                         store.span,
                         stack,
-                        self.value_environment.type_environment,
+                        self.type_environment(),
                         handler,
                     )
                     .await?;
@@ -582,7 +586,7 @@ impl<N: Normalizer> Checker<'_, N> {
                             }),
                             tuple_pack.packed_tuple_span,
                             load::Purpose::General,
-                            self.value_environment.type_environment,
+                            self.type_environment(),
                             handler,
                         )
                         .await?;
@@ -630,7 +634,7 @@ impl<N: Normalizer> Checker<'_, N> {
                         &tuple_pack.store_address,
                         tuple_pack.packed_tuple_span,
                         stack,
-                        self.value_environment.type_environment,
+                        self.type_environment(),
                         handler,
                     )
                     .await?;
@@ -913,11 +917,10 @@ impl<N: Normalizer> Checker<'_, N> {
 pub async fn memory_check<N: Normalizer>(
     representation: &mut FunctionIR,
     ty_environment: &TyEnvironment<'_, N>,
-    current_site: Global<pernixc_symbol::SymbolID>,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<(), UnrecoverableError> {
-    for (_, ir_with_context, val_environment) in representation
-        .ir_with_value_environments_mut(ty_environment, current_site)
+    for (_, ir_with_context, val_environment) in
+        representation.ir_with_value_environments_mut(ty_environment)
     {
         memory_check_ir(ir_with_context.ir_mut(), &val_environment, handler)
             .await?;

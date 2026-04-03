@@ -108,29 +108,6 @@ fn transform_lifetime(lt: &mut Lifetime, region_gen: &mut Mode) {
             }
         },
     }
-
-    match lt {
-        Lifetime::Closure(_) | Lifetime::Inference(_) => {
-            panic!("should have no prior inference lifetime")
-        }
-
-        Lifetime::Error(_)
-        | Lifetime::Parameter(_)
-        | Lifetime::Elided(_)
-        | Lifetime::Forall(_)
-        | Lifetime::Static => {}
-
-        Lifetime::Erased => {
-            *lt = match region_gen {
-                Mode::Local(local_region_generator) => {
-                    Lifetime::Inference(local_region_generator.next())
-                }
-                Mode::Closure(closure_lifetime_generator) => {
-                    Lifetime::Closure(closure_lifetime_generator.next())
-                }
-            }
-        }
-    }
 }
 
 impl MutableResolutionVisitor for ToBorrowTransformer {

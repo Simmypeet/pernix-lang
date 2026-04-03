@@ -208,14 +208,18 @@
 //! possible `Borrow` expressions that it might come from.
 
 use enum_as_inner::EnumAsInner;
+use pernixc_arena::ID;
 use pernixc_handler::Handler;
-use pernixc_ir::{FunctionIR, IR, value::Environment};
+use pernixc_ir::{FunctionIR, IRWithContext};
 use pernixc_term::{
     generic_parameters::LifetimeParameterID,
     inference,
     lifetime::{ClosureLifetime, ElidedLifetimeID, Lifetime},
 };
-use pernixc_type_system::{UnrecoverableError, normalizer::Normalizer};
+use pernixc_type_system::{
+    UnrecoverableError, environment::Environment as TyEnvironment,
+    normalizer::Normalizer,
+};
 use qbice::{Decode, Encode, StableHash};
 
 use crate::diagnostic::Diagnostic;
@@ -370,22 +374,30 @@ impl TryFrom<Lifetime> for Region {
 
 pub async fn borrow_check<N: Normalizer>(
     ir: &FunctionIR,
-    value_environment: &Environment<'_, N>,
+    ty_environment: &TyEnvironment<'_, N>,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<(), UnrecoverableError> {
     let mut function_ir = ir.clone();
 
     transform::transform_to_inference(&mut function_ir).await;
 
-    borrow_check_ir(function_ir.root_ir(), value_environment, handler).await
+    borrow_check_ir(
+        &function_ir,
+        function_ir.root_ir_id(),
+        ty_environment,
+        handler,
+    )
+    .await
 }
 
 async fn borrow_check_ir<N: Normalizer>(
-    ir: &IR,
-    value_environment: &Environment<'_, N>,
+    ir: &FunctionIR,
+    id: ID<IRWithContext>,
+    ty_environment: &TyEnvironment<'_, N>,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<(), UnrecoverableError> {
-    let context = context::Context::new(ir, value_environment, handler).await?;
+    let context =
+        context::Context::new(ir, id, ty_environment, handler).await?;
 
     let subset = subset::analyze(&context).await?;
 

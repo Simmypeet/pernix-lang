@@ -125,7 +125,6 @@ impl Binder<'_> {
         // transform inference types
         self.transform_inference(handler).await?;
 
-        let current_site = self.current_site();
         let ty_env = TyEnvironment::new(
             Cow::Borrowed(&self.environment.premise),
             Cow::Borrowed(self.engine),
@@ -142,7 +141,7 @@ impl Binder<'_> {
             root_ir_id,
         );
 
-        check::check_all(&function_ir, &ty_env, current_site, handler).await?;
+        check::check_all(&function_ir, &ty_env, handler).await?;
 
         Ok(function_ir)
     }

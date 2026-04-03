@@ -16,7 +16,7 @@ use pernixc_ir::{
     pattern::{Irrefutable, NameBindingPoint, Wildcard},
     scope,
     value::{
-        Environment as ValueEnvironment, TypeOf, Value,
+        TypeOf, Value, ValueEnvironment,
         literal::{Literal, Unreachable},
         register::{Assignment, Register, load::Load},
     },
@@ -538,7 +538,6 @@ impl Binder<'_> {
                         self.current_operation_handler_id,
                     )
                     .handling_scopes(self.handling_scopes())
-                    .current_site(self.current_site())
                     .build(),
             )
             .await
@@ -715,7 +714,6 @@ impl Binder<'_> {
                 self.current_operation_handler_id,
             )
             .handling_scopes(self.handling_scopes())
-            .current_site(self.current_site())
             .build();
 
         match self.ir.values.type_of(address, &environment).await {

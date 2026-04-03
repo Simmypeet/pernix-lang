@@ -18,7 +18,7 @@ use crate::{
     resolution_visitor::{
         self, Abort, MutableResolutionVisitor, ResolutionVisitor,
     },
-    value::{Environment, TypeOf, Value},
+    value::{ValueEnvironment, TypeOf, Value},
     visitor,
 };
 
@@ -195,7 +195,7 @@ impl TypeOf<ID<Register>> for Values {
     async fn type_of<N: Normalizer>(
         &self,
         id: ID<Register>,
-        environment: &Environment<'_, N>,
+        environment: &ValueEnvironment<'_, N>,
     ) -> Result<Succeeded<Type>, OverflowError> {
         let register = &self.registers[id];
 

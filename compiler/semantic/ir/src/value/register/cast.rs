@@ -12,7 +12,7 @@ use crate::{
     resolution_visitor::{
         self, Abort, Resolution, ResolutionMut, ResolutionVisitor,
     },
-    value::{Environment, TypeOf, Value, register::Register},
+    value::{ValueEnvironment, TypeOf, Value, register::Register},
 };
 
 macro_rules! visit_cast {
@@ -112,7 +112,7 @@ impl TypeOf<&Cast> for Values {
     async fn type_of<N: Normalizer>(
         &self,
         cast: &Cast,
-        environment: &Environment<'_, N>,
+        environment: &ValueEnvironment<'_, N>,
     ) -> Result<Succeeded<Type>, OverflowError> {
         Ok(environment
             .type_environment

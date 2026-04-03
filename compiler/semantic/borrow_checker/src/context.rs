@@ -1,18 +1,22 @@
 use getset::{CopyGetters, Getters};
+use pernixc_arena::ID;
 use pernixc_handler::Handler;
 use pernixc_hash::FxHashSet;
 use pernixc_ir::{
-    IR,
+    IR, IRWithContext,
     address::Address,
-    value::{Environment, TypeOf},
+    value::{TypeOf, ValueEnvironment},
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_target::Global;
 use pernixc_term::{r#type::Qualifier, visitor::RecursiveIterator};
-use pernixc_type_system::{UnrecoverableError, normalizer::Normalizer};
+use pernixc_type_system::{
+    UnrecoverableError, environment::Environment as TyEnvironment,
+    normalizer::Normalizer,
+};
 
 use crate::{
-    Region,
+    Region, borrow_check_ir,
     cache::{RegionVariances, RegisterInfos},
     diagnostic::Diagnostic,
 };
@@ -20,13 +24,15 @@ use crate::{
 /// A struct holding all relevant information for borrow checking
 #[derive(Clone, Getters, CopyGetters)]
 pub struct Context<'a, N> {
+    function_ir: &'a pernixc_ir::FunctionIR,
+
     /// The IR being borrow checked
     #[get_copy = "pub"]
     ir: &'a IR,
 
     /// The environment for type system operations
-    #[get_copy = "pub"]
-    environment: &'a Environment<'a, N>,
+    #[get = "pub"]
+    environment: ValueEnvironment<'a, N>,
 
     /// Cached information about reachability
     #[get = "pub"]
@@ -59,25 +65,31 @@ impl<N: std::fmt::Debug> std::fmt::Debug for Context<'_, N> {
 impl<'a, N: Normalizer> Context<'a, N> {
     /// Create a new borrow checking context
     pub async fn new(
-        ir: &'a IR,
-        environment: &'a Environment<'a, N>,
+        function_ir: &'a pernixc_ir::FunctionIR,
+        ir_id: ID<IRWithContext>,
+        environment: &'a TyEnvironment<'a, N>,
         handler: &'a dyn Handler<Diagnostic>,
     ) -> Result<Self, UnrecoverableError> {
+        let ir = &function_ir[ir_id];
+        let value_environment =
+            function_ir.create_value_environment_from_ir_id(ir_id, environment);
+
         let register_infos =
-            RegisterInfos::new(ir, environment, handler).await?;
+            RegisterInfos::new(ir.ir(), &value_environment, handler).await?;
 
         let region_variances = RegionVariances::new(
-            ir,
-            environment.current_site,
+            ir.ir(),
+            environment.current_site(),
             environment.tracked_engine(),
         )
         .await?;
 
-        let reachability = ir.control_flow_graph.reachability();
+        let reachability = ir.ir().control_flow_graph.reachability();
 
         Ok(Self {
-            ir,
-            environment,
+            function_ir,
+            ir: ir.ir(),
+            environment: value_environment,
             reachability,
             register_infos,
             region_variances,
@@ -96,15 +108,15 @@ impl<'a, N: Normalizer> Context<'a, N> {
 
     /// Gets the current site from the environment
     #[must_use]
-    pub const fn current_site(&self) -> Global<pernixc_symbol::SymbolID> {
-        self.environment.current_site
+    pub fn current_site(&self) -> Global<pernixc_symbol::SymbolID> {
+        self.environment.current_site()
     }
 
     /// Gets the type environment from the context
     pub const fn type_environment(
         &self,
     ) -> &'a pernixc_type_system::environment::Environment<'a, N> {
-        self.environment.type_environment
+        self.environment.type_environment()
     }
 
     /// Gets the control flow graph from the IR
@@ -126,7 +138,7 @@ impl<'a, N: Normalizer> Context<'a, N> {
         let address_ty = self
             .ir
             .values
-            .type_of(address, self.environment)
+            .type_of(address, &self.environment)
             .await
             .map_err(|x| {
                 x.report_as_type_calculating_overflow(
@@ -165,7 +177,7 @@ impl<'a, N: Normalizer> Context<'a, N> {
                             .values
                             .type_of(
                                 &*reference.reference_address,
-                                self.environment,
+                                &self.environment,
                             )
                             .await
                             .map_err(|x| {
@@ -229,7 +241,7 @@ impl<'a, N: Normalizer> Context<'a, N> {
                         .values()
                         .type_of(
                             &*reference.reference_address,
-                            self.environment,
+                            &self.environment,
                         )
                         .await
                         .map_err(|x| {
@@ -251,5 +263,18 @@ impl<'a, N: Normalizer> Context<'a, N> {
                 }
             }
         }
+    }
+
+    pub async fn nest_borrow_check_ir(
+        &self,
+        ir_id: ID<IRWithContext>,
+    ) -> Result<(), UnrecoverableError> {
+        Box::pin(borrow_check_ir(
+            self.function_ir,
+            ir_id,
+            self.type_environment(),
+            self.handler,
+        ))
+        .await
     }
 }

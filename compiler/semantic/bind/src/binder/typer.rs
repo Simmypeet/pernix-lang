@@ -55,9 +55,8 @@ impl Typer<Address> for BinderTyper<'_> {
         env: &E,
     ) -> Result<DerefWrapper<pernixc_term::r#type::Type>, UnrecoverableError>
     {
-        let environment = pernixc_ir::value::Environment::builder()
+        let environment = pernixc_ir::value::ValueEnvironment::builder()
             .maybe_captures(env.captures())
-            .current_site(env.current_site())
             .type_environment(&self.ty_environment)
             .handling_scopes(self.handling_scopes)
             .build();

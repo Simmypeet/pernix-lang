@@ -16,7 +16,7 @@ use crate::{
         self, Abort, Resolution, ResolutionMut, ResolutionVisitor,
     },
     value::{
-        Environment, TypeOf, Value,
+        ValueEnvironment, TypeOf, Value,
         register::{Register, subtype::Subtype},
     },
 };
@@ -78,7 +78,7 @@ impl Array {
     pub async fn subtypes<N: Normalizer>(
         &self,
         values: &Values,
-        environment: &Environment<'_, N>,
+        environment: &ValueEnvironment<'_, N>,
     ) -> Result<Subtype, OverflowError> {
         let mut constraints = Constraints::default();
 
@@ -160,7 +160,7 @@ impl TypeOf<&Array> for Values {
     async fn type_of<N: Normalizer>(
         &self,
         array: &Array,
-        environment: &Environment<'_, N>,
+        environment: &ValueEnvironment<'_, N>,
     ) -> Result<Succeeded<Type>, OverflowError> {
         Ok(environment
             .type_environment

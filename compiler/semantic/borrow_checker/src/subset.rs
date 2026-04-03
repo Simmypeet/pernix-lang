@@ -44,6 +44,7 @@ use crate::{
 
 mod array;
 mod borrow;
+mod do_with;
 mod function_call;
 mod phi;
 mod store;
@@ -615,7 +616,17 @@ impl<N: Normalizer> Builder<'_, N> {
             | Assignment::Load(_) => Ok(Changes::default()),
 
             // TODO: handle do-with subset relations
-            Assignment::Do(_do_expr) => Ok(Changes::default()),
+            Assignment::Do(do_expr) => {
+                self.context
+                    .get_changes_of_do_with(
+                        do_expr,
+                        &register.span,
+                        register_assignment.id,
+                    )
+                    .await?;
+
+                Ok(Changes::default())
+            }
 
             // TODO: handle resume-call subset relations
             Assignment::ResumeCall(_resume_call) => Ok(Changes::default()),
@@ -999,7 +1010,7 @@ impl<'a, N: Normalizer> Walker<'a, N> {
         self.context.environment().tracked_engine()
     }
 
-    pub const fn current_site(&self) -> Global<pernixc_symbol::SymbolID> {
+    pub fn current_site(&self) -> Global<pernixc_symbol::SymbolID> {
         self.context.current_site()
     }
 }
