@@ -95,7 +95,12 @@ impl Bind<&pernixc_syntax::expression::block::DoWith> for Binder<'_> {
         // pop the closure from the stack
         self.pop_handling_scope(effect_handlers.handling_scope_id);
 
-        let do_part = self.new_do(do_ir, do_captures, do_kw.span());
+        let do_part = self.new_do(
+            do_ir,
+            do_captures,
+            effect_handlers.handling_scope_id,
+            do_kw.span(),
+        );
 
         let with = build_with_blocks(
             self,

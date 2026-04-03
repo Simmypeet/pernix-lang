@@ -71,15 +71,55 @@ impl MutableRecursive<Instance> for ToBorrowTransformer {
 }
 
 fn transform_lifetime(lt: &mut Lifetime, region_gen: &mut Mode) {
+    match region_gen {
+        Mode::Local(local_region_generator) => match lt {
+            Lifetime::Error(_)
+            | Lifetime::Closure(_)
+            | Lifetime::Inference(_) => {
+                unreachable!("unexpected lifetime in closure context: {lt:?}")
+            }
+
+            // leave forall as is
+            Lifetime::Elided(_)
+            | Lifetime::Static
+            | Lifetime::Parameter(_)
+            | Lifetime::Forall(_) => {}
+
+            Lifetime::Erased => {
+                *lt = Lifetime::Inference(local_region_generator.next());
+            }
+        },
+
+        Mode::Closure(closure_lifetime_generator) => match lt {
+            Lifetime::Error(_)
+            | Lifetime::Closure(_)
+            | Lifetime::Inference(_) => {
+                unreachable!("unexpected lifetime in closure context: {lt:?}")
+            }
+
+            // leave forall as is
+            Lifetime::Forall(_) => {}
+
+            Lifetime::Elided(_)
+            | Lifetime::Parameter(_)
+            | Lifetime::Static
+            | Lifetime::Erased => {
+                *lt = Lifetime::Closure(closure_lifetime_generator.next());
+            }
+        },
+    }
+
     match lt {
         Lifetime::Closure(_) | Lifetime::Inference(_) => {
             panic!("should have no prior inference lifetime")
         }
+
         Lifetime::Error(_)
         | Lifetime::Parameter(_)
         | Lifetime::Elided(_)
         | Lifetime::Forall(_)
         | Lifetime::Static => {}
+
         Lifetime::Erased => {
             *lt = match region_gen {
                 Mode::Local(local_region_generator) => {
@@ -124,7 +164,7 @@ pub(super) async fn transform_to_inference(ir: &mut FunctionIR) {
         generator: Mode::Closure(ClosureLifetimeGenerator::new()),
     };
 
-    ir.accept_visitor_for_closure_and_capture(&mut transformer)
+    ir.accept_visitor_for_captures_and_handling_scopes(&mut transformer)
         .await
         .expect("should've no errors");
 

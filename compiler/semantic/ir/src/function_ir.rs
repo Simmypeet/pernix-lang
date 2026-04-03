@@ -11,7 +11,7 @@ use qbice::{
 use crate::{
     IRWithContext,
     capture::{Captures, CapturesMap},
-    handling_scope::{HandlingScopes, OperationHandlerID},
+    handling_scope::{HandlingScope, HandlingScopes, OperationHandlerID},
     ir::{IR, IRMap},
     resolution_visitor::{
         Abort, MutableResolutionVisitable, MutableResolutionVisitor,
@@ -67,7 +67,7 @@ impl FunctionIR {
 
     /// Accepts a visitor and invoke it on the closure parameters and captures
     /// of all IRs in the function.
-    pub async fn accept_visitor_for_closure_and_capture<
+    pub async fn accept_visitor_for_captures_and_handling_scopes<
         T: MutableResolutionVisitor,
     >(
         &mut self,
@@ -135,12 +135,21 @@ pub struct DoContext {
     /// The ID of the captures that the `do` block uses.
     #[get_copy = "pub"]
     captures_id: ID<Captures>,
+
+    /// The handling scope ID of the `do` block.
+    #[get_copy = "pub"]
+    handling_scope_id: ID<HandlingScope>,
 }
 
 impl DoContext {
     /// Creates a new `do` context.
     #[must_use]
-    pub const fn new(captures_id: ID<Captures>) -> Self { Self { captures_id } }
+    pub const fn new(
+        captures_id: ID<Captures>,
+        handling_scope_id: ID<HandlingScope>,
+    ) -> Self {
+        Self { captures_id, handling_scope_id }
+    }
 }
 
 /// The context in which an IR is used.
@@ -167,8 +176,11 @@ pub enum IRContext {
 impl IRContext {
     /// Creates a do IR context.
     #[must_use]
-    pub const fn new_do_context(captures_id: ID<Captures>) -> Self {
-        Self::Do(DoContext::new(captures_id))
+    pub const fn new_do_context(
+        captures_id: ID<Captures>,
+        handling_scope_id: ID<HandlingScope>,
+    ) -> Self {
+        Self::Do(DoContext::new(captures_id, handling_scope_id))
     }
 
     /// Creates an operation handler IR context.

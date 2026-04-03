@@ -135,6 +135,7 @@ impl Binder<'_> {
         &mut self,
         ir: IR,
         captures: Captures,
+        handling_scope_id: ID<HandlingScope>,
         do_span: RelativeSpan,
     ) -> Do {
         let (capture_id, captures_args) =
@@ -142,7 +143,7 @@ impl Binder<'_> {
 
         let ir_id = self.ir_map.new_ir(IRWithContext::new(
             ir,
-            IRContext::new_do_context(capture_id),
+            IRContext::new_do_context(capture_id, handling_scope_id),
         ));
 
         Do::new(captures_args, ir_id)
