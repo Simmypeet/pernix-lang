@@ -5,8 +5,9 @@ use literal::Literal;
 use pernixc_arena::ID;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
-use pernixc_semantic_element::parameter::{
-    Parameter, Parameters, get_parameters,
+use pernixc_semantic_element::{
+    parameter::{Parameter, Parameters, get_parameters},
+    return_type::get_return_type,
 };
 use pernixc_symbol::GlobalSymbolID;
 use pernixc_term::{instantiation::Instantiation, r#type::Type};
@@ -19,7 +20,9 @@ use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use crate::{
     Values,
     capture::Captures,
-    handling_scope::{HandlerClauseID, HandlingScopes, OperationHandlerID},
+    handling_scope::{
+        HandlerClauseID, HandlingScope, HandlingScopes, OperationHandlerID,
+    },
     resolution_visitor::ResolutionVisitable,
     value::register::Register,
 };
@@ -49,6 +52,50 @@ pub enum Value {
     Literal(Literal),
 }
 
+/// Similar to [`IRContext`], but only contains the information regarding to
+/// where the IR is used as.
+///
+/// [`IRContext`]: crate::function_ir::IRContext
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SimpleIRContext {
+    Root,
+    OperationHandler(OperationHandlerID),
+    Do(ID<HandlingScope>),
+}
+
+impl SimpleIRContext {
+    /// Gets the current operation handler ID, unwrapping the option. Panics if
+    /// there is no current operation handler ID.
+    #[must_use]
+    pub fn current_operation_handler_id(&self) -> &OperationHandlerID {
+        match self {
+            Self::Root => panic!(
+                "there is no current operation handler in the root context"
+            ),
+            Self::OperationHandler(operation_handler_id) => {
+                operation_handler_id
+            }
+            Self::Do(id) => panic!(
+                "there is no current operation handler in a do block \
+                 (handling scope ID: {id:?})"
+            ),
+        }
+    }
+
+    #[must_use]
+    pub const fn try_current_operation_handler_id(
+        &self,
+    ) -> Option<&OperationHandlerID> {
+        match self {
+            Self::OperationHandler(operation_handler_id) => {
+                Some(operation_handler_id)
+            }
+
+            Self::Root | Self::Do(_) => None,
+        }
+    }
+}
+
 /// Representing an environment that the [`Values`] is in. This is primarily
 /// used for type checking and retrieving the type of a [`Value`].
 #[derive(Debug, Clone, Copy, Builder)]
@@ -62,7 +109,7 @@ pub struct ValueEnvironment<'e, N> {
 
     /// If the IR was built inside an operation handler, this is used for
     /// accessing the closure parameters.
-    current_operation_handler_id: Option<OperationHandlerID>,
+    ir_context: SimpleIRContext,
 
     /// The handling scopes in the current context.
     handling_scopes: &'e HandlingScopes,
@@ -96,15 +143,32 @@ impl<'e, N: Normalizer> ValueEnvironment<'e, N> {
     /// Gets the current operation handler ID, unwrapping the option. Panics if
     /// there is no current operation handler ID.
     #[must_use]
-    pub const fn current_operation_handler_id(&self) -> &OperationHandlerID {
-        self.current_operation_handler_id.as_ref().unwrap()
+    pub fn current_operation_handler_id(&self) -> &OperationHandlerID {
+        match &self.ir_context {
+            SimpleIRContext::Root => panic!(
+                "there is no current operation handler in the root context"
+            ),
+            SimpleIRContext::OperationHandler(operation_handler_id) => {
+                operation_handler_id
+            }
+            SimpleIRContext::Do(id) => panic!(
+                "there is no current operation handler in a do block \
+                 (handling scope ID: {id:?})"
+            ),
+        }
     }
 
     #[must_use]
     pub const fn try_current_operation_handler_id(
         &self,
     ) -> Option<&OperationHandlerID> {
-        self.current_operation_handler_id.as_ref()
+        match &self.ir_context {
+            SimpleIRContext::OperationHandler(operation_handler_id) => {
+                Some(operation_handler_id)
+            }
+
+            SimpleIRContext::Root | SimpleIRContext::Do(_) => None,
+        }
     }
 
     #[must_use]
@@ -179,6 +243,35 @@ impl<'e, N: Normalizer> ValueEnvironment<'e, N> {
                 self.tracked_engine(),
             )
             .await
+    }
+
+    #[must_use]
+    pub const fn get_current_handling_scope_id(
+        &self,
+    ) -> Option<ID<HandlingScope>> {
+        match self.ir_context {
+            SimpleIRContext::Do(id) => Some(id),
+            SimpleIRContext::OperationHandler(op) => {
+                Some(op.handling_scope_id())
+            }
+
+            SimpleIRContext::Root => None,
+        }
+    }
+
+    pub async fn get_expected_return_type(&self) -> Type {
+        if let Some(handling_scope_id) = self.get_current_handling_scope_id() {
+            self.handling_scopes
+                .get_handling_scope_return_type(handling_scope_id)
+                .clone()
+        } else {
+            let current_site = self.current_site();
+
+            self.tracked_engine()
+                .get_return_type(current_site)
+                .await
+                .clone_inner()
+        }
     }
 }
 

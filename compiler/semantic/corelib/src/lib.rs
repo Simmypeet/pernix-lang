@@ -5,7 +5,6 @@
 //! trait. This eliminates the need for clients to manually resolve qualified
 //! identifier sequences, which is fragile and ad-hoc.
 
-use pernixc_extend::extend;
 use pernixc_symbol::SymbolID;
 use pernixc_target::Global;
 use qbice::{Decode, Encode, Query, StableHash};

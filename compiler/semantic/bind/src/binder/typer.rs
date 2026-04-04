@@ -4,8 +4,10 @@ use std::ops::Deref;
 
 use pernixc_handler::Handler;
 use pernixc_ir::{
-    address::Address, handling_scope::OperationHandlerID, typer::Typer,
-    value::TypeOf,
+    address::Address,
+    handling_scope::OperationHandlerID,
+    typer::Typer,
+    value::{SimpleIRContext, TypeOf},
 };
 use pernixc_qbice::TrackedEngine;
 use pernixc_type_system::UnrecoverableError;
@@ -19,6 +21,7 @@ pub struct BinderTyper<'x> {
         pernixc_type_system::environment::Environment<'x, InferenceContext>,
 
     handling_scopes: &'x pernixc_ir::handling_scope::HandlingScopes,
+    simple_ir_context: SimpleIRContext,
 
     handler: &'x dyn Handler<crate::diagnostic::Diagnostic>,
 }
@@ -58,6 +61,7 @@ impl Typer<Address> for BinderTyper<'_> {
         let environment = pernixc_ir::value::ValueEnvironment::builder()
             .maybe_captures(env.captures())
             .type_environment(&self.ty_environment)
+            .ir_context(self.simple_ir_context)
             .handling_scopes(self.handling_scopes)
             .build();
 
@@ -82,7 +86,7 @@ pub struct Environment<'s> {
     scope_tree: &'s pernixc_ir::scope::Tree,
     values: &'s pernixc_ir::Values,
     handling_scopes: &'s pernixc_ir::handling_scope::HandlingScopes,
-    current_operation_handler_id: Option<OperationHandlerID>,
+    simple_ir_context: SimpleIRContext,
 }
 
 impl pernixc_ir::typer::Environment for Environment<'_> {
@@ -101,7 +105,7 @@ impl pernixc_ir::typer::Environment for Environment<'_> {
     fn scope_tree(&self) -> &pernixc_ir::scope::Tree { self.scope_tree }
 
     fn current_operation_handler_id(&self) -> Option<&OperationHandlerID> {
-        self.current_operation_handler_id.as_ref()
+        self.simple_ir_context.try_current_operation_handler_id()
     }
 
     fn handling_scopes(&self) -> &pernixc_ir::handling_scope::HandlingScopes {
@@ -120,6 +124,7 @@ impl Binder<'_> {
             ty_environment: self.create_environment(),
             handler,
             handling_scopes: self.handling_scopes(),
+            simple_ir_context: self.simple_ir_context,
         }
     }
 
@@ -133,7 +138,7 @@ impl Binder<'_> {
             scope_tree: self.scope_tree(),
             values: self.values(),
             handling_scopes: self.handling_scopes(),
-            current_operation_handler_id: self.current_operation_handler_id,
+            simple_ir_context: self.simple_ir_context,
         }
     }
 }

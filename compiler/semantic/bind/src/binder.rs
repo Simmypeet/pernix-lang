@@ -10,13 +10,12 @@ use pernixc_ir::{
     alloca::Alloca,
     capture::CapturesMap,
     control_flow_graph::Block,
-    handling_scope::OperationHandlerID,
     instruction::{self, Instruction, ScopePop, ScopePush, Terminator},
     ir::{IR, IRMap},
     pattern::{Irrefutable, NameBindingPoint, Wildcard},
     scope,
     value::{
-        TypeOf, Value, ValueEnvironment,
+        SimpleIRContext, TypeOf, Value, ValueEnvironment,
         literal::{Literal, Unreachable},
         register::{Assignment, Register, load::Load},
     },
@@ -102,7 +101,7 @@ pub struct Binder<'t> {
     #[get_copy = "pub"]
     captures: Option<&'t pernixc_ir::capture::Captures>,
 
-    current_operation_handler_id: Option<OperationHandlerID>,
+    simple_ir_context: SimpleIRContext,
 
     /// The intermediate representation that is being built.
     #[get = "pub"]
@@ -186,7 +185,7 @@ impl<'t> Binder<'t> {
             environment,
 
             captures: None,
-            current_operation_handler_id: None,
+            simple_ir_context: SimpleIRContext::Root,
 
             inference_context: InferenceContext::default(),
 
@@ -534,9 +533,7 @@ impl Binder<'_> {
                 &ValueEnvironment::builder()
                     .type_environment(&self.create_environment())
                     .maybe_captures(self.captures)
-                    .maybe_current_operation_handler_id(
-                        self.current_operation_handler_id,
-                    )
+                    .ir_context(self.simple_ir_context)
                     .handling_scopes(self.handling_scopes())
                     .build(),
             )
@@ -710,9 +707,7 @@ impl Binder<'_> {
         let environment = ValueEnvironment::builder()
             .type_environment(&ty_environment)
             .maybe_captures(self.captures)
-            .maybe_current_operation_handler_id(
-                self.current_operation_handler_id,
-            )
+            .ir_context(self.simple_ir_context)
             .handling_scopes(self.handling_scopes())
             .build();
 

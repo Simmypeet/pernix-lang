@@ -18,7 +18,7 @@ use crate::{
     resolution_visitor::{
         Abort, MutableResolutionVisitable, MutableResolutionVisitor,
     },
-    value::ValueEnvironment,
+    value::{SimpleIRContext, ValueEnvironment},
 };
 
 /// An intermediate representation of a function.
@@ -204,6 +204,21 @@ impl IRContext {
             captures_id,
         ))
     }
+
+    #[must_use]
+    pub const fn to_simple_ir_context(&self) -> SimpleIRContext {
+        match self {
+            Self::Root => SimpleIRContext::Root,
+            Self::OperationHandler(operation_handler_context) => {
+                SimpleIRContext::OperationHandler(
+                    operation_handler_context.operation_handler_id,
+                )
+            }
+            Self::Do(do_context) => {
+                SimpleIRContext::Do(do_context.handling_scope_id)
+            }
+        }
+    }
 }
 
 impl FunctionIR {
@@ -240,11 +255,13 @@ impl FunctionIR {
         ty_environment: &'s TyEnvironment<'s, N>,
     ) -> ValueEnvironment<'s, N> {
         let context = self.ir_map[ir_id].context();
+        let simple_ir_context = context.to_simple_ir_context();
 
         match context {
             IRContext::Root => ValueEnvironment::builder()
                 .type_environment(ty_environment)
                 .handling_scopes(&self.handling_scopes)
+                .ir_context(simple_ir_context)
                 .build(),
 
             IRContext::OperationHandler(operation_handler_context) => {
@@ -254,9 +271,7 @@ impl FunctionIR {
                 ValueEnvironment::builder()
                     .type_environment(ty_environment)
                     .captures(captures)
-                    .current_operation_handler_id(
-                        operation_handler_context.operation_handler_id,
-                    )
+                    .ir_context(simple_ir_context)
                     .handling_scopes(&self.handling_scopes)
                     .build()
             }
@@ -268,6 +283,7 @@ impl FunctionIR {
                     .type_environment(ty_environment)
                     .captures(captures)
                     .handling_scopes(&self.handling_scopes)
+                    .ir_context(simple_ir_context)
                     .build()
             }
         }
@@ -291,10 +307,14 @@ impl FunctionIR {
         ),
     > + 's {
         self.ir_map.ir_with_contexts().map(move |(ir_id, ir_with_context)| {
+            let simple_ir_context =
+                ir_with_context.context().to_simple_ir_context();
+
             let environment = match ir_with_context.context() {
                 IRContext::Root => ValueEnvironment::builder()
                     .type_environment(ty_environment)
                     .handling_scopes(&self.handling_scopes)
+                    .ir_context(simple_ir_context)
                     .build(),
 
                 IRContext::OperationHandler(operation_handler_context) => {
@@ -304,9 +324,7 @@ impl FunctionIR {
                     ValueEnvironment::builder()
                         .type_environment(ty_environment)
                         .captures(captures)
-                        .current_operation_handler_id(
-                            operation_handler_context.operation_handler_id,
-                        )
+                        .ir_context(simple_ir_context)
                         .handling_scopes(&self.handling_scopes)
                         .build()
                 }
@@ -318,6 +336,7 @@ impl FunctionIR {
                         .type_environment(ty_environment)
                         .captures(captures)
                         .handling_scopes(&self.handling_scopes)
+                        .ir_context(simple_ir_context)
                         .build()
                 }
             };
@@ -346,10 +365,14 @@ impl FunctionIR {
 
         self.ir_map.ir_with_contexts_mut().map(
             move |(ir_id, ir_with_context)| {
+                let simple_ir_context =
+                    ir_with_context.context().to_simple_ir_context();
+
                 let environment = match ir_with_context.context() {
                     IRContext::Root => ValueEnvironment::builder()
                         .type_environment(ty_environment)
                         .handling_scopes(handling_scopes)
+                        .ir_context(simple_ir_context)
                         .build(),
 
                     IRContext::OperationHandler(operation_handler_context) => {
@@ -359,9 +382,7 @@ impl FunctionIR {
                         ValueEnvironment::builder()
                             .type_environment(ty_environment)
                             .captures(captures)
-                            .current_operation_handler_id(
-                                operation_handler_context.operation_handler_id,
-                            )
+                            .ir_context(simple_ir_context)
                             .handling_scopes(handling_scopes)
                             .build()
                     }
@@ -372,6 +393,7 @@ impl FunctionIR {
                         ValueEnvironment::builder()
                             .type_environment(ty_environment)
                             .captures(captures)
+                            .ir_context(simple_ir_context)
                             .handling_scopes(handling_scopes)
                             .build()
                     }

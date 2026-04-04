@@ -88,6 +88,14 @@ impl HandlingScopes {
     }
 
     #[must_use]
+    pub fn get_handling_scope_return_type(
+        &self,
+        handling_scope_id: ID<HandlingScope>,
+    ) -> &Type {
+        self.0.get(handling_scope_id).unwrap().return_type()
+    }
+
+    #[must_use]
     pub fn get_visitable_handler_clause(
         &self,
         id: HandlerClauseID,

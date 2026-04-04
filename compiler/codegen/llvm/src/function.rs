@@ -25,7 +25,9 @@ use pernixc_ir::{
     address::{Address, Memory},
     control_flow_graph::Block,
     function_ir::get_function_ir,
-    value::{TypeOf, Value, ValueEnvironment, register::Register},
+    value::{
+        SimpleIRContext, TypeOf, Value, ValueEnvironment, register::Register,
+    },
 };
 use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::{
@@ -681,6 +683,7 @@ impl<'ctx> Context<'_, 'ctx> {
             let value_environment = ValueEnvironment::builder()
                 .type_environment(&environment)
                 .handling_scopes(pernix_ir.handling_scopes())
+                .ir_context(SimpleIRContext::Root)
                 .build();
 
             let root_ir = pernix_ir.root_ir();

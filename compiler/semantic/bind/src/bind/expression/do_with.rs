@@ -10,7 +10,7 @@ use pernixc_ir::{
     },
     pattern::{Irrefutable, NameBindingPoint, Wildcard},
     value::{
-        Value,
+        SimpleIRContext, Value,
         register::{self, Assignment},
     },
 };
@@ -82,7 +82,7 @@ impl Bind<&pernixc_syntax::expression::block::DoWith> for Binder<'_> {
             effect_handlers.return_type.clone(),
             do_statements.span(),
             &captures,
-            None,
+            SimpleIRContext::Do(effect_handlers.handling_scope_id),
             handler,
         ))
         .await?;
@@ -205,7 +205,7 @@ async fn build_with_blocks(
                     expected_type.clone(),
                     statements_span,
                     &captures,
-                    Some(operation_handler_id),
+                    SimpleIRContext::OperationHandler(operation_handler_id),
                     handler,
                 )
                 .await?;

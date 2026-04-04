@@ -1,5 +1,3 @@
-use std::ops::Deref;
-
 use bon::bon;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
@@ -17,8 +15,7 @@ use pernixc_ir::{
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::{
-    elided_lifetime::get_elided_lifetimes, return_type::get_return_type,
-    variance::Variance,
+    elided_lifetime::get_elided_lifetimes, variance::Variance,
 };
 use pernixc_symbol::{kind::get_kind, parent::scope_walker};
 use pernixc_target::Global;
@@ -557,16 +554,12 @@ impl<N: Normalizer> Builder<'_, N> {
             .filter_map(|x| x.terminator().as_ref().and_then(|x| x.as_return()))
             .find(|x| x.value == Value::Register(register_id))
         {
-            let return_ty = self
-                .context
-                .tracked_engine()
-                .get_return_type(self.context.current_site())
-                .await;
+            let return_ty = self.context.get_expected_return_type().await;
 
             let mut constraints = Constraints::new();
             self.context
                 .subtypes_value(
-                    return_ty.deref().clone(),
+                    return_ty,
                     &Value::Register(register_id),
                     Variance::Covariant,
                     &mut constraints,

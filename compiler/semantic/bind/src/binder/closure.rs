@@ -6,11 +6,10 @@ use pernixc_handler::Handler;
 use pernixc_hash::FxHashMap;
 use pernixc_ir::{
     capture::{self, Captures, builder::CapturesWithNameBindingPoint},
-    handling_scope::OperationHandlerID,
     instruction::{self, ScopePush},
     ir::IR,
     value::{
-        Value,
+        SimpleIRContext, Value,
         register::{
             Assignment, Borrow,
             do_with::CaptureArguments,
@@ -73,7 +72,7 @@ impl Binder<'_> {
         expected_type: Type,
         closure_span: RelativeSpan,
         captures: &CapturesWithNameBindingPoint,
-        current_operation_handler_id: Option<OperationHandlerID>,
+        ir_context: SimpleIRContext,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<IR, UnrecoverableError> {
         // temporary move out the inference context for the inner binder
@@ -90,7 +89,7 @@ impl Binder<'_> {
             engine: self.engine,
             environment: self.environment,
             captures: Some(captures.captures()),
-            current_operation_handler_id,
+            simple_ir_context: ir_context,
             ir,
             current_block_id,
             stack,

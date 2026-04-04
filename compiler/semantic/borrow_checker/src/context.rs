@@ -9,7 +9,10 @@ use pernixc_ir::{
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_target::Global;
-use pernixc_term::{r#type::Qualifier, visitor::RecursiveIterator};
+use pernixc_term::{
+    r#type::{Qualifier, Type},
+    visitor::RecursiveIterator,
+};
 use pernixc_type_system::{
     UnrecoverableError, environment::Environment as TyEnvironment,
     normalizer::Normalizer,
@@ -276,5 +279,9 @@ impl<'a, N: Normalizer> Context<'a, N> {
             self.handler,
         ))
         .await
+    }
+
+    pub async fn get_expected_return_type(&self) -> Type {
+        self.environment.get_expected_return_type().await
     }
 }
