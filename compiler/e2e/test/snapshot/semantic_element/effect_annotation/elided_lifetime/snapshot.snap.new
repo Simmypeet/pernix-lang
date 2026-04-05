@@ -1,0 +1,17 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+assertion_line: 139
+expression: run
+---
+stderr:
+[error]: mismatched generic argument count
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/effect_annotation/elided_lifetime/main.pnx:9:56
+  │
+9 │ pub def illegal['x, 'y](x: &'x int32, y: &'y int32) do Test: # error: no elided lifetime parameter
+  ╰╴                                                       ━━━━ expected 1 lifetime arguments, but 0 were supplied
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

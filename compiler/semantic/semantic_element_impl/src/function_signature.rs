@@ -59,6 +59,7 @@ pub struct FunctionSignature {
     pub elided_lifetimes: Interned<Arena<ElidedLifetime>>,
     pub late_bound_lifetime_parameters:
         Interned<FxHashSet<ID<LifetimeParameter>>>,
+    pub elided_lifetime: Option<Lifetime>,
 }
 
 #[derive(
@@ -111,8 +112,10 @@ impl Build for Key {
     async fn execute(engine: &TrackedEngine, key: &Self) -> Output<Self> {
         let extra_namespace =
             engine.get_generic_parameter_namespace(key.symbol_id).await;
+
         let mut elided_lifetimes = Arena::default();
         let mut occurrences = Occurrences::default();
+
         let mut elided_lifetimes_provider = ParametersElidedLifetimeProvider {
             global_id: key.symbol_id,
             elided_lifetimes: &mut elided_lifetimes,
@@ -348,6 +351,9 @@ impl Build for Key {
                 implied_predicates: engine.intern(implied_predicates),
                 elided_lifetimes: engine.intern(elided_lifetimes),
                 late_bound_lifetime_parameters: engine.intern(late_bound),
+                elided_lifetime: return_elided_lifetime_provider
+                    .as_ref()
+                    .map(|x| x.lifetime.clone()),
             },
             diagnostics: engine.intern_unsized(storage.into_vec()),
             occurrences: engine.intern(occurrences),

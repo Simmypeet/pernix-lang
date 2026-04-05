@@ -1,0 +1,17 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+assertion_line: 139
+expression: run
+---
+stderr:
+[error]: unexpected `for` keyword, expected identifier, `target` keyword, `( ... )` block, `this` keyword
+  ╭▸ compiler/e2e/test/snapshot/ir/expression/function_call/operation_call_not_general_enough/main.pnx:5:28
+  │
+5 │ pub def useForallTest() do for['x] Test['x]: # forall lifetime x
+  ╰╴                           ━━━
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

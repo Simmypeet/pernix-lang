@@ -8,8 +8,7 @@ use proptest::{
 
 use crate::{
     arbitrary::{
-        AccessModifier, HigherRankedLifetimes, IndentDisplay, IntoSeparated,
-        QualifiedIdentifier,
+        AccessModifier, IndentDisplay, IntoSeparated, QualifiedIdentifier,
     },
     item::{arbitrary::Body, generic_parameters::arbitrary::GenericParameters},
     pattern::arbitrary::Irrefutable,
@@ -273,7 +272,6 @@ impl IndentDisplay for ReturnType {
 reference! {
     #[derive(Debug, Clone)]
     pub struct EffectUnit for super::EffectUnit {
-        pub higher_ranked_lifetimes (Option<HigherRankedLifetimes>),
         pub qualified_identifier (QualifiedIdentifier)
     }
 }
@@ -283,14 +281,8 @@ impl Arbitrary for EffectUnit {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (
-            proptest::option::of(HigherRankedLifetimes::arbitrary()),
-            QualifiedIdentifier::arbitrary(),
-        )
-            .prop_map(|(higher_ranked_lifetimes, qualified_identifier)| Self {
-                higher_ranked_lifetimes,
-                qualified_identifier,
-            })
+        QualifiedIdentifier::arbitrary()
+            .prop_map(|qualified_identifier| Self { qualified_identifier })
             .boxed()
     }
 }
@@ -301,10 +293,6 @@ impl IndentDisplay for EffectUnit {
         f: &mut std::fmt::Formatter<'_>,
         indent: usize,
     ) -> std::fmt::Result {
-        if let Some(higher_ranked_lifetimes) = &self.higher_ranked_lifetimes {
-            write!(f, "{higher_ranked_lifetimes} ")?;
-        }
-
         self.qualified_identifier.indent_fmt(f, indent)
     }
 }
