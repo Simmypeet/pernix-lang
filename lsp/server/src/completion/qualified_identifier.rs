@@ -124,7 +124,42 @@ pub async fn retrieve_qulaified_identifier_matching(
         (None, None) => None,
     };
 
-    if let Some((qualified_identifier, token)) = result {
+    let result =
+        result
+            .map(|(qualified_identifier, token)| {
+                (qualified_identifier, token, false)
+            })
+            .or_else(|| {
+                let separator_index = byte_index.checked_sub(1)?;
+                let separator_token =
+                    node.get_pointing_token(token_tree, separator_index)?;
+
+                if separator_token.kind
+                    != pernixc_lexical::kind::Kind::Punctuation(
+                        pernixc_lexical::kind::Punctuation('.'),
+                    )
+                {
+                    return None;
+                }
+
+                let qualified_identifier = node
+                .get_deepest_ast::<pernixc_syntax::QualifiedIdentifier>(
+                    token_tree,
+                    separator_index.checked_sub(1)?,
+                )?;
+
+                let qualified_identifier_span =
+                    token_tree.absolute_span_of(&qualified_identifier.span());
+                let separator_span =
+                    token_tree.absolute_span_of(&separator_token.span);
+
+                (qualified_identifier_span.end == separator_span.start)
+                    .then_some((qualified_identifier, None, true))
+            });
+
+    if let Some((qualified_identifier, token, ends_with_path_separator)) =
+        result
+    {
         let abs_token_span = if let Some(token_span) = token {
             Some(self.to_absolute_span(&token_span).await)
         } else {
@@ -134,6 +169,7 @@ pub async fn retrieve_qulaified_identifier_matching(
         Some(QualifiedIdentifierMatching {
             qualified_identifier,
             hovering_token_span: abs_token_span,
+            ends_with_path_separator,
         })
     } else {
         None
@@ -150,6 +186,9 @@ pub struct QualifiedIdentifierMatching {
     /// the cursor is exactly at the end of the qualified identifier or
     /// is in between insignificant tokens (whitespaces, etc.).
     pub hovering_token_span: Option<Span<ByteIndex>>,
+
+    /// Whether the completion point is immediately after a trailing `.`.
+    pub ends_with_path_separator: bool,
 }
 
 /// Provides completion suggestions for qualified identifiers at the given
@@ -175,6 +214,7 @@ pub async fn qualified_identifier_completion(
     let Some(QualifiedIdentifierMatching {
         qualified_identifier,
         hovering_token_span: token_abs_span,
+        ends_with_path_separator,
     }) = self
         .retrieve_qulaified_identifier_matching(
             byte_index,
@@ -222,7 +262,7 @@ pub async fn qualified_identifier_completion(
             let qual_span = qualified_identifier.span();
             let qual_abs_span = token_tree.absolute_span_of(&qual_span);
 
-            if byte_index == qual_abs_span.end {
+            if ends_with_path_separator || byte_index == qual_abs_span.end {
                 Some(no_match_found)
             } else {
                 // cursor is not at the end, no suggestions

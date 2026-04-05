@@ -61,8 +61,8 @@ impl Arbitrary for Postfix {
         (unit_strategy, operators_strategy)
             .prop_map(|(unit, operators)| Self { unit, operators })
             .prop_filter(
-                "filter out possible of numeric with no decimal with tuple \
-                 dot access",
+                "filter out numeric tuple access and qualified identifier \
+                 ambiguity",
                 |x| {
                     let unit_is_numeric =
                         x.unit.as_numeric().is_some_and(|x| {
@@ -77,9 +77,34 @@ impl Arbitrary for Postfix {
                             x.kind.as_tuple_index().is_some_and(|x| !x.minus)
                         });
 
+                    let is_path_ambiguous =
+                        x.unit.as_qualified_identifier().is_some_and(|_| {
+                            matches!(
+                                x.operators.first(),
+                                Some(Operator::MethodCall(_))
+                            ) || x
+                                .operators
+                                .first()
+                                .and_then(Operator::as_access)
+                                .is_some()
+                        });
+
+                    let is_cast_postfix_ambiguous =
+                        x.operators.windows(2).any(|operators| {
+                            let [current, next] = operators else {
+                                return false;
+                            };
+
+                            current.as_cast().is_some()
+                                && (matches!(next, Operator::MethodCall(_))
+                                    || next.as_access().is_some())
+                        });
+
                     // 123.456 this can be interpreted as a decimal number
                     // or a numeric `123` in tuple access at index `456`
                     !(unit_is_numeric && is_tuple_dot_access)
+                        && !is_path_ambiguous
+                        && !is_cast_postfix_ambiguous
                 },
             )
             .boxed()
