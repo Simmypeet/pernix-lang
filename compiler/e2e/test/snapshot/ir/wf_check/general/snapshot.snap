@@ -3,7 +3,7 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: run
 ---
 stderr:
-[error]: the predicate `marker main::ImpossibleMarker[int32]` is not satisfied
+[error]: the predicate `marker main.ImpossibleMarker[int32]` is not satisfied
    ╭▸ compiler/e2e/test/snapshot/ir/wf_check/general/main.pnx:13:13
    │
 13 │     let x = MyStruct { field: 5 }
@@ -14,11 +14,11 @@ stderr:
 4 │ pub struct MyStruct[T: ImpossibleMarker]:
   ╰╴                       ━━━━━━━━━━━━━━━━
 
-[error]: the predicate `marker main::ImpossibleMarker[int32]` is not satisfied
+[error]: the predicate `marker main.ImpossibleMarker[int32]` is not satisfied
    ╭▸ compiler/e2e/test/snapshot/ir/wf_check/general/main.pnx:14:13
    │
-14 │     let y = MyEnum::Variant(10)
-   ╰╴            ━━━━━━━━━━━━━━━━━━━
+14 │     let y = MyEnum.Variant(10)
+   ╰╴            ━━━━━━━━━━━━━━━━━━
 [note]: the required predicate is declared here
   ╭▸ compiler/e2e/test/snapshot/ir/wf_check/general/main.pnx:8:20
   │
@@ -35,7 +35,7 @@ stderr:
    ╭▸ compiler/e2e/test/snapshot/ir/wf_check/general/main.pnx:31:13
    │
 31 │     let b = *y # not fine, mutable ref cannot be copied
-   ╰╴            ━━ the predicate `marker core::Copy[&mut int32]` is explicitly marked as unsatisfiable by a negative implementation
+   ╰╴            ━━ the predicate `marker core.Copy[&mut int32]` is explicitly marked as unsatisfiable by a negative implementation
 
 [error]: Compilation aborted due to 4 error(s)
 

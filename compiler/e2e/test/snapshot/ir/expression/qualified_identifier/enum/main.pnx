@@ -4,5 +4,5 @@ pub enum MyEnum:
 
 
 pub def main():
-    MyEnum::Simple
-    MyEnum::WithValue # expect associated value
+    MyEnum.Simple
+    MyEnum.WithValue # expect associated value

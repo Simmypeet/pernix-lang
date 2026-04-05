@@ -18,7 +18,7 @@ pub type Inst2[T] = Test2[T]
 
 pub type Test3[T] = T:
     where:
-        T: for['x] target::Buzz['x]
+        T: for['x] target.Buzz['x]
 
 
 pub type Inst3[T] = Test3[T]

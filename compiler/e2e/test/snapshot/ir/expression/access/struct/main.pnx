@@ -14,7 +14,7 @@ pub module inner:
         priv privateField: int32
 
 
-pub def test(test: Test, inner: inner::Private):
+pub def test(test: Test, inner: inner.Private):
     # basic, existing fields
     test.a 
     test.b 

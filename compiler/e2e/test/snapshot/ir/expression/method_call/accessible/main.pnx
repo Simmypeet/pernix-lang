@@ -8,7 +8,7 @@ impl Test:
 
 
 pub module inner:
-    import target::Test
+    import target.Test
 
 
     impl Test:

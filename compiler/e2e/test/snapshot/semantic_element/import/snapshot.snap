@@ -6,8 +6,8 @@ stderr:
 [error]: the using statement conflicts with an existing name in the module
    ╭▸ compiler/e2e/test/snapshot/semantic_element/import/main.pnx:2:8
    │
- 2 │ import main::First
-   │        ━━━━━━━━━━━ the using `First` conflicts with the existing name in the module `main`
+ 2 │ import main.First
+   │        ━━━━━━━━━━ the using `First` conflicts with the existing name in the module `main`
    ‡
 38 │ pub struct First:
    ╰╴           ───── this symbol already defined the name `First`
@@ -15,57 +15,57 @@ stderr:
 [error]: the using statement conflicts with an existing name in the module
   ╭▸ compiler/e2e/test/snapshot/semantic_element/import/main.pnx:6:8
   │
-5 │ import main::inner1::Inner
-  │        ─────────────────── this symbol already defined the name `Inner`
-6 │ import main::inner2::Inner
-  ╰╴       ━━━━━━━━━━━━━━━━━━━ the using `Inner` conflicts with the existing name in the module `main`
+5 │ import main.inner1.Inner
+  │        ───────────────── this symbol already defined the name `Inner`
+6 │ import main.inner2.Inner
+  ╰╴       ━━━━━━━━━━━━━━━━━ the using `Inner` conflicts with the existing name in the module `main`
 
 [error]: the symbol is not accessible
-  ╭▸ compiler/e2e/test/snapshot/semantic_element/import/main.pnx:9:22
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/import/main.pnx:9:20
   │
-9 │ import main::inner3::InAccessible
-  ╰╴                     ━━━━━━━━━━━━ the symbol `main::inner3::InAccessible` is not accessible from `main`
+9 │ import main.inner3.InAccessible
+  ╰╴                   ━━━━━━━━━━━━ the symbol `main.inner3.InAccessible` is not accessible from `main`
 
 [error]: the symbol is not accessible
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/import/main.pnx:10:26
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/import/main.pnx:10:25
    │
-10 │ from main::inner3 import AnotherInAccessible
-   ╰╴                         ━━━━━━━━━━━━━━━━━━━ the symbol `main::inner3::AnotherInAccessible` is not accessible from `main`
+10 │ from main.inner3 import AnotherInAccessible
+   ╰╴                        ━━━━━━━━━━━━━━━━━━━ the symbol `main.inner3.AnotherInAccessible` is not accessible from `main`
 
 [error]: import items that have a `from` clause cannot have the `target` as the root path
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/import/main.pnx:13:26
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/import/main.pnx:13:25
    │
-13 │ from main::inner4 import target::invalidOne, target::invalidTwo
-   ╰╴                         ━━━━━━ the `target` root path is not allowed with `from` clause
+13 │ from main.inner4 import target.invalidOne, target.invalidTwo
+   ╰╴                        ━━━━━━ the `target` root path is not allowed with `from` clause
 
 [error]: import items that have a `from` clause cannot have the `target` as the root path
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/import/main.pnx:13:46
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/import/main.pnx:13:44
    │
-13 │ from main::inner4 import target::invalidOne, target::invalidTwo
-   ╰╴                                             ━━━━━━ the `target` root path is not allowed with `from` clause
+13 │ from main.inner4 import target.invalidOne, target.invalidTwo
+   ╰╴                                           ━━━━━━ the `target` root path is not allowed with `from` clause
 
 [error]: the using statement conflicts with an existing name in the module
    ╭▸ compiler/e2e/test/snapshot/semantic_element/import/main.pnx:18:16
    │
-15 │   from main::inner4 import (
-   │ ┌───────────────────────────┘
+15 │   from main.inner4 import (
+   │ ┌──────────────────────────┘
 16 │ │     InnerFirst,
    │ └──────────────┘ this symbol already defined the name `InnerFirst`
 17 │       InnerSecond,
 18 │       InnerThird as InnerFirst # cause conflict 
    ╰╴                 ━━━━━━━━━━━━━ the using `InnerFirst` conflicts with the existing name in the module `main`
 
-[error]: expected a module in the module path, but found `enum main::inner5::Direction`
+[error]: expected a module in the module path, but found `enum main.inner5.Direction`
    ╭▸ compiler/e2e/test/snapshot/semantic_element/import/main.pnx:22:6
    │
-22 │ from target::inner5::Direction import Up, Down, Left, Right
-   ╰╴     ━━━━━━━━━━━━━━━━━━━━━━━━━
+22 │ from target.inner5.Direction import Up, Down, Left, Right
+   ╰╴     ━━━━━━━━━━━━━━━━━━━━━━━
 
 [error]: the symbol could not be found
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/import/main.pnx:25:28
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/import/main.pnx:25:27
    │
-25 │ from target::inner5 import NotFound
-   ╰╴                           ━━━━━━━━ the symbol named `NotFound` does not exist in `main::inner5`
+25 │ from target.inner5 import NotFound
+   ╰╴                          ━━━━━━━━ the symbol named `NotFound` does not exist in `main.inner5`
 
 [error]: the symbol could not be found
    ╭▸ compiler/e2e/test/snapshot/semantic_element/import/main.pnx:28:8
@@ -74,10 +74,10 @@ stderr:
    ╰╴       ━━━━━━━ the target named `unknown` is not found
 
 [error]: the symbol could not be found
-   ╭▸ compiler/e2e/test/snapshot/semantic_element/import/main.pnx:29:14
+   ╭▸ compiler/e2e/test/snapshot/semantic_element/import/main.pnx:29:13
    │
-29 │ import main::unknown
-   ╰╴             ━━━━━━━ the symbol named `unknown` does not exist in `main`
+29 │ import main.unknown
+   ╰╴            ━━━━━━━ the symbol named `unknown` does not exist in `main`
 
 [error]: Compilation aborted due to 11 error(s)
 

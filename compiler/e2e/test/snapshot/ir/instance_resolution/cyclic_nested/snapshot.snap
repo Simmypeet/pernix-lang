@@ -3,29 +3,29 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: run
 ---
 stderr:
-[error]: cyclic instance dependency while resolving `main::Require[main::LinkedList[int32]]`
+[error]: cyclic instance dependency while resolving `main.Require[main.LinkedList[int32]]`
    ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/cyclic_nested/main.pnx:45:5
    │
-45 │     require(LinkedList { head: 1i32, tail: Option::None })
-   │     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ resolving `main::Require[main::LinkedList[int32]]` requires itself
+45 │     require(LinkedList { head: 1i32, tail: Option.None })
+   │     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ resolving `main.Require[main.LinkedList[int32]]` requires itself
    │
    ╰ help: instance resolution encountered a cycle; try restructuring the instance hierarchy to break the cycle
-[note]: required because resolving instance parameter `I` for `main::Require[main::LinkedList[int32]]`
+[note]: required because resolving instance parameter `I` for `main.Require[main.LinkedList[int32]]`
    ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/cyclic_nested/main.pnx:40:25
    │
 40 │ pub def require[T, inst I: Require[T]](value: T):
    ╰╴                        ━ this function requires the parameter to be resolved
-[note]: required because resolving instance parameter `T` for `main::Require[main::Option[main::Box[main::LinkedList[int32]]]]`
+[note]: required because resolving instance parameter `T` for `main.Require[main.Option[main.Box[main.LinkedList[int32]]]]`
    ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/cyclic_nested/main.pnx:31:10
    │
 31 │     inst T: Require[Option[Box[LinkedList[T]]]],
    ╰╴         ━ this instance requires the parameter to be resolved
-[note]: required because resolving instance parameter `X` for `main::Require[main::Box[main::LinkedList[int32]]]`
+[note]: required because resolving instance parameter `X` for `main.Require[main.Box[main.LinkedList[int32]]]`
    ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/cyclic_nested/main.pnx:18:29
    │
 18 │ pub inst OptionInst[T, inst X: Require[T]]: Require[Option[T]]:
    ╰╴                            ━ this instance requires the parameter to be resolved
-[note]: required because resolving instance parameter `X` for `main::Require[main::LinkedList[int32]]`
+[note]: required because resolving instance parameter `X` for `main.Require[main.LinkedList[int32]]`
   ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/cyclic_nested/main.pnx:9:26
   │
 9 │ pub inst BoxInst[T, inst X: Require[T]]: Require[Box[T]]:

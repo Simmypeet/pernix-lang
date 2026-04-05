@@ -53,11 +53,11 @@ pub def use[
 	let mut number = 32
 	
     # Call the method twice with the same mutable reference
-    DoSomething::doSomething(object, &mut number)
-    DoSomething::doSomething(object, &mut number)
+    DoSomething.doSomething(object, &mut number)
+    DoSomething.doSomething(object, &mut number)
 
 
 pub def main():
-	let mut vector = Vector[&mut int32]::new()
+	let mut vector = Vector[&mut int32].new()
 
 	use(&mut vector)

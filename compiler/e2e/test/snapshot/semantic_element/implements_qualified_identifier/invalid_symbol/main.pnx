@@ -13,7 +13,7 @@ pub trait Identity[T]:
     pub type Output
 
 
-impl Direction::North:
+impl Direction.North:
     pass
 
 

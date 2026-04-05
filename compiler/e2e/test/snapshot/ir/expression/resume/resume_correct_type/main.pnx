@@ -4,7 +4,7 @@ pub effect Test[T]:
 
 pub def main():
     do:
-        return Test[int32]::operation(12)
+        return Test[int32].operation(12)
 
     with Test[int32]:
         operation(a):

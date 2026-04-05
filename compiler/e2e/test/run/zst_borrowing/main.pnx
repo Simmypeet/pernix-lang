@@ -9,7 +9,7 @@ pub enum Option[T]:
 
 pub def main():
     let value = ()
-    let option = Option::Some(&value)
+    let option = Option.Some(&value)
 
     match option:
         case Some(value):

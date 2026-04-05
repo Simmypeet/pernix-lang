@@ -21,6 +21,6 @@ final impl[T] Copy[DropWrapper[T]] delete
 
 pub def main():
     let mut number = 32
-    let wrapper = DropWrapper::new(&number)
+    let wrapper = DropWrapper.new(&number)
 
     number += 23

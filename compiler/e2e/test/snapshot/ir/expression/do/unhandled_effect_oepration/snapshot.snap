@@ -10,9 +10,9 @@ stderr:
    │ ┏━━━━━━━━━━━━━┛
 11 │ ┃     
 12 │ ┃     with Test: # unhandled effect operation
-   │ ┗━━━━━━━━━━━━━┛ `with main::Test` clause
+   │ ┗━━━━━━━━━━━━━┛ `with main.Test` clause
    │
-   ╰ help: consider adding handlers for all the effect operations of `main::Test`
+   ╰ help: consider adding handlers for all the effect operations of `main.Test`
 
 [error]: Compilation aborted due to 1 error(s)
 

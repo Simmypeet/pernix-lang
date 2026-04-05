@@ -11,7 +11,7 @@ stderr:
   │
   ╰ help: check if the file exists and is accessible
 
-[error]: symbol `add10000` is already defined in the scope `main::second`
+[error]: symbol `add10000` is already defined in the scope `main.second`
       ╭▸ compiler/e2e/test/snapshot/regression/second.pnx:19999:10
       │
 19997 │ priv def add10000(a10000: int32, b10000: int32) -> int32:
@@ -20,7 +20,7 @@ stderr:
 19999 │ priv def add10000(a10000: int32, b10000: int32) -> int32:
       ╰╴         ━━━━━━━━ redefinition here
 
-[error]: symbol `add10000` is already defined in the scope `main::fourth`
+[error]: symbol `add10000` is already defined in the scope `main.fourth`
       ╭▸ compiler/e2e/test/snapshot/regression/fourth.pnx:20001:10
       │
 19999 │ priv def add10000(a10000: int32, b10000: int32) -> int32:
@@ -29,7 +29,7 @@ stderr:
 20001 │ priv def add10000(a10000: int32, b10000: int32) -> int32:
       ╰╴         ━━━━━━━━ redefinition here
 
-[error]: symbol `add10000` is already defined in the scope `main::first`
+[error]: symbol `add10000` is already defined in the scope `main.first`
       ╭▸ compiler/e2e/test/snapshot/regression/first.pnx:20001:10
       │
 19999 │ priv def add10000(a10000: int32, b10000: int32) -> int32:
@@ -38,7 +38,7 @@ stderr:
 20001 │ priv def add10000(a10000: int32, b10000: int32) -> int32:
       ╰╴         ━━━━━━━━ redefinition here
 
-[error]: symbol `add10000` is already defined in the scope `main::fifth`
+[error]: symbol `add10000` is already defined in the scope `main.fifth`
       ╭▸ compiler/e2e/test/snapshot/regression/fifth.pnx:20001:10
       │
 19999 │ priv def add10000(a10000: int32, b10000: int32) -> int32:

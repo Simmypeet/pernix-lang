@@ -7,7 +7,7 @@ pub def callInstanceAssociated[
 ](t: T, u: U):
 
     # fine
-    I::doSomething(t)
+    I.doSomething(t)
 
     # error
-    I::doSomething(u)
+    I.doSomething(u)

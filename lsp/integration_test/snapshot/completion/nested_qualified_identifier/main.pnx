@@ -4,5 +4,5 @@ pub enum Option[T]:
 
 
 pub struct XomeType:
-    priv test: Option[target::<cursor>]
+    priv test: Option[target.<cursor>]
 

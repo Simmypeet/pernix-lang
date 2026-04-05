@@ -4,4 +4,4 @@ pub enum Result[T: 'static, E: 'static]:
 
 
 pub def test():
-    Resu<cursor>lt::Ok()
+    Resu<cursor>lt.Ok()

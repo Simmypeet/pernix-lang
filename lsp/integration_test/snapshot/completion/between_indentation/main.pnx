@@ -3,7 +3,7 @@ pub struct XomeStruct:
 
 
 pub struct Test:
-    priv test: target::<cursor>
+    priv test: target.<cursor>
 
 
 something

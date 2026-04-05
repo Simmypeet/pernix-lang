@@ -9,6 +9,6 @@ pub trait Test:
     pub inst AssocInst: Another
 
 
-    pub def test(a: this::AssocType[this::AssocInst])
+    pub def test(a: this.AssocType[this.AssocInst])
 
 

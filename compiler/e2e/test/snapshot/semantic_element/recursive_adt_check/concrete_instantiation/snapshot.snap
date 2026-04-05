@@ -3,22 +3,22 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: run
 ---
 stderr:
-[error]: struct `main::Concrete` is infinitely sized because it recursively contains itself
+[error]: struct `main.Concrete` is infinitely sized because it recursively contains itself
    ╭▸ compiler/e2e/test/snapshot/semantic_element/recursive_adt_check/concrete_instantiation/main.pnx:2:5
    │
  2 │     pub value: T
-   │     ━━━━━━━━━━━━ this member closes the recursive expansion `main::Concrete -> main::Container[main::Concrete] -> main::Wrapper[main::Concrete] -> main::Concrete`
+   │     ━━━━━━━━━━━━ this member closes the recursive expansion `main.Concrete -> main.Container[main.Concrete] -> main.Wrapper[main.Concrete] -> main.Concrete`
    ‡
  6 │     Value(Wrapper[T])
-   │     ───── `main::Container[main::Concrete]` expands to `main::Wrapper[main::Concrete]` here
+   │     ───── `main.Container[main.Concrete]` expands to `main.Wrapper[main.Concrete]` here
    ‡
  9 │ pub struct Concrete:
-   │            ──────── `main::Concrete` is declared here
+   │            ──────── `main.Concrete` is declared here
 10 │     pub next: Container[Concrete]
-   │     ───────────────────────────── `main::Concrete` expands to `main::Container[main::Concrete]` here
+   │     ───────────────────────────── `main.Concrete` expands to `main.Container[main.Concrete]` here
    │
    ╰ help: consider introducing indirection in the recursive path so the ADT no longer stores itself by value
-[note]: recursive expansion path: main::Concrete -> main::Container[main::Concrete] -> main::Wrapper[main::Concrete] -> main::Concrete
+[note]: recursive expansion path: main.Concrete -> main.Container[main.Concrete] -> main.Wrapper[main.Concrete] -> main.Concrete
 
 [error]: Compilation aborted due to 1 error(s)
 

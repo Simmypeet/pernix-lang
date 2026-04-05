@@ -7,7 +7,7 @@ stderr:
    ╭▸ compiler/e2e/test/snapshot/semantic_element/instance_associated_value/trait_mismatch/main.pnx:22:21
    │
 22 │     inst I: First = MySecond # error: should've been MyFirst
-   ╰╴                    ━━━━━━━━ instance `main::MySecond` implements `main::Second` but `main::First` was expected
+   ╰╴                    ━━━━━━━━ instance `main.MySecond` implements `main.Second` but `main.First` was expected
 
 [error]: Compilation aborted due to 1 error(s)
 

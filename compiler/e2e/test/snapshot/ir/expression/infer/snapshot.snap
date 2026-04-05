@@ -11,19 +11,19 @@ stderr:
    │
    ╰ help: ensure the expression type matches the expected type
 
-[error]: type annotation is required for `main::Vector[{any}]`
+[error]: type annotation is required for `main.Vector[{any}]`
    ╭▸ compiler/e2e/test/snapshot/ir/expression/infer/main.pnx:21:9
    │
-21 │     let mut newVec = Vector::new()
+21 │     let mut newVec = Vector.new()
    │         ━━━━━━━━━━
    │
    ╰ help: consider adding a type annotation
 
-[error]: type annotation is required for `main::Vector[{any}]::new`
+[error]: type annotation is required for `main.Vector[{any}].new`
    ╭▸ compiler/e2e/test/snapshot/ir/expression/infer/main.pnx:21:22
    │
-21 │     let mut newVec = Vector::new()
-   │                      ━━━━━━━━━━━━━
+21 │     let mut newVec = Vector.new()
+   │                      ━━━━━━━━━━━━
    │
    ╰ help: consider adding a type annotation
 

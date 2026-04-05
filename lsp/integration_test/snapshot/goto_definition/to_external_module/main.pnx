@@ -1,4 +1,4 @@
 pub module externalModule
 
 
-impl externalMo<cursor>dule::Test[int32]
+impl externalMo<cursor>dule.Test[int32]

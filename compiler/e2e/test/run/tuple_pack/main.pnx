@@ -19,25 +19,25 @@ pub inst Int32Add: Add[int32]:
 pub trait SumTuple[T: tuple]:
     pub type Output
 
-    pub def sum(elements: T) -> this::Output
+    pub def sum(elements: T) -> this.Output
 
 
 pub inst BaseCase[T, inst A: Add[T]]: SumTuple[(T,)]:
     type Output = T
 
-    def sum(elements: (T,)) -> this::Output:
+    def sum(elements: (T,)) -> this.Output:
         return elements.0
 
 
 pub inst RecursiveCase[T, Rest, inst A: Add[T], inst S: SumTuple[Rest]]: SumTuple[(T, ...Rest)]:
     where:
         Rest: tuple
-        S::Output = T
+        S.Output = T
 
     type Output = T
 
-    def sum((first, ...rest): (T, ...Rest)) -> this::Output:
-        return A::add(first, S::sum(rest))
+    def sum((first, ...rest): (T, ...Rest)) -> this.Output:
+        return A.add(first, S.sum(rest))
 
 
 pub def main():
@@ -59,4 +59,4 @@ pub def main():
         &mut nums.5,
     )
 
-    printf(&"%d\0".[0], RecursiveCase::sum(nums))
+    printf(&"%d\0".[0], RecursiveCase.sum(nums))

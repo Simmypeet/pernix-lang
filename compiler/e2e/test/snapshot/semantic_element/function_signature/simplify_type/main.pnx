@@ -3,11 +3,11 @@ pub trait Identity:
 
 
 pub def simplifyType['x, 'y, 'z, inst I: Identity](
-    first: I::Output['x],
-    second: I::Output['y],
-    third: I::Output['z],
-) -> I::Output['z]:
+    first: I.Output['x],
+    second: I.Output['y],
+    third: I.Output['z],
+) -> I.Output['z]:
     where:
-        I::Output['x] = int32
+        I.Output['x] = int32
         
     return first

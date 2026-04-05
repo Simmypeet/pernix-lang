@@ -4,4 +4,4 @@ pub trait Identity[T]:
 
 pub type Test[T] = T:
     where:
-        T = Identity[T]::Output
+        T = Identity[T].Output

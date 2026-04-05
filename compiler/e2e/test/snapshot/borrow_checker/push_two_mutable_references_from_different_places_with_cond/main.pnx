@@ -16,7 +16,7 @@ impl[T] Vector[T]:
 pub def main(cond: bool):
     let mut first = 32
     let mut second = 64
-    let mut vector = Vector::new()
+    let mut vector = Vector.new()
 
     let mut ref = &mut first
     vector.push(&mut *ref)

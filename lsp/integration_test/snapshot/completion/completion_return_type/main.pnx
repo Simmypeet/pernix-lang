@@ -2,7 +2,7 @@ pub struct XomeStruct:
     pass
 
 
-pub def main() -> target::<cursor>
+pub def main() -> target.<cursor>
 
 
 pub def anotherFunction():

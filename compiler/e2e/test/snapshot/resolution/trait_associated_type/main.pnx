@@ -2,4 +2,4 @@ pub trait Test:
     pub type AssocType
 
     
-    pub def test(a: this::AssocType)
+    pub def test(a: this.AssocType)

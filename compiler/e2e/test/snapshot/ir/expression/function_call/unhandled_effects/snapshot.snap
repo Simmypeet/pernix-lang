@@ -3,19 +3,19 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: run
 ---
 stderr:
-[error]: the following effects are not handled by the caller: main::Effect[int32]
+[error]: the following effects are not handled by the caller: main.Effect[int32]
    ╭▸ compiler/e2e/test/snapshot/ir/expression/function_call/unhandled_effects/main.pnx:18:5
    │
 18 │     useEffectInt32()      # This should produce an unhandled effects error
-   │     ━━━━━━━━━━━━━━━━ call to the `function main::useEffectInt32`
+   │     ━━━━━━━━━━━━━━━━ call to the `function main.useEffectInt32`
    │
    ╰ help: consider adding a `do` effect annotation to the current function to handle these effects
 
-[error]: the following effects are not handled by the caller: main::Effect[int16], main::Effect[int8]
+[error]: the following effects are not handled by the caller: main.Effect[int16], main.Effect[int8]
    ╭▸ compiler/e2e/test/snapshot/ir/expression/function_call/unhandled_effects/main.pnx:20:5
    │
 20 │     useMultipleEffects()  # This should produce an unhandled effects error
-   │     ━━━━━━━━━━━━━━━━━━━━ call to the `function main::useMultipleEffects`
+   │     ━━━━━━━━━━━━━━━━━━━━ call to the `function main.useMultipleEffects`
    │
    ╰ help: consider adding a `do` effect annotation to the current function to handle these effects
 

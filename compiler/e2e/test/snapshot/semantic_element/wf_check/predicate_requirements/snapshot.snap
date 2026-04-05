@@ -53,7 +53,7 @@ stderr:
 14 │         'a: 'static
    ╰╴        ━━━━━━━━━━━
 
-[error]: the predicate `marker main::Fizz['a, float32]` is not satisfied
+[error]: the predicate `marker main.Fizz['a, float32]` is not satisfied
    ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/predicate_requirements/main.pnx:17:32
    │
 17 │ pub type Instantiate['a, 'b] = Qux['a, &'b float32]

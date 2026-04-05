@@ -18,7 +18,7 @@ pub marker SecondMarker[T]
 
 pub type Test['a, 'b, 'c, T, U, V, inst I: FirstTrait[T]] = usize:
     where:
-        I::Member[U] = usize
+        I.Member[U] = usize
         T: FirstMarker
         T: tuple
         U: tuple

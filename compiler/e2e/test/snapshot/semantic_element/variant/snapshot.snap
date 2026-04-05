@@ -12,14 +12,14 @@ stderr:
 [error]: the predicate `'a: 'b` is not satisfied
    ╭▸ compiler/e2e/test/snapshot/semantic_element/variant/main.pnx:19:28
    │
-19 │     UseTraitAssociatedType(I::Output['b, T])
-   ╰╴                           ━━━━━━━━━━━━━━━━
+19 │     UseTraitAssociatedType(I.Output['b, T])
+   ╰╴                           ━━━━━━━━━━━━━━━
 
 [error]: the predicate `'b: 'a` is not satisfied
    ╭▸ compiler/e2e/test/snapshot/semantic_element/variant/main.pnx:19:28
    │
-19 │     UseTraitAssociatedType(I::Output['b, T])
-   ╰╴                           ━━━━━━━━━━━━━━━━
+19 │     UseTraitAssociatedType(I.Output['b, T])
+   ╰╴                           ━━━━━━━━━━━━━━━
 
 [error]: Compilation aborted due to 3 error(s)
 

@@ -3,5 +3,5 @@ source: lsp/integration_test/snapshot/mod.rs
 expression: string
 ---
 ```pernix
-public module lspTest::something
+public module lspTest.something
 ```
