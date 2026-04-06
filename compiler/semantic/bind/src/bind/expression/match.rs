@@ -40,13 +40,14 @@ use pernixc_term::r#type::{Primitive, Type};
 
 use crate::{
     bind::{Bind, Expression, Guidance, expression::group::BindGroupTarget},
-    binder::{Binder, Error, MatchScrutineeBindingResult},
-    diagnostic::{
-        Diagnostic, FoundPackTuplePatternInMatchArmPattern, NonExhaustiveMatch,
-        UnreachableMatchArm,
-    },
+    binder::{Binder, Error},
+    diagnostic::{Diagnostic, NonExhaustiveMatch, UnreachableMatchArm},
     infer::constraint,
-    pattern::path::{Path, PathAccess},
+    pattern::{
+        MatchScrutineeBindingResult,
+        path::{Path, PathAccess},
+        replace_refutable_in_tuple_pack,
+    },
 };
 
 // TODO: this module is such a mess, needs to be refactored.
@@ -624,8 +625,8 @@ impl Binder<'_> {
         } = self
             .access_path_in_pattern(
                 &main_root_refutable,
-                match_info.scrutinee.address.clone(),
-                match_info.scrutinee.address_type.clone(),
+                match_info.scrutinee.address().clone(),
+                match_info.scrutinee.address_type().clone(),
                 &main_path,
             )
             .await?;
@@ -827,59 +828,6 @@ struct NonExhaustive {
     missing_value: MissingValue,
 }
 
-fn replace_refutable_in_tuple_pack_internal(
-    reftuable: &mut Refutable,
-    in_tuple_pack: bool,
-    handler: &dyn Handler<Diagnostic>,
-) {
-    match reftuable {
-        pattern @ (Refutable::Boolean(_)
-        | Refutable::Integer(_)
-        | Refutable::Enum(_)) => {
-            if in_tuple_pack {
-                let span = pattern.span();
-                *pattern = Refutable::Wildcard(Wildcard { span });
-
-                handler.receive(
-                    Diagnostic::FoundPackTuplePatternInMatchArmPattern(
-                        FoundPackTuplePatternInMatchArmPattern {
-                            pattern_span: span,
-                        },
-                    ),
-                );
-            }
-        }
-
-        Refutable::Wildcard(_) | Refutable::Named(_) => {}
-
-        Refutable::Tuple(tuple) => {
-            for pat in &mut tuple.elements {
-                replace_refutable_in_tuple_pack_internal(
-                    &mut pat.pattern,
-                    pat.is_packed || in_tuple_pack,
-                    handler,
-                );
-            }
-        }
-        Refutable::Structural(structural) => {
-            for field in structural.patterns_by_field_id.values_mut() {
-                replace_refutable_in_tuple_pack_internal(
-                    field,
-                    in_tuple_pack,
-                    handler,
-                );
-            }
-        }
-    }
-}
-
-pub(super) fn replace_refutable_in_tuple_pack(
-    reftuable: &mut Refutable,
-    handler: &dyn Handler<Diagnostic>,
-) {
-    replace_refutable_in_tuple_pack_internal(reftuable, false, handler);
-}
-
 impl Bind<&pernixc_syntax::expression::block::Match> for Binder<'_> {
     #[allow(clippy::too_many_lines)]
     async fn bind(
@@ -935,7 +883,7 @@ impl Bind<&pernixc_syntax::expression::block::Match> for Binder<'_> {
 
         for ((group, pattern), scope_id) in arms.into_iter().zip(scope_ids) {
             let mut pat = self
-                .bind_pattern(&pattern, &scrutinee.address_type, handler)
+                .bind_pattern(&pattern, scrutinee.address_type(), handler)
                 .await?
                 .unwrap_or_else(|| Wildcard { span: pattern.span() }.into());
 
@@ -978,7 +926,7 @@ impl Bind<&pernixc_syntax::expression::block::Match> for Binder<'_> {
             handler,
         )
         .await?;
-        let address_ty = match_info.scrutinee.address_type.clone();
+        let address_ty = match_info.scrutinee.address_type().clone();
 
         self.set_current_block_id(starting_block_id);
         self.insert_terminator(Terminator::Panic);

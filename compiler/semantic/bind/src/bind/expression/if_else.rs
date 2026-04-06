@@ -27,18 +27,18 @@ use pernixc_term::r#type::{Primitive, Type};
 
 use crate::{
     bind::{
-        Bind, Expression, Guidance,
-        expression::r#match::{
-            get_conditional_value, replace_refutable_in_tuple_pack,
-        },
+        Bind, Expression, Guidance, expression::r#match::get_conditional_value,
     },
     binder::{
-        Binder, BindingError, Error, MatchScrutineeBindingResult,
-        UnrecoverableError, type_check::Expected,
+        Binder, BindingError, Error, UnrecoverableError, type_check::Expected,
     },
     diagnostic::{Diagnostic, IfMissingElseBranch},
     infer::constraint,
-    pattern::path::{Path, PathAccess},
+    pattern::{
+        MatchScrutineeBindingResult,
+        path::{Path, PathAccess},
+        replace_refutable_in_tuple_pack,
+    },
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -237,7 +237,7 @@ impl Binder<'_> {
         let scrutinee =
             self.bind_match_scrutinee_expression(&binary, handler).await?;
         let mut pattern = self
-            .bind_pattern(&refutable_pattern, &scrutinee.address_type, handler)
+            .bind_pattern(&refutable_pattern, scrutinee.address_type(), handler)
             .await?
             .unwrap_or_else(|| {
                 Wildcard { span: refutable_pattern.span() }.into()
@@ -254,8 +254,8 @@ impl Binder<'_> {
         } else {
             self.bind_if_match_paths(
                 &pattern,
-                scrutinee.address.clone(),
-                scrutinee.address_type.clone(),
+                scrutinee.address().clone(),
+                scrutinee.address_type().clone(),
                 refutable_paths,
                 then_block_id,
                 else_block_id,
@@ -269,11 +269,12 @@ impl Binder<'_> {
         Ok(IfMatchConditionBinding { scrutinee, pattern })
     }
 
-    #[allow(clippy::type_complexity)]
-    async fn bind_group_for_if_else(
+    #[allow(clippy::type_complexity, clippy::too_many_lines)]
+    async fn bind_group_for_if_branch(
         &mut self,
         expression: &Group,
         allocated_scope_id: ID<pernixc_ir::scope::Scope>,
+        if_match_condition_binding: Option<&IfMatchConditionBinding>,
         if_else_success_block_id: ID<Block>,
         guidance: &Guidance<'_>,
         handler: &dyn Handler<Diagnostic>,
@@ -288,159 +289,47 @@ impl Binder<'_> {
                             .filter_map(|x| x.into_line().ok())
                             .collect()
                     });
-
-                let block_state = self
-                    .bind_block()
-                    .maybe_label(indented_group.label().as_ref())
-                    .statements(statements.iter())
-                    .span(indented_group.span())
-                    .scope_id(allocated_scope_id)
-                    .successor_block_id(success_sub_block_id)
-                    .is_unsafe(indented_group.unsafe_keyword().is_some())
-                    .handler(handler)
-                    .call()
-                    .await?;
-
-                let unit = Type::unit();
-                let value = self
-                    .bind_value_or_error(
-                        block_state,
-                        match guidance {
-                            Guidance::Expression(type_hint) => *type_hint,
-                            Guidance::Statement => Some(&unit),
-                        },
-                        handler,
-                    )
-                    .await?;
-
-                (Some(value), success_sub_block_id)
-            }
-
-            Group::Inline(inline_expression) => {
-                self.push_scope_with(allocated_scope_id, false);
-
-                let value = match guidance {
-                    Guidance::Expression(type_hint) => 'result: {
-                        let Some(expr) = inline_expression.expression() else {
-                            break 'result Some(
-                                type_hint.as_ref().map_or_else(
-                                    || {
-                                        Value::Literal(self.create_error(
-                                            inline_expression.span(),
-                                        ))
-                                    },
-                                    |ty| {
-                                        Value::error(
-                                            (*ty).clone(),
-                                            inline_expression.span(),
-                                        )
-                                    },
-                                ),
-                            );
-                        };
-
-                        Some(
-                            self.bind_value_or_error(
-                                &expr, *type_hint, handler,
-                            )
-                            .await?,
-                        )
-                    }
-                    Guidance::Statement => 'result: {
-                        let Some(expr) = inline_expression.expression() else {
-                            break 'result None;
-                        };
-
-                        match self
-                            .bind(&expr, &Guidance::Statement, handler)
-                            .await
-                        {
-                            Ok(Expression::RValue(value)) => {
-                                let value_ty =
-                                    self.type_of_value(&value, handler).await?;
-
-                                // must be type unit
-                                self.type_check(
-                                    &value_ty,
-                                    Expected::Known(Type::unit()),
-                                    expr.span(),
+                let label = indented_group.label();
+                let is_unsafe = indented_group.unsafe_keyword().is_some();
+                let block_state = if let Some(if_match_condition_binding) =
+                    if_match_condition_binding
+                {
+                    self.bind_block_with_post_enter_hook()
+                        .maybe_label(label.as_ref())
+                        .statements(statements.iter())
+                        .span(indented_group.span())
+                        .scope_id(allocated_scope_id)
+                        .successor_block_id(success_sub_block_id)
+                        .is_unsafe(is_unsafe)
+                        .hook(async move |binder| {
+                            let name_binding_point = binder
+                                .create_name_binding_point_from_match_scrutinee(
+                                    &if_match_condition_binding.pattern,
+                                    &if_match_condition_binding.scrutinee,
+                                    allocated_scope_id,
                                     handler,
                                 )
                                 .await?;
-                            }
 
-                            // no need to type check lvalue
-                            Ok(Expression::LValue(_))
-                            | Err(Error::Binding(_)) => {}
+                            binder.add_named_binding_point(name_binding_point);
 
-                            Err(Error::Unrecoverable(abort)) => {
-                                return Err(abort);
-                            }
-                        }
-
-                        None
-                    }
+                            Ok(())
+                        })
+                        .handler(handler)
+                        .call()
+                        .await?
+                } else {
+                    self.bind_block()
+                        .maybe_label(label.as_ref())
+                        .statements(statements.iter())
+                        .span(indented_group.span())
+                        .scope_id(allocated_scope_id)
+                        .successor_block_id(success_sub_block_id)
+                        .is_unsafe(is_unsafe)
+                        .handler(handler)
+                        .call()
+                        .await?
                 };
-
-                self.pop_scope(allocated_scope_id);
-
-                (value, self.current_block_id())
-            }
-        };
-
-        self.insert_terminator(Terminator::Jump(Jump::Unconditional(
-            UnconditionalJump { target: if_else_success_block_id },
-        )));
-
-        Ok((value, group_sucessor_block_id))
-    }
-
-    #[allow(clippy::type_complexity, clippy::too_many_lines)]
-    async fn bind_group_for_if_match_then(
-        &mut self,
-        expression: &Group,
-        allocated_scope_id: ID<pernixc_ir::scope::Scope>,
-        if_match_condition_binding: &IfMatchConditionBinding,
-        if_else_success_block_id: ID<Block>,
-        guidance: &Guidance<'_>,
-        handler: &dyn Handler<Diagnostic>,
-    ) -> Result<(Option<Value>, ID<Block>), UnrecoverableError> {
-        let (value, group_sucessor_block_id) = match &expression {
-            Group::Indented(indented_group) => {
-                let success_sub_block_id = self.new_block();
-
-                let statements =
-                    indented_group.statements().map_or_else(Vec::new, |x| {
-                        x.statements()
-                            .filter_map(|x| x.into_line().ok())
-                            .collect()
-                    });
-
-                let block_state = self
-                    .bind_block_with_post_enter_hook()
-                    .maybe_label(indented_group.label().as_ref())
-                    .statements(statements.iter())
-                    .span(indented_group.span())
-                    .scope_id(allocated_scope_id)
-                    .successor_block_id(success_sub_block_id)
-                    .is_unsafe(indented_group.unsafe_keyword().is_some())
-                    .hook(async move |binder| {
-                        let name_binding_point = binder
-                            .create_name_binding_point_from_match_scrutinee(
-                                &if_match_condition_binding.pattern,
-                                &if_match_condition_binding.scrutinee,
-                                allocated_scope_id,
-                                handler,
-                            )
-                            .await?;
-
-                        binder.add_named_binding_point(name_binding_point);
-
-                        Ok(())
-                    })
-                    .handler(handler)
-                    .call()
-                    .await?;
 
                 let unit = Type::unit();
                 let value = self
@@ -459,15 +348,19 @@ impl Binder<'_> {
 
             Group::Inline(inline_expression) => {
                 self.push_scope_with(allocated_scope_id, false);
-                let name_binding_point = self
-                    .create_name_binding_point_from_match_scrutinee(
-                        &if_match_condition_binding.pattern,
-                        &if_match_condition_binding.scrutinee,
-                        allocated_scope_id,
-                        handler,
-                    )
-                    .await?;
-                self.add_named_binding_point(name_binding_point);
+                if let Some(if_match_condition_binding) =
+                    if_match_condition_binding
+                {
+                    let name_binding_point = self
+                        .create_name_binding_point_from_match_scrutinee(
+                            &if_match_condition_binding.pattern,
+                            &if_match_condition_binding.scrutinee,
+                            allocated_scope_id,
+                            handler,
+                        )
+                        .await?;
+                    self.add_named_binding_point(name_binding_point);
+                }
 
                 let value = match guidance {
                     Guidance::Expression(type_hint) => 'result: {
@@ -592,29 +485,16 @@ impl Bind<&pernixc_syntax::expression::block::IfElse> for Binder<'_> {
         // bind the then block
         self.set_current_block_id(then_block_id);
 
-        let (then_value, successor_then_block_id) = match condition {
-            IfCondition::Boolean(_) => {
-                self.bind_group_for_if_else(
-                    &then_expr,
-                    then_scope_id,
-                    if_else_successor_block_id,
-                    guidance,
-                    handler,
-                )
-                .await?
-            }
-            IfCondition::Match(_) => {
-                self.bind_group_for_if_match_then(
-                    &then_expr,
-                    then_scope_id,
-                    if_match_condition_binding.as_ref().unwrap(),
-                    if_else_successor_block_id,
-                    guidance,
-                    handler,
-                )
-                .await?
-            }
-        };
+        let (then_value, successor_then_block_id) = self
+            .bind_group_for_if_branch(
+                &then_expr,
+                then_scope_id,
+                if_match_condition_binding.as_ref(),
+                if_else_successor_block_id,
+                guidance,
+                handler,
+            )
+            .await?;
 
         // bind the else block
         self.set_current_block_id(else_block_id);
@@ -630,9 +510,10 @@ impl Bind<&pernixc_syntax::expression::block::IfElse> for Binder<'_> {
             .and_then(|x| x.group_or_if_else())
         {
             Some(GroupOrIfElse::Group(group)) => {
-                (self.bind_group_for_if_else(
+                (self.bind_group_for_if_branch(
                     &group,
                     else_scope_id,
+                    None,
                     if_else_successor_block_id,
                     &match guidance {
                         Guidance::Expression(_) => {

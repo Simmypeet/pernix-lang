@@ -17,7 +17,7 @@ use pernixc_ir::{
     scope,
     value::{
         Environment as ValueEnvironment, TypeOf, Value,
-        literal::{self, Literal, Unreachable},
+        literal::{Literal, Unreachable},
         register::{Assignment, Register, load::Load},
     },
 };
@@ -40,7 +40,7 @@ use pernixc_type_system::{
 use qbice::{StableHash, storage::intern::Interned};
 
 use crate::{
-    bind::{Bind, Expression, Guidance, LValue},
+    bind::LValue,
     binder::{inference_context::InferenceContext, stack::Stack},
     diagnostic::Diagnostic,
     infer::constraint,
@@ -137,15 +137,6 @@ pub struct Binder<'t> {
     loop_context: r#loop::Context,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MatchScrutineeBindingResult {
-    pub address: Address,
-    pub qualifier: Qualifier,
-    pub from_lvalue: bool,
-    pub address_type: Type,
-    pub span: RelativeSpan,
-}
-
 impl<'t> Binder<'t> {
     /// Returns the current site where the binder is operating on.
     #[must_use]
@@ -180,106 +171,6 @@ impl<'t> Binder<'t> {
         &self.ir.scope_tree
     }
 
-    pub async fn bind_match_scrutinee_expression(
-        &mut self,
-        binary: &pernixc_syntax::expression::binary::Binary,
-        handler: &dyn Handler<Diagnostic>,
-    ) -> Result<MatchScrutineeBindingResult, Error> {
-        let scope_id = self.stack().current_scope().scope_id();
-        let span = binary.span();
-
-        let (address, qualifier, from_lvalue) = match self
-            .bind(binary, &Guidance::Expression(None), handler)
-            .await
-        {
-            Ok(Expression::LValue(lvalue)) => {
-                (lvalue.address, lvalue.qualifier, true)
-            }
-
-            Ok(Expression::RValue(value)) => (
-                Address::Memory(Memory::Alloca(
-                    self.create_alloca_with_value(
-                        value, scope_id, None, span, handler,
-                    )
-                    .await?,
-                )),
-                Qualifier::Mutable,
-                false,
-            ),
-
-            Err(Error::Binding(semantic_error)) => {
-                let ty_inference =
-                    self.create_type_inference(constraint::Type::All(true));
-
-                (
-                    Address::Memory(Memory::Alloca(
-                        self.create_alloca_with_value(
-                            Value::Literal(Literal::Error(literal::Error {
-                                r#type: Type::Inference(ty_inference),
-                                span: semantic_error.0,
-                            })),
-                            scope_id,
-                            None,
-                            span,
-                            handler,
-                        )
-                        .await?,
-                    )),
-                    Qualifier::Mutable,
-                    false,
-                )
-            }
-
-            Err(Error::Unrecoverable(abrupt_error)) => {
-                return Err(Error::Unrecoverable(abrupt_error));
-            }
-        };
-
-        let address_type = self
-            .type_of_address(&address, handler)
-            .await
-            .map_err(Error::Unrecoverable)?;
-
-        Ok(MatchScrutineeBindingResult {
-            address,
-            qualifier,
-            from_lvalue,
-            address_type,
-            span,
-        })
-    }
-
-    pub async fn create_name_binding_point_from_match_scrutinee<
-        T: insert_name_binding::InsertNameBinding,
-    >(
-        &mut self,
-        pattern: &T,
-        scrutinee: &MatchScrutineeBindingResult,
-        scope_id: ID<scope::Scope>,
-        handler: &dyn Handler<Diagnostic>,
-    ) -> Result<NameBindingPoint, UnrecoverableError> {
-        let mut name_binding_point = NameBindingPoint::default();
-
-        self.insert_name_binding_point(
-            &mut name_binding_point,
-            pattern,
-            &scrutinee.address_type,
-            scrutinee.address.clone(),
-            scrutinee.qualifier,
-            &insert_name_binding::Config {
-                must_copy: scrutinee.from_lvalue,
-                scope_id,
-                address_span: Some(scrutinee.span),
-            },
-            handler,
-        )
-        .await?;
-
-        Ok(name_binding_point)
-    }
-}
-
-impl<'t> Binder<'t> {
     /// Creates the binder for building the IR.
     pub async fn new_function(
         engine: &'t TrackedEngine,
