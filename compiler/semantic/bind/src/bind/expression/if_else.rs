@@ -4,10 +4,10 @@ use pernixc_arena::ID;
 use pernixc_handler::Handler;
 use pernixc_hash::FxHashMap;
 use pernixc_ir::{
-    address::{Address, Memory},
+    address::Address,
     control_flow_graph::Block,
     instruction::{ConditionalJump, Jump, Terminator, UnconditionalJump},
-    pattern::{NameBindingPoint, Refutable, Wildcard},
+    pattern::{Refutable, Wildcard},
     value::{
         Value,
         literal::{self, Literal, Unreachable},
@@ -23,7 +23,7 @@ use pernixc_syntax::expression::block::{
     Group, GroupOrIfElse, IfCondition, IfMatchCondition,
 };
 use pernixc_target::Global;
-use pernixc_term::r#type::{Primitive, Qualifier, Type};
+use pernixc_term::r#type::{Primitive, Type};
 
 use crate::{
     bind::{
@@ -33,15 +33,18 @@ use crate::{
         },
     },
     binder::{
-        Binder, BindingError, Error, UnrecoverableError, type_check::Expected,
+        Binder, BindingError, Error, MatchScrutineeBindingResult,
+        UnrecoverableError, type_check::Expected,
     },
     diagnostic::{Diagnostic, IfMissingElseBranch},
     infer::constraint,
-    pattern::{
-        insert_name_binding,
-        path::{Path, PathAccess},
-    },
+    pattern::path::{Path, PathAccess},
 };
+
+struct IfMatchConditionBinding {
+    scrutinee: MatchScrutineeBindingResult,
+    pattern: Refutable,
+}
 
 impl Binder<'_> {
     async fn bind_if_boolean_condition(
@@ -215,7 +218,7 @@ impl Binder<'_> {
         then_block_id: ID<Block>,
         else_block_id: ID<Block>,
         handler: &dyn Handler<Diagnostic>,
-    ) -> Result<NameBindingPoint, Error> {
+    ) -> Result<IfMatchConditionBinding, Error> {
         let Some(binary) = if_match_condition.binary() else {
             return Err(Error::Binding(BindingError(
                 if_match_condition.span(),
@@ -229,78 +232,16 @@ impl Binder<'_> {
             )));
         };
 
-        let (address, qualifier, from_lvalue) = match self
-            .bind(&binary, &Guidance::Expression(None), handler)
-            .await
-        {
-            Ok(Expression::LValue(lvalue)) => {
-                (lvalue.address, lvalue.qualifier, true)
-            }
-            Ok(Expression::RValue(value)) => (
-                Address::Memory(Memory::Alloca(
-                    self.create_alloca_with_value(
-                        value,
-                        self.stack().current_scope().scope_id(),
-                        None,
-                        binary.span(),
-                        handler,
-                    )
-                    .await?,
-                )),
-                Qualifier::Mutable,
-                false,
-            ),
-            Err(Error::Binding(semantic_error)) => {
-                let ty_inference =
-                    self.create_type_inference(constraint::Type::All(true));
-                (
-                    Address::Memory(Memory::Alloca(
-                        self.create_alloca_with_value(
-                            Value::Literal(Literal::Error(literal::Error {
-                                r#type: Type::Inference(ty_inference),
-                                span: semantic_error.0,
-                            })),
-                            self.stack().current_scope().scope_id(),
-                            None,
-                            binary.span(),
-                            handler,
-                        )
-                        .await?,
-                    )),
-                    Qualifier::Mutable,
-                    false,
-                )
-            }
-            Err(Error::Unrecoverable(abort)) => {
-                return Err(Error::Unrecoverable(abort));
-            }
-        };
-
-        let address_ty = self.type_of_address(&address, handler).await?;
+        let scrutinee =
+            self.bind_match_scrutinee_expression(&binary, handler).await?;
         let mut pattern = self
-            .bind_pattern(&refutable_pattern, &address_ty, handler)
+            .bind_pattern(&refutable_pattern, &scrutinee.address_type, handler)
             .await?
             .unwrap_or_else(|| {
                 Wildcard { span: refutable_pattern.span() }.into()
             });
 
         replace_refutable_in_tuple_pack(&mut pattern, handler);
-
-        let mut name_binding_point = NameBindingPoint::default();
-        self.insert_name_binding_point(
-            &mut name_binding_point,
-            &pattern,
-            &address_ty,
-            address.clone(),
-            qualifier,
-            &insert_name_binding::Config {
-                must_copy: from_lvalue,
-                scope_id: self.stack().current_scope().scope_id(),
-                address_span: Some(binary.span()),
-            },
-            handler,
-        )
-        .await?;
 
         let refutable_paths = Path::get_refutable_paths(&pattern);
 
@@ -311,8 +252,8 @@ impl Binder<'_> {
         } else {
             self.bind_if_match_paths(
                 &pattern,
-                address,
-                address_ty,
+                scrutinee.address.clone(),
+                scrutinee.address_type.clone(),
                 refutable_paths,
                 then_block_id,
                 else_block_id,
@@ -323,7 +264,7 @@ impl Binder<'_> {
             .map_err(Error::Unrecoverable)?;
         }
 
-        Ok(name_binding_point)
+        Ok(IfMatchConditionBinding { scrutinee, pattern })
     }
 
     #[allow(clippy::type_complexity)]
@@ -457,13 +398,13 @@ impl Binder<'_> {
         &mut self,
         expression: &Group,
         allocated_scope_id: ID<pernixc_ir::scope::Scope>,
-        name_binding_point: NameBindingPoint,
+        if_match_condition_binding: &IfMatchConditionBinding,
         if_else_success_block_id: ID<Block>,
         guidance: &Guidance<'_>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<(Option<Value>, ID<Block>), UnrecoverableError> {
         let (value, group_sucessor_block_id) = match &expression {
-            Group::Indented(indented_group) => {
+           Group::Indented(indented_group) => {
                 let success_sub_block_id = self.new_block();
 
                 let statements =
@@ -474,16 +415,17 @@ impl Binder<'_> {
                     });
 
                 let block_state = self
-                    .bind_block()
-                    .maybe_label(indented_group.label().as_ref())
-                    .statements(statements.iter())
-                    .span(indented_group.span())
-                    .scope_id(allocated_scope_id)
-                    .successor_block_id(success_sub_block_id)
-                    .is_unsafe(indented_group.unsafe_keyword().is_some())
-                    .name_binding_point(name_binding_point)
-                    .handler(handler)
-                    .call()
+                    .bind_block_with_match_scrutinee_name_bindings(
+                        indented_group.label().as_ref(),
+                        statements.iter(),
+                        indented_group.span(),
+                        allocated_scope_id,
+                        success_sub_block_id,
+                        indented_group.unsafe_keyword().is_some(),
+                        &if_match_condition_binding.pattern,
+                        &if_match_condition_binding.scrutinee,
+                        handler,
+                    )
                     .await?;
 
                 let unit = Type::unit();
@@ -503,6 +445,14 @@ impl Binder<'_> {
 
             Group::Inline(inline_expression) => {
                 self.push_scope_with(allocated_scope_id, false);
+                let name_binding_point = self
+                    .create_name_binding_point_from_match_scrutinee(
+                        &if_match_condition_binding.pattern,
+                        &if_match_condition_binding.scrutinee,
+                        allocated_scope_id,
+                        handler,
+                    )
+                    .await?;
                 self.add_named_binding_point(name_binding_point);
 
                 let value = match guidance {
@@ -602,7 +552,7 @@ impl Bind<&pernixc_syntax::expression::block::IfElse> for Binder<'_> {
             (scopes[0], scopes[1])
         };
 
-        let then_name_binding_point = match condition {
+        let if_match_condition_binding = match condition {
             IfCondition::Boolean(ref binary) => {
                 self.bind_if_boolean_condition(
                     binary,
@@ -612,17 +562,17 @@ impl Bind<&pernixc_syntax::expression::block::IfElse> for Binder<'_> {
                 )
                 .await?;
 
-                NameBindingPoint::default()
+                None
             }
-            IfCondition::Match(ref if_match_condition) => {
+            IfCondition::Match(ref if_match_condition) => Some(
                 self.bind_if_match_condition(
                     if_match_condition,
                     then_block_id,
                     else_block_id,
                     handler,
                 )
-                .await?
-            }
+                .await?,
+            ),
         };
 
         // bind the then block
@@ -643,7 +593,7 @@ impl Bind<&pernixc_syntax::expression::block::IfElse> for Binder<'_> {
                 self.bind_group_for_if_match_then(
                     &then_expr,
                     then_scope_id,
-                    then_name_binding_point,
+                    if_match_condition_binding.as_ref().unwrap(),
                     if_else_successor_block_id,
                     guidance,
                     handler,

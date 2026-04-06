@@ -27,9 +27,10 @@ use qbice::storage::intern::Interned;
 
 use crate::{
     bind::{Bind, Expression},
-    binder::{Binder, Error, UnrecoverableError},
+    binder::{Binder, Error, MatchScrutineeBindingResult, UnrecoverableError},
     diagnostic::{Diagnostic, NotAllFlowPathsExpressValue},
     infer::constraint,
+    pattern::insert_name_binding,
 };
 
 #[derive(Debug, Default)]
@@ -186,6 +187,75 @@ impl Binder<'_> {
         scope_id: ID<Scope>,
     ) -> Option<&BlockState> {
         self.block_context.block_states_by_scope_id.get(&scope_id)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn bind_block_with_match_scrutinee_name_bindings<
+        'a,
+        T: IntoIterator<Item = &'a pernixc_syntax::statement::Statement>,
+        P: insert_name_binding::InsertNameBinding,
+    >(
+        &mut self,
+        label: Option<&Label>,
+        statements: T,
+        span: RelativeSpan,
+        scope_id: ID<Scope>,
+        successor_block_id: ID<Block>,
+        is_unsafe: bool,
+        pattern: &P,
+        scrutinee: &MatchScrutineeBindingResult,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<BlockState, UnrecoverableError> {
+        self.push_instruction(Instruction::ScopePush(ScopePush(scope_id)));
+
+        assert!(
+            self.block_context
+                .block_states_by_scope_id
+                .insert(scope_id, BlockState {
+                    label: label
+                        .and_then(pernixc_syntax::Label::identifier)
+                        .map(|x| x.kind.0),
+                    incoming_values: FxHashMap::default(),
+                    successor_block_id,
+                    express_type: None,
+                    span,
+                })
+                .is_none(),
+            "attempted to bind a block in a scope that already has a block \
+             bound to it"
+        );
+
+        self.stack.push_scope(scope_id, is_unsafe);
+
+        let name_binding_point = self
+            .create_name_binding_point_from_match_scrutinee(
+                pattern, scrutinee, scope_id, handler,
+            )
+            .await?;
+        self.add_named_binding_point(name_binding_point);
+
+        for statement in statements {
+            self.bind_statement(statement, handler).await?;
+        }
+
+        assert_eq!(
+            self.stack.pop_scope().map(|x| x.scope_id()),
+            Some(scope_id),
+            "scope stack is corrupted"
+        );
+
+        self.push_instruction(Instruction::ScopePop(ScopePop(scope_id)));
+        self.insert_terminator(Terminator::Jump(Jump::Unconditional(
+            UnconditionalJump { target: successor_block_id },
+        )));
+
+        self.current_block_id = successor_block_id;
+
+        Ok(self
+            .block_context
+            .block_states_by_scope_id
+            .remove(&scope_id)
+            .expect("block state should exist"))
     }
 
     /// Expresses a value to a block associated with the given scope ID.

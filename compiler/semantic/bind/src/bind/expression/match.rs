@@ -8,17 +8,17 @@ use pernixc_arena::ID;
 use pernixc_handler::Handler;
 use pernixc_hash::FxHashMap;
 use pernixc_ir::{
-    address::{Address, Memory},
+    address::Address,
     control_flow_graph::Block,
     instruction::{
         ConditionalJump, Jump, SwitchJump, SwitchValue, Terminator,
         UnconditionalJump,
     },
-    pattern::{NameBindingPoint, Refutable, Wildcard},
+    pattern::{Refutable, Wildcard},
     scope::Scope,
     value::{
         Value,
-        literal::{self, Literal, Numeric},
+        literal::{Literal, Numeric},
         register::{
             Assignment, Binary, BinaryOperator, Phi, RelationalOperator,
             VariantNumber, load::Load,
@@ -36,20 +36,17 @@ use pernixc_symbol::{
 };
 use pernixc_syntax::expression::block::Group;
 use pernixc_target::Global;
-use pernixc_term::r#type::{Primitive, Qualifier, Type};
+use pernixc_term::r#type::{Primitive, Type};
 
 use crate::{
     bind::{Bind, Expression, Guidance, expression::group::BindGroupTarget},
-    binder::{Binder, Error},
+    binder::{Binder, Error, MatchScrutineeBindingResult},
     diagnostic::{
         Diagnostic, FoundPackTuplePatternInMatchArmPattern, NonExhaustiveMatch,
         UnreachableMatchArm,
     },
     infer::constraint,
-    pattern::{
-        insert_name_binding,
-        path::{Path, PathAccess},
-    },
+    pattern::path::{Path, PathAccess},
 };
 
 // TODO: this module is such a mess, needs to be refactored.
@@ -627,8 +624,8 @@ impl Binder<'_> {
         } = self
             .access_path_in_pattern(
                 &main_root_refutable,
-                match_info.address.clone(),
-                match_info.address_ty.clone(),
+                match_info.scrutinee.address.clone(),
+                match_info.scrutinee.address_type.clone(),
                 &main_path,
             )
             .await?;
@@ -737,21 +734,14 @@ impl Binder<'_> {
 
         self.push_scope_with(arm_info.scope_id, false);
 
-        let mut name_binding_point = NameBindingPoint::default();
-        self.insert_name_binding_point(
-            &mut name_binding_point,
-            &arm_info.refutable_pattern,
-            &match_info.address_ty,
-            match_info.address.clone(),
-            match_info.qualifier,
-            &insert_name_binding::Config {
-                must_copy: match_info.from_lvalue,
-                scope_id: self.stack().current_scope().scope_id(),
-                address_span: Some(match_info.address_span),
-            },
-            handler,
-        )
-        .await?;
+        let name_binding_point = self
+            .create_name_binding_point_from_match_scrutinee(
+                &arm_info.refutable_pattern,
+                &match_info.scrutinee,
+                self.stack().current_scope().scope_id(),
+                handler,
+            )
+            .await?;
 
         // add the named binding point to the current scope
         self.add_named_binding_point(name_binding_point);
@@ -808,12 +798,8 @@ struct ArmInfo {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct MatchInfo {
-    address: Address,
-    address_span: RelativeSpan,
-    address_ty: Type,
+    scrutinee: MatchScrutineeBindingResult,
     bind_group_target: Option<Type>,
-    qualifier: Qualifier,
-    from_lvalue: bool,
     span: RelativeSpan,
     exit_block_id: ID<Block>,
     non_exhaustive_block_id: ID<Block>,
@@ -922,65 +908,8 @@ impl Bind<&pernixc_syntax::expression::block::Match> for Binder<'_> {
         };
 
         let exit_block_id = self.new_block();
-
-        let (address, qualifier, from_lvalue) = match self
-            .bind(&binary, &Guidance::Expression(None), handler)
-            .await
-        {
-            Ok(Expression::LValue(lvalue)) => {
-                (lvalue.address, lvalue.qualifier, true)
-            }
-
-            Ok(Expression::RValue(value)) => {
-                (
-                    Address::Memory(Memory::Alloca(
-                        self.create_alloca_with_value(
-                            value,
-                            self.stack().current_scope().scope_id(),
-                            None,
-                            binary.span(),
-                            handler,
-                        )
-                        .await?,
-                    )),
-                    Qualifier::Mutable, /* has the highest mutability */
-                    false,
-                )
-            }
-
-            Err(err) => match err {
-                Error::Binding(semantic_error) => {
-                    (
-                        Address::Memory(Memory::Alloca({
-                            let ty_inference = self.create_type_inference(
-                                constraint::Type::All(true),
-                            );
-
-                            self.create_alloca_with_value(
-                                Value::Literal(Literal::Error(
-                                    literal::Error {
-                                        r#type: Type::Inference(ty_inference),
-                                        span: semantic_error.0,
-                                    },
-                                )),
-                                self.stack().current_scope().scope_id(),
-                                None,
-                                binary.span(),
-                                handler,
-                            )
-                            .await?
-                        })),
-                        Qualifier::Mutable, /* has the highest mutability */
-                        false,
-                    )
-                }
-                Error::Unrecoverable(abrupt_error) => {
-                    return Err(Error::Unrecoverable(abrupt_error));
-                }
-            },
-        };
-
-        let address_ty = self.type_of_address(&address, handler).await?;
+        let scrutinee =
+            self.bind_match_scrutinee_expression(&binary, handler).await?;
         let mut arms = Vec::new();
 
         if let Some(syn) = syntax_tree.body() {
@@ -1006,7 +935,7 @@ impl Bind<&pernixc_syntax::expression::block::Match> for Binder<'_> {
 
         for ((group, pattern), scope_id) in arms.into_iter().zip(scope_ids) {
             let mut pat = self
-                .bind_pattern(&pattern, &address_ty, handler)
+                .bind_pattern(&pattern, &scrutinee.address_type, handler)
                 .await?
                 .unwrap_or_else(|| Wildcard { span: pattern.span() }.into());
 
@@ -1035,11 +964,7 @@ impl Bind<&pernixc_syntax::expression::block::Match> for Binder<'_> {
         let mut non_exhaustives = Vec::new();
 
         let match_info = MatchInfo {
-            address,
-            address_span: binary.span(),
-            address_ty,
-            qualifier,
-            from_lvalue,
+            scrutinee,
             span: syntax_tree.span(),
             exit_block_id,
             non_exhaustive_block_id,
@@ -1053,7 +978,7 @@ impl Bind<&pernixc_syntax::expression::block::Match> for Binder<'_> {
             handler,
         )
         .await?;
-        let address_ty = match_info.address_ty;
+        let address_ty = match_info.scrutinee.address_type.clone();
 
         self.set_current_block_id(starting_block_id);
         self.insert_terminator(Terminator::Panic);
