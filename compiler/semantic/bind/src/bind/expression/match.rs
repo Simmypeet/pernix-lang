@@ -54,7 +54,7 @@ use crate::{
 
 // TODO: this module is such a mess, needs to be refactored.
 
-async fn get_conditional_value(
+pub(super) async fn get_conditional_value(
     refutable: &Refutable,
     engine: &TrackedEngine,
 ) -> Option<SwitchValue> {

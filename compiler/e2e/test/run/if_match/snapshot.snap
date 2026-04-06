@@ -1,0 +1,22 @@
+---
+source: compiler/e2e/test/run/mod.rs
+assertion_line: 227
+expression: final_string
+---
+## Case 0
+exit_code = 0
+stdin = "5"
+stdout = "some 5"
+stderr = ""
+
+## Case 1
+exit_code = 0
+stdin = "0"
+stdout = "tuple 1"
+stderr = ""
+
+## Case 2
+exit_code = 0
+stdin = "-2"
+stdout = "none"
+stderr = ""

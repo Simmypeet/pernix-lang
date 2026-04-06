@@ -1,0 +1,13 @@
+pub enum Option[T]:
+    Some(T)
+    None
+
+
+pub def main(option: Option[int32], pair: (bool, bool)):
+    let ok = if option match as Some(value): value else: 0
+
+    let mismatchedBranches = if option match as Some(value): value else: false
+    let missingElse = if option match as Some(value): value
+    let patternTypeMismatch = if option match true: 1 else: 0
+
+    let tupleOk = if pair match (true, second): second else: false

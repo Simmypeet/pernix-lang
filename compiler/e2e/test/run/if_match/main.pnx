@@ -1,0 +1,30 @@
+## Case
+## 5
+## Case
+## 0
+## Case
+## -2
+
+
+extern "C":
+    pub def printf(fmt: &uint8, ...) -> int32
+    pub def scanf(fmt: &uint8, ...) -> int32
+
+
+pub enum Option[T]:
+    Some(T)
+    None
+
+
+pub def main():
+    let mut input = 0
+    scanf(&"%d\0".[0], &mut input)
+
+    let option = if input > 0: Option.Some(input) else: Option.None
+
+    if option match as Some(value):
+        printf(&"some %d\n\0".[0], value)
+    else if (input, input + 1) match (0, next):
+        printf(&"tuple %d\n\0".[0], next)
+    else:
+        printf(&"none\n\0".[0])

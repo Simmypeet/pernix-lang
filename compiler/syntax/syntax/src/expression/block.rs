@@ -112,9 +112,26 @@ abstract_tree::abstract_tree! {
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct IfMatchCondition {
+        pub binary: Binary = ast::<Binary>(),
+        pub match_keyword: Keyword = expect::Keyword::Match,
+        pub refutable_pattern: Refutable = ast::<Refutable>(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+    pub enum IfCondition {
+        Match(IfMatchCondition = ast::<IfMatchCondition>()),
+        Boolean(Binary = ast::<Binary>()),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct IfElse {
         pub if_keyword: Keyword = expect::Keyword::If,
-        pub binary: Binary = ast::<Binary>(),
+        pub condition: IfCondition = ast::<IfCondition>(),
         pub then: Group = ast::<Group>(),
         pub r#else: Else = ast::<Else>().optional(),
     }
@@ -180,3 +197,6 @@ abstract_tree::abstract_tree! {
         pub group: IndentedGroup = ast::<IndentedGroup>(),
     }
 }
+
+#[cfg(test)]
+mod test;

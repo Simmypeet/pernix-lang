@@ -315,15 +315,14 @@ impl IndentDisplay for GroupOrIfElse {
 
 reference! {
     #[derive(Debug, Clone)]
-    pub struct IfElse for super::IfElse {
+    pub struct IfMatchCondition for super::IfMatchCondition {
         #{map_input_assert(&**binary, binary)}
         pub binary (Box<Binary>),
-        pub then (Group),
-        pub r#else (Option<Else>),
+        pub refutable_pattern (Refutable),
     }
 }
 
-impl Arbitrary for IfElse {
+impl Arbitrary for IfMatchCondition {
     type Parameters = (
         Option<BoxedStrategy<Expression>>,
         Option<BoxedStrategy<Type>>,
@@ -353,19 +352,138 @@ impl Arbitrary for IfElse {
                 })
             });
 
+        (binary.prop_map(Box::new), Refutable::arbitrary())
+            .prop_map(|(binary, refutable_pattern)| Self {
+                binary,
+                refutable_pattern,
+            })
+            .boxed()
+    }
+}
+
+impl IndentDisplay for IfMatchCondition {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        self.binary.indent_fmt(f, indent)?;
+        write!(f, " match {}", self.refutable_pattern)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum IfCondition {
+    Match(IfMatchCondition),
+    Boolean(Box<Binary>),
+}
+
+impl pernixc_test_input::Input<&super::IfCondition, ()> for &IfCondition {
+    fn assert(
+        self,
+        output: &super::IfCondition,
+        (): (),
+    ) -> proptest::test_runner::TestCaseResult {
+        match (self, output) {
+            (IfCondition::Match(left), super::IfCondition::Match(right)) => {
+                left.assert(right, ())
+            }
+            (
+                IfCondition::Boolean(left),
+                super::IfCondition::Boolean(right),
+            ) => pernixc_test_input::Input::assert(left.as_ref(), right, ()),
+            _ => Err(proptest::test_runner::TestCaseError::fail(format!(
+                "Expected {output:?}, but got {self:?}"
+            ))),
+        }
+    }
+}
+
+impl Arbitrary for IfCondition {
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Statement>>,
+    );
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let binary = args
+            .0
+            .clone()
+            .unwrap_or_else(|| {
+                Expression::arbitrary_with((
+                    args.1.clone(),
+                    args.2.clone(),
+                    args.3.clone(),
+                ))
+            })
+            .prop_filter_map("need binary and must not contain block", |x| {
+                x.into_binary().ok().and_then(|x| {
+                    (!x.chain
+                        .last()
+                        .map_or_else(|| &x.first, |x| &x.node)
+                        .is_block())
+                    .then_some(x)
+                })
+            });
+
+        prop_oneof![
+            IfMatchCondition::arbitrary_with(args).prop_map(Self::Match),
+            binary.prop_map(Box::new).prop_map(Self::Boolean),
+        ]
+        .boxed()
+    }
+}
+
+impl IndentDisplay for IfCondition {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        match self {
+            Self::Match(if_match_condition) => {
+                if_match_condition.indent_fmt(f, indent)
+            }
+            Self::Boolean(binary) => binary.indent_fmt(f, indent),
+        }
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone)]
+    pub struct IfElse for super::IfElse {
+        pub condition (IfCondition),
+        pub then (Group),
+        pub r#else (Option<Else>),
+    }
+}
+
+impl Arbitrary for IfElse {
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Statement>>,
+    );
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         let leaf = (
-            binary.clone().prop_map(Box::new),
+            IfCondition::arbitrary_with(args.clone()),
             Group::arbitrary_with(args.clone()),
         )
-            .prop_map(|(binary, then)| Self {
-                binary,
+            .prop_map(|(condition, then)| Self {
+                condition,
                 then,
                 r#else: None,
             });
 
         leaf.prop_recursive(4, 24, 6, move |inner| {
             (
-                binary.clone().prop_map(Box::new),
+                IfCondition::arbitrary_with(args.clone()),
                 Group::arbitrary_with(args.clone()),
                 proptest::option::of(prop_oneof![
                     Group::arbitrary_with(args.clone()).prop_map(|x| {
@@ -382,8 +500,8 @@ impl Arbitrary for IfElse {
                     })
                 ]),
             )
-                .prop_map(|(binary, then, r#else)| Self {
-                    binary,
+                .prop_map(|(condition, then, r#else)| Self {
+                    condition,
                     then,
                     r#else,
                 })
@@ -399,7 +517,7 @@ impl IndentDisplay for IfElse {
         indent: usize,
     ) -> std::fmt::Result {
         write!(f, "if ")?;
-        self.binary.indent_fmt(f, indent)?;
+        self.condition.indent_fmt(f, indent)?;
         if self
             .then
             .as_indented()

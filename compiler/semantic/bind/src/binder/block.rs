@@ -12,6 +12,7 @@ use pernixc_ir::{
     instruction::{
         Instruction, Jump, ScopePop, ScopePush, Terminator, UnconditionalJump,
     },
+    pattern::NameBindingPoint,
     scope::Scope,
     value::{
         Value,
@@ -90,6 +91,7 @@ impl Binder<'_> {
         /// Whether the block is marked as unsafe
         #[builder(default = true)]
         is_unsafe: bool,
+        #[builder(default)] name_binding_point: NameBindingPoint,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<BlockState, UnrecoverableError> {
         self.push_instruction(Instruction::ScopePush(ScopePush(scope_id)));
@@ -113,6 +115,7 @@ impl Binder<'_> {
 
         // push a new scope for the block
         self.stack.push_scope(scope_id, is_unsafe);
+        self.add_named_binding_point(name_binding_point);
 
         // bind all statements in the block
         for statement in statements {

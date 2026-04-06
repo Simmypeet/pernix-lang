@@ -1,0 +1,41 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+assertion_line: 139
+expression: run
+---
+stderr:
+[error]: mismatched types: expected `int32`, found `bool`
+  ╭▸ compiler/e2e/test/snapshot/ir/expression/if_match/main.pnx:9:74
+  │
+9 │     let mismatchedBranches = if option match as Some(value): value else: false
+  │                                                                          ━━━━━ expected `int32`, found `bool`
+  │
+  ╰ help: ensure the expression type matches the expected type
+
+[error]: this `if` expression is expected to have an `else` branch
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/if_match/main.pnx:10:23
+   │
+10 │     let missingElse = if option match as Some(value): value
+   │                       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   │
+   ╰ help: the `if` expression `express` a value having type other than unit, so an `else` branch expressing a value of the same type is required
+
+[error]: mismatched types: expected `bool`, found `main.Option[int32]`
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/if_match/main.pnx:11:47
+   │
+11 │     let patternTypeMismatch = if option match true: 1 else: 0
+   │                                               ━━━━ expected `bool`, found `main.Option[int32]`
+   │
+   ╰ help: ensure the expression type matches the expected type
+
+[error]: mismatched pattern binding type: expected boolean but found `main.Option[int32]`
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/if_match/main.pnx:11:47
+   │
+11 │     let patternTypeMismatch = if option match true: 1 else: 0
+   ╰╴                                              ━━━━ this pattern expects boolean type but found `main.Option[int32]`
+
+[error]: Compilation aborted due to 4 error(s)
+
+
+
+stdout:
