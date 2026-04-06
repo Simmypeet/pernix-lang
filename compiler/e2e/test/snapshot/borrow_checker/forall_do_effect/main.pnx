@@ -8,4 +8,4 @@ pub def test['x](a: &'x int32) do Test:
 
 
 pub def takeSpecific['x](a: &'x int32) do Test['x]:
-    Test::doSomething(a)
+    Test.doSomething(a)

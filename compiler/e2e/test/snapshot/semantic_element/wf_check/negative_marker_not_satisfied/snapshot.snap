@@ -3,7 +3,7 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: run
 ---
 stderr:
-[error]: the predicate `not marker main::Marker[main::MyStruct]` is not satisfied
+[error]: the predicate `not marker main.Marker[main.MyStruct]` is not satisfied
    ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/negative_marker_not_satisfied/main.pnx:22:25
    │
 22 │ pub type InstMyStruct = WithRequirement[MyStruct]

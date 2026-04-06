@@ -3,56 +3,56 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: run
 ---
 stderr:
-[error]: enum `main::Second` is infinitely sized because it recursively contains itself
+[error]: enum `main.Second` is infinitely sized because it recursively contains itself
    ╭▸ compiler/e2e/test/snapshot/semantic_element/recursive_adt_check/three_chain/main.pnx:2:5
    │
  2 │     pub next: Second
-   │     ━━━━━━━━━━━━━━━━ this member closes the recursive expansion `main::Second -> main::Third -> main::First -> main::Second`
+   │     ━━━━━━━━━━━━━━━━ this member closes the recursive expansion `main.Second -> main.Third -> main.First -> main.Second`
    ‡
  5 │ pub enum Second:
-   │          ────── `main::Second` is declared here
+   │          ────── `main.Second` is declared here
  6 │     Link(Third)
-   │     ──── `main::Second` expands to `main::Third` here
+   │     ──── `main.Second` expands to `main.Third` here
    ‡
 10 │     pub next: First
-   │     ─────────────── `main::Third` expands to `main::First` here
+   │     ─────────────── `main.Third` expands to `main.First` here
    │
    ╰ help: consider introducing indirection in the recursive path so the ADT no longer stores itself by value
-[note]: recursive expansion path: main::Second -> main::Third -> main::First -> main::Second
+[note]: recursive expansion path: main.Second -> main.Third -> main.First -> main.Second
 
-[error]: struct `main::Third` is infinitely sized because it recursively contains itself
+[error]: struct `main.Third` is infinitely sized because it recursively contains itself
    ╭▸ compiler/e2e/test/snapshot/semantic_element/recursive_adt_check/three_chain/main.pnx:6:5
    │
  2 │     pub next: Second
-   │     ──────────────── `main::First` expands to `main::Second` here
+   │     ──────────────── `main.First` expands to `main.Second` here
    ‡
  6 │     Link(Third)
-   │     ━━━━ this member closes the recursive expansion `main::Third -> main::First -> main::Second -> main::Third`
+   │     ━━━━ this member closes the recursive expansion `main.Third -> main.First -> main.Second -> main.Third`
    ‡
  9 │ pub struct Third:
-   │            ───── `main::Third` is declared here
+   │            ───── `main.Third` is declared here
 10 │     pub next: First
-   │     ─────────────── `main::Third` expands to `main::First` here
+   │     ─────────────── `main.Third` expands to `main.First` here
    │
    ╰ help: consider introducing indirection in the recursive path so the ADT no longer stores itself by value
-[note]: recursive expansion path: main::Third -> main::First -> main::Second -> main::Third
+[note]: recursive expansion path: main.Third -> main.First -> main.Second -> main.Third
 
-[error]: struct `main::First` is infinitely sized because it recursively contains itself
+[error]: struct `main.First` is infinitely sized because it recursively contains itself
    ╭▸ compiler/e2e/test/snapshot/semantic_element/recursive_adt_check/three_chain/main.pnx:10:5
    │
  1 │ pub struct First:
-   │            ───── `main::First` is declared here
+   │            ───── `main.First` is declared here
  2 │     pub next: Second
-   │     ──────────────── `main::First` expands to `main::Second` here
+   │     ──────────────── `main.First` expands to `main.Second` here
    ‡
  6 │     Link(Third)
-   │     ──── `main::Second` expands to `main::Third` here
+   │     ──── `main.Second` expands to `main.Third` here
    ‡
 10 │     pub next: First
-   │     ━━━━━━━━━━━━━━━ this member closes the recursive expansion `main::First -> main::Second -> main::Third -> main::First`
+   │     ━━━━━━━━━━━━━━━ this member closes the recursive expansion `main.First -> main.Second -> main.Third -> main.First`
    │
    ╰ help: consider introducing indirection in the recursive path so the ADT no longer stores itself by value
-[note]: recursive expansion path: main::First -> main::Second -> main::Third -> main::First
+[note]: recursive expansion path: main.First -> main.Second -> main.Third -> main.First
 
 [error]: Compilation aborted due to 3 error(s)
 

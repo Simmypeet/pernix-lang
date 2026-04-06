@@ -388,7 +388,7 @@ impl display::Display for ResolutionOwned {
                 }
 
                 let name = engine.get_name(associated_symbol.id()).await;
-                write!(formatter, "::{}", &*name)?;
+                write!(formatter, ".{}", &*name)?;
 
                 associated_symbol
                     .member_generic_arguments()

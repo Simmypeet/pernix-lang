@@ -3,7 +3,7 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: run
 ---
 stderr:
-[error]: ambiguous instance resolution for `main::Order[T]`
+[error]: ambiguous instance resolution for `main.Order[T]`
    ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/ambiguous/main.pnx:18:9
    │
 14 │ impl[T, inst O: Order[T]] MaxHeap[T, O]:
@@ -12,10 +12,10 @@ stderr:
    │                            ── this candidate instance parameter also matches
    ‡
 18 │         requireOrder(value)
-   │         ━━━━━━━━━━━━━━━━━━━ multiple instances match `main::Order[T]`
+   │         ━━━━━━━━━━━━━━━━━━━ multiple instances match `main.Order[T]`
    │
    ╰ help: the resolution is ambiguous because more than one instance satisfies the required trait reference; consider providing a more specific instance or removing the ambiguity
-[note]: required because resolving instance parameter `O` for `main::Order[T]`
+[note]: required because resolving instance parameter `O` for `main.Order[T]`
    ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/ambiguous/main.pnx:10:30
    │
 10 │ pub def requireOrder[T, inst O: Order[T]](value: T):

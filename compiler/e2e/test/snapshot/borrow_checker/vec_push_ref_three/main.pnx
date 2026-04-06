@@ -19,7 +19,7 @@ pub def consume[T](x: T):
 
 pub def main(cond: bool):
     let mut x = 1
-    let mut v = Vector::new()
+    let mut v = Vector.new()
     let p = &x
 
     if cond:

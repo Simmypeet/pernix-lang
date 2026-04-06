@@ -3,7 +3,7 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: run
 ---
 stderr:
-[error]: generic parameter `a` is already defined in the `main::First`
+[error]: generic parameter `a` is already defined in the `main.First`
   ╭▸ compiler/e2e/test/snapshot/semantic_element/generic_parameters/redefinition/main.pnx:1:21
   │
 1 │ pub type First['a, 'a, 'b] = &'a int32
@@ -11,7 +11,7 @@ stderr:
   │                 │
   ╰╴                previously defined here
 
-[error]: generic parameter `T` is already defined in the `main::Second`
+[error]: generic parameter `T` is already defined in the `main.Second`
   ╭▸ compiler/e2e/test/snapshot/semantic_element/generic_parameters/redefinition/main.pnx:3:20
   │
 3 │ pub type Second[T, T, U] = T
@@ -19,7 +19,7 @@ stderr:
   │                 │
   ╰╴                previously defined here
 
-[error]: generic parameter `N` is already defined in the `main::Third`
+[error]: generic parameter `N` is already defined in the `main.Third`
   ╭▸ compiler/e2e/test/snapshot/semantic_element/generic_parameters/redefinition/main.pnx:5:38
   │
 5 │ pub type Third[const N: usize, const N: usize, const M: float32] = int32
@@ -27,7 +27,7 @@ stderr:
   │                      │
   ╰╴                     previously defined here
 
-[error]: generic parameter `a` is already defined in the `main::Fourth`
+[error]: generic parameter `a` is already defined in the `main.Fourth`
   ╭▸ compiler/e2e/test/snapshot/semantic_element/generic_parameters/redefinition/main.pnx:8:10
   │
 8 │     'a, 'a,
@@ -35,7 +35,7 @@ stderr:
   │      │
   ╰╴     previously defined here
 
-[error]: generic parameter `T` is already defined in the `main::Fourth`
+[error]: generic parameter `T` is already defined in the `main.Fourth`
   ╭▸ compiler/e2e/test/snapshot/semantic_element/generic_parameters/redefinition/main.pnx:9:8
   │
 9 │     T, T,
@@ -43,7 +43,7 @@ stderr:
   │     │
   ╰╴    previously defined here
 
-[error]: generic parameter `N` is already defined in the `main::Fourth`
+[error]: generic parameter `N` is already defined in the `main.Fourth`
    ╭▸ compiler/e2e/test/snapshot/semantic_element/generic_parameters/redefinition/main.pnx:10:27
    │
 10 │     const N: usize, const N: usize
@@ -51,7 +51,7 @@ stderr:
    │           │
    ╰╴          previously defined here
 
-[error]: generic parameter `I` is already defined in the `main::Fifth`
+[error]: generic parameter `I` is already defined in the `main.Fifth`
    ╭▸ compiler/e2e/test/snapshot/semantic_element/generic_parameters/redefinition/main.pnx:20:41
    │
 20 │ pub type Fifth[T, inst I: Test[T], inst I: Test[int32]] = int32

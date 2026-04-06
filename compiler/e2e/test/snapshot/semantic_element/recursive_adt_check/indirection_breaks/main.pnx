@@ -17,5 +17,5 @@ pub enum PtrList:
 
 
 pub def main():
-    let .. = RefList['static]::Nil
-    let .. = PtrList::Nil
+    let .. = RefList['static].Nil
+    let .. = PtrList.Nil

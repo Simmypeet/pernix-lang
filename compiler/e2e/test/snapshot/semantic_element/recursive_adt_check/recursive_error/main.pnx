@@ -9,4 +9,4 @@ pub enum List[T]:
 
 
 pub def main():
-    let .. = List[int32]::Nil
+    let .. = List[int32].Nil

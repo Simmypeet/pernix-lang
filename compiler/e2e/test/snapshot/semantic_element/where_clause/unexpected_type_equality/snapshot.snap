@@ -6,7 +6,7 @@ stderr:
 [error]: the left-hand side of the type equality predicate must be an instance associated type
   ╭▸ compiler/e2e/test/snapshot/semantic_element/where_clause/unexpected_type_equality/main.pnx:7:9
   │
-7 │         T = Identity[T]::Output
+7 │         T = Identity[T].Output
   ╰╴        ━
 
 [error]: Compilation aborted due to 1 error(s)

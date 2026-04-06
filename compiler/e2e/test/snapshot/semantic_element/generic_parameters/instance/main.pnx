@@ -2,8 +2,8 @@ pub trait Test[T]:
     pub type Output
 
 
-pub type First[T, inst I: Test[T], inst J: Test[I::Output]] = T
+pub type First[T, inst I: Test[T], inst J: Test[I.Output]] = T
 
 
 pub trait Test2[inst I: Test[int32]]:
-    pub type Test[inst J: Test[I::Output]]
+    pub type Test[inst J: Test[I.Output]]

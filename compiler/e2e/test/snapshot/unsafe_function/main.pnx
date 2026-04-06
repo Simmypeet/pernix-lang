@@ -20,15 +20,15 @@ pub trait MyTrait[T]:
 
 
 pub def main[T, inst I: MyTrait[T]]():
-    MyType::dangerous()
+    MyType.dangerous()
     anotherDangerous()
     MyType{}.dangerousMethod()
-    I::traitDangerous()
+    I.traitDangerous()
 
 
 pub def safeMain[T, inst I: MyTrait[T]](t: T):
     unsafe scope:
-        MyType::dangerous()
+        MyType.dangerous()
         anotherDangerous()
         MyType{}.dangerousMethod()
-        I::traitDangerous()
+        I.traitDangerous()

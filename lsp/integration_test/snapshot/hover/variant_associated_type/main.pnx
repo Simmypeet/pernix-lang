@@ -4,4 +4,4 @@ pub enum Option[T]:
 
 
 pub def test():
-    Option::Som<cursor>e(32)
+    Option.Som<cursor>e(32)

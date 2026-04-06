@@ -47,7 +47,7 @@ pub module inner:
 
 
 pub def test7(
-    {hidden}: inner::Inaccessible, # inaccessible field
+    {hidden}: inner.Inaccessible, # inaccessible field
 ):
     pass
 

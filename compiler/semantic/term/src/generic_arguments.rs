@@ -1139,7 +1139,7 @@ impl crate::display::Display for AssociatedSymbol {
         self.parent_generic_arguments.fmt(engine, formatter).await?;
 
         let name = engine.get_name(self.id).await;
-        write!(formatter, "::{}", &*name)?;
+        write!(formatter, ".{}", &*name)?;
 
         self.member_generic_arguments.fmt(engine, formatter).await?;
 

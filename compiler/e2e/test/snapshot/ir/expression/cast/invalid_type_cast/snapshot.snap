@@ -3,7 +3,7 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: run
 ---
 stderr:
-[error]: the type `main::Adt` cannot be used in cast expression
+[error]: the type `main.Adt` cannot be used in cast expression
   ╭▸ compiler/e2e/test/snapshot/ir/expression/cast/invalid_type_cast/main.pnx:7:18
   │
 7 │     let b = a as Adt
@@ -11,11 +11,11 @@ stderr:
   │
   ╰ help: only casting between numeric types, casting to/from pointer-sized integer types, and casting to pointer or reference types are allowed
 
-[error]: mismatched types: expected `{number}`, found `main::Adt`
+[error]: mismatched types: expected `{number}`, found `main.Adt`
    ╭▸ compiler/e2e/test/snapshot/ir/expression/cast/invalid_type_cast/main.pnx:10:13
    │
 10 │     let d = c as int32
-   │             ━ expected `{number}`, found `main::Adt`
+   │             ━ expected `{number}`, found `main.Adt`
    │
    ╰ help: ensure the expression type matches the expected type
 

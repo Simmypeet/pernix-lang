@@ -4,10 +4,10 @@ expression: run
 ---
 stderr:
 [error]: the symbol is not accessible
-  ╭▸ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/not_accessible_trait/main.pnx:5:19
+  ╭▸ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/not_accessible_trait/main.pnx:5:18
   │
-5 │ final impl inner::InAccessible[int32]
-  ╰╴                  ━━━━━━━━━━━━ the symbol `main::inner::InAccessible` is not accessible from `main::[implements inner::InAccessible[int32]]`
+5 │ final impl inner.InAccessible[int32]
+  ╰╴                 ━━━━━━━━━━━━ the symbol `main.inner.InAccessible` is not accessible from `main.[implements inner.InAccessible[int32]]`
 
 [error]: Compilation aborted due to 1 error(s)
 

@@ -844,7 +844,7 @@ impl crate::display::Display for InstanceAssociated {
         ))
         .await?;
 
-        write!(formatter, "::")?;
+        write!(formatter, ".")?;
 
         let name = engine.get_name(self.trait_associated_symbol_id).await;
         write!(formatter, "{}", &*name)?;

@@ -2,6 +2,6 @@ pub trait Fizz:
     pub type Output['a]
 
 
-pub type Test['a, 'b, inst I: Fizz] = I::Output['a]:
+pub type Test['a, 'b, inst I: Fizz] = I.Output['a]:
     where:
-        I::Output['b] = int32
+        I.Output['b] = int32

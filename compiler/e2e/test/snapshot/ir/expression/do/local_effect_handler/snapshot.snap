@@ -3,11 +3,11 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: run
 ---
 stderr:
-[error]: the following effects are not handled by the caller: main::Test[bool]
+[error]: the following effects are not handled by the caller: main.Test[bool]
   ╭▸ compiler/e2e/test/snapshot/ir/expression/do/local_effect_handler/main.pnx:9:9
   │
-9 │         Test[bool]::op()    # error, no effect handler found
-  │         ━━━━━━━━━━━━━━━━ call to the `effect operation main::Test::op`
+9 │         Test[bool].op()    # error, no effect handler found
+  │         ━━━━━━━━━━━━━━━ call to the `effect operation main.Test.op`
   │
   ╰ help: consider adding a `do` effect annotation to the current function to handle these effects
 

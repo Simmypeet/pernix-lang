@@ -4,4 +4,4 @@ pub trait SomeTrait[T]:
 
 
 pub def testFunction():
-    SomeTrait::traitFunct<cursor>ion()
+    SomeTrait.traitFunct<cursor>ion()
