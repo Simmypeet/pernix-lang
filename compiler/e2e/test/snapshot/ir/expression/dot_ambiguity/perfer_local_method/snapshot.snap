@@ -1,0 +1,18 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: run
+---
+stderr:
+[error]: method `doSomething` not found for type `&main.TestStruct`
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/dot_ambiguity/perfer_local_method/main.pnx:17:24
+   │
+17 │   return confusingName.doSomething() # error: int32 != bool
+   │          ┬──────────── ━━━━━━━━━━━ method `doSomething` not found
+   │          │
+   ╰╴         this expression has type `&main.TestStruct`
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:
