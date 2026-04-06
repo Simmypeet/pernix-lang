@@ -27,10 +27,9 @@ use qbice::storage::intern::Interned;
 
 use crate::{
     bind::{Bind, Expression},
-    binder::{Binder, Error, MatchScrutineeBindingResult, UnrecoverableError},
+    binder::{Binder, Error, UnrecoverableError},
     diagnostic::{Diagnostic, NotAllFlowPathsExpressValue},
     infer::constraint,
-    pattern::insert_name_binding,
 };
 
 #[derive(Debug, Default)]
@@ -64,8 +63,64 @@ pub struct BlockState {
     span: RelativeSpan,
 }
 
-#[bon]
 impl Binder<'_> {
+    fn enter_bound_block(
+        &mut self,
+        label: Option<&Label>,
+        span: RelativeSpan,
+        scope_id: ID<Scope>,
+        successor_block_id: ID<Block>,
+        is_unsafe: bool,
+    ) {
+        self.push_instruction(Instruction::ScopePush(ScopePush(scope_id)));
+
+        assert!(
+            self.block_context
+                .block_states_by_scope_id
+                .insert(scope_id, BlockState {
+                    label: label
+                        .and_then(pernixc_syntax::Label::identifier)
+                        .map(|x| x.kind.0),
+                    incoming_values: FxHashMap::default(),
+                    successor_block_id,
+                    express_type: None,
+                    span,
+                })
+                .is_none(),
+            "attempted to bind a block in a scope that already has a block \
+             bound to it"
+        );
+
+        self.stack.push_scope(scope_id, is_unsafe);
+    }
+
+    fn exit_bound_block(
+        &mut self,
+        scope_id: ID<Scope>,
+        successor_block_id: ID<Block>,
+    ) -> BlockState {
+        assert_eq!(
+            self.stack.pop_scope().map(|x| x.scope_id()),
+            Some(scope_id),
+            "scope stack is corrupted"
+        );
+
+        self.push_instruction(Instruction::ScopePop(ScopePop(scope_id)));
+        self.insert_terminator(Terminator::Jump(Jump::Unconditional(
+            UnconditionalJump { target: successor_block_id },
+        )));
+
+        self.current_block_id = successor_block_id;
+
+        self.block_context
+            .block_states_by_scope_id
+            .remove(&scope_id)
+            .expect("block state should exist")
+    }
+}
+
+#[bon]
+impl<'t> Binder<'t> {
     /// Binds a block expression to the IR, returning the block state that
     /// can be later used to obtain the value of the `express` expression if
     /// it exists.
@@ -95,57 +150,67 @@ impl Binder<'_> {
         #[builder(default)] name_binding_point: NameBindingPoint,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<BlockState, UnrecoverableError> {
-        self.push_instruction(Instruction::ScopePush(ScopePush(scope_id)));
-
-        assert!(
-            self.block_context
-                .block_states_by_scope_id
-                .insert(scope_id, BlockState {
-                    label: label
-                        .and_then(pernixc_syntax::Label::identifier)
-                        .map(|x| x.kind.0),
-                    incoming_values: FxHashMap::default(),
-                    successor_block_id,
-                    express_type: None,
-                    span,
-                })
-                .is_none(),
-            "attempted to bind a block in a scope that already has a block \
-             bound to it"
+        self.enter_bound_block(
+            label,
+            span,
+            scope_id,
+            successor_block_id,
+            is_unsafe,
         );
-
-        // push a new scope for the block
-        self.stack.push_scope(scope_id, is_unsafe);
         self.add_named_binding_point(name_binding_point);
 
-        // bind all statements in the block
         for statement in statements {
             self.bind_statement(statement, handler).await?;
         }
 
-        // pop the scope for the block
-        assert_eq!(
-            self.stack.pop_scope().map(|x| x.scope_id()),
-            Some(scope_id),
-            "scope stack is corrupted"
+        Ok(self.exit_bound_block(scope_id, successor_block_id))
+    }
+
+    /// Binds a block expression to the IR, returning the block state that
+    /// can be later used to obtain the value of the `express` expression if
+    /// it exists.
+    #[builder]
+    pub async fn bind_block_with_post_enter_hook<
+        'a,
+        T: IntoIterator<Item = &'a pernixc_syntax::statement::Statement>,
+        C: AsyncFnOnce(&mut Binder<'_>) -> Result<(), UnrecoverableError>,
+    >(
+        &mut self,
+        /// Optional label for the `express` expression to target
+        label: Option<&Label>,
+        /// The list of statements inside the block that will be bound
+        /// immediately after
+        statements: T,
+        /// The span of the entire block
+        span: RelativeSpan,
+        /// The scope ID that this block is defined in. The binder will push
+        /// a new scope for the block and pop it when finished binding all
+        /// statements
+        scope_id: ID<Scope>,
+        /// The block ID to jump to after the block is finished executing
+        successor_block_id: ID<Block>,
+        hook: C,
+
+        /// Whether the block is marked as unsafe
+        #[builder(default = true)]
+        is_unsafe: bool,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<BlockState, UnrecoverableError> {
+        self.enter_bound_block(
+            label,
+            span,
+            scope_id,
+            successor_block_id,
+            is_unsafe,
         );
 
-        // pop the scope for the block
-        self.push_instruction(Instruction::ScopePop(ScopePop(scope_id)));
+        hook(self).await?;
 
-        // jump to the successor block
-        self.insert_terminator(Terminator::Jump(Jump::Unconditional(
-            UnconditionalJump { target: successor_block_id },
-        )));
+        for statement in statements {
+            self.bind_statement(statement, handler).await?;
+        }
 
-        self.current_block_id = successor_block_id;
-
-        // remove the block state for the scope
-        Ok(self
-            .block_context
-            .block_states_by_scope_id
-            .remove(&scope_id)
-            .expect("block state should exist"))
+        Ok(self.exit_bound_block(scope_id, successor_block_id))
     }
 }
 
@@ -188,76 +253,6 @@ impl Binder<'_> {
     ) -> Option<&BlockState> {
         self.block_context.block_states_by_scope_id.get(&scope_id)
     }
-
-    #[allow(clippy::too_many_arguments)]
-    pub async fn bind_block_with_match_scrutinee_name_bindings<
-        'a,
-        T: IntoIterator<Item = &'a pernixc_syntax::statement::Statement>,
-        P: insert_name_binding::InsertNameBinding,
-    >(
-        &mut self,
-        label: Option<&Label>,
-        statements: T,
-        span: RelativeSpan,
-        scope_id: ID<Scope>,
-        successor_block_id: ID<Block>,
-        is_unsafe: bool,
-        pattern: &P,
-        scrutinee: &MatchScrutineeBindingResult,
-        handler: &dyn Handler<Diagnostic>,
-    ) -> Result<BlockState, UnrecoverableError> {
-        self.push_instruction(Instruction::ScopePush(ScopePush(scope_id)));
-
-        assert!(
-            self.block_context
-                .block_states_by_scope_id
-                .insert(scope_id, BlockState {
-                    label: label
-                        .and_then(pernixc_syntax::Label::identifier)
-                        .map(|x| x.kind.0),
-                    incoming_values: FxHashMap::default(),
-                    successor_block_id,
-                    express_type: None,
-                    span,
-                })
-                .is_none(),
-            "attempted to bind a block in a scope that already has a block \
-             bound to it"
-        );
-
-        self.stack.push_scope(scope_id, is_unsafe);
-
-        let name_binding_point = self
-            .create_name_binding_point_from_match_scrutinee(
-                pattern, scrutinee, scope_id, handler,
-            )
-            .await?;
-        self.add_named_binding_point(name_binding_point);
-
-        for statement in statements {
-            self.bind_statement(statement, handler).await?;
-        }
-
-        assert_eq!(
-            self.stack.pop_scope().map(|x| x.scope_id()),
-            Some(scope_id),
-            "scope stack is corrupted"
-        );
-
-        self.push_instruction(Instruction::ScopePop(ScopePop(scope_id)));
-        self.insert_terminator(Terminator::Jump(Jump::Unconditional(
-            UnconditionalJump { target: successor_block_id },
-        )));
-
-        self.current_block_id = successor_block_id;
-
-        Ok(self
-            .block_context
-            .block_states_by_scope_id
-            .remove(&scope_id)
-            .expect("block state should exist"))
-    }
-
     /// Expresses a value to a block associated with the given scope ID.
     pub async fn express_value(
         &mut self,

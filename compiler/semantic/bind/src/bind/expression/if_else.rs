@@ -41,6 +41,7 @@ use crate::{
     pattern::path::{Path, PathAccess},
 };
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct IfMatchConditionBinding {
     scrutinee: MatchScrutineeBindingResult,
     pattern: Refutable,
@@ -73,6 +74,7 @@ impl Binder<'_> {
         Ok(())
     }
 
+    #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
     async fn bind_if_match_paths(
         &mut self,
         pattern: &Refutable,
@@ -393,7 +395,7 @@ impl Binder<'_> {
         Ok((value, group_sucessor_block_id))
     }
 
-    #[allow(clippy::type_complexity)]
+    #[allow(clippy::type_complexity, clippy::too_many_lines)]
     async fn bind_group_for_if_match_then(
         &mut self,
         expression: &Group,
@@ -404,7 +406,7 @@ impl Binder<'_> {
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<(Option<Value>, ID<Block>), UnrecoverableError> {
         let (value, group_sucessor_block_id) = match &expression {
-           Group::Indented(indented_group) => {
+            Group::Indented(indented_group) => {
                 let success_sub_block_id = self.new_block();
 
                 let statements =
@@ -415,17 +417,29 @@ impl Binder<'_> {
                     });
 
                 let block_state = self
-                    .bind_block_with_match_scrutinee_name_bindings(
-                        indented_group.label().as_ref(),
-                        statements.iter(),
-                        indented_group.span(),
-                        allocated_scope_id,
-                        success_sub_block_id,
-                        indented_group.unsafe_keyword().is_some(),
-                        &if_match_condition_binding.pattern,
-                        &if_match_condition_binding.scrutinee,
-                        handler,
-                    )
+                    .bind_block_with_post_enter_hook()
+                    .maybe_label(indented_group.label().as_ref())
+                    .statements(statements.iter())
+                    .span(indented_group.span())
+                    .scope_id(allocated_scope_id)
+                    .successor_block_id(success_sub_block_id)
+                    .is_unsafe(indented_group.unsafe_keyword().is_some())
+                    .hook(async move |binder| {
+                        let name_binding_point = binder
+                            .create_name_binding_point_from_match_scrutinee(
+                                &if_match_condition_binding.pattern,
+                                &if_match_condition_binding.scrutinee,
+                                allocated_scope_id,
+                                handler,
+                            )
+                            .await?;
+
+                        binder.add_named_binding_point(name_binding_point);
+
+                        Ok(())
+                    })
+                    .handler(handler)
+                    .call()
                     .await?;
 
                 let unit = Type::unit();
