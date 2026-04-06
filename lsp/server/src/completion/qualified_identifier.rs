@@ -53,6 +53,7 @@ use crate::pointing::{
 /// `Inner`, but we should prefer `Inner` as it is more specific because it is
 /// covered by `Outer`.
 #[extend]
+#[allow(clippy::too_many_lines)]
 pub async fn retrieve_qulaified_identifier_matching(
     self: &TrackedEngine,
     byte_index: ByteIndex,
@@ -62,6 +63,34 @@ pub async fn retrieve_qulaified_identifier_matching(
     let node = pernixc_parser::concrete_tree::Node::Branch(
         syntax_tree.inner_tree().clone(),
     );
+
+    // Special case for trailing dot autocomplete
+    if let Some(separator_index) = byte_index.checked_sub(1)
+        && let Some(separator_token) =
+            node.get_pointing_token(token_tree, separator_index)
+        && separator_token.kind
+            == pernixc_lexical::kind::Kind::Punctuation(
+                pernixc_lexical::kind::Punctuation('.'),
+            )
+        && let Some(target_index) = separator_index.checked_sub(1)
+        && let Some(qualified_identifier) = node
+            .get_deepest_ast::<pernixc_syntax::QualifiedIdentifier>(
+            token_tree,
+            target_index,
+        )
+    {
+        let qual_span =
+            token_tree.absolute_span_of(&qualified_identifier.span());
+        let separator_span = self.to_absolute_span(&separator_token.span).await;
+
+        if qual_span.end == separator_span.start {
+            return Some(QualifiedIdentifierMatching {
+                qualified_identifier,
+                hovering_token_span: None,
+                ends_with_path_separator: true,
+            });
+        }
+    }
 
     let at_cursor = byte_index;
     let before_cursor = byte_index.checked_sub(1);
