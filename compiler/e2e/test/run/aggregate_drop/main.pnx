@@ -34,20 +34,20 @@ pub enum Option[T]:
 impl[T] Option[T]:
     pub def unwrap(self: this) -> T:
         match self:
-            case Some(value): return value
-            case None: panic
+            as Some(value): return value
+            as None: panic
     
 
     pub def asRef(self: &this) -> Option[&T]:
         match self:
-            case Some(value): return Option.Some(value)
-            case None: return Option.None
+            as Some(value): return Option.Some(value)
+            as None: return Option.None
 
 
     pub def asMutable(self: &mut this) -> Option[&mut T]:
         match self:
-            case Some(value): return Option.Some(value)
-            case None: return Option.None
+            as Some(value): return Option.Some(value)
+            as None: return Option.None
 
 
 pub def main():

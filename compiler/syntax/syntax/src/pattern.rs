@@ -65,8 +65,8 @@ abstract_tree::abstract_tree! {
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    pub struct Enum {
-        pub case_keyword: Keyword = expect::Keyword::Case,
+pub struct Enum {
+        pub as_keyword: Keyword = expect::Keyword::As,
         pub identifier: Identifier = expect::Identifier,
         pub association: EnumAssociation = ast::<EnumAssociation>().optional(),
     }

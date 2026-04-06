@@ -13,15 +13,14 @@ pub enum Order:
 
 pub def second(order: Order):
     let .. = match order:
-        case First:  1
-        case Second: 2
-        case First:  3  # unreachable
-        case Third:  4
+        as First:  1
+        as Second: 2
+        as First:  3  # unreachable
+        as Third:  4
 
 
 pub def third(order: Order):
     let .. = match order:
-        case First:  1
+        as First:  1
         name:        3 
-        case Third:  4 # unreachable
-
+        as Third:  4 # unreachable

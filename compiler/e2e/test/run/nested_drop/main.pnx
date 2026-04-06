@@ -49,13 +49,13 @@ pub enum LoudEnum:
 pub inst DropLoudEnum: Drop[LoudEnum]:
     def drop(self: &mut LoudEnum):
         match (self):
-            case GtZero(..): 
+            as GtZero(..): 
                 printf(&"Dropping GtZero\n\0".[0])
 
-            case LtZero(..): 
+            as LtZero(..): 
                 printf(&"Dropping LtZero\n\0".[0])
 
-            case Zero:       
+            as Zero:       
                 printf(&"Dropping Zero\n\0".[0])
 
 

@@ -26,14 +26,14 @@ pub enum Direction:
 
 pub def fourth(a: bool, direction: Direction):
     let .. = match (a, direction): # missing (false, West) arm
-        (true, case North): 1
-        (true, case East):  2
-        (true, case South): 3
-        (true, case West):  4
+        (true, as North): 1
+        (true, as East):  2
+        (true, as South): 3
+        (true, as West):  4
 
-        (false, case North): 5
-        (false, case East):  6
-        (false, case South): 7
+        (false, as North): 5
+        (false, as East):  6
+        (false, as South): 7
 
 
 pub enum FakeBool:
@@ -43,11 +43,11 @@ pub enum FakeBool:
 
 pub def fifth(a: FakeBool, direction: Direction):
     let .. = match (a, direction): # missing (False, West) arm
-        (case True,  case North): 1
-        (case True,  case East):  2
-        (case True,  case South): 3
-        (case True,  case West):  4
+        (as True,  as North): 1
+        (as True,  as East):  2
+        (as True,  as South): 3
+        (as True,  as West):  4
 
-        (case False, case North): 5
-        (case False, case East):  6
-        (case False, case South): 7
+        (as False, as North): 5
+        (as False, as East):  6
+        (as False, as South): 7

@@ -381,7 +381,7 @@ impl Arbitrary for EnumAssociation {
 reference! {
     #[derive(Debug, Clone, derive_more::Display)]
     #[display(
-        "case {identifier}{}",
+        "as {identifier}{}",
         association.as_ref().map_or_else(String::default, ToString::to_string)
     )]
     pub struct Enum for super::Enum {

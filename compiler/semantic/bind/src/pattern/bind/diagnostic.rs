@@ -473,7 +473,7 @@ impl Report for ExpectedAssociatedPattern {
                     .build(),
             )
             .help_message(format!(
-                "if you want to ignore the associated type, use the `case \
+                "if you want to ignore the associated type, use the `as \
                  {variant_name}(..)` syntax instead"
             ))
             .build()

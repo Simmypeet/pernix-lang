@@ -12,8 +12,8 @@ impl[T] Option[T]:
             T: 'a
 	
 		match self:
-			case Some(_): return true
-			case None:    return false
+			as Some(_): return true
+			as None:    return false
 			
 
 	pub def asRef['a](self: &'a this) -> Option[&'a T]:
@@ -21,8 +21,8 @@ impl[T] Option[T]:
             T: 'a
 
 		match self:
-			case Some(value): return Option.Some(value)
-			case None: return Option.None
+			as Some(value): return Option.Some(value)
+			as None: return Option.None
 
 
     pub def asMutable['a](
@@ -32,14 +32,14 @@ impl[T] Option[T]:
             T: 'a
 
         match self:
-            case Some(value): return Option.Some(value)
-            case None: return Option.None
+            as Some(value): return Option.Some(value)
+            as None: return Option.None
 
 
     pub def unwrap(self: this) -> T:
         match self:
-            case Some(value): return value
-            case None: panic
+            as Some(value): return value
+            as None: panic
 
 
 # fake vector
@@ -101,9 +101,9 @@ impl[K, V] HashMap[K, V]:
             V: 'a
 
 		match self.get(&key):
-			case Some(value):
+			as Some(value):
 				return value
 
-			case None:
+			as None:
 				self.insert(key, default)
 				return self.get(&key).unwrap()

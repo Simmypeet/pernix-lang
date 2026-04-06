@@ -12,18 +12,18 @@ stderr:
   ╰ help: this match arm is unreachable due to prior arms covering all possible cases
 
 [warning]: unreachable match arm
-   ╭▸ compiler/e2e/test/snapshot/ir/expression/match/unreachable/main.pnx:18:19
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/match/unreachable/main.pnx:18:17
    │
-18 │         case First:  3  # unreachable
-   │                   ━━━━
+18 │         as First:  3  # unreachable
+   │                 ━━━━
    │
    ╰ help: this match arm is unreachable due to prior arms covering all possible cases
 
 [warning]: unreachable match arm
-   ╭▸ compiler/e2e/test/snapshot/ir/expression/match/unreachable/main.pnx:26:19
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/match/unreachable/main.pnx:26:17
    │
-26 │         case Third:  4 # unreachable
-   │                   ━━━━
+26 │         as Third:  4 # unreachable
+   │                 ━━━━
    │
    ╰ help: this match arm is unreachable due to prior arms covering all possible cases
 

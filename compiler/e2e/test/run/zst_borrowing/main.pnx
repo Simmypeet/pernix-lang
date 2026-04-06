@@ -12,8 +12,8 @@ pub def main():
     let option = Option.Some(&value)
 
     match option:
-        case Some(value):
+        as Some(value):
             printf(&"is some\n\0".[0])
 
-        case None:
+        as None:
             printf(&"is none\n\0".[0])
