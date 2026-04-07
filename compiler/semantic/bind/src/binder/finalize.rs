@@ -1,14 +1,13 @@
 use std::borrow::Cow;
 
 use pernixc_handler::Handler;
-use pernixc_hash::FxHashSet;
 use pernixc_ir::{
     FunctionIR, IRWithContext,
     instruction::{Instruction, ScopePop},
-    ir::IR,
 };
 use pernixc_semantic_element::return_type::get_return_type;
 use pernixc_symbol::kind::get_kind;
+use pernixc_target::get_ir_verification;
 use pernixc_term::r#type::Type;
 use pernixc_type_system::environment::Environment as TyEnvironment;
 
@@ -19,41 +18,7 @@ use crate::{
 
 mod check;
 mod transform_inference;
-
-#[allow(dead_code)]
-fn check_all_register_assigned(ir: &IR) {
-    let mut assigned = FxHashSet::default();
-    for (_, block) in ir.control_flow_graph.blocks().iter() {
-        for inst in block.instructions() {
-            if let Some(reg) = inst.as_register_assignment() {
-                assert!(
-                    assigned.insert(reg.id),
-                    "register assigned more than once"
-                );
-            }
-        }
-    }
-
-    let unassigned_registers = ir
-        .values
-        .registers
-        .ids()
-        .filter(|id| !assigned.contains(id))
-        .collect::<FxHashSet<_>>();
-
-    if !unassigned_registers.is_empty() {
-        for reg in unassigned_registers {
-            let assignment = ir.values.registers.get(reg).unwrap();
-
-            tracing::error!(
-                "register `ID({reg:?}) = {assignment:?}` is never assigned in \
-                 cfg"
-            );
-        }
-
-        panic!("some registers are never assigned in cfg");
-    }
-}
+mod verify;
 
 impl Binder<'_> {
     /// Performs sanity checks on the IR and finalizes it.
@@ -77,9 +42,6 @@ impl Binder<'_> {
         for reg_id in self.unreachable_register_ids.iter().copied() {
             assert!(self.ir.values.registers.remove(reg_id).is_some());
         }
-
-        #[cfg(debug_assertions)]
-        check_all_register_assigned(&self.ir);
     }
 
     /// Finalizes the binding process, performing necessary checks and
@@ -144,6 +106,10 @@ impl Binder<'_> {
         );
 
         check::check_all(&function_ir, &ty_env, current_site, handler).await?;
+
+        if self.engine.get_ir_verification(current_site.target_id).await {
+            verify::verify_function_ir(&function_ir);
+        }
 
         Ok(function_ir)
     }
