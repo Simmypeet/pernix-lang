@@ -173,6 +173,15 @@ pub async fn run(
             )
             .await;
 
+        input_session
+            .set_input(
+                pernixc_target::IRVerificationKey {
+                    target_id: local_target_id,
+                },
+                argument.command.input().verify_ir,
+            )
+            .await;
+
         pernixc_source_file_impl::refresh_source_file_executors(
             &mut input_session,
         )
