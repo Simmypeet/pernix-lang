@@ -30,24 +30,18 @@ pub trait JoinLattice: Clone + Eq {
 }
 
 impl<T: JoinLattice + Send + Sync> JoinLattice for Option<T> {
-    #[allow(clippy::manual_async_fn)]
-    fn join<'a>(
-        &'a mut self,
-        other: &'a Self,
-    ) -> impl Future<Output = bool> + Send + use<'a, T> {
-        async move {
-            match other {
-                None => false,
+    async fn join(&mut self, other: &Self) -> bool {
+        match other {
+            None => false,
 
-                Some(other) => match self {
-                    None => {
-                        *self = Some(other.clone());
-                        true
-                    }
+            Some(other) => match self {
+                None => {
+                    *self = Some(other.clone());
+                    true
+                }
 
-                    Some(this) => this.join(other).await,
-                },
-            }
+                Some(this) => this.join(other).await,
+            },
         }
     }
 }
@@ -72,7 +66,7 @@ pub trait DataflowProblem {
 
     /// Creates the lattice bottom used to initialize the given block.
     fn bottom(
-        &self,
+        &mut self,
         block_id: ID<Block>,
     ) -> impl Future<Output = Result<Self::JoinLattice, Self::Error>>
     + Send
@@ -80,7 +74,7 @@ pub trait DataflowProblem {
 
     /// Creates the facts used to initialize boundary blocks.
     fn boundary_facts(
-        &self,
+        &mut self,
         block_id: ID<Block>,
     ) -> impl Future<Output = Result<Self::JoinLattice, Self::Error>>
     + Send
@@ -88,7 +82,7 @@ pub trait DataflowProblem {
 
     /// Applies the instruction transfer function in-place.
     fn transfer_instruction<'a>(
-        &'a self,
+        &'a mut self,
         point: Point,
         instruction: &'a Instruction,
         state: &'a mut Self::JoinLattice,
@@ -96,7 +90,7 @@ pub trait DataflowProblem {
 
     /// Applies the terminator transfer function in-place.
     fn transfer_terminator<'a>(
-        &'a self,
+        &'a mut self,
         block_id: ID<Block>,
         terminator: &'a Terminator,
         state: &'a mut Self::JoinLattice,
@@ -106,7 +100,7 @@ pub trait DataflowProblem {
     ///
     /// This is invoked only when [`Self::EDGE_SENSITIVE`] is `true`.
     fn transfer_edge<'a>(
-        &'a self,
+        &'a mut self,
         edge: &'a ControlFlowEdge,
         state: &'a mut Self::JoinLattice,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send + use<'a, Self>;
@@ -181,7 +175,7 @@ fn enqueue_block(
 /// Solves a dataflow problem to a fixpoint using Kildall's algorithm.
 #[allow(clippy::cognitive_complexity, clippy::too_many_lines)]
 pub async fn solve<P: DataflowProblem>(
-    problem: &P,
+    problem: &mut P,
     cfg: &ControlFlowGraph,
 ) -> Result<DataflowSolution<P::JoinLattice>, P::Error> {
     let reachable_blocks = cfg.reachable_block_ids();
@@ -408,11 +402,7 @@ pub async fn solve<P: DataflowProblem>(
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::manual_async_fn,
-    clippy::needless_lifetimes,
-    clippy::elidable_lifetime_names
-)]
+#[allow(clippy::needless_lifetimes, clippy::elidable_lifetime_names)]
 mod test {
     use pernixc_arena::ID;
     use pernixc_hash::FxHashSet;
@@ -447,15 +437,10 @@ mod test {
     }
 
     impl JoinLattice for Facts {
-        fn join<'a>(
-            &'a mut self,
-            other: &'a Self,
-        ) -> impl std::future::Future<Output = bool> + Send {
-            async move {
-                let original_len = self.0.len();
-                self.0.extend(other.0.iter().cloned());
-                self.0.len() != original_len
-            }
+        async fn join(&mut self, other: &Self) -> bool {
+            let original_len = self.0.len();
+            self.0.extend(other.0.iter().cloned());
+            self.0.len() != original_len
         }
     }
 
@@ -506,92 +491,79 @@ mod test {
         const DIRECTION: Direction = Direction::Forward;
         const EDGE_SENSITIVE: bool = true;
 
-        fn bottom(
-            &self,
+        async fn bottom(
+            &mut self,
             _: ID<Block>,
-        ) -> impl std::future::Future<
-            Output = Result<Self::JoinLattice, Self::Error>,
-        > + Send {
-            async move { Ok(Facts::default()) }
+        ) -> Result<Self::JoinLattice, Self::Error> {
+            Ok(Facts::default())
         }
 
-        fn boundary_facts<'a>(
-            &'a self,
+        async fn boundary_facts(
+            &mut self,
             _: ID<Block>,
-        ) -> impl std::future::Future<
-            Output = Result<Self::JoinLattice, Self::Error>,
-        > + Send {
-            async move { Ok(Facts::from_labels(["seed"])) }
+        ) -> Result<Self::JoinLattice, Self::Error> {
+            Ok(Facts::from_labels(["seed"]))
         }
 
-        fn transfer_instruction<'a>(
-            &'a self,
+        async fn transfer_instruction(
+            &mut self,
             point: Point,
-            _: &'a Instruction,
-            state: &'a mut Self::JoinLattice,
-        ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send
-        {
-            async move {
-                let label = if point.block_id == self.entry {
-                    "entry_instruction"
-                } else if point.block_id == self.left {
-                    "left_instruction"
-                } else if point.block_id == self.right {
-                    "right_instruction"
-                } else if point.block_id == self.merge {
-                    "merge_instruction"
-                } else {
-                    unreachable!()
-                };
+            _: &Instruction,
+            state: &mut Self::JoinLattice,
+        ) -> Result<(), Self::Error> {
+            let label = if point.block_id == self.entry {
+                "entry_instruction"
+            } else if point.block_id == self.left {
+                "left_instruction"
+            } else if point.block_id == self.right {
+                "right_instruction"
+            } else if point.block_id == self.merge {
+                "merge_instruction"
+            } else {
+                unreachable!()
+            };
 
-                state.0.insert(label.to_string());
-                Ok(())
-            }
+            state.0.insert(label.to_string());
+            Ok(())
         }
 
-        fn transfer_terminator<'a>(
-            &'a self,
+        async fn transfer_terminator(
+            &mut self,
             block_id: ID<Block>,
-            _: &'a Terminator,
-            state: &'a mut Self::JoinLattice,
-        ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send
-        {
-            async move {
-                let label = if block_id == self.entry {
-                    "entry_terminator"
-                } else if block_id == self.left {
-                    "left_terminator"
-                } else if block_id == self.right {
-                    "right_terminator"
-                } else if block_id == self.merge {
-                    "merge_terminator"
-                } else {
-                    unreachable!()
-                };
+            _: &Terminator,
+            state: &mut Self::JoinLattice,
+        ) -> Result<(), Self::Error> {
+            let label = if block_id == self.entry {
+                "entry_terminator"
+            } else if block_id == self.left {
+                "left_terminator"
+            } else if block_id == self.right {
+                "right_terminator"
+            } else if block_id == self.merge {
+                "merge_terminator"
+            } else {
+                unreachable!()
+            };
 
-                state.0.insert(label.to_string());
-                Ok(())
-            }
+            state.0.insert(label.to_string());
+            Ok(())
         }
 
-        fn transfer_edge<'a>(
-            &'a self,
-            edge: &'a ControlFlowEdge,
-            state: &'a mut Self::JoinLattice,
-        ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send
-        {
-            async move {
-                let label = match edge.kind {
-                    ControlFlowEdgeKind::ConditionalTrue => "true_edge",
-                    ControlFlowEdgeKind::ConditionalFalse => "false_edge",
-                    ControlFlowEdgeKind::Unconditional => "unconditional_edge",
-                    ControlFlowEdgeKind::SwitchCase(_) => "switch_case_edge",
-                    ControlFlowEdgeKind::SwitchOtherwise => "switch_otherwise",
-                };
+        async fn transfer_edge(
+            &mut self,
+            edge: &ControlFlowEdge,
+            state: &mut Self::JoinLattice,
+        ) -> Result<(), Self::Error> {
+            let label = match edge.kind {
+                ControlFlowEdgeKind::ConditionalTrue => "true_edge",
+                ControlFlowEdgeKind::ConditionalFalse => "false_edge",
+                ControlFlowEdgeKind::Unconditional => "unconditional_edge",
+                ControlFlowEdgeKind::SwitchCase(_) => "switch_case_edge",
+                ControlFlowEdgeKind::SwitchOtherwise => "switch_otherwise",
+            };
 
-                state.0.insert(label.to_string());
-                Ok(())
-            }
+            state.0.insert(label.to_string());
+            Ok(())
         }
     }
 
@@ -608,83 +580,68 @@ mod test {
         const DIRECTION: Direction = Direction::Backward;
         const EDGE_SENSITIVE: bool = true;
 
-        fn bottom(
-            &self,
+        async fn bottom(
+            &mut self,
             _: ID<Block>,
-        ) -> impl std::future::Future<
-            Output = Result<Self::JoinLattice, Self::Error>,
-        > + Send {
-            async move { Ok(Facts::default()) }
+        ) -> Result<Self::JoinLattice, Self::Error> {
+            Ok(Facts::default())
         }
 
-        fn boundary_facts<'a>(
-            &'a self,
+        async fn boundary_facts(
+            &mut self,
             block_id: ID<Block>,
-        ) -> impl std::future::Future<
-            Output = Result<Self::JoinLattice, Self::Error>,
-        > + Send {
-            async move {
-                assert_eq!(block_id, self.terminal);
-                Ok(Facts::from_labels(["seed"]))
-            }
+        ) -> Result<Self::JoinLattice, Self::Error> {
+            assert_eq!(block_id, self.terminal);
+            Ok(Facts::from_labels(["seed"]))
         }
 
-        fn transfer_instruction<'a>(
-            &'a self,
+        async fn transfer_instruction(
+            &mut self,
             point: Point,
-            _: &'a Instruction,
-            state: &'a mut Self::JoinLattice,
-        ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send
-        {
-            async move {
-                let label = if point.block_id == self.entry {
-                    "entry_instruction"
-                } else if point.block_id == self.middle {
-                    "middle_instruction"
-                } else if point.block_id == self.terminal {
-                    "terminal_instruction"
-                } else {
-                    unreachable!()
-                };
+            _: &Instruction,
+            state: &mut Self::JoinLattice,
+        ) -> Result<(), Self::Error> {
+            let label = if point.block_id == self.entry {
+                "entry_instruction"
+            } else if point.block_id == self.middle {
+                "middle_instruction"
+            } else if point.block_id == self.terminal {
+                "terminal_instruction"
+            } else {
+                unreachable!()
+            };
 
-                state.0.insert(label.to_string());
-                Ok(())
-            }
+            state.0.insert(label.to_string());
+            Ok(())
         }
 
-        fn transfer_terminator<'a>(
-            &'a self,
+        async fn transfer_terminator(
+            &mut self,
             block_id: ID<Block>,
-            _: &'a Terminator,
-            state: &'a mut Self::JoinLattice,
-        ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send
-        {
-            async move {
-                let label = if block_id == self.entry {
-                    "entry_terminator"
-                } else if block_id == self.middle {
-                    "middle_terminator"
-                } else if block_id == self.terminal {
-                    "terminal_terminator"
-                } else {
-                    unreachable!()
-                };
+            _: &Terminator,
+            state: &mut Self::JoinLattice,
+        ) -> Result<(), Self::Error> {
+            let label = if block_id == self.entry {
+                "entry_terminator"
+            } else if block_id == self.middle {
+                "middle_terminator"
+            } else if block_id == self.terminal {
+                "terminal_terminator"
+            } else {
+                unreachable!()
+            };
 
-                state.0.insert(label.to_string());
-                Ok(())
-            }
+            state.0.insert(label.to_string());
+            Ok(())
         }
 
-        fn transfer_edge<'a>(
-            &'a self,
-            _: &'a ControlFlowEdge,
-            state: &'a mut Self::JoinLattice,
-        ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send
-        {
-            async move {
-                state.0.insert("backward_edge".to_string());
-                Ok(())
-            }
+        async fn transfer_edge(
+            &mut self,
+            _: &ControlFlowEdge,
+            state: &mut Self::JoinLattice,
+        ) -> Result<(), Self::Error> {
+            state.0.insert("backward_edge".to_string());
+            Ok(())
         }
     }
 
@@ -744,10 +701,12 @@ mod test {
         ));
         assert!(cfg.insert_terminator(merge, Terminator::Panic));
 
-        let solution =
-            solve(&ForwardBranchProblem { entry, left, right, merge }, &cfg)
-                .await
-                .unwrap();
+        let solution = solve(
+            &mut ForwardBranchProblem { entry, left, right, merge },
+            &cfg,
+        )
+        .await
+        .unwrap();
 
         let entry_edges =
             cfg.outgoing_edges(entry).unwrap().collect::<Vec<_>>();
@@ -795,7 +754,7 @@ mod test {
         assert!(cfg.insert_terminator(terminal, Terminator::Panic));
 
         let solution =
-            solve(&BackwardProblem { entry, middle, terminal }, &cfg)
+            solve(&mut BackwardProblem { entry, middle, terminal }, &cfg)
                 .await
                 .unwrap();
 
@@ -856,7 +815,7 @@ mod test {
         assert!(cfg.insert_terminator(exit, Terminator::Panic));
 
         let solution = solve(
-            &ForwardBranchProblem {
+            &mut ForwardBranchProblem {
                 entry,
                 left: header,
                 right: body,
@@ -892,7 +851,12 @@ mod test {
         assert!(cfg.insert_terminator(merge, Terminator::Panic));
 
         let solution = solve(
-            &ForwardBranchProblem { entry, left: merge, right: merge, merge },
+            &mut ForwardBranchProblem {
+                entry,
+                left: merge,
+                right: merge,
+                merge,
+            },
             &cfg,
         )
         .await
@@ -929,7 +893,7 @@ mod test {
         assert!(cfg.insert_terminator(reachable, Terminator::Panic));
 
         let solution = solve(
-            &ForwardBranchProblem {
+            &mut ForwardBranchProblem {
                 entry,
                 left: reachable,
                 right: reachable,
@@ -958,86 +922,73 @@ mod test {
         const DIRECTION: Direction = Direction::Forward;
         const EDGE_SENSITIVE: bool = false;
 
-        fn bottom(
-            &self,
+        async fn bottom(
+            &mut self,
             _: ID<Block>,
-        ) -> impl std::future::Future<
-            Output = Result<Self::JoinLattice, Self::Error>,
-        > + Send {
-            async move { Ok(Facts::default()) }
+        ) -> Result<Self::JoinLattice, Self::Error> {
+            Ok(Facts::default())
         }
 
-        fn boundary_facts<'a>(
-            &'a self,
+        async fn boundary_facts(
+            &mut self,
             _: ID<Block>,
-        ) -> impl std::future::Future<
-            Output = Result<Self::JoinLattice, Self::Error>,
-        > + Send {
-            async move { Ok(Facts::from_labels(["seed"])) }
+        ) -> Result<Self::JoinLattice, Self::Error> {
+            Ok(Facts::from_labels(["seed"]))
         }
 
-        fn transfer_instruction<'a>(
-            &'a self,
+        async fn transfer_instruction(
+            &mut self,
             point: Point,
-            _: &'a Instruction,
-            state: &'a mut Self::JoinLattice,
-        ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send
-        {
-            async move {
-                let label = if point.block_id == self.entry {
-                    "entry_instruction"
-                } else if point.block_id == self.left {
-                    "left_instruction"
-                } else if point.block_id == self.right {
-                    "right_instruction"
-                } else if point.block_id == self.merge {
-                    "merge_instruction"
-                } else {
-                    unreachable!()
-                };
+            _: &Instruction,
+            state: &mut Self::JoinLattice,
+        ) -> Result<(), Self::Error> {
+            let label = if point.block_id == self.entry {
+                "entry_instruction"
+            } else if point.block_id == self.left {
+                "left_instruction"
+            } else if point.block_id == self.right {
+                "right_instruction"
+            } else if point.block_id == self.merge {
+                "merge_instruction"
+            } else {
+                unreachable!()
+            };
 
-                state.0.insert(label.to_string());
-                Ok(())
-            }
+            state.0.insert(label.to_string());
+            Ok(())
         }
 
-        fn transfer_terminator<'a>(
-            &'a self,
+        async fn transfer_terminator(
+            &mut self,
             block_id: ID<Block>,
-            _: &'a Terminator,
-            state: &'a mut Self::JoinLattice,
-        ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send
-        {
-            async move {
-                let label = if block_id == self.entry {
-                    "entry_terminator"
-                } else if block_id == self.left {
-                    "left_terminator"
-                } else if block_id == self.right {
-                    "right_terminator"
-                } else if block_id == self.merge {
-                    "merge_terminator"
-                } else {
-                    unreachable!()
-                };
+            _: &Terminator,
+            state: &mut Self::JoinLattice,
+        ) -> Result<(), Self::Error> {
+            let label = if block_id == self.entry {
+                "entry_terminator"
+            } else if block_id == self.left {
+                "left_terminator"
+            } else if block_id == self.right {
+                "right_terminator"
+            } else if block_id == self.merge {
+                "merge_terminator"
+            } else {
+                unreachable!()
+            };
 
-                state.0.insert(label.to_string());
-                Ok(())
-            }
+            state.0.insert(label.to_string());
+            Ok(())
         }
 
-        fn transfer_edge<'a>(
-            &'a self,
-            _: &'a ControlFlowEdge,
-            _: &'a mut Self::JoinLattice,
-        ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send
-        {
-            async move {
-                panic!(
-                    "transfer_edge must not be called when edge sensitivity \
-                     is disabled"
-                );
-            }
+        async fn transfer_edge(
+            &mut self,
+            _: &ControlFlowEdge,
+            _: &mut Self::JoinLattice,
+        ) -> Result<(), Self::Error> {
+            panic!(
+                "transfer_edge must not be called when edge sensitivity is \
+                 disabled"
+            );
         }
     }
 
@@ -1076,10 +1027,12 @@ mod test {
         ));
         assert!(cfg.insert_terminator(merge, Terminator::Panic));
 
-        let solution =
-            solve(&NonEdgeSensitiveProblem { entry, left, right, merge }, &cfg)
-                .await
-                .unwrap();
+        let solution = solve(
+            &mut NonEdgeSensitiveProblem { entry, left, right, merge },
+            &cfg,
+        )
+        .await
+        .unwrap();
 
         let (merge_entry, _) = expect_solution(&solution, merge);
         assert!(merge_entry.contains("left_instruction"));
@@ -1108,7 +1061,7 @@ mod test {
         assert!(cfg.insert_terminator(exit, Terminator::Panic));
 
         let solution = solve(
-            &NonEdgeSensitiveProblem {
+            &mut NonEdgeSensitiveProblem {
                 entry,
                 left: exit,
                 right: exit,
