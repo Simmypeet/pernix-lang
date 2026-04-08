@@ -29,6 +29,29 @@ pub trait JoinLattice: Clone + Eq {
     ) -> impl Future<Output = bool> + Send + use<'a, Self>;
 }
 
+impl<T: JoinLattice + Send + Sync> JoinLattice for Option<T> {
+    #[allow(clippy::manual_async_fn)]
+    fn join<'a>(
+        &'a mut self,
+        other: &'a Self,
+    ) -> impl Future<Output = bool> + Send + use<'a, T> {
+        async move {
+            match other {
+                None => false,
+
+                Some(other) => match self {
+                    None => {
+                        *self = Some(other.clone());
+                        true
+                    }
+
+                    Some(this) => this.join(other).await,
+                },
+            }
+        }
+    }
+}
+
 /// Describes a dataflow problem that can be solved over a CFG.
 pub trait DataflowProblem {
     /// The lattice carried through the analysis.
@@ -47,16 +70,16 @@ pub trait DataflowProblem {
     /// from the final solution to reduce memory usage.
     const EDGE_SENSITIVE: bool;
 
-    /// Creates the default fact used to initialize all tracked slots.
-    fn initialize<'a>(
-        &'a self,
-        cfg: &'a ControlFlowGraph,
+    /// Creates the lattice bottom used to initialize the given block.
+    fn bottom(
+        &self,
+        block_id: ID<Block>,
     ) -> impl Future<Output = Result<Self::JoinLattice, Self::Error>>
     + Send
-    + use<'a, Self>;
+    + use<'_, Self>;
 
-    /// Creates the seed fact for a boundary block.
-    fn seed(
+    /// Creates the facts used to initialize boundary blocks.
+    fn boundary_facts(
         &self,
         block_id: ID<Block>,
     ) -> impl Future<Output = Result<Self::JoinLattice, Self::Error>>
@@ -161,28 +184,33 @@ pub async fn solve<P: DataflowProblem>(
     problem: &P,
     cfg: &ControlFlowGraph,
 ) -> Result<DataflowSolution<P::JoinLattice>, P::Error> {
-    let initial_state = problem.initialize(cfg).await?;
     let reachable_blocks = cfg.reachable_block_ids();
-
-    let mut block_entries = reachable_blocks
-        .iter()
-        .copied()
-        .map(|block_id| (block_id, initial_state.clone()))
-        .collect::<FxHashMap<_, _>>();
-    let mut block_exits = reachable_blocks
-        .iter()
-        .copied()
-        .map(|block_id| (block_id, initial_state.clone()))
-        .collect::<FxHashMap<_, _>>();
+    let mut block_entries = FxHashMap::default();
+    let mut block_exits = FxHashMap::default();
 
     let mut edge_states = P::EDGE_SENSITIVE
         .then(FxHashMap::<ControlFlowEdge, P::JoinLattice>::default);
     let mut edges = Vec::new();
 
     for block_id in reachable_blocks.iter().copied() {
+        let bottom = problem.bottom(block_id).await?;
+        block_entries.insert(block_id, bottom.clone());
+        block_exits.insert(block_id, bottom);
+    }
+
+    for block_id in reachable_blocks.iter().copied() {
         for edge in cfg.outgoing_edges(block_id).unwrap() {
             if let Some(edge_states) = &mut edge_states {
-                edge_states.insert(edge, initial_state.clone());
+                let edge_bottom = match P::DIRECTION {
+                    Direction::Forward => {
+                        block_exits.get(&edge.source).unwrap().clone()
+                    }
+                    Direction::Backward => {
+                        block_entries.get(&edge.target).unwrap().clone()
+                    }
+                };
+
+                edge_states.insert(edge, edge_bottom);
             }
 
             edges.push(edge);
@@ -191,23 +219,23 @@ pub async fn solve<P: DataflowProblem>(
 
     edges.sort_unstable();
 
+    let mut worklist = VecDeque::new();
+    let mut queued_blocks = FxHashSet::default();
+
     for block_id in cfg.boundary_block_ids(P::DIRECTION) {
-        let seed = problem.seed(block_id).await?;
+        let boundary_facts = problem.boundary_facts(block_id).await?;
 
         match P::DIRECTION {
             Direction::Forward => {
-                *block_entries.get_mut(&block_id).unwrap() = seed;
+                *block_entries.get_mut(&block_id).unwrap() = boundary_facts;
             }
             Direction::Backward => {
-                *block_exits.get_mut(&block_id).unwrap() = seed;
+                *block_exits.get_mut(&block_id).unwrap() = boundary_facts;
             }
         }
-    }
 
-    let mut worklist =
-        reachable_blocks.iter().copied().collect::<VecDeque<_>>();
-    let mut queued_blocks =
-        reachable_blocks.iter().copied().collect::<FxHashSet<_>>();
+        enqueue_block(&mut worklist, &mut queued_blocks, block_id);
+    }
 
     while let Some(block_id) = worklist.pop_front() {
         queued_blocks.remove(&block_id);
@@ -478,16 +506,16 @@ mod test {
         const DIRECTION: Direction = Direction::Forward;
         const EDGE_SENSITIVE: bool = true;
 
-        fn initialize<'a>(
-            &'a self,
-            _: &'a ControlFlowGraph,
+        fn bottom(
+            &self,
+            _: ID<Block>,
         ) -> impl std::future::Future<
             Output = Result<Self::JoinLattice, Self::Error>,
         > + Send {
             async move { Ok(Facts::default()) }
         }
 
-        fn seed<'a>(
+        fn boundary_facts<'a>(
             &'a self,
             _: ID<Block>,
         ) -> impl std::future::Future<
@@ -580,16 +608,16 @@ mod test {
         const DIRECTION: Direction = Direction::Backward;
         const EDGE_SENSITIVE: bool = true;
 
-        fn initialize<'a>(
-            &'a self,
-            _: &'a ControlFlowGraph,
+        fn bottom(
+            &self,
+            _: ID<Block>,
         ) -> impl std::future::Future<
             Output = Result<Self::JoinLattice, Self::Error>,
         > + Send {
             async move { Ok(Facts::default()) }
         }
 
-        fn seed<'a>(
+        fn boundary_facts<'a>(
             &'a self,
             block_id: ID<Block>,
         ) -> impl std::future::Future<
@@ -668,6 +696,17 @@ mod test {
             solution.block_entry(block_id).unwrap(),
             solution.block_exit(block_id).unwrap(),
         )
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn option_join_lattice_treats_none_as_bottom() {
+        let mut state = None::<Facts>;
+        assert!(state.join(&Some(Facts::from_labels(["a"]))).await);
+        assert_eq!(state, Some(Facts::from_labels(["a"])));
+
+        assert!(!state.join(&None).await);
+        assert!(state.join(&Some(Facts::from_labels(["b"]))).await);
+        assert_eq!(state, Some(Facts::from_labels(["a", "b"])));
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -919,16 +958,16 @@ mod test {
         const DIRECTION: Direction = Direction::Forward;
         const EDGE_SENSITIVE: bool = false;
 
-        fn initialize<'a>(
-            &'a self,
-            _: &'a ControlFlowGraph,
+        fn bottom(
+            &self,
+            _: ID<Block>,
         ) -> impl std::future::Future<
             Output = Result<Self::JoinLattice, Self::Error>,
         > + Send {
             async move { Ok(Facts::default()) }
         }
 
-        fn seed<'a>(
+        fn boundary_facts<'a>(
             &'a self,
             _: ID<Block>,
         ) -> impl std::future::Future<
