@@ -6,6 +6,7 @@ pub mod alloca;
 pub mod capture;
 pub mod closure_parameters;
 pub mod control_flow_graph;
+pub mod dataflow;
 pub mod function_ir;
 pub mod handling_scope;
 pub mod instruction;

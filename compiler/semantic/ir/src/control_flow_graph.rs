@@ -1,6 +1,9 @@
 //! Contains the definition of [`Block`] and [`ControlFlowGraph`].
 
-use std::ops::{Not, RangeBounds};
+use std::{
+    collections::{hash_map, hash_set},
+    ops::{Not, RangeBounds},
+};
 
 use getset::{CopyGetters, Getters};
 use pernixc_arena::{Arena, ID};
@@ -9,6 +12,8 @@ use pernixc_transitive_closure::TransitiveClosure;
 use qbice::{Decode, Encode, StableHash};
 
 use super::instruction::{Instruction, Jump, Terminator};
+/// Represents the direction in which a dataflow problem propagates.
+use crate::dataflow::Direction;
 use crate::resolution_visitor::{
     self, Abort, MutableResolutionVisitor, ResolutionVisitor,
 };
@@ -33,6 +38,182 @@ pub struct Reachability {
     index_to_blocks: Vec<ID<Block>>,
 
     transitive_closure: TransitiveClosure,
+}
+
+/// Identifies a specific outgoing branch in the control flow graph.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+)]
+#[allow(missing_docs)]
+pub enum ControlFlowEdgeKind {
+    Unconditional,
+    ConditionalTrue,
+    ConditionalFalse,
+    SwitchCase(super::instruction::SwitchValue),
+    SwitchOtherwise,
+}
+
+/// Represents one concrete control-flow edge between two blocks.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+)]
+pub struct ControlFlowEdge {
+    /// The source block that the edge leaves from.
+    pub source: ID<Block>,
+
+    /// The destination block that the edge reaches.
+    pub target: ID<Block>,
+
+    /// The logical branch represented by this edge.
+    pub kind: ControlFlowEdgeKind,
+}
+
+#[derive(Debug, Clone)]
+enum OutgoingEdgeCursor<'a> {
+    Empty,
+    Unconditional(Option<ControlFlowEdge>),
+    Conditional {
+        true_edge: Option<ControlFlowEdge>,
+        false_edge: Option<ControlFlowEdge>,
+    },
+    Switch {
+        source: ID<Block>,
+        branches:
+            hash_map::Iter<'a, super::instruction::SwitchValue, ID<Block>>,
+        otherwise: Option<ID<Block>>,
+        emitted_otherwise: bool,
+    },
+}
+
+/// Iterates over the outgoing edges of a block without heap allocation.
+#[derive(Debug, Clone)]
+pub struct OutgoingEdges<'a> {
+    cursor: OutgoingEdgeCursor<'a>,
+}
+
+impl Iterator for OutgoingEdges<'_> {
+    type Item = ControlFlowEdge;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match &mut self.cursor {
+            OutgoingEdgeCursor::Empty => None,
+
+            OutgoingEdgeCursor::Unconditional(edge) => edge.take(),
+
+            OutgoingEdgeCursor::Conditional { true_edge, false_edge } => {
+                true_edge.take().or_else(|| false_edge.take())
+            }
+
+            OutgoingEdgeCursor::Switch {
+                source,
+                branches,
+                otherwise,
+                emitted_otherwise,
+            } => branches
+                .next()
+                .map(|(value, target)| ControlFlowEdge {
+                    source: *source,
+                    target: *target,
+                    kind: ControlFlowEdgeKind::SwitchCase(*value),
+                })
+                .or_else(|| {
+                    if *emitted_otherwise {
+                        None
+                    } else {
+                        *emitted_otherwise = true;
+                        otherwise.map(|target| ControlFlowEdge {
+                            source: *source,
+                            target,
+                            kind: ControlFlowEdgeKind::SwitchOtherwise,
+                        })
+                    }
+                }),
+        }
+    }
+}
+
+/// Iterates over the incoming edges of a block without heap allocation.
+#[derive(Debug, Clone)]
+pub struct IncomingEdges<'a> {
+    graph: &'a ControlFlowGraph,
+    target: ID<Block>,
+    predecessors: hash_set::Iter<'a, ID<Block>>,
+    current_outgoing: Option<OutgoingEdges<'a>>,
+}
+
+impl Iterator for IncomingEdges<'_> {
+    type Item = ControlFlowEdge;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some(edge) =
+                self.current_outgoing.as_mut().and_then(Iterator::next)
+            {
+                if edge.target == self.target {
+                    return Some(edge);
+                }
+
+                continue;
+            }
+
+            let predecessor = *self.predecessors.next()?;
+            self.current_outgoing = self.graph.outgoing_edges(predecessor);
+        }
+    }
+}
+
+/// Iterates over the boundary blocks for a given dataflow direction.
+#[derive(Debug, Clone)]
+pub struct BoundaryBlocks<'a> {
+    graph: &'a ControlFlowGraph,
+    direction: Direction,
+    traverser: Traverser<'a>,
+    emitted_entry: bool,
+}
+
+impl Iterator for BoundaryBlocks<'_> {
+    type Item = ID<Block>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.direction {
+            Direction::Forward => {
+                if self.emitted_entry {
+                    None
+                } else {
+                    self.emitted_entry = true;
+                    Some(self.graph.entry_block_id)
+                }
+            }
+
+            Direction::Backward => self.traverser.find_map(|(block_id, _)| {
+                self.graph
+                    .outgoing_edges(block_id)?
+                    .next()
+                    .is_none()
+                    .then_some(block_id)
+            }),
+        }
+    }
 }
 
 impl Reachability {
@@ -572,6 +753,12 @@ impl ControlFlowGraph {
         self.blocks.iter_mut()
     }
 
+    /// Returns the reachable block IDs in traversal order.
+    #[must_use]
+    pub fn reachable_block_ids(&self) -> Vec<ID<Block>> {
+        self.traverse().map(|(id, _)| id).collect()
+    }
+
     /// Gets the [`Block`] with the given ID.
     #[must_use]
     pub fn get_block(&self, id: ID<Block>) -> Option<&Block> {
@@ -746,6 +933,124 @@ impl ControlFlowGraph {
         }
 
         true
+    }
+
+    /// Returns the outgoing edges from the given block.
+    #[must_use]
+    pub fn outgoing_edges(
+        &self,
+        block_id: ID<Block>,
+    ) -> Option<OutgoingEdges<'_>> {
+        let block = self.blocks.get(block_id)?;
+
+        let cursor = match block.terminator() {
+            None | Some(Terminator::Return(_) | Terminator::Panic) => {
+                OutgoingEdgeCursor::Empty
+            }
+
+            Some(Terminator::Jump(Jump::Unconditional(unconditional))) => {
+                OutgoingEdgeCursor::Unconditional(Some(ControlFlowEdge {
+                    source: block_id,
+                    target: unconditional.target,
+                    kind: ControlFlowEdgeKind::Unconditional,
+                }))
+            }
+
+            Some(Terminator::Jump(Jump::Conditional(conditional))) => {
+                OutgoingEdgeCursor::Conditional {
+                    true_edge: Some(ControlFlowEdge {
+                        source: block_id,
+                        target: conditional.true_target,
+                        kind: ControlFlowEdgeKind::ConditionalTrue,
+                    }),
+                    false_edge: Some(ControlFlowEdge {
+                        source: block_id,
+                        target: conditional.false_target,
+                        kind: ControlFlowEdgeKind::ConditionalFalse,
+                    }),
+                }
+            }
+
+            Some(Terminator::Jump(Jump::Switch(select))) => {
+                OutgoingEdgeCursor::Switch {
+                    source: block_id,
+                    branches: select.branches.iter(),
+                    otherwise: select.otherwise,
+                    emitted_otherwise: false,
+                }
+            }
+        };
+
+        Some(OutgoingEdges { cursor })
+    }
+
+    /// Returns the incoming edges to the given block.
+    #[must_use]
+    pub fn incoming_edges(
+        &self,
+        block_id: ID<Block>,
+    ) -> Option<IncomingEdges<'_>> {
+        let block = self.blocks.get(block_id)?;
+
+        Some(IncomingEdges {
+            graph: self,
+            target: block_id,
+            predecessors: block.predecessors.iter(),
+            current_outgoing: None,
+        })
+    }
+
+    /// Returns the boundary blocks for the given dataflow direction.
+    #[must_use]
+    pub fn boundary_block_ids(
+        &self,
+        direction: Direction,
+    ) -> BoundaryBlocks<'_> {
+        BoundaryBlocks {
+            graph: self,
+            direction,
+            traverser: self.traverse(),
+            emitted_entry: false,
+        }
+    }
+
+    /// Returns the instructions in the block alongside their points.
+    #[must_use]
+    pub fn instructions_with_points(
+        &self,
+        block_id: ID<Block>,
+    ) -> Option<
+        impl ExactSizeIterator<Item = (Point, &'_ Instruction)>
+        + DoubleEndedIterator
+        + '_,
+    > {
+        let block = self.blocks.get(block_id)?;
+
+        Some(block.instructions().iter().enumerate().map(
+            move |(instruction_index, instruction)| {
+                (Point { instruction_index, block_id }, instruction)
+            },
+        ))
+    }
+
+    /// Returns the instructions in the block in reverse order alongside their
+    /// points.
+    #[must_use]
+    pub fn instructions_with_points_rev(
+        &self,
+        block_id: ID<Block>,
+    ) -> Option<
+        impl ExactSizeIterator<Item = (Point, &'_ Instruction)>
+        + DoubleEndedIterator
+        + '_,
+    > {
+        let block = self.blocks.get(block_id)?;
+
+        Some(block.instructions().iter().enumerate().rev().map(
+            move |(instruction_index, instruction)| {
+                (Point { instruction_index, block_id }, instruction)
+            },
+        ))
     }
 }
 

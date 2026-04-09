@@ -108,7 +108,7 @@ impl Binder<'_> {
         check::check_all(&function_ir, &ty_env, current_site, handler).await?;
 
         if self.engine.get_ir_verification(current_site.target_id).await {
-            verify::verify_function_ir(&function_ir);
+            verify::verify_function_ir(&function_ir).await;
         }
 
         Ok(function_ir)
