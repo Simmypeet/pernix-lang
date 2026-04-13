@@ -25,7 +25,7 @@ use crate::{
     resolution_visitor::{
         self, Abort, MutableResolutionVisitor, ResolutionVisitor,
     },
-    value::{Environment, TypeOf, register::subtype::Subtype},
+    value::{TypeOf, ValueEnvironment, register::subtype::Subtype},
 };
 
 macro_rules! dispatch_jump {
@@ -337,7 +337,7 @@ impl Store {
     pub async fn subtypes<N: Normalizer>(
         &self,
         values: &Values,
-        environment: &Environment<'_, N>,
+        environment: &ValueEnvironment<'_, N>,
     ) -> Result<Subtype, OverflowError> {
         let mut constraints =
             pernixc_type_system::constraints::Constraints::default();
@@ -351,7 +351,7 @@ impl Store {
         let addr_type = addr_succeeded.result;
 
         let result = environment
-            .type_environment
+            .type_environment()
             .subtypes(addr_type.clone(), val_type.clone(), Variance::Covariant)
             .await?;
 

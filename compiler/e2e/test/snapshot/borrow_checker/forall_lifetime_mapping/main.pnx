@@ -1,0 +1,50 @@
+pub trait Map['x, T]:
+    pub def map(a: &'x T) -> &'x T
+
+
+pub trait Ident[T]:
+    pub def id(a: T) -> T
+
+
+pub def returnLocalThroughMap['y, inst I: for['x] Map['x, int32]]() -> &'y int32:
+    let local: int32 = 42
+
+    return I::map(&local) # error: cannot return local reference
+
+
+pub def returnNonStaticThroughMap['y, inst I: for['x] Map['x, int32]](
+    ref: &'y int32
+) -> &'static int32:
+    return I::map(ref) # error: 'y is not 'static
+
+
+pub def correctlyReturnNonStaticThroughMap['y, inst I: for['x] Map['x, int32]](
+    ref: &'y int32
+) -> &'y int32:
+    return I::map(ref)
+
+
+pub def correctlyReturnStaticThroughMap['y, inst I: for['x] Map['x, int32]](
+    staticRef: &'static int32
+) -> &'static int32:
+    return I::map(staticRef)
+
+
+pub struct RefWrapper['x, T: 'x]:
+    pub ref: &'x T
+
+
+pub def returnCorrectInWrapper['y, inst I: for['x] Ident[RefWrapper['x, int32]]](
+    wrapper: RefWrapper['y, int32]
+) -> RefWrapper['y, int32]:
+    let a = I::id(wrapper)
+
+    return a
+
+
+pub def returnIncorrectInWrapper['y, 'z, inst I: for['x] Ident[RefWrapper['x, int32]]](
+    wrapper: RefWrapper['y, int32]
+) -> RefWrapper['z, int32]:
+    return I::id(wrapper) # error: 'y is not 'z
+
+

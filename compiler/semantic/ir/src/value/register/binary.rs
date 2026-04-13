@@ -8,7 +8,7 @@ use qbice::{Decode, Encode, StableHash};
 use crate::{
     Values,
     resolution_visitor::{self, Abort},
-    value::{Environment, TypeOf, Value, register::Register},
+    value::{ValueEnvironment, TypeOf, Value, register::Register},
 };
 
 macro_rules! visit_binary_literals {
@@ -219,7 +219,7 @@ impl TypeOf<&Binary> for Values {
     async fn type_of<N: Normalizer>(
         &self,
         binary: &Binary,
-        environment: &Environment<'_, N>,
+        environment: &ValueEnvironment<'_, N>,
     ) -> Result<Succeeded<Type>, OverflowError> {
         // the return type always based on the lhs field
         if let BinaryOperator::Relational(_) = binary.operator {

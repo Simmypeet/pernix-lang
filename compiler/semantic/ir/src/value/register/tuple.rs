@@ -81,7 +81,7 @@ impl Tuple {
     /// type satisfies the `tuple` bound.
     pub async fn wf_check<N, D>(
         &self,
-        environment: &crate::value::Environment<'_, N>,
+        environment: &crate::value::ValueEnvironment<'_, N>,
         values: &crate::value::Values,
         handler: &dyn pernixc_handler::Handler<D>,
     ) -> Result<Constraints, UnrecoverableError>
@@ -154,7 +154,7 @@ impl TypeOf<&Tuple> for Values {
     async fn type_of<N: pernixc_type_system::normalizer::Normalizer>(
         &self,
         value: &Tuple,
-        environment: &crate::value::Environment<'_, N>,
+        environment: &crate::value::ValueEnvironment<'_, N>,
     ) -> Result<pernixc_type_system::Succeeded<Type>, OverflowError> {
         let mut constraints = Constraints::new();
         let mut elements = Vec::new();

@@ -1,5 +1,3 @@
-use std::ops::Deref;
-
 use bon::bon;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
@@ -17,8 +15,7 @@ use pernixc_ir::{
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::{
-    elided_lifetime::get_elided_lifetimes, return_type::get_return_type,
-    variance::Variance,
+    elided_lifetime::get_elided_lifetimes, variance::Variance,
 };
 use pernixc_symbol::{kind::get_kind, parent::scope_walker};
 use pernixc_target::Global;
@@ -44,6 +41,7 @@ use crate::{
 
 mod array;
 mod borrow;
+mod do_with;
 mod function_call;
 mod phi;
 mod store;
@@ -556,16 +554,12 @@ impl<N: Normalizer> Builder<'_, N> {
             .filter_map(|x| x.terminator().as_ref().and_then(|x| x.as_return()))
             .find(|x| x.value == Value::Register(register_id))
         {
-            let return_ty = self
-                .context
-                .tracked_engine()
-                .get_return_type(self.context.current_site())
-                .await;
+            let return_ty = self.context.get_expected_return_type().await;
 
             let mut constraints = Constraints::new();
             self.context
                 .subtypes_value(
-                    return_ty.deref().clone(),
+                    return_ty,
                     &Value::Register(register_id),
                     Variance::Covariant,
                     &mut constraints,
@@ -615,7 +609,17 @@ impl<N: Normalizer> Builder<'_, N> {
             | Assignment::Load(_) => Ok(Changes::default()),
 
             // TODO: handle do-with subset relations
-            Assignment::Do(_do_expr) => Ok(Changes::default()),
+            Assignment::Do(do_expr) => {
+                self.context
+                    .get_changes_of_do_with(
+                        do_expr,
+                        &register.span,
+                        register_assignment.id,
+                    )
+                    .await?;
+
+                Ok(Changes::default())
+            }
 
             // TODO: handle resume-call subset relations
             Assignment::ResumeCall(_resume_call) => Ok(Changes::default()),
@@ -999,7 +1003,7 @@ impl<'a, N: Normalizer> Walker<'a, N> {
         self.context.environment().tracked_engine()
     }
 
-    pub const fn current_site(&self) -> Global<pernixc_symbol::SymbolID> {
+    pub fn current_site(&self) -> Global<pernixc_symbol::SymbolID> {
         self.context.current_site()
     }
 }

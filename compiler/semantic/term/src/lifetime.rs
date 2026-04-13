@@ -147,6 +147,29 @@ pub struct ElidedLifetime {
 /// The ID to a elided lifetime.
 pub type ElidedLifetimeID = MemberID<pernixc_arena::ID<ElidedLifetime>>;
 
+/// A temporary lifetime generated inside the closure during borrow checking to
+/// represent the lifetime of the captured variables.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+)]
+pub struct ClosureLifetime(u64);
+
+impl ClosureLifetime {
+    /// Creates a new closure lifetime with the given unique counter.
+    #[must_use]
+    pub const fn new(counter: u64) -> Self { Self(counter) }
+}
+
 /// Represents a lifetime term.
 #[derive(
     Debug,
@@ -168,6 +191,7 @@ pub enum Lifetime {
     Parameter(LifetimeParameterID),
     Elided(ElidedLifetimeID),
     Forall(Forall),
+    Closure(ClosureLifetime),
     Static,
     Erased,
     Error(Error),
@@ -344,7 +368,10 @@ impl crate::display::Display for Lifetime {
                 }
             }
 
-            Self::Elided(_) | Self::Error(_) | Self::Erased => Ok(()),
+            Self::Closure(_)
+            | Self::Elided(_)
+            | Self::Error(_)
+            | Self::Erased => Ok(()),
         }
     }
 }

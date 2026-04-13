@@ -17,7 +17,7 @@ use crate::{
         Abort, MutableResolutionVisitor, Resolution, ResolutionMut,
         ResolutionVisitor,
     },
-    value::{Environment, TypeOf},
+    value::{ValueEnvironment, TypeOf},
 };
 
 macro_rules! visit_typed_literals {
@@ -358,7 +358,7 @@ impl TypeOf<&Literal> for Values {
     async fn type_of<N: Normalizer>(
         &self,
         literal: &Literal,
-        environment: &Environment<'_, N>,
+        environment: &ValueEnvironment<'_, N>,
     ) -> Result<pernixc_type_system::Succeeded<Type>, OverflowError> {
         environment
             .type_environment

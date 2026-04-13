@@ -26,7 +26,7 @@ use pernixc_ir::{
     control_flow_graph::Block,
     function_ir::get_function_ir,
     value::{
-        Environment as ValueEnvironment, TypeOf, Value, register::Register,
+        SimpleIRContext, TypeOf, Value, ValueEnvironment, register::Register,
     },
 };
 use pernixc_qbice::TrackedEngine;
@@ -681,9 +681,9 @@ impl<'ctx> Context<'_, 'ctx> {
                 normalizer::NO_OP,
             );
             let value_environment = ValueEnvironment::builder()
-                .current_site(key.callable_id)
                 .type_environment(&environment)
                 .handling_scopes(pernix_ir.handling_scopes())
+                .ir_context(SimpleIRContext::Root)
                 .build();
 
             let root_ir = pernix_ir.root_ir();
@@ -872,7 +872,7 @@ impl<'rctx, 'ctx, 'i, 'k> Builder<'rctx, 'ctx, 'i, 'k> {
                 }
             };
 
-            address_map.insert(Memory::Parameter(param_id), address);
+            address_map.insert(Memory::FunctionParameter(param_id), address);
         }
 
         // create allocas for all the local variables

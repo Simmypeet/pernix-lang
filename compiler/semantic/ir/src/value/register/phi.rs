@@ -19,7 +19,7 @@ use crate::{
         ResolutionVisitor,
     },
     value::{
-        Environment, TypeOf, Value,
+        ValueEnvironment, TypeOf, Value,
         register::{Register, subtype::Subtype},
     },
 };
@@ -82,7 +82,7 @@ impl Phi {
     pub async fn subtypes<N: Normalizer>(
         &self,
         values: &Values,
-        environment: &Environment<'_, N>,
+        environment: &ValueEnvironment<'_, N>,
     ) -> Result<Subtype, OverflowError> {
         let mut constraints = Constraints::default();
 
@@ -169,7 +169,7 @@ impl TypeOf<&Phi> for Values {
     async fn type_of<N: Normalizer>(
         &self,
         phi: &Phi,
-        environment: &Environment<'_, N>,
+        environment: &ValueEnvironment<'_, N>,
     ) -> Result<Succeeded<Type>, OverflowError> {
         Ok(environment
             .type_environment

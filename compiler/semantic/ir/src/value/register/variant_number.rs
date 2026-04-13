@@ -10,7 +10,7 @@ use crate::{
     Values,
     address::Address,
     resolution_visitor::{Abort, MutableResolutionVisitor, ResolutionVisitor},
-    value::{Environment, TypeOf},
+    value::{ValueEnvironment, TypeOf},
 };
 
 macro_rules! visit_variant_number_address {
@@ -71,7 +71,7 @@ impl TypeOf<&VariantNumber> for Values {
     async fn type_of<N: Normalizer>(
         &self,
         variant_number: &VariantNumber,
-        environment: &Environment<'_, N>,
+        environment: &ValueEnvironment<'_, N>,
     ) -> Result<Succeeded<Type>, OverflowError> {
         let mut answer = Primitive::Bool;
         let members = environment

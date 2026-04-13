@@ -106,7 +106,7 @@ impl Struct {
     pub async fn subtypes<N: pernixc_type_system::normalizer::Normalizer>(
         &self,
         values: &Values,
-        environment: &crate::value::Environment<'_, N>,
+        environment: &crate::value::ValueEnvironment<'_, N>,
     ) -> Result<Subtype, OverflowError> {
         let mut constraints = Constraints::default();
 
@@ -163,7 +163,7 @@ impl Struct {
     /// satisfy well-formedness constraints.
     pub async fn wf_check<N, D>(
         &self,
-        environment: &crate::value::Environment<'_, N>,
+        environment: &crate::value::ValueEnvironment<'_, N>,
         span: pernixc_lexical::tree::RelativeSpan,
         handler: &dyn pernixc_handler::Handler<D>,
     ) -> Result<Constraints, UnrecoverableError>
@@ -226,7 +226,7 @@ impl TypeOf<&Struct> for Values {
     async fn type_of<N: pernixc_type_system::normalizer::Normalizer>(
         &self,
         value: &Struct,
-        environment: &crate::value::Environment<'_, N>,
+        environment: &crate::value::ValueEnvironment<'_, N>,
     ) -> Result<pernixc_type_system::Succeeded<Type>, OverflowError> {
         Ok(environment
             .type_environment

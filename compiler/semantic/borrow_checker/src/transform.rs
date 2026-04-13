@@ -2,11 +2,8 @@
 //! [`BorrowModel`] and vice versa.
 
 use pernixc_ir::{
-    IR,
-    resolution_visitor::{
-        Abort, MutableResolutionVisitable, MutableResolutionVisitor,
-        ResolutionMut,
-    },
+    FunctionIR,
+    resolution_visitor::{Abort, MutableResolutionVisitor, ResolutionMut},
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_term::{
@@ -17,11 +14,19 @@ use pernixc_term::{
     visitor::{self, MutableRecursive},
 };
 
-use crate::local_region_generator::LocalRegionGenerator;
+use crate::local_region_generator::{
+    ClosureLifetimeGenerator, LocalRegionGenerator,
+};
+
+#[derive(Debug, Clone, Copy)]
+pub enum Mode {
+    Local(LocalRegionGenerator),
+    Closure(ClosureLifetimeGenerator),
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct ToBorrowTransformer {
-    generator: LocalRegionGenerator,
+    generator: Mode,
 }
 
 impl MutableRecursive<Lifetime> for ToBorrowTransformer {
@@ -65,22 +70,43 @@ impl MutableRecursive<Instance> for ToBorrowTransformer {
     }
 }
 
-fn transform_lifetime(
-    lt: &mut Lifetime,
-    region_gen: &mut LocalRegionGenerator,
-) {
-    match lt {
-        Lifetime::Inference(_) => {
-            panic!("should have no prior inference lifetime")
-        }
-        Lifetime::Error(_)
-        | Lifetime::Parameter(_)
-        | Lifetime::Elided(_)
-        | Lifetime::Forall(_)
-        | Lifetime::Static => {}
-        Lifetime::Erased => {
-            *lt = Lifetime::Inference(region_gen.next());
-        }
+fn transform_lifetime(lt: &mut Lifetime, region_gen: &mut Mode) {
+    match region_gen {
+        Mode::Local(local_region_generator) => match lt {
+            Lifetime::Error(_)
+            | Lifetime::Closure(_)
+            | Lifetime::Inference(_) => {
+                unreachable!("unexpected lifetime in closure context: {lt:?}")
+            }
+
+            // leave forall as is
+            Lifetime::Elided(_)
+            | Lifetime::Static
+            | Lifetime::Parameter(_)
+            | Lifetime::Forall(_) => {}
+
+            Lifetime::Erased => {
+                *lt = Lifetime::Inference(local_region_generator.next());
+            }
+        },
+
+        Mode::Closure(closure_lifetime_generator) => match lt {
+            Lifetime::Error(_)
+            | Lifetime::Closure(_)
+            | Lifetime::Inference(_) => {
+                unreachable!("unexpected lifetime in closure context: {lt:?}")
+            }
+
+            // leave forall as is
+            Lifetime::Forall(_) => {}
+
+            Lifetime::Elided(_)
+            | Lifetime::Parameter(_)
+            | Lifetime::Static
+            | Lifetime::Erased => {
+                *lt = Lifetime::Closure(closure_lifetime_generator.next());
+            }
+        },
     }
 }
 
@@ -110,13 +136,18 @@ impl MutableResolutionVisitor for ToBorrowTransformer {
     }
 }
 
-pub(super) async fn transform_to_inference(
-    ir: &mut IR,
-) -> LocalRegionGenerator {
-    let mut transformer =
-        ToBorrowTransformer { generator: LocalRegionGenerator::new() };
+pub(super) async fn transform_to_inference(ir: &mut FunctionIR) {
+    let mut transformer = ToBorrowTransformer {
+        generator: Mode::Closure(ClosureLifetimeGenerator::new()),
+    };
 
-    let _ = ir.accept_mut(&mut transformer).await;
+    ir.accept_visitor_for_captures_and_handling_scopes(&mut transformer)
+        .await
+        .expect("should've no errors");
 
-    transformer.generator
+    transformer.generator = Mode::Local(LocalRegionGenerator::new());
+
+    ir.accept_visitor_for_ir(&mut transformer)
+        .await
+        .expect("should've no errors");
 }

@@ -1,0 +1,11 @@
+pub trait Test['x]:
+    pub def get() -> &'x int32
+
+
+pub def returnFree['y, inst I: for['x] Test['x]]() -> &'y int32:
+    return I::get()
+
+
+pub def assignAndReturnFree['y, inst I: for['x] Test['x]]() -> &'y int32:
+    let assign = I::get()
+    return assign

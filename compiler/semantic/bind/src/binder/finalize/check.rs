@@ -4,11 +4,10 @@ use pernixc_ir::{
     FunctionIR,
     ir::IR,
     value::{
-        Environment as ValueEnvironment,
+        ValueEnvironment,
         register::{self, Register},
     },
 };
-use pernixc_target::Global;
 use pernixc_type_system::{
     environment::Environment as TypeSystemEnvironment, normalizer::Normalizer,
 };
@@ -89,11 +88,10 @@ async fn check_register_assignment<N: Normalizer>(
 pub(super) async fn check_all<N: Normalizer>(
     function_ir: &FunctionIR,
     ty_environment: &TypeSystemEnvironment<'_, N>,
-    current_site: Global<pernixc_symbol::SymbolID>,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<(), UnrecoverableError> {
     for (_, ir, value_environment) in
-        function_ir.ir_with_value_environments(ty_environment, current_site)
+        function_ir.ir_with_value_environments(ty_environment)
     {
         check(ir.ir(), &value_environment, handler).await?;
     }

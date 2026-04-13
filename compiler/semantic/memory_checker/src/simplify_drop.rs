@@ -13,7 +13,7 @@ use pernixc_ir::{
     address::{self, Address, Field, Index, Variant},
     instruction::{Drop, DropUnpackTuple, Instruction},
     value::{
-        Environment, TypeOf, Value,
+        TypeOf, Value, ValueEnvironment,
         literal::{Literal, Unreachable},
     },
 };
@@ -41,7 +41,7 @@ pub(super) async fn simplify_drops<
 >(
     drop_instructions: T,
     values: &Values,
-    environment: &Environment<'_, N>,
+    environment: &ValueEnvironment<'_, N>,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<Vec<Instruction>, UnrecoverableError> {
     let mut results = Vec::new();
@@ -77,7 +77,7 @@ async fn simplify_drop<N: Normalizer>(
     drop: &Drop,
     values: &Values,
     visited_types: &mut FxHashSet<Type>,
-    environment: &Environment<'_, N>,
+    environment: &ValueEnvironment<'_, N>,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<Vec<Instruction>, UnrecoverableError> {
     let span_of = values
@@ -123,7 +123,7 @@ async fn simplify_drop<N: Normalizer>(
                     );
 
                     if environment
-                        .type_environment
+                        .type_environment()
                         .resolve_instance(&trait_ref)
                         .await
                         .map_err(|x| {
@@ -184,7 +184,7 @@ async fn simplify_drop<N: Normalizer>(
                     );
 
                     if environment
-                        .type_environment
+                        .type_environment()
                         .resolve_instance(&trait_ref)
                         .await
                         .map_err(|x| {

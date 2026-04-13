@@ -14,7 +14,7 @@ use crate::{
     resolution_visitor::{
         self, Abort, Resolution, ResolutionMut, ResolutionVisitor,
     },
-    value::{Environment, TypeOf},
+    value::{ValueEnvironment, TypeOf},
 };
 
 macro_rules! visit_borrow_contents {
@@ -104,7 +104,7 @@ impl TypeOf<&Borrow> for Values {
     async fn type_of<N: Normalizer>(
         &self,
         reference_of: &Borrow,
-        environment: &Environment<'_, N>,
+        environment: &ValueEnvironment<'_, N>,
     ) -> Result<Succeeded<Type>, OverflowError> {
         self.type_of(&reference_of.address, environment).await.map(|x| {
             x.map(|x| {

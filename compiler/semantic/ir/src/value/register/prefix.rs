@@ -8,7 +8,7 @@ use qbice::{Decode, Encode, StableHash};
 use crate::{
     Values,
     resolution_visitor::{Abort, MutableResolutionVisitor, ResolutionVisitor},
-    value::{Environment, TypeOf, Value, register::Register},
+    value::{ValueEnvironment, TypeOf, Value, register::Register},
 };
 
 macro_rules! visit_prefix_operand {
@@ -100,7 +100,7 @@ impl TypeOf<&Prefix> for Values {
     async fn type_of<N: Normalizer>(
         &self,
         prefix: &Prefix,
-        environment: &Environment<'_, N>,
+        environment: &ValueEnvironment<'_, N>,
     ) -> Result<Succeeded<Type>, OverflowError> {
         let operand_type =
             Box::pin(self.type_of(&prefix.operand, environment)).await?;

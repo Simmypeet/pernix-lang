@@ -15,7 +15,7 @@ use crate::{
         Abort, RecursiveSymbolicResolutionVisitor, ResolutionVisitable,
         SymbolicResolution, accept_recursive_symbolic_resolution_visitor,
     },
-    value::Environment,
+    value::ValueEnvironment,
 };
 
 /// A visitor that performs well-formedness checks on all symbolic resolutions.
@@ -24,7 +24,7 @@ use crate::{
 /// resolutions (types, symbols, variants, etc.) are well-formed according
 /// to their constraints and predicates.
 pub(crate) struct WfCheckVisitor<'a, 'b, N, D> {
-    value_environment: &'a Environment<'b, N>,
+    value_environment: &'a ValueEnvironment<'b, N>,
     handler: &'a dyn Handler<D>,
     lifetime_constraints: Constraints,
     error: Option<UnrecoverableError>,
@@ -45,7 +45,7 @@ impl<'a, 'b, N, D> WfCheckVisitor<'a, 'b, N, D> {
     /// Creates a new well-formedness check visitor.
     #[must_use]
     pub(crate) fn new(
-        value_environment: &'a Environment<'b, N>,
+        value_environment: &'a ValueEnvironment<'b, N>,
         handler: &'a dyn Handler<D>,
     ) -> Self {
         Self {
@@ -112,7 +112,7 @@ where
         for obligation in resolution.get_wf_check_obligations(engine).await {
             match self
                 .value_environment
-                .type_environment
+                .type_environment()
                 .wf_check_obligation(
                     &obligation,
                     &span,

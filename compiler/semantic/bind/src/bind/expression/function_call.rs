@@ -522,15 +522,6 @@ impl Binder<'_> {
         method_receiver: Option<MethodReceiver>,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
     ) -> Result<pernixc_arena::ID<Register>, Error> {
-        // map the elided lifetimes to erased lifetime
-
-        // it's important that all the generic parameters (including the
-        // elided lifetimes) is mapped, since the function call
-        // might be monomorphized and the elided lifetimes are
-        // replaced with concrete lifetimes
-        let elided_lifetimes_instantiation =
-            map_elided_lifetimes_to_erased(self, callee.get_symbol_id()).await;
-
         // deduct the by one if it's method, receiver is not counted as an
         // argument
         let expected =
@@ -652,10 +643,31 @@ impl Binder<'_> {
             )
             .await?;
 
+        // map the elided lifetimes to erased lifetime
+
+        // it's important that all the generic parameters (including the
+        // elided lifetimes) is mapped, since the function call
+        // might be monomorphized and the elided lifetimes are
+        // replaced with concrete lifetimes
+        let elided_lifetimes_instantiation =
+            map_elided_lifetimes_to_erased(self, callee.get_symbol_id()).await;
+
+        // the "forall" lifetimes should be instantiated to some lifetimes (in
+        // this case, just erase them). This is required so that the forall
+        // lifetime won't appear in the return type of the function call.
+        let forall_lifetimes_instantiation = callee
+            .get_instance_associated_forall_lifetimes(
+                &Lifetime::Erased,
+                self.engine(),
+            )
+            .await
+            .unwrap_or_default();
+
         let assignment = FunctionCall::new(
             callee,
             argument_values,
             elided_lifetimes_instantiation,
+            forall_lifetimes_instantiation,
             capability_arguments,
         );
 
