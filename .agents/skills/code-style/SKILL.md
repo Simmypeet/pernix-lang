@@ -37,3 +37,12 @@ before pushing code.
 
 **Rationale**: Make the code looks consistent. Again, the CI will fail if the
 code is not formatted properly.
+
+# Avoid Heap Allocation Getters
+
+**Don't** Create getters that return heap allocated data (e.g. `Vec`, `String`,
+etc.) if it's not necessary.
+
+**Do** Return references to the internal data instead (e.g. `&[T]`, `&str`, etc.)
+if possible. Or if non-trivial getters (e.g., getting keys from a `HashMap`) are
+needed, consider returning an iterator instead (e.g. `impl Iterator<Item = &T>`).
