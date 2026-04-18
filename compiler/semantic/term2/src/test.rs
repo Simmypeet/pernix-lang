@@ -16,7 +16,7 @@ use crate::{
     },
     instance::{AnoymousTrait, Instance, InstanceAssociated},
     lifetime::Lifetime,
-    sub_term::Location,
+    sub_term::{IterSubTerms, Location},
     r#type::{self, Primitive, Qualifier, Reference, Type},
 };
 
@@ -117,18 +117,47 @@ async fn type_sub_term_locations_return_interned_children() {
     )));
 
     assert_eq!(
-        r#type::SubLifetimeLocation::Reference.get_sub_term(reference.as_ref()),
+        r#type::SubLifetimeLocation::Reference
+            .get_sub_term(reference.as_ref(), &tracked),
         lifetime,
     );
     assert_eq!(
-        r#type::SubTypeLocation::Reference.get_sub_term(reference.as_ref()),
+        r#type::SubTypeLocation::Reference
+            .get_sub_term(reference.as_ref(), &tracked),
         pointee,
     );
     assert!(
         r#type::SubTypeLocation::Pointer
-            .try_get_sub_term(reference.as_ref())
+            .try_get_sub_term(reference.as_ref(), &tracked)
             .is_none()
     );
+}
+
+#[tokio::test]
+async fn tuple_range_sub_type_location_returns_interned_tuple() {
+    let engine = create_test_engine().await;
+    let tracked = engine.tracked().await;
+
+    let first = tracked.intern(Type::Primitive(Primitive::Bool));
+    let second = tracked.intern(Type::Primitive(Primitive::Uint32));
+
+    let tuple_type = tracked.intern(Type::Tuple(r#type::Tuple::new(vec![
+        crate::tuple::Element::new_regular(first.clone()),
+        crate::tuple::Element::new_regular(second),
+    ])));
+
+    let sub_term =
+        r#type::SubTypeLocation::Tuple(crate::tuple::SubTupleLocation::Range(
+            crate::tuple::TupleRange::new(0, 1),
+        ))
+        .get_sub_term(tuple_type.as_ref(), &tracked);
+
+    let Type::Tuple(tuple) = sub_term.as_ref() else {
+        panic!("expected tuple type")
+    };
+
+    assert_eq!(tuple.elements().len(), 1);
+    assert_eq!(tuple.elements()[0].term(), &first);
 }
 
 #[tokio::test]
@@ -144,7 +173,8 @@ async fn constant_sub_term_locations_return_interned_children() {
         ])));
 
     assert_eq!(
-        constant::SubConstantLocation::Array(0).get_sub_term(array.as_ref()),
+        constant::SubConstantLocation::Array(0)
+            .get_sub_term(array.as_ref(), &tracked),
         element,
     );
 }
@@ -182,28 +212,28 @@ async fn instance_sub_term_locations_return_interned_children() {
         crate::instance::SubLifetimeLocation::InstanceAssociatedGenericArguments(
             SubGenericArgumentsLocation::new(0),
         )
-        .get_sub_term(instance.as_ref()),
+        .get_sub_term(instance.as_ref(), &tracked),
         lifetime,
     );
     assert_eq!(
         crate::instance::SubTypeLocation::InstanceAssociatedGenericArguments(
             SubGenericArgumentsLocation::new(0),
         )
-        .get_sub_term(instance.as_ref()),
+        .get_sub_term(instance.as_ref(), &tracked),
         r#type,
     );
     assert_eq!(
         crate::instance::SubConstantLocation::InstanceAssociatedGenericArguments(
             SubGenericArgumentsLocation::new(0),
         )
-        .get_sub_term(instance.as_ref()),
+        .get_sub_term(instance.as_ref(), &tracked),
         constant,
     );
     assert_eq!(
         crate::instance::SubInstanceLocation::InstanceAssociated(
             crate::instance::SubInstanceAssociatedLocation::Instance,
         )
-        .get_sub_term(instance.as_ref()),
+        .get_sub_term(instance.as_ref(), &tracked),
         parent_instance,
     );
     assert_eq!(
@@ -212,7 +242,180 @@ async fn instance_sub_term_locations_return_interned_children() {
                 SubGenericArgumentsLocation::new(0),
             ),
         )
-        .get_sub_term(instance.as_ref()),
+        .get_sub_term(instance.as_ref(), &tracked),
         nested_instance,
+    );
+}
+
+#[tokio::test]
+async fn lifetime_iter_sub_terms_is_empty() {
+    let engine = create_test_engine().await;
+    let tracked = engine.tracked().await;
+
+    assert!(Lifetime::Static.iter_sub_terms(&tracked).next().is_none());
+}
+
+#[tokio::test]
+async fn type_iter_sub_terms_reference_emits_lifetime_then_type() {
+    let engine = create_test_engine().await;
+    let tracked = engine.tracked().await;
+
+    let lifetime = tracked.intern(Lifetime::Static);
+    let pointee = tracked.intern(Type::Primitive(Primitive::Bool));
+    let reference = Type::Reference(Reference::new(
+        Qualifier::Immutable,
+        lifetime.clone(),
+        pointee.clone(),
+    ));
+
+    let sub_terms: Vec<_> = reference.iter_sub_terms(&tracked).collect();
+    assert_eq!(sub_terms.len(), 2);
+
+    assert!(matches!(
+        sub_terms[0].0,
+        crate::TermRef::Lifetime(term) if term == &lifetime
+    ));
+    assert_eq!(sub_terms[0].1, r#type::SubLifetimeLocation::Reference.into());
+
+    assert!(matches!(
+        sub_terms[1].0,
+        crate::TermRef::Type(term) if term == &pointee
+    ));
+    assert_eq!(sub_terms[1].1, r#type::SubTypeLocation::Reference.into());
+}
+
+#[tokio::test]
+async fn constant_iter_sub_terms_tuple_uses_single_locations() {
+    let engine = create_test_engine().await;
+    let tracked = engine.tracked().await;
+
+    let first = tracked
+        .intern(constant::Constant::Primitive(constant::Primitive::Bool(true)));
+    let second = tracked
+        .intern(constant::Constant::Primitive(constant::Primitive::Uint32(2)));
+    let tuple = constant::Constant::Tuple(constant::Tuple::new(vec![
+        crate::tuple::Element::new_regular(first.clone()),
+        crate::tuple::Element::new_unpacked(second.clone()),
+    ]));
+
+    let sub_terms: Vec<_> = tuple.iter_sub_terms(&tracked).collect();
+    assert_eq!(sub_terms.len(), 2);
+
+    assert!(matches!(
+        sub_terms[0].0,
+        crate::TermRef::Constant(term) if term == &first
+    ));
+    assert_eq!(
+        sub_terms[0].1,
+        constant::SubConstantLocation::Tuple(
+            crate::tuple::SubTupleLocation::Single(0,)
+        )
+        .into(),
+    );
+
+    assert!(matches!(
+        sub_terms[1].0,
+        crate::TermRef::Constant(term) if term == &second
+    ));
+    assert_eq!(
+        sub_terms[1].1,
+        constant::SubConstantLocation::Tuple(
+            crate::tuple::SubTupleLocation::Single(1,)
+        )
+        .into(),
+    );
+}
+
+#[tokio::test]
+async fn instance_iter_sub_terms_instance_associated_order_is_stable() {
+    let engine = create_test_engine().await;
+    let tracked = engine.tracked().await;
+
+    let symbol_id = TargetID::TEST.make_global(SymbolID::from_u128(101));
+    let nested_symbol_id = TargetID::TEST.make_global(SymbolID::from_u128(102));
+
+    let lifetime = tracked.intern(Lifetime::Static);
+    let r#type = tracked.intern(Type::Primitive(Primitive::Uint32));
+    let constant = tracked
+        .intern(constant::Constant::Primitive(constant::Primitive::Bool(true)));
+    let parent_instance =
+        tracked.intern(Instance::AnonymousTrait(AnoymousTrait::new(symbol_id)));
+    let nested_instance = tracked
+        .intern(Instance::AnonymousTrait(AnoymousTrait::new(nested_symbol_id)));
+    let generic_arguments = tracked.intern(GenericArguments::new(
+        vec![lifetime.clone()],
+        vec![r#type.clone()],
+        vec![constant.clone()],
+        vec![nested_instance.clone()],
+    ));
+    let instance = Instance::InstanceAssociated(InstanceAssociated::new(
+        parent_instance.clone(),
+        symbol_id,
+        generic_arguments,
+    ));
+
+    let sub_terms: Vec<_> = instance.iter_sub_terms(&tracked).collect();
+    assert_eq!(sub_terms.len(), 5);
+
+    assert!(matches!(
+        sub_terms[0].0,
+        crate::TermRef::Lifetime(term) if term == &lifetime
+    ));
+    assert_eq!(
+        sub_terms[0].1,
+        crate::instance::SubLifetimeLocation::InstanceAssociatedGenericArguments(
+            SubGenericArgumentsLocation::new(0),
+        )
+        .into(),
+    );
+
+    assert!(matches!(
+        sub_terms[1].0,
+        crate::TermRef::Type(term) if term == &r#type
+    ));
+    assert_eq!(
+        sub_terms[1].1,
+        crate::instance::SubTypeLocation::InstanceAssociatedGenericArguments(
+            SubGenericArgumentsLocation::new(0),
+        )
+        .into(),
+    );
+
+    assert!(matches!(
+        sub_terms[2].0,
+        crate::TermRef::Constant(term) if term == &constant
+    ));
+    assert_eq!(
+        sub_terms[2].1,
+        crate::instance::SubConstantLocation::InstanceAssociatedGenericArguments(
+            SubGenericArgumentsLocation::new(0),
+        )
+        .into(),
+    );
+
+    assert!(matches!(
+        sub_terms[3].0,
+        crate::TermRef::Instance(term) if term == &nested_instance
+    ));
+    assert_eq!(
+        sub_terms[3].1,
+        crate::instance::SubInstanceLocation::InstanceAssociated(
+            crate::instance::SubInstanceAssociatedLocation::GenericArguments(
+                SubGenericArgumentsLocation::new(0),
+            ),
+        )
+        .into(),
+    );
+
+    assert!(matches!(
+        sub_terms[4].0,
+        crate::TermRef::Instance(term) if term == &parent_instance
+    ));
+    assert_eq!(
+        sub_terms[4].1,
+        crate::instance::SubInstanceLocation::InstanceAssociated(
+            crate::instance::SubInstanceAssociatedLocation::Instance,
+        )
+        .into(),
     );
 }

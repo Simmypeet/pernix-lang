@@ -1,12 +1,14 @@
 //! Data definitions for type terms.
 
 use enum_as_inner::EnumAsInner;
+use pernixc_qbice::TrackedEngine;
 use pernixc_target::Global;
 use qbice::{
     Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
 };
 
 use crate::{
+    TermRef,
     constant::Constant,
     error::Error,
     generic_arguments::{
@@ -19,7 +21,7 @@ use crate::{
         Instance, InstanceAssociated, SubInstanceAssociatedGenericArgsLocation,
     },
     lifetime::Lifetime,
-    sub_term::{self, SubTerm},
+    sub_term::{self, IterSubTerms, SubTerm},
     tuple::SubTupleLocation,
 };
 
@@ -411,7 +413,11 @@ impl From<SubLifetimeLocation> for sub_term::TermLocation {
 }
 
 impl sub_term::Location<Type, Lifetime> for SubLifetimeLocation {
-    fn try_get_sub_term(self, term: &Type) -> Option<Interned<Lifetime>> {
+    fn try_get_sub_term(
+        self,
+        term: &Type,
+        _: &TrackedEngine,
+    ) -> Option<Interned<Lifetime>> {
         match (term, self) {
             (Type::Reference(reference), Self::Reference) => {
                 Some(reference.lifetime().clone())
@@ -473,7 +479,11 @@ impl From<SubTypeLocation> for sub_term::TermLocation {
 }
 
 impl sub_term::Location<Type, Type> for SubTypeLocation {
-    fn try_get_sub_term(self, term: &Type) -> Option<Interned<Type>> {
+    fn try_get_sub_term(
+        self,
+        term: &Type,
+        tracked_engine: &TrackedEngine,
+    ) -> Option<Interned<Type>> {
         match (self, term) {
             (Self::Symbol(location), Type::Symbol(symbol)) => {
                 symbol.get_term(location).cloned()
@@ -490,7 +500,7 @@ impl sub_term::Location<Type, Type> for SubTypeLocation {
             (Self::Array, Type::Array(array)) => Some(array.r#type().clone()),
 
             (Self::Tuple(location), Type::Tuple(tuple)) => {
-                tuple.get_term(&location)
+                tuple.get_term(&location, tracked_engine)
             }
 
             (Self::Phantom, Type::Phantom(phantom)) => {
@@ -556,7 +566,11 @@ impl From<SubConstantLocation> for sub_term::TermLocation {
 }
 
 impl sub_term::Location<Type, Constant> for SubConstantLocation {
-    fn try_get_sub_term(self, term: &Type) -> Option<Interned<Constant>> {
+    fn try_get_sub_term(
+        self,
+        term: &Type,
+        _: &TrackedEngine,
+    ) -> Option<Interned<Constant>> {
         match (self, term) {
             (Self::Symbol(location), Type::Symbol(symbol)) => {
                 symbol.get_term(location).cloned()
@@ -616,7 +630,11 @@ impl From<SubInstanceLocation> for sub_term::TermLocation {
 }
 
 impl sub_term::Location<Type, Instance> for SubInstanceLocation {
-    fn try_get_sub_term(self, term: &Type) -> Option<Interned<Instance>> {
+    fn try_get_sub_term(
+        self,
+        term: &Type,
+        _: &TrackedEngine,
+    ) -> Option<Interned<Instance>> {
         match (self, term) {
             (Self::Symbol(location), Type::Symbol(symbol)) => {
                 symbol.get_term(location).cloned()
@@ -654,4 +672,301 @@ impl SubTerm for Type {
     type SubConstantLocation = SubConstantLocation;
     type SubInstanceLocation = SubInstanceLocation;
     type ThisSubTermLocation = SubTypeLocation;
+}
+
+fn iter_symbol_sub_terms(
+    symbol: &Symbol,
+) -> impl Iterator<Item = (TermRef<'_>, sub_term::TermLocation)> + '_ {
+    let generic_arguments = symbol.generic_arguments().as_ref();
+
+    pernixc_coroutine_iter::coroutine_iter!({
+        for (index, lifetime) in
+            generic_arguments.lifetimes().iter().enumerate()
+        {
+            yield (
+                TermRef::Lifetime(lifetime),
+                SubLifetimeLocation::Symbol(SubSymbolLocation::new(index))
+                    .into(),
+            );
+        }
+
+        for (index, r#type) in generic_arguments.types().iter().enumerate() {
+            yield (
+                TermRef::Type(r#type),
+                SubTypeLocation::Symbol(SubSymbolLocation::new(index)).into(),
+            );
+        }
+
+        for (index, constant) in
+            generic_arguments.constants().iter().enumerate()
+        {
+            yield (
+                TermRef::Constant(constant),
+                SubConstantLocation::Symbol(SubSymbolLocation::new(index))
+                    .into(),
+            );
+        }
+
+        for (index, instance) in
+            generic_arguments.instances().iter().enumerate()
+        {
+            yield (
+                TermRef::Instance(instance),
+                SubInstanceLocation::Symbol(SubSymbolLocation::new(index))
+                    .into(),
+            );
+        }
+    })
+}
+
+fn iter_tuple_sub_terms(
+    tuple: &Tuple,
+) -> impl Iterator<Item = (TermRef<'_>, sub_term::TermLocation)> + '_ {
+    pernixc_coroutine_iter::coroutine_iter!({
+        for (index, element) in tuple.elements().iter().enumerate() {
+            yield (
+                TermRef::Type(element.term()),
+                SubTypeLocation::Tuple(SubTupleLocation::Single(index)).into(),
+            );
+        }
+    })
+}
+
+fn iter_instance_associated_sub_terms(
+    instance_associated: &InstanceAssociated,
+) -> impl Iterator<Item = (TermRef<'_>, sub_term::TermLocation)> + '_ {
+    let generic_arguments =
+        instance_associated.associated_instance_generic_arguments().as_ref();
+
+    pernixc_coroutine_iter::coroutine_iter!({
+        for (index, lifetime) in
+            generic_arguments.lifetimes().iter().enumerate()
+        {
+            yield (
+                TermRef::Lifetime(lifetime),
+                SubLifetimeLocation::InstanceAssociated(
+                    SubInstanceAssociatedGenericArgsLocation::new(index),
+                )
+                .into(),
+            );
+        }
+
+        for (index, r#type) in generic_arguments.types().iter().enumerate() {
+            yield (
+                TermRef::Type(r#type),
+                SubTypeLocation::InstanceAssociated(
+                    SubInstanceAssociatedGenericArgsLocation::new(index),
+                )
+                .into(),
+            );
+        }
+
+        for (index, constant) in
+            generic_arguments.constants().iter().enumerate()
+        {
+            yield (
+                TermRef::Constant(constant),
+                SubConstantLocation::InstanceAssociated(
+                    SubInstanceAssociatedGenericArgsLocation::new(index),
+                )
+                .into(),
+            );
+        }
+
+        for (index, instance) in
+            generic_arguments.instances().iter().enumerate()
+        {
+            yield (
+                TermRef::Instance(instance),
+                SubInstanceLocation::InstanceAssociated(
+                    SubInstanceAssociatedInstanceLocation::GenericArguments(
+                        SubInstanceAssociatedGenericArgsLocation::new(index),
+                    ),
+                )
+                .into(),
+            );
+        }
+
+        yield (
+            TermRef::Instance(instance_associated.instance()),
+            SubInstanceLocation::InstanceAssociated(
+                SubInstanceAssociatedInstanceLocation::Instance,
+            )
+            .into(),
+        );
+    })
+}
+
+fn iter_associated_symbol_sub_terms(
+    associated_symbol: &AssociatedSymbol,
+) -> impl Iterator<Item = (TermRef<'_>, sub_term::TermLocation)> + '_ {
+    pernixc_coroutine_iter::coroutine_iter!({
+        for (is_from_parent, generic_arguments) in [
+            (true, associated_symbol.parent_generic_arguments()),
+            (false, associated_symbol.member_generic_arguments()),
+        ] {
+            let generic_arguments = generic_arguments.as_ref();
+
+            for (index, lifetime) in
+                generic_arguments.lifetimes().iter().enumerate()
+            {
+                yield (
+                    TermRef::Lifetime(lifetime),
+                    SubLifetimeLocation::AssociatedSymbol(
+                        SubAssociatedSymbolLocation::new(index, is_from_parent),
+                    )
+                    .into(),
+                );
+            }
+
+            for (index, r#type) in generic_arguments.types().iter().enumerate()
+            {
+                yield (
+                    TermRef::Type(r#type),
+                    SubTypeLocation::AssociatedSymbol(
+                        SubAssociatedSymbolLocation::new(index, is_from_parent),
+                    )
+                    .into(),
+                );
+            }
+
+            for (index, constant) in
+                generic_arguments.constants().iter().enumerate()
+            {
+                yield (
+                    TermRef::Constant(constant),
+                    SubConstantLocation::AssociatedSymbol(
+                        SubAssociatedSymbolLocation::new(index, is_from_parent),
+                    )
+                    .into(),
+                );
+            }
+
+            for (index, instance) in
+                generic_arguments.instances().iter().enumerate()
+            {
+                yield (
+                    TermRef::Instance(instance),
+                    SubInstanceLocation::AssociatedSymbol(
+                        SubAssociatedSymbolLocation::new(index, is_from_parent),
+                    )
+                    .into(),
+                );
+            }
+        }
+    })
+}
+
+fn iter_function_signature_sub_terms(
+    signature: &FunctionSignature,
+) -> impl Iterator<Item = (TermRef<'_>, sub_term::TermLocation)> + '_ {
+    pernixc_coroutine_iter::coroutine_iter!({
+        for (index, parameter) in signature.parameters().iter().enumerate() {
+            yield (
+                TermRef::Type(parameter),
+                SubTypeLocation::FunctionSignature(
+                    SubFunctionSignatureLocation::Parameter(index),
+                )
+                .into(),
+            );
+        }
+
+        yield (
+            TermRef::Type(signature.return_type()),
+            SubTypeLocation::FunctionSignature(
+                SubFunctionSignatureLocation::ReturnType,
+            )
+            .into(),
+        );
+    })
+}
+
+impl IterSubTerms for Type {
+    fn iter_sub_terms<'this>(
+        &'this self,
+        _: &'this TrackedEngine,
+    ) -> impl Iterator<Item = (TermRef<'this>, sub_term::TermLocation)> + 'this
+    {
+        pernixc_coroutine_iter::coroutine_iter!({
+            match self {
+                Self::Inference(_)
+                | Self::Primitive(_)
+                | Self::Parameter(_)
+                | Self::Error(_) => {}
+
+                Self::Symbol(symbol) => {
+                    for sub_term in iter_symbol_sub_terms(symbol) {
+                        yield sub_term;
+                    }
+                }
+
+                Self::Pointer(pointer) => {
+                    yield (
+                        TermRef::Type(pointer.pointee()),
+                        SubTypeLocation::Pointer.into(),
+                    );
+                }
+
+                Self::Reference(reference) => {
+                    yield (
+                        TermRef::Lifetime(reference.lifetime()),
+                        SubLifetimeLocation::Reference.into(),
+                    );
+
+                    yield (
+                        TermRef::Type(reference.pointee()),
+                        SubTypeLocation::Reference.into(),
+                    );
+                }
+
+                Self::Array(array) => {
+                    yield (
+                        TermRef::Type(array.r#type()),
+                        SubTypeLocation::Array.into(),
+                    );
+
+                    yield (
+                        TermRef::Constant(array.length()),
+                        SubConstantLocation::Array.into(),
+                    );
+                }
+
+                Self::Tuple(tuple) => {
+                    for sub_term in iter_tuple_sub_terms(tuple) {
+                        yield sub_term;
+                    }
+                }
+
+                Self::Phantom(phantom) => {
+                    yield (
+                        TermRef::Type(phantom.r#type()),
+                        SubTypeLocation::Phantom.into(),
+                    );
+                }
+
+                Self::InstanceAssociated(instance_associated) => {
+                    for sub_term in
+                        iter_instance_associated_sub_terms(instance_associated)
+                    {
+                        yield sub_term;
+                    }
+                }
+
+                Self::AssociatedSymbol(associated_symbol) => {
+                    for sub_term in
+                        iter_associated_symbol_sub_terms(associated_symbol)
+                    {
+                        yield sub_term;
+                    }
+                }
+
+                Self::FunctionSignature(signature) => {
+                    for sub_term in iter_function_signature_sub_terms(signature)
+                    {
+                        yield sub_term;
+                    }
+                }
+            }
+        })
+    }
 }

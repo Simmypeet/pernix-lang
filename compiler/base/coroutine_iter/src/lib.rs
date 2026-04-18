@@ -52,7 +52,7 @@
 use std::{ops::Coroutine, pin::Pin};
 
 #[derive(Debug)]
-pub struct GeneratorCoroutine<T>(T);
+pub struct GeneratorCoroutine<T>(pub T);
 
 impl<T: Coroutine + Unpin> Iterator for GeneratorCoroutine<T> {
     type Item = T::Yield;

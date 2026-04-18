@@ -2090,6 +2090,7 @@ dependencies = [
  "linkme",
  "paste",
  "pernixc_arena",
+ "pernixc_coroutine_iter",
  "pernixc_extend",
  "pernixc_hash",
  "pernixc_lexical",

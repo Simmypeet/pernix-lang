@@ -1,3 +1,5 @@
+#![feature(coroutines)]
+
 //! Defines the various terms to be used with the type system.
 
 use enum_as_inner::EnumAsInner;

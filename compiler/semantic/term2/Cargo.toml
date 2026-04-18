@@ -21,6 +21,7 @@ pernixc_extend = { path = "../../base/extend/" }
 pernixc_lexical = { path = "../../syntax/lexical" }
 pernixc_symbol = { path = "../symbol" }
 pernixc_qbice = { path = "../../base/qbice" }
+pernixc_coroutine_iter = { path = "../../base/coroutine_iter" }
 qbice = { workspace = true }
 linkme = { workspace = true }
 bon = { workspace = true }

@@ -3,10 +3,11 @@
 use std::{fmt::Debug, hash::Hash};
 
 use enum_as_inner::EnumAsInner;
+use pernixc_qbice::TrackedEngine;
 use qbice::storage::intern::Interned;
 
 use crate::{
-    Never,
+    Never, TermRef,
     constant::{self, Constant},
     instance::{self, Instance},
     lifetime::Lifetime,
@@ -31,6 +32,15 @@ pub trait SubTerm: Sized {
     type ThisSubTermLocation: Location<Self, Self>;
 }
 
+/// Iterates over immediate sub-terms and their locations.
+pub trait IterSubTerms {
+    /// Returns an iterator over one level of children for this term.
+    fn iter_sub_terms<'this>(
+        &'this self,
+        tracked_engine: &'this TrackedEngine,
+    ) -> impl Iterator<Item = (TermRef<'this>, TermLocation)> + 'this;
+}
+
 /// Represents a type used to retrieve a sub-term of a particular term.
 pub trait Location<Term, SubTerm>:
     Debug
@@ -48,16 +58,24 @@ pub trait Location<Term, SubTerm>:
 {
     /// Returns the sub-term at this location.
     #[must_use]
-    fn try_get_sub_term(self, term: &Term) -> Option<Interned<SubTerm>>;
+    fn try_get_sub_term(
+        self,
+        term: &Term,
+        tracked_engine: &TrackedEngine,
+    ) -> Option<Interned<SubTerm>>;
 
     /// Returns the sub-term at this location or panics if the location is
     /// invalid for the given term.
     #[must_use]
-    fn get_sub_term(self, term: &Term) -> Interned<SubTerm>
+    fn get_sub_term(
+        self,
+        term: &Term,
+        tracked_engine: &TrackedEngine,
+    ) -> Interned<SubTerm>
     where
         Term: Debug,
     {
-        self.try_get_sub_term(term).unwrap_or_else(|| {
+        self.try_get_sub_term(term, tracked_engine).unwrap_or_else(|| {
             panic!(
                 "invalid sub-term location: {:?} for term: {term:?}",
                 Into::<TermLocation>::into(self),
@@ -185,7 +203,11 @@ impl From<Never> for TermLocation {
 }
 
 impl<Term, SubTerm> Location<Term, SubTerm> for Never {
-    fn try_get_sub_term(self, _: &Term) -> Option<Interned<SubTerm>> {
+    fn try_get_sub_term(
+        self,
+        _: &Term,
+        _: &TrackedEngine,
+    ) -> Option<Interned<SubTerm>> {
         match self {}
     }
 }

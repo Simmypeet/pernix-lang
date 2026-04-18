@@ -2,6 +2,7 @@
 
 use derive_new::new;
 use enum_as_inner::EnumAsInner;
+use pernixc_qbice::TrackedEngine;
 use qbice::{
     Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
 };
@@ -197,13 +198,35 @@ pub enum SubTupleLocation {
 impl<T> Tuple<T> {
     /// Retrieves the sub-term at `location`.
     #[must_use]
-    pub fn get_term(&self, location: &SubTupleLocation) -> Option<Interned<T>> {
+    pub fn get_term(
+        &self,
+        location: &SubTupleLocation,
+        tracked_engine: &TrackedEngine,
+    ) -> Option<Interned<T>>
+    where
+        T: Identifiable + StableHash + Send + Sync + 'static,
+        Self: Into<T>,
+    {
         match location {
             SubTupleLocation::Single(index) => {
                 self.elements.get(*index).map(|element| element.term.clone())
             }
 
-            SubTupleLocation::Range(_) => None,
+            SubTupleLocation::Range(range) => {
+                self.elements.get(range.to_std_range()).map(|elements| {
+                    let elements = elements
+                        .iter()
+                        .map(|element| {
+                            Element::new(
+                                element.term.clone(),
+                                element.is_unpacked,
+                            )
+                        })
+                        .collect();
+
+                    tracked_engine.intern(Self::new(elements).into())
+                })
+            }
         }
     }
 }

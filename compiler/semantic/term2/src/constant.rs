@@ -2,17 +2,18 @@
 
 use derive_more::Display;
 use enum_as_inner::EnumAsInner;
+use pernixc_qbice::TrackedEngine;
 use pernixc_target::Global;
 use qbice::{
     Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
 };
 
 use crate::{
-    Never,
+    Never, TermRef,
     error::Error,
     generic_parameters::{ConstantParameter, ConstantParameterID},
     inference,
-    sub_term::{self, SubTerm},
+    sub_term::{self, IterSubTerms, SubTerm},
     tuple::SubTupleLocation,
 };
 
@@ -270,10 +271,14 @@ impl From<SubConstantLocation> for sub_term::TermLocation {
 }
 
 impl sub_term::Location<Constant, Constant> for SubConstantLocation {
-    fn try_get_sub_term(self, term: &Constant) -> Option<Interned<Constant>> {
+    fn try_get_sub_term(
+        self,
+        term: &Constant,
+        tracked_engine: &TrackedEngine,
+    ) -> Option<Interned<Constant>> {
         match (self, term) {
             (Self::Tuple(location), Constant::Tuple(tuple)) => {
-                tuple.get_term(&location)
+                tuple.get_term(&location, tracked_engine)
             }
 
             (Self::Struct(location), Constant::Struct(constant)) => {
@@ -299,4 +304,68 @@ impl SubTerm for Constant {
     type SubLifetimeLocation = Never;
     type SubInstanceLocation = Never;
     type ThisSubTermLocation = SubConstantLocation;
+}
+
+impl IterSubTerms for Constant {
+    fn iter_sub_terms<'this>(
+        &'this self,
+        _: &'this TrackedEngine,
+    ) -> impl Iterator<Item = (TermRef<'this>, sub_term::TermLocation)> + 'this
+    {
+        pernixc_coroutine_iter::coroutine_iter!({
+            match self {
+                Self::Primitive(_)
+                | Self::Inference(_)
+                | Self::Parameter(_)
+                | Self::Phantom
+                | Self::Error(_) => {}
+
+                Self::Struct(struct_constant) => {
+                    for (index, field) in
+                        struct_constant.fields().iter().enumerate()
+                    {
+                        yield (
+                            TermRef::Constant(field),
+                            SubConstantLocation::Struct(index).into(),
+                        );
+                    }
+                }
+
+                Self::Enum(enum_constant) => {
+                    if let Some(associated_value) =
+                        enum_constant.associated_value()
+                    {
+                        yield (
+                            TermRef::Constant(associated_value),
+                            SubConstantLocation::Enum.into(),
+                        );
+                    }
+                }
+
+                Self::Array(array_constant) => {
+                    for (index, element) in
+                        array_constant.elements().iter().enumerate()
+                    {
+                        yield (
+                            TermRef::Constant(element),
+                            SubConstantLocation::Array(index).into(),
+                        );
+                    }
+                }
+
+                Self::Tuple(tuple) => {
+                    for (index, element) in tuple.elements().iter().enumerate()
+                    {
+                        yield (
+                            TermRef::Constant(element.term()),
+                            SubConstantLocation::Tuple(
+                                SubTupleLocation::Single(index),
+                            )
+                            .into(),
+                        );
+                    }
+                }
+            }
+        })
+    }
 }
