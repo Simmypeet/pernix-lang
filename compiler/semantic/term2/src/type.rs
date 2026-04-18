@@ -839,11 +839,9 @@ fn iter_function_signature_sub_terms(
 impl IterSubTerms for Type {
     type TermLocation = IterSubTermLocation;
 
-    fn iter_sub_terms<'this>(
-        &'this self,
-        _: &'this TrackedEngine,
-    ) -> impl Iterator<Item = (TermRef<'this>, Self::TermLocation)> + 'this
-    {
+    fn iter_sub_terms(
+        &self,
+    ) -> impl Iterator<Item = (TermRef<'_>, Self::TermLocation)> + '_ {
         pernixc_coroutine_iter::coroutine_iter!({
             match self {
                 Self::Inference(_)

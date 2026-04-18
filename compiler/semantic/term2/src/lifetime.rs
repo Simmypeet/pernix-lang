@@ -214,11 +214,9 @@ impl SubTerm for Lifetime {
 impl IterSubTerms for Lifetime {
     type TermLocation = Never;
 
-    fn iter_sub_terms<'this>(
-        &'this self,
-        _: &'this pernixc_qbice::TrackedEngine,
-    ) -> impl Iterator<Item = (TermRef<'this>, Self::TermLocation)> + 'this
-    {
+    fn iter_sub_terms(
+        &self,
+    ) -> impl Iterator<Item = (TermRef<'_>, Self::TermLocation)> + '_ {
         pernixc_coroutine_iter::coroutine_iter!({
             let _ = self;
         })

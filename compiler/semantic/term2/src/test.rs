@@ -16,7 +16,7 @@ use crate::{
     },
     instance::{AnoymousTrait, Instance, InstanceAssociated},
     lifetime::Lifetime,
-    sub_term::{IterSubTerms, Location},
+    sub_term::{IterSubTerms, Location, RecursivelyIterSubTerms},
     r#type::{self, Primitive, Qualifier, Reference, Type},
 };
 
@@ -250,9 +250,9 @@ async fn instance_sub_term_locations_return_interned_children() {
 #[tokio::test]
 async fn lifetime_iter_sub_terms_is_empty() {
     let engine = create_test_engine().await;
-    let tracked = engine.tracked().await;
+    let _tracked = engine.tracked().await;
 
-    assert!(Lifetime::Static.iter_sub_terms(&tracked).next().is_none());
+    assert!(Lifetime::Static.iter_sub_terms().next().is_none());
 }
 
 #[tokio::test]
@@ -268,7 +268,7 @@ async fn type_iter_sub_terms_reference_emits_lifetime_then_type() {
         pointee.clone(),
     ));
 
-    let sub_terms: Vec<_> = reference.iter_sub_terms(&tracked).collect();
+    let sub_terms: Vec<_> = reference.iter_sub_terms().collect();
     assert_eq!(sub_terms.len(), 2);
 
     assert!(matches!(
@@ -306,7 +306,7 @@ async fn constant_iter_sub_terms_tuple_uses_single_locations() {
         crate::tuple::Element::new_unpacked(second.clone()),
     ]));
 
-    let sub_terms: Vec<_> = tuple.iter_sub_terms(&tracked).collect();
+    let sub_terms: Vec<_> = tuple.iter_sub_terms().collect();
     assert_eq!(sub_terms.len(), 2);
 
     assert!(matches!(
@@ -360,7 +360,7 @@ async fn instance_iter_sub_terms_instance_associated_order_is_stable() {
         generic_arguments,
     ));
 
-    let sub_terms: Vec<_> = instance.iter_sub_terms(&tracked).collect();
+    let sub_terms: Vec<_> = instance.iter_sub_terms().collect();
     assert_eq!(sub_terms.len(), 5);
 
     assert!(matches!(
@@ -433,4 +433,154 @@ async fn instance_iter_sub_terms_instance_associated_order_is_stable() {
             ),
         ),
     );
+}
+
+#[tokio::test]
+async fn type_recursive_iteration_includes_root_in_depth_first_order() {
+    let engine = create_test_engine().await;
+    let tracked = engine.tracked().await;
+
+    let element_type = tracked.intern(Type::Primitive(Primitive::Bool));
+    let length = tracked
+        .intern(constant::Constant::Primitive(constant::Primitive::Uint8(3)));
+    let array = tracked.intern(Type::Array(r#type::Array::new(
+        length.clone(),
+        element_type.clone(),
+    )));
+    let lifetime = tracked.intern(Lifetime::Static);
+    let root = tracked.intern(Type::Reference(Reference::new(
+        Qualifier::Immutable,
+        lifetime.clone(),
+        array.clone(),
+    )));
+
+    let terms: Vec<_> = root.iter_sub_terms_recursive().collect();
+    assert_eq!(terms.len(), 5);
+
+    assert!(matches!(
+        terms[0],
+        crate::TermRef::Type(term) if term == &root
+    ));
+    assert!(matches!(
+        terms[1],
+        crate::TermRef::Lifetime(term) if term == &lifetime
+    ));
+    assert!(matches!(
+        terms[2],
+        crate::TermRef::Type(term) if term == &array
+    ));
+    assert!(matches!(
+        terms[3],
+        crate::TermRef::Type(term) if term == &element_type
+    ));
+    assert!(matches!(
+        terms[4],
+        crate::TermRef::Constant(term) if term == &length
+    ));
+}
+
+#[tokio::test]
+async fn constant_recursive_iteration_includes_root_in_depth_first_order() {
+    let engine = create_test_engine().await;
+    let tracked = engine.tracked().await;
+
+    let inner = tracked
+        .intern(constant::Constant::Primitive(constant::Primitive::Bool(true)));
+    let tuple =
+        tracked.intern(constant::Constant::Tuple(constant::Tuple::new(vec![
+            crate::tuple::Element::new_regular(inner.clone()),
+        ])));
+    let root =
+        tracked.intern(constant::Constant::Array(constant::Array::new(vec![
+            tuple.clone(),
+        ])));
+
+    let terms: Vec<_> = root.iter_sub_terms_recursive().collect();
+    assert_eq!(terms.len(), 3);
+
+    assert!(matches!(
+        terms[0],
+        crate::TermRef::Constant(term) if term == &root
+    ));
+    assert!(matches!(
+        terms[1],
+        crate::TermRef::Constant(term) if term == &tuple
+    ));
+    assert!(matches!(
+        terms[2],
+        crate::TermRef::Constant(term) if term == &inner
+    ));
+}
+
+#[tokio::test]
+async fn instance_recursive_iteration_includes_root_in_depth_first_order() {
+    let engine = create_test_engine().await;
+    let tracked = engine.tracked().await;
+
+    let symbol_id = TargetID::TEST.make_global(SymbolID::from_u128(201));
+    let nested_symbol_id = TargetID::TEST.make_global(SymbolID::from_u128(202));
+
+    let lifetime = tracked.intern(Lifetime::Static);
+    let r#type = tracked.intern(Type::Primitive(Primitive::Uint32));
+    let constant = tracked
+        .intern(constant::Constant::Primitive(constant::Primitive::Bool(true)));
+    let parent_instance =
+        tracked.intern(Instance::AnonymousTrait(AnoymousTrait::new(symbol_id)));
+    let nested_instance = tracked
+        .intern(Instance::AnonymousTrait(AnoymousTrait::new(nested_symbol_id)));
+    let generic_arguments = tracked.intern(GenericArguments::new(
+        vec![lifetime.clone()],
+        vec![r#type.clone()],
+        vec![constant.clone()],
+        vec![nested_instance.clone()],
+    ));
+    let root =
+        tracked.intern(Instance::InstanceAssociated(InstanceAssociated::new(
+            parent_instance.clone(),
+            symbol_id,
+            generic_arguments,
+        )));
+
+    let terms: Vec<_> = root.iter_sub_terms_recursive().collect();
+    assert_eq!(terms.len(), 6);
+
+    assert!(matches!(
+        terms[0],
+        crate::TermRef::Instance(term) if term == &root
+    ));
+    assert!(matches!(
+        terms[1],
+        crate::TermRef::Lifetime(term) if term == &lifetime
+    ));
+    assert!(matches!(
+        terms[2],
+        crate::TermRef::Type(term) if term == &r#type
+    ));
+    assert!(matches!(
+        terms[3],
+        crate::TermRef::Constant(term) if term == &constant
+    ));
+    assert!(matches!(
+        terms[4],
+        crate::TermRef::Instance(term) if term == &nested_instance
+    ));
+    assert!(matches!(
+        terms[5],
+        crate::TermRef::Instance(term) if term == &parent_instance
+    ));
+}
+
+#[tokio::test]
+async fn lifetime_recursive_iteration_includes_root_only() {
+    let engine = create_test_engine().await;
+    let tracked = engine.tracked().await;
+
+    let root = tracked.intern(Lifetime::Static);
+    let terms: Vec<_> = root.iter_sub_terms_recursive().collect();
+
+    assert_eq!(terms.len(), 1);
+    assert!(matches!(
+        terms[0],
+        crate::TermRef::Lifetime(term) if term == &root
+    ));
 }

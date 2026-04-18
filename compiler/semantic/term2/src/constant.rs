@@ -309,11 +309,9 @@ impl SubTerm for Constant {
 impl IterSubTerms for Constant {
     type TermLocation = SubConstantLocation;
 
-    fn iter_sub_terms<'this>(
-        &'this self,
-        _: &'this TrackedEngine,
-    ) -> impl Iterator<Item = (TermRef<'this>, Self::TermLocation)> + 'this
-    {
+    fn iter_sub_terms(
+        &self,
+    ) -> impl Iterator<Item = (TermRef<'_>, Self::TermLocation)> + '_ {
         pernixc_coroutine_iter::coroutine_iter!({
             match self {
                 Self::Primitive(_)

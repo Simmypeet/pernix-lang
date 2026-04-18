@@ -38,10 +38,31 @@ pub trait IterSubTerms {
     type TermLocation;
 
     /// Returns an iterator over one level of children for this term.
-    fn iter_sub_terms<'this>(
-        &'this self,
-        tracked_engine: &'this TrackedEngine,
-    ) -> impl Iterator<Item = (TermRef<'this>, Self::TermLocation)> + 'this;
+    fn iter_sub_terms(
+        &self,
+    ) -> impl Iterator<Item = (TermRef<'_>, Self::TermLocation)> + '_;
+}
+
+/// Iterates over all sub-terms recursively.
+///
+/// The iteration includes the root term and traverses descendants in
+/// depth-first order.
+pub trait RecursivelyIterSubTerms {
+    /// Returns an iterator over this term and all of its descendants.
+    fn iter_sub_terms_recursive(
+        &self,
+    ) -> impl Iterator<Item = TermRef<'_>> + '_;
+}
+
+impl<Term> RecursivelyIterSubTerms for Interned<Term>
+where
+    for<'this> &'this Self: Into<TermRef<'this>>,
+{
+    fn iter_sub_terms_recursive(
+        &self,
+    ) -> impl Iterator<Item = TermRef<'_>> + '_ {
+        iter_sub_terms_recursive_from_term_ref(self.into())
+    }
 }
 
 /// Represents a type used to retrieve a sub-term of a particular term.
@@ -199,6 +220,44 @@ pub enum TermLocation {
 
     /// The location points to an instance.
     Instance(SubInstanceLocation),
+}
+
+fn iter_sub_terms_from_term_ref<'this>(
+    term_ref: TermRef<'this>,
+) -> Box<dyn Iterator<Item = TermRef<'this>> + 'this> {
+    match term_ref {
+        TermRef::Constant(constant) => Box::new(
+            constant.as_ref().iter_sub_terms().map(|(term_ref, _)| term_ref),
+        ),
+
+        TermRef::Lifetime(lifetime) => Box::new(
+            lifetime.as_ref().iter_sub_terms().map(|(term_ref, _)| term_ref),
+        ),
+
+        TermRef::Type(ty) => {
+            Box::new(ty.as_ref().iter_sub_terms().map(|(term_ref, _)| term_ref))
+        }
+
+        TermRef::Instance(instance) => Box::new(
+            instance.as_ref().iter_sub_terms().map(|(term_ref, _)| term_ref),
+        ),
+    }
+}
+
+fn iter_sub_terms_recursive_from_term_ref<'this>(
+    term_ref: TermRef<'this>,
+) -> Box<dyn Iterator<Item = TermRef<'this>> + 'this> {
+    Box::new(pernixc_coroutine_iter::coroutine_iter!({
+        yield term_ref;
+
+        for sub_term in iter_sub_terms_from_term_ref(term_ref) {
+            for recursive_sub_term in
+                iter_sub_terms_recursive_from_term_ref(sub_term)
+            {
+                yield recursive_sub_term;
+            }
+        }
+    }))
 }
 
 impl From<Never> for TermLocation {
