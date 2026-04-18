@@ -34,11 +34,14 @@ pub trait SubTerm: Sized {
 
 /// Iterates over immediate sub-terms and their locations.
 pub trait IterSubTerms {
+    /// The location type yielded by [`Self::iter_sub_terms`].
+    type TermLocation;
+
     /// Returns an iterator over one level of children for this term.
     fn iter_sub_terms<'this>(
         &'this self,
         tracked_engine: &'this TrackedEngine,
-    ) -> impl Iterator<Item = (TermRef<'this>, TermLocation)> + 'this;
+    ) -> impl Iterator<Item = (TermRef<'this>, Self::TermLocation)> + 'this;
 }
 
 /// Represents a type used to retrieve a sub-term of a particular term.

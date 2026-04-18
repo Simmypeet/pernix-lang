@@ -307,10 +307,12 @@ impl SubTerm for Constant {
 }
 
 impl IterSubTerms for Constant {
+    type TermLocation = SubConstantLocation;
+
     fn iter_sub_terms<'this>(
         &'this self,
         _: &'this TrackedEngine,
-    ) -> impl Iterator<Item = (TermRef<'this>, sub_term::TermLocation)> + 'this
+    ) -> impl Iterator<Item = (TermRef<'this>, Self::TermLocation)> + 'this
     {
         pernixc_coroutine_iter::coroutine_iter!({
             match self {
@@ -326,7 +328,7 @@ impl IterSubTerms for Constant {
                     {
                         yield (
                             TermRef::Constant(field),
-                            SubConstantLocation::Struct(index).into(),
+                            SubConstantLocation::Struct(index),
                         );
                     }
                 }
@@ -337,7 +339,7 @@ impl IterSubTerms for Constant {
                     {
                         yield (
                             TermRef::Constant(associated_value),
-                            SubConstantLocation::Enum.into(),
+                            SubConstantLocation::Enum,
                         );
                     }
                 }
@@ -348,21 +350,16 @@ impl IterSubTerms for Constant {
                     {
                         yield (
                             TermRef::Constant(element),
-                            SubConstantLocation::Array(index).into(),
+                            SubConstantLocation::Array(index),
                         );
                     }
                 }
 
                 Self::Tuple(tuple) => {
-                    for (index, element) in tuple.elements().iter().enumerate()
+                    for (term, location) in tuple
+                        .iter_terms_with_location(SubConstantLocation::Tuple)
                     {
-                        yield (
-                            TermRef::Constant(element.term()),
-                            SubConstantLocation::Tuple(
-                                SubTupleLocation::Single(index),
-                            )
-                            .into(),
-                        );
+                        yield (TermRef::Constant(term), location);
                     }
                 }
             }

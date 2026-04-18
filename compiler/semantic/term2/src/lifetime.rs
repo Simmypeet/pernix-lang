@@ -14,7 +14,7 @@ use crate::{
     error::Error,
     generic_parameters::{LifetimeParameter, LifetimeParameterID},
     inference,
-    sub_term::{IterSubTerms, SubTerm, TermLocation},
+    sub_term::{IterSubTerms, SubTerm},
 };
 
 /// Represents a named forall lifetime declared with `for['a]`.
@@ -212,10 +212,13 @@ impl SubTerm for Lifetime {
 }
 
 impl IterSubTerms for Lifetime {
+    type TermLocation = Never;
+
     fn iter_sub_terms<'this>(
         &'this self,
         _: &'this pernixc_qbice::TrackedEngine,
-    ) -> impl Iterator<Item = (TermRef<'this>, TermLocation)> + 'this {
+    ) -> impl Iterator<Item = (TermRef<'this>, Self::TermLocation)> + 'this
+    {
         pernixc_coroutine_iter::coroutine_iter!({
             let _ = self;
         })

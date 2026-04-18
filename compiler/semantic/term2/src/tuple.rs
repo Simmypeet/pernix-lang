@@ -229,4 +229,14 @@ impl<T> Tuple<T> {
             }
         }
     }
+
+    /// Iterates over tuple elements with mapped single-element locations.
+    pub fn iter_terms_with_location<TermLocation>(
+        &self,
+        mut map_location: impl FnMut(SubTupleLocation) -> TermLocation,
+    ) -> impl Iterator<Item = (&Interned<T>, TermLocation)> {
+        self.elements.iter().enumerate().map(move |(index, element)| {
+            (element.term(), map_location(SubTupleLocation::Single(index)))
+        })
+    }
 }

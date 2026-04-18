@@ -7,6 +7,7 @@ use qbice::{
 };
 
 use crate::{
+    TermRef,
     constant::Constant,
     generic_parameters::{
         ConstantParameterID, GenericParameters, InstanceParameterID,
@@ -248,6 +249,69 @@ impl GenericArguments {
     ) -> Option<&Interned<T>> {
         T::get(self).get(location.0)
     }
+
+    /// Iterates over all immediate sub-terms in canonical generic argument
+    /// order: lifetime, type, constant, then instance.
+    pub fn iter_sub_terms<
+        'this,
+        TermLocation,
+        MLifetime,
+        MType,
+        MConstant,
+        MInstance,
+    >(
+        &'this self,
+        map_lifetime_location: MLifetime,
+        map_type_location: MType,
+        map_constant_location: MConstant,
+        map_instance_location: MInstance,
+    ) -> impl Iterator<Item = (TermRef<'this>, TermLocation)> + 'this
+    where
+        MLifetime: Fn(SubGenericArgumentsLocation) -> TermLocation + 'this,
+        MType: Fn(SubGenericArgumentsLocation) -> TermLocation + 'this,
+        MConstant: Fn(SubGenericArgumentsLocation) -> TermLocation + 'this,
+        MInstance: Fn(SubGenericArgumentsLocation) -> TermLocation + 'this,
+    {
+        let lifetimes =
+            self.lifetimes.iter().enumerate().map(move |(index, lifetime)| {
+                (
+                    TermRef::Lifetime(lifetime),
+                    map_lifetime_location(SubGenericArgumentsLocation::new(
+                        index,
+                    )),
+                )
+            });
+
+        let types =
+            self.types.iter().enumerate().map(move |(index, r#type)| {
+                (
+                    TermRef::Type(r#type),
+                    map_type_location(SubGenericArgumentsLocation::new(index)),
+                )
+            });
+
+        let constants =
+            self.constants.iter().enumerate().map(move |(index, constant)| {
+                (
+                    TermRef::Constant(constant),
+                    map_constant_location(SubGenericArgumentsLocation::new(
+                        index,
+                    )),
+                )
+            });
+
+        let instances =
+            self.instances.iter().enumerate().map(move |(index, instance)| {
+                (
+                    TermRef::Instance(instance),
+                    map_instance_location(SubGenericArgumentsLocation::new(
+                        index,
+                    )),
+                )
+            });
+
+        lifetimes.chain(types).chain(constants).chain(instances)
+    }
 }
 
 mod sealed {
@@ -425,6 +489,43 @@ impl Symbol {
         self.generic_arguments
             .get_term(SubGenericArgumentsLocation::new(location.index()))
     }
+
+    /// Iterates over all generic argument sub-terms.
+    pub fn iter_sub_terms<
+        'this,
+        TermLocation,
+        MLifetime,
+        MType,
+        MConstant,
+        MInstance,
+    >(
+        &'this self,
+        map_lifetime_location: MLifetime,
+        map_type_location: MType,
+        map_constant_location: MConstant,
+        map_instance_location: MInstance,
+    ) -> impl Iterator<Item = (TermRef<'this>, TermLocation)> + 'this
+    where
+        MLifetime: Fn(SubSymbolLocation) -> TermLocation + 'this,
+        MType: Fn(SubSymbolLocation) -> TermLocation + 'this,
+        MConstant: Fn(SubSymbolLocation) -> TermLocation + 'this,
+        MInstance: Fn(SubSymbolLocation) -> TermLocation + 'this,
+    {
+        self.generic_arguments.iter_sub_terms(
+            move |location| {
+                map_lifetime_location(SubSymbolLocation::new(location.index()))
+            },
+            move |location| {
+                map_type_location(SubSymbolLocation::new(location.index()))
+            },
+            move |location| {
+                map_constant_location(SubSymbolLocation::new(location.index()))
+            },
+            move |location| {
+                map_instance_location(SubSymbolLocation::new(location.index()))
+            },
+        )
+    }
 }
 
 /// Represents an associated symbol application.
@@ -490,5 +591,118 @@ impl AssociatedSymbol {
 
         generic_arguments
             .get_term(SubGenericArgumentsLocation::new(location.index()))
+    }
+
+    /// Iterates over all generic argument sub-terms from parent first,
+    /// followed by member generic arguments.
+    pub fn iter_sub_terms<
+        'this,
+        TermLocation,
+        MLifetime,
+        MType,
+        MConstant,
+        MInstance,
+    >(
+        &'this self,
+        map_lifetime_location: MLifetime,
+        map_type_location: MType,
+        map_constant_location: MConstant,
+        map_instance_location: MInstance,
+    ) -> impl Iterator<Item = (TermRef<'this>, TermLocation)> + 'this
+    where
+        MLifetime:
+            Fn(SubAssociatedSymbolLocation) -> TermLocation + Clone + 'this,
+        MType: Fn(SubAssociatedSymbolLocation) -> TermLocation + Clone + 'this,
+        MConstant:
+            Fn(SubAssociatedSymbolLocation) -> TermLocation + Clone + 'this,
+        MInstance:
+            Fn(SubAssociatedSymbolLocation) -> TermLocation + Clone + 'this,
+    {
+        self.parent_generic_arguments()
+            .as_ref()
+            .iter_sub_terms(
+                {
+                    let map_lifetime_location = map_lifetime_location.clone();
+
+                    move |location| {
+                        map_lifetime_location(SubAssociatedSymbolLocation::new(
+                            location.index(),
+                            true,
+                        ))
+                    }
+                },
+                {
+                    let map_type_location = map_type_location.clone();
+
+                    move |location| {
+                        map_type_location(SubAssociatedSymbolLocation::new(
+                            location.index(),
+                            true,
+                        ))
+                    }
+                },
+                {
+                    let map_constant_location = map_constant_location.clone();
+
+                    move |location| {
+                        map_constant_location(SubAssociatedSymbolLocation::new(
+                            location.index(),
+                            true,
+                        ))
+                    }
+                },
+                {
+                    let map_instance_location = map_instance_location.clone();
+
+                    move |location| {
+                        map_instance_location(SubAssociatedSymbolLocation::new(
+                            location.index(),
+                            true,
+                        ))
+                    }
+                },
+            )
+            .chain(self.member_generic_arguments().as_ref().iter_sub_terms(
+                {
+                    let map_lifetime_location = map_lifetime_location;
+
+                    move |location| {
+                        map_lifetime_location(SubAssociatedSymbolLocation::new(
+                            location.index(),
+                            false,
+                        ))
+                    }
+                },
+                {
+                    let map_type_location = map_type_location;
+
+                    move |location| {
+                        map_type_location(SubAssociatedSymbolLocation::new(
+                            location.index(),
+                            false,
+                        ))
+                    }
+                },
+                {
+                    let map_constant_location = map_constant_location;
+
+                    move |location| {
+                        map_constant_location(SubAssociatedSymbolLocation::new(
+                            location.index(),
+                            false,
+                        ))
+                    }
+                },
+                {
+                    let map_instance_location = map_instance_location;
+
+                    move |location| {
+                        map_instance_location(SubAssociatedSymbolLocation::new(
+                            location.index(),
+                            false,
+                        ))
+                    }
+                },
+            ))
     }
 }

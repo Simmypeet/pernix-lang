@@ -275,13 +275,21 @@ async fn type_iter_sub_terms_reference_emits_lifetime_then_type() {
         sub_terms[0].0,
         crate::TermRef::Lifetime(term) if term == &lifetime
     ));
-    assert_eq!(sub_terms[0].1, r#type::SubLifetimeLocation::Reference.into());
+    assert_eq!(
+        sub_terms[0].1,
+        r#type::IterSubTermLocation::Lifetime(
+            r#type::SubLifetimeLocation::Reference,
+        ),
+    );
 
     assert!(matches!(
         sub_terms[1].0,
         crate::TermRef::Type(term) if term == &pointee
     ));
-    assert_eq!(sub_terms[1].1, r#type::SubTypeLocation::Reference.into());
+    assert_eq!(
+        sub_terms[1].1,
+        r#type::IterSubTermLocation::Type(r#type::SubTypeLocation::Reference),
+    );
 }
 
 #[tokio::test]
@@ -309,8 +317,7 @@ async fn constant_iter_sub_terms_tuple_uses_single_locations() {
         sub_terms[0].1,
         constant::SubConstantLocation::Tuple(
             crate::tuple::SubTupleLocation::Single(0,)
-        )
-        .into(),
+        ),
     );
 
     assert!(matches!(
@@ -321,8 +328,7 @@ async fn constant_iter_sub_terms_tuple_uses_single_locations() {
         sub_terms[1].1,
         constant::SubConstantLocation::Tuple(
             crate::tuple::SubTupleLocation::Single(1,)
-        )
-        .into(),
+        ),
     );
 }
 
@@ -363,10 +369,12 @@ async fn instance_iter_sub_terms_instance_associated_order_is_stable() {
     ));
     assert_eq!(
         sub_terms[0].1,
-        crate::instance::SubLifetimeLocation::InstanceAssociatedGenericArguments(
-            SubGenericArgumentsLocation::new(0),
+        crate::instance::IterSubTermLocation::Lifetime(
+            crate::instance::SubLifetimeLocation::InstanceAssociatedGenericArguments(
+                SubGenericArgumentsLocation::new(0),
+            ),
         )
-        .into(),
+        ,
     );
 
     assert!(matches!(
@@ -375,10 +383,12 @@ async fn instance_iter_sub_terms_instance_associated_order_is_stable() {
     ));
     assert_eq!(
         sub_terms[1].1,
-        crate::instance::SubTypeLocation::InstanceAssociatedGenericArguments(
-            SubGenericArgumentsLocation::new(0),
+        crate::instance::IterSubTermLocation::Type(
+            crate::instance::SubTypeLocation::InstanceAssociatedGenericArguments(
+                SubGenericArgumentsLocation::new(0),
+            ),
         )
-        .into(),
+        ,
     );
 
     assert!(matches!(
@@ -387,10 +397,12 @@ async fn instance_iter_sub_terms_instance_associated_order_is_stable() {
     ));
     assert_eq!(
         sub_terms[2].1,
-        crate::instance::SubConstantLocation::InstanceAssociatedGenericArguments(
-            SubGenericArgumentsLocation::new(0),
+        crate::instance::IterSubTermLocation::Constant(
+            crate::instance::SubConstantLocation::InstanceAssociatedGenericArguments(
+                SubGenericArgumentsLocation::new(0),
+            ),
         )
-        .into(),
+        ,
     );
 
     assert!(matches!(
@@ -399,12 +411,14 @@ async fn instance_iter_sub_terms_instance_associated_order_is_stable() {
     ));
     assert_eq!(
         sub_terms[3].1,
-        crate::instance::SubInstanceLocation::InstanceAssociated(
-            crate::instance::SubInstanceAssociatedLocation::GenericArguments(
-                SubGenericArgumentsLocation::new(0),
+        crate::instance::IterSubTermLocation::Instance(
+            crate::instance::SubInstanceLocation::InstanceAssociated(
+                crate::instance::SubInstanceAssociatedLocation::GenericArguments(
+                    SubGenericArgumentsLocation::new(0),
+                ),
             ),
         )
-        .into(),
+        ,
     );
 
     assert!(matches!(
@@ -413,9 +427,10 @@ async fn instance_iter_sub_terms_instance_associated_order_is_stable() {
     ));
     assert_eq!(
         sub_terms[4].1,
-        crate::instance::SubInstanceLocation::InstanceAssociated(
-            crate::instance::SubInstanceAssociatedLocation::Instance,
-        )
-        .into(),
+        crate::instance::IterSubTermLocation::Instance(
+            crate::instance::SubInstanceLocation::InstanceAssociated(
+                crate::instance::SubInstanceAssociatedLocation::Instance,
+            ),
+        ),
     );
 }
