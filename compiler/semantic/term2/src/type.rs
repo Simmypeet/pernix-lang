@@ -148,7 +148,7 @@ pub enum Primitive {
 }
 
 /// Represents a tuple type.
-pub type Tuple = crate::tuple::Tuple<Interned<Type>>;
+pub type Tuple = crate::tuple::Tuple<Type>;
 
 /// Represents a phantom type.
 #[derive(

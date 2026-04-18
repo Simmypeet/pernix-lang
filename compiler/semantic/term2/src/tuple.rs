@@ -2,37 +2,58 @@
 
 use derive_new::new;
 use enum_as_inner::EnumAsInner;
-use qbice::{Decode, Encode, StableHash};
+use qbice::{
+    Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
+};
 
 /// Represents a single element of a tuple.
 #[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    StableHash,
-    Encode,
-    Decode,
-    new,
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, new,
 )]
 pub struct Element<Term> {
-    term: Term,
+    term: Interned<Term>,
     is_unpacked: bool,
+}
+
+impl<Term: Encode + Identifiable + StableHash + Send + Sync + 'static> Encode
+    for Element<Term>
+{
+    fn encode<E: qbice::serialize::Encoder + ?Sized>(
+        &self,
+        encoder: &mut E,
+        plugin: &qbice::serialize::Plugin,
+        session: &mut qbice::serialize::session::Session,
+    ) -> std::io::Result<()> {
+        self.term.encode(encoder, plugin, session)?;
+        self.is_unpacked.encode(encoder, plugin, session)
+    }
+}
+
+impl<Term: Decode + Identifiable + StableHash + Send + Sync + 'static> Decode
+    for Element<Term>
+{
+    fn decode<D: qbice::serialize::Decoder + ?Sized>(
+        decoder: &mut D,
+        plugin: &qbice::serialize::Plugin,
+        session: &mut qbice::serialize::session::Session,
+    ) -> std::io::Result<Self> {
+        let term = Interned::<Term>::decode(decoder, plugin, session)?;
+        let is_unpacked = bool::decode(decoder, plugin, session)?;
+
+        Ok(Self { term, is_unpacked })
+    }
 }
 
 impl<Term> Element<Term> {
     /// Creates a new regular element.
     #[must_use]
-    pub const fn new_regular(term: Term) -> Self {
+    pub const fn new_regular(term: Interned<Term>) -> Self {
         Self { term, is_unpacked: false }
     }
 
     /// Creates a new unpacked element.
     #[must_use]
-    pub const fn new_unpacked(term: Term) -> Self {
+    pub const fn new_unpacked(term: Interned<Term>) -> Self {
         Self { term, is_unpacked: true }
     }
 
@@ -42,33 +63,50 @@ impl<Term> Element<Term> {
 
     /// Returns the element term.
     #[must_use]
-    pub const fn term(&self) -> &Term { &self.term }
+    pub const fn term(&self) -> &Interned<Term> { &self.term }
 
     /// Returns a mutable reference to the element term.
     #[must_use]
-    pub const fn term_mut(&mut self) -> &mut Term { &mut self.term }
+    pub const fn term_mut(&mut self) -> &mut Interned<Term> { &mut self.term }
 
     /// Consumes the element and returns its term.
     #[must_use]
-    pub fn into_term(self) -> Term { self.term }
+    pub fn into_term(self) -> Interned<Term> { self.term }
 }
 
 /// Represents a tuple of terms.
 #[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    StableHash,
-    Encode,
-    Decode,
-    new,
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, new,
 )]
 pub struct Tuple<Term> {
     elements: Vec<Element<Term>>,
+}
+
+impl<Term: Encode + Identifiable + StableHash + Send + Sync + 'static> Encode
+    for Tuple<Term>
+{
+    fn encode<E: qbice::serialize::Encoder + ?Sized>(
+        &self,
+        encoder: &mut E,
+        plugin: &qbice::serialize::Plugin,
+        session: &mut qbice::serialize::session::Session,
+    ) -> std::io::Result<()> {
+        self.elements.encode(encoder, plugin, session)
+    }
+}
+
+impl<Term: Decode + Identifiable + StableHash + Send + Sync + 'static> Decode
+    for Tuple<Term>
+{
+    fn decode<D: qbice::serialize::Decoder + ?Sized>(
+        decoder: &mut D,
+        plugin: &qbice::serialize::Plugin,
+        session: &mut qbice::serialize::session::Session,
+    ) -> std::io::Result<Self> {
+        let elements = Vec::<Element<Term>>::decode(decoder, plugin, session)?;
+
+        Ok(Self { elements })
+    }
 }
 
 impl<Term> Tuple<Term> {
@@ -109,7 +147,9 @@ impl<Term> Tuple<Term> {
     pub fn into_elements(self) -> Vec<Element<Term>> { self.elements }
 }
 
-impl<Term> Default for Tuple<Term> {
+impl<Term: Identifiable + StableHash + Send + Sync + 'static> Default
+    for Tuple<Term>
+{
     fn default() -> Self { Self::unit() }
 }
 
@@ -157,10 +197,7 @@ pub enum SubTupleLocation {
 impl<T> Tuple<T> {
     /// Retrieves the sub-term at `location`.
     #[must_use]
-    pub fn get_term(&self, location: &SubTupleLocation) -> Option<T>
-    where
-        T: Clone,
-    {
+    pub fn get_term(&self, location: &SubTupleLocation) -> Option<Interned<T>> {
         match location {
             SubTupleLocation::Single(index) => {
                 self.elements.get(*index).map(|element| element.term.clone())

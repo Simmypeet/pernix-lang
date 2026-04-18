@@ -178,7 +178,7 @@ impl Array {
 }
 
 /// Represents a tuple constant.
-pub type Tuple = crate::tuple::Tuple<Interned<Constant>>;
+pub type Tuple = crate::tuple::Tuple<Constant>;
 
 /// Represents a constant term payload.
 #[derive(
