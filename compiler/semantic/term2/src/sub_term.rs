@@ -222,42 +222,54 @@ pub enum TermLocation {
     Instance(SubInstanceLocation),
 }
 
-fn iter_sub_terms_from_term_ref<'this>(
+fn extend_stack_with_sub_terms<'this>(
     term_ref: TermRef<'this>,
-) -> Box<dyn Iterator<Item = TermRef<'this>> + 'this> {
+    stack: &mut Vec<TermRef<'this>>,
+) {
+    let start = stack.len();
+
     match term_ref {
-        TermRef::Constant(constant) => Box::new(
-            constant.as_ref().iter_sub_terms().map(|(term_ref, _)| term_ref),
-        ),
-
-        TermRef::Lifetime(lifetime) => Box::new(
-            lifetime.as_ref().iter_sub_terms().map(|(term_ref, _)| term_ref),
-        ),
-
-        TermRef::Type(ty) => {
-            Box::new(ty.as_ref().iter_sub_terms().map(|(term_ref, _)| term_ref))
-        }
-
-        TermRef::Instance(instance) => Box::new(
-            instance.as_ref().iter_sub_terms().map(|(term_ref, _)| term_ref),
-        ),
-    }
-}
-
-fn iter_sub_terms_recursive_from_term_ref<'this>(
-    term_ref: TermRef<'this>,
-) -> Box<dyn Iterator<Item = TermRef<'this>> + 'this> {
-    Box::new(pernixc_coroutine_iter::coroutine_iter!({
-        yield term_ref;
-
-        for sub_term in iter_sub_terms_from_term_ref(term_ref) {
-            for recursive_sub_term in
-                iter_sub_terms_recursive_from_term_ref(sub_term)
-            {
-                yield recursive_sub_term;
+        TermRef::Constant(constant) => {
+            for (sub_term, _) in constant.as_ref().iter_sub_terms() {
+                stack.push(sub_term);
             }
         }
-    }))
+
+        TermRef::Lifetime(lifetime) => {
+            for (sub_term, _) in lifetime.as_ref().iter_sub_terms() {
+                stack.push(sub_term);
+            }
+        }
+
+        TermRef::Type(ty) => {
+            for (sub_term, _) in ty.as_ref().iter_sub_terms() {
+                stack.push(sub_term);
+            }
+        }
+
+        TermRef::Instance(instance) => {
+            for (sub_term, _) in instance.as_ref().iter_sub_terms() {
+                stack.push(sub_term);
+            }
+        }
+    }
+
+    // Reverse newly added children so DFS pops them in source iteration order.
+    stack[start..].reverse();
+}
+
+fn iter_sub_terms_recursive_from_term_ref(
+    term_ref: TermRef<'_>,
+) -> impl Iterator<Item = TermRef<'_>> + '_ {
+    let mut stack = vec![term_ref];
+
+    std::iter::from_fn(move || {
+        let current = stack.pop()?;
+
+        extend_stack_with_sub_terms(current, &mut stack);
+
+        Some(current)
+    })
 }
 
 impl From<Never> for TermLocation {
