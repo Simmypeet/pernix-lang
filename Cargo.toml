@@ -44,7 +44,7 @@ members = [
 
     "compiler/driver",
     "compiler/main",
-    "compiler/e2e",
+    "compiler/e2e", "compiler/base/coroutine_iter", "compiler/semantic/term2",
 
 
     # tidy-alphabetical-end
@@ -160,7 +160,7 @@ version = "0.1.0-beta.2"
 authors = ["Simmypeet"]
 description = "The Pernix Programming Language Compiler"
 edition = "2024"
-rust-version = "1.88.0"
+rust-version = "1.95.0"
 
 [workspace.lints.rust]
 missing_copy_implementations = "deny"

@@ -1,3 +1,4 @@
+#![recursion_limit = "256"]
 //! Contains all the definitions related to the intermediate representation of
 //! the function body.
 

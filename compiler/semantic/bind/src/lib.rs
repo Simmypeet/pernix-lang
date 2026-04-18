@@ -1,3 +1,4 @@
+#![recursion_limit = "256"]
 //! Contains the logic for building the [`IR`]
 
 pub mod bind;

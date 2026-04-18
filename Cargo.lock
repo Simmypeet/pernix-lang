@@ -1601,6 +1601,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "pernixc_coroutine_iter"
+version = "0.1.0-beta.2"
+
+[[package]]
 name = "pernixc_cps"
 version = "0.1.0-beta.2"
 
@@ -2072,6 +2076,31 @@ dependencies = [
  "qbice",
  "tempfile",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "pernixc_term2"
+version = "0.1.0-beta.2"
+dependencies = [
+ "bon",
+ "derive-new",
+ "derive_more",
+ "enum-as-inner",
+ "getset",
+ "linkme",
+ "paste",
+ "pernixc_arena",
+ "pernixc_extend",
+ "pernixc_hash",
+ "pernixc_lexical",
+ "pernixc_qbice",
+ "pernixc_symbol",
+ "pernixc_target",
+ "proptest",
+ "qbice",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
 ]
 
 [[package]]

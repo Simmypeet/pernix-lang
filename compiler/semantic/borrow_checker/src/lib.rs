@@ -1,3 +1,4 @@
+#![recursion_limit = "256"]
 //! Contains the model used in borrow checking and its structs/enums
 //!
 //! This module doesn't contain the logic for borrow checking, but only the
