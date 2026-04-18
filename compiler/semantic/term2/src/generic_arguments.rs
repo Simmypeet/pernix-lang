@@ -239,6 +239,15 @@ impl GenericArguments {
 
         true
     }
+
+    /// Returns a particular argument by kind and index.
+    #[must_use]
+    pub fn get_term<T: Element>(
+        &self,
+        location: SubGenericArgumentsLocation,
+    ) -> Option<&Interned<T>> {
+        T::get(self).get(location.0)
+    }
 }
 
 mod sealed {
@@ -318,6 +327,43 @@ impl Element for Type {}
 impl Element for Constant {}
 impl Element for Instance {}
 
+/// Represents the location of a term inside a generic argument list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
+pub struct SubGenericArgumentsLocation(usize);
+
+impl SubGenericArgumentsLocation {
+    /// Returns the index inside the generic argument list.
+    #[must_use]
+    pub const fn index(&self) -> usize { self.0 }
+}
+
+/// Represents the location of a term inside a symbol application.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
+pub struct SubSymbolLocation(usize);
+
+impl SubSymbolLocation {
+    /// Returns the index inside the symbol generic arguments.
+    #[must_use]
+    pub const fn index(&self) -> usize { self.0 }
+}
+
+/// Represents the location of a term inside an associated symbol application.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
+pub struct SubAssociatedSymbolLocation {
+    index: usize,
+    from_parent: bool,
+}
+
+impl SubAssociatedSymbolLocation {
+    /// Returns the index inside the selected generic argument list.
+    #[must_use]
+    pub const fn index(&self) -> usize { self.index }
+
+    /// Returns whether the location points into the parent generic arguments.
+    #[must_use]
+    pub const fn is_from_parent(&self) -> bool { self.from_parent }
+}
+
 /// Represents a symbol application.
 #[derive(
     Debug,
@@ -369,6 +415,16 @@ impl Symbol {
     pub fn into_generic_arguments(self) -> Interned<GenericArguments> {
         self.generic_arguments
     }
+
+    /// Returns a term from the symbol generic arguments.
+    #[must_use]
+    pub fn get_term<T: Element>(
+        &self,
+        location: SubSymbolLocation,
+    ) -> Option<&Interned<T>> {
+        self.generic_arguments
+            .get_term(SubGenericArgumentsLocation::new(location.index()))
+    }
 }
 
 /// Represents an associated symbol application.
@@ -418,5 +474,21 @@ impl AssociatedSymbol {
         self,
     ) -> (Global<pernixc_symbol::SymbolID>, Interned<GenericArguments>) {
         (self.id, self.member_generic_arguments)
+    }
+
+    /// Returns a term from either the parent or member generic arguments.
+    #[must_use]
+    pub fn get_term<T: Element>(
+        &self,
+        location: SubAssociatedSymbolLocation,
+    ) -> Option<&Interned<T>> {
+        let generic_arguments = if location.is_from_parent() {
+            self.parent_generic_arguments()
+        } else {
+            self.member_generic_arguments()
+        };
+
+        generic_arguments
+            .get_term(SubGenericArgumentsLocation::new(location.index()))
     }
 }

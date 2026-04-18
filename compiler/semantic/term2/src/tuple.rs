@@ -1,6 +1,7 @@
 //! Data definitions for tuple terms.
 
 use derive_new::new;
+use enum_as_inner::EnumAsInner;
 use qbice::{Decode, Encode, StableHash};
 
 /// Represents a single element of a tuple.
@@ -110,4 +111,62 @@ impl<Term> Tuple<Term> {
 
 impl<Term> Default for Tuple<Term> {
     fn default() -> Self { Self::unit() }
+}
+
+/// Represents a range inside a tuple.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
+pub struct TupleRange {
+    begin: usize,
+    end: usize,
+}
+
+impl TupleRange {
+    /// Returns the begin index.
+    #[must_use]
+    pub const fn begin(&self) -> usize { self.begin }
+
+    /// Returns the end index.
+    #[must_use]
+    pub const fn end(&self) -> usize { self.end }
+
+    /// Converts the range into a standard range.
+    #[must_use]
+    pub const fn to_std_range(&self) -> std::ops::Range<usize> {
+        self.begin..self.end
+    }
+}
+
+impl From<std::ops::Range<usize>> for TupleRange {
+    fn from(value: std::ops::Range<usize>) -> Self {
+        Self::new(value.start, value.end)
+    }
+}
+
+/// Represents the location of a term inside a tuple.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
+)]
+pub enum SubTupleLocation {
+    /// A single tuple element.
+    Single(usize),
+
+    /// A slice of tuple elements.
+    Range(TupleRange),
+}
+
+impl<T> Tuple<T> {
+    /// Retrieves the sub-term at `location`.
+    #[must_use]
+    pub fn get_term(&self, location: &SubTupleLocation) -> Option<T>
+    where
+        T: Clone,
+    {
+        match location {
+            SubTupleLocation::Single(index) => {
+                self.elements.get(*index).map(|element| element.term.clone())
+            }
+
+            SubTupleLocation::Range(_) => None,
+        }
+    }
 }

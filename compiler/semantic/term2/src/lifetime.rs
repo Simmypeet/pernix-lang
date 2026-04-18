@@ -10,9 +10,11 @@ use qbice::{
 };
 
 use crate::{
+    Never,
     error::Error,
     generic_parameters::{LifetimeParameter, LifetimeParameterID},
     inference,
+    sub_term::SubTerm,
 };
 
 /// Represents a named forall lifetime declared with `for['a]`.
@@ -199,4 +201,12 @@ impl Lifetime {
     ) -> Self {
         Self::Parameter(LifetimeParameterID::new(parent_global_id, lifetime_id))
     }
+}
+
+impl SubTerm for Lifetime {
+    type SubTypeLocation = Never;
+    type SubConstantLocation = Never;
+    type SubLifetimeLocation = Never;
+    type SubInstanceLocation = Never;
+    type ThisSubTermLocation = Never;
 }

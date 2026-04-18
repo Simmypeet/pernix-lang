@@ -8,9 +8,12 @@ use qbice::{
 };
 
 use crate::{
+    Never,
     error::Error,
     generic_parameters::{ConstantParameter, ConstantParameterID},
     inference,
+    sub_term::{self, SubTerm},
+    tuple::SubTupleLocation,
 };
 
 /// Represents a primitive constant.
@@ -219,4 +222,81 @@ impl Constant {
 
 impl Default for Constant {
     fn default() -> Self { Self::Tuple(Tuple::unit()) }
+}
+
+impl TryFrom<Constant> for Tuple {
+    type Error = Constant;
+
+    fn try_from(value: Constant) -> Result<Self, Self::Error> {
+        match value {
+            Constant::Tuple(tuple) => Ok(tuple),
+            _ => Err(value),
+        }
+    }
+}
+
+/// The location pointing to a sub-constant term in a constant.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::From,
+    EnumAsInner,
+)]
+pub enum SubConstantLocation {
+    /// The index of the element in a tuple constant.
+    #[from]
+    Tuple(SubTupleLocation),
+
+    /// The index of the field in a struct constant.
+    Struct(usize),
+
+    /// The associated value of an enum constant.
+    Enum,
+
+    /// The index of the element in an array constant.
+    Array(usize),
+}
+
+impl From<SubConstantLocation> for sub_term::TermLocation {
+    fn from(value: SubConstantLocation) -> Self {
+        Self::Constant(sub_term::SubConstantLocation::FromConstant(value))
+    }
+}
+
+impl sub_term::Location<Constant, Constant> for SubConstantLocation {
+    fn try_get_sub_term(self, term: &Constant) -> Option<Interned<Constant>> {
+        match (self, term) {
+            (Self::Tuple(location), Constant::Tuple(tuple)) => {
+                tuple.get_term(&location)
+            }
+
+            (Self::Struct(location), Constant::Struct(constant)) => {
+                constant.fields().get(location).cloned()
+            }
+
+            (Self::Enum, Constant::Enum(constant)) => {
+                constant.associated_value().cloned()
+            }
+
+            (Self::Array(location), Constant::Array(constant)) => {
+                constant.elements().get(location).cloned()
+            }
+
+            _ => None,
+        }
+    }
+}
+
+impl SubTerm for Constant {
+    type SubTypeLocation = Never;
+    type SubConstantLocation = SubConstantLocation;
+    type SubLifetimeLocation = Never;
+    type SubInstanceLocation = Never;
+    type ThisSubTermLocation = SubConstantLocation;
 }

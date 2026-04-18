@@ -9,11 +9,18 @@ use qbice::{
 use crate::{
     constant::Constant,
     error::Error,
-    generic_arguments::{AssociatedSymbol, Symbol},
+    generic_arguments::{
+        AssociatedSymbol, SubAssociatedSymbolLocation, SubSymbolLocation,
+        Symbol,
+    },
     generic_parameters::{TypeParameter, TypeParameterID},
     inference,
-    instance::InstanceAssociated,
+    instance::{
+        Instance, InstanceAssociated, SubInstanceAssociatedGenericArgsLocation,
+    },
     lifetime::Lifetime,
+    sub_term::{self, SubTerm},
+    tuple::SubTupleLocation,
 };
 
 /// A qualifier that can be applied to references.
@@ -328,4 +335,323 @@ impl Type {
     ) -> Self {
         Self::Parameter(TypeParameterID::new(parent_global_id, type_id))
     }
+}
+
+impl TryFrom<Type> for Tuple {
+    type Error = Type;
+
+    fn try_from(value: Type) -> Result<Self, Self::Error> {
+        match value {
+            Type::Tuple(tuple) => Ok(tuple),
+            _ => Err(value),
+        }
+    }
+}
+
+/// A location inside a function signature.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::From,
+    EnumAsInner,
+)]
+pub enum SubFunctionSignatureLocation {
+    /// A function parameter at a specific index.
+    Parameter(usize),
+
+    /// The return type of the function.
+    ReturnType,
+}
+
+/// A location for instance sub-terms inside an instance-associated type.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
+)]
+pub enum SubInstanceAssociatedInstanceLocation {
+    /// The direct `instance` field.
+    Instance,
+
+    /// An instance inside the associated symbol generic arguments.
+    GenericArguments(SubInstanceAssociatedGenericArgsLocation),
+}
+
+/// The location of a lifetime sub-term in a type.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::From,
+    EnumAsInner,
+)]
+pub enum SubLifetimeLocation {
+    #[from]
+    Symbol(SubSymbolLocation),
+    Reference,
+    #[from]
+    AssociatedSymbol(SubAssociatedSymbolLocation),
+    #[from]
+    InstanceAssociated(SubInstanceAssociatedGenericArgsLocation),
+}
+
+impl From<SubLifetimeLocation> for sub_term::TermLocation {
+    fn from(value: SubLifetimeLocation) -> Self {
+        Self::Lifetime(sub_term::SubLifetimeLocation::FromType(value))
+    }
+}
+
+impl sub_term::Location<Type, Lifetime> for SubLifetimeLocation {
+    fn try_get_sub_term(self, term: &Type) -> Option<Interned<Lifetime>> {
+        match (term, self) {
+            (Type::Reference(reference), Self::Reference) => {
+                Some(reference.lifetime().clone())
+            }
+
+            (Type::Symbol(symbol), Self::Symbol(location)) => {
+                symbol.get_term(location).cloned()
+            }
+
+            (
+                Type::AssociatedSymbol(symbol),
+                Self::AssociatedSymbol(location),
+            ) => symbol.get_term(location).cloned(),
+
+            (
+                Type::InstanceAssociated(instance_associated),
+                Self::InstanceAssociated(location),
+            ) => instance_associated.get_lifetime(location).cloned(),
+
+            _ => None,
+        }
+    }
+}
+
+/// The location of a type sub-term in a type.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::From,
+    EnumAsInner,
+)]
+pub enum SubTypeLocation {
+    #[from]
+    Symbol(SubSymbolLocation),
+    Pointer,
+    Reference,
+    Array,
+    #[from]
+    Tuple(SubTupleLocation),
+    Phantom,
+    #[from]
+    AssociatedSymbol(SubAssociatedSymbolLocation),
+    #[from]
+    FunctionSignature(SubFunctionSignatureLocation),
+    #[from]
+    InstanceAssociated(SubInstanceAssociatedGenericArgsLocation),
+}
+
+impl From<SubTypeLocation> for sub_term::TermLocation {
+    fn from(value: SubTypeLocation) -> Self {
+        Self::Type(sub_term::SubTypeLocation::FromType(value))
+    }
+}
+
+impl sub_term::Location<Type, Type> for SubTypeLocation {
+    fn try_get_sub_term(self, term: &Type) -> Option<Interned<Type>> {
+        match (self, term) {
+            (Self::Symbol(location), Type::Symbol(symbol)) => {
+                symbol.get_term(location).cloned()
+            }
+
+            (Self::Pointer, Type::Pointer(pointer)) => {
+                Some(pointer.pointee().clone())
+            }
+
+            (Self::Reference, Type::Reference(reference)) => {
+                Some(reference.pointee().clone())
+            }
+
+            (Self::Array, Type::Array(array)) => Some(array.r#type().clone()),
+
+            (Self::Tuple(location), Type::Tuple(tuple)) => {
+                tuple.get_term(&location)
+            }
+
+            (Self::Phantom, Type::Phantom(phantom)) => {
+                Some(phantom.r#type().clone())
+            }
+
+            (
+                Self::AssociatedSymbol(location),
+                Type::AssociatedSymbol(symbol),
+            ) => symbol.get_term(location).cloned(),
+
+            (
+                Self::FunctionSignature(
+                    SubFunctionSignatureLocation::Parameter(index),
+                ),
+                Type::FunctionSignature(signature),
+            ) => signature.parameters().get(index).cloned(),
+
+            (
+                Self::FunctionSignature(
+                    SubFunctionSignatureLocation::ReturnType,
+                ),
+                Type::FunctionSignature(signature),
+            ) => Some(signature.return_type().clone()),
+
+            (
+                Self::InstanceAssociated(location),
+                Type::InstanceAssociated(instance_associated),
+            ) => instance_associated.get_type(location).cloned(),
+
+            _ => None,
+        }
+    }
+}
+
+/// The location of a constant sub-term in a type.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::From,
+    EnumAsInner,
+)]
+pub enum SubConstantLocation {
+    #[from]
+    Symbol(SubSymbolLocation),
+    #[from]
+    AssociatedSymbol(SubAssociatedSymbolLocation),
+    Array,
+    #[from]
+    InstanceAssociated(SubInstanceAssociatedGenericArgsLocation),
+}
+
+impl From<SubConstantLocation> for sub_term::TermLocation {
+    fn from(value: SubConstantLocation) -> Self {
+        Self::Constant(sub_term::SubConstantLocation::FromType(value))
+    }
+}
+
+impl sub_term::Location<Type, Constant> for SubConstantLocation {
+    fn try_get_sub_term(self, term: &Type) -> Option<Interned<Constant>> {
+        match (self, term) {
+            (Self::Symbol(location), Type::Symbol(symbol)) => {
+                symbol.get_term(location).cloned()
+            }
+
+            (Self::Array, Type::Array(array)) => Some(array.length().clone()),
+
+            (
+                Self::AssociatedSymbol(location),
+                Type::AssociatedSymbol(symbol),
+            ) => symbol.get_term(location).cloned(),
+
+            (
+                Self::InstanceAssociated(location),
+                Type::InstanceAssociated(instance_associated),
+            ) => instance_associated.get_constant(location).cloned(),
+
+            _ => None,
+        }
+    }
+}
+
+/// The location of an instance sub-term in a type.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::From,
+    EnumAsInner,
+)]
+pub enum SubInstanceLocation {
+    #[from]
+    Symbol(SubSymbolLocation),
+    #[from]
+    AssociatedSymbol(SubAssociatedSymbolLocation),
+    #[from]
+    InstanceAssociated(SubInstanceAssociatedInstanceLocation),
+}
+
+impl From<SubInstanceAssociatedGenericArgsLocation> for SubInstanceLocation {
+    fn from(value: SubInstanceAssociatedGenericArgsLocation) -> Self {
+        Self::InstanceAssociated(
+            SubInstanceAssociatedInstanceLocation::GenericArguments(value),
+        )
+    }
+}
+
+impl From<SubInstanceLocation> for sub_term::TermLocation {
+    fn from(value: SubInstanceLocation) -> Self {
+        Self::Instance(sub_term::SubInstanceLocation::FromType(value))
+    }
+}
+
+impl sub_term::Location<Type, Instance> for SubInstanceLocation {
+    fn try_get_sub_term(self, term: &Type) -> Option<Interned<Instance>> {
+        match (self, term) {
+            (Self::Symbol(location), Type::Symbol(symbol)) => {
+                symbol.get_term(location).cloned()
+            }
+
+            (
+                Self::AssociatedSymbol(location),
+                Type::AssociatedSymbol(symbol),
+            ) => symbol.get_term(location).cloned(),
+
+            (
+                Self::InstanceAssociated(
+                    SubInstanceAssociatedInstanceLocation::Instance,
+                ),
+                Type::InstanceAssociated(instance_associated),
+            ) => Some(instance_associated.instance().clone()),
+
+            (
+                Self::InstanceAssociated(
+                    SubInstanceAssociatedInstanceLocation::GenericArguments(
+                        location,
+                    ),
+                ),
+                Type::InstanceAssociated(instance_associated),
+            ) => instance_associated.get_instance(location).cloned(),
+
+            _ => None,
+        }
+    }
+}
+
+impl SubTerm for Type {
+    type SubLifetimeLocation = SubLifetimeLocation;
+    type SubTypeLocation = SubTypeLocation;
+    type SubConstantLocation = SubConstantLocation;
+    type SubInstanceLocation = SubInstanceLocation;
+    type ThisSubTermLocation = SubTypeLocation;
 }

@@ -1,5 +1,6 @@
 //! Data definitions for instance terms.
 
+use derive_new::new;
 use enum_as_inner::EnumAsInner;
 use pernixc_target::Global;
 use qbice::{
@@ -9,10 +10,14 @@ use qbice::{
 use crate::{
     constant::Constant,
     error::Error,
-    generic_arguments::{GenericArguments, Symbol},
+    generic_arguments::{
+        GenericArguments, SubGenericArgumentsLocation, SubSymbolLocation,
+        Symbol,
+    },
     generic_parameters::{InstanceParameter, InstanceParameterID},
     inference,
     lifetime::Lifetime,
+    sub_term::{self, SubTerm},
     r#type::Type,
 };
 
@@ -121,26 +126,46 @@ impl InstanceAssociated {
 
     /// Returns a lifetime argument from the associated symbol application.
     #[must_use]
-    pub fn get_lifetime(&self, index: usize) -> Option<&Interned<Lifetime>> {
-        self.trait_associated_symbol_generic_arguments.lifetimes().get(index)
+    pub fn get_lifetime(
+        &self,
+        location: SubInstanceAssociatedGenericArgsLocation,
+    ) -> Option<&Interned<Lifetime>> {
+        self.trait_associated_symbol_generic_arguments
+            .lifetimes()
+            .get(location.index())
     }
 
     /// Returns a type argument from the associated symbol application.
     #[must_use]
-    pub fn get_type(&self, index: usize) -> Option<&Interned<Type>> {
-        self.trait_associated_symbol_generic_arguments.types().get(index)
+    pub fn get_type(
+        &self,
+        location: SubInstanceAssociatedGenericArgsLocation,
+    ) -> Option<&Interned<Type>> {
+        self.trait_associated_symbol_generic_arguments
+            .types()
+            .get(location.index())
     }
 
     /// Returns a constant argument from the associated symbol application.
     #[must_use]
-    pub fn get_constant(&self, index: usize) -> Option<&Interned<Constant>> {
-        self.trait_associated_symbol_generic_arguments.constants().get(index)
+    pub fn get_constant(
+        &self,
+        location: SubInstanceAssociatedGenericArgsLocation,
+    ) -> Option<&Interned<Constant>> {
+        self.trait_associated_symbol_generic_arguments
+            .constants()
+            .get(location.index())
     }
 
     /// Returns an instance argument from the associated symbol application.
     #[must_use]
-    pub fn get_instance(&self, index: usize) -> Option<&Interned<Instance>> {
-        self.trait_associated_symbol_generic_arguments.instances().get(index)
+    pub fn get_instance(
+        &self,
+        location: SubInstanceAssociatedGenericArgsLocation,
+    ) -> Option<&Interned<Instance>> {
+        self.trait_associated_symbol_generic_arguments
+            .instances()
+            .get(location.index())
     }
 }
 
@@ -226,4 +251,252 @@ impl Instance {
     ) -> Self {
         Self::AnonymousTrait(AnoymousTrait::new(trait_id))
     }
+}
+
+/// Represents the location of a generic argument inside an instance-associated
+/// symbol application.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
+pub struct SubInstanceAssociatedGenericArgsLocation(usize);
+
+impl SubInstanceAssociatedGenericArgsLocation {
+    /// Returns the index of the generic argument.
+    #[must_use]
+    pub const fn index(&self) -> usize { self.0 }
+}
+
+/// Represents the location of an instance sub-term inside an
+/// [`InstanceAssociated`] payload.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
+)]
+pub enum SubInstanceAssociatedLocation {
+    /// The direct parent instance field.
+    Instance,
+
+    /// A nested instance inside the associated symbol generic arguments.
+    GenericArguments(SubGenericArgumentsLocation),
+}
+
+/// The location pointing to a sub-lifetime term in an instance.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::From,
+    EnumAsInner,
+)]
+pub enum SubLifetimeLocation {
+    /// The index of lifetime argument in an [`Instance::Symbol`] variant.
+    #[from]
+    Symbol(SubSymbolLocation),
+
+    /// A lifetime argument in an [`Instance::InstanceAssociated`] generic
+    /// arguments.
+    #[from]
+    InstanceAssociatedGenericArguments(SubGenericArgumentsLocation),
+}
+
+impl From<SubLifetimeLocation> for sub_term::TermLocation {
+    fn from(value: SubLifetimeLocation) -> Self {
+        Self::Lifetime(sub_term::SubLifetimeLocation::FromInstance(value))
+    }
+}
+
+impl sub_term::Location<Instance, Lifetime> for SubLifetimeLocation {
+    fn try_get_sub_term(self, term: &Instance) -> Option<Interned<Lifetime>> {
+        match (term, self) {
+            (Instance::Symbol(symbol), Self::Symbol(location)) => {
+                symbol.get_term(location).cloned()
+            }
+
+            (
+                Instance::InstanceAssociated(instance_associated),
+                Self::InstanceAssociatedGenericArguments(location),
+            ) => instance_associated
+                .associated_instance_generic_arguments()
+                .get_term(location)
+                .cloned(),
+
+            _ => None,
+        }
+    }
+}
+
+/// The location pointing to a sub-type term in an instance.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::From,
+    EnumAsInner,
+)]
+pub enum SubTypeLocation {
+    /// The index of type argument in an [`Instance::Symbol`] variant.
+    #[from]
+    Symbol(SubSymbolLocation),
+
+    /// A type argument in an [`Instance::InstanceAssociated`] generic
+    /// arguments.
+    #[from]
+    InstanceAssociatedGenericArguments(SubGenericArgumentsLocation),
+}
+
+impl From<SubTypeLocation> for sub_term::TermLocation {
+    fn from(value: SubTypeLocation) -> Self {
+        Self::Type(sub_term::SubTypeLocation::FromInstance(value))
+    }
+}
+
+impl sub_term::Location<Instance, Type> for SubTypeLocation {
+    fn try_get_sub_term(self, term: &Instance) -> Option<Interned<Type>> {
+        match (term, self) {
+            (Instance::Symbol(symbol), Self::Symbol(location)) => {
+                symbol.get_term(location).cloned()
+            }
+
+            (
+                Instance::InstanceAssociated(instance_associated),
+                Self::InstanceAssociatedGenericArguments(location),
+            ) => instance_associated
+                .associated_instance_generic_arguments()
+                .get_term(location)
+                .cloned(),
+
+            _ => None,
+        }
+    }
+}
+
+/// The location pointing to a sub-constant term in an instance.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::From,
+    EnumAsInner,
+)]
+pub enum SubConstantLocation {
+    /// The index of constant argument in an [`Instance::Symbol`] variant.
+    #[from]
+    Symbol(SubSymbolLocation),
+
+    /// A constant argument in an [`Instance::InstanceAssociated`] generic
+    /// arguments.
+    #[from]
+    InstanceAssociatedGenericArguments(SubGenericArgumentsLocation),
+}
+
+impl From<SubConstantLocation> for sub_term::TermLocation {
+    fn from(value: SubConstantLocation) -> Self {
+        Self::Constant(sub_term::SubConstantLocation::FromInstance(value))
+    }
+}
+
+impl sub_term::Location<Instance, Constant> for SubConstantLocation {
+    fn try_get_sub_term(self, term: &Instance) -> Option<Interned<Constant>> {
+        match (term, self) {
+            (Instance::Symbol(symbol), Self::Symbol(location)) => {
+                symbol.get_term(location).cloned()
+            }
+
+            (
+                Instance::InstanceAssociated(instance_associated),
+                Self::InstanceAssociatedGenericArguments(location),
+            ) => instance_associated
+                .associated_instance_generic_arguments()
+                .get_term(location)
+                .cloned(),
+
+            _ => None,
+        }
+    }
+}
+
+/// The location pointing to a sub-instance term in an instance.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::From,
+    EnumAsInner,
+)]
+pub enum SubInstanceLocation {
+    /// The index of instance argument in an [`Instance::Symbol`] variant.
+    #[from]
+    Symbol(SubSymbolLocation),
+
+    /// An instance in an [`Instance::InstanceAssociated`] variant.
+    #[from]
+    InstanceAssociated(SubInstanceAssociatedLocation),
+}
+
+impl From<SubGenericArgumentsLocation> for SubInstanceLocation {
+    fn from(value: SubGenericArgumentsLocation) -> Self {
+        Self::InstanceAssociated(
+            SubInstanceAssociatedLocation::GenericArguments(value),
+        )
+    }
+}
+
+impl From<SubInstanceLocation> for sub_term::TermLocation {
+    fn from(value: SubInstanceLocation) -> Self {
+        Self::Instance(sub_term::SubInstanceLocation::FromInstance(value))
+    }
+}
+
+impl sub_term::Location<Instance, Instance> for SubInstanceLocation {
+    fn try_get_sub_term(self, term: &Instance) -> Option<Interned<Instance>> {
+        match (term, self) {
+            (Instance::Symbol(symbol), Self::Symbol(location)) => {
+                symbol.get_term(location).cloned()
+            }
+
+            (
+                Instance::InstanceAssociated(instance_associated),
+                Self::InstanceAssociated(
+                    SubInstanceAssociatedLocation::Instance,
+                ),
+            ) => Some(instance_associated.instance().clone()),
+
+            (
+                Instance::InstanceAssociated(instance_associated),
+                Self::InstanceAssociated(
+                    SubInstanceAssociatedLocation::GenericArguments(location),
+                ),
+            ) => instance_associated
+                .associated_instance_generic_arguments()
+                .get_term(location)
+                .cloned(),
+
+            _ => None,
+        }
+    }
+}
+
+impl SubTerm for Instance {
+    type SubLifetimeLocation = SubLifetimeLocation;
+    type SubTypeLocation = SubTypeLocation;
+    type SubConstantLocation = SubConstantLocation;
+    type SubInstanceLocation = SubInstanceLocation;
+    type ThisSubTermLocation = SubInstanceLocation;
 }
