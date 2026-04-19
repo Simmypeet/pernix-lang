@@ -252,7 +252,19 @@ impl GenericArguments {
 
     /// Iterates over all immediate sub-terms in canonical generic argument
     /// order: lifetime, type, constant, then instance.
-    pub fn iter_sub_terms<
+    pub fn iter_sub_term(&self) -> impl Iterator<Item = TermRef<'_>> + '_ {
+        self.iter_sub_terms_with_location(
+            |_: SubGenericArgumentsLocation| (),
+            |_: SubGenericArgumentsLocation| (),
+            |_: SubGenericArgumentsLocation| (),
+            |_: SubGenericArgumentsLocation| (),
+        )
+        .map(|(term_ref, ())| term_ref)
+    }
+
+    /// Iterates over all immediate sub-terms in canonical generic argument
+    /// order: lifetime, type, constant, then instance.
+    pub(crate) fn iter_sub_terms_with_location<
         'this,
         TermLocation,
         MLifetime,
@@ -511,7 +523,7 @@ impl Symbol {
         MConstant: Fn(SubSymbolLocation) -> TermLocation + 'this,
         MInstance: Fn(SubSymbolLocation) -> TermLocation + 'this,
     {
-        self.generic_arguments.iter_sub_terms(
+        self.generic_arguments.iter_sub_terms_with_location(
             move |location| {
                 map_lifetime_location(SubSymbolLocation::new(location.index()))
             },
@@ -620,7 +632,7 @@ impl AssociatedSymbol {
     {
         self.parent_generic_arguments()
             .as_ref()
-            .iter_sub_terms(
+            .iter_sub_terms_with_location(
                 {
                     let map_lifetime_location = map_lifetime_location.clone();
 
@@ -662,47 +674,59 @@ impl AssociatedSymbol {
                     }
                 },
             )
-            .chain(self.member_generic_arguments().as_ref().iter_sub_terms(
-                {
-                    let map_lifetime_location = map_lifetime_location;
+            .chain(
+                self.member_generic_arguments()
+                    .as_ref()
+                    .iter_sub_terms_with_location(
+                        {
+                            let map_lifetime_location = map_lifetime_location;
 
-                    move |location| {
-                        map_lifetime_location(SubAssociatedSymbolLocation::new(
-                            location.index(),
-                            false,
-                        ))
-                    }
-                },
-                {
-                    let map_type_location = map_type_location;
+                            move |location| {
+                                map_lifetime_location(
+                                    SubAssociatedSymbolLocation::new(
+                                        location.index(),
+                                        false,
+                                    ),
+                                )
+                            }
+                        },
+                        {
+                            let map_type_location = map_type_location;
 
-                    move |location| {
-                        map_type_location(SubAssociatedSymbolLocation::new(
-                            location.index(),
-                            false,
-                        ))
-                    }
-                },
-                {
-                    let map_constant_location = map_constant_location;
+                            move |location| {
+                                map_type_location(
+                                    SubAssociatedSymbolLocation::new(
+                                        location.index(),
+                                        false,
+                                    ),
+                                )
+                            }
+                        },
+                        {
+                            let map_constant_location = map_constant_location;
 
-                    move |location| {
-                        map_constant_location(SubAssociatedSymbolLocation::new(
-                            location.index(),
-                            false,
-                        ))
-                    }
-                },
-                {
-                    let map_instance_location = map_instance_location;
+                            move |location| {
+                                map_constant_location(
+                                    SubAssociatedSymbolLocation::new(
+                                        location.index(),
+                                        false,
+                                    ),
+                                )
+                            }
+                        },
+                        {
+                            let map_instance_location = map_instance_location;
 
-                    move |location| {
-                        map_instance_location(SubAssociatedSymbolLocation::new(
-                            location.index(),
-                            false,
-                        ))
-                    }
-                },
-            ))
+                            move |location| {
+                                map_instance_location(
+                                    SubAssociatedSymbolLocation::new(
+                                        location.index(),
+                                        false,
+                                    ),
+                                )
+                            }
+                        },
+                    ),
+            )
     }
 }

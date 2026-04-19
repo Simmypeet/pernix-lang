@@ -16,6 +16,7 @@ use crate::{
     },
     instance::{AnoymousTrait, Instance, InstanceAssociated},
     lifetime::Lifetime,
+    predicate::{Compatible, Outlives, Predicate},
     sub_term::{IterSubTerms, Location, RecursivelyIterSubTerms},
     r#type::{self, Primitive, Qualifier, Reference, Type},
 };
@@ -510,6 +511,49 @@ async fn constant_recursive_iteration_includes_root_in_depth_first_order() {
         terms[2],
         crate::TermRef::Constant(term) if term == &inner
     ));
+}
+
+#[tokio::test]
+async fn predicate_contains_error_detects_nested_error_terms() {
+    let engine = create_test_engine().await;
+    let tracked = engine.tracked().await;
+
+    let lifetime = tracked.intern(Lifetime::Static);
+    let pointee = tracked.intern(Type::Error(crate::error::Error));
+    let operand = tracked.intern(Type::Reference(Reference::new(
+        Qualifier::Immutable,
+        lifetime.clone(),
+        pointee,
+    )));
+
+    let predicate = Predicate::TypeOutlives(Outlives::new(operand, lifetime));
+
+    assert!(predicate.contains_error());
+}
+
+#[tokio::test]
+async fn predicate_contains_error_detects_instance_associated_type_equality_errors()
+ {
+    let engine = create_test_engine().await;
+    let tracked = engine.tracked().await;
+
+    let symbol_id = TargetID::TEST.make_global(SymbolID::from_u128(201));
+    let parent_instance =
+        tracked.intern(Instance::AnonymousTrait(AnoymousTrait::new(symbol_id)));
+    let error_type = tracked.intern(Type::Error(crate::error::Error));
+    let generic_arguments = tracked.intern(GenericArguments::new(
+        vec![],
+        vec![error_type],
+        vec![],
+        vec![],
+    ));
+    let lhs =
+        InstanceAssociated::new(parent_instance, symbol_id, generic_arguments);
+    let rhs = tracked.intern(Type::Primitive(Primitive::Bool));
+    let predicate =
+        Predicate::InstanceAssociatedTypeEquality(Compatible::new(lhs, rhs));
+
+    assert!(predicate.contains_error());
 }
 
 #[tokio::test]

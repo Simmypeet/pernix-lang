@@ -734,7 +734,7 @@ fn iter_instance_associated_sub_terms(
     pernixc_coroutine_iter::coroutine_iter!({
         for sub_term in instance_associated
             .associated_instance_generic_arguments()
-            .iter_sub_terms(
+            .iter_sub_terms_with_location(
                 |location| {
                     IterSubTermLocation::Lifetime(
                         SubLifetimeLocation::InstanceAssociated(

@@ -12,6 +12,7 @@ pub mod generic_parameters;
 pub mod inference;
 pub mod instance;
 pub mod lifetime;
+pub mod predicate;
 pub mod sub_term;
 pub mod tuple;
 pub mod r#type;
