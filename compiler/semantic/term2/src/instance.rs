@@ -13,12 +13,12 @@ use crate::{
     constant::Constant,
     error::Error,
     folding::{
-        Abort, FoldFuture, Foldable, FoldableAsync, Folder, FolderAsync,
-        finish_fold_async, fold_interned,
+        Abort, Foldable, FoldableAsync, Folder, FolderAsync, finish_fold_async,
+        fold_interned,
     },
     generic_arguments::{
         GenericArguments, SubGenericArgumentsLocation, SubSymbolLocation,
-        Symbol, fold_symbol_payload, fold_symbol_payload_async,
+        Symbol,
     },
     generic_parameters::{InstanceParameter, InstanceParameterID},
     inference,
@@ -928,18 +928,14 @@ fn fold_instance_payload<F: Folder>(
 ) -> Result<(), Abort> {
     *instance = match instance.clone() {
         Instance::Symbol(mut symbol) => {
-            fold_symbol_payload(&mut symbol, folder, engine)?;
+            symbol.fold_with(folder, engine)?;
             Instance::Symbol(symbol)
         }
 
         Instance::Parameter(parameter) => Instance::Parameter(parameter),
 
         Instance::InstanceAssociated(mut instance_associated) => {
-            fold_instance_associated_payload(
-                &mut instance_associated,
-                folder,
-                engine,
-            )?;
+            instance_associated.fold_with(folder, engine)?;
 
             Instance::InstanceAssociated(instance_associated)
         }
@@ -1005,6 +1001,7 @@ pub(crate) async fn fold_trait_ref_payload_async<F: FolderAsync>(
     generic_arguments.fold_with_async(folder, engine).await?;
 
     *trait_ref = TraitRef::new(trait_ref.trait_id(), generic_arguments);
+
     Ok(())
 }
 
@@ -1025,94 +1022,84 @@ pub(crate) async fn fold_instance_associated_payload_async<F: FolderAsync>(
         instance_associated.trait_associated_symbol_id(),
         generic_arguments,
     );
+
     Ok(())
 }
 
-async fn fold_instance_payload_async<F: FolderAsync>(
-    instance: &mut Instance,
-    folder: &mut F,
-    engine: &TrackedEngine,
-) -> Result<(), Abort> {
-    *instance = match instance.clone() {
-        Instance::Symbol(mut symbol) => {
-            fold_symbol_payload_async(&mut symbol, folder, engine).await?;
-            Instance::Symbol(symbol)
-        }
+// We do manual async function because of cyclic `impl Trait` sutff.
+#[allow(clippy::manual_async_fn)]
+fn fold_instance_payload_async<'a, F: FolderAsync>(
+    instance: &'a mut Instance,
+    folder: &'a mut F,
+    engine: &'a TrackedEngine,
+) -> impl Future<Output = Result<(), Abort>> + Send + 'a {
+    async move {
+        *instance = match instance.clone() {
+            Instance::Symbol(mut symbol) => {
+                Box::pin(symbol.fold_with_async(folder, engine)).await?;
 
-        Instance::Parameter(parameter) => Instance::Parameter(parameter),
+                Instance::Symbol(symbol)
+            }
 
-        Instance::InstanceAssociated(mut instance_associated) => {
-            fold_instance_associated_payload_async(
-                &mut instance_associated,
-                folder,
-                engine,
-            )
-            .await?;
+            Instance::Parameter(parameter) => Instance::Parameter(parameter),
 
-            Instance::InstanceAssociated(instance_associated)
-        }
+            Instance::InstanceAssociated(mut instance_associated) => {
+                Box::pin(instance_associated.fold_with_async(folder, engine))
+                    .await?;
 
-        Instance::Inference(variable) => Instance::Inference(variable),
-        Instance::AnonymousTrait(trait_instance) => {
-            Instance::AnonymousTrait(trait_instance)
-        }
-        Instance::Error(error) => Instance::Error(error),
-    };
+                Instance::InstanceAssociated(instance_associated)
+            }
 
-    Ok(())
+            Instance::Inference(variable) => Instance::Inference(variable),
+            Instance::AnonymousTrait(trait_instance) => {
+                Instance::AnonymousTrait(trait_instance)
+            }
+            Instance::Error(error) => Instance::Error(error),
+        };
+
+        Ok(())
+    }
 }
 
 impl FoldableAsync for Interned<TraitRef> {
-    fn fold_with_async<'a, F: FolderAsync + 'a>(
-        &'a mut self,
-        folder: &'a mut F,
-        engine: &'a TrackedEngine,
-    ) -> FoldFuture<'a> {
-        Box::pin(async move {
-            let mut rebuilt_value = self.as_ref().clone();
-            fold_trait_ref_payload_async(&mut rebuilt_value, folder, engine)
-                .await?;
+    async fn fold_with_async<F: FolderAsync>(
+        &mut self,
+        folder: &mut F,
+        engine: &TrackedEngine,
+    ) -> Result<(), Abort> {
+        let mut rebuilt_value = self.as_ref().clone();
 
-            if self.as_ref() != &rebuilt_value {
-                *self = engine.intern(rebuilt_value);
-            }
+        fold_trait_ref_payload_async(&mut rebuilt_value, folder, engine)
+            .await?;
 
-            Ok(())
-        })
+        if self.as_ref() != &rebuilt_value {
+            *self = engine.intern(rebuilt_value);
+        }
+
+        Ok(())
     }
 }
 
 impl FoldableAsync for InstanceAssociated {
-    fn fold_with_async<'a, F: FolderAsync + 'a>(
-        &'a mut self,
-        folder: &'a mut F,
-        engine: &'a TrackedEngine,
-    ) -> FoldFuture<'a> {
-        Box::pin(async move {
-            fold_instance_associated_payload_async(self, folder, engine).await
-        })
+    async fn fold_with_async<F: FolderAsync>(
+        &mut self,
+        folder: &mut F,
+        engine: &TrackedEngine,
+    ) -> Result<(), Abort> {
+        fold_instance_associated_payload_async(self, folder, engine).await
     }
 }
 
 impl FoldableAsync for Interned<Instance> {
-    fn fold_with_async<'a, F: FolderAsync + 'a>(
-        &'a mut self,
-        folder: &'a mut F,
-        engine: &'a TrackedEngine,
-    ) -> FoldFuture<'a> {
-        Box::pin(async move {
-            let mut rebuilt_value = self.as_ref().clone();
-            fold_instance_payload_async(&mut rebuilt_value, folder, engine)
-                .await?;
+    async fn fold_with_async<F: FolderAsync>(
+        &mut self,
+        folder: &mut F,
+        engine: &TrackedEngine,
+    ) -> Result<(), Abort> {
+        let mut rebuilt_value = self.as_ref().clone();
+        fold_instance_payload_async(&mut rebuilt_value, folder, engine).await?;
 
-            finish_fold_async!(
-                self,
-                rebuilt_value,
-                folder,
-                engine,
-                fold_instance
-            )
-        })
+        finish_fold_async!(self, rebuilt_value, folder, engine, fold_instance)
     }
 }
 

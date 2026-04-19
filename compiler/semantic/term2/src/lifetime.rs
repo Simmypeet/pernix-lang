@@ -14,8 +14,8 @@ use crate::{
     Never, TermRef,
     error::Error,
     folding::{
-        Abort, FoldFuture, Foldable, FoldableAsync, Folder, FolderAsync,
-        finish_fold_async, fold_interned,
+        Abort, Foldable, FoldableAsync, Folder, FolderAsync, finish_fold_async,
+        fold_interned,
     },
     generic_parameters::{LifetimeParameter, LifetimeParameterID},
     inference,
@@ -288,21 +288,19 @@ impl Foldable for Interned<Lifetime> {
 }
 
 impl FoldableAsync for Interned<Lifetime> {
-    fn fold_with_async<'a, F: FolderAsync + 'a>(
-        &'a mut self,
-        folder: &'a mut F,
-        engine: &'a TrackedEngine,
-    ) -> FoldFuture<'a> {
-        Box::pin(async move {
-            let rebuilt_value = self.as_ref().clone();
-            finish_fold_async!(
-                self,
-                rebuilt_value,
-                folder,
-                engine,
-                fold_lifetime
-            )
-        })
+    async fn fold_with_async<F: FolderAsync>(
+        &mut self,
+        folder: &mut F,
+        engine: &TrackedEngine,
+    ) -> Result<(), Abort> {
+        let rebuilt_value = self.as_ref().clone();
+        finish_fold_async!(
+            self,
+            rebuilt_value,
+            folder,
+            engine,
+            fold_lifetime
+        )
     }
 }
 

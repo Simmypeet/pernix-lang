@@ -12,10 +12,10 @@ use crate::{
     Never, TermRef,
     error::Error,
     folding::{
-        Abort, FoldFuture, Foldable, FoldableAsync, Folder, FolderAsync,
-        finish_fold_async, fold_interned, fold_option_term,
-        fold_option_term_async, fold_term_slice, fold_term_slice_async,
-        fold_tuple_terms, fold_tuple_terms_async,
+        Abort, Foldable, FoldableAsync, Folder, FolderAsync, finish_fold_async,
+        fold_interned, fold_option_term, fold_option_term_async,
+        fold_term_slice, fold_term_slice_async, fold_tuple_terms,
+        fold_tuple_terms_async,
     },
     generic_parameters::{ConstantParameter, ConstantParameterID},
     inference,
@@ -611,73 +611,77 @@ impl Foldable for Interned<Constant> {
     }
 }
 
-async fn fold_constant_payload_async<F: FolderAsync>(
-    constant: &mut Constant,
-    folder: &mut F,
-    engine: &TrackedEngine,
-) -> Result<(), Abort> {
-    *constant = match constant.clone() {
-        Constant::Primitive(primitive) => Constant::Primitive(primitive),
-        Constant::Inference(variable) => Constant::Inference(variable),
-        Constant::Parameter(parameter) => Constant::Parameter(parameter),
+// We do manual async function because of cyclic `impl Trait` sutff.
+#[allow(clippy::manual_async_fn)]
+fn fold_constant_payload_async<'a, F: FolderAsync + 'a>(
+    constant: &'a mut Constant,
+    folder: &'a mut F,
+    engine: &'a TrackedEngine,
+) -> impl Future<Output = Result<(), Abort>> + Send + 'a {
+    async move {
+        *constant = match constant.clone() {
+            Constant::Primitive(primitive) => Constant::Primitive(primitive),
+            Constant::Inference(variable) => Constant::Inference(variable),
+            Constant::Parameter(parameter) => Constant::Parameter(parameter),
 
-        Constant::Struct(struct_constant) => {
-            let mut fields = struct_constant.fields().to_vec();
-            fold_term_slice_async(&mut fields, folder, engine).await?;
+            Constant::Struct(struct_constant) => {
+                let mut fields = struct_constant.fields().to_vec();
+                Box::pin(fold_term_slice_async(&mut fields, folder, engine))
+                    .await?;
 
-            Constant::Struct(Struct::new(struct_constant.id(), fields))
-        }
+                Constant::Struct(Struct::new(struct_constant.id(), fields))
+            }
 
-        Constant::Enum(enum_constant) => {
-            let mut associated_value =
-                enum_constant.associated_value().cloned();
-            fold_option_term_async(&mut associated_value, folder, engine)
+            Constant::Enum(enum_constant) => {
+                let mut associated_value =
+                    enum_constant.associated_value().cloned();
+                Box::pin(fold_option_term_async(
+                    &mut associated_value,
+                    folder,
+                    engine,
+                ))
                 .await?;
 
-            Constant::Enum(Enum::new(
-                enum_constant.variant_id(),
-                associated_value,
-            ))
-        }
+                Constant::Enum(Enum::new(
+                    enum_constant.variant_id(),
+                    associated_value,
+                ))
+            }
 
-        Constant::Array(array_constant) => {
-            let mut elements = array_constant.elements().to_vec();
-            fold_term_slice_async(&mut elements, folder, engine).await?;
+            Constant::Array(array_constant) => {
+                let mut elements = array_constant.elements().to_vec();
 
-            Constant::Array(Array::new(elements))
-        }
+                Box::pin(fold_term_slice_async(&mut elements, folder, engine))
+                    .await?;
 
-        Constant::Tuple(mut tuple) => {
-            fold_tuple_terms_async(&mut tuple, folder, engine).await?;
-            Constant::Tuple(tuple)
-        }
+                Constant::Array(Array::new(elements))
+            }
 
-        Constant::Phantom => Constant::Phantom,
-        Constant::Error(error) => Constant::Error(error),
-    };
+            Constant::Tuple(mut tuple) => {
+                Box::pin(fold_tuple_terms_async(&mut tuple, folder, engine))
+                    .await?;
 
-    Ok(())
+                Constant::Tuple(tuple)
+            }
+
+            Constant::Phantom => Constant::Phantom,
+            Constant::Error(error) => Constant::Error(error),
+        };
+
+        Ok(())
+    }
 }
 
 impl FoldableAsync for Interned<Constant> {
-    fn fold_with_async<'a, F: FolderAsync + 'a>(
-        &'a mut self,
-        folder: &'a mut F,
-        engine: &'a TrackedEngine,
-    ) -> FoldFuture<'a> {
-        Box::pin(async move {
-            let mut rebuilt_value = self.as_ref().clone();
-            fold_constant_payload_async(&mut rebuilt_value, folder, engine)
-                .await?;
+    async fn fold_with_async<F: FolderAsync>(
+        &mut self,
+        folder: &mut F,
+        engine: &TrackedEngine,
+    ) -> Result<(), Abort> {
+        let mut rebuilt_value = self.as_ref().clone();
+        fold_constant_payload_async(&mut rebuilt_value, folder, engine).await?;
 
-            finish_fold_async!(
-                self,
-                rebuilt_value,
-                folder,
-                engine,
-                fold_constant
-            )
-        })
+        finish_fold_async!(self, rebuilt_value, folder, engine, fold_constant)
     }
 }
 

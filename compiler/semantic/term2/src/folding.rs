@@ -1,7 +1,7 @@
 //! Recursive post-order folding for interned terms and term-bearing
 //! containers.
 
-use std::{future::Future, pin::Pin};
+use std::future::Future;
 
 use pernixc_qbice::TrackedEngine;
 use qbice::{Identifiable, StableHash, storage::intern::Interned};
@@ -17,10 +17,6 @@ use crate::{
 )]
 #[error("folding aborted")]
 pub struct Abort;
-
-/// A boxed future used by recursive async folding entrypoints.
-pub type FoldFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<(), Abort>> + Send + 'a>>;
 
 /// A folder that may rewrite interned term handles in post-order.
 pub trait Folder {
@@ -114,11 +110,11 @@ pub trait Foldable {
 /// A type that can be recursively folded in post-order asynchronously.
 pub trait FoldableAsync {
     /// Recursively folds `self` in post-order.
-    fn fold_with_async<'a, F: FolderAsync + 'a>(
+    fn fold_with_async<'a, F: FolderAsync>(
         &'a mut self,
         folder: &'a mut F,
         engine: &'a TrackedEngine,
-    ) -> FoldFuture<'a>;
+    ) -> impl Future<Output = Result<(), Abort>> + Send + 'a;
 }
 
 pub(crate) fn fold_interned<T, F, FoldChildren, FoldSelf>(
@@ -214,7 +210,7 @@ where
     Interned<T>: FoldableAsync,
 {
     if let Some(term) = term {
-        term.fold_with_async(folder, engine).await?;
+        Box::pin(term.fold_with_async(folder, engine)).await?;
     }
 
     Ok(())
