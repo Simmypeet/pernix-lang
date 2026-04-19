@@ -12,10 +12,13 @@ use crate::{
     TermRef,
     constant::Constant,
     error::Error,
-    folding::{Abort, Foldable, Folder, fold_interned},
+    folding::{
+        Abort, FoldFuture, Foldable, FoldableAsync, Folder, FolderAsync,
+        finish_fold_async, fold_interned,
+    },
     generic_arguments::{
         GenericArguments, SubGenericArgumentsLocation, SubSymbolLocation,
-        Symbol, fold_symbol_payload,
+        Symbol, fold_symbol_payload, fold_symbol_payload_async,
     },
     generic_parameters::{InstanceParameter, InstanceParameterID},
     inference,
@@ -996,6 +999,140 @@ impl Foldable for Instance {
             fold_instance_payload,
             Folder::fold_instance,
         )
+    }
+}
+
+pub(crate) async fn fold_trait_ref_payload_async<F: FolderAsync>(
+    trait_ref: &mut TraitRef,
+    folder: &mut F,
+    engine: &TrackedEngine,
+) -> Result<(), Abort> {
+    let mut generic_arguments = trait_ref.generic_arguments().clone();
+    GenericArguments::fold_with_async(&mut generic_arguments, folder, engine)
+        .await?;
+
+    *trait_ref = TraitRef::new(trait_ref.trait_id(), generic_arguments);
+    Ok(())
+}
+
+pub(crate) async fn fold_instance_associated_payload_async<F: FolderAsync>(
+    instance_associated: &mut InstanceAssociated,
+    folder: &mut F,
+    engine: &TrackedEngine,
+) -> Result<(), Abort> {
+    let mut instance = instance_associated.instance().clone();
+    Instance::fold_with_async(&mut instance, folder, engine).await?;
+
+    let mut generic_arguments =
+        instance_associated.associated_instance_generic_arguments().clone();
+    GenericArguments::fold_with_async(&mut generic_arguments, folder, engine)
+        .await?;
+
+    *instance_associated = InstanceAssociated::new(
+        instance,
+        instance_associated.trait_associated_symbol_id(),
+        generic_arguments,
+    );
+    Ok(())
+}
+
+async fn fold_instance_payload_async<F: FolderAsync>(
+    instance: &mut Instance,
+    folder: &mut F,
+    engine: &TrackedEngine,
+) -> Result<(), Abort> {
+    *instance = match instance.clone() {
+        Instance::Symbol(mut symbol) => {
+            fold_symbol_payload_async(&mut symbol, folder, engine).await?;
+            Instance::Symbol(symbol)
+        }
+
+        Instance::Parameter(parameter) => Instance::Parameter(parameter),
+
+        Instance::InstanceAssociated(mut instance_associated) => {
+            fold_instance_associated_payload_async(
+                &mut instance_associated,
+                folder,
+                engine,
+            )
+            .await?;
+
+            Instance::InstanceAssociated(instance_associated)
+        }
+
+        Instance::Inference(variable) => Instance::Inference(variable),
+        Instance::AnonymousTrait(trait_instance) => {
+            Instance::AnonymousTrait(trait_instance)
+        }
+        Instance::Error(error) => Instance::Error(error),
+    };
+
+    Ok(())
+}
+
+impl FoldableAsync for TraitRef {
+    fn fold_with_async<'a, F: FolderAsync + 'a>(
+        term: &'a mut Interned<Self>,
+        folder: &'a mut F,
+        engine: &'a TrackedEngine,
+    ) -> FoldFuture<'a> {
+        Box::pin(async move {
+            let mut rebuilt_value = term.as_ref().clone();
+            fold_trait_ref_payload_async(&mut rebuilt_value, folder, engine)
+                .await?;
+
+            if term.as_ref() != &rebuilt_value {
+                *term = engine.intern(rebuilt_value);
+            }
+
+            Ok(())
+        })
+    }
+}
+
+impl FoldableAsync for InstanceAssociated {
+    fn fold_with_async<'a, F: FolderAsync + 'a>(
+        term: &'a mut Interned<Self>,
+        folder: &'a mut F,
+        engine: &'a TrackedEngine,
+    ) -> FoldFuture<'a> {
+        Box::pin(async move {
+            let mut rebuilt_value = term.as_ref().clone();
+            fold_instance_associated_payload_async(
+                &mut rebuilt_value,
+                folder,
+                engine,
+            )
+            .await?;
+
+            if term.as_ref() != &rebuilt_value {
+                *term = engine.intern(rebuilt_value);
+            }
+
+            Ok(())
+        })
+    }
+}
+
+impl FoldableAsync for Instance {
+    fn fold_with_async<'a, F: FolderAsync + 'a>(
+        term: &'a mut Interned<Self>,
+        folder: &'a mut F,
+        engine: &'a TrackedEngine,
+    ) -> FoldFuture<'a> {
+        Box::pin(async move {
+            let mut rebuilt_value = term.as_ref().clone();
+            fold_instance_payload_async(&mut rebuilt_value, folder, engine)
+                .await?;
+
+            finish_fold_async!(
+                term,
+                rebuilt_value,
+                folder,
+                engine,
+                fold_instance
+            )
+        })
     }
 }
 

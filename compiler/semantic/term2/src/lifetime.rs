@@ -13,7 +13,10 @@ use qbice::{
 use crate::{
     Never, TermRef,
     error::Error,
-    folding::{Abort, Foldable, Folder, fold_interned},
+    folding::{
+        Abort, FoldFuture, Foldable, FoldableAsync, Folder, FolderAsync,
+        finish_fold_async, fold_interned,
+    },
     generic_parameters::{LifetimeParameter, LifetimeParameterID},
     inference,
     matching::{Match, Matching, Substructural},
@@ -281,6 +284,25 @@ impl Foldable for Lifetime {
             |_, _, _| Ok(()),
             Folder::fold_lifetime,
         )
+    }
+}
+
+impl FoldableAsync for Lifetime {
+    fn fold_with_async<'a, F: FolderAsync + 'a>(
+        term: &'a mut Interned<Self>,
+        folder: &'a mut F,
+        engine: &'a TrackedEngine,
+    ) -> FoldFuture<'a> {
+        Box::pin(async move {
+            let rebuilt_value = term.as_ref().clone();
+            finish_fold_async!(
+                term,
+                rebuilt_value,
+                folder,
+                engine,
+                fold_lifetime
+            )
+        })
     }
 }
 

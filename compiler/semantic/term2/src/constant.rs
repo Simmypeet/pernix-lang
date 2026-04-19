@@ -12,8 +12,10 @@ use crate::{
     Never, TermRef,
     error::Error,
     folding::{
-        Abort, Foldable, Folder, fold_interned, fold_option_term,
-        fold_term_slice, fold_tuple_terms,
+        Abort, FoldFuture, Foldable, FoldableAsync, Folder, FolderAsync,
+        finish_fold_async, fold_interned, fold_option_term,
+        fold_option_term_async, fold_term_slice, fold_term_slice_async,
+        fold_tuple_terms, fold_tuple_terms_async,
     },
     generic_parameters::{ConstantParameter, ConstantParameterID},
     inference,
@@ -606,6 +608,76 @@ impl Foldable for Constant {
             fold_constant_payload,
             Folder::fold_constant,
         )
+    }
+}
+
+async fn fold_constant_payload_async<F: FolderAsync>(
+    constant: &mut Constant,
+    folder: &mut F,
+    engine: &TrackedEngine,
+) -> Result<(), Abort> {
+    *constant = match constant.clone() {
+        Constant::Primitive(primitive) => Constant::Primitive(primitive),
+        Constant::Inference(variable) => Constant::Inference(variable),
+        Constant::Parameter(parameter) => Constant::Parameter(parameter),
+
+        Constant::Struct(struct_constant) => {
+            let mut fields = struct_constant.fields().to_vec();
+            fold_term_slice_async(&mut fields, folder, engine).await?;
+
+            Constant::Struct(Struct::new(struct_constant.id(), fields))
+        }
+
+        Constant::Enum(enum_constant) => {
+            let mut associated_value =
+                enum_constant.associated_value().cloned();
+            fold_option_term_async(&mut associated_value, folder, engine)
+                .await?;
+
+            Constant::Enum(Enum::new(
+                enum_constant.variant_id(),
+                associated_value,
+            ))
+        }
+
+        Constant::Array(array_constant) => {
+            let mut elements = array_constant.elements().to_vec();
+            fold_term_slice_async(&mut elements, folder, engine).await?;
+
+            Constant::Array(Array::new(elements))
+        }
+
+        Constant::Tuple(mut tuple) => {
+            fold_tuple_terms_async(&mut tuple, folder, engine).await?;
+            Constant::Tuple(tuple)
+        }
+
+        Constant::Phantom => Constant::Phantom,
+        Constant::Error(error) => Constant::Error(error),
+    };
+
+    Ok(())
+}
+
+impl FoldableAsync for Constant {
+    fn fold_with_async<'a, F: FolderAsync + 'a>(
+        term: &'a mut Interned<Self>,
+        folder: &'a mut F,
+        engine: &'a TrackedEngine,
+    ) -> FoldFuture<'a> {
+        Box::pin(async move {
+            let mut rebuilt_value = term.as_ref().clone();
+            fold_constant_payload_async(&mut rebuilt_value, folder, engine)
+                .await?;
+
+            finish_fold_async!(
+                term,
+                rebuilt_value,
+                folder,
+                engine,
+                fold_constant
+            )
+        })
     }
 }
 

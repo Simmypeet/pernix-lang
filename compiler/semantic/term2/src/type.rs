@@ -12,18 +12,22 @@ use crate::{
     constant::Constant,
     error::Error,
     folding::{
-        Abort, Foldable, Folder, fold_interned, fold_term_slice,
-        fold_tuple_terms,
+        Abort, FoldFuture, Foldable, FoldableAsync, Folder, FolderAsync,
+        finish_fold_async, fold_interned, fold_term_slice,
+        fold_term_slice_async, fold_tuple_terms, fold_tuple_terms_async,
     },
     generic_arguments::{
         AssociatedSymbol, SubAssociatedSymbolLocation, SubSymbolLocation,
-        Symbol, fold_associated_symbol_payload, fold_symbol_payload,
+        Symbol, fold_associated_symbol_payload,
+        fold_associated_symbol_payload_async, fold_symbol_payload,
+        fold_symbol_payload_async,
     },
     generic_parameters::{TypeParameter, TypeParameterID},
     inference,
     instance::{
         Instance, InstanceAssociated, SubInstanceAssociatedGenericArgsLocation,
         fold_instance_associated_payload,
+        fold_instance_associated_payload_async,
     },
     lifetime::Lifetime,
     matching::{Match, Matching, Substructural},
@@ -1450,6 +1454,115 @@ impl Foldable for Type {
             fold_type_payload,
             Folder::fold_type,
         )
+    }
+}
+
+async fn fold_type_payload_async<F: FolderAsync>(
+    r#type: &mut Type,
+    folder: &mut F,
+    engine: &TrackedEngine,
+) -> Result<(), Abort> {
+    *r#type = match r#type.clone() {
+        Type::Inference(variable) => Type::Inference(variable),
+        Type::Primitive(primitive) => Type::Primitive(primitive),
+        Type::Parameter(parameter) => Type::Parameter(parameter),
+
+        Type::Symbol(mut symbol) => {
+            fold_symbol_payload_async(&mut symbol, folder, engine).await?;
+            Type::Symbol(symbol)
+        }
+
+        Type::Pointer(pointer_type) => {
+            let mut pointee = pointer_type.pointee().clone();
+            Type::fold_with_async(&mut pointee, folder, engine).await?;
+
+            Type::Pointer(Pointer::new(pointer_type.is_mutable(), pointee))
+        }
+
+        Type::Reference(reference) => {
+            let mut lifetime = reference.lifetime().clone();
+            Lifetime::fold_with_async(&mut lifetime, folder, engine).await?;
+
+            let mut pointee = reference.pointee().clone();
+            Type::fold_with_async(&mut pointee, folder, engine).await?;
+
+            Type::Reference(Reference::new(
+                reference.qualifier(),
+                lifetime,
+                pointee,
+            ))
+        }
+
+        Type::Array(array) => {
+            let mut length = array.length().clone();
+            Constant::fold_with_async(&mut length, folder, engine).await?;
+
+            let mut element = array.r#type().clone();
+            Type::fold_with_async(&mut element, folder, engine).await?;
+
+            Type::Array(Array::new(length, element))
+        }
+
+        Type::Tuple(mut tuple) => {
+            fold_tuple_terms_async(&mut tuple, folder, engine).await?;
+            Type::Tuple(tuple)
+        }
+
+        Type::Phantom(phantom) => {
+            let mut inner = phantom.r#type().clone();
+            Type::fold_with_async(&mut inner, folder, engine).await?;
+
+            Type::Phantom(Phantom::new(inner))
+        }
+
+        Type::InstanceAssociated(mut instance_associated) => {
+            fold_instance_associated_payload_async(
+                &mut instance_associated,
+                folder,
+                engine,
+            )
+            .await?;
+
+            Type::InstanceAssociated(instance_associated)
+        }
+
+        Type::AssociatedSymbol(mut symbol) => {
+            fold_associated_symbol_payload_async(&mut symbol, folder, engine)
+                .await?;
+            Type::AssociatedSymbol(symbol)
+        }
+
+        Type::FunctionSignature(signature) => {
+            let mut parameters = signature.parameters().to_vec();
+            fold_term_slice_async(&mut parameters, folder, engine).await?;
+
+            let mut return_type = signature.return_type().clone();
+            Type::fold_with_async(&mut return_type, folder, engine).await?;
+
+            Type::FunctionSignature(FunctionSignature::new(
+                parameters,
+                return_type,
+            ))
+        }
+
+        Type::Error(error) => Type::Error(error),
+    };
+
+    Ok(())
+}
+
+impl FoldableAsync for Type {
+    fn fold_with_async<'a, F: FolderAsync + 'a>(
+        term: &'a mut Interned<Self>,
+        folder: &'a mut F,
+        engine: &'a TrackedEngine,
+    ) -> FoldFuture<'a> {
+        Box::pin(async move {
+            let mut rebuilt_value = term.as_ref().clone();
+            fold_type_payload_async(&mut rebuilt_value, folder, engine).await?;
+
+            finish_fold_async!(term, rebuilt_value, folder, engine, fold_type)
+        })
     }
 }
 
