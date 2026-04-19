@@ -3,24 +3,26 @@
 use std::collections::BTreeMap;
 
 use derive_new::new;
+use linkme::distributed_slice;
 use pernixc_arena::ID;
 use pernixc_extend::extend;
-use pernixc_qbice::{Interner, TrackedEngine};
-use pernixc_symbol::{MemberID, SymbolID};
+use pernixc_qbice::{Config, Interner, PERNIX_PROGRAM, TrackedEngine};
+use pernixc_symbol::{MemberID, SymbolID, parent::get_parent_global};
 use pernixc_target::Global;
 use qbice::{
-    Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
+    Decode, Encode, Identifiable, Query, StableHash, executor,
+    program::Registration, storage::intern::Interned,
 };
 
 use crate::{
     constant::Constant,
     folding::{Abort, FoldExt, Foldable, Folder},
-    generic_arguments::GenericArguments,
+    generic_arguments::{AssociatedSymbol, GenericArguments, Symbol},
     generic_parameters::{
         ConstantParameterID, GenericParameters, InstanceParameterID,
         LifetimeParameterID, TypeParameterID, get_generic_parameters,
     },
-    instance::Instance,
+    instance::{Instance, TraitRef},
     lifetime::Lifetime,
     r#type::Type,
 };
@@ -38,6 +40,7 @@ use crate::{
     StableHash,
     Encode,
     Decode,
+    Identifiable,
     new,
 )]
 #[allow(missing_docs)]
@@ -606,6 +609,268 @@ pub async fn create_generic_arguments_from_instantiation(
         generic_parameters.as_ref(),
         self,
     )
+}
+
+/// Query key for retrieving the instantiation corresponding to a symbol
+/// application.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    Query,
+)]
+#[value(Interned<Instantiation>)]
+#[extend(name = get_symbol_instantiation, by_val)]
+pub struct SymbolKey {
+    /// The symbol application to instantiate.
+    pub symbol: Interned<Symbol>,
+}
+
+/// Query key for retrieving the instantiation corresponding to the parent of a
+/// symbol application.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    Query,
+)]
+#[value(Interned<Instantiation>)]
+#[extend(name = get_symbol_parent_instantiation, by_val)]
+pub struct SymbolParentKey {
+    /// The symbol application whose parent instantiation is requested.
+    pub symbol: Interned<Symbol>,
+}
+
+/// Query key for retrieving the instantiation corresponding to an associated
+/// symbol application.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    Query,
+)]
+#[value(Interned<Instantiation>)]
+#[extend(name = get_associated_symbol_instantiation, by_val)]
+pub struct AssociatedSymbolKey {
+    /// The associated symbol application to instantiate.
+    pub associated_symbol: Interned<AssociatedSymbol>,
+}
+
+/// Query key for retrieving the instantiation corresponding to a trait
+/// reference.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+    Query,
+)]
+#[value(Interned<Instantiation>)]
+#[extend(name = get_trait_ref_instantiation, by_val)]
+pub struct TraitRefKey {
+    /// The trait reference to instantiate.
+    pub trait_ref: Interned<TraitRef>,
+}
+
+async fn create_symbol_instantiation(
+    symbol: &Symbol,
+    engine: &TrackedEngine,
+) -> Interned<Instantiation> {
+    let generic_parameters = engine.get_generic_parameters(symbol.id()).await;
+
+    engine.intern(Instantiation::from_generic_arguments(
+        symbol.generic_arguments().as_ref(),
+        symbol.id(),
+        generic_parameters.as_ref(),
+        engine,
+    ))
+}
+
+async fn create_symbol_parent_instantiation(
+    symbol: &Symbol,
+    engine: &TrackedEngine,
+) -> Interned<Instantiation> {
+    let parent_id = engine.get_parent_global(symbol.id()).await.unwrap();
+    let generic_parameters = engine.get_generic_parameters(parent_id).await;
+
+    engine.intern(Instantiation::from_generic_arguments(
+        symbol.generic_arguments().as_ref(),
+        parent_id,
+        generic_parameters.as_ref(),
+        engine,
+    ))
+}
+
+async fn create_associated_symbol_instantiation(
+    associated_symbol: &AssociatedSymbol,
+    engine: &TrackedEngine,
+) -> Interned<Instantiation> {
+    let member_generic_parameters =
+        engine.get_generic_parameters(associated_symbol.id()).await;
+
+    let mut instantiation = Instantiation::from_generic_arguments(
+        associated_symbol.member_generic_arguments().as_ref(),
+        associated_symbol.id(),
+        member_generic_parameters.as_ref(),
+        engine,
+    );
+
+    let parent_id =
+        engine.get_parent_global(associated_symbol.id()).await.unwrap();
+    let parent_generic_parameters =
+        engine.get_generic_parameters(parent_id).await;
+
+    instantiation.append_from_generic_arguments(
+        associated_symbol.parent_generic_arguments().as_ref(),
+        parent_id,
+        parent_generic_parameters.as_ref(),
+        engine,
+    );
+
+    engine.intern(instantiation)
+}
+
+async fn create_trait_ref_instantiation(
+    trait_ref: &TraitRef,
+    engine: &TrackedEngine,
+) -> Interned<Instantiation> {
+    let generic_parameters =
+        engine.get_generic_parameters(trait_ref.trait_id()).await;
+
+    engine.intern(Instantiation::from_generic_arguments(
+        trait_ref.generic_arguments().as_ref(),
+        trait_ref.trait_id(),
+        generic_parameters.as_ref(),
+        engine,
+    ))
+}
+
+#[executor(config = Config)]
+async fn symbol_instantiation_executor(
+    key: &SymbolKey,
+    engine: &TrackedEngine,
+) -> Interned<Instantiation> {
+    create_symbol_instantiation(key.symbol.as_ref(), engine).await
+}
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static SYMBOL_INSTANTIATION_EXECUTOR: Registration<Config> =
+    Registration::new::<SymbolKey, SymbolInstantiationExecutor>();
+
+#[executor(config = Config)]
+async fn symbol_parent_instantiation_executor(
+    key: &SymbolParentKey,
+    engine: &TrackedEngine,
+) -> Interned<Instantiation> {
+    create_symbol_parent_instantiation(key.symbol.as_ref(), engine).await
+}
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static SYMBOL_PARENT_INSTANTIATION_EXECUTOR: Registration<Config> =
+    Registration::new::<SymbolParentKey, SymbolParentInstantiationExecutor>();
+
+#[executor(config = Config)]
+async fn associated_symbol_instantiation_executor(
+    key: &AssociatedSymbolKey,
+    engine: &TrackedEngine,
+) -> Interned<Instantiation> {
+    create_associated_symbol_instantiation(
+        key.associated_symbol.as_ref(),
+        engine,
+    )
+    .await
+}
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static ASSOCIATED_SYMBOL_INSTANTIATION_EXECUTOR: Registration<Config> =
+    Registration::new::<
+        AssociatedSymbolKey,
+        AssociatedSymbolInstantiationExecutor,
+    >();
+
+#[executor(config = Config)]
+async fn trait_ref_instantiation_executor(
+    key: &TraitRefKey,
+    engine: &TrackedEngine,
+) -> Interned<Instantiation> {
+    create_trait_ref_instantiation(key.trait_ref.as_ref(), engine).await
+}
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static TRAIT_REF_INSTANTIATION_EXECUTOR: Registration<Config> =
+    Registration::new::<TraitRefKey, TraitRefInstantiationExecutor>();
+
+impl Symbol {
+    /// Creates an instantiation for this symbol by using the generic
+    /// arguments supplied to this symbol and the symbol generic parameters.
+    pub async fn create_instantiation(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Interned<Instantiation> {
+        engine.get_symbol_instantiation(engine.intern(self.clone())).await
+    }
+
+    /// Creates an instantiation for the parent of this symbol by using the
+    /// generic arguments supplied to this symbol and the parent generic
+    /// parameters.
+    pub async fn create_instantiation_parent(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Interned<Instantiation> {
+        engine
+            .get_symbol_parent_instantiation(engine.intern(self.clone()))
+            .await
+    }
+}
+
+impl AssociatedSymbol {
+    /// Creates an instantiation for this associated symbol by using both
+    /// member and parent generic arguments.
+    pub async fn create_instantiation(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Interned<Instantiation> {
+        engine
+            .get_associated_symbol_instantiation(engine.intern(self.clone()))
+            .await
+    }
+}
+
+impl TraitRef {
+    /// Creates an instantiation for this trait reference.
+    pub async fn create_instantiation(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Interned<Instantiation> {
+        engine.get_trait_ref_instantiation(engine.intern(self.clone())).await
+    }
 }
 
 /// A term kind that can provide access to its instantiation mapping table.
