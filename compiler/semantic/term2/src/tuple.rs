@@ -459,3 +459,215 @@ impl<T> Tuple<T> {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        matching::Substructural,
+        test_support::create_test_engine,
+        r#type::{Primitive, SubTypeLocation, Type},
+    };
+
+    #[tokio::test]
+    async fn substructural_match_packs_rhs_range_into_unpacked_lhs_element() {
+        // Matches `(bool, ...(uint16, usize), uint32)` against
+        // `(int8, uint16, usize, int64)`.
+        let engine = create_test_engine().await;
+        let tracked = engine.tracked().await;
+
+        let lhs_head = tracked.intern(Type::Primitive(Primitive::Bool));
+        let rhs_head = tracked.intern(Type::Primitive(Primitive::Int8));
+        let middle_first = tracked.intern(Type::Primitive(Primitive::Uint16));
+        let middle_second = tracked.intern(Type::Primitive(Primitive::Usize));
+        let lhs_tail = tracked.intern(Type::Primitive(Primitive::Uint32));
+        let rhs_tail = tracked.intern(Type::Primitive(Primitive::Int64));
+
+        let lhs_unpack = tracked.intern(Type::Tuple(Tuple::new(vec![
+            Element::new_regular(middle_first.clone()),
+            Element::new_regular(middle_second.clone()),
+        ])));
+        let lhs = Tuple::new(vec![
+            Element::new_regular(lhs_head.clone()),
+            Element::new_unpacked(lhs_unpack.clone()),
+            Element::new_regular(lhs_tail.clone()),
+        ]);
+        let rhs = Tuple::new(vec![
+            Element::new_regular(rhs_head.clone()),
+            Element::new_regular(middle_first.clone()),
+            Element::new_regular(middle_second.clone()),
+            Element::new_regular(rhs_tail.clone()),
+        ]);
+
+        let matches: Vec<_> = lhs.substructural_match(&rhs).unwrap().collect();
+        assert_eq!(matches.len(), 3);
+
+        assert!(matches!(
+            &matches[0],
+            Substructural::Type(matching)
+                if matching.lhs() == &lhs_head
+                && matching.rhs() == &rhs_head
+                && matching.lhs_location() == &SubTypeLocation::Tuple(
+                    SubTupleLocation::Single(0),
+                )
+                && matching.rhs_location() == &SubTypeLocation::Tuple(
+                    SubTupleLocation::Single(0),
+                )
+        ));
+
+        assert!(matches!(
+            &matches[1],
+            Substructural::Type(matching)
+                if matching.lhs() == &lhs_tail
+                && matching.rhs() == &rhs_tail
+                && matching.lhs_location() == &SubTypeLocation::Tuple(
+                    SubTupleLocation::Single(2),
+                )
+                && matching.rhs_location() == &SubTypeLocation::Tuple(
+                    SubTupleLocation::Single(3),
+                )
+        ));
+
+        assert!(matches!(
+            &matches[2],
+            Substructural::Type(matching)
+                if matching.lhs() == &lhs_unpack
+                && matching.lhs_location() == &SubTypeLocation::Tuple(
+                    SubTupleLocation::Single(1),
+                )
+                && matching.rhs_location() == &SubTypeLocation::Tuple(
+                    SubTupleLocation::Range(TupleRange::new(1, 3)),
+                )
+        ));
+
+        let Substructural::Type(unpacked_matching) = &matches[2] else {
+            panic!("expected unpacked type matching");
+        };
+        let Type::Tuple(rhs_middle) = unpacked_matching.rhs().as_ref() else {
+            panic!("expected packed tuple on the right-hand side");
+        };
+        assert_eq!(rhs_middle.elements().len(), 2);
+        assert_eq!(rhs_middle.elements()[0].term(), &middle_first);
+        assert_eq!(rhs_middle.elements()[1].term(), &middle_second);
+    }
+
+    #[tokio::test]
+    async fn substructural_match_packs_lhs_range_into_unpacked_rhs_element() {
+        // Matches `(int8, uint16, usize, int64)` against
+        // `(bool, ...(uint16, usize), uint32)`.
+        let engine = create_test_engine().await;
+        let tracked = engine.tracked().await;
+
+        let lhs_head = tracked.intern(Type::Primitive(Primitive::Int8));
+        let rhs_head = tracked.intern(Type::Primitive(Primitive::Bool));
+        let middle_first = tracked.intern(Type::Primitive(Primitive::Uint16));
+        let middle_second = tracked.intern(Type::Primitive(Primitive::Usize));
+        let lhs_tail = tracked.intern(Type::Primitive(Primitive::Int64));
+        let rhs_tail = tracked.intern(Type::Primitive(Primitive::Uint32));
+
+        let rhs_unpack = tracked.intern(Type::Tuple(Tuple::new(vec![
+            Element::new_regular(middle_first.clone()),
+            Element::new_regular(middle_second.clone()),
+        ])));
+        let lhs = Tuple::new(vec![
+            Element::new_regular(lhs_head.clone()),
+            Element::new_regular(middle_first.clone()),
+            Element::new_regular(middle_second.clone()),
+            Element::new_regular(lhs_tail.clone()),
+        ]);
+        let rhs = Tuple::new(vec![
+            Element::new_regular(rhs_head.clone()),
+            Element::new_unpacked(rhs_unpack.clone()),
+            Element::new_regular(rhs_tail.clone()),
+        ]);
+
+        let matches: Vec<_> = lhs.substructural_match(&rhs).unwrap().collect();
+        assert_eq!(matches.len(), 3);
+
+        assert!(matches!(
+            &matches[0],
+            Substructural::Type(matching)
+                if matching.lhs() == &lhs_head
+                && matching.rhs() == &rhs_head
+                && matching.lhs_location() == &SubTypeLocation::Tuple(
+                    SubTupleLocation::Single(0),
+                )
+                && matching.rhs_location() == &SubTypeLocation::Tuple(
+                    SubTupleLocation::Single(0),
+                )
+        ));
+
+        assert!(matches!(
+            &matches[1],
+            Substructural::Type(matching)
+                if matching.lhs() == &lhs_tail
+                && matching.rhs() == &rhs_tail
+                && matching.lhs_location() == &SubTypeLocation::Tuple(
+                    SubTupleLocation::Single(3),
+                )
+                && matching.rhs_location() == &SubTypeLocation::Tuple(
+                    SubTupleLocation::Single(2),
+                )
+        ));
+
+        assert!(matches!(
+            &matches[2],
+            Substructural::Type(matching)
+                if matching.rhs() == &rhs_unpack
+                && matching.lhs_location() == &SubTypeLocation::Tuple(
+                    SubTupleLocation::Range(TupleRange::new(1, 3)),
+                )
+                && matching.rhs_location() == &SubTypeLocation::Tuple(
+                    SubTupleLocation::Single(1),
+                )
+        ));
+
+        let Substructural::Type(unpacked_matching) = &matches[2] else {
+            panic!("expected unpacked type matching");
+        };
+        let Type::Tuple(lhs_middle) = unpacked_matching.lhs().as_ref() else {
+            panic!("expected packed tuple on the left-hand side");
+        };
+        assert_eq!(lhs_middle.elements().len(), 2);
+        assert_eq!(lhs_middle.elements()[0].term(), &middle_first);
+        assert_eq!(lhs_middle.elements()[1].term(), &middle_second);
+    }
+
+    #[tokio::test]
+    async fn substructural_match_rejects_multiple_unpacked_elements() {
+        // Rejects `(bool, ...T, ...U)` against `(int8, uint16, usize, int64)`.
+        let engine = create_test_engine().await;
+        let tracked = engine.tracked().await;
+
+        let first_unpack = tracked.intern(Type::Tuple(Tuple::new(vec![
+            Element::new_regular(
+                tracked.intern(Type::Primitive(Primitive::Bool)),
+            ),
+        ])));
+        let second_unpack = tracked.intern(Type::Tuple(Tuple::new(vec![
+            Element::new_regular(
+                tracked.intern(Type::Primitive(Primitive::Uint16)),
+            ),
+        ])));
+        let rhs = Tuple::new(vec![
+            Element::new_regular(
+                tracked.intern(Type::Primitive(Primitive::Int8)),
+            ),
+            Element::new_regular(
+                tracked.intern(Type::Primitive(Primitive::Uint16)),
+            ),
+            Element::new_regular(
+                tracked.intern(Type::Primitive(Primitive::Usize)),
+            ),
+            Element::new_regular(
+                tracked.intern(Type::Primitive(Primitive::Int64)),
+            ),
+        ]);
+        let lhs = Tuple::new(vec![
+            Element::new_unpacked(first_unpack),
+            Element::new_unpacked(second_unpack),
+        ]);
+
+        assert!(lhs.substructural_match(&rhs).is_none());
+    }
+}
