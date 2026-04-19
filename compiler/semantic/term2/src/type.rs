@@ -1366,17 +1366,17 @@ fn fold_type_payload<F: Folder>(
 
         Type::Pointer(pointer_type) => {
             let mut pointee = pointer_type.pointee().clone();
-            Type::fold_with(&mut pointee, folder, engine)?;
+            pointee.fold_with(folder, engine)?;
 
             Type::Pointer(Pointer::new(pointer_type.is_mutable(), pointee))
         }
 
         Type::Reference(reference) => {
             let mut lifetime = reference.lifetime().clone();
-            Lifetime::fold_with(&mut lifetime, folder, engine)?;
+            lifetime.fold_with(folder, engine)?;
 
             let mut pointee = reference.pointee().clone();
-            Type::fold_with(&mut pointee, folder, engine)?;
+            pointee.fold_with(folder, engine)?;
 
             Type::Reference(Reference::new(
                 reference.qualifier(),
@@ -1387,10 +1387,10 @@ fn fold_type_payload<F: Folder>(
 
         Type::Array(array) => {
             let mut length = array.length().clone();
-            Constant::fold_with(&mut length, folder, engine)?;
+            length.fold_with(folder, engine)?;
 
             let mut element = array.r#type().clone();
-            Type::fold_with(&mut element, folder, engine)?;
+            element.fold_with(folder, engine)?;
 
             Type::Array(Array::new(length, element))
         }
@@ -1402,7 +1402,7 @@ fn fold_type_payload<F: Folder>(
 
         Type::Phantom(phantom) => {
             let mut inner = phantom.r#type().clone();
-            Type::fold_with(&mut inner, folder, engine)?;
+            inner.fold_with(folder, engine)?;
 
             Type::Phantom(Phantom::new(inner))
         }
@@ -1427,7 +1427,7 @@ fn fold_type_payload<F: Folder>(
             fold_term_slice(&mut parameters, folder, engine)?;
 
             let mut return_type = signature.return_type().clone();
-            Type::fold_with(&mut return_type, folder, engine)?;
+            return_type.fold_with(folder, engine)?;
 
             Type::FunctionSignature(FunctionSignature::new(
                 parameters,
@@ -1441,14 +1441,14 @@ fn fold_type_payload<F: Folder>(
     Ok(())
 }
 
-impl Foldable for Type {
+impl Foldable for Interned<Type> {
     fn fold_with<F: Folder>(
-        term: &mut Interned<Self>,
+        &mut self,
         folder: &mut F,
         engine: &TrackedEngine,
     ) -> Result<(), Abort> {
         fold_interned(
-            term,
+            self,
             folder,
             engine,
             fold_type_payload,
@@ -1474,17 +1474,17 @@ async fn fold_type_payload_async<F: FolderAsync>(
 
         Type::Pointer(pointer_type) => {
             let mut pointee = pointer_type.pointee().clone();
-            Type::fold_with_async(&mut pointee, folder, engine).await?;
+            pointee.fold_with_async(folder, engine).await?;
 
             Type::Pointer(Pointer::new(pointer_type.is_mutable(), pointee))
         }
 
         Type::Reference(reference) => {
             let mut lifetime = reference.lifetime().clone();
-            Lifetime::fold_with_async(&mut lifetime, folder, engine).await?;
+            lifetime.fold_with_async(folder, engine).await?;
 
             let mut pointee = reference.pointee().clone();
-            Type::fold_with_async(&mut pointee, folder, engine).await?;
+            pointee.fold_with_async(folder, engine).await?;
 
             Type::Reference(Reference::new(
                 reference.qualifier(),
@@ -1495,10 +1495,10 @@ async fn fold_type_payload_async<F: FolderAsync>(
 
         Type::Array(array) => {
             let mut length = array.length().clone();
-            Constant::fold_with_async(&mut length, folder, engine).await?;
+            length.fold_with_async(folder, engine).await?;
 
             let mut element = array.r#type().clone();
-            Type::fold_with_async(&mut element, folder, engine).await?;
+            element.fold_with_async(folder, engine).await?;
 
             Type::Array(Array::new(length, element))
         }
@@ -1510,7 +1510,7 @@ async fn fold_type_payload_async<F: FolderAsync>(
 
         Type::Phantom(phantom) => {
             let mut inner = phantom.r#type().clone();
-            Type::fold_with_async(&mut inner, folder, engine).await?;
+            inner.fold_with_async(folder, engine).await?;
 
             Type::Phantom(Phantom::new(inner))
         }
@@ -1537,7 +1537,7 @@ async fn fold_type_payload_async<F: FolderAsync>(
             fold_term_slice_async(&mut parameters, folder, engine).await?;
 
             let mut return_type = signature.return_type().clone();
-            Type::fold_with_async(&mut return_type, folder, engine).await?;
+            return_type.fold_with_async(folder, engine).await?;
 
             Type::FunctionSignature(FunctionSignature::new(
                 parameters,
@@ -1551,17 +1551,17 @@ async fn fold_type_payload_async<F: FolderAsync>(
     Ok(())
 }
 
-impl FoldableAsync for Type {
+impl FoldableAsync for Interned<Type> {
     fn fold_with_async<'a, F: FolderAsync + 'a>(
-        term: &'a mut Interned<Self>,
+        &'a mut self,
         folder: &'a mut F,
         engine: &'a TrackedEngine,
     ) -> FoldFuture<'a> {
         Box::pin(async move {
-            let mut rebuilt_value = term.as_ref().clone();
+            let mut rebuilt_value = self.as_ref().clone();
             fold_type_payload_async(&mut rebuilt_value, folder, engine).await?;
 
-            finish_fold_async!(term, rebuilt_value, folder, engine, fold_type)
+            finish_fold_async!(self, rebuilt_value, folder, engine, fold_type)
         })
     }
 }

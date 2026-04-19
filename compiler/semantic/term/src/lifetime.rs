@@ -320,7 +320,7 @@ impl crate::display::Display for Lifetime {
 
             Self::Forall(forall) => {
                 let forall_number = formatter.forall_lifetime_names(forall);
-                write!(formatter, "'∀{forall_number}",)
+                write!(formatter, "'∀{forall_number}")
             }
 
             Self::Static => write!(formatter, "'static"),

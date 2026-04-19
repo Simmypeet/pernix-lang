@@ -595,14 +595,14 @@ fn fold_constant_payload<F: Folder>(
     Ok(())
 }
 
-impl Foldable for Constant {
+impl Foldable for Interned<Constant> {
     fn fold_with<F: Folder>(
-        term: &mut Interned<Self>,
+        &mut self,
         folder: &mut F,
         engine: &TrackedEngine,
     ) -> Result<(), Abort> {
         fold_interned(
-            term,
+            self,
             folder,
             engine,
             fold_constant_payload,
@@ -659,19 +659,19 @@ async fn fold_constant_payload_async<F: FolderAsync>(
     Ok(())
 }
 
-impl FoldableAsync for Constant {
+impl FoldableAsync for Interned<Constant> {
     fn fold_with_async<'a, F: FolderAsync + 'a>(
-        term: &'a mut Interned<Self>,
+        &'a mut self,
         folder: &'a mut F,
         engine: &'a TrackedEngine,
     ) -> FoldFuture<'a> {
         Box::pin(async move {
-            let mut rebuilt_value = term.as_ref().clone();
+            let mut rebuilt_value = self.as_ref().clone();
             fold_constant_payload_async(&mut rebuilt_value, folder, engine)
                 .await?;
 
             finish_fold_async!(
-                term,
+                self,
                 rebuilt_value,
                 folder,
                 engine,

@@ -843,7 +843,7 @@ pub(crate) fn fold_symbol_payload<F: Folder>(
     engine: &TrackedEngine,
 ) -> Result<(), Abort> {
     let mut generic_arguments = symbol.generic_arguments().clone();
-    GenericArguments::fold_with(&mut generic_arguments, folder, engine)?;
+    generic_arguments.fold_with(folder, engine)?;
 
     *symbol = Symbol::new(symbol.id(), generic_arguments);
     Ok(())
@@ -856,11 +856,11 @@ pub(crate) fn fold_associated_symbol_payload<F: Folder>(
 ) -> Result<(), Abort> {
     let mut parent_generic_arguments =
         symbol.parent_generic_arguments().clone();
-    GenericArguments::fold_with(&mut parent_generic_arguments, folder, engine)?;
+    parent_generic_arguments.fold_with(folder, engine)?;
 
     let mut member_generic_arguments =
         symbol.member_generic_arguments().clone();
-    GenericArguments::fold_with(&mut member_generic_arguments, folder, engine)?;
+    member_generic_arguments.fold_with(folder, engine)?;
 
     *symbol = AssociatedSymbol::new(
         symbol.id(),
@@ -891,8 +891,7 @@ pub(crate) async fn fold_symbol_payload_async<F: FolderAsync>(
     engine: &TrackedEngine,
 ) -> Result<(), Abort> {
     let mut generic_arguments = symbol.generic_arguments().clone();
-    GenericArguments::fold_with_async(&mut generic_arguments, folder, engine)
-        .await?;
+    generic_arguments.fold_with_async(folder, engine).await?;
 
     *symbol = Symbol::new(symbol.id(), generic_arguments);
     Ok(())
@@ -905,21 +904,11 @@ pub(crate) async fn fold_associated_symbol_payload_async<F: FolderAsync>(
 ) -> Result<(), Abort> {
     let mut parent_generic_arguments =
         symbol.parent_generic_arguments().clone();
-    GenericArguments::fold_with_async(
-        &mut parent_generic_arguments,
-        folder,
-        engine,
-    )
-    .await?;
+    parent_generic_arguments.fold_with_async(folder, engine).await?;
 
     let mut member_generic_arguments =
         symbol.member_generic_arguments().clone();
-    GenericArguments::fold_with_async(
-        &mut member_generic_arguments,
-        folder,
-        engine,
-    )
-    .await?;
+    member_generic_arguments.fold_with_async(folder, engine).await?;
 
     *symbol = AssociatedSymbol::new(
         symbol.id(),
@@ -929,14 +918,14 @@ pub(crate) async fn fold_associated_symbol_payload_async<F: FolderAsync>(
     Ok(())
 }
 
-impl Foldable for GenericArguments {
+impl Foldable for Interned<GenericArguments> {
     fn fold_with<F: Folder>(
-        term: &mut Interned<Self>,
+        &mut self,
         folder: &mut F,
         engine: &TrackedEngine,
     ) -> Result<(), Abort> {
         fold_interned(
-            term,
+            self,
             folder,
             engine,
             fold_generic_arguments_payload,
@@ -947,40 +936,32 @@ impl Foldable for GenericArguments {
 
 impl Foldable for Symbol {
     fn fold_with<F: Folder>(
-        term: &mut Interned<Self>,
+        &mut self,
         folder: &mut F,
         engine: &TrackedEngine,
     ) -> Result<(), Abort> {
-        fold_interned(term, folder, engine, fold_symbol_payload, |_, _, _| {
-            Ok(())
-        })
+        fold_symbol_payload(self, folder, engine)
     }
 }
 
 impl Foldable for AssociatedSymbol {
     fn fold_with<F: Folder>(
-        term: &mut Interned<Self>,
+        &mut self,
         folder: &mut F,
         engine: &TrackedEngine,
     ) -> Result<(), Abort> {
-        fold_interned(
-            term,
-            folder,
-            engine,
-            fold_associated_symbol_payload,
-            |_, _, _| Ok(()),
-        )
+        fold_associated_symbol_payload(self, folder, engine)
     }
 }
 
-impl FoldableAsync for GenericArguments {
+impl FoldableAsync for Interned<GenericArguments> {
     fn fold_with_async<'a, F: FolderAsync + 'a>(
-        term: &'a mut Interned<Self>,
+        &'a mut self,
         folder: &'a mut F,
         engine: &'a TrackedEngine,
     ) -> FoldFuture<'a> {
         Box::pin(async move {
-            let mut rebuilt_value = term.as_ref().clone();
+            let mut rebuilt_value = self.as_ref().clone();
             fold_generic_arguments_payload_async(
                 &mut rebuilt_value,
                 folder,
@@ -988,8 +969,8 @@ impl FoldableAsync for GenericArguments {
             )
             .await?;
 
-            if term.as_ref() != &rebuilt_value {
-                *term = engine.intern(rebuilt_value);
+            if self.as_ref() != &rebuilt_value {
+                *self = engine.intern(rebuilt_value);
             }
 
             Ok(())
@@ -999,44 +980,24 @@ impl FoldableAsync for GenericArguments {
 
 impl FoldableAsync for Symbol {
     fn fold_with_async<'a, F: FolderAsync + 'a>(
-        term: &'a mut Interned<Self>,
+        &'a mut self,
         folder: &'a mut F,
         engine: &'a TrackedEngine,
     ) -> FoldFuture<'a> {
         Box::pin(async move {
-            let mut rebuilt_value = term.as_ref().clone();
-            fold_symbol_payload_async(&mut rebuilt_value, folder, engine)
-                .await?;
-
-            if term.as_ref() != &rebuilt_value {
-                *term = engine.intern(rebuilt_value);
-            }
-
-            Ok(())
+            fold_symbol_payload_async(self, folder, engine).await
         })
     }
 }
 
 impl FoldableAsync for AssociatedSymbol {
     fn fold_with_async<'a, F: FolderAsync + 'a>(
-        term: &'a mut Interned<Self>,
+        &'a mut self,
         folder: &'a mut F,
         engine: &'a TrackedEngine,
     ) -> FoldFuture<'a> {
         Box::pin(async move {
-            let mut rebuilt_value = term.as_ref().clone();
-            fold_associated_symbol_payload_async(
-                &mut rebuilt_value,
-                folder,
-                engine,
-            )
-            .await?;
-
-            if term.as_ref() != &rebuilt_value {
-                *term = engine.intern(rebuilt_value);
-            }
-
-            Ok(())
+            fold_associated_symbol_payload_async(self, folder, engine).await
         })
     }
 }

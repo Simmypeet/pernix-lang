@@ -129,7 +129,7 @@ async fn rewrites_nested_terms() {
         ))),
     )));
 
-    instantiation.instantiate(&mut term, &tracked).unwrap();
+    instantiation.instantiate(&mut term, &tracked);
 
     let Type::Reference(outer_reference) = term.as_ref() else {
         panic!("expected outer reference");
@@ -177,7 +177,7 @@ async fn rewrites_instantiation_values() {
         tracked.intern(Type::Primitive(Primitive::Uint32)),
     );
 
-    mapped_values.instantiate_values(&replacement, &tracked).unwrap();
+    mapped_values.instantiate_values(&replacement, &tracked);
 
     let updated = mapped_values
         .get_type_mapping(&tracked.intern(Type::Primitive(Primitive::Bool)))

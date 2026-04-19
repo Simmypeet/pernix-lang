@@ -271,14 +271,14 @@ impl IterSubTerms for Lifetime {
     }
 }
 
-impl Foldable for Lifetime {
+impl Foldable for Interned<Lifetime> {
     fn fold_with<F: Folder>(
-        term: &mut Interned<Self>,
+        &mut self,
         folder: &mut F,
         engine: &TrackedEngine,
     ) -> Result<(), Abort> {
         fold_interned(
-            term,
+            self,
             folder,
             engine,
             |_, _, _| Ok(()),
@@ -287,16 +287,16 @@ impl Foldable for Lifetime {
     }
 }
 
-impl FoldableAsync for Lifetime {
+impl FoldableAsync for Interned<Lifetime> {
     fn fold_with_async<'a, F: FolderAsync + 'a>(
-        term: &'a mut Interned<Self>,
+        &'a mut self,
         folder: &'a mut F,
         engine: &'a TrackedEngine,
     ) -> FoldFuture<'a> {
         Box::pin(async move {
-            let rebuilt_value = term.as_ref().clone();
+            let rebuilt_value = self.as_ref().clone();
             finish_fold_async!(
-                term,
+                self,
                 rebuilt_value,
                 folder,
                 engine,

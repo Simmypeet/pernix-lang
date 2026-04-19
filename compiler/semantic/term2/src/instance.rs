@@ -895,7 +895,7 @@ pub(crate) fn fold_trait_ref_payload<F: Folder>(
     engine: &TrackedEngine,
 ) -> Result<(), Abort> {
     let mut generic_arguments = trait_ref.generic_arguments().clone();
-    GenericArguments::fold_with(&mut generic_arguments, folder, engine)?;
+    generic_arguments.fold_with(folder, engine)?;
 
     *trait_ref = TraitRef::new(trait_ref.trait_id(), generic_arguments);
     Ok(())
@@ -907,11 +907,11 @@ pub(crate) fn fold_instance_associated_payload<F: Folder>(
     engine: &TrackedEngine,
 ) -> Result<(), Abort> {
     let mut instance = instance_associated.instance().clone();
-    Instance::fold_with(&mut instance, folder, engine)?;
+    instance.fold_with(folder, engine)?;
 
     let mut generic_arguments =
         instance_associated.associated_instance_generic_arguments().clone();
-    GenericArguments::fold_with(&mut generic_arguments, folder, engine)?;
+    generic_arguments.fold_with(folder, engine)?;
 
     *instance_associated = InstanceAssociated::new(
         instance,
@@ -954,14 +954,14 @@ fn fold_instance_payload<F: Folder>(
     Ok(())
 }
 
-impl Foldable for TraitRef {
+impl Foldable for Interned<TraitRef> {
     fn fold_with<F: Folder>(
-        term: &mut Interned<Self>,
+        &mut self,
         folder: &mut F,
         engine: &TrackedEngine,
     ) -> Result<(), Abort> {
         fold_interned(
-            term,
+            self,
             folder,
             engine,
             fold_trait_ref_payload,
@@ -972,28 +972,22 @@ impl Foldable for TraitRef {
 
 impl Foldable for InstanceAssociated {
     fn fold_with<F: Folder>(
-        term: &mut Interned<Self>,
+        &mut self,
         folder: &mut F,
         engine: &TrackedEngine,
     ) -> Result<(), Abort> {
-        fold_interned(
-            term,
-            folder,
-            engine,
-            fold_instance_associated_payload,
-            |_, _, _| Ok(()),
-        )
+        fold_instance_associated_payload(self, folder, engine)
     }
 }
 
-impl Foldable for Instance {
+impl Foldable for Interned<Instance> {
     fn fold_with<F: Folder>(
-        term: &mut Interned<Self>,
+        &mut self,
         folder: &mut F,
         engine: &TrackedEngine,
     ) -> Result<(), Abort> {
         fold_interned(
-            term,
+            self,
             folder,
             engine,
             fold_instance_payload,
@@ -1008,8 +1002,7 @@ pub(crate) async fn fold_trait_ref_payload_async<F: FolderAsync>(
     engine: &TrackedEngine,
 ) -> Result<(), Abort> {
     let mut generic_arguments = trait_ref.generic_arguments().clone();
-    GenericArguments::fold_with_async(&mut generic_arguments, folder, engine)
-        .await?;
+    generic_arguments.fold_with_async(folder, engine).await?;
 
     *trait_ref = TraitRef::new(trait_ref.trait_id(), generic_arguments);
     Ok(())
@@ -1021,12 +1014,11 @@ pub(crate) async fn fold_instance_associated_payload_async<F: FolderAsync>(
     engine: &TrackedEngine,
 ) -> Result<(), Abort> {
     let mut instance = instance_associated.instance().clone();
-    Instance::fold_with_async(&mut instance, folder, engine).await?;
+    instance.fold_with_async(folder, engine).await?;
 
     let mut generic_arguments =
         instance_associated.associated_instance_generic_arguments().clone();
-    GenericArguments::fold_with_async(&mut generic_arguments, folder, engine)
-        .await?;
+    generic_arguments.fold_with_async(folder, engine).await?;
 
     *instance_associated = InstanceAssociated::new(
         instance,
@@ -1070,19 +1062,19 @@ async fn fold_instance_payload_async<F: FolderAsync>(
     Ok(())
 }
 
-impl FoldableAsync for TraitRef {
+impl FoldableAsync for Interned<TraitRef> {
     fn fold_with_async<'a, F: FolderAsync + 'a>(
-        term: &'a mut Interned<Self>,
+        &'a mut self,
         folder: &'a mut F,
         engine: &'a TrackedEngine,
     ) -> FoldFuture<'a> {
         Box::pin(async move {
-            let mut rebuilt_value = term.as_ref().clone();
+            let mut rebuilt_value = self.as_ref().clone();
             fold_trait_ref_payload_async(&mut rebuilt_value, folder, engine)
                 .await?;
 
-            if term.as_ref() != &rebuilt_value {
-                *term = engine.intern(rebuilt_value);
+            if self.as_ref() != &rebuilt_value {
+                *self = engine.intern(rebuilt_value);
             }
 
             Ok(())
@@ -1092,41 +1084,29 @@ impl FoldableAsync for TraitRef {
 
 impl FoldableAsync for InstanceAssociated {
     fn fold_with_async<'a, F: FolderAsync + 'a>(
-        term: &'a mut Interned<Self>,
+        &'a mut self,
         folder: &'a mut F,
         engine: &'a TrackedEngine,
     ) -> FoldFuture<'a> {
         Box::pin(async move {
-            let mut rebuilt_value = term.as_ref().clone();
-            fold_instance_associated_payload_async(
-                &mut rebuilt_value,
-                folder,
-                engine,
-            )
-            .await?;
-
-            if term.as_ref() != &rebuilt_value {
-                *term = engine.intern(rebuilt_value);
-            }
-
-            Ok(())
+            fold_instance_associated_payload_async(self, folder, engine).await
         })
     }
 }
 
-impl FoldableAsync for Instance {
+impl FoldableAsync for Interned<Instance> {
     fn fold_with_async<'a, F: FolderAsync + 'a>(
-        term: &'a mut Interned<Self>,
+        &'a mut self,
         folder: &'a mut F,
         engine: &'a TrackedEngine,
     ) -> FoldFuture<'a> {
         Box::pin(async move {
-            let mut rebuilt_value = term.as_ref().clone();
+            let mut rebuilt_value = self.as_ref().clone();
             fold_instance_payload_async(&mut rebuilt_value, folder, engine)
                 .await?;
 
             finish_fold_async!(
-                term,
+                self,
                 rebuilt_value,
                 folder,
                 engine,

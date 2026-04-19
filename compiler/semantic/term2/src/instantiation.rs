@@ -16,7 +16,7 @@ use qbice::{
 
 use crate::{
     constant::Constant,
-    folding::{Abort, FoldExt, Foldable, Folder},
+    folding::{Abort, Foldable, Folder},
     generic_arguments::{AssociatedSymbol, GenericArguments, Symbol},
     generic_parameters::{
         ConstantParameterID, GenericParameters, InstanceParameterID,
@@ -225,24 +225,22 @@ impl Instantiation {
         &mut self,
         instantiation: &Self,
         engine: &TrackedEngine,
-    ) -> Result<(), Abort> {
+    ) {
         for term in self.lifetime_values_mut() {
-            instantiation.instantiate(term, engine)?;
+            instantiation.instantiate(term, engine);
         }
 
         for term in self.type_values_mut() {
-            instantiation.instantiate(term, engine)?;
+            instantiation.instantiate(term, engine);
         }
 
         for term in self.constant_values_mut() {
-            instantiation.instantiate(term, engine)?;
+            instantiation.instantiate(term, engine);
         }
 
         for term in self.instance_values_mut() {
-            instantiation.instantiate(term, engine)?;
+            instantiation.instantiate(term, engine);
         }
-
-        Ok(())
     }
 
     /// Inserts a mapping from one lifetime to another.
@@ -524,24 +522,27 @@ impl Instantiation {
     }
 
     /// Applies this instantiation recursively to an interned term.
-    pub fn instantiate<T: Foldable>(
-        &self,
-        term: &mut Interned<T>,
-        engine: &TrackedEngine,
-    ) -> Result<(), Abort> {
+    pub fn instantiate<T>(&self, term: &mut Interned<T>, engine: &TrackedEngine)
+    where
+        Interned<T>: Foldable,
+    {
         term.fold_with(&mut Instantiater { substitution: self }, engine)
+            .expect("instantiation folder is infallible");
     }
 
     /// Clones an interned term, applies this instantiation, and returns the
     /// instantiated clone.
-    pub fn clone_and_instantiate<T: Foldable>(
+    pub fn clone_and_instantiate<T>(
         &self,
         term: &Interned<T>,
         engine: &TrackedEngine,
-    ) -> Result<Interned<T>, Abort> {
+    ) -> Interned<T>
+    where
+        Interned<T>: Foldable,
+    {
         let mut cloned = term.clone();
-        self.instantiate(&mut cloned, engine)?;
-        Ok(cloned)
+        self.instantiate(&mut cloned, engine);
+        cloned
     }
 }
 

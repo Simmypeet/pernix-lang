@@ -101,33 +101,9 @@ pub trait FolderAsync: Send {
     }
 }
 
-/// A type that can be recursively folded through an interned handle.
-pub trait Foldable: Sized {
-    /// Recursively folds the interned handle in post-order.
-    fn fold_with<F: Folder>(
-        term: &mut Interned<Self>,
-        folder: &mut F,
-        engine: &TrackedEngine,
-    ) -> Result<(), Abort>;
-}
-
-/// A type that can be recursively folded through an interned handle
-/// asynchronously.
-pub trait FoldableAsync: Sized {
-    /// Recursively folds the interned handle in post-order.
-    fn fold_with_async<'a, F: FolderAsync + 'a>(
-        term: &'a mut Interned<Self>,
-        folder: &'a mut F,
-        engine: &'a TrackedEngine,
-    ) -> FoldFuture<'a>;
-}
-
-/// Extension methods for folding interned handles.
-pub trait FoldExt {
-    /// The payload stored behind this interned handle.
-    type Payload: Foldable;
-
-    /// Recursively folds the handle in post-order.
+/// A type that can be recursively folded in post-order.
+pub trait Foldable {
+    /// Recursively folds `self` in post-order.
     fn fold_with<F: Folder>(
         &mut self,
         folder: &mut F,
@@ -135,41 +111,14 @@ pub trait FoldExt {
     ) -> Result<(), Abort>;
 }
 
-/// Extension methods for asynchronously folding interned handles.
-pub trait FoldExtAsync {
-    /// The payload stored behind this interned handle.
-    type Payload: FoldableAsync;
-
-    /// Recursively folds the handle in post-order.
+/// A type that can be recursively folded in post-order asynchronously.
+pub trait FoldableAsync {
+    /// Recursively folds `self` in post-order.
     fn fold_with_async<'a, F: FolderAsync + 'a>(
         &'a mut self,
         folder: &'a mut F,
         engine: &'a TrackedEngine,
     ) -> FoldFuture<'a>;
-}
-
-impl<T: Foldable> FoldExt for Interned<T> {
-    type Payload = T;
-
-    fn fold_with<F: Folder>(
-        &mut self,
-        folder: &mut F,
-        engine: &TrackedEngine,
-    ) -> Result<(), Abort> {
-        T::fold_with(self, folder, engine)
-    }
-}
-
-impl<T: FoldableAsync> FoldExtAsync for Interned<T> {
-    type Payload = T;
-
-    fn fold_with_async<'a, F: FolderAsync + 'a>(
-        &'a mut self,
-        folder: &'a mut F,
-        engine: &'a TrackedEngine,
-    ) -> FoldFuture<'a> {
-        T::fold_with_async(self, folder, engine)
-    }
 }
 
 pub(crate) fn fold_interned<T, F, FoldChildren, FoldSelf>(
@@ -196,73 +145,91 @@ where
     fold_self(folder, term, engine)
 }
 
-pub(crate) fn fold_term_slice<T: Foldable, F: Folder>(
+pub(crate) fn fold_term_slice<T, F: Folder>(
     terms: &mut [Interned<T>],
     folder: &mut F,
     engine: &TrackedEngine,
-) -> Result<(), Abort> {
+) -> Result<(), Abort>
+where
+    Interned<T>: Foldable,
+{
     for term in terms {
-        T::fold_with(term, folder, engine)?;
+        term.fold_with(folder, engine)?;
     }
 
     Ok(())
 }
 
-pub(crate) fn fold_option_term<T: Foldable, F: Folder>(
+pub(crate) fn fold_option_term<T, F: Folder>(
     term: &mut Option<Interned<T>>,
     folder: &mut F,
     engine: &TrackedEngine,
-) -> Result<(), Abort> {
+) -> Result<(), Abort>
+where
+    Interned<T>: Foldable,
+{
     if let Some(term) = term {
-        T::fold_with(term, folder, engine)?;
+        term.fold_with(folder, engine)?;
     }
 
     Ok(())
 }
 
-pub(crate) fn fold_tuple_terms<T: Foldable, F: Folder>(
+pub(crate) fn fold_tuple_terms<T, F: Folder>(
     tuple: &mut tuple::Tuple<T>,
     folder: &mut F,
     engine: &TrackedEngine,
-) -> Result<(), Abort> {
+) -> Result<(), Abort>
+where
+    Interned<T>: Foldable,
+{
     for element in tuple.elements_mut() {
-        T::fold_with(element.term_mut(), folder, engine)?;
+        element.term_mut().fold_with(folder, engine)?;
     }
 
     Ok(())
 }
 
-pub(crate) async fn fold_term_slice_async<T: FoldableAsync, F: FolderAsync>(
+pub(crate) async fn fold_term_slice_async<T, F: FolderAsync>(
     terms: &mut [Interned<T>],
     folder: &mut F,
     engine: &TrackedEngine,
-) -> Result<(), Abort> {
+) -> Result<(), Abort>
+where
+    Interned<T>: FoldableAsync,
+{
     for term in terms {
-        T::fold_with_async(term, folder, engine).await?;
+        term.fold_with_async(folder, engine).await?;
     }
 
     Ok(())
 }
 
-pub(crate) async fn fold_option_term_async<T: FoldableAsync, F: FolderAsync>(
+pub(crate) async fn fold_option_term_async<T, F: FolderAsync>(
     term: &mut Option<Interned<T>>,
     folder: &mut F,
     engine: &TrackedEngine,
-) -> Result<(), Abort> {
+) -> Result<(), Abort>
+where
+    Interned<T>: FoldableAsync,
+{
     if let Some(term) = term {
-        T::fold_with_async(term, folder, engine).await?;
+        term.fold_with_async(folder, engine).await?;
     }
 
     Ok(())
 }
 
-pub(crate) async fn fold_tuple_terms_async<T: FoldableAsync, F: FolderAsync>(
+pub(crate) async fn fold_tuple_terms_async<T, F: FolderAsync>(
     tuple: &mut tuple::Tuple<T>,
     folder: &mut F,
     engine: &TrackedEngine,
-) -> Result<(), Abort> {
+) -> Result<(), Abort>
+where
+    Interned<T>: FoldableAsync,
+{
     for element in tuple.elements_mut() {
-        T::fold_with_async(element.term_mut(), folder, engine).await?;
+        element.term_mut().fold_with_async(folder, engine).await?;
     }
 
     Ok(())
@@ -700,7 +667,7 @@ mod tests {
             vec![],
             vec![],
         ));
-        let mut symbol = tracked.intern(Symbol::new(symbol_id, symbol_args));
+        let mut symbol = Symbol::new(symbol_id, symbol_args);
 
         symbol
             .fold_with(
@@ -732,11 +699,8 @@ mod tests {
                 TargetID::TEST.make_global(SymbolID::from_u128(50)),
             )))],
         ));
-        let mut associated_symbol = tracked.intern(AssociatedSymbol::new(
-            symbol_id,
-            parent_args,
-            member_args,
-        ));
+        let mut associated_symbol =
+            AssociatedSymbol::new(symbol_id, parent_args, member_args);
 
         associated_symbol
             .fold_with(
@@ -772,7 +736,7 @@ mod tests {
         let replacement_instance_id =
             TargetID::TEST.make_global(SymbolID::from_u128(62));
 
-        let mut instance_associated = tracked.intern(InstanceAssociated::new(
+        let mut instance_associated = InstanceAssociated::new(
             tracked.intern(Instance::AnonymousTrait(AnoymousTrait::new(
                 original_instance_id,
             ))),
@@ -783,7 +747,7 @@ mod tests {
                 vec![],
                 vec![],
             )),
-        ));
+        );
 
         instance_associated
             .fold_with(
