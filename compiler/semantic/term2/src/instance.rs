@@ -19,6 +19,7 @@ use crate::{
     generic_parameters::{InstanceParameter, InstanceParameterID},
     inference,
     lifetime::Lifetime,
+    matching::{Match, Matching, Substructural},
     sub_term::{self, IterSubTerms, SubTerm},
     r#type::Type,
 };
@@ -95,6 +96,23 @@ pub struct InstanceAssociated {
 }
 
 impl InstanceAssociated {
+    fn generic_argument_arity_matches(&self, other: &Self) -> bool {
+        self.trait_associated_symbol_generic_arguments.lifetimes().len()
+            == other.trait_associated_symbol_generic_arguments.lifetimes().len()
+            && self.trait_associated_symbol_generic_arguments.types().len()
+                == other.trait_associated_symbol_generic_arguments.types().len()
+            && self.trait_associated_symbol_generic_arguments.constants().len()
+                == other
+                    .trait_associated_symbol_generic_arguments
+                    .constants()
+                    .len()
+            && self.trait_associated_symbol_generic_arguments.instances().len()
+                == other
+                    .trait_associated_symbol_generic_arguments
+                    .instances()
+                    .len()
+    }
+
     /// Creates a new instance-associated term.
     #[must_use]
     pub const fn new(
@@ -171,6 +189,116 @@ impl InstanceAssociated {
         self.trait_associated_symbol_generic_arguments
             .instances()
             .get(location.index())
+    }
+
+    /// Streams the substructural matches between two instance-associated terms.
+    pub(crate) fn substructural_match<'a, L, T, C, I>(
+        &'a self,
+        other: &'a Self,
+        to_lifetime_loc: impl Fn(usize) -> L + 'a,
+        to_type_loc: impl Fn(usize) -> T + 'a,
+        to_constant_loc: impl Fn(usize) -> C + 'a,
+        to_instance_generic_args_loc: impl Fn(usize) -> I + 'a,
+        instance_loc: I,
+    ) -> Option<impl Iterator<Item = Substructural<L, T, C, I>> + 'a>
+    where
+        L: Copy + 'a,
+        T: Copy + 'a,
+        C: Copy + 'a,
+        I: Copy + 'a,
+    {
+        if !self.generic_argument_arity_matches(other) {
+            return None;
+        }
+
+        Some(pernixc_coroutine_iter::coroutine_iter!({
+            for (idx, (lhs, rhs)) in self
+                .trait_associated_symbol_generic_arguments
+                .lifetimes()
+                .iter()
+                .cloned()
+                .zip(
+                    other
+                        .trait_associated_symbol_generic_arguments
+                        .lifetimes()
+                        .iter()
+                        .cloned(),
+                )
+                .enumerate()
+            {
+                let location = to_lifetime_loc(idx);
+                yield Substructural::Lifetime(Matching::new(
+                    lhs, rhs, location, location,
+                ));
+            }
+
+            for (idx, (lhs, rhs)) in self
+                .trait_associated_symbol_generic_arguments
+                .types()
+                .iter()
+                .cloned()
+                .zip(
+                    other
+                        .trait_associated_symbol_generic_arguments
+                        .types()
+                        .iter()
+                        .cloned(),
+                )
+                .enumerate()
+            {
+                let location = to_type_loc(idx);
+                yield Substructural::Type(Matching::new(
+                    lhs, rhs, location, location,
+                ));
+            }
+
+            for (idx, (lhs, rhs)) in self
+                .trait_associated_symbol_generic_arguments
+                .constants()
+                .iter()
+                .cloned()
+                .zip(
+                    other
+                        .trait_associated_symbol_generic_arguments
+                        .constants()
+                        .iter()
+                        .cloned(),
+                )
+                .enumerate()
+            {
+                let location = to_constant_loc(idx);
+                yield Substructural::Constant(Matching::new(
+                    lhs, rhs, location, location,
+                ));
+            }
+
+            for (idx, (lhs, rhs)) in self
+                .trait_associated_symbol_generic_arguments
+                .instances()
+                .iter()
+                .cloned()
+                .zip(
+                    other
+                        .trait_associated_symbol_generic_arguments
+                        .instances()
+                        .iter()
+                        .cloned(),
+                )
+                .enumerate()
+            {
+                let location = to_instance_generic_args_loc(idx);
+                yield Substructural::Instance(Matching::new(
+                    lhs, rhs, location, location,
+                ));
+            }
+
+            yield Substructural::Instance(Matching::new(
+                self.instance.clone(),
+                other.instance.clone(),
+                instance_loc,
+                instance_loc,
+            ));
+        }))
     }
 }
 
@@ -520,6 +648,110 @@ impl SubTerm for Instance {
     type SubConstantLocation = SubConstantLocation;
     type SubInstanceLocation = SubInstanceLocation;
     type ThisSubTermLocation = SubInstanceLocation;
+}
+
+impl Match for Instance {
+    fn substructural_match<'a>(
+        &'a self,
+        other: &'a Self,
+    ) -> Option<
+        impl Iterator<
+            Item = Substructural<
+                Self::SubLifetimeLocation,
+                Self::SubTypeLocation,
+                Self::SubConstantLocation,
+                Self::SubInstanceLocation,
+            >,
+        > + 'a,
+    > {
+        enum MatchPlan<'a> {
+            Symbol(&'a Symbol, &'a Symbol),
+            InstanceAssociated(&'a InstanceAssociated, &'a InstanceAssociated),
+        }
+
+        let match_plan =
+            if let (Self::Symbol(lhs), Self::Symbol(rhs)) = (self, other) {
+                if lhs.id() != rhs.id() {
+                    return None;
+                }
+
+                MatchPlan::Symbol(lhs, rhs)
+            } else if let (
+                Self::InstanceAssociated(lhs),
+                Self::InstanceAssociated(rhs),
+            ) = (self, other)
+            {
+                if lhs.trait_associated_symbol_id()
+                    != rhs.trait_associated_symbol_id()
+                {
+                    return None;
+                }
+
+                MatchPlan::InstanceAssociated(lhs, rhs)
+            } else {
+                return None;
+            };
+
+        Some(pernixc_coroutine_iter::coroutine_iter!({
+            match match_plan {
+                MatchPlan::Symbol(lhs, rhs) => {
+                    for substructural in lhs.generic_arguments().as_ref().substructural_match(
+                        rhs.generic_arguments().as_ref(),
+                        SubSymbolLocation::new,
+                    ).expect("validated symbol ids before building iterator") {
+                        yield substructural;
+                    }
+                }
+
+                MatchPlan::InstanceAssociated(lhs, rhs) => {
+                    for substructural in lhs.substructural_match(
+                        rhs,
+                        |idx| {
+                            SubLifetimeLocation::InstanceAssociatedGenericArguments(
+                                SubGenericArgumentsLocation::new(idx),
+                            )
+                        },
+                        |idx| {
+                            SubTypeLocation::InstanceAssociatedGenericArguments(
+                                SubGenericArgumentsLocation::new(idx),
+                            )
+                        },
+                        |idx| {
+                            SubConstantLocation::InstanceAssociatedGenericArguments(
+                                SubGenericArgumentsLocation::new(idx),
+                            )
+                        },
+                        |idx| {
+                            SubInstanceLocation::InstanceAssociated(
+                                SubInstanceAssociatedLocation::GenericArguments(
+                                    SubGenericArgumentsLocation::new(idx),
+                                ),
+                            )
+                        },
+                        SubInstanceLocation::InstanceAssociated(
+                            SubInstanceAssociatedLocation::Instance,
+                        ),
+                    )
+                    .expect(
+                        "validated instance-associated symbol ids before building iterator",
+                    ) {
+                        yield substructural;
+                    }
+                }
+            }
+        }))
+    }
+
+    fn from_self_matching(
+        matching: Matching<Interned<Self>, Self::ThisSubTermLocation>,
+    ) -> Substructural<
+        Self::SubLifetimeLocation,
+        Self::SubTypeLocation,
+        Self::SubConstantLocation,
+        Self::SubInstanceLocation,
+    > {
+        Substructural::Instance(matching)
+    }
 }
 
 /// Location of an immediate child yielded by [`IterSubTerms`] for [`Instance`].

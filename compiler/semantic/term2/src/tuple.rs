@@ -7,6 +7,8 @@ use qbice::{
     Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
 };
 
+use crate::matching::{Match, Matching, Substructural};
+
 #[cfg(any(test, feature = "arbitrary"))]
 pub mod arbitrary;
 
@@ -155,6 +157,220 @@ impl<Term: Identifiable + StableHash + Send + Sync + 'static> Default
     for Tuple<Term>
 {
     fn default() -> Self { Self::unit() }
+}
+
+impl<Term> Tuple<Term>
+where
+    Term: Match + Clone + Identifiable + StableHash + Send + Sync + 'static,
+    Self: TryFrom<Term, Error = Term> + Into<Term>,
+    Term::ThisSubTermLocation: From<SubTupleLocation>,
+{
+    #[allow(clippy::too_many_lines, clippy::type_complexity)]
+    fn substructural_match_internal<'a>(
+        from: &'a Self,
+        to: &'a Self,
+        swap: bool,
+    ) -> Option<
+        impl Iterator<
+            Item = Substructural<
+                Term::SubLifetimeLocation,
+                Term::SubTypeLocation,
+                Term::SubConstantLocation,
+                Term::SubInstanceLocation,
+            >,
+        > + 'a,
+    > {
+        enum MatchPlan {
+            Exact,
+            Packed {
+                unpacked_position: usize,
+                from_tail_range: std::ops::Range<usize>,
+                to_tail_range: std::ops::Range<usize>,
+                to_unpack_range: std::ops::Range<usize>,
+            },
+        }
+
+        fn into_substructural<Term>(
+            lhs: Interned<Term>,
+            rhs: Interned<Term>,
+            lhs_location: SubTupleLocation,
+            rhs_location: SubTupleLocation,
+            swap: bool,
+        ) -> crate::matching::Substructural<
+            Term::SubLifetimeLocation,
+            Term::SubTypeLocation,
+            Term::SubConstantLocation,
+            Term::SubInstanceLocation,
+        >
+        where
+            Term: Match + Identifiable + StableHash + Send + Sync + 'static,
+            Term::ThisSubTermLocation: From<SubTupleLocation>,
+        {
+            let matching = if swap {
+                Matching::new(
+                    rhs,
+                    lhs,
+                    rhs_location.into(),
+                    lhs_location.into(),
+                )
+            } else {
+                Matching::new(
+                    lhs,
+                    rhs,
+                    lhs_location.into(),
+                    rhs_location.into(),
+                )
+            };
+
+            Term::from_self_matching(matching)
+        }
+
+        let match_plan = if from.elements.len() == to.elements.len()
+            && from.elements.iter().zip(&to.elements).all(
+                |(from_element, to_element)| {
+                    from_element.is_unpacked == to_element.is_unpacked
+                },
+            ) {
+            MatchPlan::Exact
+        } else {
+            let from_unpacked_count = from
+                .elements
+                .iter()
+                .filter(|element| element.is_unpacked)
+                .count();
+            let to_unpacked_count = to
+                .elements
+                .iter()
+                .filter(|element| element.is_unpacked)
+                .count();
+
+            if from_unpacked_count != 1 || to_unpacked_count > 1 {
+                return None;
+            }
+
+            if from.elements.len() > to.elements.len() + 1 {
+                return None;
+            }
+
+            let unpacked_position =
+                from.elements.iter().position(|element| element.is_unpacked)?;
+
+            let head_range = 0..unpacked_position;
+            let from_tail_range = (unpacked_position + 1)..from.elements.len();
+            let to_tail_range = (to.elements.len()
+                - from_tail_range.clone().count())
+                ..to.elements.len();
+            let to_unpack_range = unpacked_position..to_tail_range.start;
+
+            if to.elements[head_range].iter().any(|element| element.is_unpacked)
+                || to.elements[to_tail_range.clone()]
+                    .iter()
+                    .any(|element| element.is_unpacked)
+            {
+                return None;
+            }
+
+            MatchPlan::Packed {
+                unpacked_position,
+                from_tail_range,
+                to_tail_range,
+                to_unpack_range,
+            }
+        };
+
+        Some(pernixc_coroutine_iter::coroutine_iter!({
+            match match_plan {
+                MatchPlan::Exact => {
+                    for (idx, (from_element, to_element)) in
+                        from.elements.iter().zip(&to.elements).enumerate()
+                    {
+                        yield into_substructural::<Term>(
+                            from_element.term.clone(),
+                            to_element.term.clone(),
+                            SubTupleLocation::Single(idx),
+                            SubTupleLocation::Single(idx),
+                            swap,
+                        );
+                    }
+                }
+
+                MatchPlan::Packed {
+                    unpacked_position,
+                    from_tail_range,
+                    to_tail_range,
+                    to_unpack_range,
+                } => {
+                    for (idx, (from_element, to_element)) in from.elements
+                        [0..unpacked_position]
+                        .iter()
+                        .zip(&to.elements[0..unpacked_position])
+                        .enumerate()
+                    {
+                        yield into_substructural::<Term>(
+                            from_element.term.clone(),
+                            to_element.term.clone(),
+                            SubTupleLocation::Single(idx),
+                            SubTupleLocation::Single(idx),
+                            swap,
+                        );
+                    }
+
+                    for (idx, (from_element, to_element)) in from.elements
+                        [from_tail_range.clone()]
+                    .iter()
+                    .zip(&to.elements[to_tail_range.clone()])
+                    .enumerate()
+                    {
+                        yield into_substructural::<Term>(
+                            from_element.term.clone(),
+                            to_element.term.clone(),
+                            SubTupleLocation::Single(
+                                idx + from_tail_range.start,
+                            ),
+                            SubTupleLocation::Single(idx + to_tail_range.start),
+                            swap,
+                        );
+                    }
+
+                    let to_unpack = Interned::new_duplicating(
+                        Self::new(
+                            to.elements[to_unpack_range.clone()].to_vec(),
+                        )
+                        .into(),
+                    );
+                    let unpacked =
+                        from.elements[unpacked_position].term.clone();
+
+                    yield into_substructural::<Term>(
+                        unpacked,
+                        to_unpack,
+                        SubTupleLocation::Single(unpacked_position),
+                        SubTupleLocation::Range(to_unpack_range.into()),
+                        swap,
+                    );
+                }
+            }
+        }))
+    }
+
+    /// Streams the substructural matches between two tuples.
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn substructural_match<'a>(
+        &'a self,
+        other: &'a Self,
+    ) -> Option<
+        impl Iterator<
+            Item = Substructural<
+                Term::SubLifetimeLocation,
+                Term::SubTypeLocation,
+                Term::SubConstantLocation,
+                Term::SubInstanceLocation,
+            >,
+        > + 'a,
+    > {
+        Self::substructural_match_internal(self, other, false)
+            .or_else(|| Self::substructural_match_internal(other, self, true))
+    }
 }
 
 /// Represents a range inside a tuple.

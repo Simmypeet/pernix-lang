@@ -15,6 +15,7 @@ use crate::{
     },
     instance::Instance,
     lifetime::Lifetime,
+    matching::{Matching, Substructural},
     r#type::Type,
 };
 
@@ -45,6 +46,90 @@ pub struct GenericArguments {
 }
 
 impl GenericArguments {
+    /// Streams the structural matches between two generic argument lists.
+    pub(crate) fn substructural_match<'a, L, T, C, I, Y>(
+        &'a self,
+        other: &'a Self,
+        to_location: impl Fn(usize) -> Y + 'a,
+    ) -> Option<impl Iterator<Item = Substructural<L, T, C, I>> + 'a>
+    where
+        Y: Into<L> + Into<T> + Into<C> + Into<I> + Copy + 'a,
+    {
+        if self.lifetimes.len() != other.lifetimes.len()
+            || self.types.len() != other.types.len()
+            || self.constants.len() != other.constants.len()
+            || self.instances.len() != other.instances.len()
+        {
+            return None;
+        }
+
+        Some(pernixc_coroutine_iter::coroutine_iter!({
+            for (idx, (lhs, rhs)) in self
+                .lifetimes
+                .iter()
+                .cloned()
+                .zip(other.lifetimes.iter().cloned())
+                .enumerate()
+            {
+                let location = to_location(idx);
+                yield Substructural::Lifetime(Matching::new(
+                    lhs,
+                    rhs,
+                    location.into(),
+                    location.into(),
+                ));
+            }
+
+            for (idx, (lhs, rhs)) in self
+                .types
+                .iter()
+                .cloned()
+                .zip(other.types.iter().cloned())
+                .enumerate()
+            {
+                let location = to_location(idx);
+                yield Substructural::Type(Matching::new(
+                    lhs,
+                    rhs,
+                    location.into(),
+                    location.into(),
+                ));
+            }
+
+            for (idx, (lhs, rhs)) in self
+                .constants
+                .iter()
+                .cloned()
+                .zip(other.constants.iter().cloned())
+                .enumerate()
+            {
+                let location = to_location(idx);
+                yield Substructural::Constant(Matching::new(
+                    lhs,
+                    rhs,
+                    location.into(),
+                    location.into(),
+                ));
+            }
+
+            for (idx, (lhs, rhs)) in self
+                .instances
+                .iter()
+                .cloned()
+                .zip(other.instances.iter().cloned())
+                .enumerate()
+            {
+                let location = to_location(idx);
+                yield Substructural::Instance(Matching::new(
+                    lhs,
+                    rhs,
+                    location.into(),
+                    location.into(),
+                ));
+            }
+        }))
+    }
+
     /// Creates generic arguments with a single type argument.
     #[must_use]
     pub fn new_single_type(r#type: Interned<Type>) -> Self {

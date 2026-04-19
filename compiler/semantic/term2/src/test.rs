@@ -16,6 +16,7 @@ use crate::{
     },
     instance::{AnoymousTrait, Instance, InstanceAssociated},
     lifetime::Lifetime,
+    matching::{Match, Substructural},
     predicate::{Compatible, Outlives, Predicate},
     sub_term::{IterSubTerms, Location, RecursivelyIterSubTerms},
     r#type::{self, Primitive, Qualifier, Reference, Type},
@@ -554,6 +555,120 @@ async fn predicate_contains_error_detects_instance_associated_type_equality_erro
         Predicate::InstanceAssociatedTypeEquality(Compatible::new(lhs, rhs));
 
     assert!(predicate.contains_error());
+}
+
+#[tokio::test]
+async fn type_substructural_match_streams_components_in_order() {
+    let engine = create_test_engine().await;
+    let tracked = engine.tracked().await;
+
+    let lhs_lifetime = tracked.intern(Lifetime::Static);
+    let rhs_lifetime = tracked.intern(Lifetime::Erased);
+    let lhs_type = tracked.intern(Type::Primitive(Primitive::Bool));
+    let rhs_type = tracked.intern(Type::Primitive(Primitive::Uint32));
+
+    let lhs = Type::Reference(Reference::new(
+        Qualifier::Immutable,
+        lhs_lifetime.clone(),
+        lhs_type.clone(),
+    ));
+    let rhs = Type::Reference(Reference::new(
+        Qualifier::Immutable,
+        rhs_lifetime.clone(),
+        rhs_type.clone(),
+    ));
+
+    let matches: Vec<_> = lhs.substructural_match(&rhs).unwrap().collect();
+    assert_eq!(matches.len(), 2);
+
+    assert!(matches!(
+        &matches[0],
+        Substructural::Lifetime(matching)
+            if matching.lhs() == &lhs_lifetime
+            && matching.rhs() == &rhs_lifetime
+            && matching.lhs_location() == &r#type::SubLifetimeLocation::Reference
+            && matching.rhs_location() == &r#type::SubLifetimeLocation::Reference
+    ));
+
+    assert!(matches!(
+        &matches[1],
+        Substructural::Type(matching)
+            if matching.lhs() == &lhs_type
+            && matching.rhs() == &rhs_type
+            && matching.lhs_location() == &r#type::SubTypeLocation::Reference
+            && matching.rhs_location() == &r#type::SubTypeLocation::Reference
+    ));
+}
+
+#[tokio::test]
+async fn instance_substructural_match_streams_parent_instance_last() {
+    let engine = create_test_engine().await;
+    let tracked = engine.tracked().await;
+
+    let symbol_id = TargetID::TEST.make_global(SymbolID::from_u128(301));
+    let left_nested_id = TargetID::TEST.make_global(SymbolID::from_u128(302));
+    let right_nested_id = TargetID::TEST.make_global(SymbolID::from_u128(303));
+
+    let lhs_lifetime = tracked.intern(Lifetime::Static);
+    let rhs_lifetime = tracked.intern(Lifetime::Erased);
+    let lhs_type = tracked.intern(Type::Primitive(Primitive::Bool));
+    let rhs_type = tracked.intern(Type::Primitive(Primitive::Uint32));
+    let lhs_constant = tracked
+        .intern(constant::Constant::Primitive(constant::Primitive::Uint8(1)));
+    let rhs_constant = tracked
+        .intern(constant::Constant::Primitive(constant::Primitive::Uint8(2)));
+    let lhs_nested = tracked
+        .intern(Instance::AnonymousTrait(AnoymousTrait::new(left_nested_id)));
+    let rhs_nested = tracked
+        .intern(Instance::AnonymousTrait(AnoymousTrait::new(right_nested_id)));
+    let lhs_parent =
+        tracked.intern(Instance::AnonymousTrait(AnoymousTrait::new(symbol_id)));
+    let rhs_parent =
+        tracked.intern(Instance::AnonymousTrait(AnoymousTrait::new(symbol_id)));
+
+    let lhs = Instance::InstanceAssociated(InstanceAssociated::new(
+        lhs_parent.clone(),
+        symbol_id,
+        tracked.intern(GenericArguments::new(
+            vec![lhs_lifetime],
+            vec![lhs_type],
+            vec![lhs_constant],
+            vec![lhs_nested],
+        )),
+    ));
+    let rhs = Instance::InstanceAssociated(InstanceAssociated::new(
+        rhs_parent.clone(),
+        symbol_id,
+        tracked.intern(GenericArguments::new(
+            vec![rhs_lifetime],
+            vec![rhs_type],
+            vec![rhs_constant],
+            vec![rhs_nested],
+        )),
+    ));
+
+    let matches: Vec<_> = lhs.substructural_match(&rhs).unwrap().collect();
+    assert_eq!(matches.len(), 5);
+
+    assert!(matches!(&matches[0], Substructural::Lifetime(_)));
+    assert!(matches!(&matches[1], Substructural::Type(_)));
+    assert!(matches!(&matches[2], Substructural::Constant(_)));
+    assert!(matches!(&matches[3], Substructural::Instance(_)));
+
+    assert!(matches!(
+        &matches[4],
+        Substructural::Instance(matching)
+            if matching.lhs() == &lhs_parent
+            && matching.rhs() == &rhs_parent
+            && matching.lhs_location()
+                == &crate::instance::SubInstanceLocation::InstanceAssociated(
+                    crate::instance::SubInstanceAssociatedLocation::Instance,
+                )
+            && matching.rhs_location()
+                == &crate::instance::SubInstanceLocation::InstanceAssociated(
+                    crate::instance::SubInstanceAssociatedLocation::Instance,
+                )
+    ));
 }
 
 #[tokio::test]

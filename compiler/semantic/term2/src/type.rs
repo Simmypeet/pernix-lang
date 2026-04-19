@@ -21,6 +21,7 @@ use crate::{
         Instance, InstanceAssociated, SubInstanceAssociatedGenericArgsLocation,
     },
     lifetime::Lifetime,
+    matching::{Match, Matching, Substructural},
     sub_term::{self, IterSubTerms, SubTerm},
     tuple::SubTupleLocation,
 };
@@ -675,6 +676,412 @@ impl SubTerm for Type {
     type SubConstantLocation = SubConstantLocation;
     type SubInstanceLocation = SubInstanceLocation;
     type ThisSubTermLocation = SubTypeLocation;
+}
+
+impl Match for Type {
+    #[allow(clippy::too_many_lines)]
+    fn substructural_match<'a>(
+        &'a self,
+        other: &'a Self,
+    ) -> Option<
+        impl Iterator<
+            Item = Substructural<
+                Self::SubLifetimeLocation,
+                Self::SubTypeLocation,
+                Self::SubConstantLocation,
+                Self::SubInstanceLocation,
+            >,
+        > + 'a,
+    > {
+        enum MatchPlan<'a> {
+            Symbol(&'a Symbol, &'a Symbol),
+            Pointer(&'a Pointer, &'a Pointer),
+            Reference(&'a Reference, &'a Reference),
+            Array(&'a Array, &'a Array),
+            Tuple(&'a Tuple, &'a Tuple),
+            Phantom(&'a Phantom, &'a Phantom),
+            AssociatedSymbol(&'a AssociatedSymbol, &'a AssociatedSymbol),
+            FunctionSignature(&'a FunctionSignature, &'a FunctionSignature),
+            InstanceAssociated(&'a InstanceAssociated, &'a InstanceAssociated),
+        }
+
+        let match_plan = match self {
+            Self::Inference(_)
+            | Self::Primitive(_)
+            | Self::Parameter(_)
+            | Self::Error(_) => None,
+
+            Self::Symbol(lhs) => match other {
+                Self::Symbol(rhs) if lhs.id() == rhs.id() => {
+                    Some(MatchPlan::Symbol(lhs, rhs))
+                }
+
+                Self::Inference(_)
+                | Self::Primitive(_)
+                | Self::Parameter(_)
+                | Self::Symbol(_)
+                | Self::Pointer(_)
+                | Self::Reference(_)
+                | Self::Array(_)
+                | Self::Tuple(_)
+                | Self::Phantom(_)
+                | Self::InstanceAssociated(_)
+                | Self::AssociatedSymbol(_)
+                | Self::FunctionSignature(_)
+                | Self::Error(_) => None,
+            },
+
+            Self::Pointer(lhs) => match other {
+                Self::Pointer(rhs) if lhs.is_mutable() == rhs.is_mutable() => {
+                    Some(MatchPlan::Pointer(lhs, rhs))
+                }
+
+                Self::Inference(_)
+                | Self::Primitive(_)
+                | Self::Parameter(_)
+                | Self::Symbol(_)
+                | Self::Pointer(_)
+                | Self::Reference(_)
+                | Self::Array(_)
+                | Self::Tuple(_)
+                | Self::Phantom(_)
+                | Self::InstanceAssociated(_)
+                | Self::AssociatedSymbol(_)
+                | Self::FunctionSignature(_)
+                | Self::Error(_) => None,
+            },
+
+            Self::Reference(lhs) => match other {
+                Self::Reference(rhs) if lhs.qualifier() == rhs.qualifier() => {
+                    Some(MatchPlan::Reference(lhs, rhs))
+                }
+
+                Self::Inference(_)
+                | Self::Primitive(_)
+                | Self::Parameter(_)
+                | Self::Symbol(_)
+                | Self::Pointer(_)
+                | Self::Reference(_)
+                | Self::Array(_)
+                | Self::Tuple(_)
+                | Self::Phantom(_)
+                | Self::InstanceAssociated(_)
+                | Self::AssociatedSymbol(_)
+                | Self::FunctionSignature(_)
+                | Self::Error(_) => None,
+            },
+
+            Self::Array(lhs) => match other {
+                Self::Array(rhs) => Some(MatchPlan::Array(lhs, rhs)),
+
+                Self::Inference(_)
+                | Self::Primitive(_)
+                | Self::Parameter(_)
+                | Self::Symbol(_)
+                | Self::Pointer(_)
+                | Self::Reference(_)
+                | Self::Tuple(_)
+                | Self::Phantom(_)
+                | Self::InstanceAssociated(_)
+                | Self::AssociatedSymbol(_)
+                | Self::FunctionSignature(_)
+                | Self::Error(_) => None,
+            },
+
+            Self::Tuple(lhs) => match other {
+                Self::Tuple(rhs) => Some(MatchPlan::Tuple(lhs, rhs)),
+
+                Self::Inference(_)
+                | Self::Primitive(_)
+                | Self::Parameter(_)
+                | Self::Symbol(_)
+                | Self::Pointer(_)
+                | Self::Reference(_)
+                | Self::Array(_)
+                | Self::Phantom(_)
+                | Self::InstanceAssociated(_)
+                | Self::AssociatedSymbol(_)
+                | Self::FunctionSignature(_)
+                | Self::Error(_) => None,
+            },
+
+            Self::Phantom(lhs) => match other {
+                Self::Phantom(rhs) => Some(MatchPlan::Phantom(lhs, rhs)),
+
+                Self::Inference(_)
+                | Self::Primitive(_)
+                | Self::Parameter(_)
+                | Self::Symbol(_)
+                | Self::Pointer(_)
+                | Self::Reference(_)
+                | Self::Array(_)
+                | Self::Tuple(_)
+                | Self::InstanceAssociated(_)
+                | Self::AssociatedSymbol(_)
+                | Self::FunctionSignature(_)
+                | Self::Error(_) => None,
+            },
+
+            Self::InstanceAssociated(lhs) => match other {
+                Self::InstanceAssociated(rhs)
+                    if lhs.trait_associated_symbol_id()
+                        == rhs.trait_associated_symbol_id() =>
+                {
+                    Some(MatchPlan::InstanceAssociated(lhs, rhs))
+                }
+
+                Self::Inference(_)
+                | Self::Primitive(_)
+                | Self::Parameter(_)
+                | Self::Symbol(_)
+                | Self::Pointer(_)
+                | Self::Reference(_)
+                | Self::Array(_)
+                | Self::Tuple(_)
+                | Self::Phantom(_)
+                | Self::InstanceAssociated(_)
+                | Self::AssociatedSymbol(_)
+                | Self::FunctionSignature(_)
+                | Self::Error(_) => None,
+            },
+
+            Self::AssociatedSymbol(lhs) => match other {
+                Self::AssociatedSymbol(rhs) if lhs.id() == rhs.id() => {
+                    Some(MatchPlan::AssociatedSymbol(lhs, rhs))
+                }
+
+                Self::Inference(_)
+                | Self::Primitive(_)
+                | Self::Parameter(_)
+                | Self::Symbol(_)
+                | Self::Pointer(_)
+                | Self::Reference(_)
+                | Self::Array(_)
+                | Self::Tuple(_)
+                | Self::Phantom(_)
+                | Self::InstanceAssociated(_)
+                | Self::AssociatedSymbol(_)
+                | Self::FunctionSignature(_)
+                | Self::Error(_) => None,
+            },
+
+            Self::FunctionSignature(lhs) => match other {
+                Self::FunctionSignature(rhs)
+                    if lhs.parameters().len() == rhs.parameters().len() =>
+                {
+                    Some(MatchPlan::FunctionSignature(lhs, rhs))
+                }
+
+                Self::Inference(_)
+                | Self::Primitive(_)
+                | Self::Parameter(_)
+                | Self::Symbol(_)
+                | Self::Pointer(_)
+                | Self::Reference(_)
+                | Self::Array(_)
+                | Self::Tuple(_)
+                | Self::Phantom(_)
+                | Self::InstanceAssociated(_)
+                | Self::AssociatedSymbol(_)
+                | Self::FunctionSignature(_)
+                | Self::Error(_) => None,
+            },
+        }?;
+
+        Some(pernixc_coroutine_iter::coroutine_iter!({
+            match match_plan {
+                MatchPlan::Symbol(lhs, rhs) => {
+                    for substructural in lhs
+                        .generic_arguments()
+                        .as_ref()
+                        .substructural_match(
+                            rhs.generic_arguments().as_ref(),
+                            SubSymbolLocation::new,
+                        )
+                        .expect("validated symbol ids before building iterator")
+                    {
+                        yield substructural;
+                    }
+                }
+
+                MatchPlan::Pointer(lhs, rhs) => {
+                    yield Substructural::Type(Matching::new(
+                        lhs.pointee().clone(),
+                        rhs.pointee().clone(),
+                        SubTypeLocation::Pointer,
+                        SubTypeLocation::Pointer,
+                    ));
+                }
+
+                MatchPlan::Reference(lhs, rhs) => {
+                    yield Substructural::Lifetime(Matching::new(
+                        lhs.lifetime().clone(),
+                        rhs.lifetime().clone(),
+                        SubLifetimeLocation::Reference,
+                        SubLifetimeLocation::Reference,
+                    ));
+
+                    yield Substructural::Type(Matching::new(
+                        lhs.pointee().clone(),
+                        rhs.pointee().clone(),
+                        SubTypeLocation::Reference,
+                        SubTypeLocation::Reference,
+                    ));
+                }
+
+                MatchPlan::Array(lhs, rhs) => {
+                    yield Substructural::Type(Matching::new(
+                        lhs.r#type().clone(),
+                        rhs.r#type().clone(),
+                        SubTypeLocation::Array,
+                        SubTypeLocation::Array,
+                    ));
+
+                    yield Substructural::Constant(Matching::new(
+                        lhs.length().clone(),
+                        rhs.length().clone(),
+                        SubConstantLocation::Array,
+                        SubConstantLocation::Array,
+                    ));
+                }
+
+                MatchPlan::Tuple(lhs, rhs) => {
+                    for substructural in lhs
+                        .substructural_match(rhs)
+                        .expect(
+                            "validated tuple variants before building iterator",
+                        )
+                    {
+                        yield substructural;
+                    }
+                }
+
+                MatchPlan::Phantom(lhs, rhs) => {
+                    yield Substructural::Type(Matching::new(
+                        lhs.r#type().clone(),
+                        rhs.r#type().clone(),
+                        SubTypeLocation::Phantom,
+                        SubTypeLocation::Phantom,
+                    ));
+                }
+
+                MatchPlan::AssociatedSymbol(lhs, rhs) => {
+                    for substructural in lhs
+                        .parent_generic_arguments()
+                        .as_ref()
+                        .substructural_match(
+                            rhs.parent_generic_arguments().as_ref(),
+                            |idx| SubAssociatedSymbolLocation::new(idx, true),
+                        )
+                        .expect(
+                            "validated associated-symbol parent arguments before building iterator",
+                        )
+                    {
+                        yield substructural;
+                    }
+
+                    for substructural in lhs
+                        .member_generic_arguments()
+                        .as_ref()
+                        .substructural_match(
+                            rhs.member_generic_arguments().as_ref(),
+                            |idx| SubAssociatedSymbolLocation::new(idx, false),
+                        )
+                        .expect(
+                            "validated associated-symbol member arguments before building iterator",
+                        )
+                    {
+                        yield substructural;
+                    }
+                }
+
+                MatchPlan::FunctionSignature(lhs, rhs) => {
+                    for (index, (lhs, rhs)) in lhs
+                        .parameters()
+                        .iter()
+                        .cloned()
+                        .zip(rhs.parameters().iter().cloned())
+                        .enumerate()
+                    {
+                        yield Substructural::Type(Matching::new(
+                            lhs,
+                            rhs,
+                            SubTypeLocation::FunctionSignature(
+                                SubFunctionSignatureLocation::Parameter(index),
+                            ),
+                            SubTypeLocation::FunctionSignature(
+                                SubFunctionSignatureLocation::Parameter(index),
+                            ),
+                        ));
+                    }
+
+                    yield Substructural::Type(Matching::new(
+                        lhs.return_type().clone(),
+                        rhs.return_type().clone(),
+                        SubTypeLocation::FunctionSignature(
+                            SubFunctionSignatureLocation::ReturnType,
+                        ),
+                        SubTypeLocation::FunctionSignature(
+                            SubFunctionSignatureLocation::ReturnType,
+                        ),
+                    ));
+                }
+
+                MatchPlan::InstanceAssociated(lhs, rhs) => {
+                    for substructural in lhs.substructural_match(
+                        rhs,
+                        |idx| {
+                            SubLifetimeLocation::InstanceAssociated(
+                                SubInstanceAssociatedGenericArgsLocation::new(
+                                    idx,
+                                ),
+                            )
+                        },
+                        |idx| {
+                            SubTypeLocation::InstanceAssociated(
+                                SubInstanceAssociatedGenericArgsLocation::new(
+                                    idx,
+                                ),
+                            )
+                        },
+                        |idx| {
+                            SubConstantLocation::InstanceAssociated(
+                                SubInstanceAssociatedGenericArgsLocation::new(
+                                    idx,
+                                ),
+                            )
+                        },
+                        |idx| {
+                            SubInstanceLocation::InstanceAssociated(
+                                SubInstanceAssociatedInstanceLocation::GenericArguments(
+                                    SubInstanceAssociatedGenericArgsLocation::new(idx),
+                                ),
+                            )
+                        },
+                        SubInstanceLocation::InstanceAssociated(
+                            SubInstanceAssociatedInstanceLocation::Instance,
+                        ),
+                    )
+                    .expect(
+                        "validated instance-associated ids before building iterator",
+                    ) {
+                        yield substructural;
+                    }
+                }
+            }
+        }))
+    }
+
+    fn from_self_matching(
+        matching: Matching<Interned<Self>, Self::ThisSubTermLocation>,
+    ) -> Substructural<
+        Self::SubLifetimeLocation,
+        Self::SubTypeLocation,
+        Self::SubConstantLocation,
+        Self::SubInstanceLocation,
+    > {
+        Substructural::Type(matching)
+    }
 }
 
 /// Location of an immediate child yielded by [`IterSubTerms`] for [`Type`].

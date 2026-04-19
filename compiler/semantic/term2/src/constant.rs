@@ -13,6 +13,7 @@ use crate::{
     error::Error,
     generic_parameters::{ConstantParameter, ConstantParameterID},
     inference,
+    matching::{Match, Matching, Substructural},
     sub_term::{self, IterSubTerms, SubTerm},
     tuple::SubTupleLocation,
 };
@@ -307,6 +308,179 @@ impl SubTerm for Constant {
     type SubLifetimeLocation = Never;
     type SubInstanceLocation = Never;
     type ThisSubTermLocation = SubConstantLocation;
+}
+
+impl Match for Constant {
+    #[allow(clippy::too_many_lines)]
+    fn substructural_match<'a>(
+        &'a self,
+        other: &'a Self,
+    ) -> Option<
+        impl Iterator<
+            Item = Substructural<
+                Self::SubLifetimeLocation,
+                Self::SubTypeLocation,
+                Self::SubConstantLocation,
+                Self::SubInstanceLocation,
+            >,
+        > + 'a,
+    > {
+        enum MatchPlan<'a> {
+            Struct(&'a Struct, &'a Struct),
+            EnumWithValue(Interned<Constant>, Interned<Constant>),
+            EnumWithoutValue,
+            Array(&'a Array, &'a Array),
+            Tuple(&'a Tuple, &'a Tuple),
+        }
+
+        let match_plan = match self {
+            Self::Primitive(_)
+            | Self::Inference(_)
+            | Self::Parameter(_)
+            | Self::Phantom
+            | Self::Error(_) => None,
+
+            Self::Struct(lhs) => match other {
+                Self::Struct(rhs)
+                    if lhs.id() == rhs.id()
+                        && lhs.fields().len() == rhs.fields().len() =>
+                {
+                    Some(MatchPlan::Struct(lhs, rhs))
+                }
+
+                Self::Primitive(_)
+                | Self::Inference(_)
+                | Self::Parameter(_)
+                | Self::Struct(_)
+                | Self::Enum(_)
+                | Self::Array(_)
+                | Self::Tuple(_)
+                | Self::Phantom
+                | Self::Error(_) => None,
+            },
+
+            Self::Enum(lhs) => match other {
+                Self::Enum(rhs) if lhs.variant_id() == rhs.variant_id() => {
+                    match (lhs.associated_value(), rhs.associated_value()) {
+                        (Some(lhs), Some(rhs)) => Some(
+                            MatchPlan::EnumWithValue(lhs.clone(), rhs.clone()),
+                        ),
+                        (None, None) => Some(MatchPlan::EnumWithoutValue),
+                        (Some(_), None) | (None, Some(_)) => None,
+                    }
+                }
+
+                Self::Primitive(_)
+                | Self::Inference(_)
+                | Self::Parameter(_)
+                | Self::Struct(_)
+                | Self::Enum(_)
+                | Self::Array(_)
+                | Self::Tuple(_)
+                | Self::Phantom
+                | Self::Error(_) => None,
+            },
+
+            Self::Array(lhs) => match other {
+                Self::Array(rhs)
+                    if lhs.elements().len() == rhs.elements().len() =>
+                {
+                    Some(MatchPlan::Array(lhs, rhs))
+                }
+
+                Self::Primitive(_)
+                | Self::Inference(_)
+                | Self::Parameter(_)
+                | Self::Struct(_)
+                | Self::Enum(_)
+                | Self::Array(_)
+                | Self::Tuple(_)
+                | Self::Phantom
+                | Self::Error(_) => None,
+            },
+
+            Self::Tuple(lhs) => match other {
+                Self::Tuple(rhs) => Some(MatchPlan::Tuple(lhs, rhs)),
+
+                Self::Primitive(_)
+                | Self::Inference(_)
+                | Self::Parameter(_)
+                | Self::Struct(_)
+                | Self::Enum(_)
+                | Self::Array(_)
+                | Self::Phantom
+                | Self::Error(_) => None,
+            },
+        }?;
+
+        Some(pernixc_coroutine_iter::coroutine_iter!({
+            match match_plan {
+                MatchPlan::Struct(lhs, rhs) => {
+                    for (idx, (lhs, rhs)) in lhs
+                        .fields()
+                        .iter()
+                        .cloned()
+                        .zip(rhs.fields().iter().cloned())
+                        .enumerate()
+                    {
+                        yield Substructural::Constant(Matching::new(
+                            lhs,
+                            rhs,
+                            SubConstantLocation::Struct(idx),
+                            SubConstantLocation::Struct(idx),
+                        ));
+                    }
+                }
+
+                MatchPlan::EnumWithValue(lhs, rhs) => {
+                    yield Substructural::Constant(Matching::new(
+                        lhs,
+                        rhs,
+                        SubConstantLocation::Enum,
+                        SubConstantLocation::Enum,
+                    ));
+                }
+
+                MatchPlan::EnumWithoutValue => {}
+
+                MatchPlan::Array(lhs, rhs) => {
+                    for (idx, (lhs, rhs)) in lhs
+                        .elements()
+                        .iter()
+                        .cloned()
+                        .zip(rhs.elements().iter().cloned())
+                        .enumerate()
+                    {
+                        yield Substructural::Constant(Matching::new(
+                            lhs,
+                            rhs,
+                            SubConstantLocation::Array(idx),
+                            SubConstantLocation::Array(idx),
+                        ));
+                    }
+                }
+
+                MatchPlan::Tuple(lhs, rhs) => {
+                    for substructural in lhs.substructural_match(rhs).expect(
+                        "validated tuple variants before building iterator",
+                    ) {
+                        yield substructural;
+                    }
+                }
+            }
+        }))
+    }
+
+    fn from_self_matching(
+        matching: Matching<Interned<Self>, Self::ThisSubTermLocation>,
+    ) -> Substructural<
+        Self::SubLifetimeLocation,
+        Self::SubTypeLocation,
+        Self::SubConstantLocation,
+        Self::SubInstanceLocation,
+    > {
+        Substructural::Constant(matching)
+    }
 }
 
 impl IterSubTerms for Constant {

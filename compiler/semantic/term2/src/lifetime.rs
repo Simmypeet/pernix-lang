@@ -14,6 +14,7 @@ use crate::{
     error::Error,
     generic_parameters::{LifetimeParameter, LifetimeParameterID},
     inference,
+    matching::{Match, Matching, Substructural},
     sub_term::{IterSubTerms, SubTerm},
 };
 
@@ -212,6 +213,45 @@ impl SubTerm for Lifetime {
     type SubLifetimeLocation = Never;
     type SubInstanceLocation = Never;
     type ThisSubTermLocation = Never;
+}
+
+impl Match for Lifetime {
+    fn substructural_match<'a>(
+        &'a self,
+        _: &'a Self,
+    ) -> Option<
+        impl Iterator<
+            Item = Substructural<
+                Self::SubLifetimeLocation,
+                Self::SubTypeLocation,
+                Self::SubConstantLocation,
+                Self::SubInstanceLocation,
+            >,
+        > + 'a,
+    > {
+        None::<
+            std::iter::Empty<
+                Substructural<
+                    Self::SubLifetimeLocation,
+                    Self::SubTypeLocation,
+                    Self::SubConstantLocation,
+                    Self::SubInstanceLocation,
+                >,
+            >,
+        >
+    }
+
+    fn from_self_matching(
+        matching: Matching<Interned<Self>, Self::ThisSubTermLocation>,
+    ) -> Substructural<
+        Self::SubLifetimeLocation,
+        Self::SubTypeLocation,
+        Self::SubConstantLocation,
+        Self::SubInstanceLocation,
+    > {
+        let _ = matching;
+        unreachable!("lifetime terms do not produce self-structural matches")
+    }
 }
 
 impl IterSubTerms for Lifetime {
