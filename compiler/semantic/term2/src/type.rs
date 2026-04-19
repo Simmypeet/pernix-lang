@@ -1339,3 +1339,204 @@ impl IterSubTerms for Type {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        TermRef, constant,
+        matching::{Match, Substructural},
+        sub_term::{IterSubTerms, Location, RecursivelyIterSubTerms},
+        test_support::create_test_engine,
+        tuple::{Element, SubTupleLocation, TupleRange},
+    };
+
+    #[tokio::test]
+    async fn reference_type_stores_interned_children() {
+        let engine = create_test_engine().await;
+        let tracked = engine.tracked().await;
+
+        let lifetime = tracked.intern(Lifetime::Static);
+        let pointee = tracked.intern(Type::Primitive(Primitive::Bool));
+        let reference = tracked.intern(Type::Reference(Reference::new(
+            Qualifier::Immutable,
+            lifetime.clone(),
+            pointee.clone(),
+        )));
+
+        let Type::Reference(reference) = reference.as_ref() else {
+            panic!("expected reference type");
+        };
+
+        assert_eq!(reference.lifetime(), &lifetime);
+        assert_eq!(reference.pointee(), &pointee);
+    }
+
+    #[tokio::test]
+    async fn sub_term_locations_return_interned_children() {
+        let engine = create_test_engine().await;
+        let tracked = engine.tracked().await;
+
+        let lifetime = tracked.intern(Lifetime::Static);
+        let pointee = tracked.intern(Type::Primitive(Primitive::Bool));
+        let reference = tracked.intern(Type::Reference(Reference::new(
+            Qualifier::Immutable,
+            lifetime.clone(),
+            pointee.clone(),
+        )));
+
+        assert_eq!(
+            SubLifetimeLocation::Reference
+                .get_sub_term(reference.as_ref(), &tracked),
+            lifetime,
+        );
+        assert_eq!(
+            SubTypeLocation::Reference
+                .get_sub_term(reference.as_ref(), &tracked),
+            pointee,
+        );
+        assert!(
+            SubTypeLocation::Pointer
+                .try_get_sub_term(reference.as_ref(), &tracked)
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn tuple_range_sub_type_location_returns_interned_tuple() {
+        let engine = create_test_engine().await;
+        let tracked = engine.tracked().await;
+
+        let first = tracked.intern(Type::Primitive(Primitive::Bool));
+        let second = tracked.intern(Type::Primitive(Primitive::Uint32));
+
+        let tuple_type = tracked.intern(Type::Tuple(Tuple::new(vec![
+            Element::new_regular(first.clone()),
+            Element::new_regular(second),
+        ])));
+
+        let sub_term = SubTypeLocation::Tuple(SubTupleLocation::Range(
+            TupleRange::new(0, 1),
+        ))
+        .get_sub_term(tuple_type.as_ref(), &tracked);
+
+        let Type::Tuple(tuple) = sub_term.as_ref() else {
+            panic!("expected tuple type");
+        };
+
+        assert_eq!(tuple.elements().len(), 1);
+        assert_eq!(tuple.elements()[0].term(), &first);
+    }
+
+    #[tokio::test]
+    async fn iter_sub_terms_reference_emits_lifetime_then_type() {
+        let engine = create_test_engine().await;
+        let tracked = engine.tracked().await;
+
+        let lifetime = tracked.intern(Lifetime::Static);
+        let pointee = tracked.intern(Type::Primitive(Primitive::Bool));
+        let reference = Type::Reference(Reference::new(
+            Qualifier::Immutable,
+            lifetime.clone(),
+            pointee.clone(),
+        ));
+
+        let sub_terms: Vec<_> = reference.iter_sub_terms().collect();
+        assert_eq!(sub_terms.len(), 2);
+
+        assert!(matches!(
+            sub_terms[0].0,
+            TermRef::Lifetime(term) if term == &lifetime
+        ));
+        assert_eq!(
+            sub_terms[0].1,
+            IterSubTermLocation::Lifetime(SubLifetimeLocation::Reference),
+        );
+
+        assert!(matches!(
+            sub_terms[1].0,
+            TermRef::Type(term) if term == &pointee
+        ));
+        assert_eq!(
+            sub_terms[1].1,
+            IterSubTermLocation::Type(SubTypeLocation::Reference),
+        );
+    }
+
+    #[tokio::test]
+    async fn recursive_iteration_includes_root_in_depth_first_order() {
+        let engine = create_test_engine().await;
+        let tracked = engine.tracked().await;
+
+        let element_type = tracked.intern(Type::Primitive(Primitive::Bool));
+        let length = tracked.intern(constant::Constant::Primitive(
+            constant::Primitive::Uint8(3),
+        ));
+        let array = tracked.intern(Type::Array(Array::new(
+            length.clone(),
+            element_type.clone(),
+        )));
+        let lifetime = tracked.intern(Lifetime::Static);
+        let root = tracked.intern(Type::Reference(Reference::new(
+            Qualifier::Immutable,
+            lifetime.clone(),
+            array.clone(),
+        )));
+
+        let terms: Vec<_> = root.iter_sub_terms_recursive().collect();
+        assert_eq!(terms.len(), 5);
+
+        assert!(matches!(terms[0], TermRef::Type(term) if term == &root));
+        assert!(
+            matches!(terms[1], TermRef::Lifetime(term) if term == &lifetime)
+        );
+        assert!(matches!(terms[2], TermRef::Type(term) if term == &array));
+        assert!(
+            matches!(terms[3], TermRef::Type(term) if term == &element_type)
+        );
+        assert!(matches!(terms[4], TermRef::Constant(term) if term == &length));
+    }
+
+    #[tokio::test]
+    async fn substructural_match_streams_components_in_order() {
+        let engine = create_test_engine().await;
+        let tracked = engine.tracked().await;
+
+        let lhs_lifetime = tracked.intern(Lifetime::Static);
+        let rhs_lifetime = tracked.intern(Lifetime::Erased);
+        let lhs_type = tracked.intern(Type::Primitive(Primitive::Bool));
+        let rhs_type = tracked.intern(Type::Primitive(Primitive::Uint32));
+
+        let lhs = Type::Reference(Reference::new(
+            Qualifier::Immutable,
+            lhs_lifetime.clone(),
+            lhs_type.clone(),
+        ));
+        let rhs = Type::Reference(Reference::new(
+            Qualifier::Immutable,
+            rhs_lifetime.clone(),
+            rhs_type.clone(),
+        ));
+
+        let matches: Vec<_> = lhs.substructural_match(&rhs).unwrap().collect();
+        assert_eq!(matches.len(), 2);
+
+        assert!(matches!(
+            &matches[0],
+            Substructural::Lifetime(matching)
+                if matching.lhs() == &lhs_lifetime
+                && matching.rhs() == &rhs_lifetime
+                && matching.lhs_location() == &SubLifetimeLocation::Reference
+                && matching.rhs_location() == &SubLifetimeLocation::Reference
+        ));
+
+        assert!(matches!(
+            &matches[1],
+            Substructural::Type(matching)
+                if matching.lhs() == &lhs_type
+                && matching.rhs() == &rhs_type
+                && matching.lhs_location() == &SubTypeLocation::Reference
+                && matching.rhs_location() == &SubTypeLocation::Reference
+        ));
+    }
+}

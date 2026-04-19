@@ -19,7 +19,7 @@ pub mod tuple;
 pub mod r#type;
 
 #[cfg(test)]
-mod test;
+mod test_support;
 
 /// Represents a type that can never be instantiated.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

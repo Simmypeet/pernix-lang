@@ -818,3 +818,73 @@ impl AssociatedSymbol {
             )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use pernixc_symbol::SymbolID;
+    use pernixc_target::TargetID;
+
+    use super::*;
+    use crate::{
+        generic_parameters::{
+            GenericParameters, LifetimeParameter, TypeParameter,
+        },
+        lifetime::Lifetime,
+        test_support::create_test_engine,
+        r#type::{Primitive, Type},
+    };
+
+    #[tokio::test]
+    async fn identity_generic_arguments_are_interned() {
+        let engine = create_test_engine().await;
+        let tracked = engine.tracked().await;
+
+        let mut generic_parameters = GenericParameters::default();
+        let lifetime_id = generic_parameters
+            .add_lifetime_parameter(LifetimeParameter::new(
+                tracked.intern_unsized("a".to_owned()),
+                None,
+            ))
+            .unwrap();
+        let type_id = generic_parameters
+            .add_type_parameter(TypeParameter::new(
+                tracked.intern_unsized("T".to_owned()),
+                None,
+            ))
+            .unwrap();
+
+        let symbol_id = TargetID::TEST.make_global(SymbolID::from_u128(7));
+        let generic_arguments = generic_parameters
+            .create_identity_generic_arguments(symbol_id, &tracked);
+
+        assert_eq!(
+            generic_arguments.lifetimes()[0].as_ref(),
+            &Lifetime::Parameter(LifetimeParameterID::new(
+                symbol_id,
+                lifetime_id
+            )),
+        );
+        assert_eq!(
+            generic_arguments.types()[0].as_ref(),
+            &Type::Parameter(TypeParameterID::new(symbol_id, type_id)),
+        );
+
+        let symbol = Symbol::new(symbol_id, generic_arguments.clone());
+        assert_eq!(symbol.generic_arguments(), &generic_arguments);
+    }
+
+    #[tokio::test]
+    async fn single_type_generic_arguments_keep_interned_type() {
+        let engine = create_test_engine().await;
+        let tracked = engine.tracked().await;
+
+        let r#type = tracked.intern(Type::Primitive(Primitive::Uint32));
+        let generic_arguments =
+            GenericArguments::new_single_type(r#type.clone());
+
+        assert_eq!(generic_arguments.types(), &[r#type]);
+        assert!(generic_arguments.lifetimes().is_empty());
+        assert!(generic_arguments.constants().is_empty());
+        assert!(generic_arguments.instances().is_empty());
+    }
+}

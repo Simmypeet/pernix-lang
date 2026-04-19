@@ -541,3 +541,88 @@ impl IterSubTerms for Constant {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        TermRef,
+        sub_term::{IterSubTerms, Location, RecursivelyIterSubTerms},
+        test_support::create_test_engine,
+        tuple::Element,
+    };
+
+    #[tokio::test]
+    async fn sub_term_locations_return_interned_children() {
+        let engine = create_test_engine().await;
+        let tracked = engine.tracked().await;
+
+        let element = tracked.intern(Constant::Primitive(Primitive::Uint8(1)));
+        let array =
+            tracked.intern(Constant::Array(Array::new(vec![element.clone()])));
+
+        assert_eq!(
+            SubConstantLocation::Array(0)
+                .get_sub_term(array.as_ref(), &tracked),
+            element,
+        );
+    }
+
+    #[tokio::test]
+    async fn iter_sub_terms_tuple_uses_single_locations() {
+        let engine = create_test_engine().await;
+        let tracked = engine.tracked().await;
+
+        let first = tracked.intern(Constant::Primitive(Primitive::Bool(true)));
+        let second = tracked.intern(Constant::Primitive(Primitive::Uint32(2)));
+        let tuple = Constant::Tuple(Tuple::new(vec![
+            Element::new_regular(first.clone()),
+            Element::new_unpacked(second.clone()),
+        ]));
+
+        let sub_terms: Vec<_> = tuple.iter_sub_terms().collect();
+        assert_eq!(sub_terms.len(), 2);
+
+        assert!(matches!(
+            sub_terms[0].0,
+            TermRef::Constant(term) if term == &first
+        ));
+        assert_eq!(
+            sub_terms[0].1,
+            SubConstantLocation::Tuple(crate::tuple::SubTupleLocation::Single(
+                0
+            )),
+        );
+
+        assert!(matches!(
+            sub_terms[1].0,
+            TermRef::Constant(term) if term == &second
+        ));
+        assert_eq!(
+            sub_terms[1].1,
+            SubConstantLocation::Tuple(crate::tuple::SubTupleLocation::Single(
+                1
+            )),
+        );
+    }
+
+    #[tokio::test]
+    async fn recursive_iteration_includes_root_in_depth_first_order() {
+        let engine = create_test_engine().await;
+        let tracked = engine.tracked().await;
+
+        let inner = tracked.intern(Constant::Primitive(Primitive::Bool(true)));
+        let tuple = tracked.intern(Constant::Tuple(Tuple::new(vec![
+            Element::new_regular(inner.clone()),
+        ])));
+        let root =
+            tracked.intern(Constant::Array(Array::new(vec![tuple.clone()])));
+
+        let terms: Vec<_> = root.iter_sub_terms_recursive().collect();
+        assert_eq!(terms.len(), 3);
+
+        assert!(matches!(terms[0], TermRef::Constant(term) if term == &root));
+        assert!(matches!(terms[1], TermRef::Constant(term) if term == &tuple));
+        assert!(matches!(terms[2], TermRef::Constant(term) if term == &inner));
+    }
+}

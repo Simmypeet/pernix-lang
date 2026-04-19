@@ -265,3 +265,33 @@ impl IterSubTerms for Lifetime {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        TermRef,
+        sub_term::{IterSubTerms, RecursivelyIterSubTerms},
+        test_support::create_test_engine,
+    };
+
+    #[tokio::test]
+    async fn iter_sub_terms_is_empty() {
+        let engine = create_test_engine().await;
+        let _tracked = engine.tracked().await;
+
+        assert!(Lifetime::Static.iter_sub_terms().next().is_none());
+    }
+
+    #[tokio::test]
+    async fn recursive_iteration_includes_root_only() {
+        let engine = create_test_engine().await;
+        let tracked = engine.tracked().await;
+
+        let root = tracked.intern(Lifetime::Static);
+        let terms: Vec<_> = root.iter_sub_terms_recursive().collect();
+
+        assert_eq!(terms.len(), 1);
+        assert!(matches!(terms[0], TermRef::Lifetime(term) if term == &root));
+    }
+}

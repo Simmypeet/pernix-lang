@@ -883,3 +883,323 @@ impl IterSubTerms for Instance {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use pernixc_symbol::SymbolID;
+    use pernixc_target::TargetID;
+
+    use super::*;
+    use crate::{
+        TermRef, constant,
+        matching::{Match, Substructural},
+        sub_term::{IterSubTerms, Location, RecursivelyIterSubTerms},
+        test_support::create_test_engine,
+        r#type::{Primitive, Type},
+    };
+
+    #[tokio::test]
+    async fn sub_term_locations_return_interned_children() {
+        let engine = create_test_engine().await;
+        let tracked = engine.tracked().await;
+
+        let symbol_id = TargetID::TEST.make_global(SymbolID::from_u128(11));
+        let nested_symbol_id =
+            TargetID::TEST.make_global(SymbolID::from_u128(12));
+
+        let lifetime = tracked.intern(Lifetime::Static);
+        let r#type = tracked.intern(Type::Primitive(Primitive::Uint32));
+        let constant = tracked.intern(constant::Constant::Primitive(
+            constant::Primitive::Bool(true),
+        ));
+        let parent_instance = tracked
+            .intern(Instance::AnonymousTrait(AnoymousTrait::new(symbol_id)));
+        let nested_instance = tracked.intern(Instance::AnonymousTrait(
+            AnoymousTrait::new(nested_symbol_id),
+        ));
+        let generic_arguments = tracked.intern(GenericArguments::new(
+            vec![lifetime.clone()],
+            vec![r#type.clone()],
+            vec![constant.clone()],
+            vec![nested_instance.clone()],
+        ));
+        let instance = tracked.intern(Instance::InstanceAssociated(
+            InstanceAssociated::new(
+                parent_instance.clone(),
+                symbol_id,
+                generic_arguments,
+            ),
+        ));
+
+        assert_eq!(
+            SubLifetimeLocation::InstanceAssociatedGenericArguments(
+                SubGenericArgumentsLocation::new(0),
+            )
+            .get_sub_term(instance.as_ref(), &tracked),
+            lifetime,
+        );
+        assert_eq!(
+            SubTypeLocation::InstanceAssociatedGenericArguments(
+                SubGenericArgumentsLocation::new(0),
+            )
+            .get_sub_term(instance.as_ref(), &tracked),
+            r#type,
+        );
+        assert_eq!(
+            SubConstantLocation::InstanceAssociatedGenericArguments(
+                SubGenericArgumentsLocation::new(0),
+            )
+            .get_sub_term(instance.as_ref(), &tracked),
+            constant,
+        );
+        assert_eq!(
+            SubInstanceLocation::InstanceAssociated(
+                SubInstanceAssociatedLocation::Instance,
+            )
+            .get_sub_term(instance.as_ref(), &tracked),
+            parent_instance,
+        );
+        assert_eq!(
+            SubInstanceLocation::InstanceAssociated(
+                SubInstanceAssociatedLocation::GenericArguments(
+                    SubGenericArgumentsLocation::new(0),
+                ),
+            )
+            .get_sub_term(instance.as_ref(), &tracked),
+            nested_instance,
+        );
+    }
+
+    #[tokio::test]
+    async fn iter_sub_terms_instance_associated_order_is_stable() {
+        let engine = create_test_engine().await;
+        let tracked = engine.tracked().await;
+
+        let symbol_id = TargetID::TEST.make_global(SymbolID::from_u128(101));
+        let nested_symbol_id =
+            TargetID::TEST.make_global(SymbolID::from_u128(102));
+
+        let lifetime = tracked.intern(Lifetime::Static);
+        let r#type = tracked.intern(Type::Primitive(Primitive::Uint32));
+        let constant = tracked.intern(constant::Constant::Primitive(
+            constant::Primitive::Bool(true),
+        ));
+        let parent_instance = tracked
+            .intern(Instance::AnonymousTrait(AnoymousTrait::new(symbol_id)));
+        let nested_instance = tracked.intern(Instance::AnonymousTrait(
+            AnoymousTrait::new(nested_symbol_id),
+        ));
+        let generic_arguments = tracked.intern(GenericArguments::new(
+            vec![lifetime.clone()],
+            vec![r#type.clone()],
+            vec![constant.clone()],
+            vec![nested_instance.clone()],
+        ));
+        let instance = Instance::InstanceAssociated(InstanceAssociated::new(
+            parent_instance.clone(),
+            symbol_id,
+            generic_arguments,
+        ));
+
+        let sub_terms: Vec<_> = instance.iter_sub_terms().collect();
+        assert_eq!(sub_terms.len(), 5);
+
+        assert!(matches!(
+            sub_terms[0].0,
+            TermRef::Lifetime(term) if term == &lifetime
+        ));
+        assert_eq!(
+            sub_terms[0].1,
+            IterSubTermLocation::Lifetime(
+                SubLifetimeLocation::InstanceAssociatedGenericArguments(
+                    SubGenericArgumentsLocation::new(0),
+                ),
+            ),
+        );
+
+        assert!(matches!(
+            sub_terms[1].0,
+            TermRef::Type(term) if term == &r#type
+        ));
+        assert_eq!(
+            sub_terms[1].1,
+            IterSubTermLocation::Type(
+                SubTypeLocation::InstanceAssociatedGenericArguments(
+                    SubGenericArgumentsLocation::new(0),
+                ),
+            ),
+        );
+
+        assert!(matches!(
+            sub_terms[2].0,
+            TermRef::Constant(term) if term == &constant
+        ));
+        assert_eq!(
+            sub_terms[2].1,
+            IterSubTermLocation::Constant(
+                SubConstantLocation::InstanceAssociatedGenericArguments(
+                    SubGenericArgumentsLocation::new(0),
+                ),
+            ),
+        );
+
+        assert!(matches!(
+            sub_terms[3].0,
+            TermRef::Instance(term) if term == &nested_instance
+        ));
+        assert_eq!(
+            sub_terms[3].1,
+            IterSubTermLocation::Instance(
+                SubInstanceLocation::InstanceAssociated(
+                    SubInstanceAssociatedLocation::GenericArguments(
+                        SubGenericArgumentsLocation::new(0),
+                    ),
+                ),
+            ),
+        );
+
+        assert!(matches!(
+            sub_terms[4].0,
+            TermRef::Instance(term) if term == &parent_instance
+        ));
+        assert_eq!(
+            sub_terms[4].1,
+            IterSubTermLocation::Instance(
+                SubInstanceLocation::InstanceAssociated(
+                    SubInstanceAssociatedLocation::Instance,
+                ),
+            ),
+        );
+    }
+
+    #[tokio::test]
+    async fn substructural_match_streams_parent_instance_last() {
+        let engine = create_test_engine().await;
+        let tracked = engine.tracked().await;
+
+        let symbol_id = TargetID::TEST.make_global(SymbolID::from_u128(301));
+        let left_nested_id =
+            TargetID::TEST.make_global(SymbolID::from_u128(302));
+        let right_nested_id =
+            TargetID::TEST.make_global(SymbolID::from_u128(303));
+
+        let lhs_lifetime = tracked.intern(Lifetime::Static);
+        let rhs_lifetime = tracked.intern(Lifetime::Erased);
+        let lhs_type = tracked.intern(Type::Primitive(Primitive::Bool));
+        let rhs_type = tracked.intern(Type::Primitive(Primitive::Uint32));
+        let lhs_constant = tracked.intern(constant::Constant::Primitive(
+            constant::Primitive::Uint8(1),
+        ));
+        let rhs_constant = tracked.intern(constant::Constant::Primitive(
+            constant::Primitive::Uint8(2),
+        ));
+        let lhs_nested = tracked.intern(Instance::AnonymousTrait(
+            AnoymousTrait::new(left_nested_id),
+        ));
+        let rhs_nested = tracked.intern(Instance::AnonymousTrait(
+            AnoymousTrait::new(right_nested_id),
+        ));
+        let lhs_parent = tracked
+            .intern(Instance::AnonymousTrait(AnoymousTrait::new(symbol_id)));
+        let rhs_parent = tracked
+            .intern(Instance::AnonymousTrait(AnoymousTrait::new(symbol_id)));
+
+        let lhs = Instance::InstanceAssociated(InstanceAssociated::new(
+            lhs_parent.clone(),
+            symbol_id,
+            tracked.intern(GenericArguments::new(
+                vec![lhs_lifetime],
+                vec![lhs_type],
+                vec![lhs_constant],
+                vec![lhs_nested],
+            )),
+        ));
+        let rhs = Instance::InstanceAssociated(InstanceAssociated::new(
+            rhs_parent.clone(),
+            symbol_id,
+            tracked.intern(GenericArguments::new(
+                vec![rhs_lifetime],
+                vec![rhs_type],
+                vec![rhs_constant],
+                vec![rhs_nested],
+            )),
+        ));
+
+        let matches: Vec<_> = lhs.substructural_match(&rhs).unwrap().collect();
+        assert_eq!(matches.len(), 5);
+
+        assert!(matches!(&matches[0], Substructural::Lifetime(_)));
+        assert!(matches!(&matches[1], Substructural::Type(_)));
+        assert!(matches!(&matches[2], Substructural::Constant(_)));
+        assert!(matches!(&matches[3], Substructural::Instance(_)));
+
+        assert!(matches!(
+            &matches[4],
+            Substructural::Instance(matching)
+                if matching.lhs() == &lhs_parent
+                && matching.rhs() == &rhs_parent
+                && matching.lhs_location()
+                    == &SubInstanceLocation::InstanceAssociated(
+                        SubInstanceAssociatedLocation::Instance,
+                    )
+                && matching.rhs_location()
+                    == &SubInstanceLocation::InstanceAssociated(
+                        SubInstanceAssociatedLocation::Instance,
+                    )
+        ));
+    }
+
+    #[tokio::test]
+    async fn recursive_iteration_includes_root_in_depth_first_order() {
+        let engine = create_test_engine().await;
+        let tracked = engine.tracked().await;
+
+        let symbol_id = TargetID::TEST.make_global(SymbolID::from_u128(201));
+        let nested_symbol_id =
+            TargetID::TEST.make_global(SymbolID::from_u128(202));
+
+        let lifetime = tracked.intern(Lifetime::Static);
+        let r#type = tracked.intern(Type::Primitive(Primitive::Uint32));
+        let constant = tracked.intern(constant::Constant::Primitive(
+            constant::Primitive::Bool(true),
+        ));
+        let parent_instance = tracked
+            .intern(Instance::AnonymousTrait(AnoymousTrait::new(symbol_id)));
+        let nested_instance = tracked.intern(Instance::AnonymousTrait(
+            AnoymousTrait::new(nested_symbol_id),
+        ));
+        let generic_arguments = tracked.intern(GenericArguments::new(
+            vec![lifetime.clone()],
+            vec![r#type.clone()],
+            vec![constant.clone()],
+            vec![nested_instance.clone()],
+        ));
+        let root = tracked.intern(Instance::InstanceAssociated(
+            InstanceAssociated::new(
+                parent_instance.clone(),
+                symbol_id,
+                generic_arguments,
+            ),
+        ));
+
+        let terms: Vec<_> = root.iter_sub_terms_recursive().collect();
+        assert_eq!(terms.len(), 6);
+
+        assert!(matches!(terms[0], TermRef::Instance(term) if term == &root));
+        assert!(
+            matches!(terms[1], TermRef::Lifetime(term) if term == &lifetime)
+        );
+        assert!(matches!(terms[2], TermRef::Type(term) if term == &r#type));
+        assert!(
+            matches!(terms[3], TermRef::Constant(term) if term == &constant)
+        );
+        assert!(matches!(
+            terms[4],
+            TermRef::Instance(term) if term == &nested_instance
+        ));
+        assert!(matches!(
+            terms[5],
+            TermRef::Instance(term) if term == &parent_instance
+        ));
+    }
+}
