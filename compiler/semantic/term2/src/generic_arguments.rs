@@ -1,6 +1,7 @@
 //! Data definitions for generic arguments and symbol applications.
 
 use derive_new::new;
+use pernixc_qbice::TrackedEngine;
 use pernixc_target::Global;
 use qbice::{
     Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
@@ -9,6 +10,7 @@ use qbice::{
 use crate::{
     TermRef,
     constant::Constant,
+    folding::{Abort, Foldable, Folder, fold_interned, fold_term_slice},
     generic_parameters::{
         ConstantParameterID, GenericParameters, InstanceParameterID,
         LifetimeParameterID, TypeParameterID,
@@ -540,6 +542,7 @@ impl SubAssociatedSymbolLocation {
     Encode,
     Decode,
     StableHash,
+    Identifiable,
 )]
 pub struct Symbol {
     id: Global<pernixc_symbol::SymbolID>,
@@ -640,6 +643,7 @@ impl Symbol {
     Encode,
     Decode,
     StableHash,
+    Identifiable,
     new,
 )]
 pub struct AssociatedSymbol {
@@ -816,6 +820,94 @@ impl AssociatedSymbol {
                         },
                     ),
             )
+    }
+}
+
+pub(crate) fn fold_generic_arguments_payload<F: Folder>(
+    generic_arguments: &mut GenericArguments,
+    folder: &mut F,
+    engine: &TrackedEngine,
+) -> Result<(), Abort> {
+    fold_term_slice(generic_arguments.lifetimes_mut(), folder, engine)?;
+    fold_term_slice(generic_arguments.types_mut(), folder, engine)?;
+    fold_term_slice(generic_arguments.constants_mut(), folder, engine)?;
+    fold_term_slice(generic_arguments.instances_mut(), folder, engine)
+}
+
+pub(crate) fn fold_symbol_payload<F: Folder>(
+    symbol: &mut Symbol,
+    folder: &mut F,
+    engine: &TrackedEngine,
+) -> Result<(), Abort> {
+    let mut generic_arguments = symbol.generic_arguments().clone();
+    GenericArguments::fold_with(&mut generic_arguments, folder, engine)?;
+
+    *symbol = Symbol::new(symbol.id(), generic_arguments);
+    Ok(())
+}
+
+pub(crate) fn fold_associated_symbol_payload<F: Folder>(
+    symbol: &mut AssociatedSymbol,
+    folder: &mut F,
+    engine: &TrackedEngine,
+) -> Result<(), Abort> {
+    let mut parent_generic_arguments =
+        symbol.parent_generic_arguments().clone();
+    GenericArguments::fold_with(&mut parent_generic_arguments, folder, engine)?;
+
+    let mut member_generic_arguments =
+        symbol.member_generic_arguments().clone();
+    GenericArguments::fold_with(&mut member_generic_arguments, folder, engine)?;
+
+    *symbol = AssociatedSymbol::new(
+        symbol.id(),
+        parent_generic_arguments,
+        member_generic_arguments,
+    );
+    Ok(())
+}
+
+impl Foldable for GenericArguments {
+    fn fold_with<F: Folder>(
+        term: &mut Interned<Self>,
+        folder: &mut F,
+        engine: &TrackedEngine,
+    ) -> Result<(), Abort> {
+        fold_interned(
+            term,
+            folder,
+            engine,
+            fold_generic_arguments_payload,
+            |_, _, _| Ok(()),
+        )
+    }
+}
+
+impl Foldable for Symbol {
+    fn fold_with<F: Folder>(
+        term: &mut Interned<Self>,
+        folder: &mut F,
+        engine: &TrackedEngine,
+    ) -> Result<(), Abort> {
+        fold_interned(term, folder, engine, fold_symbol_payload, |_, _, _| {
+            Ok(())
+        })
+    }
+}
+
+impl Foldable for AssociatedSymbol {
+    fn fold_with<F: Folder>(
+        term: &mut Interned<Self>,
+        folder: &mut F,
+        engine: &TrackedEngine,
+    ) -> Result<(), Abort> {
+        fold_interned(
+            term,
+            folder,
+            engine,
+            fold_associated_symbol_payload,
+            |_, _, _| Ok(()),
+        )
     }
 }
 

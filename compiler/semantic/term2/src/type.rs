@@ -11,14 +11,19 @@ use crate::{
     TermRef,
     constant::Constant,
     error::Error,
+    folding::{
+        Abort, Foldable, Folder, fold_interned, fold_term_slice,
+        fold_tuple_terms,
+    },
     generic_arguments::{
         AssociatedSymbol, SubAssociatedSymbolLocation, SubSymbolLocation,
-        Symbol,
+        Symbol, fold_associated_symbol_payload, fold_symbol_payload,
     },
     generic_parameters::{TypeParameter, TypeParameterID},
     inference,
     instance::{
         Instance, InstanceAssociated, SubInstanceAssociatedGenericArgsLocation,
+        fold_instance_associated_payload,
     },
     lifetime::Lifetime,
     matching::{Match, Matching, Substructural},
@@ -1337,6 +1342,114 @@ impl IterSubTerms for Type {
                 }
             }
         })
+    }
+}
+
+fn fold_type_payload<F: Folder>(
+    r#type: &mut Type,
+    folder: &mut F,
+    engine: &TrackedEngine,
+) -> Result<(), Abort> {
+    *r#type = match r#type.clone() {
+        Type::Inference(variable) => Type::Inference(variable),
+        Type::Primitive(primitive) => Type::Primitive(primitive),
+        Type::Parameter(parameter) => Type::Parameter(parameter),
+
+        Type::Symbol(mut symbol) => {
+            fold_symbol_payload(&mut symbol, folder, engine)?;
+            Type::Symbol(symbol)
+        }
+
+        Type::Pointer(pointer_type) => {
+            let mut pointee = pointer_type.pointee().clone();
+            Type::fold_with(&mut pointee, folder, engine)?;
+
+            Type::Pointer(Pointer::new(pointer_type.is_mutable(), pointee))
+        }
+
+        Type::Reference(reference) => {
+            let mut lifetime = reference.lifetime().clone();
+            Lifetime::fold_with(&mut lifetime, folder, engine)?;
+
+            let mut pointee = reference.pointee().clone();
+            Type::fold_with(&mut pointee, folder, engine)?;
+
+            Type::Reference(Reference::new(
+                reference.qualifier(),
+                lifetime,
+                pointee,
+            ))
+        }
+
+        Type::Array(array) => {
+            let mut length = array.length().clone();
+            Constant::fold_with(&mut length, folder, engine)?;
+
+            let mut element = array.r#type().clone();
+            Type::fold_with(&mut element, folder, engine)?;
+
+            Type::Array(Array::new(length, element))
+        }
+
+        Type::Tuple(mut tuple) => {
+            fold_tuple_terms(&mut tuple, folder, engine)?;
+            Type::Tuple(tuple)
+        }
+
+        Type::Phantom(phantom) => {
+            let mut inner = phantom.r#type().clone();
+            Type::fold_with(&mut inner, folder, engine)?;
+
+            Type::Phantom(Phantom::new(inner))
+        }
+
+        Type::InstanceAssociated(mut instance_associated) => {
+            fold_instance_associated_payload(
+                &mut instance_associated,
+                folder,
+                engine,
+            )?;
+
+            Type::InstanceAssociated(instance_associated)
+        }
+
+        Type::AssociatedSymbol(mut symbol) => {
+            fold_associated_symbol_payload(&mut symbol, folder, engine)?;
+            Type::AssociatedSymbol(symbol)
+        }
+
+        Type::FunctionSignature(signature) => {
+            let mut parameters = signature.parameters().to_vec();
+            fold_term_slice(&mut parameters, folder, engine)?;
+
+            let mut return_type = signature.return_type().clone();
+            Type::fold_with(&mut return_type, folder, engine)?;
+
+            Type::FunctionSignature(FunctionSignature::new(
+                parameters,
+                return_type,
+            ))
+        }
+
+        Type::Error(error) => Type::Error(error),
+    };
+
+    Ok(())
+}
+
+impl Foldable for Type {
+    fn fold_with<F: Folder>(
+        term: &mut Interned<Self>,
+        folder: &mut F,
+        engine: &TrackedEngine,
+    ) -> Result<(), Abort> {
+        fold_interned(
+            term,
+            folder,
+            engine,
+            fold_type_payload,
+            Folder::fold_type,
+        )
     }
 }
 

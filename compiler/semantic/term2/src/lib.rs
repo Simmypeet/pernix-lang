@@ -7,6 +7,7 @@ use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
 pub mod constant;
 pub mod error;
+pub mod folding;
 pub mod generic_arguments;
 pub mod generic_parameters;
 pub mod inference;

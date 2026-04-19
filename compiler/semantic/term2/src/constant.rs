@@ -11,6 +11,10 @@ use qbice::{
 use crate::{
     Never, TermRef,
     error::Error,
+    folding::{
+        Abort, Foldable, Folder, fold_interned, fold_option_term,
+        fold_term_slice, fold_tuple_terms,
+    },
     generic_parameters::{ConstantParameter, ConstantParameterID},
     inference,
     matching::{Match, Matching, Substructural},
@@ -539,6 +543,69 @@ impl IterSubTerms for Constant {
                 }
             }
         })
+    }
+}
+
+fn fold_constant_payload<F: Folder>(
+    constant: &mut Constant,
+    folder: &mut F,
+    engine: &TrackedEngine,
+) -> Result<(), Abort> {
+    *constant = match constant.clone() {
+        Constant::Primitive(primitive) => Constant::Primitive(primitive),
+        Constant::Inference(variable) => Constant::Inference(variable),
+        Constant::Parameter(parameter) => Constant::Parameter(parameter),
+
+        Constant::Struct(struct_constant) => {
+            let mut fields = struct_constant.fields().to_vec();
+            fold_term_slice(&mut fields, folder, engine)?;
+
+            Constant::Struct(Struct::new(struct_constant.id(), fields))
+        }
+
+        Constant::Enum(enum_constant) => {
+            let mut associated_value =
+                enum_constant.associated_value().cloned();
+            fold_option_term(&mut associated_value, folder, engine)?;
+
+            Constant::Enum(Enum::new(
+                enum_constant.variant_id(),
+                associated_value,
+            ))
+        }
+
+        Constant::Array(array_constant) => {
+            let mut elements = array_constant.elements().to_vec();
+            fold_term_slice(&mut elements, folder, engine)?;
+
+            Constant::Array(Array::new(elements))
+        }
+
+        Constant::Tuple(mut tuple) => {
+            fold_tuple_terms(&mut tuple, folder, engine)?;
+            Constant::Tuple(tuple)
+        }
+
+        Constant::Phantom => Constant::Phantom,
+        Constant::Error(error) => Constant::Error(error),
+    };
+
+    Ok(())
+}
+
+impl Foldable for Constant {
+    fn fold_with<F: Folder>(
+        term: &mut Interned<Self>,
+        folder: &mut F,
+        engine: &TrackedEngine,
+    ) -> Result<(), Abort> {
+        fold_interned(
+            term,
+            folder,
+            engine,
+            fold_constant_payload,
+            Folder::fold_constant,
+        )
     }
 }
 

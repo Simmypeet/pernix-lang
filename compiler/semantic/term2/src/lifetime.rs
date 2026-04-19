@@ -3,6 +3,7 @@
 use derive_new::new;
 use enum_as_inner::EnumAsInner;
 use pernixc_lexical::tree::RelativeSpan;
+use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::MemberID;
 use pernixc_target::Global;
 use qbice::{
@@ -12,6 +13,7 @@ use qbice::{
 use crate::{
     Never, TermRef,
     error::Error,
+    folding::{Abort, Foldable, Folder, fold_interned},
     generic_parameters::{LifetimeParameter, LifetimeParameterID},
     inference,
     matching::{Match, Matching, Substructural},
@@ -263,6 +265,22 @@ impl IterSubTerms for Lifetime {
         pernixc_coroutine_iter::coroutine_iter!({
             let _ = self;
         })
+    }
+}
+
+impl Foldable for Lifetime {
+    fn fold_with<F: Folder>(
+        term: &mut Interned<Self>,
+        folder: &mut F,
+        engine: &TrackedEngine,
+    ) -> Result<(), Abort> {
+        fold_interned(
+            term,
+            folder,
+            engine,
+            |_, _, _| Ok(()),
+            Folder::fold_lifetime,
+        )
     }
 }
 

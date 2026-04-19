@@ -12,9 +12,10 @@ use crate::{
     TermRef,
     constant::Constant,
     error::Error,
+    folding::{Abort, Foldable, Folder, fold_interned},
     generic_arguments::{
         GenericArguments, SubGenericArgumentsLocation, SubSymbolLocation,
-        Symbol,
+        Symbol, fold_symbol_payload,
     },
     generic_parameters::{InstanceParameter, InstanceParameterID},
     inference,
@@ -88,6 +89,7 @@ impl TraitRef {
     Encode,
     Decode,
     StableHash,
+    Identifiable,
 )]
 pub struct InstanceAssociated {
     instance: Interned<Instance>,
@@ -881,6 +883,119 @@ impl IterSubTerms for Instance {
                 | Self::Error(_) => {}
             }
         })
+    }
+}
+
+pub(crate) fn fold_trait_ref_payload<F: Folder>(
+    trait_ref: &mut TraitRef,
+    folder: &mut F,
+    engine: &TrackedEngine,
+) -> Result<(), Abort> {
+    let mut generic_arguments = trait_ref.generic_arguments().clone();
+    GenericArguments::fold_with(&mut generic_arguments, folder, engine)?;
+
+    *trait_ref = TraitRef::new(trait_ref.trait_id(), generic_arguments);
+    Ok(())
+}
+
+pub(crate) fn fold_instance_associated_payload<F: Folder>(
+    instance_associated: &mut InstanceAssociated,
+    folder: &mut F,
+    engine: &TrackedEngine,
+) -> Result<(), Abort> {
+    let mut instance = instance_associated.instance().clone();
+    Instance::fold_with(&mut instance, folder, engine)?;
+
+    let mut generic_arguments =
+        instance_associated.associated_instance_generic_arguments().clone();
+    GenericArguments::fold_with(&mut generic_arguments, folder, engine)?;
+
+    *instance_associated = InstanceAssociated::new(
+        instance,
+        instance_associated.trait_associated_symbol_id(),
+        generic_arguments,
+    );
+    Ok(())
+}
+
+fn fold_instance_payload<F: Folder>(
+    instance: &mut Instance,
+    folder: &mut F,
+    engine: &TrackedEngine,
+) -> Result<(), Abort> {
+    *instance = match instance.clone() {
+        Instance::Symbol(mut symbol) => {
+            fold_symbol_payload(&mut symbol, folder, engine)?;
+            Instance::Symbol(symbol)
+        }
+
+        Instance::Parameter(parameter) => Instance::Parameter(parameter),
+
+        Instance::InstanceAssociated(mut instance_associated) => {
+            fold_instance_associated_payload(
+                &mut instance_associated,
+                folder,
+                engine,
+            )?;
+
+            Instance::InstanceAssociated(instance_associated)
+        }
+
+        Instance::Inference(variable) => Instance::Inference(variable),
+        Instance::AnonymousTrait(trait_instance) => {
+            Instance::AnonymousTrait(trait_instance)
+        }
+        Instance::Error(error) => Instance::Error(error),
+    };
+
+    Ok(())
+}
+
+impl Foldable for TraitRef {
+    fn fold_with<F: Folder>(
+        term: &mut Interned<Self>,
+        folder: &mut F,
+        engine: &TrackedEngine,
+    ) -> Result<(), Abort> {
+        fold_interned(
+            term,
+            folder,
+            engine,
+            fold_trait_ref_payload,
+            |_, _, _| Ok(()),
+        )
+    }
+}
+
+impl Foldable for InstanceAssociated {
+    fn fold_with<F: Folder>(
+        term: &mut Interned<Self>,
+        folder: &mut F,
+        engine: &TrackedEngine,
+    ) -> Result<(), Abort> {
+        fold_interned(
+            term,
+            folder,
+            engine,
+            fold_instance_associated_payload,
+            |_, _, _| Ok(()),
+        )
+    }
+}
+
+impl Foldable for Instance {
+    fn fold_with<F: Folder>(
+        term: &mut Interned<Self>,
+        folder: &mut F,
+        engine: &TrackedEngine,
+    ) -> Result<(), Abort> {
+        fold_interned(
+            term,
+            folder,
+            engine,
+            fold_instance_payload,
+            Folder::fold_instance,
+        )
     }
 }
 
