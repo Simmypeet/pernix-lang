@@ -18,6 +18,9 @@ use crate::{
     r#type::Type,
 };
 
+#[cfg(any(test, feature = "arbitrary"))]
+pub mod arbitrary;
+
 /// Represents the generic arguments supplied to a symbol.
 #[derive(
     Debug,

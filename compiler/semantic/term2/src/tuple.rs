@@ -7,6 +7,9 @@ use qbice::{
     Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
 };
 
+#[cfg(any(test, feature = "arbitrary"))]
+pub mod arbitrary;
+
 /// Represents a single element of a tuple.
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, new,

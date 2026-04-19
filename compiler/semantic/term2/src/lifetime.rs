@@ -17,6 +17,9 @@ use crate::{
     sub_term::{IterSubTerms, SubTerm},
 };
 
+#[cfg(any(test, feature = "arbitrary"))]
+pub mod arbitrary;
+
 /// Represents a named forall lifetime declared with `for['a]`.
 #[derive(
     Debug,

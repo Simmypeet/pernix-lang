@@ -25,6 +25,9 @@ use crate::{
     tuple::SubTupleLocation,
 };
 
+#[cfg(any(test, feature = "arbitrary"))]
+pub mod arbitrary;
+
 /// A qualifier that can be applied to references.
 #[derive(
     Debug,

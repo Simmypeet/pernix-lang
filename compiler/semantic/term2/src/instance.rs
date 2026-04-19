@@ -23,6 +23,9 @@ use crate::{
     r#type::Type,
 };
 
+#[cfg(any(test, feature = "arbitrary"))]
+pub mod arbitrary;
+
 /// Refers to a trait with generic arguments applied.
 #[derive(
     Debug,
