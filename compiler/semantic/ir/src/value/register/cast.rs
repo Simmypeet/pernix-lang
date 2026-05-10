@@ -12,7 +12,7 @@ use crate::{
     resolution_visitor::{
         self, Abort, Resolution, ResolutionMut, ResolutionVisitor,
     },
-    value::{ValueEnvironment, TypeOf, Value, register::Register},
+    value::{TypeOf, Value, ValueEnvironment, register::Register},
 };
 
 macro_rules! visit_cast {

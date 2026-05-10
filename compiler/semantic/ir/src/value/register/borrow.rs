@@ -14,7 +14,7 @@ use crate::{
     resolution_visitor::{
         self, Abort, Resolution, ResolutionMut, ResolutionVisitor,
     },
-    value::{ValueEnvironment, TypeOf},
+    value::{TypeOf, ValueEnvironment},
 };
 
 macro_rules! visit_borrow_contents {

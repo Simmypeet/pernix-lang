@@ -19,7 +19,7 @@ use crate::{
         ResolutionVisitor,
     },
     value::{
-        ValueEnvironment, TypeOf, Value,
+        TypeOf, Value, ValueEnvironment,
         register::{Register, subtype::Subtype},
     },
 };

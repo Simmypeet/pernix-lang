@@ -17,7 +17,7 @@ use crate::{
         Abort, MutableResolutionVisitor, Resolution, ResolutionMut,
         ResolutionVisitor,
     },
-    value::{ValueEnvironment, TypeOf},
+    value::{TypeOf, ValueEnvironment},
 };
 
 macro_rules! visit_typed_literals {

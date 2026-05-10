@@ -6,7 +6,7 @@ use pernixc_hash::{FxHashMap, FxHashSet};
 use pernixc_ir::{
     IR,
     control_flow_graph::Point,
-    value::{ValueEnvironment, TypeOf, register::Register},
+    value::{TypeOf, ValueEnvironment, register::Register},
 };
 use pernixc_qbice::TrackedEngine;
 use pernixc_semantic_element::{parameter::get_parameters, variance::Variance};

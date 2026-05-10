@@ -19,7 +19,7 @@ use crate::{
         self, Abort, MutableResolutionVisitable, MutableResolutionVisitor,
         ResolutionVisitable, ResolutionVisitor,
     },
-    value::{ValueEnvironment, TypeOf, Value, register::Register},
+    value::{TypeOf, Value, ValueEnvironment, register::Register},
 };
 
 macro_rules! visit_capture_literals {

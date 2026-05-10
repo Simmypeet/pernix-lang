@@ -8,7 +8,7 @@ use qbice::{Decode, Encode, StableHash};
 use crate::{
     Values,
     resolution_visitor::{self, Abort},
-    value::{ValueEnvironment, TypeOf, Value, register::Register},
+    value::{TypeOf, Value, ValueEnvironment, register::Register},
 };
 
 macro_rules! visit_binary_literals {

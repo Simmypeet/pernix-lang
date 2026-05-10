@@ -16,7 +16,7 @@ use crate::{
         self, Abort, Resolution, ResolutionMut, ResolutionVisitor,
     },
     value::{
-        ValueEnvironment, TypeOf, Value,
+        TypeOf, Value, ValueEnvironment,
         register::{Register, subtype::Subtype},
     },
 };

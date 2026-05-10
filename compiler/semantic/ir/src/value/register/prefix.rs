@@ -8,7 +8,7 @@ use qbice::{Decode, Encode, StableHash};
 use crate::{
     Values,
     resolution_visitor::{Abort, MutableResolutionVisitor, ResolutionVisitor},
-    value::{ValueEnvironment, TypeOf, Value, register::Register},
+    value::{TypeOf, Value, ValueEnvironment, register::Register},
 };
 
 macro_rules! visit_prefix_operand {

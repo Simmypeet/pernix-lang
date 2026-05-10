@@ -10,7 +10,7 @@ use crate::{
     Values,
     address::Address,
     resolution_visitor::{Abort, MutableResolutionVisitor, ResolutionVisitor},
-    value::{ValueEnvironment, TypeOf},
+    value::{TypeOf, ValueEnvironment},
 };
 
 macro_rules! visit_variant_number_address {
