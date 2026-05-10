@@ -1,4 +1,2 @@
-pub effect Test[T]:
-    doInner[A, const U: int32]():
-        where:
-            T: 'static
+pub effect Test['a]:
+    doInner['b](value: &'a int32)
