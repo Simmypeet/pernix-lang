@@ -286,6 +286,10 @@ impl Kind {
         matches!(
             self,
             Self::Function
+                // technically, effect operation doesn't have a `do Effect` 
+                // syntax. But calling an effect operation itself incurs
+                // effects, so we consider it as having effect annotation.
+                | Self::EffectOperation
                 | Self::TraitAssociatedFunction
                 | Self::ImplementationAssociatedFunction
                 | Self::ExternFunction
