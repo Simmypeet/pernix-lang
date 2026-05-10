@@ -88,7 +88,7 @@ impl Bind<&pernixc_syntax::expression::binary::Node>
         match syntax_tree {
             pernixc_syntax::expression::binary::Node::Prefixable(
                 prefixable,
-            ) => self.bind(prefixable, config, handler).await,
+            ) => Box::pin(self.bind(prefixable, config, handler)).await,
             pernixc_syntax::expression::binary::Node::Block(block) => {
                 self.bind(block, config, handler).await
             }

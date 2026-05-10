@@ -9,6 +9,7 @@ use pernixc_ir::value::{
 use pernixc_resolution::qualified_identifier::Resolution;
 use pernixc_semantic_element::variant::get_variant_associated_type;
 use pernixc_source_file::SourceElement;
+use pernixc_symbol::kind::get_kind;
 use pernixc_syntax::QualifiedIdentifierRoot;
 use pernixc_term::r#type::Qualifier;
 
@@ -49,10 +50,28 @@ impl Bind<&pernixc_syntax::QualifiedIdentifier> for Binder<'_> {
         };
 
         match resolution {
-            Resolution::Variant(variant_res) => {
+            Resolution::ParentGenericSymbol(symbol) => {
+                let kind = self.engine().get_kind(symbol.symbol_id()).await;
+
+                if kind != pernixc_symbol::kind::Kind::Variant {
+                    handler.receive(
+                        Diagnostic::SymbolCannotBeUsedAsAnExpression(
+                            SymbolCannotBeUsedAsAnExpression {
+                                span: syntax_tree.span(),
+                                found: Resolution::ParentGenericSymbol(symbol),
+                            },
+                        )
+                        .into(),
+                    );
+
+                    return Err(Error::Binding(BindingError(
+                        syntax_tree.span(),
+                    )));
+                }
+
                 let variant = self
                     .engine()
-                    .get_variant_associated_type(variant_res.variant_id())
+                    .get_variant_associated_type(symbol.symbol_id())
                     .await;
 
                 // expected a variant type
@@ -61,7 +80,7 @@ impl Bind<&pernixc_syntax::QualifiedIdentifier> for Binder<'_> {
                         Diagnostic::ExpectedAssociatedValue(
                             ExpectedAssociatedValue {
                                 span: syntax_tree.span(),
-                                variant_id: variant_res.variant_id(),
+                                variant_id: symbol.symbol_id(),
                             },
                         )
                         .into(),
@@ -71,7 +90,7 @@ impl Bind<&pernixc_syntax::QualifiedIdentifier> for Binder<'_> {
                 let associated_value = if let Some(associated_type) = variant {
                     let mut associated_type = associated_type.deref().clone();
                     let instantiation =
-                        variant_res.create_instantiation(self.engine()).await;
+                        symbol.create_instantiation(self.engine()).await;
 
                     instantiation.instantiate(&mut associated_type);
 
@@ -87,10 +106,7 @@ impl Bind<&pernixc_syntax::QualifiedIdentifier> for Binder<'_> {
                 };
 
                 let register_id = self.create_register_assignment(
-                    Assignment::Variant(Variant::new(
-                        variant_res,
-                        associated_value,
-                    )),
+                    Assignment::Variant(Variant::new(symbol, associated_value)),
                     syntax_tree.span(),
                 );
 

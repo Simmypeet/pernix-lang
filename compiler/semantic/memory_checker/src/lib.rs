@@ -561,6 +561,7 @@ impl<N: Normalizer> Checker<'_, N> {
                         }
 
                         Assignment::FunctionCall(_)
+                        | Assignment::EffectOperationCall(_)
                         | Assignment::Struct(_)
                         | Assignment::Variant(_)
                         | Assignment::Array(_)

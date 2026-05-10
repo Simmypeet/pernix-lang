@@ -42,6 +42,7 @@ use crate::{
 mod array;
 mod borrow;
 mod do_with;
+mod effect_operation_call;
 mod function_call;
 mod phi;
 mod store;
@@ -639,6 +640,14 @@ impl<N: Normalizer> Builder<'_, N> {
             Assignment::FunctionCall(function_call) => {
                 self.context
                     .get_changes_of_function_call(function_call, &register.span)
+                    .await
+            }
+            Assignment::EffectOperationCall(effect_operation_call) => {
+                self.context
+                    .get_changes_of_effect_operation_call(
+                        effect_operation_call,
+                        &register.span,
+                    )
                     .await
             }
             Assignment::Struct(struct_lit) => {

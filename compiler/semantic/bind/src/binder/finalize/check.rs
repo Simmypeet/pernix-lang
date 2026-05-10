@@ -37,6 +37,13 @@ async fn check_register_assignment<N: Normalizer>(
 
             Ok(())
         }
+        register::Assignment::EffectOperationCall(effect_operation_call) => {
+            effect_operation_call
+                .wf_check(value_environment, register.span, handler)
+                .await?;
+
+            Ok(())
+        }
         register::Assignment::FunctionCall(function_call) => {
             // Use the new wf_check method from pernixc_ir
             function_call

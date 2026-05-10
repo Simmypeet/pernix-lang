@@ -748,7 +748,7 @@ impl Bind<&BinaryNode> for Binder<'_> {
                     self.bind(&**binary, config, handler).await
                 }
                 BinaryNode::Expression(prefixable) => {
-                    self.bind(prefixable, config, handler).await
+                    Box::pin(self.bind(prefixable, config, handler)).await
                 }
             }
         })

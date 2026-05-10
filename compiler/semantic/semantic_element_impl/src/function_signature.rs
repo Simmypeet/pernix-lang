@@ -20,7 +20,7 @@ use pernixc_semantic_element::{
 };
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
-    parent::get_parent, syntax::get_function_signature_syntax,
+    kind::get_kind, parent::get_parent, syntax::get_function_signature_syntax,
 };
 use pernixc_target::Global;
 use pernixc_term::{
@@ -326,22 +326,32 @@ impl Build for Key {
             )
         };
 
+        // TODO: this implemention isn't correct, but current it isn't used
+        // elsewhere, so we'll leave it like this for now.
         let late_bound = {
-            let generic_params =
-                engine.get_generic_parameters(key.symbol_id).await;
-            let where_clause = engine.get_where_clause(key.symbol_id).await;
+            let kind = engine.get_kind(key.symbol_id).await;
 
-            let mut all_lifetime_parameters = AllLifetimeParameters {
-                lifetimes: generic_params.lifetime_parameter_order().collect(),
-                current_function_id: key.symbol_id,
-            };
+            if kind.has_generic_parameters() {
+                let generic_params =
+                    engine.get_generic_parameters(key.symbol_id).await;
+                let where_clause = engine.get_where_clause(key.symbol_id).await;
 
-            for predicate in where_clause.as_ref() {
-                all_lifetime_parameters
-                    .exclude_late_bound(&predicate.predicate);
+                let mut all_lifetime_parameters = AllLifetimeParameters {
+                    lifetimes: generic_params
+                        .lifetime_parameter_order()
+                        .collect(),
+                    current_function_id: key.symbol_id,
+                };
+
+                for predicate in where_clause.as_ref() {
+                    all_lifetime_parameters
+                        .exclude_late_bound(&predicate.predicate);
+                }
+
+                all_lifetime_parameters.lifetimes
+            } else {
+                FxHashSet::default()
             }
-
-            all_lifetime_parameters.lifetimes
         };
 
         Output {

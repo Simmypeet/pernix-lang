@@ -14,14 +14,12 @@ use pernixc_semantic_element::effect_annotation;
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
     kind::{Kind, get_kind},
-    parent::get_parent_global,
     syntax::get_function_effect_annotation_syntax,
 };
 use pernixc_syntax::item::function::{EffectUnit, EffectUnitListKind};
 use pernixc_target::Global;
 use pernixc_term::{
-    constant::Constant, effect, generic_arguments::ZipRef,
-    generic_parameters::get_generic_parameters, instance::Instance,
+    constant::Constant, effect, generic_arguments::ZipRef, instance::Instance,
     lifetime::Lifetime, r#type::Type,
 };
 use pernixc_type_system::{
@@ -306,31 +304,6 @@ impl Build for effect_annotation::Key {
     type Diagnostic = diagnostic::Diagnostic;
 
     async fn execute(engine: &TrackedEngine, key: &Self) -> Output<Self> {
-        let kind = engine.get_kind(key.symbol_id).await;
-
-        // NOTE: effect operation doesn't have implicit `do Effect` syntax like
-        // function does. But calling an effect operation itself incurs effects,
-        // so we consider it as having a single effect annotation corresponding
-        // to the effect operation itself.
-        if kind == Kind::EffectOperation {
-            let effect_id =
-                engine.get_parent_global(key.symbol_id).await.unwrap();
-            let parameters = engine.get_generic_parameters(effect_id).await;
-            let generic_arguments =
-                parameters.create_identity_generic_arguments(effect_id);
-
-            let effect = effect::Unit::new(effect_id, generic_arguments);
-
-            let mut effects = OrderedArena::new();
-            effects.insert(effect);
-
-            return Output {
-                item: engine.intern(effects),
-                diagnostics: engine.intern_unsized(Vec::new()),
-                occurrences: engine.intern(Occurrences::default()),
-            };
-        }
-
         let effect_annotation_syntax =
             engine.get_function_effect_annotation_syntax(key.symbol_id).await;
 

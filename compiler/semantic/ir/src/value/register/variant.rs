@@ -44,7 +44,10 @@ macro_rules! visit_variant {
         }
 
         $visitor
-            .$visit_method($resolution_ctor::Variant($symbol_expr), $span)
+            .$visit_method(
+                $resolution_ctor::ParentGenericSymbol($symbol_expr),
+                $span,
+            )
             .await?;
         Ok(())
     }};
@@ -64,18 +67,20 @@ macro_rules! visit_variant {
     StableHash,
 )]
 pub struct Variant {
-    symbol: pernixc_resolution::qualified_identifier::Variant,
+    symbol: pernixc_resolution::qualified_identifier::ParentGenericSymbol,
     associated_value: Option<Value>,
 }
 
 impl<'a> From<&'a Variant> for Resolution<'a> {
-    fn from(val: &'a Variant) -> Self { Resolution::Variant(&val.symbol) }
+    fn from(val: &'a Variant) -> Self {
+        Resolution::ParentGenericSymbol(&val.symbol)
+    }
 }
 
 impl Variant {
     #[must_use]
     pub const fn new(
-        symbol: pernixc_resolution::qualified_identifier::Variant,
+        symbol: pernixc_resolution::qualified_identifier::ParentGenericSymbol,
         associated_value: Option<Value>,
     ) -> Self {
         Self { symbol, associated_value }
@@ -85,7 +90,7 @@ impl Variant {
         &self,
         engine: &TrackedEngine,
     ) -> Global<pernixc_symbol::SymbolID> {
-        self.symbol.parent_enum_id(engine).await
+        self.symbol.parent_symbol_id(engine).await
     }
 
     pub async fn create_instantiation(
@@ -97,7 +102,7 @@ impl Variant {
 
     #[must_use]
     pub const fn variant_id(&self) -> Global<pernixc_symbol::SymbolID> {
-        self.symbol.variant_id()
+        self.symbol.symbol_id()
     }
 
     #[must_use]
@@ -251,14 +256,15 @@ impl TypeOf<&Variant> for Values {
         value: &Variant,
         environment: &crate::value::ValueEnvironment<'_, N>,
     ) -> Result<pernixc_type_system::Succeeded<Type>, OverflowError> {
+        let parent_enum_id =
+            value.symbol.parent_symbol_id(environment.tracked_engine()).await;
+
         Ok(environment
             .type_environment
-            .simplify(
-                value
-                    .symbol
-                    .create_enum_type(environment.tracked_engine())
-                    .await,
-            )
+            .simplify(Type::new_symbol(
+                parent_enum_id,
+                value.symbol.parent_generic_arguments().clone(),
+            ))
             .await?
             .deref()
             .clone())
