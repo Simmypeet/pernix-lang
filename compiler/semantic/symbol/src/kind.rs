@@ -184,7 +184,6 @@ impl Kind {
                 | Self::ImplementationAssociatedFunction
                 | Self::ImplementationAssociatedConstant
                 | Self::Effect
-                | Self::EffectOperation
                 | Self::Instance
                 | Self::InstanceAssociatedType
                 | Self::InstanceAssociatedFunction

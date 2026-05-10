@@ -29,8 +29,6 @@ abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Operation {
         pub identifier: Identifier = expect::Identifier,
-        pub generic_parameters: GenericParameters
-            = ast::<GenericParameters>().optional(),
         pub parameters: function::Parameters = ast::<function::Parameters>(),
         pub return_type: ReturnType = ast::<ReturnType>()
             .commit_if(ast::<Arrow>()),

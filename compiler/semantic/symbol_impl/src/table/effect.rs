@@ -68,10 +68,6 @@ impl Builder {
                 builder.insert_kind(operation_id, Kind::EffectOperation);
                 builder.insert_scope_span(operation_id, member.span());
                 builder.insert_name_identifier(operation_id, &identifier);
-                builder.insert_generic_parameters_syntax(
-                    operation_id,
-                    member.generic_parameters(),
-                );
                 builder.insert_function_signature_syntax(
                     operation_id,
                     member.parameters(),

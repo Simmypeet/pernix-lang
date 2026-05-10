@@ -57,7 +57,6 @@ reference! {
     pub struct Operation for super::Operation {
         #{map_input_assert(identifier, &identifier.kind)}
         pub identifier (Identifier),
-        pub generic_parameters (Option<GenericParameters>),
         pub parameters (function::arbitrary::Parameters),
         pub return_type (Option<function::arbitrary::ReturnType>),
         pub trailing_where_clause (Option<TrailingWhereClause>),
@@ -71,7 +70,6 @@ impl Arbitrary for Operation {
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
             Identifier::arbitrary(),
-            proptest::option::of(GenericParameters::arbitrary()),
             function::arbitrary::Parameters::arbitrary(),
             proptest::option::of(function::arbitrary::ReturnType::arbitrary()),
             proptest::option::of(TrailingWhereClause::arbitrary()),
@@ -79,13 +77,11 @@ impl Arbitrary for Operation {
             .prop_map(
                 |(
                     identifier,
-                    generic_parameters,
                     parameters,
                     return_type,
                     trailing_where_clause,
                 )| Self {
                     identifier,
-                    generic_parameters,
                     parameters,
                     return_type,
                     trailing_where_clause,
@@ -102,10 +98,6 @@ impl IndentDisplay for Operation {
         indent: usize,
     ) -> std::fmt::Result {
         write!(formatter, "{}", self.identifier.0.as_ref())?;
-
-        if let Some(generic_parameters) = &self.generic_parameters {
-            generic_parameters.indent_fmt(formatter, indent)?;
-        }
 
         self.parameters.indent_fmt(formatter, indent)?;
 
