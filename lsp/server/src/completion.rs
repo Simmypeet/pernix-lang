@@ -9,8 +9,11 @@ use qbice::storage::intern::Interned;
 use tower_lsp::lsp_types::{CompletionParams, CompletionResponse};
 
 use crate::{
-    completion::qualified_identifier::qualified_identifier_completion,
-    conversion::lsp_position_to_editor_location, test_config::is_testing_lsp,
+    completion::qualified_identifier::{
+        qualified_identifier_completion, retrieve_qulaified_identifier_matching,
+    },
+    conversion::lsp_position_to_editor_location,
+    test_config::is_testing_lsp,
 };
 
 pub mod keyword;
@@ -58,14 +61,14 @@ pub async fn handle_completion(
         .get_byte_index_from_editor_location(&pernix_editor_location)
         .unwrap();
 
-    let mut completions = Vec::new();
-
-    keyword::keyword_completion(
-        &token_tree,
-        &error,
-        byte_index,
-        &mut completions,
-    );
+    let in_qualified_identifier_context = self
+        .retrieve_qulaified_identifier_matching(
+            byte_index,
+            &token_tree,
+            &content,
+        )
+        .await
+        .is_some();
 
     let mut qualified_identifier_completions = self
         .qualified_identifier_completion(
@@ -80,6 +83,17 @@ pub async fn handle_completion(
     // in testing mode, sort completions to make snapshots stable
     if self.is_testing_lsp().await {
         qualified_identifier_completions.sort();
+    }
+
+    let mut completions = Vec::new();
+
+    if !in_qualified_identifier_context {
+        keyword::keyword_completion(
+            &token_tree,
+            &error,
+            byte_index,
+            &mut completions,
+        );
     }
 
     completions.reserve(qualified_identifier_completions.len());

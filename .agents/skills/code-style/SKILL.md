@@ -27,10 +27,13 @@ that we don't control).
 **Rationale**: This makes the compiler helps notify us when there's a new
 variant added to the enum and where we need to handle it.
 
-# Always Run `clippy`
+# Always run `cargo clippy`
 
-**Rationale**: Clippy can catch many common programming mistakes
+**Rationale**: Clippy can catch many common programming mistakes. And the CI
+will fail if there are any warnings from Clippy, so it's better to run it locally
+before pushing code.
 
-# Always run `+nightly fmt`
+# Always run `cargo +nightly fmt`
 
-**Rationale**: Make the code looks consistent
+**Rationale**: Make the code looks consistent. Again, the CI will fail if the
+code is not formatted properly.

@@ -3,7 +3,7 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: run
 ---
 stderr:
-[error]: the predicate `marker main::Fizz[bool]` is not satisfied
+[error]: the predicate `marker main.Fizz[bool]` is not satisfied
    ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/marker_with_constraints/main.pnx:20:25
    │
 20 │ pub type InstMyStruct = WithRequirement[MyStruct]
@@ -13,7 +13,7 @@ stderr:
    │
 17 │ pub type WithRequirement[T: Buzz] = T
    ╰╴                            ━━━━
-[note]: required for predicate marker main::Buzz[(bool)] to be implemented
+[note]: required for predicate marker main.Buzz[(bool)] to be implemented
   ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/marker_with_constraints/main.pnx:9:15
   │
 9 │ final impl[T: Fizz] Buzz[(T,)]

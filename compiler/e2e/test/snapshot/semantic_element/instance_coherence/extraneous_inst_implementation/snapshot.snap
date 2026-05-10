@@ -7,10 +7,10 @@ stderr:
    ╭▸ compiler/e2e/test/snapshot/semantic_element/instance_coherence/extraneous_inst_implementation/main.pnx:11:10
    │
  1 │ pub trait Test:
-   │           ──── trait `main::Test` declared here
+   │           ──── trait `main.Test` declared here
    ‡
 11 │     type Extra = int32
-   ╰╴         ━━━━━ member `Extra` is not part of trait `main::Test`
+   ╰╴         ━━━━━ member `Extra` is not part of trait `main.Test`
 
 [error]: Compilation aborted due to 1 error(s)
 

@@ -51,7 +51,16 @@ use crate::{
 pub mod diagnostic;
 
 use crate::{
-    bind::{Bind, Expression, Guidance},
+    bind::{
+        Bind, Expression, Guidance,
+        expression::{
+            postfix::{
+                access::bind_struct_field_access,
+                method_call::bind_method_call_from_parts,
+            },
+            qualified_identifier::bind_local_root,
+        },
+    },
     binder::{Binder, BindingError, Error},
 };
 
@@ -267,6 +276,12 @@ impl Bind<&pernixc_syntax::expression::unit::FunctionCall> for Binder<'_> {
         _config: &Guidance<'_>,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
     ) -> Result<Expression, Error> {
+        if let Some(expression) =
+            bind_local_function_call(self, syntax_tree, handler).await?
+        {
+            return Ok(expression);
+        }
+
         let callee_or_variant =
             get_function_instantiation(self, syntax_tree, handler).await?;
 
@@ -382,6 +397,73 @@ impl Bind<&pernixc_syntax::expression::unit::FunctionCall> for Binder<'_> {
                 .map(|x| Expression::RValue(Value::Register(x))),
         }
     }
+}
+
+async fn bind_local_function_call(
+    binder: &mut Binder<'_>,
+    syntax_tree: &pernixc_syntax::expression::unit::FunctionCall,
+    handler: &dyn Handler<crate::diagnostic::Diagnostic>,
+) -> Result<Option<Expression>, Error> {
+    let Some(qualified_identifier) = syntax_tree.qualified_identifier() else {
+        return Ok(None);
+    };
+
+    let Some(pernixc_syntax::QualifiedIdentifierRoot::GenericIdentifier(root)) =
+        qualified_identifier.root()
+    else {
+        return Ok(None);
+    };
+
+    if qualified_identifier.subsequences().count() == 0 {
+        return Ok(None);
+    }
+
+    let Some(mut receiver) =
+        bind_local_root(binder, &root, root.span(), handler).await?
+    else {
+        return Ok(None);
+    };
+
+    let subsequences = qualified_identifier.subsequences().collect::<Vec<_>>();
+    let (last, prefixes) = subsequences
+        .split_last()
+        .expect("checked that the qualified identifier is non-empty");
+
+    for subsequent in prefixes {
+        let Some(generic_identifier) = subsequent.generic_identifier() else {
+            return Err(Error::Binding(BindingError(syntax_tree.span())));
+        };
+
+        if generic_identifier.generic_arguments().is_some() {
+            return Ok(None);
+        }
+
+        let Some(identifier) = generic_identifier.identifier() else {
+            return Err(Error::Binding(BindingError(syntax_tree.span())));
+        };
+
+        receiver =
+            bind_struct_field_access(binder, receiver, identifier, handler)
+                .await?;
+    }
+
+    let Some(generic_identifier) = last.generic_identifier() else {
+        return Err(Error::Binding(BindingError(syntax_tree.span())));
+    };
+    let Some(call) = syntax_tree.call() else {
+        return Err(Error::Binding(BindingError(syntax_tree.span())));
+    };
+
+    bind_method_call_from_parts(
+        binder,
+        receiver,
+        &generic_identifier,
+        &call,
+        syntax_tree.span(),
+        handler,
+    )
+    .await
+    .map(Some)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

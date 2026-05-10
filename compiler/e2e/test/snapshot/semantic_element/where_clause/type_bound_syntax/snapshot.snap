@@ -3,7 +3,7 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: run
 ---
 stderr:
-[error]: the predicate `marker main::Fizz[T]` is not satisfied
+[error]: the predicate `marker main.Fizz[T]` is not satisfied
   ╭▸ compiler/e2e/test/snapshot/semantic_element/where_clause/type_bound_syntax/main.pnx:7:20
   │
 7 │ pub type Inst[T] = Test[T]
@@ -14,7 +14,7 @@ stderr:
 4 │ pub type Test[T: Fizz] = T
   ╰╴                 ━━━━
 
-[error]: the predicate `marker main::Buzz['∀0, T]` is not satisfied
+[error]: the predicate `marker main.Buzz['∀0, T]` is not satisfied
    ╭▸ compiler/e2e/test/snapshot/semantic_element/where_clause/type_bound_syntax/main.pnx:16:21
    │
 16 │ pub type Inst2[T] = Test2[T]
@@ -25,7 +25,7 @@ stderr:
 13 │ pub type Test2[T: for['x] Buzz['x]] = T
    ╰╴                  ━━━━━━━━━━━━━━━━
 
-[error]: the predicate `marker main::Buzz['∀0, T]` is not satisfied
+[error]: the predicate `marker main.Buzz['∀0, T]` is not satisfied
    ╭▸ compiler/e2e/test/snapshot/semantic_element/where_clause/type_bound_syntax/main.pnx:24:21
    │
 24 │ pub type Inst3[T] = Test3[T]
@@ -33,8 +33,8 @@ stderr:
 [note]: the required predicate is declared here
    ╭▸ compiler/e2e/test/snapshot/semantic_element/where_clause/type_bound_syntax/main.pnx:21:12
    │
-21 │         T: for['x] target::Buzz['x]
-   ╰╴           ━━━━━━━━━━━━━━━━━━━━━━━━
+21 │         T: for['x] target.Buzz['x]
+   ╰╴           ━━━━━━━━━━━━━━━━━━━━━━━
 
 [error]: Compilation aborted due to 3 error(s)
 

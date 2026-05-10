@@ -4,4 +4,4 @@ pub enum Option[T]:
 
 
 pub def test():
-    Option::Non<cursor>e
+    Option.Non<cursor>e

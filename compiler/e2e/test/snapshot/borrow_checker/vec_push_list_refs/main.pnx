@@ -3,6 +3,18 @@ pub enum Option[T]:
 	None
 
 
+pub struct Box[T]:
+    priv fake: phantom T
+
+
+impl[T] Box[T]:
+    pub def asMutable['a](self: &'a mut this) -> &'a mut T:
+        where:
+            T: 'a
+
+        panic
+
+
 impl[T] Option[T]:
 	pub def isSome['a](self: &'a this ) -> bool:
         where:
@@ -18,8 +30,8 @@ impl[T] Option[T]:
             T: 'a
 
 		match self:
-			case Some(value): return Option::Some(value)
-			case None: return Option::None
+			case Some(value): return Option.Some(value)
+			case None: return Option.None
 
 
     pub def asMutable['a](
@@ -29,8 +41,8 @@ impl[T] Option[T]:
             T: 'a
 
         match self:
-            case Some(value): return Option::Some(value)
-            case None: return Option::None
+            case Some(value): return Option.Some(value)
+            case None: return Option.None
 
 
     pub def unwrap(self: this) -> T:
@@ -56,9 +68,8 @@ impl[T] Vector[T]:
 
 pub struct List[T]:
 	pub value: T
-    
-    # NOTE: this will create infinite sized struct in the future (use Box)
-	pub next: Option[List[T]] 
+
+	pub next: Option[Box[List[T]]]
 
 
 pub def createList[T]() -> List[T]:
@@ -71,13 +82,13 @@ pub def getRefs['a, T](
     where:
         T: 'a
 
-	let mut vector = Vector::new()
+	let mut vector = Vector.new()
 
 	loop:
 		vector.push(&mut list.value)
 
 		match (&mut list.next):
 			case Some(next):
-				list = next
+				list = next.asMutable()
 
 			case None: return vector

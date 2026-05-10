@@ -5,7 +5,7 @@ pub effect Effect[T]:
 pub def main():
     do:
         let a = 42
-        Effect::doSomething(&a)
+        Effect.doSomething(&a)
     
     with Effect[&int32]:
         doSomething(a):

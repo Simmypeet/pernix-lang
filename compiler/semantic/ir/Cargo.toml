@@ -31,5 +31,8 @@ derive_more = { workspace = true }
 getset = { workspace = true }
 bon = { workspace = true }
 
+[dev-dependencies]
+tokio = { workspace = true }
+
 [lints]
 workspace = true

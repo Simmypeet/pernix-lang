@@ -6,14 +6,14 @@ stderr:
 [error]: the predicate `'a: 'b` is not satisfied
   ╭▸ compiler/e2e/test/snapshot/semantic_element/type_alias/simplify/main.pnx:5:39
   │
-5 │ pub type Test['a, 'b, inst I: Fizz] = I::Output['a]:
-  ╰╴                                      ━━━━━━━━━━━━━
+5 │ pub type Test['a, 'b, inst I: Fizz] = I.Output['a]:
+  ╰╴                                      ━━━━━━━━━━━━
 
 [error]: the predicate `'b: 'a` is not satisfied
   ╭▸ compiler/e2e/test/snapshot/semantic_element/type_alias/simplify/main.pnx:5:39
   │
-5 │ pub type Test['a, 'b, inst I: Fizz] = I::Output['a]:
-  ╰╴                                      ━━━━━━━━━━━━━
+5 │ pub type Test['a, 'b, inst I: Fizz] = I.Output['a]:
+  ╰╴                                      ━━━━━━━━━━━━
 
 [error]: Compilation aborted due to 2 error(s)
 

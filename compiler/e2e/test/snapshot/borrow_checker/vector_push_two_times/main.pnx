@@ -14,7 +14,7 @@ impl[T] Vector[T]:
 
 
 pub def main():
-    let mut vector = Vector::new()
+    let mut vector = Vector.new()
     let mut number = 0
 
     vector.push(number)

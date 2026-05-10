@@ -6,24 +6,24 @@ stderr:
 [error]: mismatched types: expected `bool`, found `{number}`
    ╭▸ compiler/e2e/test/snapshot/ir/expression/function_call/inference/main.pnx:37:18
    │
-37 │     expect[bool](Test::right(true, 32))
-   │                  ━━━━━━━━━━━━━━━━━━━━━ expected `bool`, found `{number}`
+37 │     expect[bool](Test.right(true, 32))
+   │                  ━━━━━━━━━━━━━━━━━━━━ expected `bool`, found `{number}`
    │
    ╰ help: ensure the expression type matches the expected type
 
 [error]: mismatched types: expected `int32`, found `bool`
    ╭▸ compiler/e2e/test/snapshot/ir/expression/function_call/inference/main.pnx:38:19
    │
-38 │     expect[int32](Test::left(true, 32))
-   │                   ━━━━━━━━━━━━━━━━━━━━ expected `int32`, found `bool`
+38 │     expect[int32](Test.left(true, 32))
+   │                   ━━━━━━━━━━━━━━━━━━━ expected `int32`, found `bool`
    │
    ╰ help: ensure the expression type matches the expected type
 
 [error]: mismatched types: expected `()`, found `(bool, {number})`
    ╭▸ compiler/e2e/test/snapshot/ir/expression/function_call/inference/main.pnx:39:16
    │
-39 │     expect[()](Test::both(true, 32)) 
-   │                ━━━━━━━━━━━━━━━━━━━━ expected `()`, found `(bool, {number})`
+39 │     expect[()](Test.both(true, 32)) 
+   │                ━━━━━━━━━━━━━━━━━━━ expected `()`, found `(bool, {number})`
    │
    ╰ help: ensure the expression type matches the expected type
 

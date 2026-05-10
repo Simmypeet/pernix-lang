@@ -11,8 +11,8 @@ stderr:
 [note]: the required predicate is declared here
    ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:15:9
    │
-15 │         I::Output = Invariant['x, 'a]
-   ╰╴        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+15 │         I.Output = Invariant['x, 'a]
+   ╰╴        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 [error]: the predicate `'b: 'a` is not satisfied
    ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:19:55
@@ -22,8 +22,8 @@ stderr:
 [note]: the required predicate is declared here
    ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:15:9
    │
-15 │         I::Output = Invariant['x, 'a]
-   ╰╴        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+15 │         I.Output = Invariant['x, 'a]
+   ╰╴        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 [error]: the predicate `T: 'a` is not satisfied
    ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:38:41
@@ -44,8 +44,8 @@ stderr:
 [note]: the required predicate is declared here
    ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:47:9
    │
-47 │         I::Output = Bivariant['a]
-   ╰╴        ━━━━━━━━━━━━━━━━━━━━━━━━━
+47 │         I.Output = Bivariant['a]
+   ╰╴        ━━━━━━━━━━━━━━━━━━━━━━━━
 
 [error]: the predicate `'b: 'a` is not satisfied
    ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:52:61
@@ -55,8 +55,8 @@ stderr:
 [note]: the required predicate is declared here
    ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:47:9
    │
-47 │         I::Output = Bivariant['a]
-   ╰╴        ━━━━━━━━━━━━━━━━━━━━━━━━━
+47 │         I.Output = Bivariant['a]
+   ╰╴        ━━━━━━━━━━━━━━━━━━━━━━━━
 
 [error]: Compilation aborted due to 5 error(s)
 

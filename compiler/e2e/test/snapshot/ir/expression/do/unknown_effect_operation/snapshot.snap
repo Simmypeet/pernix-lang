@@ -3,11 +3,11 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: run
 ---
 stderr:
-[error]: the effect `main::Test` has no operation named `unknown`
+[error]: the effect `main.Test` has no operation named `unknown`
    ╭▸ compiler/e2e/test/snapshot/ir/expression/do/unknown_effect_operation/main.pnx:13:9
    │
 13 │         unknown():
-   ╰╴        ━━━━━━━ `unknown` is not an operation of `main::Test` effect
+   ╰╴        ━━━━━━━ `unknown` is not an operation of `main.Test` effect
 
 [error]: Compilation aborted due to 1 error(s)
 

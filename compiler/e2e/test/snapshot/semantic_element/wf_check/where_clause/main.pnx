@@ -12,7 +12,7 @@ pub trait Identity:
 pub type ConstrainedInvariant['x, 'a, inst I: Identity] = int32:
     where:
         'a: 'x
-        I::Output = Invariant['x, 'a]
+        I.Output = Invariant['x, 'a]
 
 
 # should error with 'b: 'a and 'a: 'b
@@ -20,7 +20,7 @@ pub type UseInvariant['x, 'a, 'b, inst I: Identity] = ConstrainedInvariant['x, '
     where:
         'a: 'x
         'b: 'x
-        I::Output = Invariant['x, 'b]
+        I.Output = Invariant['x, 'b]
 
 
 pub struct ConstraintLifetime['a, T]:
@@ -44,11 +44,11 @@ pub struct Bivariant['a]:
 
 pub type ConstraintBivariant['a, inst I: Identity] = int32:
     where:
-        I::Output = Bivariant['a]
+        I.Output = Bivariant['a]
 
 
 # should have no lifetime errors, since the lifetime 'a  of `Bivariant` is
 # bivariant
 pub type UseConstraintBivariant['a, 'b, inst I: Identity] = ConstraintBivariant['a, I]:
     where:
-        I::Output = Bivariant['b]
+        I.Output = Bivariant['b]

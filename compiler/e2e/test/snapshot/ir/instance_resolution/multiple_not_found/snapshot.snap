@@ -3,37 +3,37 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: run
 ---
 stderr:
-[error]: no instance found for `main::Require[T]`
+[error]: no instance found for `main.Require[T]`
    ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/multiple_not_found/main.pnx:24:5
    │
 24 │     require(Test { value: a, other: b })
-   │     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ an instance of `main::Require[T]` is required here
+   │     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ an instance of `main.Require[T]` is required here
    │
    ╰ help: consider adding an `instance` parameter or importing a suitable instance implementation into scope
-[note]: required because resolving instance parameter `I` for `main::Require[main::Test[T, U]]`
+[note]: required because resolving instance parameter `I` for `main.Require[main.Test[T, U]]`
    ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/multiple_not_found/main.pnx:19:25
    │
 19 │ pub def require[T, inst I: Require[T]](value: T):
    ╰╴                        ━ this function requires the parameter to be resolved
-[note]: required because resolving instance parameter `X` for `main::Require[T]`
+[note]: required because resolving instance parameter `X` for `main.Require[T]`
    ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/multiple_not_found/main.pnx:13:10
    │
 13 │     inst X: Require[T], 
    ╰╴         ━ this instance requires the parameter to be resolved
 
-[error]: no instance found for `main::Require[U]`
+[error]: no instance found for `main.Require[U]`
    ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/multiple_not_found/main.pnx:24:5
    │
 24 │     require(Test { value: a, other: b })
-   │     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ an instance of `main::Require[U]` is required here
+   │     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ an instance of `main.Require[U]` is required here
    │
    ╰ help: consider adding an `instance` parameter or importing a suitable instance implementation into scope
-[note]: required because resolving instance parameter `I` for `main::Require[main::Test[T, U]]`
+[note]: required because resolving instance parameter `I` for `main.Require[main.Test[T, U]]`
    ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/multiple_not_found/main.pnx:19:25
    │
 19 │ pub def require[T, inst I: Require[T]](value: T):
    ╰╴                        ━ this function requires the parameter to be resolved
-[note]: required because resolving instance parameter `Y` for `main::Require[U]`
+[note]: required because resolving instance parameter `Y` for `main.Require[U]`
    ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/multiple_not_found/main.pnx:14:10
    │
 14 │     inst Y: Require[U]

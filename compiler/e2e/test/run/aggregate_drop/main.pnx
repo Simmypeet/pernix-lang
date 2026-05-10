@@ -40,14 +40,14 @@ impl[T] Option[T]:
 
     pub def asRef(self: &this) -> Option[&T]:
         match self:
-            case Some(value): return Option::Some(value)
-            case None: return Option::None
+            case Some(value): return Option.Some(value)
+            case None: return Option.None
 
 
     pub def asMutable(self: &mut this) -> Option[&mut T]:
         match self:
-            case Some(value): return Option::Some(value)
-            case None: return Option::None
+            case Some(value): return Option.Some(value)
+            case None: return Option.None
 
 
 pub def main():
@@ -58,8 +58,8 @@ pub def main():
         second: LoudDrop { value: 0 },
     }
 
-    let mut inSome = Option::Some(LoudDrop { value: 0 })
-    let mut inNone = Option[LoudDrop]::None
+    let mut inSome = Option.Some(LoudDrop { value: 0 })
+    let mut inNone = Option[LoudDrop].None
 
     unsafe scope:
         scanf(&"%d %d %d %d %d %d %d\0".[0],

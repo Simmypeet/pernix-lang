@@ -3,7 +3,7 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: run
 ---
 stderr:
-[error]: symbol `duplicateInner` is already defined in the scope `main::inner`
+[error]: symbol `duplicateInner` is already defined in the scope `main.inner`
   ╭▸ compiler/e2e/test/snapshot/symbol/redefinition/inner.pnx:4:12
   │
 1 │ pub module duplicateInner:
@@ -30,7 +30,7 @@ stderr:
 12 │ pub trait Second:
    ╰╴          ━━━━━━ redefinition here
 
-[error]: symbol `First` is already defined in the scope `main::Inner`
+[error]: symbol `First` is already defined in the scope `main.Inner`
    ╭▸ compiler/e2e/test/snapshot/symbol/redefinition/main.pnx:19:14
    │
 17 │     pub type First
@@ -39,7 +39,7 @@ stderr:
 19 │     pub type First
    ╰╴             ━━━━━ redefinition here
 
-[error]: symbol `Second` is already defined in the scope `main::Inner`
+[error]: symbol `Second` is already defined in the scope `main.Inner`
    ╭▸ compiler/e2e/test/snapshot/symbol/redefinition/main.pnx:23:13
    │
 21 │     pub const Second: usize
@@ -57,7 +57,7 @@ stderr:
 28 │ pub struct Third:
    ╰╴           ━━━━━ redefinition here
 
-[error]: symbol `SecondVariant` is already defined in the scope `main::Fourth`
+[error]: symbol `SecondVariant` is already defined in the scope `main.Fourth`
    ╭▸ compiler/e2e/test/snapshot/symbol/redefinition/main.pnx:35:5
    │
 34 │     SecondVariant
@@ -74,7 +74,7 @@ stderr:
 37 │ pub enum Fourth:
    ╰╴         ━━━━━━ redefinition here
 
-[error]: symbol `FourthVariant` is already defined in the scope `main::Fourth`
+[error]: symbol `FourthVariant` is already defined in the scope `main.Fourth`
    ╭▸ compiler/e2e/test/snapshot/symbol/redefinition/main.pnx:40:5
    │
 39 │     FourthVariant
@@ -100,7 +100,7 @@ stderr:
 49 │ pub enum Sixth:
    ╰╴         ━━━━━ redefinition here
 
-[error]: symbol `test` is already defined in the scope `main::[implements Test[int32]]`
+[error]: symbol `test` is already defined in the scope `main.[implements Test[int32]]`
    ╭▸ compiler/e2e/test/snapshot/symbol/redefinition/main.pnx:59:13
    │
 56 │     pub def test():

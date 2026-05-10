@@ -13,11 +13,11 @@ impl[T] Vector[T]:
     
 
 pub def main():
-    let mut vec = Vector::new()
+    let mut vec = Vector.new()
     vec.push(true)
     vec.push(false)
     vec.push(53)  # error
 
-    let mut newVec = Vector::new()
+    let mut newVec = Vector.new()
 
     # newVec type is not inferred

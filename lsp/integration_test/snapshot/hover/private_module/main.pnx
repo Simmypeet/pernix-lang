@@ -3,4 +3,4 @@ pub module outer:
         type Test = int32
 
 
-pub type Test = outer::inn<cursor>er::Test
+pub type Test = outer.inn<cursor>er.Test

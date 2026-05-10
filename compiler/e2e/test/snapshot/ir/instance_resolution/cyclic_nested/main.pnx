@@ -42,4 +42,4 @@ pub def require[T, inst I: Require[T]](value: T):
 
 
 pub def useLinkedList():
-    require(LinkedList { head: 1i32, tail: Option::None })
+    require(LinkedList { head: 1i32, tail: Option.None })

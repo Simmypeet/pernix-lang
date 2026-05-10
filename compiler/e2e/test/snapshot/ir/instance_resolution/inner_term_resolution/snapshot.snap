@@ -3,27 +3,27 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: run
 ---
 stderr:
-[error]: no instance found for `main::Require[T]`
+[error]: no instance found for `main.Require[T]`
    ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/inner_term_resolution/main.pnx:16:5
    │
 16 │     require[(Test[T, ..], Test[U, ..])]()
-   │     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ an instance of `main::Require[T]` is required here
+   │     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ an instance of `main.Require[T]` is required here
    │
    ╰ help: consider adding an `instance` parameter or importing a suitable instance implementation into scope
-[note]: required because resolving instance parameter `I` for `main::Require[T]`
+[note]: required because resolving instance parameter `I` for `main.Require[T]`
   ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/inner_term_resolution/main.pnx:6:25
   │
 6 │ pub struct Test[T, inst I: Require[T]]:
   ╰╴                        ━ this struct requires the parameter to be resolved
 
-[error]: no instance found for `main::Require[U]`
+[error]: no instance found for `main.Require[U]`
    ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/inner_term_resolution/main.pnx:16:5
    │
 16 │     require[(Test[T, ..], Test[U, ..])]()
-   │     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ an instance of `main::Require[U]` is required here
+   │     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ an instance of `main.Require[U]` is required here
    │
    ╰ help: consider adding an `instance` parameter or importing a suitable instance implementation into scope
-[note]: required because resolving instance parameter `I` for `main::Require[U]`
+[note]: required because resolving instance parameter `I` for `main.Require[U]`
   ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/inner_term_resolution/main.pnx:6:25
   │
 6 │ pub struct Test[T, inst I: Require[T]]:

@@ -7,13 +7,13 @@ stderr:
    ╭▸ compiler/e2e/test/snapshot/ir/expression/do/not_effect_handler/main.pnx:17:10
    │
 17 │     with MyStruct: # totally not an effect handler
-   ╰╴         ━━━━━━━━ the effect was expected but found `struct main::MyStruct`
+   ╰╴         ━━━━━━━━ the effect was expected but found `struct main.MyStruct`
 
 [error]: effect expected
    ╭▸ compiler/e2e/test/snapshot/ir/expression/do/not_effect_handler/main.pnx:20:10
    │
 20 │     with MyEnum: # totally not an effect handler
-   ╰╴         ━━━━━━ the effect was expected but found `enum main::MyEnum`
+   ╰╴         ━━━━━━ the effect was expected but found `enum main.MyEnum`
 
 [error]: Compilation aborted due to 2 error(s)
 

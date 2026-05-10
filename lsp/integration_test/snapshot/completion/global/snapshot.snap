@@ -11,7 +11,7 @@ expression: string
   {
     "label": "XomeStructTwo",
     "labelDetails": {
-      "detail": "(from lspTest::innerSecond)"
+      "detail": "(from lspTest.innerSecond)"
     },
     "kind": 22,
     "sortText": "200"
@@ -19,7 +19,7 @@ expression: string
   {
     "label": "XomeStructOne",
     "labelDetails": {
-      "detail": "(from lspTest::innerFirst)"
+      "detail": "(from lspTest.innerFirst)"
     },
     "kind": 22,
     "sortText": "200"

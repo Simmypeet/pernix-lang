@@ -8,7 +8,7 @@ pub struct MyStruct:
 
 pub enum Test['a, 'b, T, U, inst I: Fizz]:
     where:
-        I::Output['a, T] = int32
+        I.Output['a, T] = int32
         
     UseT(T)
     UseU(U)
@@ -16,4 +16,4 @@ pub enum Test['a, 'b, T, U, inst I: Fizz]:
     UseUnknown(Unknown)
     Plain
     UseAnother(MyStruct)
-    UseTraitAssociatedType(I::Output['b, T])
+    UseTraitAssociatedType(I.Output['b, T])

@@ -16,6 +16,7 @@ mod import;
 mod instance_associated_value;
 mod instance_coherence;
 mod occurrences;
+mod recursive_adt_check;
 mod trait_ref;
 mod type_alias;
 mod variance;

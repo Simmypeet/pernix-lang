@@ -4,12 +4,12 @@ expression: run
 ---
 stderr:
 [error]: access is done while it is mutably borrowed
-   ╭▸ compiler/e2e/test/snapshot/borrow_checker/universal_regions_through_instances/main.pnx:17:23
+   ╭▸ compiler/e2e/test/snapshot/borrow_checker/universal_regions_through_instances/main.pnx:17:22
    │
-16 │     I::doSomething(t, u)
-   │                       ─ the mutable borrow starts here
-17 │     I::doSomething(t, u)
-   │                       ━ access occurs here while it is mutably borrowed
+16 │     I.doSomething(t, u)
+   │                      ─ the mutable borrow starts here
+17 │     I.doSomething(t, u)
+   │                      ━ access occurs here while it is mutably borrowed
    │
    ╰ help: lifetime(s) 'a can access the borrow later
 

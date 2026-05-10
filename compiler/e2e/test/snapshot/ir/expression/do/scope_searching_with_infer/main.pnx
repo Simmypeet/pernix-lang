@@ -4,7 +4,7 @@ pub effect Effect[T]:
 
 pub def main():
     do:
-        Effect::doSomething(42)
+        Effect.doSomething(42)
     
     with Effect[int32]:
         doSomething(a):

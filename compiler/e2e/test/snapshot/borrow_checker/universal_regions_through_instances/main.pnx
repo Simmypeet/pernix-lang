@@ -13,5 +13,5 @@ pub def test['a, 'b, T, U, inst I: Fizz['a, T, U]](
         T: 'b
         U: 'a
 
-    I::doSomething(t, u)
-    I::doSomething(t, u)
+    I.doSomething(t, u)
+    I.doSomething(t, u)

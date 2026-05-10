@@ -7,13 +7,13 @@ stderr:
    ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/instance_check_mismatch_trait/main.pnx:13:48
    │
 13 │ pub type Use[inst I: TraitB, inst J: TraitA] = Require[I, J]
-   ╰╴                                               ━━━━━━━━━━━━━ instance `I` implements `main::TraitB` but `main::TraitA` was expected
+   ╰╴                                               ━━━━━━━━━━━━━ instance `I` implements `main.TraitB` but `main.TraitA` was expected
 
 [error]: mismatched trait reference
    ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/instance_check_mismatch_trait/main.pnx:13:48
    │
 13 │ pub type Use[inst I: TraitB, inst J: TraitA] = Require[I, J]
-   ╰╴                                               ━━━━━━━━━━━━━ instance `J` implements `main::TraitA` but `main::TraitB` was expected
+   ╰╴                                               ━━━━━━━━━━━━━ instance `J` implements `main.TraitA` but `main.TraitB` was expected
 
 [error]: Compilation aborted due to 2 error(s)
 

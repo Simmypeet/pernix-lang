@@ -7,8 +7,8 @@ pub effect Unhandled:
 
 
 pub def test['a](x: &'a int32) do Test['a]:
-    Test::firstOperation(x)
+    Test.firstOperation(x)
 
 
 pub def doUnhandled():
-    Unhandled::unhandledOperation()
+    Unhandled.unhandledOperation()

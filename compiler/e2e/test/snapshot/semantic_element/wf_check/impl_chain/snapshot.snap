@@ -3,7 +3,7 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: run
 ---
 stderr:
-[error]: the predicate `marker main::None[int32]` is not satisfied
+[error]: the predicate `marker main.None[int32]` is not satisfied
    ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/impl_chain/main.pnx:19:28
    │
 19 │ pub type UseRequireOuter = RequireOuter[int32]
@@ -13,14 +13,14 @@ stderr:
    │
 16 │ pub type RequireOuter[T: Outer] = T
    ╰╴                         ━━━━━
-[note]: required for predicate marker main::Outer[int32] to be implemented
+[note]: required for predicate marker main.Outer[int32] to be implemented
    ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/impl_chain/main.pnx:13:15
    │
 13 │ final impl[T: Inner] Outer[T]
    │               ┯━━━━  ────────
    │               │
    ╰╴              the required predicate is declared here
-[note]: required for predicate marker main::Inner[int32] to be implemented
+[note]: required for predicate marker main.Inner[int32] to be implemented
    ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/impl_chain/main.pnx:10:15
    │
 10 │ final impl[T: None] Inner[T]

@@ -1,0 +1,11 @@
+pub effect Test['x]:
+    doSomething(a: &'x int32)
+
+
+# `Test` uses forall lifetime
+pub def test['x](a: &'x int32) do Test: 
+    takeSpecific(a)
+
+
+pub def takeSpecific['x](a: &'x int32) do Test['x]:
+    Test.doSomething(a)

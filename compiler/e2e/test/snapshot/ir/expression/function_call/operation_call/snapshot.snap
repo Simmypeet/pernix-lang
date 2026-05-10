@@ -3,11 +3,11 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: run
 ---
 stderr:
-[error]: the following effects are not handled by the caller: main::Unhandled
+[error]: the following effects are not handled by the caller: main.Unhandled
    ╭▸ compiler/e2e/test/snapshot/ir/expression/function_call/operation_call/main.pnx:14:5
    │
-14 │     Unhandled::unhandledOperation()
-   │     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ call to the `effect operation main::Unhandled::unhandledOperation`
+14 │     Unhandled.unhandledOperation()
+   │     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ call to the `effect operation main.Unhandled.unhandledOperation`
    │
    ╰ help: consider adding a `do` effect annotation to the current function to handle these effects
 

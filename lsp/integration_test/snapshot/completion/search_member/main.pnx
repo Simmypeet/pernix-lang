@@ -1,4 +1,4 @@
 pub module inner
 
 
-impl inner::<cursor>
+impl inner.<cursor>

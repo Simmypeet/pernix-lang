@@ -1,0 +1,18 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: run
+---
+stderr:
+[error]: mismatched types: expected `main.confusingName`, found `int32`
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/dot_ambiguity/prefer_local_access/main.pnx:11:12
+   │
+11 │     return confusingName.variable # error: int32 != enum confusingName
+   │            ━━━━━━━━━━━━━━━━━━━━━━ expected `main.confusingName`, found `int32`
+   │
+   ╰ help: ensure the expression type matches the expected type
+
+[error]: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

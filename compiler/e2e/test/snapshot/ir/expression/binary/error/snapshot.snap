@@ -67,7 +67,7 @@ stderr:
    │
    ╰ help: ensure the expression type matches the expected type
 
-[error]: the left-hand side of a relational operator must be a number or a `bool`, but found `main::Adt`
+[error]: the left-hand side of a relational operator must be a number or a `bool`, but found `main.Adt`
    ╭▸ compiler/e2e/test/snapshot/ir/expression/binary/error/main.pnx:31:18
    │
 31 │     expect[bool](Adt{} == Adt{}) # error, adt is not comparable

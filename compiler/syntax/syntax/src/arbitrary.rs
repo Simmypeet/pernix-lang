@@ -832,7 +832,7 @@ impl Arbitrary for SimplePathRoot {
 
 reference! {
     #[derive(Debug, Clone, derive_more::Display)]
-    #[display("::{identifier}")]
+    #[display(".{identifier}")]
     pub struct SimplePathSubsequent for super::SimplePathSubsequent {
         #{map_input_assert(identifier, &identifier.kind)}
         pub identifier (kind::Identifier),
@@ -936,7 +936,7 @@ impl IndentDisplay for QualifiedIdentifierSubsequent {
         f: &mut std::fmt::Formatter<'_>,
         indent: usize,
     ) -> std::fmt::Result {
-        f.write_str("::")?;
+        f.write_str(".")?;
         self.generic_identifier.indent_fmt(f, indent)
     }
 }

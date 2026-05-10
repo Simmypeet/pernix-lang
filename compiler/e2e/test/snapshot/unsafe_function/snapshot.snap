@@ -9,8 +9,8 @@ stderr:
  6 │     pub unsafe def dangerous(): 
    │                    ───────── the function is declared as unsafe here
    ‡
-23 │     MyType::dangerous()
-   ╰╴    ━━━━━━━━━━━━━━━━━━━ call to unsafe function `main::[implements MyType]::dangerous` requires unsafe scope
+23 │     MyType.dangerous()
+   ╰╴    ━━━━━━━━━━━━━━━━━━ call to unsafe function `main.[implements MyType].dangerous` requires unsafe scope
 
 [error]: unsafe function call outside unsafe scope
    ╭▸ compiler/e2e/test/snapshot/unsafe_function/main.pnx:24:5
@@ -19,16 +19,16 @@ stderr:
    │                ──────────────── the function is declared as unsafe here
    ‡
 24 │     anotherDangerous()
-   ╰╴    ━━━━━━━━━━━━━━━━━━ call to unsafe function `main::anotherDangerous` requires unsafe scope
+   ╰╴    ━━━━━━━━━━━━━━━━━━ call to unsafe function `main.anotherDangerous` requires unsafe scope
 
 [error]: unsafe function call outside unsafe scope
-   ╭▸ compiler/e2e/test/snapshot/unsafe_function/main.pnx:25:13
+   ╭▸ compiler/e2e/test/snapshot/unsafe_function/main.pnx:25:5
    │
 10 │     pub unsafe def dangerousMethod(self: &this):
    │                    ─────────────── the function is declared as unsafe here
    ‡
 25 │     MyType{}.dangerousMethod()
-   ╰╴            ━━━━━━━━━━━━━━━━━━ call to unsafe function `main::[implements MyType]::dangerousMethod` requires unsafe scope
+   ╰╴    ━━━━━━━━━━━━━━━━━━━━━━━━━━ call to unsafe function `main.[implements MyType].dangerousMethod` requires unsafe scope
 
 [error]: unsafe function call outside unsafe scope
    ╭▸ compiler/e2e/test/snapshot/unsafe_function/main.pnx:26:5
@@ -36,8 +36,8 @@ stderr:
 19 │     pub unsafe def traitDangerous()
    │                    ────────────── the function is declared as unsafe here
    ‡
-26 │     I::traitDangerous()
-   ╰╴    ━━━━━━━━━━━━━━━━━━━ call to unsafe function `main::MyTrait::traitDangerous` requires unsafe scope
+26 │     I.traitDangerous()
+   ╰╴    ━━━━━━━━━━━━━━━━━━ call to unsafe function `main.MyTrait.traitDangerous` requires unsafe scope
 
 [error]: Compilation aborted due to 4 error(s)
 

@@ -7,7 +7,9 @@ use std::{
 };
 
 use pernixc_diagnostic::ByteIndex;
-use pernixc_qbice::{Engine, IncrementalStorageEngine, TrackedEngine};
+use pernixc_qbice::{
+    Engine, IncrementalStorageEngine, InputSession, TrackedEngine,
+};
 use pernixc_source_file::{
     EditorLocation, GlobalSourceID, SourceFile, get_source_file_by_id,
 };
@@ -82,6 +84,19 @@ impl Analyzer {
 }
 
 impl Analyzer {
+    async fn set_ir_verification(
+        input_session: &mut InputSession,
+        target_id: TargetID,
+        verify_ir: bool,
+    ) {
+        input_session
+            .set_input(
+                pernixc_target::IRVerificationKey { target_id },
+                verify_ir,
+            )
+            .await;
+    }
+
     /// Creates a new [`Engine`] setup for LSP services.
     ///
     /// # Arguments
@@ -91,6 +106,7 @@ impl Analyzer {
     /// - `source_file_loader_overide`: An executor to override the default
     ///   source file loader.
     /// - `target_seed`: An optional seed for the target.
+    #[allow(clippy::too_many_lines)]
     pub async fn create_engine<
         E: executor::Executor<pernixc_source_file::Key, pernixc_qbice::Config>,
         S: StorageEngineFactory<StorageEngine = pernixc_qbice::StorageEngine>,
@@ -103,7 +119,6 @@ impl Analyzer {
         storage_engine_factory: S,
     ) -> Result<Arc<Engine>, S::Error> {
         let local_target_id = TargetID::from_target_name(&target_name);
-
         let command = pernixc_target::Command::Check(Check {
             input: Input {
                 file: root_source_file,
@@ -113,9 +128,10 @@ impl Analyzer {
                 chrome_tracing: false,
                 target_seed,
                 fancy: false,
+                verify_ir: is_testing_lsp,
             },
         });
-
+        let verify_ir = command.input().verify_ir;
         // initialize the engine with corelib
         let mut engine = Engine::new_with_options()
             .options(
@@ -128,7 +144,6 @@ impl Analyzer {
             .stable_hasher(SeededStableHasherBuilder::new(0))
             .build()
             .await?;
-
         // Due to how rust compiler work, if a crate is linked without having
         // any symbols in it used, the crate will be completely ignored
         // and the static distributed registration will be optimized
@@ -136,18 +151,12 @@ impl Analyzer {
         pernixc_source_file_impl::black_box();
         pernixc_lexical_impl::black_box();
         pernixc_syntax_impl::black_box();
-
         engine.register_program(pernixc_qbice::PERNIX_PROGRAM);
-
         engine.register_executor(source_file_loader_override);
-
         let engine = Arc::new(engine);
-
         {
             let mut input_session = engine.input_session().await;
-
             pernixc_corelib_impl::initialize_corelib(&mut input_session).await;
-
             input_session
                 .set_input(
                     pernixc_target::LinkKey { target_id: local_target_id },
@@ -155,7 +164,6 @@ impl Analyzer {
                         .intern(std::iter::once(TargetID::CORE).collect()),
                 )
                 .await;
-
             input_session
                 .set_input(
                     pernixc_target::AllTargetIDsKey,
@@ -166,9 +174,7 @@ impl Analyzer {
                     ),
                 )
                 .await;
-
             input_session.set_input(TestConfig, is_testing_lsp).await;
-
             input_session
                 .set_input(
                     pernixc_target::MapKey,
@@ -190,14 +196,18 @@ impl Analyzer {
                     ),
                 )
                 .await;
-
             input_session
                 .set_input(
                     pernixc_target::Key { target_id: local_target_id },
                     input_session.intern(Arguments { command }),
                 )
                 .await;
-
+            Self::set_ir_verification(
+                &mut input_session,
+                local_target_id,
+                verify_ir,
+            )
+            .await;
             if let Some(target_seed) = target_seed {
                 input_session
                     .set_input(
@@ -206,15 +216,12 @@ impl Analyzer {
                     )
                     .await;
             }
-
             pernixc_source_file_impl::refresh_source_file_executors(
                 &mut input_session,
             )
             .await;
-
             input_session.commit().await;
         }
-
         Ok(engine)
     }
 

@@ -29,14 +29,14 @@ pub def expectSameCongruence[T](..: (T,), ..: (T,)):
 
 pub def main():
     # normal case, no type error
-    expect[int32](Test::right(true, 32))
-    expect[bool](Test::left(true, 32))
-    expect[(bool, int32)](Test::both(true, 32))
+    expect[int32](Test.right(true, 32))
+    expect[bool](Test.left(true, 32))
+    expect[(bool, int32)](Test.both(true, 32))
     
     # type mismatches
-    expect[bool](Test::right(true, 32))
-    expect[int32](Test::left(true, 32))
-    expect[()](Test::both(true, 32)) 
+    expect[bool](Test.right(true, 32))
+    expect[int32](Test.left(true, 32))
+    expect[()](Test.both(true, 32)) 
 
     # same type
     expectSame(true, false)

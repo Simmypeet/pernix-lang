@@ -174,6 +174,13 @@ pub struct Input {
     /// colors.
     #[clap(long = "no-fancy", default_value = "true", action = clap::ArgAction::SetFalse)]
     pub fancy: bool,
+
+    /// Enables IR verification after function IR finalization.
+    ///
+    /// This is an internal configuration knob used by tests and tooling. It
+    /// is intentionally not exposed as a user-facing CLI flag.
+    #[clap(skip = false)]
+    pub verify_ir: bool,
 }
 
 impl Input {
@@ -603,6 +610,28 @@ static TARGET_SEED_EXECUTOR: Registration<Config> =
 #[value(TargetID)]
 #[extend(name = get_local_target_id, by_val)]
 pub struct LocalTargetIDKey;
+
+/// A query for determining whether finalized function IR should be verified.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    qbice::Query,
+)]
+#[value(bool)]
+#[extend(name = get_ir_verification, by_val)]
+pub struct IRVerificationKey {
+    /// The target ID to retrieve the IR verification flag for.
+    pub target_id: TargetID,
+}
 
 /// A query for retrieving all the target IDs, including the downstream
 /// dependencies.

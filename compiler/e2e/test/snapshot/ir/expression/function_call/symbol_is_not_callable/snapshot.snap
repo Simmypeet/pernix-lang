@@ -3,7 +3,7 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: run
 ---
 stderr:
-[error]: `struct main::MyStruct` cannot be called
+[error]: `struct main.MyStruct` cannot be called
    ╭▸ compiler/e2e/test/snapshot/ir/expression/function_call/symbol_is_not_callable/main.pnx:18:5
    │
 18 │     MyStruct()
@@ -11,7 +11,7 @@ stderr:
    │
    ╰ help: only functions, effect operation or enum with associated value can be called
 
-[error]: `enum main::MyEnum` cannot be called
+[error]: `enum main.MyEnum` cannot be called
    ╭▸ compiler/e2e/test/snapshot/ir/expression/function_call/symbol_is_not_callable/main.pnx:19:5
    │
 19 │     MyEnum()
@@ -19,7 +19,7 @@ stderr:
    │
    ╰ help: only functions, effect operation or enum with associated value can be called
 
-[error]: `module main::myModule` cannot be called
+[error]: `module main.myModule` cannot be called
    ╭▸ compiler/e2e/test/snapshot/ir/expression/function_call/symbol_is_not_callable/main.pnx:20:5
    │
 20 │     myModule()
@@ -27,7 +27,7 @@ stderr:
    │
    ╰ help: only functions, effect operation or enum with associated value can be called
 
-[error]: `trait main::MyTrait` cannot be called
+[error]: `trait main.MyTrait` cannot be called
    ╭▸ compiler/e2e/test/snapshot/ir/expression/function_call/symbol_is_not_callable/main.pnx:21:5
    │
 21 │     MyTrait[int32]()

@@ -2,4 +2,4 @@ pub module something:
     pub type Test
 
 
-pub type Test = som<cursor>ething::Test
+pub type Test = som<cursor>ething.Test

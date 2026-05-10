@@ -2,4 +2,4 @@ pub module inner:
     priv marker InAccessible[T]
 
 
-final impl inner::InAccessible[int32]
+final impl inner.InAccessible[int32]

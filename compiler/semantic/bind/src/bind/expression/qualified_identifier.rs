@@ -15,9 +15,12 @@ use pernixc_term::r#type::Qualifier;
 use crate::{
     bind::{
         Bind, Expression, Guidance, LValue,
-        expression::qualified_identifier::diagnostic::{
-            Diagnostic, ExpectedAssociatedValue,
-            SymbolCannotBeUsedAsAnExpression,
+        expression::{
+            postfix::access::bind_struct_field_access,
+            qualified_identifier::diagnostic::{
+                Diagnostic, ExpectedAssociatedValue,
+                SymbolCannotBeUsedAsAnExpression,
+            },
         },
     },
     binder::{Binder, BindingError, Error},
@@ -29,12 +32,11 @@ impl Bind<&pernixc_syntax::QualifiedIdentifier> for Binder<'_> {
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::QualifiedIdentifier,
-        config: &Guidance<'_>,
+        _: &Guidance<'_>,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
     ) -> Result<Expression, crate::binder::Error> {
-        // search for the variable/parameter in the stack
         if let Some(expression) =
-            bind_simple_identifier(self, syntax_tree, config, handler).await?
+            bind_local_qualified_identifier(self, syntax_tree, handler).await?
         {
             return Ok(expression);
         }
@@ -112,28 +114,18 @@ impl Bind<&pernixc_syntax::QualifiedIdentifier> for Binder<'_> {
     }
 }
 
-async fn bind_simple_identifier(
+pub(super) async fn bind_local_root(
     binder: &mut Binder<'_>,
-    syn: &pernixc_syntax::QualifiedIdentifier,
-    _: &Guidance<'_>,
+    ident: &pernixc_syntax::GenericIdentifier,
+    span: pernixc_lexical::tree::RelativeSpan,
     handler: &dyn Handler<crate::diagnostic::Diagnostic>,
-) -> Result<Option<Expression>, crate::binder::Error> {
-    let Some(QualifiedIdentifierRoot::GenericIdentifier(ident)) = syn.root()
-    else {
-        return Ok(None);
-    };
-
+) -> Result<Option<LValue>, crate::binder::Error> {
     let Some(identifier) = ident.identifier() else {
         return Ok(None);
     };
 
     // should have no generic arguments
     if ident.generic_arguments().is_some() {
-        return Ok(None);
-    }
-
-    // should have no subsequences
-    if syn.subsequences().count() > 0 {
         return Ok(None);
     }
 
@@ -149,9 +141,47 @@ async fn bind_simple_identifier(
         .await?
         .map_or(name_qualifier, |x| x.min(name_qualifier));
 
-    Ok(Some(Expression::LValue(LValue {
+    Ok(Some(LValue {
         address: name.load_address.clone(),
-        span: syn.span(),
+        span,
         qualifier: final_qualifier,
-    })))
+    }))
+}
+
+async fn bind_local_qualified_identifier(
+    binder: &mut Binder<'_>,
+    syn: &pernixc_syntax::QualifiedIdentifier,
+    handler: &dyn Handler<crate::diagnostic::Diagnostic>,
+) -> Result<Option<Expression>, crate::binder::Error> {
+    let Some(QualifiedIdentifierRoot::GenericIdentifier(ident)) = syn.root()
+    else {
+        return Ok(None);
+    };
+
+    let Some(mut lvalue) =
+        bind_local_root(binder, &ident, ident.span(), handler).await?
+    else {
+        return Ok(None);
+    };
+
+    for subsequent in syn.subsequences() {
+        let Some(generic_identifier) = subsequent.generic_identifier() else {
+            return Err(Error::Binding(BindingError(syn.span())));
+        };
+
+        if generic_identifier.generic_arguments().is_some() {
+            return Ok(None);
+        }
+
+        let Some(identifier) = generic_identifier.identifier() else {
+            return Err(Error::Binding(BindingError(syn.span())));
+        };
+
+        lvalue = bind_struct_field_access(binder, lvalue, identifier, handler)
+            .await?;
+    }
+
+    lvalue.span = syn.span();
+
+    Ok(Some(Expression::LValue(lvalue)))
 }

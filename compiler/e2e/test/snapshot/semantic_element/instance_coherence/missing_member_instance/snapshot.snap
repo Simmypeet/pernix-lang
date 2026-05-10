@@ -10,7 +10,7 @@ stderr:
   │             ─────────────── trait member `missingFunction` declared here
   ‡
 9 │ pub inst TestImpl: Test:
-  ╰╴         ━━━━━━━━ instance `main::TestImpl` is missing member `missingFunction`
+  ╰╴         ━━━━━━━━ instance `main.TestImpl` is missing member `missingFunction`
 
 [error]: Compilation aborted due to 1 error(s)
 

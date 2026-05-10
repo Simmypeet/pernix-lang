@@ -3,4 +3,4 @@ pub trait Test:
 
 
 # error: `T: 'static` is not satisfied
-pub type Alias[T, inst I: Test] = I::Assoc[T]
+pub type Alias[T, inst I: Test] = I.Assoc[T]

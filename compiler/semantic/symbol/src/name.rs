@@ -33,7 +33,7 @@ pub struct Key {
     pub symbol_id: Global<SymbolID>,
 }
 
-/// Gets the qualified name of the symbol such as `module::function`.
+/// Gets the qualified name of the symbol such as `module.function`.
 #[extend]
 pub async fn get_qualified_name(
     self: &TrackedEngine,
@@ -47,7 +47,7 @@ pub async fn get_qualified_name(
         if qualified_name.is_empty() {
             qualified_name.push_str(&current_name);
         } else {
-            qualified_name.insert_str(0, "::");
+            qualified_name.insert(0, '.');
             qualified_name.insert_str(0, &current_name);
         }
 

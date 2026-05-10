@@ -3,24 +3,24 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: run
 ---
 stderr:
-[error]: no instance found for `main::Require[T]`
+[error]: no instance found for `main.Require[T]`
    ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/nested_not_found/main.pnx:22:5
    │
 22 │     require(Test{value: Test{value: a}})
-   │     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ an instance of `main::Require[T]` is required here
+   │     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ an instance of `main.Require[T]` is required here
    │
    ╰ help: consider adding an `instance` parameter or importing a suitable instance implementation into scope
-[note]: required because resolving instance parameter `I` for `main::Require[main::Test[main::Test[T]]]`
+[note]: required because resolving instance parameter `I` for `main.Require[main.Test[main.Test[T]]]`
    ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/nested_not_found/main.pnx:17:25
    │
 17 │ pub def require[T, inst I: Require[T]](test: T):
    ╰╴                        ━ this function requires the parameter to be resolved
-[note]: required because resolving instance parameter `X` for `main::Require[main::Test[T]]`
+[note]: required because resolving instance parameter `X` for `main.Require[main.Test[T]]`
   ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/nested_not_found/main.pnx:5:24
   │
 5 │ pub inst Outer[T, inst X: Require[Test[T]]]: Require[Test[Test[T]]]:
   ╰╴                       ━ this instance requires the parameter to be resolved
-[note]: required because resolving instance parameter `Y` for `main::Require[T]`
+[note]: required because resolving instance parameter `Y` for `main.Require[T]`
   ╭▸ compiler/e2e/test/snapshot/ir/instance_resolution/nested_not_found/main.pnx:9:24
   │
 9 │ pub inst Inner[T, inst Y: Require[T]]: Require[Test[T]]:

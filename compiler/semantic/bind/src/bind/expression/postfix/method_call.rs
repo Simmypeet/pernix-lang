@@ -45,6 +45,50 @@ use crate::{
 
 pub mod diagnostic;
 
+pub(crate) async fn bind_method_call_from_parts(
+    binder: &mut crate::binder::Binder<'_>,
+    lvalue: LValue,
+    generic_identifier: &pernixc_syntax::GenericIdentifier,
+    call: &pernixc_syntax::expression::Call,
+    whole_span: RelativeSpan,
+    handler: &dyn pernixc_handler::Handler<crate::diagnostic::Diagnostic>,
+) -> Result<Expression, Error> {
+    let Some(identifier) = generic_identifier.identifier() else {
+        return Err(Error::Binding(BindingError(whole_span)));
+    };
+
+    let receiver_span = lvalue.span;
+    let ty = binder.type_of_address(&lvalue.address, handler).await?;
+
+    if let Ok(value) = attempt_adt_method_call(
+        binder,
+        lvalue,
+        &ty,
+        generic_identifier,
+        &identifier,
+        call,
+        whole_span,
+        handler,
+    )
+    .await?
+    {
+        Ok(Expression::RValue(value))
+    } else {
+        handler.receive(
+            Diagnostic::MethodCallNotFound(MethodCallNotFound {
+                method_name: identifier.kind.0,
+                receiver_type: ty.clone(),
+                method_span: identifier.span,
+                receiver_span,
+                rendering_map: binder.get_rendering_map(),
+            })
+            .into(),
+        );
+
+        Err(Error::Binding(BindingError(whole_span)))
+    }
+}
+
 pub(super) async fn bind_method_call(
     binder: &mut crate::binder::Binder<'_>,
     current_state: BindState,
@@ -52,10 +96,7 @@ pub(super) async fn bind_method_call(
     method_call: &pernixc_syntax::expression::postfix::MethodCall,
     handler: &dyn pernixc_handler::Handler<crate::diagnostic::Diagnostic>,
 ) -> Result<(Expression, RelativeSpan), Error> {
-    let (Some(identifier), Some(call)) = (
-        method_call.generic_identifier().and_then(|x| x.identifier()),
-        method_call.call(),
-    ) else {
+    let Some(call) = method_call.call() else {
         return Err(Error::Binding(BindingError(
             current_span.join(&method_call.span()),
         )));
@@ -89,55 +130,16 @@ pub(super) async fn bind_method_call(
         Expression::LValue(lvalue) => lvalue,
     };
 
-    let ty = binder.type_of_address(&lvalue.address, handler).await?;
-    // let lvalue = match attempt_adt_method_call(
-    //     binder,
-    //     lvalue,
-    //     &ty,
-    //     method_call,
-    //     &identifier,
-    //     &call,
-    //     handler,
-    // )
-    // .await?
-    // {
-    //     Ok(value) => {
-    //         return Ok((
-    //             Expression::RValue(value),
-    //             current_span.join(&method_call.span()),
-    //         ));
-    //     }
-    //     Err(lvalue) => lvalue,
-    // };
-
-    if let Ok(value) = attempt_adt_method_call(
+    bind_method_call_from_parts(
         binder,
         lvalue,
-        &ty,
-        method_call,
-        &identifier,
+        &method_call.generic_identifier().unwrap(),
         &call,
+        current_span.join(&method_call.span()),
         handler,
     )
-    .await?
-    {
-        Ok((Expression::RValue(value), current_span.join(&method_call.span())))
-    } else {
-        handler.receive(
-            Diagnostic::MethodCallNotFound(MethodCallNotFound {
-                method_name: identifier.kind.0,
-                receiver_type: ty.clone(),
-                method_span: identifier.span,
-                receiver_span: current_span,
-                rendering_map: binder.get_rendering_map(),
-            })
-            .into(),
-        );
-
-        Err(Error::Binding(BindingError(
-            current_span.join(&method_call.span()),
-        )))
-    }
+    .await
+    .map(|expression| (expression, current_span.join(&method_call.span())))
 }
 
 fn fill_inferences(
@@ -696,14 +698,15 @@ async fn attempt_trait_method_call(
 }
     */
 
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 async fn attempt_adt_method_call(
     binder: &mut crate::binder::Binder<'_>,
     lvalue: LValue,
     ty: &Type,
-    method_call: &pernixc_syntax::expression::postfix::MethodCall,
+    generic_identifier: &pernixc_syntax::GenericIdentifier,
     identifier: &pernixc_syntax::Identifier,
     call: &pernixc_syntax::expression::Call,
+    whole_span: RelativeSpan,
     handler: &dyn pernixc_handler::Handler<crate::diagnostic::Diagnostic>,
 ) -> Result<Result<Value, LValue>, Error> {
     let ty = ty.reduce_reference();
@@ -735,10 +738,10 @@ async fn attempt_adt_method_call(
     };
 
     let method_generic_args =
-        if let Some(generic_arguments) = method_call.generic_identifier() {
+        if generic_identifier.generic_arguments().is_some() {
             binder
                 .resolve_generic_arguments_with_inference(
-                    &generic_arguments,
+                    generic_identifier,
                     method_id,
                     handler,
                 )
@@ -819,7 +822,7 @@ async fn attempt_adt_method_call(
                 MethodReceiver { kind: receiver_kind, lvalue },
                 &arguments,
                 call.span(),
-                method_call.span(),
+                whole_span,
                 handler,
             )
             .await?,

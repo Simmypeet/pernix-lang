@@ -33,6 +33,40 @@ use crate::{
 
 pub mod diagnostic;
 
+pub(crate) async fn bind_struct_field_access(
+    binder: &mut crate::binder::Binder<'_>,
+    lvalue: LValue,
+    ident: pernixc_syntax::Identifier,
+    handler: &dyn pernixc_handler::Handler<crate::diagnostic::Diagnostic>,
+) -> Result<LValue, Error> {
+    let current_span = lvalue.span;
+    let new_span = current_span.join(&ident.span());
+    let reduced_lvalue =
+        reduce_address_reference(binder, lvalue, current_span, handler).await?;
+    let qualifier = reduced_lvalue.qualifier;
+
+    let address_ty =
+        binder.type_of_address(&reduced_lvalue.address, handler).await?;
+
+    assert!(
+        !address_ty.is_reference(),
+        "should've reduced to non-reference type"
+    );
+
+    let address = access_struct(
+        binder,
+        reduced_lvalue,
+        ident,
+        current_span,
+        new_span,
+        address_ty,
+        handler,
+    )
+    .await?;
+
+    Ok(LValue { address, span: new_span, qualifier })
+}
+
 pub(super) async fn bind_access(
     binder: &mut crate::binder::Binder<'_>,
     current_state: BindState,
@@ -86,16 +120,9 @@ pub(super) async fn bind_access(
 
     let address = match kind {
         AccessKind::StructField(ident) => {
-            access_struct(
-                binder,
-                reduced_lvalue,
-                ident,
-                current_span,
-                new_span,
-                address_ty,
-                handler,
-            )
-            .await?
+            bind_struct_field_access(binder, reduced_lvalue, ident, handler)
+                .await?
+                .address
         }
 
         AccessKind::TupleIndex(tuple_index) => access_tuple(

@@ -68,13 +68,13 @@ pub def createLoudEnum() -> LoudEnum:
     scanf(&"%d\0".[0], &mut value)
 
     if value > 0:
-        return LoudEnum::GtZero(LoudDrop { value: value })
+        return LoudEnum.GtZero(LoudDrop { value: value })
 
     else if value < 0:
-        return LoudEnum::LtZero(LoudDrop { value: value })
+        return LoudEnum.LtZero(LoudDrop { value: value })
 
     else:
-        return LoudEnum::Zero
+        return LoudEnum.Zero
 
 
 pub def main():

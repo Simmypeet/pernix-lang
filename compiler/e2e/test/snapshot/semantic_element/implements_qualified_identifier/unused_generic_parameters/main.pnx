@@ -19,7 +19,7 @@ pub trait Iterator:
 
 
 # error T and I is not inferrable
-impl[T, inst I: Iterator] Option[I::Item[T]]:
+impl[T, inst I: Iterator] Option[I.Item[T]]:
     pass
 
 

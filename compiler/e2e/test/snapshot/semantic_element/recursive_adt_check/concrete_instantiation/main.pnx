@@ -1,0 +1,14 @@
+pub struct Wrapper[T]:
+    pub value: T
+
+
+pub enum Container[T]:
+    Value(Wrapper[T])
+
+
+pub struct Concrete:
+    pub next: Container[Concrete]
+
+
+pub def main():
+    pass

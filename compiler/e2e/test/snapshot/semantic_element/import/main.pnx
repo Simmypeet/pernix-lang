@@ -1,32 +1,32 @@
 # conflict with the `First` struct defined below
-import main::First
+import main.First
 
 # conflicting import
-import main::inner1::Inner
-import main::inner2::Inner
+import main.inner1.Inner
+import main.inner2.Inner
 
 # importing in-accessible symbol
-import main::inner3::InAccessible
-from main::inner3 import AnotherInAccessible
+import main.inner3.InAccessible
+from main.inner3 import AnotherInAccessible
 
-# invalid use of `target::` in import
-from main::inner4 import target::invalidOne, target::invalidTwo
+# invalid use of `target.` in import
+from main.inner4 import target.invalidOne, target.invalidTwo
 
-from main::inner4 import (
+from main.inner4 import (
     InnerFirst,
     InnerSecond,
     InnerThird as InnerFirst # cause conflict 
 )
 
 # non-module symbol in `from` clause
-from target::inner5::Direction import Up, Down, Left, Right
+from target.inner5.Direction import Up, Down, Left, Right
 
 # unknown symbol 
-from target::inner5 import NotFound
+from target.inner5 import NotFound
 
 # unknown module imports
 import unknown
-import main::unknown
+import main.unknown
 
 pub module inner1
 pub module inner2

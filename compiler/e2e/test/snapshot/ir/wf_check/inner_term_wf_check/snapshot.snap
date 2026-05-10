@@ -3,7 +3,7 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: run
 ---
 stderr:
-[error]: the predicate `marker main::Impossible[T]` is not satisfied
+[error]: the predicate `marker main.Impossible[T]` is not satisfied
    ╭▸ compiler/e2e/test/snapshot/ir/wf_check/inner_term_wf_check/main.pnx:13:5
    │
 13 │     require[(Test[T], Test[U])]()
@@ -14,7 +14,7 @@ stderr:
 4 │ pub struct Test[T: Impossible]:
   ╰╴                   ━━━━━━━━━━
 
-[error]: the predicate `marker main::Impossible[U]` is not satisfied
+[error]: the predicate `marker main.Impossible[U]` is not satisfied
    ╭▸ compiler/e2e/test/snapshot/ir/wf_check/inner_term_wf_check/main.pnx:13:5
    │
 13 │     require[(Test[T], Test[U])]()

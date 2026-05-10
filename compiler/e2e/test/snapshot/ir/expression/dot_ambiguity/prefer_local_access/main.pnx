@@ -1,0 +1,16 @@
+pub enum confusingName:
+    variable
+
+
+pub struct TestStruct:
+    pub variable: int32
+
+
+pub def testError(confusingName: &TestStruct) -> confusingName: # return confusingName enum
+    # should refer to the struct field `variable`, not the enum `confusingName.variable`
+    return confusingName.variable # error: int32 != enum confusingName
+
+
+pub def testTyped(confusingName: &TestStruct) -> int32: 
+    # should refer to the struct field `variable`, not the enum `confusingName.variable`
+    return confusingName.variable # good

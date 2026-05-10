@@ -20,7 +20,7 @@ impl[T] Vector[T]:
         panic
 
 pub def main(cond: bool):
-    let mut vector = Vector::new()
+    let mut vector = Vector.new()
     let mut number = 0
 
     while cond:

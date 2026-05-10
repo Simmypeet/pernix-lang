@@ -15,7 +15,7 @@ stderr:
    ╭▸ compiler/e2e/test/snapshot/ir/pattern/struct/main.pnx:15:9
    │
 15 │     {a, a}: Test,                # duplicate field binding
-   │      ┬  ━ the field `a` is already bound in the pattern of struct `main::Test`
+   │      ┬  ━ the field `a` is already bound in the pattern of struct `main.Test`
    │      │
    ╰╴     the field `a` is first bound here
 
@@ -31,7 +31,7 @@ stderr:
    ╭▸ compiler/e2e/test/snapshot/ir/pattern/struct/main.pnx:16:16
    │
 16 │     {a: first, a: second}: Test, # duplicate field binding
-   │         ┬────  ━━━━━━━━━ the field `a` is already bound in the pattern of struct `main::Test`
+   │         ┬────  ━━━━━━━━━ the field `a` is already bound in the pattern of struct `main.Test`
    │         │
    ╰╴        the field `a` is first bound here
 
@@ -55,15 +55,15 @@ stderr:
    ╭▸ compiler/e2e/test/snapshot/ir/pattern/struct/main.pnx:39:6
    │
 39 │     {unknown}: Test, # unknown field 
-   ╰╴     ━━━━━━━ field 'unknown' not found in struct 'main::Test'
+   ╰╴     ━━━━━━━ field 'unknown' not found in struct 'main.Test'
 
 [error]: field is not accessible
    ╭▸ compiler/e2e/test/snapshot/ir/pattern/struct/main.pnx:50:6
    │
-50 │     {hidden}: inner::Inaccessible, # inaccessible field
-   │      ━━━━━━ field 'hidden' of struct 'main::inner::Inaccessible' is not accessible from 'main::test7'
+50 │     {hidden}: inner.Inaccessible, # inaccessible field
+   │      ━━━━━━ field 'hidden' of struct 'main.inner.Inaccessible' is not accessible from 'main.test7'
    │
-   ╰ help: field 'hidden' is accessible in `main::inner`
+   ╰ help: field 'hidden' is accessible in `main.inner`
 
 [error]: mismatched pattern binding type: expected struct but found `int32`
    ╭▸ compiler/e2e/test/snapshot/ir/pattern/struct/main.pnx:56:1

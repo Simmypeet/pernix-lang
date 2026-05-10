@@ -9,7 +9,7 @@ stderr:
 4 │ final impl Test[int32]:
   │            ─────────── this is a marker `implements`
 5 │     pub def someFunction():
-  │             ━━━━━━━━━━━━ `main::[implements Test[int32]]::someFunction` cannot be declared in this `implements`
+  │             ━━━━━━━━━━━━ `main.[implements Test[int32]].someFunction` cannot be declared in this `implements`
   │
   ╰ help: marker implementations cannot have members
 

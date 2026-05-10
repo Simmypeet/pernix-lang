@@ -4,10 +4,10 @@ expression: run
 ---
 stderr:
 [error]: mismatched types: expected `T`, found `U`
-   ╭▸ compiler/e2e/test/snapshot/ir/expression/function_call/instance_associated/main.pnx:13:20
+   ╭▸ compiler/e2e/test/snapshot/ir/expression/function_call/instance_associated/main.pnx:13:19
    │
-13 │     I::doSomething(u)
-   │                    ━ expected `T`, found `U`
+13 │     I.doSomething(u)
+   │                   ━ expected `T`, found `U`
    │
    ╰ help: ensure the expression type matches the expected type
 

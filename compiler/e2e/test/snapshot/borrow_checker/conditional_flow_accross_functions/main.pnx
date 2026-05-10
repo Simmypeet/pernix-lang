@@ -21,8 +21,8 @@ impl[T] Option[T]:
             T: 'a
 
 		match self:
-			case Some(value): return Option::Some(value)
-			case None: return Option::None
+			case Some(value): return Option.Some(value)
+			case None: return Option.None
 
 
     pub def asMutable['a](
@@ -32,8 +32,8 @@ impl[T] Option[T]:
             T: 'a
 
         match self:
-            case Some(value): return Option::Some(value)
-            case None: return Option::None
+            case Some(value): return Option.Some(value)
+            case None: return Option.None
 
 
     pub def unwrap(self: this) -> T:

@@ -13,7 +13,7 @@ stderr:
   ╭▸ compiler/e2e/test/snapshot/semantic_element/trait_ref/higher_ranked_lifetimes_not_allowed/main.pnx:6:34
   │
 6 │ priv inst MyTestI: for['x] Test['x]:
-  ╰╴                                 ━ the lifetime parameter `x` was not found in `main::MyTestI`
+  ╰╴                                 ━ the lifetime parameter `x` was not found in `main.MyTestI`
 
 [error]: Compilation aborted due to 2 error(s)
 

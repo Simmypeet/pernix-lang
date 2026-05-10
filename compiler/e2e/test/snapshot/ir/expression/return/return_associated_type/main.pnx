@@ -2,14 +2,14 @@ pub trait Fizz[T]:
     pub type Output
 
 
-    pub def fizz(x: T) -> this::Output
+    pub def fizz(x: T) -> this.Output
 
 
 pub inst Test[T]: Fizz[T]:
     type Output = T
 
 
-    def fizz(x: T) -> this::Output:
+    def fizz(x: T) -> this.Output:
         if true:
             return x # should be fine
         else:

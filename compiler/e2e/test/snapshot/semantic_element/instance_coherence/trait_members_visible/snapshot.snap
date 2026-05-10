@@ -3,14 +3,14 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: run
 ---
 stderr:
-[error]: the trait member `main::bad::Bad::secondFunction` is not visible and thus cannot be implemented
+[error]: the trait member `main.bad.Bad.secondFunction` is not visible and thus cannot be implemented
    ╭▸ compiler/e2e/test/snapshot/semantic_element/instance_coherence/trait_members_visible/main.pnx:28:10
    │
 13 │         priv def secondFunction()
-   │                  ────────────── the trait member `main::bad::Bad::secondFunction` was declared here
+   │                  ────────────── the trait member `main.bad.Bad.secondFunction` was declared here
    ‡
-28 │ pub inst BadImpl: bad::Bad:
-   │          ━━━━━━━ the trait member `main::bad::Bad::secondFunction` is not visible here
+28 │ pub inst BadImpl: bad.Bad:
+   │          ━━━━━━━ the trait member `main.bad.Bad.secondFunction` is not visible here
    │
    ╰ help: to implement an instance for a trait, all of the trait members must be visible to the instance
 

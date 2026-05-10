@@ -18,7 +18,7 @@ pub def consume[T](x: T):
 
 
 pub def main():
-    let mut v = Vector::new()
+    let mut v = Vector.new()
     let p = &mut v
     let mut x = 1
 

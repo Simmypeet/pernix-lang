@@ -1,0 +1,22 @@
+pub struct TestStruct:
+  pass
+
+
+impl TestStruct:
+  pub def doSomething() -> int32:
+    return 42
+
+
+pub module confusingName:
+  pub def doSomething() -> bool:
+    return true
+
+
+pub def testError(confusingName: &TestStruct) -> bool:
+  # this should've called the method `doSomething` on the struct
+  return confusingName.doSomething() # error: int32 != bool
+
+
+pub def testTyped(confusingNameI: &TestStruct) -> bool:
+  # this should've called the module function `confusingName.doSomething()`
+  return confusingName.doSomething() # correct!

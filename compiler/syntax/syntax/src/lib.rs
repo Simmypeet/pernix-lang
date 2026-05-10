@@ -14,8 +14,12 @@ use pernixc_lexical::{
 use pernixc_parser::{
     abstract_tree::{self, AbstractTree},
     expect::{self, Ext as _},
-    parser::{ParserExt, ast, ast_always_step_into_fragment},
+    parser::{
+        Parser, ParserExt, Unexpected, ast, ast_always_step_into_fragment,
+    },
+    state::State,
 };
+use pernixc_qbice::Interner;
 use pernixc_target::TargetID;
 use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 use r#type::Type;
@@ -29,6 +33,42 @@ pub mod r#type;
 
 #[cfg(any(test, feature = "arbitrary"))]
 pub mod arbitrary;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct QualifiedIdentifierSubsequentCommit;
+
+impl<I: Interner> Parser<I> for QualifiedIdentifierSubsequentCommit {
+    fn parse(&self, state: &mut State<'_, '_, I>) -> Result<(), Unexpected> {
+        let checkpoint = state.checkpoint();
+        match state.peek() {
+            Some((node, node_index))
+                if node.as_leaf().is_some_and(|leaf| {
+                    leaf.kind == kind::Kind::Punctuation(kind::Punctuation('.'))
+                }) =>
+            {
+                state.eat_token((node_index - state.cursor().node_index) + 1);
+
+                match state.peek() {
+                    Some((next, _))
+                        if next.as_leaf().is_some_and(|leaf| {
+                            matches!(leaf.kind, kind::Kind::Identifier(_))
+                        }) =>
+                    {
+                        Ok(())
+                    }
+                    _ => {
+                        state.restore(checkpoint);
+                        Err(Unexpected)
+                    }
+                }
+            }
+            _ => {
+                state.restore(checkpoint);
+                Err(Unexpected)
+            }
+        }
+    }
+}
 
 /// Type alias for [`Token`] categorized as a [`kind::Keyword`].
 pub type Keyword = Token<kind::Keyword, RelativeLocation>;
@@ -74,9 +114,8 @@ abstract_tree::abstract_tree! {
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    pub struct ScopeSeparator {
-        pub first_colon = ':',
-        pub second_colon = ':'.no_prior_insignificant()
+    pub struct PathSeparator {
+        pub dot = '.'
     }
 }
 
@@ -200,7 +239,7 @@ abstract_tree::abstract_tree! {
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct SimplePathSubsequent {
-        pub scope_separator: ScopeSeparator = ast::<ScopeSeparator>(),
+        pub path_separator: PathSeparator = ast::<PathSeparator>(),
         pub identifier: Identifier = expect::Identifier,
     }
 }
@@ -248,7 +287,7 @@ abstract_tree::abstract_tree! {
         pub root: QualifiedIdentifierRoot = ast::<QualifiedIdentifierRoot>(),
         pub subsequences: #[multi] QualifiedIdentifierSubsequent
             = ast::<QualifiedIdentifierSubsequent>()
-                .repeat_with_commit(ast::<ScopeSeparator>())
+                .repeat_with_commit(QualifiedIdentifierSubsequentCommit)
     }
 }
 

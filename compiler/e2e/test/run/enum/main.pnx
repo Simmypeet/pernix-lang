@@ -75,7 +75,7 @@ pub def main():
 
             scanf(format, &mut first)
 
-            express Fizz::Single(first)
+            express Fizz.Single(first)
 
         2:
             let mut first: int32 = 0
@@ -84,7 +84,7 @@ pub def main():
             scanf(format, &mut first)
             scanf(format, &mut second)
 
-            express Fizz::Pair(Pair {
+            express Fizz.Pair(Pair {
                 first: first,
                 second: second
             })
@@ -98,7 +98,7 @@ pub def main():
             scanf(format, &mut second)
             scanf(format, &mut third)
 
-            express Fizz::Triplet(Triplet {
+            express Fizz.Triplet(Triplet {
                 first: first,
                 second: second,
                 third: third
@@ -115,7 +115,7 @@ pub def main():
             scanf(format, &mut third)
             scanf(format, &mut fourth)
 
-            express Fizz::Quaduplet(Quaduplet {
+            express Fizz.Quaduplet(Quaduplet {
                 first: first,
                 second: second,
                 third: third ,

@@ -3,7 +3,7 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: run
 ---
 stderr:
-[error]: expected an effect, found `struct main::TotallyNotAnEffect`
+[error]: expected an effect, found `struct main.TotallyNotAnEffect`
   ╭▸ compiler/e2e/test/snapshot/semantic_element/effect_annotation/not_an_effect/main.pnx:5:19
   │
 5 │ pub def test() do TotallyNotAnEffect:

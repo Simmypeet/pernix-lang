@@ -16,7 +16,7 @@ stderr:
    │
 22 │         T: Buzz
    ╰╴           ━━━━
-[note]: required for predicate marker main::Buzz[&'a mut T] to be implemented
+[note]: required for predicate marker main.Buzz[&'a mut T] to be implemented
    ╭▸ compiler/e2e/test/snapshot/semantic_element/wf_check/implementation_is_not_general_enough_nested/main.pnx:17:20
    │
 15 │ final impl[T] Buzz[T]:
