@@ -2,10 +2,14 @@ pub effect Test['x]:
     doSomething()
 
 
-pub def correct(a: &int32) do Test:
+pub def correct(a: &int32) do Test: # correct
     pass
 
 
-pub def illegal['x, 'y](x: &'x int32, y: &'y int32) do Test: # error: no elided lifetime parameter
+pub def illegalOne(a: &int32, b: &int32) do Test: # error
+    pass
+
+
+pub def illegalTwo['x, 'y](x: &'x int32, y: &'y int32) do Test # error
     pass
 
