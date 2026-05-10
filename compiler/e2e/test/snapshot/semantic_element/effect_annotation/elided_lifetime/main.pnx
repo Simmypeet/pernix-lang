@@ -10,6 +10,5 @@ pub def illegalOne(a: &int32, b: &int32) do Test: # error
     pass
 
 
-pub def illegalTwo['x, 'y](x: &'x int32, y: &'y int32) do Test # error
+pub def illegalTwo['x, 'y](x: &'x int32, y: &'y int32) do Test: # error
     pass
-
