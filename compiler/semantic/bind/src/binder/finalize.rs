@@ -93,6 +93,7 @@ impl Binder<'_> {
             &self.inference_context,
         );
 
+        let current_target_id = self.current_site().target_id;
         let root_ir_id =
             self.ir_map.new_ir(IRWithContext::new_root_ir(self.ir));
 
@@ -105,7 +106,7 @@ impl Binder<'_> {
 
         check::check_all(&function_ir, &ty_env, handler).await?;
 
-        if self.engine.get_ir_verification(current_site.target_id).await {
+        if self.engine.get_ir_verification(current_target_id).await {
             verify::verify_function_ir(&function_ir).await;
         }
 
