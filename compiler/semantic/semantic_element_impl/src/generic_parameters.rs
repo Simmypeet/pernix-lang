@@ -7,10 +7,7 @@ use pernixc_resolution::{
 };
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
-    MemberID,
-    kind::{Kind, get_kind},
-    parent::get_parent,
-    syntax::get_generic_parameters_syntax,
+    MemberID, parent::get_parent, syntax::get_generic_parameters_syntax,
 };
 use pernixc_syntax::item::generic_parameters::GenericParameter as GenericParameterSyn;
 use pernixc_target::Global;
@@ -30,7 +27,6 @@ use crate::{
     build::{self, Output},
     generic_parameters::diagnostic::{
         DefaultGenericParameterMustBeTrailing, Diagnostic,
-        EffectOperationCanNotHaveTypeOrConstantParameters,
         GenericParameterRedefinition, MisorderedGenericParameter,
     },
     occurrences::Occurrences,
@@ -240,34 +236,6 @@ impl build::Build for pernixc_term::generic_parameters::Key {
                     ));
                 }
             }
-        }
-
-        let kind = engine.get_kind(key.symbol_id).await;
-
-        // check if the generic parameters are for an effect operation
-        if kind == Kind::EffectOperation
-            && (!type_parameter_syns.is_empty()
-                || !constant_parameter_syns.is_empty())
-        {
-            storage.receive(
-                Diagnostic::EffectOperationCanNotHaveTypeOrConstantParameters(
-                    EffectOperationCanNotHaveTypeOrConstantParameters {
-                        type_or_constant_parameter_span: type_parameter_syns
-                            .iter()
-                            .map(|x| x.span)
-                            .chain(
-                                constant_parameter_syns
-                                    .iter()
-                                    .map(|x| x.0.span),
-                            )
-                            .collect(),
-                        effect_operation_id: key.symbol_id,
-                    },
-                ),
-            );
-
-            type_parameter_syns.clear();
-            constant_parameter_syns.clear();
         }
 
         for type_parameter_syn in type_parameter_syns {

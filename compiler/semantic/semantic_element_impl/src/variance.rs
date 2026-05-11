@@ -193,6 +193,10 @@ impl Constraints {
                 unreachable!("elided lifetime in adt shouldn't be present");
             }
 
+            Lifetime::Closure(_) => {
+                unreachable!("closure lifetime in adt shouldn't be present");
+            }
+
             Lifetime::Parameter(member_id) => {
                 // add the constraint to the context
                 if member_id.parent_id().target_id == target_id {

@@ -14,19 +14,13 @@ use pernixc_semantic_element::effect_annotation;
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
     kind::{Kind, get_kind},
-    parent::get_parent_global,
     syntax::get_function_effect_annotation_syntax,
 };
 use pernixc_syntax::item::function::{EffectUnit, EffectUnitListKind};
 use pernixc_target::Global;
 use pernixc_term::{
-    constant::Constant,
-    effect,
-    generic_arguments::ZipRef,
-    generic_parameters::get_generic_parameters,
-    instance::Instance,
-    lifetime::{Forall, FromSemanticElement, GeneratedForall, Lifetime},
-    r#type::Type,
+    constant::Constant, effect, generic_arguments::ZipRef, instance::Instance,
+    lifetime::Lifetime, r#type::Type,
 };
 use pernixc_type_system::{
     OverflowError, Satisfied, Succeeded, UnrecoverableError,
@@ -37,6 +31,7 @@ use pernixc_type_system::{
 
 use crate::{
     build::{Build, Output},
+    function_signature,
     occurrences::Occurrences,
 };
 
@@ -59,24 +54,14 @@ async fn to_effect(
     Ok(effect::Unit::from_symbol(symbol))
 }
 
-struct ElidedForallLifetimeProvider {
-    count: usize,
-    current_site: Global<pernixc_symbol::SymbolID>,
+struct ElidedLifetimeProvider {
+    lifetime: Lifetime,
 }
 
 impl pernixc_resolution::ElidedTermProvider<Lifetime>
-    for ElidedForallLifetimeProvider
+    for ElidedLifetimeProvider
 {
-    fn create(&mut self) -> Lifetime {
-        let counter = self.count;
-        self.count += 1;
-
-        Lifetime::Forall(Forall::Generated(GeneratedForall {
-            from_id: self.current_site,
-            from_semantic_element: FromSemanticElement::DoEffect,
-            unique_counter: counter,
-        }))
-    }
+    fn create(&mut self) -> Lifetime { self.lifetime.clone() }
 }
 
 async fn build_effect_annotation(
@@ -88,9 +73,13 @@ async fn build_effect_annotation(
     handler: &Storage<diagnostic::Diagnostic>,
 ) -> Option<(effect::Unit, RelativeSpan)> {
     let q_ident = effect_unit_syntax.qualified_identifier()?;
+    let function_signature = engine
+        .query(&function_signature::Key { symbol_id: current_site })
+        .await;
 
-    let mut elided_lifetime_provider =
-        ElidedForallLifetimeProvider { count: 0, current_site };
+    let mut elided_lifetime_provider = function_signature
+        .elided_lifetime
+        .map(|x| ElidedLifetimeProvider { lifetime: x });
 
     let mut resolver = Resolver::builder()
         .tracked_engine(engine)
@@ -98,25 +87,20 @@ async fn build_effect_annotation(
         .observer(observer)
         .referring_site(current_site)
         .extra_namespace(extra_namespace)
-        .elided_lifetime_provider(&mut elided_lifetime_provider)
+        .maybe_elided_lifetime_provider(
+            elided_lifetime_provider.as_mut().map(|x| x as _),
+        )
         .build();
-
-    resolver.push_higher_ranked_lifetimes(
-        effect_unit_syntax.higher_ranked_lifetimes().as_ref(),
-    );
 
     let resolution = match resolver.resolve_qualified_identifier(&q_ident).await
     {
         Ok(resolution) => resolution,
         Err(er) => match er {
             pernixc_resolution::Error::Abort => {
-                resolver.pop_higher_ranked_lifetimes();
                 return None;
             }
         },
     };
-
-    resolver.pop_higher_ranked_lifetimes();
 
     to_effect(engine, resolution).await.map_or_else(
         |resolution| {
@@ -320,28 +304,6 @@ impl Build for effect_annotation::Key {
     type Diagnostic = diagnostic::Diagnostic;
 
     async fn execute(engine: &TrackedEngine, key: &Self) -> Output<Self> {
-        let kind = engine.get_kind(key.symbol_id).await;
-
-        if kind == Kind::EffectOperation {
-            // simply return the parent effect's do effect
-            let parent_effect_id =
-                engine.get_parent_global(key.symbol_id).await.unwrap();
-            let parent_generic_parameters =
-                engine.get_generic_parameters(parent_effect_id).await;
-
-            let arguments = parent_generic_parameters
-                .create_identity_generic_arguments(parent_effect_id);
-
-            let mut arena = OrderedArena::new();
-            arena.insert(effect::Unit::new(parent_effect_id, arguments));
-
-            return Output {
-                item: engine.intern(arena),
-                diagnostics: engine.intern_unsized([]),
-                occurrences: engine.intern(Occurrences::default()),
-            };
-        }
-
         let effect_annotation_syntax =
             engine.get_function_effect_annotation_syntax(key.symbol_id).await;
 

@@ -18,9 +18,8 @@ use pernixc_term::{
     generic_parameters::get_generic_parameters,
     instance::{Instance, TraitRef},
     instantiation::{self, Instantiation},
-    predicate::{Outlives, Predicate},
+    predicate::Predicate,
     r#type::Type,
-    visitor::RecursiveIterator,
 };
 
 use crate::{
@@ -318,15 +317,10 @@ impl<N: Normalizer> Environment<'_, N> {
                 }
 
                 Ok(Some(
-                    RecursiveIterator::new(&outlives.bound)
-                        .filter_map(|x| x.0.into_lifetime().ok())
-                        .map(|x| {
-                            LifetimeConstraint::LifetimeOutlives(Outlives::new(
-                                x.clone(),
-                                outlives.bound.clone(),
-                            ))
-                        })
-                        .collect(),
+                    std::iter::once(LifetimeConstraint::TypeOutlives(
+                        outlives.clone(),
+                    ))
+                    .collect(),
                 ))
             }
 

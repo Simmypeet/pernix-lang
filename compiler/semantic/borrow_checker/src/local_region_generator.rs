@@ -1,4 +1,7 @@
-use pernixc_term::{inference, lifetime::Lifetime};
+use pernixc_term::{
+    inference,
+    lifetime::{ClosureLifetime, Lifetime},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct LocalRegionGenerator(u64);
@@ -13,5 +16,21 @@ impl LocalRegionGenerator {
         self.0 += 1;
 
         inference::Variable::new(id)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct ClosureLifetimeGenerator(u64);
+
+impl ClosureLifetimeGenerator {
+    /// Creates a new instance of [`ClosureLifetimeGenerator`]
+    pub const fn new() -> Self { Self(0) }
+
+    /// Generate a new closure lifetime id
+    pub const fn next(&mut self) -> ClosureLifetime {
+        let id = self.0;
+        self.0 += 1;
+
+        ClosureLifetime::new(id)
     }
 }

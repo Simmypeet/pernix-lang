@@ -6,7 +6,7 @@ use pernixc_ir::resolution_visitor::{
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
-use pernixc_resolution::qualified_identifier::Variant;
+use pernixc_resolution::qualified_identifier::ParentGenericSymbol;
 use pernixc_semantic_element::trait_ref::create_instantiation;
 use pernixc_symbol::parent::get_parent_global;
 use pernixc_term::{
@@ -69,18 +69,18 @@ impl InstanceInferenceResolver<'_, '_> {
         }
     }
 
-    async fn resolve_inferring_instance_variable_on_variant(
+    async fn resolve_inferring_instance_variable_on_parent_generic_symbol(
         &mut self,
-        symbol: &Variant,
+        symbol: &ParentGenericSymbol,
     ) -> Result<(), Abort> {
-        let enum_inst = symbol.create_instantiation(self.engine).await;
-        let enum_id = symbol.parent_enum_id(self.engine).await;
+        let parent_inst = symbol.create_instantiation(self.engine).await;
+        let parent_id = symbol.parent_symbol_id(self.engine).await;
 
         if let Err(err) = self
             .inference_context
             .resolve_inferring_instance_variable(
-                enum_id,
-                &enum_inst,
+                parent_id,
+                &parent_inst,
                 &self.span,
                 self.engine,
                 self.premise,
@@ -212,13 +212,13 @@ impl InstanceInferenceResolver<'_, '_> {
                 self.resolve_inferring_instance_variable_on_symbol(symbol).await
             }
 
-            ResolutionMut::Variant(symbol) => {
+            ResolutionMut::ParentGenericSymbol(symbol) => {
                 self.reucrsive_resolve_inference_instance(
                     symbol.iter_all_term_mut(),
                 )
                 .await?;
 
-                self.resolve_inferring_instance_variable_on_variant(symbol)
+                self.resolve_inferring_instance_variable_on_parent_generic_symbol(symbol)
                     .await
             }
 
@@ -678,9 +678,6 @@ impl Binder<'_> {
         visitor.bail()?;
 
         let _ = self.effect_handler_context.accept_mut(&mut visitor).await;
-        visitor.bail()?;
-
-        let _ = self.closure_parameters_map.accept_mut(&mut visitor).await;
         visitor.bail()?;
 
         let _ = self.captures_map.accept_mut(&mut visitor).await;

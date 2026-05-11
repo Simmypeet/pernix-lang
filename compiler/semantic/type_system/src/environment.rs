@@ -214,6 +214,13 @@ impl<N> Clone for Environment<'_, N> {
     }
 }
 
+impl<N> Environment<'_, N> {
+    #[must_use]
+    pub fn current_site(&self) -> Global<pernixc_symbol::SymbolID> {
+        self.premise.query_site
+    }
+}
+
 /// Type-erased `Arc<dyn Any + Send + Sync>`.
 pub type DynArc = Arc<dyn Any + Send + Sync>;
 

@@ -3,7 +3,12 @@
 use std::ops::Deref;
 
 use pernixc_handler::Handler;
-use pernixc_ir::{address::Address, typer::Typer, value::TypeOf};
+use pernixc_ir::{
+    address::Address,
+    handling_scope::OperationHandlerID,
+    typer::Typer,
+    value::{SimpleIRContext, TypeOf},
+};
 use pernixc_qbice::TrackedEngine;
 use pernixc_type_system::UnrecoverableError;
 use qbice::StableHash;
@@ -16,6 +21,7 @@ pub struct BinderTyper<'x> {
         pernixc_type_system::environment::Environment<'x, InferenceContext>,
 
     handling_scopes: &'x pernixc_ir::handling_scope::HandlingScopes,
+    simple_ir_context: SimpleIRContext,
 
     handler: &'x dyn Handler<crate::diagnostic::Diagnostic>,
 }
@@ -52,10 +58,10 @@ impl Typer<Address> for BinderTyper<'_> {
         env: &E,
     ) -> Result<DerefWrapper<pernixc_term::r#type::Type>, UnrecoverableError>
     {
-        let environment = pernixc_ir::value::Environment::builder()
+        let environment = pernixc_ir::value::ValueEnvironment::builder()
             .maybe_captures(env.captures())
-            .current_site(env.current_site())
             .type_environment(&self.ty_environment)
+            .ir_context(self.simple_ir_context)
             .handling_scopes(self.handling_scopes)
             .build();
 
@@ -75,23 +81,17 @@ impl Typer<Address> for BinderTyper<'_> {
 #[derive(Debug, Clone, Copy)]
 pub struct Environment<'s> {
     captures: Option<&'s pernixc_ir::capture::Captures>,
-    closure_parameters:
-        Option<&'s pernixc_ir::closure_parameters::ClosureParameters>,
     tracked_engine: &'s TrackedEngine,
     current_site: pernixc_target::Global<pernixc_symbol::SymbolID>,
     scope_tree: &'s pernixc_ir::scope::Tree,
     values: &'s pernixc_ir::Values,
+    handling_scopes: &'s pernixc_ir::handling_scope::HandlingScopes,
+    simple_ir_context: SimpleIRContext,
 }
 
 impl pernixc_ir::typer::Environment for Environment<'_> {
     fn captures(&self) -> Option<&pernixc_ir::capture::Captures> {
         self.captures
-    }
-
-    fn closure_parameters(
-        &self,
-    ) -> Option<&pernixc_ir::closure_parameters::ClosureParameters> {
-        self.closure_parameters
     }
 
     fn values(&self) -> &pernixc_ir::Values { self.values }
@@ -103,6 +103,14 @@ impl pernixc_ir::typer::Environment for Environment<'_> {
     }
 
     fn scope_tree(&self) -> &pernixc_ir::scope::Tree { self.scope_tree }
+
+    fn current_operation_handler_id(&self) -> Option<&OperationHandlerID> {
+        self.simple_ir_context.try_current_operation_handler_id()
+    }
+
+    fn handling_scopes(&self) -> &pernixc_ir::handling_scope::HandlingScopes {
+        self.handling_scopes
+    }
 }
 
 impl Binder<'_> {
@@ -116,6 +124,7 @@ impl Binder<'_> {
             ty_environment: self.create_environment(),
             handler,
             handling_scopes: self.handling_scopes(),
+            simple_ir_context: self.simple_ir_context,
         }
     }
 
@@ -128,7 +137,8 @@ impl Binder<'_> {
             current_site: self.current_site(),
             scope_tree: self.scope_tree(),
             values: self.values(),
-            closure_parameters: self.closure_parameters(),
+            handling_scopes: self.handling_scopes(),
+            simple_ir_context: self.simple_ir_context,
         }
     }
 }

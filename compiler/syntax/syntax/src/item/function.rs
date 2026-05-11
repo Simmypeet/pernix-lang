@@ -8,9 +8,9 @@ use pernixc_parser::{
 use qbice::{Decode, Encode, StableHash};
 
 use crate::{
-    AccessModifier, HigherRankedLifetimes, Identifier, Keyword, Punctuation,
-    QualifiedIdentifier, item::generic_parameters::GenericParameters,
-    pattern::Irrefutable, statement::Statement, r#type::Type,
+    AccessModifier, Identifier, Keyword, Punctuation, QualifiedIdentifier,
+    item::generic_parameters::GenericParameters, pattern::Irrefutable,
+    statement::Statement, r#type::Type,
 };
 
 #[cfg(any(test, feature = "arbitrary"))]
@@ -158,8 +158,6 @@ abstract_tree::abstract_tree! {
         StableHash
     )]
     pub struct EffectUnit {
-        pub higher_ranked_lifetimes: HigherRankedLifetimes =
-            ast::<HigherRankedLifetimes>().optional(),
         pub qualified_identifier: QualifiedIdentifier =
             ast::<QualifiedIdentifier>(),
     }

@@ -370,7 +370,7 @@ impl DropOrder {
         match address {
             Address::Memory(memory) => {
                 let root_order = match memory {
-                    Memory::Parameter(id) => {
+                    Memory::FunctionParameter(id) => {
                         let parameters = env
                             .tracked_engine()
                             .get_parameters(env.current_site())
@@ -406,11 +406,12 @@ impl DropOrder {
                             .declaration_order_of(*id),
                     }),
 
-                    Memory::ClosureParameter(id) => {
+                    Memory::OperationHandlerParameter(id) => {
+                        let parameters =
+                            env.current_operation_parameters().await;
+
                         RootOrder::ClosureParameter(ParameterOrder {
-                            declaration_order: env
-                                .closure_parameters()
-                                .unwrap()
+                            declaration_order: parameters
                                 .get_parameter_declaration_order(*id),
                         })
                     }

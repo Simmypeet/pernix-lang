@@ -3,10 +3,8 @@ use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
 use pernixc_source_file::ByteIndex;
 use pernixc_symbol::{
-    MemberID, name::get_qualified_name, parent::get_parent_global,
-    source_map::to_absolute_span, span::get_span,
+    MemberID, name::get_qualified_name, source_map::to_absolute_span,
 };
-use pernixc_target::Global;
 use pernixc_term::generic_parameters::{
     ConstantParameter, GenericKind, GenericParameter, InstanceParameter,
     LifetimeParameter, TypeParameter, get_generic_parameters,
@@ -44,9 +42,6 @@ pub enum Diagnostic {
     InstanceParameterRedefinition(
         GenericParameterRedefinition<InstanceParameter>,
     ),
-    EffectOperationCanNotHaveTypeOrConstantParameters(
-        EffectOperationCanNotHaveTypeOrConstantParameters,
-    ),
 }
 
 impl Report for Diagnostic {
@@ -71,9 +66,6 @@ impl Report for Diagnostic {
             Self::ConstantParameterRedefinition(diagnostic) => {
                 diagnostic.report(engine).await
             }
-            Self::EffectOperationCanNotHaveTypeOrConstantParameters(
-                diagnostic,
-            ) => diagnostic.report(engine).await,
             Self::InstanceParameterRedefinition(diagnostic) => {
                 diagnostic.report(engine).await
             }
@@ -230,103 +222,6 @@ impl<T: GenericParameter> Report for GenericParameterRedefinition<T> {
                 qualified_name
             ))
             .maybe_related(related)
-            .build()
-    }
-}
-
-/// The effect operation cannot have type or constant parameters.
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    StableHash,
-    Encode,
-    Decode,
-)]
-pub struct EffectOperationCanNotHaveTypeOrConstantParameters {
-    /// The spans of the type or constant parameters.
-    pub type_or_constant_parameter_span: Vec<RelativeSpan>,
-
-    /// The span of the effect operation.
-    pub effect_operation_id: Global<pernixc_symbol::SymbolID>,
-}
-
-impl Report for EffectOperationCanNotHaveTypeOrConstantParameters {
-    async fn report(
-        &self,
-        engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Rendered<ByteIndex> {
-        let span = engine
-            .to_absolute_span(
-                &engine.get_span(self.effect_operation_id).await.unwrap(),
-            )
-            .await;
-
-        let parent_effect_id =
-            engine.get_parent_global(self.effect_operation_id).await.unwrap();
-
-        let parent_effect_id_span = engine
-            .to_absolute_span(&engine.get_span(parent_effect_id).await.unwrap())
-            .await;
-
-        let parent_qualified_name =
-            engine.get_qualified_name(parent_effect_id).await;
-
-        let qualified_name =
-            engine.get_qualified_name(self.effect_operation_id).await;
-
-        let mut relateds =
-            Vec::with_capacity(self.type_or_constant_parameter_span.len() + 1);
-
-        for type_or_constant_parameter_span in
-            &self.type_or_constant_parameter_span
-        {
-            let absolute_span =
-                engine.to_absolute_span(type_or_constant_parameter_span).await;
-
-            relateds.push(
-                Highlight::builder()
-                    .span(absolute_span)
-                    .message("defined here")
-                    .build(),
-            );
-        }
-
-        relateds.push(
-            Highlight::builder()
-                .span(parent_effect_id_span)
-                .message(format!(
-                    "or consider moving generic parameters to the effect \
-                     `{parent_qualified_name}` symbol instead",
-                ))
-                .build(),
-        );
-
-        pernixc_diagnostic::Rendered::builder()
-            .message(
-                "effect operation symbol cannot have type or constant \
-                 parameters",
-            )
-            .primary_highlight(
-                Highlight::builder()
-                    .span(span)
-                    .message(format!(
-                        "`{qualified_name}` is an effect operation and cannot \
-                         have type or constant parameters",
-                    ))
-                    .build(),
-            )
-            .related(relateds)
-            .severity(pernixc_diagnostic::Severity::Error)
-            .help_message(
-                "only lifetime parameters are allowed on effect operations; \
-                 consider moving type or constant parameters to the parent \
-                 effect symbol instead",
-            )
             .build()
     }
 }

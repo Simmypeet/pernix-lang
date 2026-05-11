@@ -87,27 +87,26 @@ impl Binder<'_> {
         // transform inference types
         self.transform_inference(handler).await?;
 
-        let current_site = self.current_site();
         let ty_env = TyEnvironment::new(
             Cow::Borrowed(&self.environment.premise),
             Cow::Borrowed(self.engine),
             &self.inference_context,
         );
 
+        let current_target_id = self.current_site().target_id;
         let root_ir_id =
             self.ir_map.new_ir(IRWithContext::new_root_ir(self.ir));
 
         let function_ir = FunctionIR::new(
             self.effect_handler_context.into_handler_groups(),
             self.ir_map,
-            self.closure_parameters_map,
             self.captures_map,
             root_ir_id,
         );
 
-        check::check_all(&function_ir, &ty_env, current_site, handler).await?;
+        check::check_all(&function_ir, &ty_env, handler).await?;
 
-        if self.engine.get_ir_verification(current_site.target_id).await {
+        if self.engine.get_ir_verification(current_target_id).await {
             verify::verify_function_ir(&function_ir).await;
         }
 

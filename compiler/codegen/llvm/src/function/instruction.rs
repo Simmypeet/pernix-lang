@@ -1610,6 +1610,9 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             Assignment::Variant(variant) => {
                 self.handle_variant(variant, reg_id).await
             }
+            Assignment::EffectOperationCall(_) => {
+                todo!()
+            }
             Assignment::FunctionCall(function_call) => {
                 self.handle_function_call(function_call, reg_id).await
             }

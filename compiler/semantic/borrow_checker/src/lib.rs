@@ -208,14 +208,18 @@
 //! possible `Borrow` expressions that it might come from.
 
 use enum_as_inner::EnumAsInner;
+use pernixc_arena::ID;
 use pernixc_handler::Handler;
-use pernixc_ir::{IR, value::Environment};
+use pernixc_ir::{FunctionIR, IRWithContext};
 use pernixc_term::{
     generic_parameters::LifetimeParameterID,
     inference,
-    lifetime::{ElidedLifetimeID, Lifetime},
+    lifetime::{ClosureLifetime, ElidedLifetimeID, Lifetime},
 };
-use pernixc_type_system::{UnrecoverableError, normalizer::Normalizer};
+use pernixc_type_system::{
+    UnrecoverableError, environment::Environment as TyEnvironment,
+    normalizer::Normalizer,
+};
 use qbice::{Decode, Encode, StableHash};
 
 use crate::diagnostic::Diagnostic;
@@ -250,6 +254,7 @@ pub mod diagnostic;
 pub enum NonStaticUniversalRegion {
     Named(LifetimeParameterID),
     Elided(ElidedLifetimeID),
+    Closure(ClosureLifetime),
 }
 
 /// Represents a region that was created by explicitly specified by the user.
@@ -287,6 +292,9 @@ impl From<UniversalRegion> for Lifetime {
                 }
                 NonStaticUniversalRegion::Elided(member_id) => {
                     Self::Elided(member_id)
+                }
+                NonStaticUniversalRegion::Closure(closure_lifetime) => {
+                    Self::Closure(closure_lifetime)
                 }
             },
         }
@@ -353,25 +361,43 @@ impl TryFrom<Lifetime> for Region {
             }
             Lifetime::Inference(inference) => Ok(Self::Local(inference)),
 
+            Lifetime::Closure(closure) => {
+                Ok(Self::Universal(UniversalRegion::NonStatic(
+                    NonStaticUniversalRegion::Closure(closure),
+                )))
+            }
+
             lifetime => Err(lifetime),
         }
     }
 }
 
-/// Perform borrow checking on the given IR at the given current site.
-#[allow(clippy::missing_errors_doc)]
 pub async fn borrow_check<N: Normalizer>(
-    ir: &IR,
-    value_environment: &Environment<'_, N>,
+    ir: &FunctionIR,
+    ty_environment: &TyEnvironment<'_, N>,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<(), UnrecoverableError> {
-    // NOTE: we clone the whole ir here, is there a better way to do this?
-    let mut ir = ir.clone();
+    let mut function_ir = ir.clone();
 
-    transform::transform_to_inference(&mut ir).await;
+    transform::transform_to_inference(&mut function_ir).await;
 
+    borrow_check_ir(
+        &function_ir,
+        function_ir.root_ir_id(),
+        ty_environment,
+        handler,
+    )
+    .await
+}
+
+async fn borrow_check_ir<N: Normalizer>(
+    ir: &FunctionIR,
+    id: ID<IRWithContext>,
+    ty_environment: &TyEnvironment<'_, N>,
+    handler: &dyn Handler<Diagnostic>,
+) -> Result<(), UnrecoverableError> {
     let context =
-        context::Context::new(&ir, value_environment, handler).await?;
+        context::Context::new(ir, id, ty_environment, handler).await?;
 
     let subset = subset::analyze(&context).await?;
 

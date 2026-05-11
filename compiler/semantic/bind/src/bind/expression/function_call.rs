@@ -5,12 +5,14 @@ use pernixc_hash::FxHashMap;
 use pernixc_ir::value::{
     Value,
     register::{
-        Assignment, EffectHandlerArgument, FunctionCall, Register, Variant,
-        function_call::Callee, load::Load,
+        Assignment, EffectHandlerArgument, EffectOperationCall, FunctionCall,
+        Register, Variant, function_call::Callee, load::Load,
     },
 };
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_resolution::qualified_identifier::Resolution;
+use pernixc_resolution::qualified_identifier::{
+    ParentGenericSymbol, Resolution,
+};
 use pernixc_semantic_element::{
     effect_annotation::get_effect_annotation,
     elided_lifetime::get_elided_lifetimes,
@@ -19,6 +21,7 @@ use pernixc_semantic_element::{
 };
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
+    GlobalSymbolID,
     kind::{Kind, get_kind},
     linkage::{C, Linkage, get_linkage},
     r#unsafe::is_function_unsafe,
@@ -77,9 +80,10 @@ async fn map_elided_lifetimes_to_erased(
 }
 
 #[derive(Debug, EnumAsInner)]
-enum CalleeOrVariant {
+enum CallTarget {
     Callee(Callee),
-    Variant(pernixc_resolution::qualified_identifier::Variant),
+    Variant(ParentGenericSymbol),
+    EffectOperation(ParentGenericSymbol),
 }
 
 #[allow(clippy::too_many_lines)]
@@ -87,7 +91,7 @@ async fn get_function_instantiation(
     binder: &mut Binder<'_>,
     syntax_tree: &pernixc_syntax::expression::unit::FunctionCall,
     handler: &dyn Handler<crate::diagnostic::Diagnostic>,
-) -> Result<CalleeOrVariant, Error> {
+) -> Result<CallTarget, Error> {
     let Some(qualified_identifier) = syntax_tree.qualified_identifier() else {
         return Err(Error::Binding(BindingError(syntax_tree.span())));
     };
@@ -101,7 +105,17 @@ async fn get_function_instantiation(
 
     // get the function id and instantation
     match resolution {
-        Resolution::Variant(variant) => Ok(CalleeOrVariant::Variant(variant)),
+        Resolution::ParentGenericSymbol(symbol) => {
+            let kind = binder.engine().get_kind(symbol.symbol_id()).await;
+
+            match kind {
+                Kind::Variant => Ok(CallTarget::Variant(symbol)),
+                Kind::EffectOperation => {
+                    Ok(CallTarget::EffectOperation(symbol))
+                }
+                _ => unreachable!(),
+            }
+        }
 
         Resolution::GenericSymbol(generic)
             if {
@@ -109,20 +123,16 @@ async fn get_function_instantiation(
                 kind.has_function_signature()
             } =>
         {
-            Ok(CalleeOrVariant::Callee(Callee::Function(generic)))
+            Ok(CallTarget::Callee(Callee::Function(generic)))
         }
 
         Resolution::GenericAssociatedSymbol(member_generic)
             if {
                 let kind = binder.engine().get_kind(member_generic.id()).await;
                 kind.has_function_signature()
-                    || kind == Kind::EffectOperation
-                        && kind != Kind::TraitAssociatedFunction
             } =>
         {
-            Ok(CalleeOrVariant::Callee(Callee::AssociatedFunction(
-                member_generic,
-            )))
+            Ok(CallTarget::Callee(Callee::AssociatedFunction(member_generic)))
         }
 
         Resolution::InstanceAssociatedSymbol(inst)
@@ -134,9 +144,7 @@ async fn get_function_instantiation(
                 kind == Kind::TraitAssociatedFunction
             } =>
         {
-            Ok(CalleeOrVariant::Callee(Callee::InstanceAssociatedFunction(
-                inst,
-            )))
+            Ok(CallTarget::Callee(Callee::InstanceAssociatedFunction(inst)))
         }
 
         Resolution::IntermediateAdtImplSymbol(sym) => {
@@ -196,7 +204,7 @@ async fn get_function_instantiation(
                     parent_impl_id,
                 );
 
-            Ok(CalleeOrVariant::Callee(Callee::AssociatedFunction(
+            Ok(CallTarget::Callee(Callee::AssociatedFunction(
                 AssociatedSymbol::new(
                     sym.impl_associated_symbol_id(),
                     impl_generic_arguments,
@@ -223,10 +231,10 @@ async fn get_function_instantiation(
 async fn get_callable_expected_types(
     binder: &mut Binder<'_>,
     span: RelativeSpan,
-    callee_or_variant: &CalleeOrVariant,
+    call_target: &CallTarget,
 ) -> Result<Vec<pernixc_term::r#type::Type>, Error> {
-    match callee_or_variant {
-        CalleeOrVariant::Callee(callee) => {
+    match call_target {
+        CallTarget::Callee(callee) => {
             let Some(inst) = callee.create_instantiation(binder.engine()).await
             else {
                 return Err(Error::new_binding_error(span));
@@ -248,10 +256,10 @@ async fn get_callable_expected_types(
             Ok(result)
         }
 
-        CalleeOrVariant::Variant(variant) => {
+        CallTarget::Variant(variant) => {
             let associated_type = binder
                 .engine()
-                .get_variant_associated_type(variant.variant_id())
+                .get_variant_associated_type(variant.symbol_id())
                 .await
                 .as_deref()
                 .cloned();
@@ -264,6 +272,25 @@ async fn get_callable_expected_types(
             instantiation.instantiate(&mut ty);
 
             Ok(vec![ty])
+        }
+
+        CallTarget::EffectOperation(effect_operation) => {
+            let instantiation =
+                effect_operation.create_instantiation(binder.engine()).await;
+            let parameters = binder
+                .engine()
+                .get_parameters(effect_operation.symbol_id())
+                .await;
+
+            let mut result = Vec::with_capacity(parameters.len());
+
+            for (_, parameter) in parameters.parameters_as_order() {
+                let mut ty = parameter.r#type.clone();
+                instantiation.instantiate(&mut ty);
+                result.push(ty);
+            }
+
+            Ok(result)
         }
     }
 }
@@ -282,27 +309,24 @@ impl Bind<&pernixc_syntax::expression::unit::FunctionCall> for Binder<'_> {
             return Ok(expression);
         }
 
-        let callee_or_variant =
+        let call_target =
             get_function_instantiation(self, syntax_tree, handler).await?;
 
-        let mut expected_types = get_callable_expected_types(
-            self,
-            syntax_tree.span(),
-            &callee_or_variant,
-        )
-        .await?;
+        let mut expected_types =
+            get_callable_expected_types(self, syntax_tree.span(), &call_target)
+                .await?;
 
         let arguments = syntax_tree
             .call()
             .map(|x| x.expressions().collect::<Vec<_>>())
             .unwrap_or_default();
 
-        match (callee_or_variant, expected_types.len()) {
-            (CalleeOrVariant::Variant(var), 0) => {
+        match (call_target, expected_types.len()) {
+            (CallTarget::Variant(var), 0) => {
                 handler.receive(
                     Diagnostic::VariantDoesntHaveAssociatedValue(
                         VariantDoesntHaveAssociatedValue {
-                            variant_id: var.variant_id(),
+                            variant_id: var.symbol_id(),
                             span: syntax_tree.span(),
                             supplied_count: arguments.len(),
                         },
@@ -313,13 +337,13 @@ impl Bind<&pernixc_syntax::expression::unit::FunctionCall> for Binder<'_> {
                 Err(Error::Binding(BindingError(syntax_tree.span())))
             }
 
-            (CalleeOrVariant::Variant(var), 1) => {
+            (CallTarget::Variant(var), 1) => {
                 let inner_value = match arguments.len() {
                     0 => {
                         handler.receive(
                             Diagnostic::VariantAssociatedValueExpected(
                                 VariantAssociatedValueExpected {
-                                    variant_id: var.variant_id(),
+                                    variant_id: var.symbol_id(),
                                     span: syntax_tree.span(),
                                 },
                             )
@@ -345,7 +369,7 @@ impl Bind<&pernixc_syntax::expression::unit::FunctionCall> for Binder<'_> {
                         handler.receive(
                             Diagnostic::ExtraneousArgumentsToAssociatedValue(
                                 ExtraneousArgumentsToAssociatedValue {
-                                    variant_id: var.variant_id(),
+                                    variant_id: var.symbol_id(),
                                     span: syntax_tree.call().map_or_else(
                                         || syntax_tree.span(),
                                         |c| c.span(),
@@ -373,7 +397,7 @@ impl Bind<&pernixc_syntax::expression::unit::FunctionCall> for Binder<'_> {
                 Ok(Expression::RValue(Value::Register(register_id)))
             }
 
-            (CalleeOrVariant::Variant(_), _) => {
+            (CallTarget::Variant(_), _) => {
                 unreachable!(
                     "the expected types of a variant can only be 0 or 1, got \
                      {}",
@@ -381,7 +405,21 @@ impl Bind<&pernixc_syntax::expression::unit::FunctionCall> for Binder<'_> {
                 );
             }
 
-            (CalleeOrVariant::Callee(callee), _) => self
+            (CallTarget::EffectOperation(effect_operation), _) => self
+                .bind_effect_operation_call_internal(
+                    &expected_types,
+                    &arguments,
+                    syntax_tree
+                        .call()
+                        .map_or_else(|| syntax_tree.span(), |c| c.span()),
+                    syntax_tree.span(),
+                    effect_operation,
+                    handler,
+                )
+                .await
+                .map(|x| Expression::RValue(Value::Register(x))),
+
+            (CallTarget::Callee(callee), _) => self
                 .bind_function_call_internal(
                     &expected_types,
                     &arguments,
@@ -489,15 +527,13 @@ impl Binder<'_> {
         whole_span: RelativeSpan,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
     ) -> Result<pernixc_arena::ID<Register>, Error> {
-        let callee_or_variant = CalleeOrVariant::Callee(callee);
+        let call_target = CallTarget::Callee(callee);
 
         let expected_types =
-            get_callable_expected_types(self, whole_span, &callee_or_variant)
-                .await?;
+            get_callable_expected_types(self, whole_span, &call_target).await?;
 
-        let callee = callee_or_variant
-            .into_callee()
-            .expect("we've just created as callee");
+        let callee =
+            call_target.into_callee().expect("we've just created as callee");
 
         self.bind_function_call_internal(
             &expected_types,
@@ -522,15 +558,6 @@ impl Binder<'_> {
         method_receiver: Option<MethodReceiver>,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
     ) -> Result<pernixc_arena::ID<Register>, Error> {
-        // map the elided lifetimes to erased lifetime
-
-        // it's important that all the generic parameters (including the
-        // elided lifetimes) is mapped, since the function call
-        // might be monomorphized and the elided lifetimes are
-        // replaced with concrete lifetimes
-        let elided_lifetimes_instantiation =
-            map_elided_lifetimes_to_erased(self, callee.get_symbol_id()).await;
-
         // deduct the by one if it's method, receiver is not counted as an
         // argument
         let expected =
@@ -652,10 +679,31 @@ impl Binder<'_> {
             )
             .await?;
 
+        // map the elided lifetimes to erased lifetime
+
+        // it's important that all the generic parameters (including the
+        // elided lifetimes) is mapped, since the function call
+        // might be monomorphized and the elided lifetimes are
+        // replaced with concrete lifetimes
+        let elided_lifetimes_instantiation =
+            map_elided_lifetimes_to_erased(self, callee.get_symbol_id()).await;
+
+        // the "forall" lifetimes should be instantiated to some lifetimes (in
+        // this case, just erase them). This is required so that the forall
+        // lifetime won't appear in the return type of the function call.
+        let forall_lifetimes_instantiation = callee
+            .get_instance_associated_forall_lifetimes(
+                &Lifetime::Erased,
+                self.engine(),
+            )
+            .await
+            .unwrap_or_default();
+
         let assignment = FunctionCall::new(
             callee,
             argument_values,
             elided_lifetimes_instantiation,
+            forall_lifetimes_instantiation,
             capability_arguments,
         );
 
@@ -665,20 +713,154 @@ impl Binder<'_> {
         ))
     }
 
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+    async fn bind_effect_operation_call_internal(
+        &mut self,
+        expected_types: &[pernixc_term::r#type::Type],
+        arguments: &[pernixc_syntax::expression::Expression],
+        call_span: RelativeSpan,
+        whole_span: RelativeSpan,
+        effect_operation: ParentGenericSymbol,
+        handler: &dyn Handler<crate::diagnostic::Diagnostic>,
+    ) -> Result<pernixc_arena::ID<Register>, Error> {
+        let expected = expected_types.len();
+        let supplied = arguments.len();
+
+        if supplied != expected {
+            handler.receive(
+                Diagnostic::MismatchedArgumentsCount(
+                    MismatchedArgumentsCount {
+                        function_id: effect_operation.symbol_id(),
+                        expected,
+                        supplied,
+                        span: call_span,
+                    },
+                )
+                .into(),
+            );
+        }
+
+        let mut argument_values = Vec::with_capacity(arguments.len());
+
+        for (arg, expected_ty) in arguments.iter().zip(expected_types.iter()) {
+            argument_values.push(
+                self.bind_value_or_error(arg, Some(expected_ty), handler)
+                    .await?,
+            );
+        }
+
+        match argument_values.len().cmp(&expected_types.len()) {
+            std::cmp::Ordering::Less => {
+                for ty in expected_types.iter().skip(argument_values.len()) {
+                    argument_values.push(Value::error(ty.clone(), call_span));
+                }
+            }
+            std::cmp::Ordering::Greater => {
+                argument_values.truncate(expected_types.len());
+            }
+            std::cmp::Ordering::Equal => {}
+        }
+
+        let capabilities =
+            self.engine().get_effect_annotation(self.current_site()).await;
+
+        let capability_arguments = self
+            .find_handler_for_effect_unit(
+                effect_operation.parent_symbol_id(self.engine()).await,
+                effect_operation.parent_generic_arguments(),
+                whole_span,
+                &capabilities,
+                handler,
+            )
+            .await?;
+
+        if capability_arguments == EffectHandlerArgument::Unhandled {
+            handler.receive(crate::diagnostic::Diagnostic::UnhandledEffects(
+                UnhandledEffects {
+                    effects: vec![effect::Unit::new(
+                        effect_operation.parent_symbol_id(self.engine()).await,
+                        effect_operation.parent_generic_arguments().clone(),
+                    )],
+                    callable_id: effect_operation.symbol_id(),
+                    span: whole_span,
+                    rendering_map: self.get_rendering_map(),
+                },
+            ));
+        }
+
+        let assignment = EffectOperationCall::new(
+            effect_operation,
+            argument_values,
+            capability_arguments,
+        );
+
+        Ok(self.create_register_assignment(
+            Assignment::EffectOperationCall(assignment),
+            whole_span,
+        ))
+    }
+
+    async fn find_handler_for_effect_unit(
+        &mut self,
+        required_effect_id: GlobalSymbolID,
+        required_generic_arguments: &GenericArguments,
+        span: RelativeSpan,
+        available_capabilities: &OrderedArena<effect::Unit>,
+        handler: &dyn Handler<crate::diagnostic::Diagnostic>,
+    ) -> Result<EffectHandlerArgument, UnrecoverableError> {
+        // traverse in the handler stack
+        if let Some(effect_handler_id) = self
+            .search_handler_clause(
+                required_effect_id,
+                required_generic_arguments,
+            )
+            .await
+            .map_err(|x| {
+                x.report_as_type_calculating_overflow(span, &handler)
+            })?
+        {
+            return Ok(EffectHandlerArgument::FromEffectHandler(
+                effect_handler_id,
+            ));
+        }
+
+        let environment = self.create_environment();
+
+        for (available_id, available) in available_capabilities.iter() {
+            if Self::effect_compatible(
+                &environment,
+                available,
+                required_effect_id,
+                required_generic_arguments,
+                span,
+                handler,
+            )
+            .await?
+            {
+                return Ok(EffectHandlerArgument::FromEffectAnnotation(
+                    available_id,
+                ));
+            }
+        }
+
+        Ok(EffectHandlerArgument::Unhandled)
+    }
+
     async fn effect_compatible(
         env: &Environment<'_, inference_context::InferenceContext>,
         capability: &effect::Unit,
-        effect: &effect::Unit,
+        effect_id: GlobalSymbolID,
+        effect_arg: &GenericArguments,
         span: RelativeSpan,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
     ) -> Result<bool, UnrecoverableError> {
-        if capability.effect_id() != effect.effect_id() {
+        if capability.effect_id() != effect_id {
             return Ok(false);
         }
 
         let result = env
             .subtypes_generic_arguments(
-                effect.generic_arguments(),
+                effect_arg,
                 capability.generic_arguments(),
             )
             .await
@@ -742,56 +924,21 @@ impl Binder<'_> {
     > {
         let mut effect_arguments = FxHashMap::default();
 
-        // First, we'll traverse the capability handlers stack first, then we'll
-
-        'next: for (required_id, required) in required_capabilities.iter() {
+        for (required_id, required) in required_capabilities.iter() {
             let mut required = required.clone();
             required.instantiate(instantiation);
 
-            // traverse in the handler stack
-            if let Some(effect_handler_id) = self
-                .search_handler_clause(
+            effect_arguments.insert(
+                required_id,
+                self.find_handler_for_effect_unit(
                     required.effect_id(),
                     required.generic_arguments(),
-                )
-                .await
-                .map_err(|x| {
-                    x.report_as_type_calculating_overflow(span, &handler)
-                })?
-            {
-                effect_arguments.insert(
-                    required_id,
-                    EffectHandlerArgument::FromEffectHandler(effect_handler_id),
-                );
-
-                continue 'next;
-            }
-
-            let environment = self.create_environment();
-
-            for (available_id, available) in available_capabilities.iter() {
-                if Self::effect_compatible(
-                    &environment,
-                    available,
-                    &required,
                     span,
+                    available_capabilities,
                     handler,
                 )
-                .await?
-                {
-                    effect_arguments.insert(
-                        required_id,
-                        EffectHandlerArgument::FromEffectAnnotation(
-                            available_id,
-                        ),
-                    );
-                    continue 'next;
-                }
-            }
-
-            // cannot find a compatible capability
-            effect_arguments
-                .insert(required_id, EffectHandlerArgument::Unhandled);
+                .await?,
+            );
         }
 
         if effect_arguments

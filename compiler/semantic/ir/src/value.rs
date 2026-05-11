@@ -5,17 +5,26 @@ use literal::Literal;
 use pernixc_arena::ID;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
-use pernixc_target::Global;
-use pernixc_term::r#type::Type;
+use pernixc_semantic_element::{
+    parameter::{Parameter, Parameters, get_parameters},
+    return_type::get_return_type,
+};
+use pernixc_symbol::GlobalSymbolID;
+use pernixc_term::{instantiation::Instantiation, r#type::Type};
 use pernixc_type_system::{
     OverflowError, Succeeded, environment::Environment as TyEnvironment,
     normalizer::Normalizer,
 };
-use qbice::{Decode, Encode, StableHash};
+use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
 use crate::{
-    Values, capture::Captures, closure_parameters::ClosureParameters,
-    handling_scope::HandlerClauseID, value::register::Register,
+    Values,
+    capture::Captures,
+    handling_scope::{
+        HandlerClauseID, HandlingScope, HandlingScopes, OperationHandlerID,
+    },
+    resolution_visitor::ResolutionVisitable,
+    value::register::Register,
 };
 pub mod literal;
 pub mod register;
@@ -43,33 +52,84 @@ pub enum Value {
     Literal(Literal),
 }
 
+/// Similar to [`IRContext`], but only contains the information regarding to
+/// where the IR is used as.
+///
+/// [`IRContext`]: crate::function_ir::IRContext
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SimpleIRContext {
+    Root,
+    OperationHandler(OperationHandlerID),
+    Do(ID<HandlingScope>),
+}
+
+impl SimpleIRContext {
+    /// Gets the current operation handler ID, unwrapping the option. Panics if
+    /// there is no current operation handler ID.
+    #[must_use]
+    pub fn current_operation_handler_id(&self) -> &OperationHandlerID {
+        match self {
+            Self::Root => panic!(
+                "there is no current operation handler in the root context"
+            ),
+            Self::OperationHandler(operation_handler_id) => {
+                operation_handler_id
+            }
+            Self::Do(id) => panic!(
+                "there is no current operation handler in a do block \
+                 (handling scope ID: {id:?})"
+            ),
+        }
+    }
+
+    #[must_use]
+    pub const fn try_current_operation_handler_id(
+        &self,
+    ) -> Option<&OperationHandlerID> {
+        match self {
+            Self::OperationHandler(operation_handler_id) => {
+                Some(operation_handler_id)
+            }
+
+            Self::Root | Self::Do(_) => None,
+        }
+    }
+}
+
 /// Representing an environment that the [`Values`] is in. This is primarily
 /// used for type checking and retrieving the type of a [`Value`].
 #[derive(Debug, Clone, Copy, Builder)]
-pub struct Environment<'e, N> {
+pub struct ValueEnvironment<'e, N> {
     /// The environment for type system operations.
-    pub type_environment: &'e TyEnvironment<'e, N>,
+    type_environment: &'e TyEnvironment<'e, N>,
 
     /// If the IR was built with captures, the captures here is used for
     /// accessing the captured values.
-    pub captures: Option<&'e Captures>,
+    captures: Option<&'e Captures>,
 
-    /// If the IR was built with closure parameters, the closure parameters
-    /// here is used for accessing the closure parameters.
-    pub closure_parameters: Option<&'e ClosureParameters>,
+    /// If the IR was built inside an operation handler, this is used for
+    /// accessing the closure parameters.
+    ir_context: SimpleIRContext,
 
     /// The handling scopes in the current context.
-    pub handling_scopes: &'e crate::handling_scope::HandlingScopes,
-
-    /// The site where the IR binding is being taken place in.
-    pub current_site: Global<pernixc_symbol::SymbolID>,
+    handling_scopes: &'e HandlingScopes,
 }
 
-impl<'e, N: Normalizer> Environment<'e, N> {
+impl<'e, N: Normalizer> ValueEnvironment<'e, N> {
     /// Gets the tracked engine from the type environment.
     #[must_use]
     pub fn tracked_engine(&self) -> &'e TrackedEngine {
         self.type_environment.tracked_engine()
+    }
+
+    #[must_use]
+    pub fn current_site(&self) -> GlobalSymbolID {
+        self.type_environment.current_site()
+    }
+
+    #[must_use]
+    pub const fn type_environment(&self) -> &'e TyEnvironment<'e, N> {
+        self.type_environment
     }
 
     /// Gets the captures, unwrapping the option. Panics if there are no
@@ -77,19 +137,141 @@ impl<'e, N: Normalizer> Environment<'e, N> {
     #[must_use]
     pub const fn captures(&self) -> &'e Captures { self.captures.unwrap() }
 
-    /// Gets the closure parameters, unwrapping the option. Panics if there
-    /// are no closure parameters.
     #[must_use]
-    pub const fn closure_parameters(&self) -> &'e ClosureParameters {
-        self.closure_parameters.unwrap()
+    pub const fn try_captures(&self) -> Option<&'e Captures> { self.captures }
+
+    /// Gets the current operation handler ID, unwrapping the option. Panics if
+    /// there is no current operation handler ID.
+    #[must_use]
+    pub fn current_operation_handler_id(&self) -> &OperationHandlerID {
+        match &self.ir_context {
+            SimpleIRContext::Root => panic!(
+                "there is no current operation handler in the root context"
+            ),
+            SimpleIRContext::OperationHandler(operation_handler_id) => {
+                operation_handler_id
+            }
+            SimpleIRContext::Do(id) => panic!(
+                "there is no current operation handler in a do block \
+                 (handling scope ID: {id:?})"
+            ),
+        }
     }
 
     #[must_use]
-    pub fn get_handler_clause(
+    pub const fn try_current_operation_handler_id(
         &self,
-        handler_clause_id: HandlerClauseID,
-    ) -> &'e crate::handling_scope::HandlerClause {
-        self.handling_scopes.get_handler_clause(handler_clause_id)
+    ) -> Option<&OperationHandlerID> {
+        match &self.ir_context {
+            SimpleIRContext::OperationHandler(operation_handler_id) => {
+                Some(operation_handler_id)
+            }
+
+            SimpleIRContext::Root | SimpleIRContext::Do(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub fn get_current_operation_handler(
+        &self,
+    ) -> &'e crate::handling_scope::OperationHandler {
+        self.handling_scopes
+            .get_operation_handler(*self.current_operation_handler_id())
+    }
+
+    #[must_use]
+    pub async fn get_current_operation_handler_parameters(
+        &self,
+    ) -> Interned<Parameters> {
+        let operation_symbol_id =
+            self.handling_scopes.get_global_operation_symbol_id(
+                *self.current_operation_handler_id(),
+            );
+
+        self.tracked_engine().get_parameters(operation_symbol_id).await
+    }
+
+    #[must_use]
+    pub async fn try_get_current_operation_handler_parameters(
+        &self,
+    ) -> Option<Interned<Parameters>> {
+        let operation_handler_id = self.try_current_operation_handler_id()?;
+
+        Some(
+            self.handling_scopes
+                .get_operation_handler_parameters(
+                    *operation_handler_id,
+                    self.tracked_engine(),
+                )
+                .await,
+        )
+    }
+
+    #[must_use]
+    pub async fn get_instantiated_operation_handler_parameter_type(
+        &self,
+        parameter_id: ID<Parameter>,
+    ) -> Type {
+        let operation_handler = self.current_operation_handler_id();
+
+        self.handling_scopes
+            .get_instantiated_operation_handler_parameter_type(
+                *operation_handler,
+                parameter_id,
+                self.tracked_engine(),
+            )
+            .await
+    }
+
+    #[must_use]
+    pub fn get_visitable_handler_clause(
+        &self,
+        id: HandlerClauseID,
+    ) -> impl ResolutionVisitable {
+        self.handling_scopes.get_visitable_handler_clause(id)
+    }
+
+    #[must_use]
+    pub async fn get_current_operation_handler_instantiation(
+        &self,
+    ) -> Instantiation {
+        let operation_handler_id = self.current_operation_handler_id();
+
+        self.handling_scopes
+            .get_handler_instantiation(
+                operation_handler_id.handler_clause_id(),
+                self.tracked_engine(),
+            )
+            .await
+    }
+
+    #[must_use]
+    pub const fn get_current_handling_scope_id(
+        &self,
+    ) -> Option<ID<HandlingScope>> {
+        match self.ir_context {
+            SimpleIRContext::Do(id) => Some(id),
+            SimpleIRContext::OperationHandler(op) => {
+                Some(op.handling_scope_id())
+            }
+
+            SimpleIRContext::Root => None,
+        }
+    }
+
+    pub async fn get_expected_return_type(&self) -> Type {
+        if let Some(handling_scope_id) = self.get_current_handling_scope_id() {
+            self.handling_scopes
+                .get_handling_scope_return_type(handling_scope_id)
+                .clone()
+        } else {
+            let current_site = self.current_site();
+
+            self.tracked_engine()
+                .get_return_type(current_site)
+                .await
+                .clone_inner()
+        }
     }
 }
 
@@ -110,7 +292,7 @@ pub trait TypeOf<V> {
     fn type_of<'s, 'e, 'n, N: Normalizer>(
         &'s self,
         value: V,
-        environment: &'e Environment<'n, N>,
+        environment: &'e ValueEnvironment<'n, N>,
     ) -> impl std::future::Future<
         Output = Result<Succeeded<Type>, OverflowError>,
     > + use<'s, 'e, 'n, Self, V, N>;
@@ -120,7 +302,7 @@ impl TypeOf<&Value> for Values {
     async fn type_of<N: Normalizer>(
         &self,
         value: &Value,
-        environment: &Environment<'_, N>,
+        environment: &ValueEnvironment<'_, N>,
     ) -> Result<Succeeded<Type>, OverflowError> {
         match value {
             Value::Register(id) => self.type_of(*id, environment).await,

@@ -3,15 +3,14 @@ use std::collections::hash_map::Entry;
 use pernixc_handler::{Handler, Storage};
 use pernixc_hash::FxHashMap;
 use pernixc_ir::{
-    address::{Address, Memory},
+    address::Address,
     capture::{builder::CapturesWithNameBindingPoint, pruning::PruneMode},
-    closure_parameters::ClosureParameters,
     handling_scope::{
         HandlerClause, HandlerClauseID, HandlingScope, OperationHandlerID,
     },
     pattern::{Irrefutable, NameBindingPoint, Wildcard},
     value::{
-        Value,
+        SimpleIRContext, Value,
         register::{self, Assignment},
     },
 };
@@ -83,7 +82,7 @@ impl Bind<&pernixc_syntax::expression::block::DoWith> for Binder<'_> {
             effect_handlers.return_type.clone(),
             do_statements.span(),
             &captures,
-            None,
+            SimpleIRContext::Do(effect_handlers.handling_scope_id),
             handler,
         ))
         .await?;
@@ -96,7 +95,12 @@ impl Bind<&pernixc_syntax::expression::block::DoWith> for Binder<'_> {
         // pop the closure from the stack
         self.pop_handling_scope(effect_handlers.handling_scope_id);
 
-        let do_part = self.new_do(do_ir, do_captures, do_kw.span());
+        let do_part = self.new_do(
+            do_ir,
+            do_captures,
+            effect_handlers.handling_scope_id,
+            do_kw.span(),
+        );
 
         let with = build_with_blocks(
             self,
@@ -170,29 +174,25 @@ async fn build_with_blocks(
                 ))
                 .await;
 
-            let closure_parameters =
-                ClosureParameters::from_original_parameters_and_instantiation(
-                    &effect_operation_parameters,
-                    &instantiation,
-                    handler_block.parameters.iter().map(SourceElement::span),
+            let handler_clause_id = HandlerClauseID::new(
+                handling_scope_id,
+                with_block.handler_clause_id,
+            );
+
+            let operation_handler_id = binder
+                .insert_operation_handler_to_handler_clause(
+                    handler_clause_id,
+                    effect_operation_id,
                 );
 
             let ir = binder
                 .new_closure_binder(
                     async |x| {
-                        let operation_handler_id = OperationHandlerID::new(
-                            HandlerClauseID::new(
-                                handling_scope_id,
-                                with_block.handler_clause_id,
-                            ),
-                            effect_operation_id,
-                        );
-
                         x.push_operation_handler(operation_handler_id);
 
                         Box::pin(build_operation_handler(
                             x,
-                            &closure_parameters,
+                            operation_handler_id,
                             handler_block,
                             handler,
                         ))
@@ -205,7 +205,7 @@ async fn build_with_blocks(
                     expected_type.clone(),
                     statements_span,
                     &captures,
-                    Some(&closure_parameters),
+                    SimpleIRContext::OperationHandler(operation_handler_id),
                     handler,
                 )
                 .await?;
@@ -217,7 +217,7 @@ async fn build_with_blocks(
                 continue;
             };
 
-            entry.insert((ir, closure_parameters));
+            entry.insert((ir, operation_handler_id));
         }
     }
 
@@ -234,14 +234,16 @@ async fn build_with_blocks(
 
     let mut with = register::do_with::HandlerChain::new(with_capture_arguments);
 
-    for ((effect_handler_id, effect_operation_id), (ir, closure_parameters)) in
-        with_irs
+    for (
+        (effect_handler_id, effect_operation_id),
+        (ir, operation_handler_id),
+    ) in with_irs
     {
         let effect_handler = with.insert_handler_clause(effect_handler_id);
-        let operation_handler = binder.new_operation_handler(
+        let operation_handler = binder.new_operation_handler_ir(
             ir,
             with_capture_id,
-            closure_parameters,
+            operation_handler_id,
         );
 
         effect_handler.insert_effect_operation_handler_closure(
@@ -268,28 +270,39 @@ async fn build_do_block(
 
 async fn build_operation_handler(
     binder: &mut Binder<'_>,
-    closure_parameters: &ClosureParameters,
+    operation_handler_id: OperationHandlerID,
     handler_block: OperationHanderBlock,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<(), UnrecoverableError> {
     // start binding all the arguments as parameters
     let mut name_binding_point = NameBindingPoint::default();
 
-    for ((parameter_id, parameter), parameter_syn) in
-        closure_parameters.parameters_as_order().zip(&handler_block.parameters)
-    {
-        let simplified_type = binder
-            .create_environment()
-            .simplify(parameter.r#type.clone())
-            .await
-            .map_err(|x| {
-                x.report_as_type_check_overflow(parameter_syn.span(), &handler)
-            })?;
+    let current_operation_handler_parameters = binder
+        .engine()
+        .get_parameters(
+            binder.get_global_operation_symbol_id(operation_handler_id),
+        )
+        .await;
 
-        let parameter_ty = &simplified_type.result;
+    // initialize parameters of the operation handler
+    for ((parameter_id, _), parameter_syn) in
+        current_operation_handler_parameters
+            .parameters_as_order()
+            .zip(&handler_block.parameters)
+    {
+        binder.add_operation_parameter_span(
+            operation_handler_id,
+            parameter_id,
+            parameter_syn.span(),
+        );
+
+        let parameter_address =
+            Address::new_operation_handler_parameter(parameter_id);
+
+        let ty = binder.type_of_address(&parameter_address, handler).await?;
 
         let pattern = binder
-            .bind_pattern(parameter_syn, parameter_ty, handler)
+            .bind_pattern(parameter_syn, &ty, handler)
             .await?
             .unwrap_or_else(|| {
                 Irrefutable::Wildcard(Wildcard { span: parameter_syn.span() })
@@ -299,8 +312,8 @@ async fn build_operation_handler(
             .insert_name_binding_point(
                 &mut name_binding_point,
                 &pattern,
-                parameter_ty,
-                Address::Memory(Memory::ClosureParameter(parameter_id)),
+                &ty,
+                parameter_address,
                 Qualifier::Mutable,
                 &insert_name_binding::Config {
                     must_copy: false,

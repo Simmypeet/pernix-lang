@@ -33,7 +33,6 @@ pub(super) mod test {
     use pernixc_ir::{
         FunctionIR, IRWithContext, Values,
         capture::CapturesMap,
-        closure_parameters::ClosureParametersMap,
         control_flow_graph::ControlFlowGraph,
         function_ir::IRContext,
         handling_scope::HandlingScopes,
@@ -106,7 +105,6 @@ pub(super) mod test {
         FunctionIR::new(
             HandlingScopes::default(),
             ir_map,
-            ClosureParametersMap::default(),
             CapturesMap::default(),
             root_ir_id,
         )

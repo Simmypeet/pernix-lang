@@ -18,7 +18,7 @@ use crate::{
     resolution_visitor::{
         self, Abort, MutableResolutionVisitor, ResolutionVisitor,
     },
-    value::{Environment, TypeOf, Value},
+    value::{TypeOf, Value, ValueEnvironment},
     visitor,
 };
 
@@ -27,6 +27,7 @@ pub mod binary;
 pub mod borrow;
 pub mod cast;
 pub mod do_with;
+pub mod effect_operation_call;
 pub mod function_call;
 pub mod load;
 pub mod phi;
@@ -46,6 +47,7 @@ pub use binary::{
 };
 pub use borrow::Borrow;
 pub use cast::Cast;
+pub use effect_operation_call::EffectOperationCall;
 pub use function_call::{EffectHandlerArgument, FunctionCall};
 pub use load::{Load, Purpose as LoadPurpose};
 pub use phi::Phi;
@@ -67,6 +69,7 @@ macro_rules! visit_assignment_with {
         $prefix_fn:path,
         $struct_fn:path,
         $variant_fn:path,
+        $effect_operation_call_fn:path,
         $function_call_fn:path,
         $binary_fn:path,
         $array_fn:path,
@@ -94,6 +97,14 @@ macro_rules! visit_assignment_with {
             }
             Assignment::Variant(variant) => {
                 $variant_fn(variant, $visitor, $span).await?;
+            }
+            Assignment::EffectOperationCall(effect_operation_call) => {
+                $effect_operation_call_fn(
+                    effect_operation_call,
+                    $visitor,
+                    $span,
+                )
+                .await?;
             }
             Assignment::FunctionCall(function_call) => {
                 $function_call_fn(function_call, $visitor, $span).await?;
@@ -137,6 +148,7 @@ pub enum Assignment {
     Prefix(Prefix),
     Struct(Struct),
     Variant(Variant),
+    EffectOperationCall(EffectOperationCall),
     FunctionCall(FunctionCall),
     Binary(Binary),
     Array(Array),
@@ -156,6 +168,9 @@ impl visitor::Element for Assignment {
             Self::Prefix(prefix) => prefix.accept(visitor),
             Self::Struct(st) => st.accept(visitor),
             Self::Variant(variant) => variant.accept(visitor),
+            Self::EffectOperationCall(effect_operation_call) => {
+                effect_operation_call.accept(visitor);
+            }
             Self::FunctionCall(function_call) => function_call.accept(visitor),
             Self::Binary(binary) => binary.accept(visitor),
             Self::Array(array) => array.accept(visitor),
@@ -195,7 +210,7 @@ impl TypeOf<ID<Register>> for Values {
     async fn type_of<N: Normalizer>(
         &self,
         id: ID<Register>,
-        environment: &Environment<'_, N>,
+        environment: &ValueEnvironment<'_, N>,
     ) -> Result<Succeeded<Type>, OverflowError> {
         let register = &self.registers[id];
 
@@ -217,6 +232,9 @@ impl TypeOf<ID<Register>> for Values {
             }
             Assignment::Variant(variant) => {
                 return self.type_of(variant, environment).await;
+            }
+            Assignment::EffectOperationCall(effect_operation_call) => {
+                return self.type_of(effect_operation_call, environment).await;
             }
             Assignment::FunctionCall(function_call) => {
                 return self.type_of(function_call, environment).await;
@@ -259,6 +277,7 @@ impl resolution_visitor::MutableResolutionVisitable for Register {
             prefix::transform_prefix,
             r#struct::transform_struct,
             variant::transform_variant,
+            effect_operation_call::transform_effect_operation_call,
             function_call::transform_function_call,
             binary::transform_binary,
             array::transform_array,
@@ -286,6 +305,7 @@ impl resolution_visitor::ResolutionVisitable for Register {
             prefix::inspect_prefix,
             r#struct::inspect_struct,
             variant::inspect_variant,
+            effect_operation_call::inspect_effect_operation_call,
             function_call::inspect_function_call,
             binary::inspect_binary,
             array::inspect_array,

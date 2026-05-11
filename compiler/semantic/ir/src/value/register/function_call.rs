@@ -20,8 +20,9 @@ use pernixc_term::{
     generic_parameters::get_generic_parameters,
     instance::InstanceAssociated,
     instantiation::Instantiation,
-    lifetime::{ElidedLifetime, ElidedLifetimeID, Lifetime},
+    lifetime::{ElidedLifetime, ElidedLifetimeID, Forall, Lifetime},
     r#type::Type,
+    visitor::RecursiveIterator,
 };
 use pernixc_type_system::{
     OverflowError, Succeeded, UnrecoverableError, constraints::Constraints,
@@ -40,49 +41,6 @@ use crate::{
         register::{Register, subtype::Subtype},
     },
 };
-
-macro_rules! visit_function_call {
-    (
-        $function_call:expr,
-        $visitor:expr,
-        $span:expr,
-        $callee_ref:expr,
-        $res_symbol_ctor:ident,
-        $res_associated_ctor:ident,
-        $res_instance_ctor:ident,
-        $visit_method:ident,
-        $arguments_iter:expr,
-        $literal_accessor:ident,
-        $accept_method:ident,
-        $lifetimes_values:expr,
-        $res_lifetime_ctor:ident
-    ) => {{
-        let res = match $callee_ref {
-            Callee::Function(symbol) => $res_symbol_ctor::Symbol(symbol),
-            Callee::AssociatedFunction(associated_symbol) => {
-                $res_associated_ctor::AssociatedSymbol(associated_symbol)
-            }
-            Callee::InstanceAssociatedFunction(instance_associated) => {
-                $res_instance_ctor::InstanceAssociated(instance_associated)
-            }
-        };
-
-        $visitor.$visit_method(res, $span).await?;
-
-        for argument in $arguments_iter {
-            if let Some(literal) = argument.$literal_accessor() {
-                literal.$accept_method($visitor).await?;
-            }
-        }
-
-        for lt in $lifetimes_values {
-            $visitor
-                .$visit_method($res_lifetime_ctor::Lifetime(lt), $span)
-                .await?;
-        }
-        Ok(())
-    }};
-}
 
 /// Specifies how an effectful operation's capability arguments are supplied.
 #[derive(
@@ -119,6 +77,59 @@ pub enum Callee {
     Function(Symbol),
     AssociatedFunction(AssociatedSymbol),
     InstanceAssociatedFunction(InstanceAssociated),
+}
+
+impl Callee {
+    /// If the callee is an instance-associated function, return all of the
+    /// "forall" lifetimes that appear in the instance's generic parameters.
+    pub async fn get_instance_associated_forall_lifetimes(
+        &self,
+        mapped_lt: &Lifetime,
+        engine: &TrackedEngine,
+    ) -> Option<FxHashMap<Forall, Lifetime>> {
+        let Self::InstanceAssociatedFunction(inst) = self else {
+            return None;
+        };
+
+        let inst = inst.create_instantiation(engine).await?;
+        let mut forall_lifetimes = FxHashMap::default();
+
+        for term in inst.iter_all_term() {
+            match term {
+                // lifetime shouldn't appear in constant
+                pernixc_term::TermRef::Constant(_) => {}
+
+                pernixc_term::TermRef::Lifetime(lifetime) => {
+                    if let Lifetime::Forall(forall) = lifetime {
+                        forall_lifetimes
+                            .insert(forall.clone(), mapped_lt.clone());
+                    }
+                }
+
+                pernixc_term::TermRef::Type(ty) => {
+                    for forall in RecursiveIterator::new(ty).filter_map(|x| {
+                        x.0.as_lifetime().and_then(|x| x.as_forall())
+                    }) {
+                        forall_lifetimes
+                            .insert(forall.clone(), mapped_lt.clone());
+                    }
+                }
+
+                pernixc_term::TermRef::Instance(instance) => {
+                    for forall in
+                        RecursiveIterator::new(instance).filter_map(|x| {
+                            x.0.as_lifetime().and_then(|x| x.as_forall())
+                        })
+                    {
+                        forall_lifetimes
+                            .insert(forall.clone(), mapped_lt.clone());
+                    }
+                }
+            }
+        }
+
+        Some(forall_lifetimes)
+    }
 }
 
 impl<'a> From<&'a FunctionCall> for Resolution<'a> {
@@ -180,7 +191,10 @@ impl Callee {
 pub struct FunctionCall {
     callee: Callee,
     arguments: Vec<Value>,
+
     elided_lifetimes_instantiation: FxHashMap<ID<ElidedLifetime>, Lifetime>,
+    forall_lifetimes_instantiation: FxHashMap<Forall, Lifetime>,
+
     effect_arguments: FxHashMap<ID<effect::Unit>, EffectHandlerArgument>,
 }
 
@@ -203,12 +217,14 @@ impl FunctionCall {
         callee: Callee,
         arguments: Vec<Value>,
         elided_lifetimes_instantiation: FxHashMap<ID<ElidedLifetime>, Lifetime>,
+        forall_lifetimes_instantiation: FxHashMap<Forall, Lifetime>,
         effect_arguments: FxHashMap<ID<effect::Unit>, EffectHandlerArgument>,
     ) -> Self {
         Self {
             callee,
             arguments,
             elided_lifetimes_instantiation,
+            forall_lifetimes_instantiation,
             effect_arguments,
         }
     }
@@ -314,6 +330,15 @@ impl FunctionCall {
             ),
         );
 
+        for (forall, lifetime) in &self.forall_lifetimes_instantiation {
+            // NOTE: we need to compose the lifetime mapping to the existing
+            // instantiation
+            instantiation.insert_lifetime_mapping_compose(
+                Lifetime::Forall(forall.clone()),
+                lifetime.clone(),
+            );
+        }
+
         Some(instantiation)
     }
 
@@ -331,9 +356,10 @@ impl FunctionCall {
     pub async fn subtypes<N: pernixc_type_system::normalizer::Normalizer>(
         &self,
         values: &Values,
-        environment: &crate::value::Environment<'_, N>,
+        environment: &crate::value::ValueEnvironment<'_, N>,
     ) -> Result<Subtype, OverflowError> {
         let engine = environment.type_environment.tracked_engine();
+
         let Some(inst) = self.create_instantiation(engine).await else {
             return Ok(Subtype::Succeeded(Constraints::default()));
         };
@@ -387,7 +413,7 @@ impl FunctionCall {
             engine.get_effect_annotation(self.callee_symbol_id()).await;
 
         let current_capabilities =
-            engine.get_effect_annotation(environment.current_site).await;
+            engine.get_effect_annotation(environment.current_site()).await;
 
         for (required_id, argument) in self.effect_arguments() {
             let mut required_capability =
@@ -450,7 +476,7 @@ impl FunctionCall {
     /// satisfy well-formedness constraints.
     pub async fn wf_check<N, D>(
         &self,
-        environment: &crate::value::Environment<'_, N>,
+        environment: &crate::value::ValueEnvironment<'_, N>,
         span: pernixc_lexical::tree::RelativeSpan,
         handler: &dyn pernixc_handler::Handler<D>,
     ) -> Result<Constraints, UnrecoverableError>
@@ -486,21 +512,33 @@ pub(super) async fn transform_function_call<T: MutableResolutionVisitor>(
     visitor: &mut T,
     span: pernixc_lexical::tree::RelativeSpan,
 ) -> Result<(), Abort> {
-    visit_function_call!(
-        function_call,
-        visitor,
-        span,
-        &mut function_call.callee,
-        ResolutionMut,
-        ResolutionMut,
-        ResolutionMut,
-        visit_mut,
-        &mut function_call.arguments,
-        as_literal_mut,
-        accept_mut,
-        function_call.elided_lifetimes_instantiation.values_mut(),
-        ResolutionMut
-    )
+    let res = match &mut function_call.callee {
+        Callee::Function(symbol) => ResolutionMut::Symbol(symbol),
+        Callee::AssociatedFunction(associated_symbol) => {
+            ResolutionMut::AssociatedSymbol(associated_symbol)
+        }
+        Callee::InstanceAssociatedFunction(instance_associated) => {
+            ResolutionMut::InstanceAssociated(instance_associated)
+        }
+    };
+
+    visitor.visit_mut(res, span).await?;
+
+    for argument in &mut function_call.arguments {
+        if let Some(literal) = argument.as_literal_mut() {
+            literal.accept_mut(visitor).await?;
+        }
+    }
+
+    for lt in function_call
+        .elided_lifetimes_instantiation
+        .values_mut()
+        .chain(function_call.forall_lifetimes_instantiation.values_mut())
+    {
+        visitor.visit_mut(ResolutionMut::Lifetime(lt), span).await?;
+    }
+
+    Ok(())
 }
 
 #[allow(clippy::too_many_lines)]
@@ -509,50 +547,46 @@ pub(super) async fn inspect_function_call<T: ResolutionVisitor>(
     visitor: &mut T,
     span: pernixc_lexical::tree::RelativeSpan,
 ) -> Result<(), Abort> {
-    visit_function_call!(
-        function_call,
-        visitor,
-        span,
-        &function_call.callee,
-        Resolution,
-        Resolution,
-        Resolution,
-        visit,
-        &function_call.arguments,
-        as_literal,
-        accept,
-        function_call.elided_lifetimes_instantiation.values(),
-        Resolution
-    )
+    let res = match &function_call.callee {
+        Callee::Function(symbol) => Resolution::Symbol(symbol),
+        Callee::AssociatedFunction(associated_symbol) => {
+            Resolution::AssociatedSymbol(associated_symbol)
+        }
+        Callee::InstanceAssociatedFunction(instance_associated) => {
+            Resolution::InstanceAssociated(instance_associated)
+        }
+    };
+
+    visitor.visit(res, span).await?;
+
+    for argument in &function_call.arguments {
+        if let Some(literal) = argument.as_literal() {
+            literal.accept(visitor).await?;
+        }
+    }
+
+    for lt in function_call
+        .elided_lifetimes_instantiation
+        .values()
+        .chain(function_call.forall_lifetimes_instantiation.values())
+    {
+        visitor.visit(Resolution::Lifetime(lt), span).await?;
+    }
+
+    Ok(())
 }
 
 impl TypeOf<&FunctionCall> for Values {
     async fn type_of<N: pernixc_type_system::normalizer::Normalizer>(
         &self,
         value: &FunctionCall,
-        environment: &crate::value::Environment<'_, N>,
+        environment: &crate::value::ValueEnvironment<'_, N>,
     ) -> Result<pernixc_type_system::Succeeded<Type>, OverflowError> {
-        let Some(mut instantiation) = value
-            .callee
-            .create_instantiation(environment.tracked_engine())
-            .await
+        let Some(instantiation) =
+            value.create_instantiation(environment.tracked_engine()).await
         else {
             return Ok(Succeeded::new(Type::new_error()));
         };
-
-        instantiation.extend_lifetimes_mappings(
-            value.elided_lifetimes_instantiation.iter().map(
-                |(elided_lifetime_id, lifetime)| {
-                    (
-                        Lifetime::Elided(ElidedLifetimeID::new(
-                            value.callee.get_symbol_id(),
-                            *elided_lifetime_id,
-                        )),
-                        lifetime.clone(),
-                    )
-                },
-            ),
-        );
 
         let return_type = environment
             .tracked_engine()

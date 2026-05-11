@@ -5,7 +5,7 @@ use linkme::distributed_slice;
 use pernixc_diagnostic::Report;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_semantic_element::{
-    effect_annotation::Key as DoEffectKey, fields::Key as FieldsKey,
+    effect_annotation::Key as EffectAnnotationKey, fields::Key as FieldsKey,
     import::Key as ImportKey,
     instance_associated_value::Key as InstanceAssociatedValueKey,
     trait_ref::Key as TraitRefKey, type_alias::Key as TypeAliasKey,
@@ -130,9 +130,9 @@ async fn single_rendered_executor(
         }
     }
 
-    if kind.has_capabilities() {
+    if kind.has_effect_annotation() {
         let diags = engine
-            .query(&BuildDiagnosticKey::new(DoEffectKey { symbol_id }))
+            .query(&BuildDiagnosticKey::new(EffectAnnotationKey { symbol_id }))
             .await;
 
         for diag in diags.iter() {

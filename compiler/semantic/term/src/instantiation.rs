@@ -15,6 +15,7 @@ use super::{
     visitor::{self, MutableRecursive},
 };
 use crate::{
+    TermRef,
     constant::Constant,
     generic_arguments::GenericArguments,
     generic_parameters::{
@@ -229,6 +230,46 @@ impl Instantiation {
         self.lifetimes.insert(from, to);
     }
 
+    /// Inserts a mapping of lifetime to another while applying the new mapping
+    /// to the existing mappings in this instantiation.
+    pub fn insert_lifetime_mapping_compose(
+        &mut self,
+        from: Lifetime,
+        to: Lifetime,
+    ) {
+        compose(Composer::Lifetime(&from, &to), self);
+        self.insert_lifetime_mapping(from, to);
+    }
+
+    /// Inserts a mapping of type to another while applying the new mapping to
+    /// the existing mappings in this instantiation.
+    pub fn insert_type_mapping_compose(&mut self, from: Type, to: Type) {
+        compose(Composer::Type(&from, &to), self);
+        self.insert_type_mapping(from, to);
+    }
+
+    /// Inserts a mapping of constant to another while applying the new mapping
+    /// to the existing mappings in this instantiation.
+    pub fn insert_constant_mapping_compose(
+        &mut self,
+        from: Constant,
+        to: Constant,
+    ) {
+        compose(Composer::Constant(&from, &to), self);
+        self.insert_constant_mapping(from, to);
+    }
+
+    /// Inserts a mapping of instance to another while applying the new mapping
+    /// to the existing mappings in this instantiation.
+    pub fn insert_instance_mapping_compose(
+        &mut self,
+        from: Instance,
+        to: Instance,
+    ) {
+        compose(Composer::Instance(&from, &to), self);
+        self.insert_instance_mapping(from, to);
+    }
+
     /// Inserts a mapping from one type to another.
     pub fn insert_type_mapping(&mut self, from: Type, to: Type) {
         self.types.insert(from, to);
@@ -271,6 +312,114 @@ impl Instantiation {
         from: &Instance,
     ) -> Option<Instance> {
         self.instances.remove(from)
+    }
+
+    /// Returns an iterator yielding immutable references to all terms appeared
+    /// as the values in the mappings of this instantiation.
+    pub fn iter_all_term(&self) -> impl Iterator<Item = TermRef<'_>> + '_ {
+        self.lifetimes
+            .values()
+            .map(TermRef::Lifetime)
+            .chain(self.types.values().map(TermRef::Type))
+            .chain(self.constants.values().map(TermRef::Constant))
+            .chain(self.instances.values().map(TermRef::Instance))
+    }
+}
+
+enum Composer<'a> {
+    Lifetime(&'a Lifetime, &'a Lifetime),
+    Type(&'a Type, &'a Type),
+    Constant(&'a Constant, &'a Constant),
+    Instance(&'a Instance, &'a Instance),
+}
+
+impl MutableRecursive<Lifetime> for Composer<'_> {
+    fn visit(
+        &mut self,
+        term: &mut Lifetime,
+        _: impl Iterator<Item = TermLocation>,
+    ) -> bool {
+        let Composer::Lifetime(from, to) = self else {
+            return true;
+        };
+
+        if &*term == *from {
+            *term = to.clone();
+        }
+
+        true
+    }
+}
+
+impl MutableRecursive<Type> for Composer<'_> {
+    fn visit(
+        &mut self,
+        term: &mut Type,
+        _: impl Iterator<Item = TermLocation>,
+    ) -> bool {
+        let Composer::Type(from, to) = self else {
+            return true;
+        };
+
+        if &*term == *from {
+            *term = to.clone();
+        }
+
+        true
+    }
+}
+
+impl MutableRecursive<Constant> for Composer<'_> {
+    fn visit(
+        &mut self,
+        term: &mut Constant,
+        _: impl Iterator<Item = TermLocation>,
+    ) -> bool {
+        let Composer::Constant(from, to) = self else {
+            return true;
+        };
+
+        if &*term == *from {
+            *term = to.clone();
+        }
+
+        true
+    }
+}
+
+impl MutableRecursive<Instance> for Composer<'_> {
+    fn visit(
+        &mut self,
+        term: &mut Instance,
+        _: impl Iterator<Item = TermLocation>,
+    ) -> bool {
+        let Composer::Instance(from, to) = self else {
+            return true;
+        };
+
+        if &*term == *from {
+            *term = to.clone();
+        }
+
+        true
+    }
+}
+
+fn compose(mut composer: Composer<'_>, instantiation: &mut Instantiation) {
+    for lt in instantiation.lifetime_values_mut() {
+        visitor::accept_recursive_mut(lt, &mut composer);
+    }
+
+    for ty in instantiation.type_values_mut() {
+        visitor::accept_recursive_mut(ty, &mut composer);
+    }
+
+    for c in instantiation.constant_values_mut() {
+        visitor::accept_recursive_mut(c, &mut composer);
+    }
+
+    for i in instantiation.instance_values_mut() {
+        visitor::accept_recursive_mut(i, &mut composer);
     }
 }
 

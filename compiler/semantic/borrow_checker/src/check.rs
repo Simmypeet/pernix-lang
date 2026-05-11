@@ -208,6 +208,7 @@ impl<N: Normalizer> Checker<'_, N> {
                     | Assignment::Prefix(_)
                     | Assignment::Struct(_)
                     | Assignment::Variant(_)
+                    | Assignment::EffectOperationCall(_)
                     | Assignment::FunctionCall(_)
                     | Assignment::Binary(_)
                     | Assignment::Array(_)

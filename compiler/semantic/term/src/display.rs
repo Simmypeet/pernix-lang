@@ -85,7 +85,9 @@ impl Configuration<'_> {
                 true
             }
 
-            Lifetime::Erased | Lifetime::Error(_) => false,
+            Lifetime::Closure(_) | Lifetime::Erased | Lifetime::Error(_) => {
+                false
+            }
         }
     }
 

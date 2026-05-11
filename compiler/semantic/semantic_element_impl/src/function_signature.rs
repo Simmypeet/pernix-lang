@@ -20,7 +20,7 @@ use pernixc_semantic_element::{
 };
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
-    parent::get_parent, syntax::get_function_signature_syntax,
+    kind::get_kind, parent::get_parent, syntax::get_function_signature_syntax,
 };
 use pernixc_target::Global;
 use pernixc_term::{
@@ -59,6 +59,7 @@ pub struct FunctionSignature {
     pub elided_lifetimes: Interned<Arena<ElidedLifetime>>,
     pub late_bound_lifetime_parameters:
         Interned<FxHashSet<ID<LifetimeParameter>>>,
+    pub elided_lifetime: Option<Lifetime>,
 }
 
 #[derive(
@@ -111,8 +112,10 @@ impl Build for Key {
     async fn execute(engine: &TrackedEngine, key: &Self) -> Output<Self> {
         let extra_namespace =
             engine.get_generic_parameter_namespace(key.symbol_id).await;
+
         let mut elided_lifetimes = Arena::default();
         let mut occurrences = Occurrences::default();
+
         let mut elided_lifetimes_provider = ParametersElidedLifetimeProvider {
             global_id: key.symbol_id,
             elided_lifetimes: &mut elided_lifetimes,
@@ -323,22 +326,32 @@ impl Build for Key {
             )
         };
 
+        // TODO: this implemention isn't correct, but current it isn't used
+        // elsewhere, so we'll leave it like this for now.
         let late_bound = {
-            let generic_params =
-                engine.get_generic_parameters(key.symbol_id).await;
-            let where_clause = engine.get_where_clause(key.symbol_id).await;
+            let kind = engine.get_kind(key.symbol_id).await;
 
-            let mut all_lifetime_parameters = AllLifetimeParameters {
-                lifetimes: generic_params.lifetime_parameter_order().collect(),
-                current_function_id: key.symbol_id,
-            };
+            if kind.has_generic_parameters() {
+                let generic_params =
+                    engine.get_generic_parameters(key.symbol_id).await;
+                let where_clause = engine.get_where_clause(key.symbol_id).await;
 
-            for predicate in where_clause.as_ref() {
-                all_lifetime_parameters
-                    .exclude_late_bound(&predicate.predicate);
+                let mut all_lifetime_parameters = AllLifetimeParameters {
+                    lifetimes: generic_params
+                        .lifetime_parameter_order()
+                        .collect(),
+                    current_function_id: key.symbol_id,
+                };
+
+                for predicate in where_clause.as_ref() {
+                    all_lifetime_parameters
+                        .exclude_late_bound(&predicate.predicate);
+                }
+
+                all_lifetime_parameters.lifetimes
+            } else {
+                FxHashSet::default()
             }
-
-            all_lifetime_parameters.lifetimes
         };
 
         Output {
@@ -348,6 +361,9 @@ impl Build for Key {
                 implied_predicates: engine.intern(implied_predicates),
                 elided_lifetimes: engine.intern(elided_lifetimes),
                 late_bound_lifetime_parameters: engine.intern(late_bound),
+                elided_lifetime: return_elided_lifetime_provider
+                    .as_ref()
+                    .map(|x| x.lifetime.clone()),
             },
             diagnostics: engine.intern_unsized(storage.into_vec()),
             occurrences: engine.intern(occurrences),

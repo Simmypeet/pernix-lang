@@ -1,0 +1,4 @@
+pub effect Test['a, T]:
+    borrow(value: &'a T) -> &'a T:
+        where:
+            T: 'a

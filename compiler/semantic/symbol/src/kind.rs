@@ -184,7 +184,6 @@ impl Kind {
                 | Self::ImplementationAssociatedFunction
                 | Self::ImplementationAssociatedConstant
                 | Self::Effect
-                | Self::EffectOperation
                 | Self::Instance
                 | Self::InstanceAssociatedType
                 | Self::InstanceAssociatedFunction
@@ -282,14 +281,13 @@ impl Kind {
 
     /// Checks if the symbol has a `do Effects` clause.
     #[must_use]
-    pub const fn has_capabilities(&self) -> bool {
+    pub const fn has_effect_annotation(&self) -> bool {
         matches!(
             self,
             Self::Function
                 | Self::TraitAssociatedFunction
                 | Self::ImplementationAssociatedFunction
                 | Self::ExternFunction
-                | Self::EffectOperation
         )
     }
 

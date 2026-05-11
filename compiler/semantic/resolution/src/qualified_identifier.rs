@@ -46,7 +46,8 @@ use crate::{
     },
 };
 
-/// Represents a resolution to the variant.
+/// Represents a resolution to a symbol whose parent owns the generic
+/// parameters while the symbol itself does not.
 #[derive(
     Debug,
     Clone,
@@ -59,18 +60,18 @@ use crate::{
     Decode,
     StableHash,
 )]
-pub struct Variant(Symbol);
+pub struct ParentGenericSymbol(Symbol);
 
-impl display::Display for Variant {
+impl display::Display for ParentGenericSymbol {
     async fn fmt(
         &self,
         engine: &TrackedEngine,
         formatter: &mut display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
-        let parent_enum_id = self.parent_enum_id(engine).await;
+        let parent_symbol_id = self.parent_symbol_id(engine).await;
 
         DisplaySymbolWithGenericArguments::new(
-            parent_enum_id,
+            parent_symbol_id,
             self.0.generic_arguments(),
         )
         .fmt(engine, formatter)
@@ -78,42 +79,33 @@ impl display::Display for Variant {
     }
 }
 
-impl Variant {
-    /// Creates a new [`Variant`] from the given [`Symbol`].
+impl ParentGenericSymbol {
+    /// Creates a new [`ParentGenericSymbol`] from the given [`Symbol`].
     #[must_use]
     pub const fn from_symbol(symbol: Symbol) -> Self { Self(symbol) }
 
-    /// Creates a new [`Variant`]
+    /// Creates a new [`ParentGenericSymbol`].
     #[must_use]
     pub const fn new(
-        variant_id: Global<pernixc_symbol::SymbolID>,
+        symbol_id: Global<pernixc_symbol::SymbolID>,
         generic_arguments: GenericArguments,
     ) -> Self {
-        Self(Symbol::new(variant_id, generic_arguments))
+        Self(Symbol::new(symbol_id, generic_arguments))
     }
 
-    /// Returns the ID of the resolved variant symbol.
+    /// Returns the ID of the resolved symbol.
     #[must_use]
-    pub const fn variant_id(&self) -> Global<pernixc_symbol::SymbolID> {
+    pub const fn symbol_id(&self) -> Global<pernixc_symbol::SymbolID> {
         self.0.id()
     }
 
-    /// Returns the generic arguments supplied to the parent enum of the variant
-    /// symbol.
+    /// Returns the generic arguments supplied to the parent symbol.
     #[must_use]
-    pub const fn enum_generic_arguments(&self) -> &GenericArguments {
+    pub const fn parent_generic_arguments(&self) -> &GenericArguments {
         self.0.generic_arguments()
     }
 
-    /// Returns the type of the variant.
-    pub async fn create_enum_type(&self, engine: &TrackedEngine) -> Type {
-        let enum_id =
-            engine.get_parent_global(self.variant_id()).await.unwrap();
-
-        Type::new_symbol(enum_id, self.0.generic_arguments().clone())
-    }
-
-    /// Creates [`Instantiation`] for this variant.
+    /// Creates an [`Instantiation`] for the parent symbol.
     pub async fn create_instantiation(
         &self,
         engine: &TrackedEngine,
@@ -136,11 +128,11 @@ impl Variant {
     }
 
     #[must_use]
-    pub async fn parent_enum_id(
+    pub async fn parent_symbol_id(
         &self,
         engine: &TrackedEngine,
     ) -> Global<pernixc_symbol::SymbolID> {
-        engine.get_parent_global(self.variant_id()).await.unwrap()
+        engine.get_parent_global(self.symbol_id()).await.unwrap()
     }
 }
 
@@ -249,8 +241,8 @@ pub enum Resolution {
     /// Resolved to a module symbol.
     Module(Global<pernixc_symbol::SymbolID>),
 
-    /// Resolved to an enum-variant symbol.
-    Variant(Variant),
+    /// Resolved to a symbol whose parent owns the generic parameters.
+    ParentGenericSymbol(ParentGenericSymbol),
 
     /// Resolved to a symbol with generic arguments such as `Symbol['a, T, U]`.
     GenericSymbol(Symbol),
@@ -279,7 +271,7 @@ impl Resolution {
     pub const fn global_id(&self) -> Option<Global<pernixc_symbol::SymbolID>> {
         match self {
             Self::Module(id) => Some(*id),
-            Self::Variant(variant) => Some(variant.variant_id()),
+            Self::ParentGenericSymbol(symbol) => Some(symbol.symbol_id()),
             Self::GenericSymbol(generic) => Some(generic.id()),
             Self::GenericAssociatedSymbol(member) => Some(member.id()),
             Self::IntermediateAdtImplSymbol(impl_symbol) => {
@@ -305,7 +297,7 @@ impl Resolution {
         } else {
             match self {
                 Self::Module(_)
-                | Self::Variant(_)
+                | Self::ParentGenericSymbol(_)
                 | Self::GenericSymbol(_)
                 | Self::IntermediateAdtImplSymbol(_)
                 | Self::GenericAssociatedSymbol(_)
@@ -357,13 +349,15 @@ fn to_resolution(
             ))
         }
 
-        Kind::Variant => Resolution::Variant(Variant::new(
-            resolved_id,
-            latest_resolution
-                .into_generic_symbol()
-                .unwrap()
-                .into_generic_arguments(),
-        )),
+        Kind::Variant | Kind::EffectOperation => {
+            Resolution::ParentGenericSymbol(ParentGenericSymbol::new(
+                resolved_id,
+                latest_resolution
+                    .into_generic_symbol()
+                    .unwrap()
+                    .into_generic_arguments(),
+            ))
+        }
 
         trait_associated @ (Kind::TraitAssociatedType
         | Kind::TraitAssociatedFunction
@@ -401,19 +395,8 @@ fn to_resolution(
             | Resolution::Module(_)
             | Resolution::InstanceAssociatedSymbol(_)
             | Resolution::IntermediateAdtImplSymbol(_)
-            | Resolution::Variant(_) => unreachable!(),
+            | Resolution::ParentGenericSymbol(_) => unreachable!(),
         },
-
-        Kind::EffectOperation => {
-            Resolution::GenericAssociatedSymbol(AssociatedSymbol::new(
-                resolved_id,
-                latest_resolution
-                    .into_generic_symbol()
-                    .unwrap()
-                    .into_generic_arguments(),
-                generic_arguments.unwrap(),
-            ))
-        }
 
         Kind::ImplementationAssociatedConstant
         | Kind::ImplementationAssociatedType
@@ -534,6 +517,39 @@ pub async fn resolve_simple_qualified_identifier_root(
 }
 
 impl Resolver<'_, '_> {
+    async fn resolve_qualified_identifier_generic_arguments(
+        &mut self,
+        resolved_id: Global<pernixc_symbol::SymbolID>,
+        symbol_kind: Kind,
+        bound_type: Option<&Type>,
+        generic_identifier: &pernixc_syntax::GenericIdentifier,
+    ) -> Option<GenericArguments> {
+        if symbol_kind.has_generic_parameters() {
+            return Some(
+                self.resolve_generic_arguments_for_internal(
+                    resolved_id,
+                    (symbol_kind == Kind::Marker || symbol_kind == Kind::Trait)
+                        .then_some(bound_type)
+                        .flatten(),
+                    generic_identifier,
+                )
+                .await,
+            );
+        }
+
+        if let Some(gen_args) = generic_identifier.generic_arguments().as_ref()
+        {
+            self.receive_diagnostic(Diagnostic::NoGenericArgumentsRequired(
+                NoGenericArgumentsRequired {
+                    global_id: resolved_id,
+                    generic_argument_span: gen_args.span(),
+                },
+            ));
+        }
+
+        None
+    }
+
     #[allow(clippy::too_many_lines)]
     async fn resolve_root(
         &mut self,
@@ -665,35 +681,14 @@ impl Resolver<'_, '_> {
 
                 let symbol_kind = self.tracked_engine().get_kind(id).await;
 
-                let generic_arguments = if symbol_kind.has_generic_parameters()
-                {
-                    Some(
-                        self.resolve_generic_arguments_for_internal(
-                            id,
-                            (symbol_kind == Kind::Marker
-                                || symbol_kind == Kind::Trait)
-                                .then_some(type_bound)
-                                .flatten(),
-                            generic_identifier,
-                        )
-                        .await,
+                let generic_arguments = self
+                    .resolve_qualified_identifier_generic_arguments(
+                        id,
+                        symbol_kind,
+                        type_bound,
+                        generic_identifier,
                     )
-                } else {
-                    if let Some(gen_args) =
-                        generic_identifier.generic_arguments().as_ref()
-                    {
-                        self.receive_diagnostic(
-                            Diagnostic::NoGenericArgumentsRequired(
-                                NoGenericArgumentsRequired {
-                                    global_id: id,
-                                    generic_argument_span: gen_args.span(),
-                                },
-                            ),
-                        );
-                    }
-
-                    None
-                };
+                    .await;
 
                 match (symbol_kind, generic_arguments) {
                     (Kind::Module, None) => Resolution::Module(id),
@@ -737,7 +732,7 @@ impl Resolver<'_, '_> {
     ) -> Result<Global<pernixc_symbol::SymbolID>, Error> {
         let resolved = match latest_resolution {
             normal @ (Resolution::Module(_)
-            | Resolution::Variant(_)
+            | Resolution::ParentGenericSymbol(_)
             | Resolution::GenericSymbol(_)
             | Resolution::GenericAssociatedSymbol(_)) => {
                 let global_id = normal
@@ -951,34 +946,14 @@ impl Resolver<'_, '_> {
 
             let symbol_kind = self.tracked_engine().get_kind(resolved_id).await;
 
-            let generic_arguments = if symbol_kind.has_generic_parameters() {
-                Some(
-                    self.resolve_generic_arguments_for_internal(
-                        resolved_id,
-                        (symbol_kind == Kind::Marker
-                            || symbol_kind == Kind::Trait)
-                            .then_some(bound_type)
-                            .flatten(),
-                        &generic_identifier,
-                    )
-                    .await,
+            let generic_arguments = self
+                .resolve_qualified_identifier_generic_arguments(
+                    resolved_id,
+                    symbol_kind,
+                    bound_type,
+                    &generic_identifier,
                 )
-            } else {
-                if let Some(gen_args) =
-                    generic_identifier.generic_arguments().as_ref()
-                {
-                    self.receive_diagnostic(
-                        Diagnostic::NoGenericArgumentsRequired(
-                            NoGenericArgumentsRequired {
-                                global_id: resolved_id,
-                                generic_argument_span: gen_args.span(),
-                            },
-                        ),
-                    );
-                }
-
-                None
-            };
+                .await;
 
             let next_resolution = to_resolution(
                 resolved_id,

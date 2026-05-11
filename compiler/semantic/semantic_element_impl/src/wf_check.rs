@@ -63,7 +63,7 @@ impl Checker<'_> {
             Resolution::Type(_)
             | Resolution::Instance(_)
             | Resolution::Module(_)
-            | Resolution::Variant(_) => {}
+            | Resolution::ParentGenericSymbol(_) => {}
 
             Resolution::InstanceAssociatedSymbol(inst_assoc) => {
                 self.check_instantiation_predicates_of_instance_associated(

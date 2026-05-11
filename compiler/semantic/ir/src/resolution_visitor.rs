@@ -8,6 +8,7 @@ use derive_more::From;
 use pernixc_extend::extend;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
+use pernixc_resolution::qualified_identifier::ParentGenericSymbol;
 use pernixc_semantic_element::{
     implements::get_implements, implements_arguments::get_implements_argument,
 };
@@ -46,7 +47,7 @@ pub struct Abort;
 )]
 pub enum ResolutionOwned {
     Symbol(Symbol),
-    Variant(pernixc_resolution::qualified_identifier::Variant),
+    ParentGenericSymbol(ParentGenericSymbol),
     AssociatedSymbol(AssociatedSymbol),
     InstanceAssociated(InstanceAssociated),
     Type(Type),
@@ -56,7 +57,7 @@ pub enum ResolutionOwned {
 #[derive(Debug, From)]
 pub enum ResolutionMut<'x> {
     Symbol(&'x mut Symbol),
-    Variant(&'x mut pernixc_resolution::qualified_identifier::Variant),
+    ParentGenericSymbol(&'x mut ParentGenericSymbol),
     AssociatedSymbol(&'x mut AssociatedSymbol),
     InstanceAssociated(&'x mut InstanceAssociated),
     Type(&'x mut Type),
@@ -66,7 +67,7 @@ pub enum ResolutionMut<'x> {
 #[derive(Debug, Clone, Copy, From)]
 pub enum Resolution<'x> {
     Symbol(&'x Symbol),
-    Variant(&'x pernixc_resolution::qualified_identifier::Variant),
+    ParentGenericSymbol(&'x ParentGenericSymbol),
     AssociatedSymbol(&'x AssociatedSymbol),
     InstanceAssociated(&'x InstanceAssociated),
     Type(&'x Type),
@@ -76,24 +77,22 @@ pub enum Resolution<'x> {
 #[derive(Debug, Clone, Copy, From)]
 pub enum SymbolicResolution<'a> {
     Symbol(&'a Symbol),
-    Variant(&'a pernixc_resolution::qualified_identifier::Variant),
+    ParentGenericSymbol(&'a ParentGenericSymbol),
     AssociatedSymbol(&'a AssociatedSymbol),
     InstanceAssociated(&'a InstanceAssociated),
 }
 
 /// Extension method for creating a well-formedness check obligation for a
-/// [`Variant`].
-///
-/// The obligation is for the parent enum, not the variant itself.
+/// symbol whose parent owns the generic parameters.
 #[extend]
 pub async fn create_wf_check_obligation<'a>(
-    self: &'a pernixc_resolution::qualified_identifier::Variant,
+    self: &'a ParentGenericSymbol,
     engine: &pernixc_qbice::TrackedEngine,
 ) -> pernixc_type_system::wf_check::WfCheckObligation<'a> {
-    let parent_enum_id = self.parent_enum_id(engine).await;
+    let parent_symbol_id = self.parent_symbol_id(engine).await;
     pernixc_type_system::wf_check::WfCheckObligation::new(
-        parent_enum_id,
-        self.enum_generic_arguments().instances(),
+        parent_symbol_id,
+        self.parent_generic_arguments().instances(),
     )
 }
 
@@ -108,8 +107,8 @@ impl SymbolicResolution<'_> {
     ) -> Option<pernixc_term::instantiation::Instantiation> {
         match self {
             Self::Symbol(sym) => Some(sym.create_instantiation(engine).await),
-            Self::Variant(variant) => {
-                Some(variant.create_instantiation(engine).await)
+            Self::ParentGenericSymbol(symbol) => {
+                Some(symbol.create_instantiation(engine).await)
             }
             Self::AssociatedSymbol(assoc) => {
                 Some(assoc.create_instantiation(engine).await)
@@ -149,9 +148,9 @@ impl SymbolicResolution<'_> {
             Self::Symbol(sym) => WfCheckObligationsIterator::Single(
                 std::iter::once(sym.create_wf_check_obligation()),
             ),
-            Self::Variant(variant) => {
+            Self::ParentGenericSymbol(symbol) => {
                 WfCheckObligationsIterator::Single(std::iter::once(
-                    variant.create_wf_check_obligation(engine).await,
+                    symbol.create_wf_check_obligation(engine).await,
                 ))
             }
             Self::AssociatedSymbol(assoc) => {
@@ -229,8 +228,8 @@ impl Resolution<'_> {
     pub fn to_owned(&self) -> ResolutionOwned {
         match self {
             Self::Symbol(symbol) => ResolutionOwned::Symbol((*symbol).clone()),
-            Self::Variant(variant) => {
-                ResolutionOwned::Variant((*variant).clone())
+            Self::ParentGenericSymbol(symbol) => {
+                ResolutionOwned::ParentGenericSymbol((*symbol).clone())
             }
             Self::AssociatedSymbol(associated_symbol) => {
                 ResolutionOwned::AssociatedSymbol((*associated_symbol).clone())
@@ -284,7 +283,7 @@ impl Resolution<'_> {
 
         match self {
             Self::Symbol(symbol) => Six::A(symbol.iter_all_term()),
-            Self::Variant(variant) => Six::B(variant.iter_all_term()),
+            Self::ParentGenericSymbol(symbol) => Six::B(symbol.iter_all_term()),
             Self::AssociatedSymbol(associated_symbol) => {
                 Six::C(associated_symbol.iter_all_term())
             }
@@ -304,7 +303,9 @@ impl ResolutionMut<'_> {
     pub const fn as_resolution_ref(&self) -> Resolution<'_> {
         match self {
             Self::Symbol(symbol) => Resolution::Symbol(symbol),
-            Self::Variant(variant) => Resolution::Variant(variant),
+            Self::ParentGenericSymbol(symbol) => {
+                Resolution::ParentGenericSymbol(symbol)
+            }
             Self::AssociatedSymbol(associated_symbol) => {
                 Resolution::AssociatedSymbol(associated_symbol)
             }
@@ -320,8 +321,8 @@ impl ResolutionMut<'_> {
     pub fn to_owned(&self) -> ResolutionOwned {
         match self {
             Self::Symbol(symbol) => ResolutionOwned::Symbol((*symbol).clone()),
-            Self::Variant(variant) => {
-                ResolutionOwned::Variant((*variant).clone())
+            Self::ParentGenericSymbol(symbol) => {
+                ResolutionOwned::ParentGenericSymbol((*symbol).clone())
             }
             Self::AssociatedSymbol(associated_symbol) => {
                 ResolutionOwned::AssociatedSymbol((*associated_symbol).clone())
@@ -347,7 +348,9 @@ impl display::Display for ResolutionOwned {
     ) -> std::fmt::Result {
         match self {
             Self::Symbol(symbol) => symbol.fmt(engine, formatter).await,
-            Self::Variant(variant) => variant.fmt(engine, formatter).await,
+            Self::ParentGenericSymbol(symbol) => {
+                symbol.fmt(engine, formatter).await
+            }
 
             Self::AssociatedSymbol(associated_symbol) => {
                 let parent = engine
@@ -443,7 +446,9 @@ impl ResolutionMut<'_> {
 
         match self {
             Self::Symbol(symbol) => Six::A(symbol.iter_all_term_mut()),
-            Self::Variant(variant) => Six::B(variant.iter_all_term_mut()),
+            Self::ParentGenericSymbol(symbol) => {
+                Six::B(symbol.iter_all_term_mut())
+            }
             Self::AssociatedSymbol(associated_symbol) => {
                 Six::C(associated_symbol.iter_all_term_mut())
             }
@@ -473,21 +478,20 @@ pub trait MutableResolutionVisitor {
 }
 
 /// A trait for inspecting the [`Resolution`]s in an object.
-pub trait ResolutionVisitor {
+pub trait ResolutionVisitor: Send + Sync {
     /// Visits the given resolution `resolution`, using the provided `source`
     /// for error reporting if necessary.
     ///
     /// Returns `Err(Abort)` to short-circuit the entire visitation process.
-    #[allow(async_fn_in_trait)]
-    async fn visit(
-        &mut self,
-        resolution: Resolution<'_>,
+    fn visit<'s, 'r>(
+        &'s mut self,
+        resolution: Resolution<'r>,
         span: RelativeSpan,
-    ) -> Result<(), Abort>;
+    ) -> impl Future<Output = Result<(), Abort>> + Send + use<'s, 'r, Self>;
 }
 
 /// A trait for recursively inspecting symbolic resolutions within terms.
-pub trait RecursiveSymbolicResolutionVisitor: Send {
+pub trait RecursiveSymbolicResolutionVisitor: Send + Sync {
     /// Visits the given symbolic resolution `resolution`, using the provided
     /// `span` for error reporting if necessary.
     ///
@@ -517,16 +521,16 @@ pub trait MutableResolutionVisitable {
 
 /// A trait for an object that can have [`ResolutionVisitor`] elements visited
 /// within it.
-pub trait ResolutionVisitable {
+pub trait ResolutionVisitable: Send + Sync {
     /// Visits the types, lifetimes, and constants in self using the given
     /// visitor.
     ///
     /// Returns `Err(Abort)` if the visitor aborts the visitation process.
     #[allow(async_fn_in_trait)]
-    async fn accept<T: ResolutionVisitor>(
-        &self,
-        visitor: &mut T,
-    ) -> Result<(), Abort>;
+    fn accept<'s, 'v, T: ResolutionVisitor>(
+        &'s self,
+        visitor: &'v mut T,
+    ) -> impl Future<Output = Result<(), Abort>> + Send + use<'s, 'v, Self, T>;
 }
 
 /// Accepts a recursive symbolic resolution visitor on a visitable element.
@@ -626,9 +630,12 @@ pub async fn accept_recursive_symbolic_resolution_visitor<
                         .visit(SymbolicResolution::Symbol(sym), span)
                         .await?;
                 }
-                Resolution::Variant(variant) => {
+                Resolution::ParentGenericSymbol(symbol) => {
                     self.visitor
-                        .visit(SymbolicResolution::Variant(variant), span)
+                        .visit(
+                            SymbolicResolution::ParentGenericSymbol(symbol),
+                            span,
+                        )
                         .await?;
                 }
                 Resolution::AssociatedSymbol(assoc) => {
@@ -676,7 +683,7 @@ impl<'a, T> IntoResolutionWithSpan<'a, T> {
     }
 }
 
-impl<'a, T> ResolutionVisitable for IntoResolutionWithSpan<'a, T>
+impl<'a, T: Send + Sync> ResolutionVisitable for IntoResolutionWithSpan<'a, T>
 where
     &'a T: Into<Resolution<'a>>,
 {

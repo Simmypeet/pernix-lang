@@ -98,7 +98,7 @@ impl TypeOf<&ResumeCall> for Values {
     async fn type_of<N: pernixc_type_system::normalizer::Normalizer>(
         &self,
         value: &ResumeCall,
-        environment: &crate::value::Environment<'_, N>,
+        environment: &crate::value::ValueEnvironment<'_, N>,
     ) -> Result<pernixc_type_system::Succeeded<Type>, OverflowError> {
         let handling_scope =
             &environment.handling_scopes[value.handling_scope_id()];

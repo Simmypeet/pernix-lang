@@ -6,7 +6,7 @@ use pernixc_ir::{
     address::{Address, Memory},
     control_flow_graph::{ControlFlowGraph, Point},
     instruction::{AccessMode, Instruction},
-    value::{Environment, register::Register},
+    value::{ValueEnvironment, register::Register},
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_qbice::TrackedEngine;
@@ -116,7 +116,7 @@ impl<'a, N: Normalizer> Checker<'a, N> {
         self.context.values()
     }
 
-    pub const fn current_site(&self) -> Global<pernixc_symbol::SymbolID> {
+    pub fn current_site(&self) -> Global<pernixc_symbol::SymbolID> {
         self.context.current_site()
     }
 
@@ -124,14 +124,14 @@ impl<'a, N: Normalizer> Checker<'a, N> {
         self.context.control_flow_graph()
     }
 
-    pub fn environment(&self) -> &'a Environment<'a, N> {
+    pub fn environment(&self) -> &'a ValueEnvironment<'a, N> {
         self.context.environment()
     }
 
-    pub fn type_environment(
+    pub const fn type_environment(
         &self,
     ) -> &'a pernixc_type_system::environment::Environment<'a, N> {
-        self.context.environment().type_environment
+        self.context.type_environment()
     }
 
     pub fn handler(&self) -> &'a dyn Handler<Diagnostic> {
