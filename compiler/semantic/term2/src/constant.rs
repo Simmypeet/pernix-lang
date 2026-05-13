@@ -1,8 +1,11 @@
 //! Data definitions for constant terms.
 
+use std::fmt::Write as _;
+
 use derive_more::Display;
 use enum_as_inner::EnumAsInner;
 use pernixc_qbice::TrackedEngine;
+use pernixc_symbol::name::get_qualified_name;
 use pernixc_target::Global;
 use qbice::{
     Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
@@ -10,6 +13,7 @@ use qbice::{
 
 use crate::{
     Never, TermRef,
+    display::{Display as TermDisplay, Formatter, InferenceRendering},
     error::Error,
     folding::{
         Abort, Foldable, FoldableAsync, Folder, FolderAsync, finish_fold_async,
@@ -17,7 +21,10 @@ use crate::{
         fold_term_slice, fold_term_slice_async, fold_tuple_terms,
         fold_tuple_terms_async,
     },
-    generic_parameters::{ConstantParameter, ConstantParameterID},
+    generic_parameters::{
+        ConstantParameter, ConstantParameterID, GenericParameter,
+        get_generic_parameters,
+    },
     inference,
     matching::{Match, Matching, Substructural},
     sub_term::{self, IterSubTerms, SubTerm},
@@ -685,6 +692,99 @@ impl FoldableAsync for Interned<Constant> {
     }
 }
 
+impl TermDisplay for Constant {
+    async fn fmt(
+        &self,
+        engine: &TrackedEngine,
+        formatter: &mut Formatter<'_, '_>,
+    ) -> std::fmt::Result {
+        match self {
+            Self::Primitive(primitive) => write!(formatter, "{primitive}"),
+
+            Self::Inference(inference) => {
+                let Some(rendering) = formatter
+                    .configuration()
+                    .constant_inferences()
+                    .and_then(|m| m.get(inference))
+                else {
+                    return write!(formatter, "_");
+                };
+
+                match rendering {
+                    InferenceRendering::Recurse(constant) => {
+                        Box::pin(constant.fmt(engine, formatter)).await
+                    }
+                    InferenceRendering::Rendered(rendered) => {
+                        write!(formatter, "{}", rendered.as_ref())
+                    }
+                }
+            }
+
+            Self::Parameter(member_id) => {
+                let generic_parameters =
+                    engine.get_generic_parameters(member_id.parent_id()).await;
+
+                write!(
+                    formatter,
+                    "{}",
+                    &**generic_parameters
+                        .get_constant_parameter(member_id.id())
+                        .name()
+                )
+            }
+
+            Self::Struct(stu) => {
+                let qualified_name = engine.get_qualified_name(stu.id()).await;
+                write!(formatter, "{qualified_name} {{ ")?;
+
+                for (index, field) in stu.fields().iter().enumerate() {
+                    Box::pin(field.fmt(engine, formatter)).await?;
+
+                    if index + 1 != stu.fields().len() {
+                        write!(formatter, ", ")?;
+                    }
+                }
+
+                write!(formatter, " }}")
+            }
+
+            Self::Enum(en) => {
+                let qualified_name =
+                    engine.get_qualified_name(en.variant_id()).await;
+                write!(formatter, "{qualified_name}")?;
+
+                if let Some(variant) = en.associated_value() {
+                    write!(formatter, "(")?;
+                    Box::pin(variant.fmt(engine, formatter)).await?;
+                    write!(formatter, ")")?;
+                }
+
+                Ok(())
+            }
+
+            Self::Array(array) => {
+                write!(formatter, "[")?;
+
+                for (index, element) in array.elements().iter().enumerate() {
+                    Box::pin(element.fmt(engine, formatter)).await?;
+
+                    if index + 1 != array.elements().len() {
+                        write!(formatter, ", ")?;
+                    }
+                }
+
+                write!(formatter, "]")
+            }
+
+            Self::Tuple(tuple) => Box::pin(tuple.fmt(engine, formatter)).await,
+
+            Self::Phantom => write!(formatter, "phantom"),
+
+            Self::Error(_) => write!(formatter, "{{error}}"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -767,5 +867,19 @@ mod tests {
         assert!(matches!(terms[0], TermRef::Constant(term) if term == &root));
         assert!(matches!(terms[1], TermRef::Constant(term) if term == &tuple));
         assert!(matches!(terms[2], TermRef::Constant(term) if term == &inner));
+    }
+
+    #[tokio::test]
+    async fn writes_constant_array() {
+        let engine = create_test_engine().await;
+        let tracked = engine.tracked().await;
+
+        let constant = tracked.intern(Constant::Array(Array::new(vec![
+            tracked.intern(Constant::Primitive(Primitive::Uint8(1))),
+            tracked.intern(Constant::Primitive(Primitive::Uint8(2))),
+        ])));
+
+        let rendered = constant.write_to_string(&tracked).await.unwrap();
+        assert_eq!(rendered, "[1u8, 2u8]");
     }
 }

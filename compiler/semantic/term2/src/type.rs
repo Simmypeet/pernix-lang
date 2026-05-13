@@ -1,5 +1,7 @@
 //! Data definitions for type terms.
 
+use std::fmt::Write as _;
+
 use enum_as_inner::EnumAsInner;
 use pernixc_qbice::TrackedEngine;
 use pernixc_target::Global;
@@ -10,6 +12,7 @@ use qbice::{
 use crate::{
     TermRef,
     constant::Constant,
+    display::{Display, Formatter, InferenceRendering},
     error::Error,
     folding::{
         Abort, Foldable, FoldableAsync, Folder, FolderAsync, finish_fold_async,
@@ -20,7 +23,10 @@ use crate::{
         AssociatedSymbol, SubAssociatedSymbolLocation, SubSymbolLocation,
         Symbol,
     },
-    generic_parameters::{TypeParameter, TypeParameterID},
+    generic_parameters::{
+        GenericParameter, TypeParameter, TypeParameterID,
+        get_generic_parameters,
+    },
     inference,
     instance::{
         Instance, InstanceAssociated, SubInstanceAssociatedGenericArgsLocation,
@@ -1567,6 +1573,123 @@ impl FoldableAsync for Interned<Type> {
     }
 }
 
+impl Display for Type {
+    async fn fmt(
+        &self,
+        engine: &TrackedEngine,
+        formatter: &mut Formatter<'_, '_>,
+    ) -> std::fmt::Result {
+        match self {
+            Self::Inference(inference) => {
+                let Some(rendering) = formatter
+                    .configuration()
+                    .type_inferences()
+                    .and_then(|m| m.get(inference))
+                else {
+                    return write!(formatter, "_");
+                };
+
+                match rendering {
+                    InferenceRendering::Recurse(r#type) => {
+                        Box::pin(r#type.fmt(engine, formatter)).await
+                    }
+                    InferenceRendering::Rendered(rendered) => {
+                        write!(formatter, "{}", rendered.as_ref())
+                    }
+                }
+            }
+
+            Self::Primitive(primitive) => write!(formatter, "{primitive}"),
+
+            Self::Parameter(member_id) => {
+                let generic_parameters =
+                    engine.get_generic_parameters(member_id.parent_id()).await;
+
+                write!(
+                    formatter,
+                    "{}",
+                    &**generic_parameters
+                        .get_type_parameter(member_id.id())
+                        .name()
+                )
+            }
+
+            Self::Symbol(symbol) => {
+                Box::pin(symbol.fmt(engine, formatter)).await
+            }
+
+            Self::Pointer(pointer) => {
+                write!(
+                    formatter,
+                    "*{}",
+                    if pointer.is_mutable() { "mut " } else { "" }
+                )?;
+
+                Box::pin(pointer.pointee().fmt(engine, formatter)).await
+            }
+
+            Self::Reference(reference) => {
+                write!(formatter, "&")?;
+
+                if formatter
+                    .configuration()
+                    .lifetime_will_be_displayed(reference.lifetime().as_ref())
+                {
+                    reference.lifetime().fmt(engine, formatter).await?;
+                    write!(formatter, " ")?;
+                }
+
+                if reference.qualifier() == Qualifier::Mutable {
+                    write!(formatter, "mut ")?;
+                }
+
+                Box::pin(reference.pointee().fmt(engine, formatter)).await
+            }
+
+            Self::Array(array) => {
+                write!(formatter, "[")?;
+                Box::pin(array.r#type().fmt(engine, formatter)).await?;
+                write!(formatter, " x ")?;
+                Box::pin(array.length().fmt(engine, formatter)).await?;
+                write!(formatter, "]")
+            }
+
+            Self::Tuple(tuple) => Box::pin(tuple.fmt(engine, formatter)).await,
+
+            Self::Phantom(phantom) => {
+                write!(formatter, "phantom ")?;
+                Box::pin(phantom.r#type().fmt(engine, formatter)).await
+            }
+
+            Self::InstanceAssociated(instance_associated) => {
+                Box::pin(instance_associated.fmt(engine, formatter)).await
+            }
+
+            Self::AssociatedSymbol(symbol) => {
+                Box::pin(symbol.fmt(engine, formatter)).await
+            }
+
+            Self::FunctionSignature(signature) => {
+                write!(formatter, "function(")?;
+
+                for (index, r#type) in signature.parameters().iter().enumerate()
+                {
+                    Box::pin(r#type.fmt(engine, formatter)).await?;
+
+                    if index + 1 != signature.parameters().len() {
+                        write!(formatter, ", ")?;
+                    }
+                }
+
+                write!(formatter, ") -> ")?;
+                Box::pin(signature.return_type().fmt(engine, formatter)).await
+            }
+
+            Self::Error(_) => write!(formatter, "{{error}}"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1765,5 +1888,20 @@ mod tests {
                 && matching.lhs_location() == &SubTypeLocation::Reference
                 && matching.rhs_location() == &SubTypeLocation::Reference
         ));
+    }
+
+    #[tokio::test]
+    async fn writes_reference_type() {
+        let engine = create_test_engine().await;
+        let tracked = engine.tracked().await;
+
+        let r#type = tracked.intern(Type::Reference(Reference::new(
+            Qualifier::Immutable,
+            tracked.intern(Lifetime::Static),
+            tracked.intern(Type::Primitive(Primitive::Bool)),
+        )));
+
+        let rendered = r#type.write_to_string(&tracked).await.unwrap();
+        assert_eq!(rendered, "&'static bool");
     }
 }

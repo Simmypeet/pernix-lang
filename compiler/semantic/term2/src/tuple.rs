@@ -1,5 +1,7 @@
 //! Data definitions for tuple terms.
 
+use std::fmt::Write as _;
+
 use derive_new::new;
 use enum_as_inner::EnumAsInner;
 use pernixc_qbice::TrackedEngine;
@@ -7,7 +9,10 @@ use qbice::{
     Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
 };
 
-use crate::matching::{Match, Matching, Substructural};
+use crate::{
+    display::{Display, Formatter},
+    matching::{Match, Matching, Substructural},
+};
 
 #[cfg(any(test, feature = "arbitrary"))]
 pub mod arbitrary;
@@ -370,6 +375,49 @@ where
     > {
         Self::substructural_match_internal(self, other, false)
             .or_else(|| Self::substructural_match_internal(other, self, true))
+    }
+}
+
+impl<Term> Display for Element<Term>
+where
+    Interned<Term>: Display,
+    Term: Send + Sync + 'static,
+{
+    async fn fmt(
+        &self,
+        engine: &TrackedEngine,
+        formatter: &mut Formatter<'_, '_>,
+    ) -> std::fmt::Result {
+        if self.is_unpacked() {
+            formatter.write_str("...")?;
+        }
+
+        self.term().fmt(engine, formatter).await
+    }
+}
+
+impl<Term> Display for Tuple<Term>
+where
+    Interned<Term>: Display,
+    Term: Send + Sync + 'static,
+{
+    async fn fmt(
+        &self,
+        engine: &TrackedEngine,
+        formatter: &mut Formatter<'_, '_>,
+    ) -> std::fmt::Result {
+        formatter.write_str("(")?;
+
+        for (index, element) in self.elements().iter().enumerate() {
+            element.fmt(engine, formatter).await?;
+
+            if index + 1 != self.elements().len() {
+                formatter.write_str(", ")?;
+            }
+        }
+
+        formatter.write_str(")")?;
+        Ok(())
     }
 }
 

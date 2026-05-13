@@ -1,5 +1,7 @@
 //! Data definitions for lifetime terms.
 
+use std::fmt::Write as _;
+
 use derive_new::new;
 use enum_as_inner::EnumAsInner;
 use pernixc_lexical::tree::RelativeSpan;
@@ -12,6 +14,7 @@ use qbice::{
 
 use crate::{
     Never, TermRef,
+    display::{Display, Formatter, InferenceRendering},
     error::Error,
     folding::{
         Abort, Foldable, FoldableAsync, Folder, FolderAsync, finish_fold_async,
@@ -294,13 +297,49 @@ impl FoldableAsync for Interned<Lifetime> {
         engine: &TrackedEngine,
     ) -> Result<(), Abort> {
         let rebuilt_value = self.as_ref().clone();
-        finish_fold_async!(
-            self,
-            rebuilt_value,
-            folder,
-            engine,
-            fold_lifetime
-        )
+        finish_fold_async!(self, rebuilt_value, folder, engine, fold_lifetime)
+    }
+}
+
+impl Display for Lifetime {
+    async fn fmt(
+        &self,
+        engine: &TrackedEngine,
+        formatter: &mut Formatter<'_, '_>,
+    ) -> std::fmt::Result {
+        match self {
+            Self::Parameter(member_id) => {
+                member_id.fmt(engine, formatter).await
+            }
+
+            Self::Forall(forall) => {
+                let forall_number = formatter.forall_lifetime_names(forall);
+                write!(formatter, "'∀{forall_number}")
+            }
+
+            Self::Static => write!(formatter, "'static"),
+
+            Self::Inference(inference) => {
+                let Some(rendering) = formatter
+                    .configuration()
+                    .lifetime_inferences()
+                    .and_then(|m| m.get(inference))
+                else {
+                    return Ok(());
+                };
+
+                match rendering {
+                    InferenceRendering::Recurse(lifetime) => {
+                        Box::pin(lifetime.fmt(engine, formatter)).await
+                    }
+                    InferenceRendering::Rendered(rendered) => {
+                        write!(formatter, "{}", rendered.as_ref())
+                    }
+                }
+            }
+
+            Self::Elided(_) | Self::Error(_) | Self::Erased => Ok(()),
+        }
     }
 }
 

@@ -6,6 +6,7 @@ use enum_as_inner::EnumAsInner;
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
 pub mod constant;
+pub mod display;
 pub mod error;
 pub mod folding;
 pub mod generic_arguments;

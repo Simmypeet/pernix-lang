@@ -1,7 +1,13 @@
 //! Data definitions for generic arguments and symbol applications.
 
+use std::fmt::Write as _;
+
 use derive_new::new;
 use pernixc_qbice::TrackedEngine;
+use pernixc_symbol::{
+    name::{get_name, get_qualified_name},
+    parent::get_parent_global,
+};
 use pernixc_target::Global;
 use qbice::{
     Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
@@ -10,6 +16,7 @@ use qbice::{
 use crate::{
     TermRef,
     constant::Constant,
+    display::{Display, DisplaySymbolWithGenericArguments, Formatter},
     folding::{
         Abort, Foldable, FoldableAsync, Folder, FolderAsync, fold_interned,
         fold_term_slice, fold_term_slice_async,
@@ -998,6 +1005,131 @@ impl FoldableAsync for AssociatedSymbol {
         engine: &TrackedEngine,
     ) -> Result<(), Abort> {
         fold_associated_symbol_payload_async(self, folder, engine).await
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GenericKind {
+    Lifetime,
+    Type,
+    Constant,
+    Instance,
+}
+
+impl Display for GenericArguments {
+    async fn fmt(
+        &self,
+        engine: &TrackedEngine,
+        formatter: &mut Formatter<'_, '_>,
+    ) -> std::fmt::Result {
+        if !formatter.configuration().generic_arguments_will_be_displayed(self)
+        {
+            return Ok(());
+        }
+
+        let last_is = if !self.instances().is_empty() {
+            GenericKind::Instance
+        } else if !self.constants().is_empty() {
+            GenericKind::Constant
+        } else if !self.types().is_empty() {
+            GenericKind::Type
+        } else if self.lifetimes().iter().any(|lifetime| {
+            formatter.configuration().lifetime_will_be_displayed(lifetime)
+        }) {
+            GenericKind::Lifetime
+        } else {
+            unreachable!()
+        };
+
+        write!(formatter, "[")?;
+
+        let lifetimes = self
+            .lifetimes()
+            .iter()
+            .filter(|lifetime| {
+                formatter.configuration().lifetime_will_be_displayed(lifetime)
+            })
+            .collect::<Vec<_>>();
+
+        for (index, lifetime) in lifetimes.iter().enumerate() {
+            lifetime.fmt(engine, formatter).await?;
+
+            if index + 1 != lifetimes.len() || last_is != GenericKind::Lifetime
+            {
+                write!(formatter, ", ")?;
+            }
+        }
+
+        for (index, r#type) in self.types().iter().enumerate() {
+            r#type.fmt(engine, formatter).await?;
+
+            if index + 1 != self.types().len() || last_is != GenericKind::Type {
+                write!(formatter, ", ")?;
+            }
+        }
+
+        for (index, constant) in self.constants().iter().enumerate() {
+            constant.fmt(engine, formatter).await?;
+
+            if index + 1 != self.constants().len()
+                || last_is != GenericKind::Constant
+            {
+                write!(formatter, ", ")?;
+            }
+        }
+
+        for (index, instance) in self.instances().iter().enumerate() {
+            Box::pin(instance.fmt(engine, formatter)).await?;
+
+            if index + 1 != self.instances().len()
+                || last_is != GenericKind::Instance
+            {
+                write!(formatter, ", ")?;
+            }
+        }
+
+        write!(formatter, "]")
+    }
+}
+
+impl Display for Symbol {
+    async fn fmt(
+        &self,
+        engine: &TrackedEngine,
+        formatter: &mut Formatter<'_, '_>,
+    ) -> std::fmt::Result {
+        DisplaySymbolWithGenericArguments::new(
+            self.id(),
+            self.generic_arguments().as_ref(),
+        )
+        .fmt(engine, formatter)
+        .await
+    }
+}
+
+impl Display for AssociatedSymbol {
+    async fn fmt(
+        &self,
+        engine: &TrackedEngine,
+        formatter: &mut Formatter<'_, '_>,
+    ) -> std::fmt::Result {
+        let parent_id = engine.get_parent_global(self.id()).await.unwrap();
+
+        if formatter.configuration().short_qualified_identifiers() {
+            let parent_name = engine.get_name(parent_id).await;
+            write!(formatter, "{}", &*parent_name)?;
+        } else {
+            let parent_qualified_name =
+                engine.get_qualified_name(parent_id).await;
+            write!(formatter, "{parent_qualified_name}")?;
+        }
+
+        self.parent_generic_arguments().fmt(engine, formatter).await?;
+
+        let name = engine.get_name(self.id()).await;
+        write!(formatter, ".{}", &*name)?;
+
+        self.member_generic_arguments().fmt(engine, formatter).await
     }
 }
 

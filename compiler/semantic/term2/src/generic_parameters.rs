@@ -1,6 +1,6 @@
 //! Data definitions for generic parameters.
 
-use std::{collections::hash_map::Entry, ops::Index};
+use std::{collections::hash_map::Entry, fmt::Write as _, ops::Index};
 
 use derive_new::new;
 use getset::Getters;
@@ -10,7 +10,7 @@ use pernixc_arena::Arena;
 use pernixc_extend::extend;
 use pernixc_hash::FxHashMap;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_qbice::Interner;
+use pernixc_qbice::{Interner, TrackedEngine};
 use pernixc_symbol::MemberID;
 use pernixc_target::Global;
 use qbice::{
@@ -19,6 +19,7 @@ use qbice::{
 
 use crate::{
     constant::Constant,
+    display::{Display, Formatter},
     generic_arguments::GenericArguments,
     instance::{Instance, TraitRef},
     lifetime::Lifetime,
@@ -605,6 +606,40 @@ impl GenericParameters {
                 })
                 .collect(),
         ))
+    }
+}
+
+impl Display for LifetimeParameterID {
+    async fn fmt(
+        &self,
+        engine: &TrackedEngine,
+        formatter: &mut Formatter<'_, '_>,
+    ) -> std::fmt::Result {
+        let generic_parameters =
+            engine.get_generic_parameters(self.parent_id()).await;
+
+        write!(
+            formatter,
+            "'{}",
+            &**generic_parameters.get_lifetime_parameter(self.id()).name()
+        )
+    }
+}
+
+impl Display for InstanceParameterID {
+    async fn fmt(
+        &self,
+        engine: &TrackedEngine,
+        formatter: &mut Formatter<'_, '_>,
+    ) -> std::fmt::Result {
+        let generic_parameters =
+            engine.get_generic_parameters(self.parent_id()).await;
+
+        write!(
+            formatter,
+            "{}",
+            &**generic_parameters.get_instance_parameter(self.id()).name()
+        )
     }
 }
 

@@ -1,5 +1,7 @@
 //! Data definitions for where-clause predicates.
 
+use std::fmt::Write as _;
+
 mod compatible;
 mod constant_type;
 mod instance_associated_type_equality;
@@ -13,12 +15,18 @@ use enum_as_inner::EnumAsInner;
 pub use instance_associated_type_equality::InstanceAssociatedTypeEquality;
 pub use marker::{Negative as NegativeMarker, Positive as PositiveMarker};
 pub use outlives::Outlives;
+use pernixc_qbice::TrackedEngine;
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 pub use tuple::Tuple;
 
 use crate::{
-    TermRef, generic_arguments::GenericArguments, instance, lifetime::Lifetime,
-    sub_term::IterSubTerms, r#type::Type,
+    TermRef,
+    display::{Display, DisplaySymbolWithGenericArguments, Formatter},
+    generic_arguments::GenericArguments,
+    instance,
+    lifetime::Lifetime,
+    sub_term::IterSubTerms,
+    r#type::Type,
 };
 
 pub(crate) fn term_ref_contains_error(term_ref: TermRef<'_>) -> bool {
@@ -127,6 +135,110 @@ impl Predicate {
             Self::InstanceAssociatedTypeEquality(equality) => {
                 instance_associated_contains_error(equality.lhs())
                     || term_ref_contains_error(equality.rhs().into())
+            }
+        }
+    }
+}
+
+impl<T: Display, U: Display> Display for Compatible<T, U> {
+    async fn fmt(
+        &self,
+        engine: &TrackedEngine,
+        formatter: &mut Formatter<'_, '_>,
+    ) -> std::fmt::Result {
+        self.lhs().fmt(engine, formatter).await?;
+        formatter.write_str(" = ")?;
+        self.rhs().fmt(engine, formatter).await
+    }
+}
+
+impl Display for ConstantType {
+    async fn fmt(
+        &self,
+        engine: &TrackedEngine,
+        formatter: &mut Formatter<'_, '_>,
+    ) -> std::fmt::Result {
+        self.r#type().fmt(engine, formatter).await?;
+        write!(formatter, ": const")
+    }
+}
+
+impl<T: Display> Display for Outlives<T> {
+    async fn fmt(
+        &self,
+        engine: &TrackedEngine,
+        formatter: &mut Formatter<'_, '_>,
+    ) -> std::fmt::Result {
+        self.operand().fmt(engine, formatter).await?;
+        write!(formatter, ": ")?;
+        self.bound().fmt(engine, formatter).await
+    }
+}
+
+impl<T: Display> Display for Tuple<T> {
+    async fn fmt(
+        &self,
+        engine: &TrackedEngine,
+        formatter: &mut Formatter<'_, '_>,
+    ) -> std::fmt::Result {
+        self.term().fmt(engine, formatter).await?;
+        write!(formatter, ": tuple")
+    }
+}
+
+impl Display for PositiveMarker {
+    async fn fmt(
+        &self,
+        engine: &TrackedEngine,
+        formatter: &mut Formatter<'_, '_>,
+    ) -> std::fmt::Result {
+        write!(formatter, "marker ")?;
+        DisplaySymbolWithGenericArguments::new(
+            self.marker_id(),
+            self.generic_arguments().as_ref(),
+        )
+        .fmt(engine, formatter)
+        .await
+    }
+}
+
+impl Display for NegativeMarker {
+    async fn fmt(
+        &self,
+        engine: &TrackedEngine,
+        formatter: &mut Formatter<'_, '_>,
+    ) -> std::fmt::Result {
+        write!(formatter, "not marker ")?;
+        DisplaySymbolWithGenericArguments::new(
+            self.marker_id(),
+            self.generic_arguments().as_ref(),
+        )
+        .fmt(engine, formatter)
+        .await
+    }
+}
+
+impl Display for Predicate {
+    async fn fmt(
+        &self,
+        engine: &TrackedEngine,
+        formatter: &mut Formatter<'_, '_>,
+    ) -> std::fmt::Result {
+        match self {
+            Self::ConstantType(constant_type) => {
+                constant_type.fmt(engine, formatter).await
+            }
+            Self::LifetimeOutlives(outlives) => {
+                outlives.fmt(engine, formatter).await
+            }
+            Self::TypeOutlives(outlives) => {
+                outlives.fmt(engine, formatter).await
+            }
+            Self::TupleType(tuple) => tuple.fmt(engine, formatter).await,
+            Self::PositiveMarker(marker) => marker.fmt(engine, formatter).await,
+            Self::NegativeMarker(marker) => marker.fmt(engine, formatter).await,
+            Self::InstanceAssociatedTypeEquality(eq) => {
+                eq.fmt(engine, formatter).await
             }
         }
     }

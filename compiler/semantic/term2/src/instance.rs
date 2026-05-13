@@ -1,8 +1,11 @@
 //! Data definitions for instance terms.
 
+use std::fmt::Write as _;
+
 use derive_new::new;
 use enum_as_inner::EnumAsInner;
 use pernixc_qbice::TrackedEngine;
+use pernixc_symbol::name::get_name;
 use pernixc_target::Global;
 use qbice::{
     Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
@@ -11,6 +14,10 @@ use qbice::{
 use crate::{
     TermRef,
     constant::Constant,
+    display::{
+        Display, DisplaySymbolWithGenericArguments, Formatter,
+        InferenceRendering,
+    },
     error::Error,
     folding::{
         Abort, Foldable, FoldableAsync, Folder, FolderAsync, finish_fold_async,
@@ -1100,6 +1107,85 @@ impl FoldableAsync for Interned<Instance> {
         fold_instance_payload_async(&mut rebuilt_value, folder, engine).await?;
 
         finish_fold_async!(self, rebuilt_value, folder, engine, fold_instance)
+    }
+}
+
+impl Display for TraitRef {
+    async fn fmt(
+        &self,
+        engine: &TrackedEngine,
+        formatter: &mut Formatter<'_, '_>,
+    ) -> std::fmt::Result {
+        DisplaySymbolWithGenericArguments::new(
+            self.trait_id(),
+            self.generic_arguments().as_ref(),
+        )
+        .fmt(engine, formatter)
+        .await
+    }
+}
+
+impl Display for InstanceAssociated {
+    async fn fmt(
+        &self,
+        engine: &TrackedEngine,
+        formatter: &mut Formatter<'_, '_>,
+    ) -> std::fmt::Result {
+        Box::pin(self.instance().fmt(engine, formatter)).await?;
+        write!(formatter, ".")?;
+
+        let name = engine.get_name(self.trait_associated_symbol_id()).await;
+        write!(formatter, "{}", &*name)?;
+
+        Box::pin(
+            self.associated_instance_generic_arguments().fmt(engine, formatter),
+        )
+        .await
+    }
+}
+
+impl Display for Instance {
+    async fn fmt(
+        &self,
+        engine: &TrackedEngine,
+        formatter: &mut Formatter<'_, '_>,
+    ) -> std::fmt::Result {
+        match self {
+            Self::Symbol(symbol) => {
+                Box::pin(symbol.fmt(engine, formatter)).await
+            }
+
+            Self::Parameter(parameter_id) => {
+                parameter_id.fmt(engine, formatter).await
+            }
+
+            Self::InstanceAssociated(instance_associated) => {
+                Box::pin(instance_associated.fmt(engine, formatter)).await
+            }
+
+            Self::Inference(variable) => {
+                let Some(rendering) = formatter
+                    .configuration()
+                    .instance_inferences()
+                    .and_then(|m| m.get(variable))
+                else {
+                    return write!(formatter, "_");
+                };
+
+                match rendering {
+                    InferenceRendering::Recurse(instance) => {
+                        Box::pin(instance.fmt(engine, formatter)).await
+                    }
+                    InferenceRendering::Rendered(rendered) => {
+                        write!(formatter, "{}", rendered.as_ref())
+                    }
+                }
+            }
+
+            Self::AnonymousTrait(_) => write!(formatter, "this"),
+
+            Self::Error(_) => write!(formatter, "{{error}}"),
+        }
     }
 }
 
