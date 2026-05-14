@@ -35,12 +35,15 @@ pub enum Type {
 impl Type {
     pub async fn kind(&self, ctx: &impl TyContext) -> kind::TyKind {
         match self {
-            Self::GenericParameter(member_id) => {
-                ctx.get_generic_parameter(*member_id).await.kind()
-            }
+            Self::GenericParameter(member_id) => ctx
+                .get_symbol_generic_parameters(member_id.parent_id())
+                .await[member_id.id()]
+            .kind(),
+
             Self::InferenceVariable(inference_variable) => {
                 ctx.get_inference_variable_kind(*inference_variable).await
             }
+
             Self::Application(application) => application.kind(ctx).await,
         }
     }

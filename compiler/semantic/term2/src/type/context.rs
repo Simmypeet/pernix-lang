@@ -2,34 +2,32 @@ use pernixc_symbol::GlobalSymbolID;
 use qbice::storage::intern::Interned;
 
 use crate::{
-    generic_parameters::{GenericParameter, GenericParameterID},
+    generic_parameters::GenericParameters,
     r#type::{Type, inference::InferenceVariable, kind::TyKind},
 };
 
-#[trait_variant::make(Send)]
-pub trait SymbolContext {
-    async fn get_generic_parameter(
-        &self,
-        id: GenericParameterID,
-    ) -> &GenericParameter;
-
-    async fn get_instance_associated_type_kind(
+pub trait SymbolContext: Send + Sync {
+    fn get_instance_associated_type_kind(
         &self,
         instance_associated_symbol_id: GlobalSymbolID,
-    ) -> TyKind;
+    ) -> impl Future<Output = TyKind> + Send;
 
-    async fn get_instance_associated_type(
+    fn get_instance_associated_type(
         &self,
         instance_associated_symbol_id: GlobalSymbolID,
-    ) -> Option<Interned<Type>>;
+    ) -> impl Future<Output = Option<Interned<Type>>> + Send;
+
+    fn get_symbol_generic_parameters(
+        &self,
+        symbol_id: GlobalSymbolID,
+    ) -> impl Future<Output = Interned<GenericParameters>> + Send;
 }
 
-#[trait_variant::make(Send)]
-pub trait InferenceVariableContext {
-    async fn get_inference_variable_kind(
+pub trait InferenceVariableContext: Send + Sync {
+    fn get_inference_variable_kind(
         &self,
         inference_variable_id: InferenceVariable,
-    ) -> TyKind;
+    ) -> impl Future<Output = TyKind> + Send;
 }
 
 pub trait TyContext: InferenceVariableContext + SymbolContext {}

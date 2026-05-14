@@ -68,7 +68,9 @@ pub enum GenericParameterKind {
     Instance(InstanceParameterKind),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, derive_more::Index,
+)]
 pub struct GenericParameters {
     parameters: OrderedArena<GenericParameter>,
 }
