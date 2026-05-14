@@ -1,0 +1,216 @@
+use enum_as_inner::EnumAsInner;
+use pernixc_symbol::GlobalSymbolID;
+use qbice::{Decode, Encode, StableHash};
+
+/// Simple primitive types
+///
+/// Kind: Type
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    StableHash,
+    Encode,
+    Decode,
+    derive_more::Display,
+)]
+#[allow(missing_docs)]
+pub enum Primitive {
+    #[display("int8")]
+    Int8,
+    #[display("int16")]
+    Int16,
+    #[display("int32")]
+    Int32,
+    #[display("int64")]
+    Int64,
+    #[display("uint8")]
+    Uint8,
+    #[display("uint16")]
+    Uint16,
+    #[display("uint32")]
+    Uint32,
+    #[display("uint64")]
+    Uint64,
+    #[display("float32")]
+    Float32,
+    #[display("float64")]
+    Float64,
+    #[display("bool")]
+    Bool,
+    #[display("usize")]
+    Usize,
+    #[display("isize")]
+    Isize,
+}
+
+/// Represents a simple lifetime.
+///
+/// Kind: Lifetime
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+)]
+pub enum Lifetime {
+    Static,
+    Erased,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+)]
+pub enum Mutability {
+    Mutable,
+    Immutable,
+}
+
+/// Represents a reference type constructor, such as `&T` or `&mut T`.
+///
+/// Kind: (Lifetime, Type) -> Type
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+)]
+pub struct Reference {
+    mutability: Mutability,
+}
+
+/// Represents an algebraic data type (ADT) constructor, such as `Option` or
+/// `Result`.
+///
+/// Kind: ( <Adt's Generic Parameter Kinds> ) -> Type
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+)]
+pub struct Adt {
+    adt_symbol_id: GlobalSymbolID,
+}
+
+/// Represents an unpacked element in the tuple, such as (int32, ...T, float64).
+/// Where `...` represents the unpacking constructor, and `T` is the
+/// application of the unpacking constructor
+///
+/// Kind: Type -> Unpacked
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+)]
+pub struct Unpacked(());
+
+/// Represents a tuple type constructor, such as `(T1, T2, T3)`. Which can
+/// include `Unpacked` elements.
+///
+/// Kinds: ( (Type | Unpacked)* ) -> Type
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+)]
+pub struct Tuple(());
+
+/// Represents an associated member of an instance, such as an associated type
+/// or an associated instance.
+///
+/// Kind: ( Instance, <Associated's Generic Parameter Kinds> ) -> (Type |
+/// Instance)
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+)]
+pub struct InstanceAssociated {
+    instance_associated_symbol_id: GlobalSymbolID,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    StableHash,
+    Encode,
+    Decode,
+)]
+pub enum Constructor {
+    Primitive(Primitive),
+    Lifetime(Lifetime),
+    Reference(Reference),
+    Adt(Adt),
+    Unpacked(Unpacked),
+    Tuple(Tuple),
+    InstanceAssociated(InstanceAssociated),
+}
