@@ -10,6 +10,7 @@ use crate::r#type::{Type, kind::TyKind};
 
 mod destructure;
 mod instantiate;
+mod reduction;
 
 /// Simple primitive types
 ///
