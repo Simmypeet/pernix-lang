@@ -13,9 +13,9 @@ use qbice::{Decode, Encode, StableHash};
     Encode,
     Decode,
 )]
-pub enum TyKind {
-    Type,
-    Lifetime,
-    Instance,
-    UnpackedTuple,
+pub struct InferenceVariable(u64);
+
+impl InferenceVariable {
+    #[must_use]
+    pub const fn new(id: u64) -> Self { Self(id) }
 }

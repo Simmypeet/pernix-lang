@@ -1,6 +1,8 @@
 use enum_as_inner::EnumAsInner;
 use pernixc_symbol::GlobalSymbolID;
-use qbice::{Decode, Encode, StableHash};
+use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
+
+use crate::r#type::{Type, context::TyContext, kind::TyKind};
 
 /// Simple primitive types
 ///
@@ -213,4 +215,43 @@ pub enum Constructor {
     Unpacked(Unpacked),
     Tuple(Tuple),
     InstanceAssociated(InstanceAssociated),
+}
+
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+)]
+pub struct Application {
+    constructor: Constructor,
+    arguments: Interned<[Interned<Type>]>,
+}
+
+impl Application {
+    pub async fn kind(&self, ctx: &impl TyContext) -> TyKind {
+        match self.constructor {
+            Constructor::Tuple(_)
+            | Constructor::Adt(_)
+            | Constructor::Primitive(_)
+            | Constructor::Reference(_) => TyKind::Type,
+
+            Constructor::Lifetime(_) => TyKind::Lifetime,
+
+            Constructor::Unpacked(_) => TyKind::UnpackedTuple,
+
+            Constructor::InstanceAssociated(inst) => {
+                ctx.get_instance_associated_type_kind(
+                    inst.instance_associated_symbol_id,
+                )
+                .await
+            }
+        }
+    }
 }
