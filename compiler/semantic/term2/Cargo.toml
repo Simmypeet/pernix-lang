@@ -18,6 +18,7 @@ qbice.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true
+pernixc_target = { path = "../../base/target" }
 
 [lints]
 workspace = true

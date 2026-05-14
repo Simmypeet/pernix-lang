@@ -1,5 +1,7 @@
 use pernixc_arena::{ID, OrderedArena};
 use pernixc_lexical::tree::RelativeSpan;
+#[cfg(test)]
+use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::{GlobalSymbolID, MemberID};
 use qbice::{
     Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned,
@@ -118,6 +120,24 @@ impl GenericParameters {
         &self,
     ) -> impl Iterator<Item = (ID<GenericParameter>, &GenericParameter)> {
         self.parameters.iter()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_kinds(
+        kinds: impl IntoIterator<Item = GenericParameterKind>,
+        engine: &TrackedEngine,
+    ) -> Self {
+        let mut parameters = OrderedArena::new();
+
+        for (index, kind) in kinds.into_iter().enumerate() {
+            parameters.insert(GenericParameter {
+                name: engine.intern_unsized(format!("T{index}")),
+                span: None,
+                kind,
+            });
+        }
+
+        Self { parameters }
     }
 }
 

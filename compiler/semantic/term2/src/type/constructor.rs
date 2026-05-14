@@ -119,10 +119,10 @@ pub struct Reference {
     mutability: Mutability,
 }
 
-/// Represents an algebraic data type (ADT) constructor, such as `Option` or
-/// `Result`.
+/// Represents a symbolic type constructor, supplying generic arguments to a
+/// symbol, such as `Option<T>` or `SomeInstance<X, Y, Z>`.
 ///
-/// Kind: ( <Adt's Generic Parameter Kinds> ) -> Type
+/// Kind: ( <Symbol's Generic Parameter Kinds> ) -> (Type | Instance)
 #[derive(
     Debug,
     Clone,
@@ -136,8 +136,8 @@ pub struct Reference {
     Encode,
     Decode,
 )]
-pub struct Adt {
-    adt_symbol_id: GlobalSymbolID,
+pub struct Symbolic {
+    symbolic_id: GlobalSymbolID,
 }
 
 /// Represents a tuple type constructor, such as `(T1, T2, T3)`. Which can
@@ -179,6 +179,9 @@ impl Tuple {
 /// Represents an associated member of an instance, such as an associated type
 /// or an associated instance.
 ///
+/// The first argument is always the instance, and the remaining arguments are
+/// the generic arguments supplied to the associated member.
+///
 /// Kind: ( Instance, <Associated's Generic Parameter Kinds> ) -> (Type |
 /// Instance)
 #[derive(
@@ -195,7 +198,7 @@ impl Tuple {
     Decode,
 )]
 pub struct InstanceAssociated {
-    instance_associated_symbol_id: GlobalSymbolID,
+    trait_associated_id: GlobalSymbolID,
 }
 
 #[derive(
@@ -215,7 +218,7 @@ pub enum Constructor {
     Primitive(Primitive),
     Lifetime(Lifetime),
     Reference(Reference),
-    Adt(Adt),
+    Symbolic(Symbolic),
     Tuple(Tuple),
     InstanceAssociated(InstanceAssociated),
 }
@@ -241,15 +244,27 @@ impl Application {
     pub async fn kind(&self, engine: &TrackedEngine) -> TyKind {
         match self.constructor {
             Constructor::Tuple(_)
-            | Constructor::Adt(_)
             | Constructor::Primitive(_)
             | Constructor::Reference(_) => TyKind::Type,
+
+            Constructor::Symbolic(symbol) => {
+                let kind = engine.get_kind(symbol.symbolic_id).await;
+
+                match kind {
+                    Kind::Struct | Kind::Enum => TyKind::Type,
+                    Kind::Instance => TyKind::Instance,
+
+                    _ => panic!(
+                        "Expected an ADT, primitive, or trait, but got a \
+                         different kind"
+                    ),
+                }
+            }
 
             Constructor::Lifetime(_) => TyKind::Lifetime,
 
             Constructor::InstanceAssociated(inst) => {
-                let kind =
-                    engine.get_kind(inst.instance_associated_symbol_id).await;
+                let kind = engine.get_kind(inst.trait_associated_id).await;
 
                 match kind {
                     Kind::InstanceAssociatedType => TyKind::Type,
