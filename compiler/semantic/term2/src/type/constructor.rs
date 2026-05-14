@@ -5,6 +5,7 @@ use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use crate::r#type::{Type, context::TyContext, kind::TyKind};
 
 mod destructure;
+mod instantiate;
 
 /// Simple primitive types
 ///
