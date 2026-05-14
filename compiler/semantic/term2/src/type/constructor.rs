@@ -139,26 +139,6 @@ pub struct Adt {
     adt_symbol_id: GlobalSymbolID,
 }
 
-/// Represents an unpacked element in the tuple, such as (int32, ...T, float64).
-/// Where `...` represents the unpacking constructor, and `T` is the
-/// application of the unpacking constructor
-///
-/// Kind: Type -> Unpacked
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    StableHash,
-    Encode,
-    Decode,
-)]
-pub struct Unpacked(());
-
 /// Represents a tuple type constructor, such as `(T1, T2, T3)`. Which can
 /// include `Unpacked` elements.
 ///
