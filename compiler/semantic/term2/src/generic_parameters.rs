@@ -75,4 +75,14 @@ pub struct GenericParameters {
     parameters: OrderedArena<GenericParameter>,
 }
 
+impl GenericParameters {
+    pub fn len(&self) -> usize { self.parameters.len() }
+
+    pub fn iter(
+        &self,
+    ) -> impl Iterator<Item = (ID<GenericParameter>, &GenericParameter)> {
+        self.parameters.iter()
+    }
+}
+
 pub type GenericParameterID = MemberID<ID<GenericParameter>>;
