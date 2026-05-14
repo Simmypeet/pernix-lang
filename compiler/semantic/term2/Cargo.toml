@@ -16,5 +16,8 @@ enum-as-inner.workspace = true
 derive_more.workspace = true
 qbice.workspace = true
 
+[dev-dependencies]
+tokio.workspace = true
+
 [lints]
 workspace = true

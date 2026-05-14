@@ -1,4 +1,4 @@
-use pernixc_qbice::Interner;
+use pernixc_qbice::TrackedEngine;
 use qbice::storage::intern::Interned;
 
 use super::{Application, Constructor, Tuple, TupleShape};
@@ -10,12 +10,12 @@ type RegularDestructure<'a> = std::iter::Zip<
 >;
 
 #[derive(Debug)]
-enum Destructure<'a, I: Interner + ?Sized> {
+enum Destructure<'a> {
     Regular(RegularDestructure<'a>),
-    OneSidedTuple(OneSidedTupleDestructure<'a, I>),
+    OneSidedTuple(OneSidedTupleDestructure<'a>),
 }
 
-impl<I: Interner + ?Sized> Iterator for Destructure<'_, I> {
+impl Iterator for Destructure<'_> {
     type Item = (Interned<Type>, Interned<Type>);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -42,20 +42,20 @@ enum OneSidedTupleState {
 }
 
 #[derive(Debug)]
-struct OneSidedTupleDestructure<'a, I: Interner + ?Sized> {
+struct OneSidedTupleDestructure<'a> {
     from_arguments: &'a [Interned<Type>],
     to_arguments: &'a [Interned<Type>],
     unpacked_position: usize,
     to_unpack_range: std::ops::Range<usize>,
     to_unpacked_position: Option<usize>,
-    interner: &'a I,
+    engine: &'a TrackedEngine,
     swap: bool,
     next_head_index: usize,
     next_tail_offset: usize,
     state: OneSidedTupleState,
 }
 
-impl<I: Interner + ?Sized> OneSidedTupleDestructure<'_, I> {
+impl OneSidedTupleDestructure<'_> {
     const fn tail_len(&self) -> usize {
         self.from_arguments.len() - self.unpacked_position - 1
     }
@@ -77,7 +77,7 @@ impl<I: Interner + ?Sized> OneSidedTupleDestructure<'_, I> {
     }
 }
 
-impl<I: Interner + ?Sized> Iterator for OneSidedTupleDestructure<'_, I> {
+impl Iterator for OneSidedTupleDestructure<'_> {
     type Item = (Interned<Type>, Interned<Type>);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -106,7 +106,7 @@ impl<I: Interner + ?Sized> Iterator for OneSidedTupleDestructure<'_, I> {
                         self.to_arguments,
                         self.to_unpack_range.clone(),
                         self.to_unpacked_position,
-                        self.interner,
+                        self.engine,
                     ),
                     self.swap,
                 ))
@@ -140,10 +140,10 @@ impl<I: Interner + ?Sized> Iterator for OneSidedTupleDestructure<'_, I> {
 }
 
 impl Application {
-    pub fn destructure<'a, I: Interner + ?Sized>(
+    pub fn destructure<'a>(
         &'a self,
         other: &'a Self,
-        interner: &'a I,
+        engine: &'a TrackedEngine,
     ) -> Option<impl Iterator<Item = (Interned<Type>, Interned<Type>)> + 'a>
     {
         if let (Constructor::Tuple(lhs), Constructor::Tuple(rhs)) =
@@ -154,7 +154,7 @@ impl Application {
                 &self.arguments,
                 rhs,
                 &other.arguments,
-                interner,
+                engine,
             )
         } else if self.constructor == other.constructor {
             Self::destructure_regular(&self.arguments, &other.arguments)
@@ -172,13 +172,13 @@ impl Application {
             .then(|| lhs.iter().cloned().zip(rhs.iter().cloned()))
     }
 
-    fn destructure_tuples<'a, I: Interner + ?Sized>(
+    fn destructure_tuples<'a>(
         lhs_tuple: &Tuple,
         lhs_arguments: &'a [Interned<Type>],
         rhs_tuple: &Tuple,
         rhs_arguments: &'a [Interned<Type>],
-        interner: &'a I,
-    ) -> Option<Destructure<'a, I>> {
+        engine: &'a TrackedEngine,
+    ) -> Option<Destructure<'a>> {
         let lhs_shape = lhs_tuple.shape()?;
         let rhs_shape = rhs_tuple.shape()?;
 
@@ -203,7 +203,7 @@ impl Application {
                     position,
                     rhs_arguments,
                     rhs_shape,
-                    interner,
+                    engine,
                     false,
                 )
                 .map(Destructure::OneSidedTuple)
@@ -214,7 +214,7 @@ impl Application {
                     position,
                     lhs_arguments,
                     lhs_shape,
-                    interner,
+                    engine,
                     true,
                 )
                 .map(Destructure::OneSidedTuple)
@@ -222,14 +222,14 @@ impl Application {
         }
     }
 
-    fn destructure_one_sided_tuple<'a, I: Interner + ?Sized>(
+    fn destructure_one_sided_tuple<'a>(
         from_arguments: &'a [Interned<Type>],
         unpacked_position: usize,
         to_arguments: &'a [Interned<Type>],
         to_shape: TupleShape,
-        interner: &'a I,
+        engine: &'a TrackedEngine,
         swap: bool,
-    ) -> Option<OneSidedTupleDestructure<'a, I>> {
+    ) -> Option<OneSidedTupleDestructure<'a>> {
         if from_arguments.len() > to_arguments.len() + 1 {
             return None;
         }
@@ -257,7 +257,7 @@ impl Application {
             unpacked_position,
             to_unpack_range,
             to_unpacked_position,
-            interner,
+            engine,
             swap,
             next_head_index: 0,
             next_tail_offset: 0,
@@ -269,18 +269,18 @@ impl Application {
         arguments: &[Interned<Type>],
         range: std::ops::Range<usize>,
         unpacked_position: Option<usize>,
-        interner: &(impl Interner + ?Sized),
+        engine: &TrackedEngine,
     ) -> Interned<Type> {
         let unpacked_positions = match unpacked_position {
             Some(position) if range.contains(&position) => {
-                interner.intern_unsized(vec![position - range.start])
+                engine.intern_unsized(vec![position - range.start])
             }
-            Some(_) | None => interner.intern_unsized(Vec::<usize>::new()),
+            Some(_) | None => engine.intern_unsized(Vec::<usize>::new()),
         };
 
-        interner.intern(Type::Application(Self {
+        engine.intern(Type::Application(Self {
             constructor: Constructor::Tuple(Tuple { unpacked_positions }),
-            arguments: interner.intern_unsized(arguments[range].to_vec()),
+            arguments: engine.intern_unsized(arguments[range].to_vec()),
         }))
     }
 

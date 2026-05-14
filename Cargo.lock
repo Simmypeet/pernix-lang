@@ -2085,6 +2085,7 @@ dependencies = [
  "pernixc_qbice",
  "pernixc_symbol",
  "qbice",
+ "tokio",
  "trait-variant",
 ]
 
