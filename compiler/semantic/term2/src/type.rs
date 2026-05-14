@@ -1,7 +1,8 @@
+use pernixc_qbice::TrackedEngine;
 use qbice::{Decode, Encode, Identifiable, StableHash};
 
 use crate::{
-    generic_parameters::GenericParameterID,
+    generic_parameters::{GenericParameterID, get_generic_parameters},
     r#type::{
         constructor::Application, context::TyContext,
         inference::InferenceVariable,
@@ -33,10 +34,14 @@ pub enum Type {
 }
 
 impl Type {
-    pub async fn kind(&self, ctx: &impl TyContext) -> kind::TyKind {
+    pub async fn kind(
+        &self,
+        engine: &TrackedEngine,
+        ctx: &impl TyContext,
+    ) -> kind::TyKind {
         match self {
-            Self::GenericParameter(member_id) => ctx
-                .get_symbol_generic_parameters(member_id.parent_id())
+            Self::GenericParameter(member_id) => engine
+                .get_generic_parameters(member_id.parent_id())
                 .await[member_id.id()]
             .kind(),
 
@@ -44,7 +49,7 @@ impl Type {
                 ctx.get_inference_variable_kind(*inference_variable).await
             }
 
-            Self::Application(application) => application.kind(ctx).await,
+            Self::Application(application) => application.kind(engine).await,
         }
     }
 }

@@ -1,9 +1,33 @@
 use pernixc_arena::{ID, OrderedArena};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_symbol::MemberID;
-use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
+use pernixc_symbol::{GlobalSymbolID, MemberID};
+use qbice::{
+    Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned,
+};
 
 use crate::{symbol::Symbol, r#type::kind::TyKind};
+
+/// Key for querying generic parameters for a given global symbol ID.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Query,
+)]
+#[value(Interned<GenericParameters>)]
+#[extend(name = get_generic_parameters, by_val)]
+pub struct Key {
+    /// The global symbol ID to get the generic parameters for.
+    pub symbol_id: GlobalSymbolID,
+}
 
 #[derive(
     Debug,
@@ -69,14 +93,26 @@ pub enum GenericParameterKind {
 }
 
 #[derive(
-    Debug, Clone, PartialEq, Eq, StableHash, Encode, Decode, derive_more::Index,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    StableHash,
+    Identifiable,
+    Encode,
+    Decode,
+    derive_more::Index,
 )]
 pub struct GenericParameters {
     parameters: OrderedArena<GenericParameter>,
 }
 
 impl GenericParameters {
+    #[must_use]
     pub fn len(&self) -> usize { self.parameters.len() }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool { self.parameters.is_empty() }
 
     pub fn iter(
         &self,

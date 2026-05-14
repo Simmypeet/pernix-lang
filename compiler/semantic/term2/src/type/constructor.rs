@@ -1,8 +1,12 @@
 use enum_as_inner::EnumAsInner;
-use pernixc_symbol::GlobalSymbolID;
+use pernixc_qbice::TrackedEngine;
+use pernixc_symbol::{
+    GlobalSymbolID,
+    kind::{Kind, get_kind},
+};
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
-use crate::r#type::{Type, context::TyContext, kind::TyKind};
+use crate::r#type::{Type, kind::TyKind};
 
 mod destructure;
 mod instantiate;
@@ -253,7 +257,7 @@ pub struct Application {
 }
 
 impl Application {
-    pub async fn kind(&self, ctx: &impl TyContext) -> TyKind {
+    pub async fn kind(&self, engine: &TrackedEngine) -> TyKind {
         match self.constructor {
             Constructor::Tuple(_)
             | Constructor::Adt(_)
@@ -263,10 +267,18 @@ impl Application {
             Constructor::Lifetime(_) => TyKind::Lifetime,
 
             Constructor::InstanceAssociated(inst) => {
-                ctx.get_instance_associated_type_kind(
-                    inst.instance_associated_symbol_id,
-                )
-                .await
+                let kind =
+                    engine.get_kind(inst.instance_associated_symbol_id).await;
+
+                match kind {
+                    Kind::InstanceAssociatedType => TyKind::Type,
+                    Kind::InstanceAssociatedInstance => TyKind::Instance,
+
+                    _ => panic!(
+                        "Expected an instance associated type or instance, \
+                         but got a different kind"
+                    ),
+                }
             }
         }
     }

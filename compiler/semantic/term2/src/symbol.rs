@@ -1,10 +1,11 @@
+use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::GlobalSymbolID;
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
 use crate::{
-    generic_parameters::GenericParameterID,
+    generic_parameters::{GenericParameterID, get_generic_parameters},
     instantiation::Instantiation,
-    r#type::{Type, context::SymbolContext},
+    r#type::Type,
 };
 
 #[derive(
@@ -27,10 +28,10 @@ pub struct Symbol {
 impl Symbol {
     pub async fn create_instantiation(
         &self,
-        symbol_context: &impl SymbolContext,
+        engine: &TrackedEngine,
     ) -> Instantiation {
         let generic_params =
-            symbol_context.get_symbol_generic_parameters(self.symbol_id).await;
+            engine.get_generic_parameters(self.symbol_id).await;
 
         assert!(generic_params.len() == self.generic_arguments.len());
 
