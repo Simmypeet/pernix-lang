@@ -155,11 +155,10 @@ pub struct Unpacked(());
 /// Represents a tuple type constructor, such as `(T1, T2, T3)`. Which can
 /// include `Unpacked` elements.
 ///
-/// Kinds: ( (Type | Unpacked)* ) -> Type
+/// Kinds: ( Type* ) -> Type
 #[derive(
     Debug,
     Clone,
-    Copy,
     PartialEq,
     Eq,
     PartialOrd,
@@ -169,7 +168,9 @@ pub struct Unpacked(());
     Encode,
     Decode,
 )]
-pub struct Tuple(());
+pub struct Tuple {
+    unpacked_positions: Interned<[usize]>,
+}
 
 /// Represents an associated member of an instance, such as an associated type
 /// or an associated instance.
@@ -196,7 +197,6 @@ pub struct InstanceAssociated {
 #[derive(
     Debug,
     Clone,
-    Copy,
     PartialEq,
     Eq,
     PartialOrd,
@@ -212,7 +212,6 @@ pub enum Constructor {
     Lifetime(Lifetime),
     Reference(Reference),
     Adt(Adt),
-    Unpacked(Unpacked),
     Tuple(Tuple),
     InstanceAssociated(InstanceAssociated),
 }
@@ -243,8 +242,6 @@ impl Application {
             | Constructor::Reference(_) => TyKind::Type,
 
             Constructor::Lifetime(_) => TyKind::Lifetime,
-
-            Constructor::Unpacked(_) => TyKind::UnpackedTuple,
 
             Constructor::InstanceAssociated(inst) => {
                 ctx.get_instance_associated_type_kind(

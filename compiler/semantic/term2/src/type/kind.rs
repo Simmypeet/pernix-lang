@@ -17,5 +17,4 @@ pub enum TyKind {
     Type,
     Lifetime,
     Instance,
-    UnpackedTuple,
 }
