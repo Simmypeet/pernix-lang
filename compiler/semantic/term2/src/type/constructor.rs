@@ -201,6 +201,42 @@ pub struct InstanceAssociated {
     trait_associated_id: GlobalSymbolID,
 }
 
+/// Refers to an instance that is coupled with a trait when user writes
+/// `this.Associated` syntax.
+///
+/// For example, consider the following program:
+///
+/// ```pnx
+/// public trait MyTrait:
+///   public type Assoc
+///
+///   public function a(a: this.Assoc)
+/// ```
+///
+/// The type `this.Assoc` declared under `MyTrait` would be represented as an
+/// instance associated type where the instance is `AnonymousTraitInstance
+/// {MyTrait}`.
+///
+/// The `AnonymousTraitInstance` can only appear under the trait declaration.
+///
+/// Kind: Instance
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+)]
+pub struct AnonymousTraitInstance {
+    trait_id: GlobalSymbolID,
+}
+
 #[derive(
     Debug,
     Clone,
@@ -220,6 +256,7 @@ pub enum Constructor {
     Reference(Reference),
     Symbolic(Symbolic),
     Tuple(Tuple),
+    AnonymousTraitInstance(AnonymousTraitInstance),
     InstanceAssociated(InstanceAssociated),
 }
 
@@ -262,6 +299,8 @@ impl Application {
             }
 
             Constructor::Lifetime(_) => TyKind::Lifetime,
+
+            Constructor::AnonymousTraitInstance(_) => TyKind::Instance,
 
             Constructor::InstanceAssociated(inst) => {
                 let kind = engine.get_kind(inst.trait_associated_id).await;

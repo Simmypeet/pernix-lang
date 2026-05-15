@@ -14,6 +14,10 @@ pub mod context;
 pub mod inference;
 pub mod kind;
 
+/// The main representation of types in the compiler.
+///
+/// The representation is highly homogeneous, making easy to manipulate and
+/// reason about them.
 #[derive(
     Debug,
     Clone,

@@ -20,6 +20,7 @@ impl Application {
             Constructor::Symbolic(_)
             | Constructor::Primitive(_)
             | Constructor::Lifetime(_)
+            | Constructor::AnonymousTraitInstance(_)
             | Constructor::Reference(_) => None,
 
             Constructor::Tuple(tuple) => {
