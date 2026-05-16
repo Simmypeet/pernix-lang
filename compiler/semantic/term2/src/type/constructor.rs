@@ -6,7 +6,7 @@ use pernixc_symbol::{
 };
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
-use crate::r#type::{Type, kind::TyKind};
+use crate::r#type::{Type, bound::Binder, kind::TyKind};
 
 mod destructure;
 mod instantiate;
@@ -245,6 +245,22 @@ pub struct AnonymousTraitInstance {
     PartialOrd,
     Ord,
     Hash,
+    StableHash,
+    Encode,
+    Decode,
+)]
+pub struct FunctionPointer {
+    binder: Binder,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
     EnumAsInner,
     StableHash,
     Encode,
@@ -256,6 +272,7 @@ pub enum Constructor {
     Reference(Reference),
     Symbolic(Symbolic),
     Tuple(Tuple),
+    FunctionPointer(FunctionPointer),
     AnonymousTraitInstance(AnonymousTraitInstance),
     InstanceAssociated(InstanceAssociated),
 }
@@ -282,6 +299,7 @@ impl Application {
         match self.constructor {
             Constructor::Tuple(_)
             | Constructor::Primitive(_)
+            | Constructor::FunctionPointer(_)
             | Constructor::Reference(_) => TyKind::Type,
 
             Constructor::Symbolic(symbol) => {

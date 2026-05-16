@@ -1,7 +1,4 @@
-use std::{
-    future::{Future, ready},
-    sync::Arc,
-};
+use std::sync::Arc;
 
 use pernixc_arena::ID;
 use pernixc_qbice::{Config, Engine, InMemoryFactory, TrackedEngine};
@@ -21,7 +18,9 @@ use crate::{
     instance_associated,
     r#type::{
         Type,
+        bound::BoundVar,
         constructor::{Primitive, Tuple},
+        inference::InferenceVariable,
         kind::TyKind,
     },
 };
@@ -46,11 +45,15 @@ const INSTANCE_ASSOC_NON_TYPE_KIND_SYMBOL_ID: GlobalSymbolID =
     TargetID::TEST.make_global(SymbolID::from_u128(14));
 
 impl crate::r#type::context::InferenceVariableContext for TestTyContext {
-    fn get_inference_variable_kind(
+    async fn get_inference_variable_kind(
         &self,
-        _: crate::r#type::inference::InferenceVariable,
-    ) -> impl Future<Output = TyKind> + Send {
-        ready(TyKind::Type)
+        _: InferenceVariable,
+    ) -> TyKind {
+        TyKind::Type
+    }
+
+    async fn get_bound_var_kind(&self, _: &BoundVar) -> TyKind {
+        unreachable!()
     }
 }
 

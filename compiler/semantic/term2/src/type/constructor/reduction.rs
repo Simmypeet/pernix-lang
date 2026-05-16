@@ -21,6 +21,7 @@ impl Application {
             | Constructor::Primitive(_)
             | Constructor::Lifetime(_)
             | Constructor::AnonymousTraitInstance(_)
+            | Constructor::FunctionPointer(_)
             | Constructor::Reference(_) => None,
 
             Constructor::Tuple(tuple) => {

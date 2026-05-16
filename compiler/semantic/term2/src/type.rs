@@ -4,11 +4,12 @@ use qbice::{Decode, Encode, Identifiable, StableHash};
 use crate::{
     generic_parameters::{GenericParameterID, get_generic_parameters},
     r#type::{
-        constructor::Application, context::TyContext,
+        bound::BoundVar, constructor::Application, context::TyContext,
         inference::InferenceVariable,
     },
 };
 
+pub mod bound;
 pub mod constructor;
 pub mod context;
 pub mod inference;
@@ -34,6 +35,7 @@ pub mod kind;
 pub enum Type {
     GenericParameter(GenericParameterID),
     InferenceVariable(InferenceVariable),
+    BoundVar(BoundVar),
     Application(Application),
 }
 
@@ -54,6 +56,10 @@ impl Type {
             }
 
             Self::Application(application) => application.kind(engine).await,
+
+            Self::BoundVar(bound_var) => {
+                ctx.get_bound_var_kind(bound_var).await
+            }
         }
     }
 }

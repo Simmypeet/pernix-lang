@@ -58,7 +58,7 @@ impl Instantiation {
                 })
             }
 
-            Type::InferenceVariable(_) => None,
+            Type::BoundVar(_) | Type::InferenceVariable(_) => None,
         }
     }
 
