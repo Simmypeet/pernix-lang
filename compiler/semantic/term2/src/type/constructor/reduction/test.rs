@@ -18,10 +18,11 @@ use crate::{
     instance_associated,
     r#type::{
         Type,
-        bound::BoundVar,
+        bound::BoundVariable,
         constructor::{Primitive, Tuple},
         inference::InferenceVariable,
         kind::TyKind,
+        skolem::SkolemizedVariable,
     },
 };
 
@@ -47,12 +48,19 @@ const INSTANCE_ASSOC_NON_TYPE_KIND_SYMBOL_ID: GlobalSymbolID =
 impl crate::r#type::context::InferenceVariableContext for TestTyContext {
     async fn get_inference_variable_kind(
         &self,
-        _: InferenceVariable,
+        _: &InferenceVariable,
     ) -> TyKind {
         TyKind::Type
     }
 
-    async fn get_bound_var_kind(&self, _: &BoundVar) -> TyKind {
+    async fn get_bound_variable_kind(&self, _: &BoundVariable) -> TyKind {
+        unreachable!()
+    }
+
+    async fn get_skolemized_variable_kind(
+        &self,
+        _: &SkolemizedVariable,
+    ) -> TyKind {
         unreachable!()
     }
 }

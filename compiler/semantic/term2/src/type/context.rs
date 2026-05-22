@@ -1,16 +1,22 @@
 use crate::r#type::{
-    bound::BoundVar, inference::InferenceVariable, kind::TyKind,
+    bound::BoundVariable, inference::InferenceVariable, kind::TyKind,
+    skolem::SkolemizedVariable,
 };
 
 pub trait InferenceVariableContext: Send + Sync {
     fn get_inference_variable_kind(
         &self,
-        inference_variable_id: InferenceVariable,
+        inference_variable_id: &InferenceVariable,
     ) -> impl Future<Output = TyKind> + Send;
 
-    fn get_bound_var_kind(
+    fn get_bound_variable_kind(
         &self,
-        bound_var: &BoundVar,
+        bound_var: &BoundVariable,
+    ) -> impl Future<Output = TyKind> + Send;
+
+    fn get_skolemized_variable_kind(
+        &self,
+        skolemized_var: &SkolemizedVariable,
     ) -> impl Future<Output = TyKind> + Send;
 }
 

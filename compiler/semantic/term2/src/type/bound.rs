@@ -31,7 +31,7 @@ pub struct Binder {
     Encode,
     Decode,
 )]
-pub struct BoundVar {
+pub struct BoundVariable {
     depth: usize,
     index: usize,
 }

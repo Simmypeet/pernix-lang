@@ -58,7 +58,9 @@ impl Instantiation {
                 })
             }
 
-            Type::BoundVar(_) | Type::InferenceVariable(_) => None,
+            Type::SkolemizedVariable(_)
+            | Type::BoundVariable(_)
+            | Type::InferenceVariable(_) => None,
         }
     }
 

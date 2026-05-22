@@ -4,8 +4,8 @@ use qbice::{Decode, Encode, Identifiable, StableHash};
 use crate::{
     generic_parameters::{GenericParameterID, get_generic_parameters},
     r#type::{
-        bound::BoundVar, constructor::Application, context::TyContext,
-        inference::InferenceVariable,
+        bound::BoundVariable, constructor::Application, context::TyContext,
+        inference::InferenceVariable, skolem::SkolemizedVariable,
     },
 };
 
@@ -14,6 +14,7 @@ pub mod constructor;
 pub mod context;
 pub mod inference;
 pub mod kind;
+pub mod skolem;
 
 /// The main representation of types in the compiler.
 ///
@@ -35,7 +36,8 @@ pub mod kind;
 pub enum Type {
     GenericParameter(GenericParameterID),
     InferenceVariable(InferenceVariable),
-    BoundVar(BoundVar),
+    BoundVariable(BoundVariable),
+    SkolemizedVariable(SkolemizedVariable),
     Application(Application),
 }
 
@@ -52,13 +54,17 @@ impl Type {
             .kind(),
 
             Self::InferenceVariable(inference_variable) => {
-                ctx.get_inference_variable_kind(*inference_variable).await
+                ctx.get_inference_variable_kind(inference_variable).await
             }
 
             Self::Application(application) => application.kind(engine).await,
 
-            Self::BoundVar(bound_var) => {
-                ctx.get_bound_var_kind(bound_var).await
+            Self::BoundVariable(bound_var) => {
+                ctx.get_bound_variable_kind(bound_var).await
+            }
+
+            Self::SkolemizedVariable(skolemized_var) => {
+                ctx.get_skolemized_variable_kind(skolemized_var).await
             }
         }
     }
