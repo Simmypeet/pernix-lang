@@ -7,10 +7,7 @@ use std::{
 
 use pernixc_hash::FxHashMap;
 use pernixc_qbice::TrackedEngine;
-use pernixc_type::r#type::{
-    Type, constructor::Application, context::TyContext,
-    inference::InferenceVariable, kind::TyKind,
-};
+use pernixc_type::r#type::{Type, constructor::Application, kind::TyKind};
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
 use crate::{premise::Premise, solver::variable_info::VariableInfos};
@@ -210,28 +207,6 @@ impl Solver<'_> {
                 .max()
                 .unwrap_or(UniverseIndex::root()),
         }
-    }
-
-    /// Checks whether the `inference_variable` can be mapped to the `mapped`
-    /// type in the substitution, by performing kind check and universe check.
-    pub async fn map_check(
-        &self,
-        inference_variable: &InferenceVariable,
-        mapped: &Type,
-    ) -> bool {
-        // perform kind check
-        if self.get_inference_variable_kind(inference_variable)
-            != mapped.kind(self.engine(), self).await
-        {
-            return false;
-        }
-
-        // perform universe check
-        let inference_variable_universe =
-            self.get_inference_variable_universe(inference_variable);
-        let mapped_universe = self.max_universe_index(mapped);
-
-        inference_variable_universe.0 <= mapped_universe.0
     }
 }
 
