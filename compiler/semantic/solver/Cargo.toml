@@ -9,6 +9,11 @@ rust-version.workspace = true
 [dependencies]
 pernixc_qbice.path = "../../base/qbice"
 pernixc_type.path = "../type"
+pernixc_symbol.path = "../symbol"
+pernixc_hash.path = "../../base/hash"
+enum-as-inner.workspace = true
+qbice.workspace = true
+thiserror.workspace = true
 
 [lints]
 workspace = true
