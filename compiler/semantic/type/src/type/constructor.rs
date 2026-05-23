@@ -295,6 +295,11 @@ pub struct Application {
 }
 
 impl Application {
+    #[must_use]
+    pub fn arguments(&self) -> impl ExactSizeIterator<Item = &Interned<Type>> {
+        self.arguments.iter()
+    }
+
     pub async fn kind(&self, engine: &TrackedEngine) -> TyKind {
         match self.constructor {
             Constructor::Tuple(_)

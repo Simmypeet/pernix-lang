@@ -54,17 +54,17 @@ impl Type {
             .kind(),
 
             Self::InferenceVariable(inference_variable) => {
-                ctx.get_inference_variable_kind(inference_variable).await
+                ctx.get_inference_variable_kind(inference_variable)
             }
 
             Self::Application(application) => application.kind(engine).await,
 
             Self::BoundVariable(bound_var) => {
-                ctx.get_bound_variable_kind(bound_var).await
+                ctx.get_bound_variable_kind(bound_var)
             }
 
             Self::SkolemizedVariable(skolemized_var) => {
-                ctx.get_skolemized_variable_kind(skolemized_var).await
+                ctx.get_skolemized_variable_kind(skolemized_var)
             }
         }
     }

@@ -45,22 +45,16 @@ const INSTANCE_ASSOC_MIXED_SYMBOL_ID: GlobalSymbolID =
 const INSTANCE_ASSOC_NON_TYPE_KIND_SYMBOL_ID: GlobalSymbolID =
     TargetID::TEST.make_global(SymbolID::from_u128(14));
 
-impl crate::r#type::context::InferenceVariableContext for TestTyContext {
-    async fn get_inference_variable_kind(
-        &self,
-        _: &InferenceVariable,
-    ) -> TyKind {
+impl crate::r#type::context::TyContext for TestTyContext {
+    fn get_inference_variable_kind(&self, _: &InferenceVariable) -> TyKind {
         TyKind::Type
     }
 
-    async fn get_bound_variable_kind(&self, _: &BoundVariable) -> TyKind {
+    fn get_bound_variable_kind(&self, _: &BoundVariable) -> TyKind {
         unreachable!()
     }
 
-    async fn get_skolemized_variable_kind(
-        &self,
-        _: &SkolemizedVariable,
-    ) -> TyKind {
+    fn get_skolemized_variable_kind(&self, _: &SkolemizedVariable) -> TyKind {
         unreachable!()
     }
 }

@@ -1,16 +1,21 @@
 use std::{
     any::Any,
     borrow::Cow,
-    cmp::Ordering,
     hash::{Hash, Hasher},
     sync::Arc,
 };
 
 use pernixc_hash::FxHashMap;
 use pernixc_qbice::TrackedEngine;
-use qbice::{Decode, Encode, StableHash};
+use pernixc_type::r#type::{
+    Type, constructor::Application, context::TyContext,
+    inference::InferenceVariable, kind::TyKind,
+};
+use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
-use crate::premise::Premise;
+use crate::{premise::Premise, solver::variable_info::VariableInfos};
+
+pub mod variable_info;
 
 /// A trait for identifying type's equality dynamically.
 #[allow(missing_docs)]
@@ -20,10 +25,9 @@ pub trait DynIdent: Any + Send + Sync + 'static {
 
     fn dyn_eq(&self, other: &dyn DynIdent) -> bool;
     fn dyn_hash(&self, state: &mut dyn Hasher);
-    fn dyn_ord(&self, other: &dyn DynIdent) -> Ordering;
 }
 
-impl<T: Any + Send + Sync + Eq + Hash + Ord> DynIdent for T {
+impl<T: Any + Send + Sync + Eq + Hash> DynIdent for T {
     fn as_any(&self) -> &dyn Any { self }
 
     fn as_any_mut(&mut self) -> &mut dyn Any { self }
@@ -33,13 +37,6 @@ impl<T: Any + Send + Sync + Eq + Hash + Ord> DynIdent for T {
     }
 
     fn dyn_hash(&self, mut state: &mut dyn Hasher) { self.hash(&mut state); }
-
-    fn dyn_ord(&self, other: &dyn DynIdent) -> Ordering {
-        other
-            .as_any()
-            .downcast_ref::<T>()
-            .map_or(Ordering::Less, |other| self.cmp(other))
-    }
 }
 
 impl PartialEq for dyn DynIdent {
@@ -50,16 +47,6 @@ impl Eq for dyn DynIdent {}
 
 impl Hash for dyn DynIdent {
     fn hash<H: Hasher>(&self, state: &mut H) { self.dyn_hash(state); }
-}
-
-impl PartialOrd for dyn DynIdent {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for dyn DynIdent {
-    fn cmp(&self, other: &Self) -> Ordering { self.dyn_ord(other) }
 }
 
 /// An error that occurs when the number of queries exceeds the limit.
@@ -83,6 +70,17 @@ impl Ord for dyn DynIdent {
 )]
 pub struct OverflowError(());
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UniverseIndex(usize);
+
+impl UniverseIndex {
+    #[must_use]
+    pub const fn root() -> Self { Self(0) }
+
+    #[must_use]
+    pub const fn next(&self) -> Self { Self(self.0 + 1) }
+}
+
 pub struct Solver<'a> {
     premise: Cow<'a, Premise>,
     engine: Cow<'a, TrackedEngine>,
@@ -92,6 +90,9 @@ pub struct Solver<'a> {
 
     limit_step: usize,
     current_step: usize,
+
+    variable_infos: VariableInfos,
+    universe_index: UniverseIndex,
 
     unwinding: bool,
 }
@@ -117,8 +118,10 @@ impl<'a> Solver<'a> {
             map: FxHashMap::default(),
             call_stack: Vec::new(),
             limit_step: 69_420, // hehe
+            variable_infos: VariableInfos::default(),
             current_step: 0,
             unwinding: false,
+            universe_index: UniverseIndex::root(),
         }
     }
 }
@@ -139,6 +142,22 @@ pub trait Agree {
     fn agree(&self, other: &Self) -> bool;
 }
 
+impl<T: Agree> Agree for Box<T> {
+    fn agree(&self, other: &Self) -> bool {
+        self.as_ref().agree(other.as_ref())
+    }
+}
+
+impl<T: Agree> Agree for Option<T> {
+    fn agree(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Some(a), Some(b)) => a.agree(b),
+            (None, None) => true,
+            _ => false,
+        }
+    }
+}
+
 /// The main interface for the solver.
 pub trait Solve: Clone + Eq + Hash + DynIdent {
     type Result: Any + Send + Sync + Clone + Agree;
@@ -157,6 +176,81 @@ enum CurrentStatus<Q> {
 }
 
 impl Solver<'_> {
+    pub async fn new_universe<T>(
+        &mut self,
+        f: impl AsyncFnOnce(&mut Solver) -> T,
+    ) -> T {
+        let current = self.universe_index;
+        self.universe_index = current.next();
+
+        let x = f(self).await;
+
+        self.universe_index = current;
+
+        x
+    }
+
+    pub fn max_universe_index(&self, ty: &Type) -> UniverseIndex {
+        match ty {
+            Type::BoundVariable(_) | Type::GenericParameter(_) => {
+                UniverseIndex::root()
+            }
+
+            Type::InferenceVariable(inference_variable) => {
+                self.get_inference_variable_universe(inference_variable)
+            }
+
+            Type::SkolemizedVariable(skolemized_variable) => {
+                self.get_skolemized_variable_universe(skolemized_variable)
+            }
+
+            Type::Application(application) => application
+                .arguments()
+                .map(|x| self.max_universe_index(x))
+                .max()
+                .unwrap_or(UniverseIndex::root()),
+        }
+    }
+
+    /// Checks whether the `inference_variable` can be mapped to the `mapped`
+    /// type in the substitution, by performing kind check and universe check.
+    pub async fn map_check(
+        &self,
+        inference_variable: &InferenceVariable,
+        mapped: &Type,
+    ) -> bool {
+        // perform kind check
+        if self.get_inference_variable_kind(inference_variable)
+            != mapped.kind(self.engine(), self).await
+        {
+            return false;
+        }
+
+        // perform universe check
+        let inference_variable_universe =
+            self.get_inference_variable_universe(inference_variable);
+        let mapped_universe = self.max_universe_index(mapped);
+
+        inference_variable_universe.0 <= mapped_universe.0
+    }
+}
+
+impl Solver<'_> {
+    fn engine(&self) -> &TrackedEngine { &self.engine }
+
+    pub fn destructure<'s>(
+        &'s self,
+        left_ap: &'s Application,
+        right_ap: &'s Application,
+    ) -> Option<impl Iterator<Item = (Interned<Type>, Interned<Type>)> + 's>
+    {
+        left_ap.destructure(right_ap, self.engine())
+    }
+
+    pub async fn kind_of(&self, ty: &Type) -> TyKind {
+        ty.kind(self.engine(), self).await
+    }
+
     pub(crate) async fn solve<Q: Solve>(
         &mut self,
         query: &Q,

@@ -1,9 +1,10 @@
 use enum_as_inner::EnumAsInner;
-use qbice::{Decode, Encode, StableHash};
+use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
 use crate::{
     symbol::Symbol,
     r#type::{Type, bound::Binder},
+    variance::Variance,
 };
 
 /// A basic type equality predicate, can also be used for rewriting.
@@ -41,10 +42,17 @@ pub struct Equality {
 )]
 pub struct Outlives {
     /// Can either has a kind of lifetime or a kind of type.
-    operand: Type,
+    operand: Interned<Type>,
 
     /// Must always has a kind of lifetime.
-    bound: Type,
+    bound: Interned<Type>,
+}
+
+impl Outlives {
+    #[must_use]
+    pub const fn new(operand: Interned<Type>, bound: Interned<Type>) -> Self {
+        Self { operand, bound }
+    }
 }
 
 /// Requires the operand is a tuple type. The oeprand can only be a kind of
@@ -119,6 +127,7 @@ pub struct Marker {
 pub struct Subtype {
     less: Type,
     greater: Type,
+    variance: Variance,
 }
 
 #[derive(
