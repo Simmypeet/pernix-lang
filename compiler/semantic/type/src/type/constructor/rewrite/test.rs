@@ -10,7 +10,7 @@ use crate::{
     instantiation::Instantiation,
     r#type::{
         Type,
-        bound::Binder,
+        bound::{Binder, BoundVariable},
         constructor::{FunctionPointer, Primitive},
     },
 };
@@ -29,6 +29,14 @@ fn generic_parameter_type(
     interner.intern(Type::GenericParameter(id))
 }
 
+fn bound_variable_type(
+    depth: usize,
+    index: usize,
+    interner: &impl Interner,
+) -> Interned<Type> {
+    interner.intern(Type::BoundVariable(BoundVariable::new(depth, index)))
+}
+
 fn primitive_type(
     primitive: Primitive,
     interner: &impl Interner,
@@ -42,7 +50,7 @@ fn function_pointer_type(
 ) -> Interned<Type> {
     application_type(
         Constructor::FunctionPointer(FunctionPointer {
-            binder: Binder::new_for_test(Vec::new()),
+            binder: Binder::new(Vec::new()),
         }),
         arguments,
         interner,
@@ -66,6 +74,14 @@ fn as_application(ty: &Interned<Type>) -> &Application {
     };
 
     application
+}
+
+fn as_bound_variable(ty: &Interned<Type>) -> BoundVariable {
+    let Type::BoundVariable(variable) = ty.as_ref() else {
+        panic!("expected bound variable");
+    };
+
+    *variable
 }
 
 fn same_type_handle(lhs: &Interned<Type>, rhs: &Interned<Type>) -> bool {
@@ -222,4 +238,102 @@ fn binder_depth_tracks_function_pointer_nesting() {
         (inside_one, 1),
         (inside_two, 2),
     ]);
+}
+
+#[test]
+fn rewrite_bound_variables_respects_nested_binders() {
+    let interner = DuplicatingInterner;
+    let replacement_zero = primitive_type(Primitive::Bool, &interner);
+    let replacement_one = primitive_type(Primitive::Int16, &interner);
+    let nested_inner_bound = bound_variable_type(0, 0, &interner);
+    let nested_outer_bound = bound_variable_type(1, 0, &interner);
+    let nested_function_pointer = function_pointer_type(
+        &[nested_inner_bound.clone(), nested_outer_bound],
+        &interner,
+    );
+    let ty = application_type(
+        Constructor::Primitive(Primitive::Int32),
+        &[
+            bound_variable_type(0, 0, &interner),
+            nested_function_pointer,
+            bound_variable_type(0, 1, &interner),
+        ],
+        &interner,
+    );
+    let binder = Binder::new(vec![
+        crate::r#type::kind::TyKind::Type,
+        crate::r#type::kind::TyKind::Type,
+    ]);
+
+    let rewritten = binder.rewrite_bound_variables(
+        &ty,
+        &[replacement_zero.clone(), replacement_one.clone()],
+        &interner,
+    );
+
+    let rewritten_application = as_application(&rewritten);
+    assert!(same_type_handle(
+        &rewritten_application.arguments[0],
+        &replacement_zero
+    ));
+    assert!(same_type_handle(
+        &rewritten_application.arguments[2],
+        &replacement_one
+    ));
+
+    let rewritten_nested = as_application(&rewritten_application.arguments[1]);
+    assert!(same_type_handle(
+        &rewritten_nested.arguments[0],
+        &nested_inner_bound
+    ));
+    assert!(same_type_handle(
+        &rewritten_nested.arguments[1],
+        &replacement_zero
+    ));
+}
+
+#[test]
+fn rewrite_bound_variables_leaves_missing_replacement_unchanged() {
+    let interner = DuplicatingInterner;
+    let missing = bound_variable_type(0, 1, &interner);
+    let ty = application_type(
+        Constructor::Primitive(Primitive::Int32),
+        std::slice::from_ref(&missing),
+        &interner,
+    );
+
+    let rewritten =
+        crate::r#type::bound::rewrite_bound_variables(&ty, &[], &interner);
+
+    let rewritten_application = as_application(&rewritten);
+    assert!(same_type_handle(&rewritten_application.arguments[0], &missing));
+}
+
+#[test]
+fn rewrite_bound_variables_shifts_free_bound_variables_in_replacement() {
+    let interner = DuplicatingInterner;
+    let replacement = bound_variable_type(0, 7, &interner);
+    let nested_function_pointer = function_pointer_type(
+        &[bound_variable_type(1, 0, &interner)],
+        &interner,
+    );
+    let ty = application_type(
+        Constructor::Primitive(Primitive::Int32),
+        &[nested_function_pointer],
+        &interner,
+    );
+    let binder = Binder::new(vec![crate::r#type::kind::TyKind::Type]);
+
+    let rewritten = binder.rewrite_bound_variables(
+        &ty,
+        std::slice::from_ref(&replacement),
+        &interner,
+    );
+
+    let rewritten_application = as_application(&rewritten);
+    let rewritten_nested = as_application(&rewritten_application.arguments[0]);
+    let rewritten_variable = as_bound_variable(&rewritten_nested.arguments[0]);
+
+    assert_eq!(rewritten_variable.depth(), 1);
+    assert_eq!(rewritten_variable.index(), 7);
 }
