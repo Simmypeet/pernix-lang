@@ -11,6 +11,7 @@ use crate::r#type::{Type, bound::Binder, kind::TyKind};
 mod destructure;
 mod instantiate;
 mod reduction;
+pub mod rewrite;
 
 /// Simple primitive types
 ///

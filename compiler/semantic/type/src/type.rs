@@ -16,6 +16,8 @@ pub mod inference;
 pub mod kind;
 pub mod skolem;
 
+pub use constructor::rewrite;
+
 /// The main representation of types in the compiler.
 ///
 /// The representation is highly homogeneous, making easy to manipulate and

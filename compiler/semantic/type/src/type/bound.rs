@@ -18,6 +18,13 @@ pub struct Binder {
     bound_vars: Vec<TyKind>,
 }
 
+impl Binder {
+    #[cfg(test)]
+    pub(crate) const fn new_for_test(bound_vars: Vec<TyKind>) -> Self {
+        Self { bound_vars }
+    }
+}
+
 #[derive(
     Debug,
     Clone,
