@@ -19,3 +19,16 @@ impl Constraints {
         lifetime_eq
     }
 }
+
+impl Extend<Outlives> for Constraints {
+    fn extend<T: IntoIterator<Item = Outlives>>(&mut self, iter: T) {
+        self.0.extend(iter);
+    }
+}
+
+impl IntoIterator for Constraints {
+    type Item = Outlives;
+    type IntoIter = <FxHashSet<Outlives> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter { self.0.into_iter() }
+}

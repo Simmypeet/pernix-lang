@@ -1,3 +1,4 @@
+use enum_as_inner::EnumAsInner;
 use pernixc_qbice::TrackedEngine;
 use qbice::{Decode, Encode, Identifiable, StableHash};
 
@@ -34,6 +35,7 @@ pub use constructor::rewrite;
     Encode,
     Decode,
     Identifiable,
+    EnumAsInner,
 )]
 pub enum Type {
     GenericParameter(GenericParameterID),

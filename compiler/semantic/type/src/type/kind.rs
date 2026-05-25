@@ -1,3 +1,4 @@
+use enum_as_inner::EnumAsInner;
 use qbice::{Decode, Encode, StableHash};
 
 #[derive(
@@ -12,6 +13,7 @@ use qbice::{Decode, Encode, StableHash};
     StableHash,
     Encode,
     Decode,
+    EnumAsInner,
 )]
 pub enum TyKind {
     Type,

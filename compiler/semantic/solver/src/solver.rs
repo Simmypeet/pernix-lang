@@ -1,13 +1,15 @@
 use std::{
     any::Any,
-    borrow::Cow,
     hash::{Hash, Hasher},
     sync::Arc,
 };
 
 use pernixc_hash::FxHashMap;
 use pernixc_qbice::TrackedEngine;
-use pernixc_type::r#type::{Type, constructor::Application, kind::TyKind};
+use pernixc_type::{
+    substitution::Substitution,
+    r#type::{Type, constructor::Application, kind::TyKind},
+};
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
 use crate::{premise::Premise, solver::variable_info::VariableInfos};
@@ -79,8 +81,8 @@ impl UniverseIndex {
 }
 
 pub struct Solver<'a> {
-    premise: Cow<'a, Premise>,
-    engine: Cow<'a, TrackedEngine>,
+    premise: &'a Premise,
+    engine: &'a TrackedEngine,
 
     map: FxHashMap<Arc<dyn DynIdent>, Box<dyn Any + Send + Sync>>,
     call_stack: Vec<Call<Arc<dyn DynIdent>, Box<dyn Any + Send + Sync>>>,
@@ -105,10 +107,7 @@ impl std::fmt::Debug for Solver<'_> {
 
 impl<'a> Solver<'a> {
     #[must_use]
-    pub fn new(
-        premise: Cow<'a, Premise>,
-        engine: Cow<'a, TrackedEngine>,
-    ) -> Self {
+    pub fn new(premise: &'a Premise, engine: &'a TrackedEngine) -> Self {
         Self {
             premise,
             engine,
@@ -187,6 +186,7 @@ impl Solver<'_> {
         x
     }
 
+    #[must_use]
     pub fn max_universe_index(&self, ty: &Type) -> UniverseIndex {
         match ty {
             Type::BoundVariable(_) | Type::GenericParameter(_) => {
@@ -194,11 +194,11 @@ impl Solver<'_> {
             }
 
             Type::InferenceVariable(inference_variable) => {
-                self.get_inference_variable_universe(inference_variable)
+                self.get_inference_variable_universe(*inference_variable)
             }
 
             Type::SkolemizedVariable(skolemized_variable) => {
-                self.get_skolemized_variable_universe(skolemized_variable)
+                self.get_skolemized_variable_universe(*skolemized_variable)
             }
 
             Type::Application(application) => application
@@ -210,16 +210,27 @@ impl Solver<'_> {
     }
 }
 
-impl Solver<'_> {
-    fn engine(&self) -> &TrackedEngine { &self.engine }
+impl<'a> Solver<'a> {
+    #[must_use]
+    const fn engine(&self) -> &'a TrackedEngine { self.engine }
 
-    pub fn destructure<'s>(
-        &'s self,
-        left_ap: &'s Application,
-        right_ap: &'s Application,
-    ) -> Option<impl Iterator<Item = (Interned<Type>, Interned<Type>)> + 's>
+    #[must_use]
+    pub fn destructure(
+        &self,
+        left_ap: &'a Application,
+        right_ap: &'a Application,
+    ) -> Option<impl Iterator<Item = (Interned<Type>, Interned<Type>)> + 'a>
     {
         left_ap.destructure(right_ap, self.engine())
+    }
+
+    #[must_use]
+    pub fn apply(
+        &self,
+        subst: &Substitution,
+        ty: &Interned<Type>,
+    ) -> Interned<Type> {
+        subst.apply(ty, self.engine())
     }
 
     pub async fn kind_of(&self, ty: &Type) -> TyKind {

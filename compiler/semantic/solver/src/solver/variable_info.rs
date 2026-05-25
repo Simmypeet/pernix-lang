@@ -31,26 +31,28 @@ pub struct VariableInfos {
 }
 
 impl Solver<'_> {
-    pub fn get_inference_variable_universe(
+    #[must_use]
+    pub(crate) fn get_inference_variable_universe(
         &self,
-        inference_variable_id: &InferenceVariable,
+        inference_variable_id: InferenceVariable,
     ) -> UniverseIndex {
         self.variable_infos
             .inference_variables
             .infos
-            .get(inference_variable_id)
+            .get(&inference_variable_id)
             .map(|x| x.universe)
             .unwrap()
     }
 
-    pub fn get_skolemized_variable_universe(
+    #[must_use]
+    pub(crate) fn get_skolemized_variable_universe(
         &self,
-        skolemized_variable: &SkolemizedVariable,
+        skolemized_variable: SkolemizedVariable,
     ) -> UniverseIndex {
         self.variable_infos
             .skolemized_variables
             .infos
-            .get(skolemized_variable)
+            .get(&skolemized_variable)
             .map(|x| x.universe)
             .unwrap()
     }
