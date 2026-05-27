@@ -111,6 +111,18 @@ pub trait Substitutable {
     {
         self.apply(subst, interner).unwrap_or_else(|| self.clone())
     }
+
+    #[must_use]
+    fn apply_or_self(
+        self,
+        subst: &Substitution,
+        interner: &impl Interner,
+    ) -> Self
+    where
+        Self: Sized,
+    {
+        self.apply(subst, interner).unwrap_or(self)
+    }
 }
 
 impl Substitutable for Interned<Type> {
@@ -154,4 +166,12 @@ impl<
 
         None
     }
+}
+
+pub trait InPlaceSubstitutable {
+    fn apply_in_place(
+        &mut self,
+        subst: &Substitution,
+        interner: &impl Interner,
+    );
 }

@@ -24,10 +24,52 @@ struct FreshSkolemizedVariable {
     infos: FxHashMap<SkolemizedVariable, VariableInfo>,
 }
 
+impl Solver<'_> {
+    /// Creates a new skolemized variable with the given kind and assigns the
+    /// current active universe to it.
+    pub fn fresh_skolem_variable(
+        &mut self,
+        kind: TyKind,
+    ) -> SkolemizedVariable {
+        let id = SkolemizedVariable::new(
+            self.variable_infos.skolemized_variables.counter,
+        );
+
+        self.variable_infos.skolemized_variables.counter += 1;
+        self.variable_infos.skolemized_variables.infos.insert(
+            id,
+            VariableInfo { kind, universe: self.current_universe() },
+        );
+
+        id
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct VariableInfos {
     inference_variables: FreshInferenceVariable,
     skolemized_variables: FreshSkolemizedVariable,
+}
+
+impl Solver<'_> {
+    /// Creates a new inference variable with the given kind and assigns the
+    /// current active universe to it.
+    pub fn fresh_inference_variable(
+        &mut self,
+        kind: TyKind,
+    ) -> InferenceVariable {
+        let id = InferenceVariable::new(
+            self.variable_infos.inference_variables.counter,
+        );
+
+        self.variable_infos.inference_variables.counter += 1;
+        self.variable_infos.inference_variables.infos.insert(
+            id,
+            VariableInfo { kind, universe: self.current_universe() },
+        );
+
+        id
+    }
 }
 
 impl Solver<'_> {

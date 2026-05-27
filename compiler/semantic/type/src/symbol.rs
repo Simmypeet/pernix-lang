@@ -70,3 +70,13 @@ impl Symbol {
     Decode,
 )]
 pub struct TraitRef(Symbol);
+
+impl Substitutable for TraitRef {
+    fn apply(
+        &self,
+        subst: &Substitution,
+        interner: &impl pernixc_qbice::Interner,
+    ) -> Option<Self> {
+        self.0.apply(subst, interner).map(TraitRef)
+    }
+}

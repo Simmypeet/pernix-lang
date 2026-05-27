@@ -7,13 +7,27 @@ use std::{
 use pernixc_hash::FxHashMap;
 use pernixc_qbice::TrackedEngine;
 use pernixc_type::{
-    substitution::Substitution,
-    r#type::{Type, constructor::Application, kind::TyKind},
+    predicate::Predicate,
+    substitution::{Substitutable, Substitution},
+    r#type::{
+        Type, bound::rewrite_bound_variables, constructor::Application,
+        context::TyContext, inference::InferenceVariable, kind::TyKind,
+    },
 };
-use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
+use qbice::{
+    Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
+};
 
-use crate::{premise::Premise, solver::variable_info::VariableInfos};
+use crate::{
+    constraints::Constraints,
+    premise::Premise,
+    solver::{
+        universe::{Universe, UniverseIndex},
+        variable_info::VariableInfos,
+    },
+};
 
+pub mod universe;
 pub mod variable_info;
 
 /// A trait for identifying type's equality dynamically.
@@ -69,17 +83,6 @@ impl Hash for dyn DynIdent {
 )]
 pub struct OverflowError(());
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct UniverseIndex(usize);
-
-impl UniverseIndex {
-    #[must_use]
-    pub const fn root() -> Self { Self(0) }
-
-    #[must_use]
-    pub const fn next(&self) -> Self { Self(self.0 + 1) }
-}
-
 pub struct Solver<'a> {
     premise: &'a Premise,
     engine: &'a TrackedEngine,
@@ -91,7 +94,7 @@ pub struct Solver<'a> {
     current_step: usize,
 
     variable_infos: VariableInfos,
-    universe_index: UniverseIndex,
+    universe: Universe,
 
     unwinding: bool,
 }
@@ -117,7 +120,7 @@ impl<'a> Solver<'a> {
             variable_infos: VariableInfos::default(),
             current_step: 0,
             unwinding: false,
-            universe_index: UniverseIndex::root(),
+            universe: Universe::default(),
         }
     }
 }
@@ -138,7 +141,27 @@ pub trait Agree {
     fn agree(&self, other: &Self) -> bool;
 }
 
+impl Agree for Type {
+    fn agree(&self, other: &Self) -> bool { self == other }
+}
+
+impl Agree for Constraints {
+    fn agree(&self, other: &Self) -> bool { self == other }
+}
+
+impl<T: Agree, U: Agree> Agree for (T, U) {
+    fn agree(&self, other: &Self) -> bool {
+        self.0.agree(&other.0) && self.1.agree(&other.1)
+    }
+}
+
 impl<T: Agree> Agree for Box<T> {
+    fn agree(&self, other: &Self) -> bool {
+        self.as_ref().agree(other.as_ref())
+    }
+}
+
+impl<T: Agree> Agree for Interned<T> {
     fn agree(&self, other: &Self) -> bool {
         self.as_ref().agree(other.as_ref())
     }
@@ -171,19 +194,30 @@ enum CurrentStatus<Q> {
     NonStarted,
 }
 
+pub type BoundInstantiation = Vec<Interned<Type>>;
+
 impl Solver<'_> {
-    pub async fn new_universe<T>(
+    /// Creates a fresh inference variables for each kind in `kinds`, and
+    /// returns an array of all the created inference variables.
+    pub fn instaitate_inference_variables(
         &mut self,
-        f: impl AsyncFnOnce(&mut Solver) -> T,
-    ) -> T {
-        let current = self.universe_index;
-        self.universe_index = current.next();
+        kinds: impl Iterator<Item = TyKind>,
+    ) -> BoundInstantiation {
+        kinds
+            .map(|kind| {
+                let var = self.fresh_inference_variable(kind);
+                self.intern(Type::InferenceVariable(var))
+            })
+            .collect()
+    }
 
-        let x = f(self).await;
-
-        self.universe_index = current;
-
-        x
+    #[must_use]
+    pub fn replace_bound_variables_with(
+        &self,
+        ty: &Interned<Type>,
+        instantiations: &[Interned<Type>],
+    ) -> Interned<Type> {
+        rewrite_bound_variables(ty, instantiations, self.engine())
     }
 
     #[must_use]
@@ -224,17 +258,67 @@ impl<'a> Solver<'a> {
         left_ap.destructure(right_ap, self.engine())
     }
 
+    pub fn premise_predicates(
+        &self,
+    ) -> impl Iterator<Item = &'a Predicate> + 'a {
+        self.premise.iter()
+    }
+
+    pub async fn reduce_step(
+        &mut self,
+        ap: &Application,
+    ) -> Option<Interned<Type>> {
+        ap.reduce(self.engine).await
+    }
+
     #[must_use]
-    pub fn apply(
+    pub fn apply_or_clone<T: Substitutable + Clone>(
         &self,
         subst: &Substitution,
-        ty: &Interned<Type>,
-    ) -> Interned<Type> {
-        subst.apply(ty, self.engine())
+        ty: &T,
+    ) -> T {
+        ty.apply_or_clone(subst, self.engine())
+    }
+
+    pub fn apply_or_self<T: Substitutable>(
+        &self,
+        subst: &Substitution,
+        ty: T,
+    ) -> T {
+        ty.apply_or_self(subst, self.engine())
     }
 
     pub async fn kind_of(&self, ty: &Type) -> TyKind {
         ty.kind(self.engine(), self).await
+    }
+
+    pub fn intern<T>(&self, value: T) -> Interned<T>
+    where
+        T: StableHash + Identifiable + Send + Sync + 'static,
+    {
+        self.engine().intern(value)
+    }
+
+    pub async fn map_variable(
+        &mut self,
+        inference_variable: InferenceVariable,
+        ty: Interned<Type>,
+    ) -> Option<Substitution> {
+        let var_kind = self.get_inference_variable_kind(&inference_variable);
+        let subject_kind = self.kind_of(&ty).await;
+
+        if var_kind != subject_kind {
+            return None;
+        }
+
+        let var_uni = self.get_inference_variable_universe(inference_variable);
+        let subject_uni = self.max_universe_index(&ty);
+
+        if var_uni < subject_uni {
+            return None;
+        }
+
+        Some(Substitution::singleton(inference_variable, ty))
     }
 
     pub(crate) async fn solve<Q: Solve>(
@@ -253,6 +337,11 @@ impl<'a> Solver<'a> {
 
         match result {
             Ok(mut result) => {
+                /// Immediately `OverflowError` if we have to run to fixpoint
+                /// for too many times, to avoid infinite loop in pathological
+                /// cases.
+                const FIXED_POINT_COUNT: usize = 16;
+
                 assert!(
                     !self.unwinding,
                     "invalid state: should never return Ok on your own after \
@@ -268,7 +357,14 @@ impl<'a> Solver<'a> {
                 // the provisional results in the cycle are consistent with each
                 // other.
                 if is_cyclic_root {
+                    let mut count = FIXED_POINT_COUNT;
+
                     loop {
+                        if count == 0 {
+                            self.unwinding = true;
+                            return Err(self.handle_overflow(OverflowError(())));
+                        }
+
                         let provisional = self
                             .call_stack
                             .last_mut()
@@ -286,7 +382,9 @@ impl<'a> Solver<'a> {
                         result = match query.solve(self).await {
                             Ok(res) => res,
                             Err(err) => return Err(self.handle_overflow(err)),
-                        }
+                        };
+
+                        count -= 1;
                     }
                 }
 

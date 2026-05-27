@@ -90,6 +90,13 @@ pub struct Outlives {
     bound: Interned<Type>,
 }
 
+impl Outlives {
+    #[must_use]
+    pub const fn new(operand: Interned<Type>, bound: Interned<Type>) -> Self {
+        Self { operand, bound }
+    }
+}
+
 impl Substitutable for Outlives {
     fn apply(
         &self,
@@ -262,4 +269,25 @@ pub enum Predicate {
     Tuple(Tuple),
     Marker(Marker),
     Equality(Equality),
+}
+
+impl Substitutable for Predicate {
+    fn apply(
+        &self,
+        subst: &Substitution,
+        interner: &impl Interner,
+    ) -> Option<Self> {
+        match self {
+            Self::Outlives(outlives) => {
+                outlives.apply(subst, interner).map(Self::Outlives)
+            }
+            Self::Tuple(tuple) => tuple.apply(subst, interner).map(Self::Tuple),
+            Self::Marker(marker) => {
+                marker.apply(subst, interner).map(Self::Marker)
+            }
+            Self::Equality(equality) => {
+                equality.apply(subst, interner).map(Self::Equality)
+            }
+        }
+    }
 }

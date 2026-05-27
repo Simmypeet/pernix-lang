@@ -21,3 +21,9 @@ pub struct Premise {
     predicates: BTreeSet<Predicate>,
     query_site: GlobalSymbolID,
 }
+
+impl Premise {
+    pub fn iter(&self) -> impl Iterator<Item = &Predicate> {
+        self.predicates.iter()
+    }
+}

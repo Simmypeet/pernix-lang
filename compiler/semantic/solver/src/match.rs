@@ -24,22 +24,8 @@ impl Solver<'_> {
             (Type::InferenceVariable(infer_var), x)
                 if !x.is_bound_variable() =>
             {
-                let var_kind = self.kind_of(head).await;
-                let subject_kind = self.kind_of(subject).await;
-
-                if var_kind != subject_kind {
-                    return None;
-                }
-
-                let var_uni = self.max_universe_index(head);
-                let subject_uni = self.max_universe_index(subject);
-
-                if var_uni < subject_uni {
-                    return None;
-                }
-
                 Some((
-                    Substitution::singleton(*infer_var, subject.clone()),
+                    self.map_variable(*infer_var, subject.clone()).await?,
                     Constraints::default(),
                 ))
             }
@@ -52,8 +38,9 @@ impl Solver<'_> {
 
                 Box::pin(async move {
                     for (head_ty, subject_ty) in iter {
-                        let head_ty = self.apply(&subst, &head_ty);
-                        let subject_ty = self.apply(&subst, &subject_ty);
+                        let head_ty = self.apply_or_clone(&subst, &head_ty);
+                        let subject_ty =
+                            self.apply_or_clone(&subst, &subject_ty);
 
                         let (new_subst, new_constraints) =
                             self.match_types(&head_ty, &subject_ty).await?;
@@ -62,6 +49,7 @@ impl Solver<'_> {
                         constraint.extend(new_constraints);
                     }
 
+                    constraint = self.apply_or_self(&subst, constraint);
                     Some((subst, constraint))
                 })
                 .await
