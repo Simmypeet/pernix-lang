@@ -6,7 +6,7 @@ use qbice::storage::intern::Interned;
 
 use crate::{
     constraints::Constraints,
-    solver::{OverflowError, Solve, Solver},
+    solver::{OverflowError, Provisional, Solve, Solver},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -49,7 +49,9 @@ impl Solve for Reduction {
             .await
     }
 
-    fn provisional_result(&self) -> Self::Result { None }
+    fn provisional_result(&self) -> Provisional<Self::Result> {
+        Provisional::Bail
+    }
 }
 
 async fn rewrite_step(
@@ -121,7 +123,7 @@ async fn try_match_eq(
     let (subst, constrs) = solver.match_types(&instantiated_lhs, ty).await?;
 
     let instantiated_rhs =
-        solver.replace_bound_variables_with(ty, &fresh_instantiation);
+        solver.replace_bound_variables_with(eq.right(), &fresh_instantiation);
 
     Some((solver.apply_or_self(&subst, instantiated_rhs), constrs))
 }
@@ -145,3 +147,6 @@ async fn rewrite_from_eq(
 
     Ok(None)
 }
+
+#[cfg(test)]
+mod test;

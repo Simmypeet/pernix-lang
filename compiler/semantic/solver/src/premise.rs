@@ -23,6 +23,10 @@ pub struct Premise {
 }
 
 impl Premise {
+    pub fn insert(&mut self, predicate: Predicate) -> bool {
+        self.predicates.insert(predicate)
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = &Predicate> {
         self.predicates.iter()
     }

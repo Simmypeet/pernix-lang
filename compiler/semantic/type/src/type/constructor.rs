@@ -119,6 +119,11 @@ pub struct Reference {
     mutability: Mutability,
 }
 
+impl Reference {
+    #[must_use]
+    pub const fn new(mutability: Mutability) -> Self { Self { mutability } }
+}
+
 /// Represents a symbolic type constructor, supplying generic arguments to a
 /// symbol, such as `Option<T>` or `SomeInstance<X, Y, Z>`.
 ///
@@ -167,6 +172,11 @@ enum TupleShape {
 }
 
 impl Tuple {
+    #[must_use]
+    pub const fn new(unpacked_positions: Interned<[usize]>) -> Self {
+        Self { unpacked_positions }
+    }
+
     fn shape(&self) -> Option<TupleShape> {
         match self.unpacked_positions.len() {
             0 => Some(TupleShape::Regular),
@@ -295,6 +305,14 @@ pub struct Application {
 }
 
 impl Application {
+    #[must_use]
+    pub const fn new(
+        constructor: Constructor,
+        arguments: Interned<[Interned<Type>]>,
+    ) -> Self {
+        Self { constructor, arguments }
+    }
+
     #[must_use]
     pub fn arguments(&self) -> impl ExactSizeIterator<Item = &Interned<Type>> {
         self.arguments.iter()

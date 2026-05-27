@@ -1938,6 +1938,7 @@ dependencies = [
  "pernixc_type",
  "qbice",
  "thiserror 2.0.18",
+ "tokio",
 ]
 
 [[package]]

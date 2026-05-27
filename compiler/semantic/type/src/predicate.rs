@@ -32,6 +32,15 @@ pub struct Equality {
 
 impl Equality {
     #[must_use]
+    pub const fn new(
+        binder: Binder,
+        left: Interned<Type>,
+        right: Interned<Type>,
+    ) -> Self {
+        Self { binder, left, right }
+    }
+
+    #[must_use]
     pub const fn binder(&self) -> &Binder { &self.binder }
     #[must_use]
     pub const fn left(&self) -> &Interned<Type> { &self.left }

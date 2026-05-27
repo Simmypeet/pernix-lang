@@ -15,5 +15,8 @@ enum-as-inner.workspace = true
 qbice.workspace = true
 thiserror.workspace = true
 
+[dev-dependencies]
+tokio.workspace = true
+
 [lints]
 workspace = true

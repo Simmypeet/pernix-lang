@@ -130,9 +130,8 @@ impl<'a> Solver<'a> {
 #[allow(missing_docs)]
 struct Call<Q, I> {
     query: Q,
-    provisional: I,
+    provisional: Option<I>,
     is_in_scc: bool,
-    is_cyclic_root: bool,
 }
 
 /// Primiarily used for checking whether the provisional results in a cycle are
@@ -186,7 +185,13 @@ pub trait Solve: Clone + Eq + Hash + DynIdent {
         solver: &mut Solver,
     ) -> impl Future<Output = Result<Self::Result, OverflowError>>;
 
-    fn provisional_result(&self) -> Self::Result;
+    fn provisional_result(&self) -> Provisional<Self::Result>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Provisional<T> {
+    Continue(T),
+    Bail,
 }
 
 enum CurrentStatus<Q> {
@@ -327,10 +332,10 @@ impl<'a> Solver<'a> {
     ) -> Result<Q::Result, OverflowError> {
         assert!(!self.unwinding, "the query has overflowed, has to abort now");
 
-        if let CurrentStatus::Solved(result) =
-            self.mark_as_in_progress(query)?
-        {
-            return Ok(result);
+        match self.mark_as_in_progress(query) {
+            Ok(CurrentStatus::Solved(result)) => return Ok(result),
+            Ok(CurrentStatus::NonStarted) => {}
+            Err(err) => return Err(err),
         }
 
         let result = query.solve(self).await;
@@ -348,21 +353,21 @@ impl<'a> Solver<'a> {
                      overflow"
                 );
 
-                let (is_cyclic_root, is_in_scc) = {
+                let (has_cycle, is_in_scc) = {
                     let frame = self.call_stack.last().unwrap();
-                    (frame.is_cyclic_root, frame.is_in_scc)
+                    (frame.provisional.is_some(), frame.is_in_scc)
                 };
 
                 // run to fixpoint if the query is in a cycle, to make sure all
                 // the provisional results in the cycle are consistent with each
                 // other.
-                if is_cyclic_root {
+                if has_cycle {
                     let mut count = FIXED_POINT_COUNT;
 
                     loop {
                         if count == 0 {
-                            self.unwinding = true;
-                            return Err(self.handle_overflow(OverflowError(())));
+                            let err = self.bail();
+                            return Err(self.handle_overflow(err));
                         }
 
                         let provisional = self
@@ -370,6 +375,8 @@ impl<'a> Solver<'a> {
                             .last_mut()
                             .unwrap()
                             .provisional
+                            .as_mut()
+                            .unwrap()
                             .as_mut()
                             .downcast_mut::<Q::Result>()
                             .unwrap();
@@ -395,6 +402,11 @@ impl<'a> Solver<'a> {
 
             Err(err) => Err(self.handle_overflow(err)),
         }
+    }
+
+    const fn bail(&mut self) -> OverflowError {
+        self.unwinding = true;
+        OverflowError(())
     }
 
     fn handle_overflow(&mut self, er: OverflowError) -> OverflowError {
@@ -440,8 +452,7 @@ impl<'a> Solver<'a> {
         query: &Q,
     ) -> Result<CurrentStatus<Q::Result>, OverflowError> {
         if self.current_step >= self.limit_step {
-            self.unwinding = true;
-            return Err(OverflowError(()));
+            return Err(self.bail());
         }
 
         // if the query is already computed, return the result
@@ -461,28 +472,35 @@ impl<'a> Solver<'a> {
         });
 
         if let Some(position) = position {
-            let provisitional = self.call_stack[position]
-                .provisional
-                .as_ref()
-                .downcast_ref::<Q::Result>()
-                .unwrap()
-                .clone();
+            let provisional = if let Some(provisional) =
+                &self.call_stack[position].provisional
+            {
+                provisional.downcast_ref::<Q::Result>().unwrap().clone()
+            } else {
+                let provisional = match query.provisional_result() {
+                    Provisional::Continue(provisional) => provisional,
+                    Provisional::Bail => return Err(self.bail()),
+                };
 
-            self.call_stack[position].is_cyclic_root = true;
+                self.call_stack[position].provisional =
+                    Some(Box::new(provisional.clone()));
+
+                provisional
+            };
+
             for call in &mut self.call_stack[(position + 1)..] {
                 call.is_in_scc = true;
             }
 
-            Ok(CurrentStatus::Solved(provisitional))
+            Ok(CurrentStatus::Solved(provisional))
         } else {
             let arc_query = Arc::new(query.clone()) as Arc<dyn DynIdent>;
 
             self.current_step += 1;
             self.call_stack.push(Call {
                 query: arc_query,
-                provisional: Box::new(query.provisional_result()),
+                provisional: None,
                 is_in_scc: false,
-                is_cyclic_root: false,
             });
 
             Ok(CurrentStatus::NonStarted)
