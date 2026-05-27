@@ -4,7 +4,7 @@ use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 use crate::r#type::{
     Type,
     kind::TyKind,
-    rewrite::{RewriteContext, TypeRewriter, rewrite_type},
+    rewrite::{RewriteContext, TypeRewriter, rewrite_type_or_clone},
 };
 
 #[derive(
@@ -20,21 +20,23 @@ use crate::r#type::{
     Decode,
 )]
 pub struct Binder {
-    bound_vars: Vec<TyKind>,
+    bound_vars: Interned<[TyKind]>,
 }
 
 impl Binder {
     /// Creates a new binder with the given bound variable kinds.
     #[must_use]
-    pub const fn new(bound_vars: Vec<TyKind>) -> Self { Self { bound_vars } }
+    pub const fn new(bound_vars: Interned<[TyKind]>) -> Self {
+        Self { bound_vars }
+    }
 
     /// Returns the number of variables bound by this binder.
     #[must_use]
-    pub const fn len(&self) -> usize { self.bound_vars.len() }
+    pub fn len(&self) -> usize { self.bound_vars.len() }
 
     /// Returns whether this binder binds no variables.
     #[must_use]
-    pub const fn is_empty(&self) -> bool { self.bound_vars.is_empty() }
+    pub fn is_empty(&self) -> bool { self.bound_vars.is_empty() }
 
     /// Returns the kind of the bound variable at the given index.
     #[must_use]
@@ -159,7 +161,7 @@ fn shift_free_bound_variables(
         return ty.clone();
     }
 
-    rewrite_type(
+    rewrite_type_or_clone(
         ty,
         &mut ShiftFreeBoundVariableRewriter { amount, interner },
         interner,
@@ -177,7 +179,7 @@ pub fn rewrite_bound_variables(
     replacements: &[Interned<Type>],
     interner: &impl Interner,
 ) -> Interned<Type> {
-    rewrite_type(
+    rewrite_type_or_clone(
         ty,
         &mut BoundVariableRewriter { replacements, interner },
         interner,

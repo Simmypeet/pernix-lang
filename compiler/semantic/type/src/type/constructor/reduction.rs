@@ -5,8 +5,8 @@ use qbice::storage::intern::Interned;
 use super::{Application, Constructor, Tuple};
 use crate::{
     instance_associated::get_instance_associated_type,
-    instantiation::Instantiation,
-    r#type::{Type, constructor::Symbolic, context::TyContext},
+    substitution::{Substitutable, Substitution},
+    r#type::{Type, constructor::Symbolic},
 };
 
 impl Application {
@@ -14,7 +14,6 @@ impl Application {
     pub async fn reduce(
         &self,
         engine: &TrackedEngine,
-        _tyctx: &impl TyContext,
     ) -> Option<Interned<Type>> {
         match &self.constructor {
             Constructor::Symbolic(_)
@@ -104,11 +103,11 @@ impl Application {
                 .get_by_name(&instance_associated_name)?,
         );
 
-        let mut instantiation = Instantiation::default();
-        instantiation
+        let mut substitution = Substitution::new();
+        substitution
             .append_generic_arguments(symbol_id, generic_args, engine)
             .await;
-        instantiation
+        substitution
             .append_generic_arguments(
                 instance_associated_symbol_id,
                 &self.arguments[1..],
@@ -120,7 +119,7 @@ impl Application {
             .get_instance_associated_type(instance_associated_symbol_id)
             .await;
 
-        Some(instantiation.instantiate(&instance_associated_type, engine))
+        Some(instance_associated_type.apply_or_clone(&substitution, engine))
     }
 }
 

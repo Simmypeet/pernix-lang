@@ -18,15 +18,9 @@ use crate::{
     instance_associated,
     r#type::{
         Type,
-        bound::BoundVariable,
         constructor::{Primitive, Tuple},
-        inference::InferenceVariable,
-        kind::TyKind,
-        skolem::SkolemizedVariable,
     },
 };
-
-struct TestTyContext;
 
 const INSTANCE_SYMBOL_ID: GlobalSymbolID =
     TargetID::TEST.make_global(SymbolID::from_u128(1));
@@ -44,20 +38,6 @@ const INSTANCE_ASSOC_MIXED_SYMBOL_ID: GlobalSymbolID =
     TargetID::TEST.make_global(SymbolID::from_u128(13));
 const INSTANCE_ASSOC_NON_TYPE_KIND_SYMBOL_ID: GlobalSymbolID =
     TargetID::TEST.make_global(SymbolID::from_u128(14));
-
-impl crate::r#type::context::TyContext for TestTyContext {
-    fn get_inference_variable_kind(&self, _: &InferenceVariable) -> TyKind {
-        TyKind::Type
-    }
-
-    fn get_bound_variable_kind(&self, _: &BoundVariable) -> TyKind {
-        unreachable!()
-    }
-
-    fn get_skolemized_variable_kind(&self, _: &SkolemizedVariable) -> TyKind {
-        unreachable!()
-    }
-}
 
 struct KindExecutor;
 
@@ -326,7 +306,6 @@ fn instance_associated_application(
 #[tokio::test]
 async fn reduce_tuple_flattens_unpacked_tuple_argument() {
     let engine = create_test_engine().await;
-    let tyctx = TestTyContext;
 
     let reduced = tuple_application(
         &[
@@ -345,7 +324,7 @@ async fn reduce_tuple_flattens_unpacked_tuple_argument() {
         &[1],
         &engine,
     )
-    .reduce(&engine, &tyctx)
+    .reduce(&engine)
     .await
     .unwrap();
 
@@ -368,7 +347,6 @@ async fn reduce_tuple_flattens_unpacked_tuple_argument() {
 #[tokio::test]
 async fn reduce_tuple_returns_none_for_non_tuple_unpacked_argument() {
     let engine = create_test_engine().await;
-    let tyctx = TestTyContext;
 
     let original = tuple_application(
         &[
@@ -380,13 +358,12 @@ async fn reduce_tuple_returns_none_for_non_tuple_unpacked_argument() {
         &engine,
     );
 
-    assert_eq!(original.reduce(&engine, &tyctx).await, None);
+    assert_eq!(original.reduce(&engine).await, None);
 }
 
 #[tokio::test]
 async fn reduce_tuple_preserves_inner_unpacked_positions() {
     let engine = create_test_engine().await;
-    let tyctx = TestTyContext;
 
     let reduced = tuple_application(
         &[
@@ -405,7 +382,7 @@ async fn reduce_tuple_preserves_inner_unpacked_positions() {
         &[1],
         &engine,
     )
-    .reduce(&engine, &tyctx)
+    .reduce(&engine)
     .await
     .unwrap();
 
@@ -428,7 +405,6 @@ async fn reduce_tuple_preserves_inner_unpacked_positions() {
 #[tokio::test]
 async fn reduce_tuple_shifts_later_unpacked_positions() {
     let engine = create_test_engine().await;
-    let tyctx = TestTyContext;
 
     let reduced = tuple_application(
         &[
@@ -446,7 +422,7 @@ async fn reduce_tuple_shifts_later_unpacked_positions() {
         &[1, 2],
         &engine,
     )
-    .reduce(&engine, &tyctx)
+    .reduce(&engine)
     .await
     .unwrap();
 
@@ -468,7 +444,6 @@ async fn reduce_tuple_shifts_later_unpacked_positions() {
 #[tokio::test]
 async fn reduce_instance_associated_substitutes_instance_generic_argument() {
     let engine = create_test_engine().await;
-    let tyctx = TestTyContext;
 
     let reduced = instance_associated_application(
         symbolic_type(
@@ -480,7 +455,7 @@ async fn reduce_instance_associated_substitutes_instance_generic_argument() {
         &[],
         &engine,
     )
-    .reduce(&engine, &tyctx)
+    .reduce(&engine)
     .await
     .unwrap();
 
@@ -490,7 +465,6 @@ async fn reduce_instance_associated_substitutes_instance_generic_argument() {
 #[tokio::test]
 async fn reduce_instance_associated_substitutes_associated_generic_arguments() {
     let engine = create_test_engine().await;
-    let tyctx = TestTyContext;
 
     let reduced = instance_associated_application(
         symbolic_type(
@@ -502,7 +476,7 @@ async fn reduce_instance_associated_substitutes_associated_generic_arguments() {
         &[intern_primitive(Primitive::Uint64, &engine)],
         &engine,
     )
-    .reduce(&engine, &tyctx)
+    .reduce(&engine)
     .await
     .unwrap();
 
@@ -522,7 +496,6 @@ async fn reduce_instance_associated_substitutes_associated_generic_arguments() {
 #[tokio::test]
 async fn reduce_instance_associated_does_not_require_type_kind() {
     let engine = create_test_engine().await;
-    let tyctx = TestTyContext;
 
     let reduced = instance_associated_application(
         symbolic_type(
@@ -534,7 +507,7 @@ async fn reduce_instance_associated_does_not_require_type_kind() {
         &[],
         &engine,
     )
-    .reduce(&engine, &tyctx)
+    .reduce(&engine)
     .await
     .unwrap();
 
@@ -544,7 +517,6 @@ async fn reduce_instance_associated_does_not_require_type_kind() {
 #[tokio::test]
 async fn reduce_instance_associated_does_not_recurse_into_inner_instance() {
     let engine = create_test_engine().await;
-    let tyctx = TestTyContext;
 
     let inner_instance =
         engine.intern(Type::Application(instance_associated_application(
@@ -565,5 +537,5 @@ async fn reduce_instance_associated_does_not_recurse_into_inner_instance() {
         &engine,
     );
 
-    assert_eq!(outer.reduce(&engine, &tyctx).await, None);
+    assert_eq!(outer.reduce(&engine,).await, None);
 }

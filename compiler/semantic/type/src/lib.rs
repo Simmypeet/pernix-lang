@@ -1,6 +1,5 @@
 pub mod generic_parameters;
 pub mod instance_associated;
-pub mod instantiation;
 pub mod predicate;
 pub mod substitution;
 pub mod symbol;

@@ -69,7 +69,7 @@ pub trait TypeRewriter {
 }
 
 /// Rewrites a type using lazy clone-on-write traversal.
-pub fn rewrite_type<R: TypeRewriter>(
+pub fn rewrite_type_or_clone<R: TypeRewriter>(
     ty: &Interned<Type>,
     rewriter: &mut R,
     interner: &impl Interner,
@@ -78,6 +78,18 @@ pub fn rewrite_type<R: TypeRewriter>(
         binder_depth: 0,
     })
     .unwrap_or_else(|| ty.clone())
+}
+
+/// Rewrites an instance associated type application into the associated type of
+/// the instance's trait, if possible.
+pub fn rewrite_type<R: TypeRewriter>(
+    ty: &Interned<Type>,
+    rewriter: &mut R,
+    interner: &impl Interner,
+) -> Option<Interned<Type>> {
+    rewrite_type_internal(ty, rewriter, interner, RewriteContext {
+        binder_depth: 0,
+    })
 }
 
 fn rewrite_type_internal<R: TypeRewriter>(
@@ -103,19 +115,73 @@ fn rewrite_type_internal<R: TypeRewriter>(
             rewriter.rewrite_skolemized_variable(*variable, ctx)
         }
 
-        Type::Application(application) => {
-            rewrite_application(application, rewriter, interner, ctx)
-        }
+        Type::Application(application) => rewrite_application_with_rewriter(
+            application,
+            rewriter,
+            interner,
+            ctx,
+        ),
     }
 }
 
-fn rewrite_application<R: TypeRewriter>(
+/// Rewrites the direct arguments of an application using a failable
+/// asynchronous callback.
+///
+/// Returns `Ok(None)` when none of the arguments changed.
+pub async fn rewrite_application<E>(
+    application: &Application,
+    mut rewrite_argument: impl AsyncFnMut(
+        &Interned<Type>,
+    ) -> Result<Option<Interned<Type>>, E>,
+) -> Result<Option<Application>, E> {
+    let mut new_arguments = None::<Vec<_>>;
+
+    for (index, argument) in application.arguments.iter().enumerate() {
+        let rewritten_argument = rewrite_argument(argument).await?;
+
+        collect_rewritten_argument(
+            &mut new_arguments,
+            &application.arguments,
+            index,
+            argument,
+            rewritten_argument,
+        );
+    }
+
+    Ok(rewritten_application(application, new_arguments))
+}
+
+fn rewrite_application_with_rewriter<R: TypeRewriter>(
     application: &Application,
     rewriter: &mut R,
     interner: &impl Interner,
     ctx: RewriteContext,
 ) -> Option<Interned<Type>> {
-    let argument_ctx = match application.constructor {
+    let argument_ctx = argument_context(application, ctx);
+    let mut new_arguments = None::<Vec<_>>;
+
+    for (index, argument) in application.arguments.iter().enumerate() {
+        let rewritten_argument =
+            rewrite_type_internal(argument, rewriter, interner, argument_ctx);
+
+        collect_rewritten_argument(
+            &mut new_arguments,
+            &application.arguments,
+            index,
+            argument,
+            rewritten_argument,
+        );
+    }
+
+    rewritten_application(application, new_arguments)
+        .map(|application| interner.intern(Type::Application(application)))
+}
+
+const fn argument_context(
+    application: &Application,
+    ctx: RewriteContext,
+) -> RewriteContext {
+    match application.constructor {
         Constructor::FunctionPointer(_) => ctx.enter_binder(),
         Constructor::Primitive(_)
         | Constructor::Lifetime(_)
@@ -124,43 +190,47 @@ fn rewrite_application<R: TypeRewriter>(
         | Constructor::Tuple(_)
         | Constructor::AnonymousTraitInstance(_)
         | Constructor::InstanceAssociated(_) => ctx,
-    };
+    }
+}
 
-    let mut new_arguments = None::<Vec<_>>;
+fn collect_rewritten_argument(
+    new_arguments: &mut Option<Vec<Interned<Type>>>,
+    current_arguments: &[Interned<Type>],
+    index: usize,
+    argument: &Interned<Type>,
+    rewritten_argument: Option<Interned<Type>>,
+) {
+    match (rewritten_argument, new_arguments.as_mut()) {
+        (None, None) => {}
 
-    for (index, argument) in application.arguments.iter().enumerate() {
-        let rewritten_argument =
-            rewrite_type_internal(argument, rewriter, interner, argument_ctx);
+        (None, Some(new_arguments)) => {
+            new_arguments.push(argument.clone());
+        }
 
-        match (rewritten_argument, new_arguments.as_mut()) {
-            (None, None) => {}
+        (Some(rewritten_argument), None) => {
+            let mut new_arguments_vec =
+                Vec::with_capacity(current_arguments.len());
 
-            (None, Some(new_arguments)) => {
-                new_arguments.push(argument.clone());
-            }
+            new_arguments_vec
+                .extend(current_arguments[..index].iter().cloned());
+            new_arguments_vec.push(rewritten_argument);
 
-            (Some(rewritten_argument), None) => {
-                let mut new_arguments_vec =
-                    Vec::with_capacity(application.arguments.len());
+            *new_arguments = Some(new_arguments_vec);
+        }
 
-                new_arguments_vec
-                    .extend(application.arguments[..index].iter().cloned());
-                new_arguments_vec.push(rewritten_argument);
-
-                new_arguments = Some(new_arguments_vec);
-            }
-
-            (Some(rewritten_argument), Some(new_arguments)) => {
-                new_arguments.push(rewritten_argument);
-            }
+        (Some(rewritten_argument), Some(new_arguments)) => {
+            new_arguments.push(rewritten_argument);
         }
     }
+}
 
-    new_arguments.map(|arguments| {
-        interner.intern(Type::Application(Application {
-            constructor: application.constructor.clone(),
-            arguments: interner.intern_unsized(arguments),
-        }))
+fn rewritten_application(
+    application: &Application,
+    new_arguments: Option<Vec<Interned<Type>>>,
+) -> Option<Application> {
+    new_arguments.map(|arguments| Application {
+        constructor: application.constructor.clone(),
+        arguments: Interned::new_duplicating_unsized(arguments),
     })
 }
 

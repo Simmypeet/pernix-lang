@@ -1,5 +1,5 @@
 use enum_as_inner::EnumAsInner;
-use qbice::{Decode, Encode, StableHash};
+use qbice::{Decode, Encode, Identifiable, StableHash};
 
 #[derive(
     Debug,
@@ -13,6 +13,7 @@ use qbice::{Decode, Encode, StableHash};
     StableHash,
     Encode,
     Decode,
+    Identifiable,
     EnumAsInner,
 )]
 pub enum TyKind {

@@ -7,7 +7,7 @@ use qbice::storage::intern::Interned;
 use super::*;
 use crate::{
     generic_parameters::{GenericParameter, GenericParameterID},
-    instantiation::Instantiation,
+    substitution::{Substitutable, Substitution},
     r#type::{
         Type,
         bound::{Binder, BoundVariable},
@@ -50,7 +50,9 @@ fn function_pointer_type(
 ) -> Interned<Type> {
     application_type(
         Constructor::FunctionPointer(FunctionPointer {
-            binder: Binder::new(Vec::new()),
+            binder: Binder::new(interner.intern_unsized(
+                vec![crate::r#type::kind::TyKind::Type; arguments.len()],
+            )),
         }),
         arguments,
         interner,
@@ -102,7 +104,7 @@ fn noop_rewriter_returns_original_type() {
         &interner,
     );
 
-    let rewritten = rewrite_type(&ty, &mut NoopRewriter, &interner);
+    let rewritten = rewrite_type_or_clone(&ty, &mut NoopRewriter, &interner);
 
     assert!(same_type_handle(&ty, &rewritten));
 }
@@ -141,7 +143,7 @@ fn rewrite_nested_generic_parameter_preserves_unchanged_siblings() {
         &interner,
     );
 
-    let rewritten = rewrite_type(
+    let rewritten = rewrite_type_or_clone(
         &ty,
         &mut GenericParameterRewriter {
             target,
@@ -174,10 +176,10 @@ fn instantiation_replaces_generic_parameter_and_leaves_missing_unchanged() {
         &[target_type, missing_type.clone()],
         &interner,
     );
-    let mut instantiation = Instantiation::default();
-    instantiation.insert(target, replacement.clone());
+    let mut instantiation = Substitution::default();
+    instantiation.insert_generic(target, replacement.clone());
 
-    let instantiated = instantiation.instantiate(&ty, &interner);
+    let instantiated = ty.apply_or_clone(&instantiation, &interner);
 
     let instantiated_application = as_application(&instantiated);
     assert!(same_type_handle(
@@ -230,7 +232,7 @@ fn binder_depth_tracks_function_pointer_nesting() {
     );
     let mut recorder = BinderDepthRecorder::default();
 
-    let rewritten = rewrite_type(&ty, &mut recorder, &interner);
+    let rewritten = rewrite_type_or_clone(&ty, &mut recorder, &interner);
 
     assert!(same_type_handle(&ty, &rewritten));
     assert_eq!(recorder.records, vec![
@@ -238,6 +240,60 @@ fn binder_depth_tracks_function_pointer_nesting() {
         (inside_one, 1),
         (inside_two, 2),
     ]);
+}
+
+#[tokio::test]
+async fn rewrite_application_supports_async_failable_rewrite() {
+    let interner = DuplicatingInterner;
+    let target = generic_parameter_id(0);
+    let target_type = generic_parameter_type(target, &interner);
+    let unchanged = primitive_type(Primitive::Int16, &interner);
+    let replacement = primitive_type(Primitive::Bool, &interner);
+    let function_pointer =
+        function_pointer_type(&[target_type, unchanged.clone()], &interner);
+    let application = as_application(&function_pointer);
+    let mut visited_count = 0;
+
+    let rewritten = rewrite_application(application, async |argument| {
+        visited_count += 1;
+
+        Ok::<_, ()>(
+            argument
+                .as_generic_parameter()
+                .is_some_and(|id| *id == target)
+                .then(|| replacement.clone()),
+        )
+    })
+    .await
+    .unwrap();
+
+    let rewritten_application =
+        rewritten.expect("expected rewritten application");
+
+    assert_eq!(visited_count, 2);
+    assert!(same_type_handle(
+        &rewritten_application.arguments[0],
+        &replacement
+    ));
+    assert!(same_type_handle(&rewritten_application.arguments[1], &unchanged));
+}
+
+#[tokio::test]
+async fn rewrite_application_returns_callback_error() {
+    let interner = DuplicatingInterner;
+    let argument = generic_parameter_type(generic_parameter_id(0), &interner);
+    let ty = application_type(
+        Constructor::Primitive(Primitive::Int32),
+        &[argument],
+        &interner,
+    );
+
+    let result = rewrite_application(as_application(&ty), async |_| {
+        Err::<Option<Interned<Type>>, _>("stop")
+    })
+    .await;
+
+    assert_eq!(result, Err("stop"));
 }
 
 #[test]
@@ -260,10 +316,10 @@ fn rewrite_bound_variables_respects_nested_binders() {
         ],
         &interner,
     );
-    let binder = Binder::new(vec![
+    let binder = Binder::new(interner.intern_unsized([
         crate::r#type::kind::TyKind::Type,
         crate::r#type::kind::TyKind::Type,
-    ]);
+    ]));
 
     let rewritten = binder.rewrite_bound_variables(
         &ty,
@@ -322,7 +378,9 @@ fn rewrite_bound_variables_shifts_free_bound_variables_in_replacement() {
         &[nested_function_pointer],
         &interner,
     );
-    let binder = Binder::new(vec![crate::r#type::kind::TyKind::Type]);
+    let binder = Binder::new(
+        interner.intern_unsized(vec![crate::r#type::kind::TyKind::Type]),
+    );
 
     let rewritten = binder.rewrite_bound_variables(
         &ty,
