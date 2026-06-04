@@ -93,16 +93,16 @@ impl Substitutable for Equality {
 )]
 pub struct Outlives {
     /// Can either has a kind of lifetime or a kind of type.
-    operand: Interned<Type>,
+    lesser: Interned<Type>,
 
     /// Must always has a kind of lifetime.
-    bound: Interned<Type>,
+    greater: Interned<Type>,
 }
 
 impl Outlives {
     #[must_use]
-    pub const fn new(operand: Interned<Type>, bound: Interned<Type>) -> Self {
-        Self { operand, bound }
+    pub const fn new(lesser: Interned<Type>, greater: Interned<Type>) -> Self {
+        Self { lesser, greater }
     }
 }
 
@@ -116,15 +116,17 @@ impl Substitutable for Outlives {
         Self: Sized,
     {
         match (
-            self.operand.apply(subst, interner),
-            self.bound.apply(subst, interner),
+            self.lesser.apply(subst, interner),
+            self.greater.apply(subst, interner),
         ) {
-            (Some(operand), Some(bound)) => Some(Self { operand, bound }),
+            (Some(operand), Some(bound)) => {
+                Some(Self { lesser: operand, greater: bound })
+            }
             (Some(operand), _) => {
-                Some(Self { operand, bound: self.bound.clone() })
+                Some(Self { lesser: operand, greater: self.greater.clone() })
             }
             (_, Some(bound)) => {
-                Some(Self { operand: self.operand.clone(), bound })
+                Some(Self { lesser: self.lesser.clone(), greater: bound })
             }
             _ => None,
         }
@@ -228,6 +230,26 @@ pub struct Subtype {
     less: Interned<Type>,
     greater: Interned<Type>,
     variance: Variance,
+}
+
+impl Subtype {
+    #[must_use]
+    pub const fn new(
+        less: Interned<Type>,
+        greater: Interned<Type>,
+        variance: Variance,
+    ) -> Self {
+        Self { less, greater, variance }
+    }
+
+    #[must_use]
+    pub const fn lesser(&self) -> &Interned<Type> { &self.less }
+
+    #[must_use]
+    pub const fn greater(&self) -> &Interned<Type> { &self.greater }
+
+    #[must_use]
+    pub const fn variance(&self) -> Variance { self.variance }
 }
 
 impl Substitutable for Subtype {
