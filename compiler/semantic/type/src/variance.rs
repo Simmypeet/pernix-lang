@@ -1,4 +1,11 @@
-use qbice::{Decode, Encode, Identifiable, StableHash};
+use pernixc_arena::ID;
+use pernixc_hash::FxHashMap;
+use pernixc_symbol::GlobalSymbolID;
+use qbice::{
+    Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned,
+};
+
+use crate::generic_parameters::GenericParameter;
 
 /// Representing a variance used by the sub-typing system to determine the
 /// relationship between two types.
@@ -87,4 +94,53 @@ impl Variance {
             (x, Self::Bivariant) | (Self::Bivariant, x) => x,
         }
     }
+}
+
+/// A mapping of generic parameters to their variances. This component only
+/// presents in the `struct` or `enum` symbols.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
+    StableHash,
+    Encode,
+    Decode,
+    Identifiable,
+)]
+pub struct Variances {
+    variances_by_generic_parameter: FxHashMap<ID<GenericParameter>, Variance>,
+}
+
+impl Variances {
+    #[must_use]
+    pub fn get_variacne_of(
+        &self,
+        generic_parameter_id: ID<GenericParameter>,
+    ) -> Variance {
+        *self.variances_by_generic_parameter.get(&generic_parameter_id).unwrap()
+    }
+}
+
+/// Query key for retrieving the variances of a symbol.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Query,
+)]
+#[value(Interned<Variances>)]
+#[extend(name = get_variances, by_val)]
+pub struct Key {
+    /// The global ID of the struct or enum symbol.
+    pub symbol_id: GlobalSymbolID,
 }
