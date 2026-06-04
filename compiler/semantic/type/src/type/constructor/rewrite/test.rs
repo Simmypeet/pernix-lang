@@ -10,7 +10,7 @@ use crate::{
     substitution::{Substitutable, Substitution},
     r#type::{
         Type,
-        bound::{Binder, BoundVariable},
+        bound::{Binder, BoundVariable, Instantiate},
         constructor::{FunctionPointer, Primitive},
     },
 };
@@ -297,7 +297,7 @@ async fn rewrite_application_returns_callback_error() {
 }
 
 #[test]
-fn rewrite_bound_variables_respects_nested_binders() {
+fn instantiate_respects_nested_binders() {
     let interner = DuplicatingInterner;
     let replacement_zero = primitive_type(Primitive::Bool, &interner);
     let replacement_one = primitive_type(Primitive::Int16, &interner);
@@ -321,7 +321,7 @@ fn rewrite_bound_variables_respects_nested_binders() {
         crate::r#type::kind::TyKind::Type,
     ]));
 
-    let rewritten = binder.rewrite_bound_variables(
+    let rewritten = binder.instantiate(
         &ty,
         &[replacement_zero.clone(), replacement_one.clone()],
         &interner,
@@ -349,7 +349,7 @@ fn rewrite_bound_variables_respects_nested_binders() {
 }
 
 #[test]
-fn rewrite_bound_variables_leaves_missing_replacement_unchanged() {
+fn instantiate_leaves_missing_replacement_unchanged() {
     let interner = DuplicatingInterner;
     let missing = bound_variable_type(0, 1, &interner);
     let ty = application_type(
@@ -358,15 +358,31 @@ fn rewrite_bound_variables_leaves_missing_replacement_unchanged() {
         &interner,
     );
 
-    let rewritten =
-        crate::r#type::bound::rewrite_bound_variables(&ty, &[], &interner);
+    let rewritten = ty.instantiate(&[], &interner);
 
     let rewritten_application = as_application(&rewritten);
     assert!(same_type_handle(&rewritten_application.arguments[0], &missing));
 }
 
 #[test]
-fn rewrite_bound_variables_shifts_free_bound_variables_in_replacement() {
+fn instantiate_interned_slice_of_types() {
+    let interner = DuplicatingInterner;
+    let replacement = primitive_type(Primitive::Bool, &interner);
+    let unchanged = primitive_type(Primitive::Int16, &interner);
+    let arguments: Interned<[Interned<Type>]> = interner.intern_unsized(vec![
+        bound_variable_type(0, 0, &interner),
+        unchanged.clone(),
+    ]);
+
+    let instantiated =
+        arguments.instantiate(std::slice::from_ref(&replacement), &interner);
+
+    assert!(same_type_handle(&instantiated[0], &replacement));
+    assert!(same_type_handle(&instantiated[1], &unchanged));
+}
+
+#[test]
+fn instantiate_shifts_free_bound_variables_in_replacement() {
     let interner = DuplicatingInterner;
     let replacement = bound_variable_type(0, 7, &interner);
     let nested_function_pointer = function_pointer_type(
@@ -382,11 +398,8 @@ fn rewrite_bound_variables_shifts_free_bound_variables_in_replacement() {
         interner.intern_unsized(vec![crate::r#type::kind::TyKind::Type]),
     );
 
-    let rewritten = binder.rewrite_bound_variables(
-        &ty,
-        std::slice::from_ref(&replacement),
-        &interner,
-    );
+    let rewritten =
+        binder.instantiate(&ty, std::slice::from_ref(&replacement), &interner);
 
     let rewritten_application = as_application(&rewritten);
     let rewritten_nested = as_application(&rewritten_application.arguments[0]);

@@ -1,10 +1,14 @@
 use pernixc_qbice::Interner;
-use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
+use qbice::{
+    Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
+};
 
 use crate::r#type::{
     Type,
     kind::TyKind,
-    rewrite::{RewriteContext, TypeRewriter, rewrite_type_or_clone},
+    rewrite::{
+        RewriteContext, TypeRewriter, rewrite_type, rewrite_type_or_clone,
+    },
 };
 
 #[derive(
@@ -50,25 +54,25 @@ impl Binder {
         self.bound_vars.iter().copied()
     }
 
-    /// Rewrites the variables bound by this binder in `ty`.
+    /// Instantiates the variables bound by this binder in `value`.
     ///
-    /// The replacement at index `i` rewrites bound variable `(depth = 0, index
-    /// = i)` at the root of `ty`. Under nested binders, the rewritten depth is
-    /// adjusted automatically so variables bound by nested binders are left
-    /// untouched.
+    /// The replacement at index `i` instantiates bound variable `(depth = 0,
+    /// index = i)` at the root of `value`. Under nested binders, the rewritten
+    /// depth is adjusted automatically so variables bound by nested binders are
+    /// left untouched.
     ///
     /// This is intended for operations such as skolemizing this binder or
     /// instantiating it with freshly-created inference variables.
     #[must_use]
-    pub fn rewrite_bound_variables(
+    pub fn instantiate<T: Instantiate + Clone>(
         &self,
-        ty: &Interned<Type>,
+        value: &T,
         replacements: &[Interned<Type>],
         interner: &impl Interner,
-    ) -> Interned<Type> {
+    ) -> T {
         assert_eq!(self.bound_vars.len(), replacements.len());
 
-        rewrite_bound_variables(ty, replacements, interner)
+        value.instantiate(replacements, interner)
     }
 }
 
@@ -168,20 +172,84 @@ fn shift_free_bound_variables(
     )
 }
 
-/// Rewrites bound variables for the binder immediately enclosing `ty`.
+/// Instantiates values containing bound type variables.
 ///
-/// A bound variable is rewritten when its depth points to that enclosing
-/// binder from its occurrence site. For example, at the root of `ty`, this
-/// rewrites depth `0`; under one nested binder, it rewrites depth `1`.
-#[must_use]
-pub fn rewrite_bound_variables(
-    ty: &Interned<Type>,
-    replacements: &[Interned<Type>],
-    interner: &impl Interner,
-) -> Interned<Type> {
-    rewrite_type_or_clone(
-        ty,
-        &mut BoundVariableRewriter { replacements, interner },
-        interner,
-    )
+/// A bound variable is instantiated when its depth points to the binder
+/// immediately enclosing the instantiated value from its occurrence site. For
+/// example, at the root of a type, this rewrites depth `0`; under one nested
+/// binder, it rewrites depth `1`.
+pub trait Instantiate {
+    /// Attempts to instantiate bound variables in `self`.
+    ///
+    /// Returns `None` if no bound variables were replaced.
+    #[must_use]
+    fn try_instantiate(
+        &self,
+        replacements: &[Interned<Type>],
+        interner: &impl Interner,
+    ) -> Option<Self>
+    where
+        Self: Sized;
+
+    /// Instantiates bound variables in `self`, or clones `self` if no bound
+    /// variables were replaced.
+    #[must_use]
+    fn instantiate(
+        &self,
+        replacements: &[Interned<Type>],
+        interner: &impl Interner,
+    ) -> Self
+    where
+        Self: Sized + Clone,
+    {
+        self.try_instantiate(replacements, interner)
+            .unwrap_or_else(|| self.clone())
+    }
+}
+
+impl Instantiate for Interned<Type> {
+    fn try_instantiate(
+        &self,
+        replacements: &[Interned<Type>],
+        interner: &impl Interner,
+    ) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        rewrite_type(
+            self,
+            &mut BoundVariableRewriter { replacements, interner },
+            interner,
+        )
+    }
+}
+
+impl<T: Instantiate + StableHash + Send + Sync + 'static + Identifiable + Clone>
+    Instantiate for Interned<[T]>
+{
+    fn try_instantiate(
+        &self,
+        replacements: &[Interned<Type>],
+        interner: &impl Interner,
+    ) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        for (index, item) in self.iter().enumerate() {
+            if let Some(new_item) = item.try_instantiate(replacements, interner)
+            {
+                let mut new_vec = Vec::with_capacity(self.len());
+                new_vec.extend_from_slice(&self[..index]);
+                new_vec.push(new_item);
+                new_vec.extend(
+                    self[(index + 1)..]
+                        .iter()
+                        .map(|item| item.instantiate(replacements, interner)),
+                );
+                return Some(interner.intern_unsized(new_vec));
+            }
+        }
+
+        None
+    }
 }

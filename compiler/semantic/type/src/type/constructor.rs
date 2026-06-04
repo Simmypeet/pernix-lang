@@ -122,6 +122,9 @@ pub struct Reference {
 impl Reference {
     #[must_use]
     pub const fn new(mutability: Mutability) -> Self { Self { mutability } }
+
+    #[must_use]
+    pub const fn mutability(&self) -> Mutability { self.mutability }
 }
 
 /// Represents a symbolic type constructor, supplying generic arguments to a
@@ -247,6 +250,13 @@ pub struct AnonymousTraitInstance {
     trait_id: GlobalSymbolID,
 }
 
+/// Represents a function pointer, such as `fn(T1, T2) -> T3`.
+///
+/// The last type argument is assumed to be return type, and the preceding type
+/// arguments are assumed to be parameter types. The binder contains the late
+/// bound lifetimes of the function pointer, if any.
+///
+/// Kind: (Type*) -> Type
 #[derive(
     Debug,
     Clone,
@@ -314,9 +324,20 @@ impl Application {
     }
 
     #[must_use]
-    pub fn arguments(&self) -> impl ExactSizeIterator<Item = &Interned<Type>> {
-        self.arguments.iter()
+    pub const fn arguments(&self) -> &Interned<[Interned<Type>]> {
+        &self.arguments
     }
+
+    #[must_use]
+    pub const fn binder(&self) -> Option<&Binder> {
+        match &self.constructor {
+            Constructor::FunctionPointer(fp) => Some(&fp.binder),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn constructor(&self) -> &Constructor { &self.constructor }
 
     pub async fn kind(&self, engine: &TrackedEngine) -> TyKind {
         match self.constructor {
