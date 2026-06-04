@@ -41,6 +41,21 @@ impl Substitution {
         assert!(self.0.insert(Variable::Generic(id), ty).is_none());
     }
 
+    /// Composes `sub2` into `self` such that `self(sub2(x)) = composedSelf(x)`.
+    pub fn compose(&mut self, mut sub2: Self, interner: &impl Interner) {
+        self.0.reserve(sub2.0.len());
+
+        for ty in sub2.0.values_mut() {
+            *ty = ty.apply_or_clone(self, interner);
+        }
+
+        for (var, ty) in sub2.0 {
+            // sub2 bias: if sub1 and sub2 have the same variable, the one from
+            // sub2 will be used.
+            self.0.insert(var, ty);
+        }
+    }
+
     pub fn merge(&mut self, other: &Self) {
         self.0.reserve(other.0.len());
 
