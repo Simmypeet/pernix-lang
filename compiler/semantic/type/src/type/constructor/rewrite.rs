@@ -1,4 +1,4 @@
-use std::{future::Future, pin::Pin};
+use std::future::Future;
 
 use pernixc_qbice::Interner;
 use qbice::storage::intern::Interned;
@@ -138,9 +138,6 @@ pub trait AsyncTypeRewriter: Send {
     }
 }
 
-type AsyncRewriteFuture<'a, E> =
-    Pin<Box<dyn Future<Output = Result<Option<Interned<Type>>, E>> + 'a>>;
-
 /// Rewrites a type using lazy clone-on-write traversal.
 pub fn rewrite_type_or_clone<R: TypeRewriter>(
     ty: &Interned<Type>,
@@ -169,7 +166,7 @@ pub fn rewrite_type<R: TypeRewriter>(
 pub async fn rewrite_type_or_clone_async<R: AsyncTypeRewriter>(
     ty: &Interned<Type>,
     rewriter: &mut R,
-    interner: &impl Interner,
+    interner: &(impl Interner + Sync),
 ) -> Result<Interned<Type>, R::Error> {
     Ok(rewrite_type_async(ty, rewriter, interner)
         .await?
@@ -180,7 +177,7 @@ pub async fn rewrite_type_or_clone_async<R: AsyncTypeRewriter>(
 pub async fn rewrite_type_async<R: AsyncTypeRewriter>(
     ty: &Interned<Type>,
     rewriter: &mut R,
-    interner: &impl Interner,
+    interner: &(impl Interner + Sync),
 ) -> Result<Option<Interned<Type>>, R::Error> {
     rewrite_type_internal_async(ty, rewriter, interner, RewriteContext {
         binder_depth: 0,
@@ -220,12 +217,12 @@ fn rewrite_type_internal<R: TypeRewriter>(
     }
 }
 
-fn rewrite_type_internal_async<'a, R: AsyncTypeRewriter>(
-    ty: &'a Interned<Type>,
-    rewriter: &'a mut R,
-    interner: &'a impl Interner,
+async fn rewrite_type_internal_async<R: AsyncTypeRewriter>(
+    ty: &Interned<Type>,
+    rewriter: &mut R,
+    interner: &impl Interner,
     ctx: RewriteContext,
-) -> AsyncRewriteFuture<'a, R::Error> {
+) -> Result<Option<Interned<Type>>, R::Error> {
     Box::pin(async move {
         match &**ty {
             Type::GenericParameter(id) => {
@@ -255,6 +252,7 @@ fn rewrite_type_internal_async<'a, R: AsyncTypeRewriter>(
             }
         }
     })
+    .await
 }
 
 /// Rewrites the direct arguments of an application using a failable
