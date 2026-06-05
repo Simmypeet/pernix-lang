@@ -12,6 +12,14 @@ use qbice::storage::intern::Interned;
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Constraints(FxHashSet<Outlives>);
 
+impl Constraints {
+    #[must_use]
+    pub fn union_into(mut self, other: Self) -> Self {
+        self.0.extend(other.0);
+        self
+    }
+}
+
 impl Substitutable for Constraints {
     fn apply(
         &self,
@@ -54,6 +62,18 @@ impl Constraints {
 
         lifetime_eq.0.insert(Outlives::new(a.clone(), b.clone()));
         lifetime_eq.0.insert(Outlives::new(b, a));
+
+        lifetime_eq
+    }
+
+    #[must_use]
+    pub fn lifetimes_outlives(
+        lesser: Interned<Type>,
+        greater: Interned<Type>,
+    ) -> Self {
+        let mut lifetime_eq = Self::new();
+
+        lifetime_eq.0.insert(Outlives::new(lesser, greater));
 
         lifetime_eq
     }
