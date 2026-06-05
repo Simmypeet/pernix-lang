@@ -163,6 +163,76 @@ fn rewrite_nested_generic_parameter_preserves_unchanged_siblings() {
     assert!(same_type_handle(&rewritten_nested.arguments[0], &replacement));
 }
 
+struct ApplicationRewriter {
+    target_constructor: Constructor,
+    replacement: Interned<Type>,
+    argument_replacement: Interned<Type>,
+    visited_generic_parameters: usize,
+    saw_rewritten_argument: bool,
+}
+
+impl TypeRewriter for ApplicationRewriter {
+    fn rewrite_application(
+        &mut self,
+        application: &Application,
+        _: RewriteContext,
+    ) -> Option<Interned<Type>> {
+        if application.constructor() == &self.target_constructor {
+            self.saw_rewritten_argument = same_type_handle(
+                &application.arguments()[0],
+                &self.argument_replacement,
+            );
+        }
+
+        (application.constructor() == &self.target_constructor)
+            .then(|| self.replacement.clone())
+    }
+
+    fn rewrite_generic_parameter(
+        &mut self,
+        _: GenericParameterID,
+        _: RewriteContext,
+    ) -> Option<Interned<Type>> {
+        self.visited_generic_parameters += 1;
+        Some(self.argument_replacement.clone())
+    }
+}
+
+#[test]
+fn application_rewriter_runs_after_rewriting_arguments() {
+    let interner = DuplicatingInterner;
+    let target_constructor = Constructor::Primitive(Primitive::Int16);
+    let replacement = primitive_type(Primitive::Bool, &interner);
+    let argument_replacement = primitive_type(Primitive::Uint8, &interner);
+    let nested = application_type(
+        target_constructor.clone(),
+        &[generic_parameter_type(generic_parameter_id(0), &interner)],
+        &interner,
+    );
+    let ty = application_type(
+        Constructor::Primitive(Primitive::Int32),
+        &[nested],
+        &interner,
+    );
+    let mut rewriter = ApplicationRewriter {
+        target_constructor,
+        replacement: replacement.clone(),
+        argument_replacement,
+        visited_generic_parameters: 0,
+        saw_rewritten_argument: false,
+    };
+
+    let rewritten = rewrite_type_or_clone(&ty, &mut rewriter, &interner);
+
+    let rewritten_application = as_application(&rewritten);
+    assert!(same_type_handle(
+        &rewritten_application.arguments[0],
+        &replacement
+    ));
+    assert_eq!(rewriter.visited_generic_parameters, 1);
+    assert!(rewriter.saw_rewritten_argument);
+}
+
 #[test]
 fn instantiation_replaces_generic_parameter_and_leaves_missing_unchanged() {
     let interner = DuplicatingInterner;

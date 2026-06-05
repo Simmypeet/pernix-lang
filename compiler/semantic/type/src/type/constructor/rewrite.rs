@@ -26,11 +26,20 @@ impl RewriteContext {
     }
 }
 
-/// Rewrites selected leaf nodes in a type tree.
+/// Rewrites selected nodes in a type tree.
 ///
 /// A returned replacement is used as-is and is not recursively rewritten.
 #[allow(unused_variables)]
 pub trait TypeRewriter {
+    /// Rewrites an application type.
+    fn rewrite_application(
+        &mut self,
+        application: &Application,
+        ctx: RewriteContext,
+    ) -> Option<Interned<Type>> {
+        None
+    }
+
     /// Rewrites a generic parameter type.
     fn rewrite_generic_parameter(
         &mut self,
@@ -173,8 +182,19 @@ fn rewrite_application_with_rewriter<R: TypeRewriter>(
         );
     }
 
-    rewritten_application(application, new_arguments)
-        .map(|application| interner.intern(Type::Application(application)))
+    let rewritten_application =
+        rewritten_application(application, new_arguments);
+
+    rewriter
+        .rewrite_application(
+            rewritten_application.as_ref().unwrap_or(application),
+            ctx,
+        )
+        .or_else(|| {
+            rewritten_application.map(|application| {
+                interner.intern(Type::Application(application))
+            })
+        })
 }
 
 const fn argument_context(
