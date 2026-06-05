@@ -18,6 +18,12 @@ use crate::{
 
 pub type Step = (Substitution, Vec<Subtype>, Constraints);
 
+enum BindInferenceVariableSubtype {
+    Bound(Step),
+    Failed,
+    NotApplicable,
+}
+
 impl Agree for Step {
     fn agree(&self, other: &Self) -> bool {
         let (subst1, subtypes1, constrs1) = self;
@@ -61,38 +67,12 @@ impl Solver<'_> {
                 )));
             }
 
-            // if one of them is an inference variable, directly map it to the
-            // other type.
-            match (&**subtype.lesser(), &**subtype.greater()) {
-                (Type::InferenceVariable(infer_var), x)
-                | (x, Type::InferenceVariable(infer_var))
-                    if !x.is_bound_variable()
-                        && !x.is_inference_variable()
-                        && !self.kind_of(x).await.is_lifetime() =>
-                {
-                    let Some(subst) = self
-                        .map_variable(
-                            *infer_var,
-                            if subtype.lesser().is_inference_variable() {
-                                subtype.greater().clone()
-                            } else {
-                                subtype.lesser().clone()
-                            },
-                            DoOccurCheck::Yes,
-                        )
-                        .await
-                    else {
-                        return Ok(None);
-                    };
-
-                    return Ok(Some((
-                        subst,
-                        Vec::new(),
-                        Constraints::default(),
-                    )));
+            match self.bind_inference_variable_subtype(subtype).await {
+                BindInferenceVariableSubtype::Bound(step) => {
+                    return Ok(Some(step));
                 }
-
-                _ => {}
+                BindInferenceVariableSubtype::Failed => return Ok(None),
+                BindInferenceVariableSubtype::NotApplicable => {}
             }
 
             // if they are both lifetimes, return constraints according to the
@@ -148,6 +128,44 @@ impl Solver<'_> {
                 }
             }
         }
+    }
+
+    async fn bind_inference_variable_subtype(
+        &mut self,
+        subtype: &Subtype,
+    ) -> BindInferenceVariableSubtype {
+        // if one of them is an inference variable, directly map it to the
+        // other type.
+        let target = match (&**subtype.lesser(), &**subtype.greater()) {
+            (Type::InferenceVariable(infer_var), x)
+            | (x, Type::InferenceVariable(infer_var))
+                if !x.is_bound_variable()
+                    && !x.is_inference_variable()
+                    && !self.kind_of(x).await.is_lifetime() =>
+            {
+                let target = if subtype.lesser().is_inference_variable() {
+                    subtype.greater().clone()
+                } else {
+                    subtype.lesser().clone()
+                };
+
+                (*infer_var, target)
+            }
+
+            (_, _) => return BindInferenceVariableSubtype::NotApplicable,
+        };
+
+        let Some(subst) =
+            self.map_variable(target.0, target.1, DoOccurCheck::Yes).await
+        else {
+            return BindInferenceVariableSubtype::Failed;
+        };
+
+        BindInferenceVariableSubtype::Bound((
+            subst,
+            Vec::new(),
+            Constraints::default(),
+        ))
     }
 
     async fn try_reduce(
