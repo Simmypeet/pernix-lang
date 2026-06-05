@@ -171,6 +171,54 @@ struct ApplicationRewriter {
     saw_rewritten_argument: bool,
 }
 
+struct AsyncApplicationRewriter {
+    target: GenericParameterID,
+    target_constructor: Constructor,
+    replacement: Interned<Type>,
+    argument_replacement: Interned<Type>,
+    saw_argument_binder_depth: Option<usize>,
+    saw_rewritten_argument: bool,
+}
+
+impl AsyncTypeRewriter for AsyncApplicationRewriter {
+    type Error = ();
+
+    async fn rewrite_application(
+        &mut self,
+        application: &Application,
+        _: RewriteContext,
+    ) -> Result<Option<Interned<Type>>, Self::Error> {
+        if application.constructor() == &self.target_constructor {
+            self.saw_rewritten_argument = same_type_handle(
+                &application.arguments()[0],
+                &self.argument_replacement,
+            );
+        }
+
+        Ok((application.constructor() == &self.target_constructor)
+            .then(|| self.replacement.clone()))
+    }
+
+    async fn rewrite_generic_parameter(
+        &mut self,
+        id: GenericParameterID,
+        ctx: RewriteContext,
+    ) -> Result<Option<Interned<Type>>, Self::Error> {
+        if id == self.target {
+            self.saw_argument_binder_depth = Some(ctx.binder_depth());
+            Ok(Some(self.argument_replacement.clone()))
+        } else {
+            Ok(None)
+        }
+    }
+}
+
+struct AsyncNoopRewriter;
+
+impl AsyncTypeRewriter for AsyncNoopRewriter {
+    type Error = ();
+}
+
 impl TypeRewriter for ApplicationRewriter {
     fn rewrite_application(
         &mut self,
@@ -196,6 +244,57 @@ impl TypeRewriter for ApplicationRewriter {
         self.visited_generic_parameters += 1;
         Some(self.argument_replacement.clone())
     }
+}
+
+#[tokio::test]
+async fn async_type_rewriter_uses_async_traversal() {
+    let interner = DuplicatingInterner;
+    let ty = application_type(
+        Constructor::Primitive(Primitive::Int32),
+        &[generic_parameter_type(generic_parameter_id(0), &interner)],
+        &interner,
+    );
+
+    let rewritten = rewrite_type_async(&ty, &mut AsyncNoopRewriter, &interner)
+        .await
+        .unwrap();
+
+    assert!(rewritten.is_none());
+}
+
+#[tokio::test]
+async fn async_application_rewriter_runs_after_rewriting_arguments() {
+    let interner = DuplicatingInterner;
+    let target = generic_parameter_id(0);
+    let target_constructor = Constructor::Primitive(Primitive::Int16);
+    let replacement = primitive_type(Primitive::Bool, &interner);
+    let argument_replacement = primitive_type(Primitive::Uint8, &interner);
+    let nested = application_type(
+        target_constructor.clone(),
+        &[generic_parameter_type(target, &interner)],
+        &interner,
+    );
+    let ty = function_pointer_type(&[nested], &interner);
+    let mut rewriter = AsyncApplicationRewriter {
+        target,
+        target_constructor,
+        replacement: replacement.clone(),
+        argument_replacement,
+        saw_argument_binder_depth: None,
+        saw_rewritten_argument: false,
+    };
+
+    let rewritten = rewrite_type_or_clone_async(&ty, &mut rewriter, &interner)
+        .await
+        .unwrap();
+
+    let rewritten_application = as_application(&rewritten);
+    assert!(same_type_handle(
+        &rewritten_application.arguments[0],
+        &replacement
+    ));
+    assert_eq!(rewriter.saw_argument_binder_depth, Some(1));
+    assert!(rewriter.saw_rewritten_argument);
 }
 
 #[test]
@@ -231,6 +330,43 @@ fn application_rewriter_runs_after_rewriting_arguments() {
     ));
     assert_eq!(rewriter.visited_generic_parameters, 1);
     assert!(rewriter.saw_rewritten_argument);
+}
+
+struct FailingAsyncRewriter {
+    target: GenericParameterID,
+}
+
+impl AsyncTypeRewriter for FailingAsyncRewriter {
+    type Error = &'static str;
+
+    async fn rewrite_generic_parameter(
+        &mut self,
+        id: GenericParameterID,
+        _: RewriteContext,
+    ) -> Result<Option<Interned<Type>>, Self::Error> {
+        if id == self.target { Err("stop") } else { Ok(None) }
+    }
+}
+
+#[tokio::test]
+async fn async_type_rewriter_returns_rewriter_error() {
+    let interner = DuplicatingInterner;
+    let target = generic_parameter_id(0);
+    let argument = generic_parameter_type(target, &interner);
+    let ty = application_type(
+        Constructor::Primitive(Primitive::Int32),
+        &[argument],
+        &interner,
+    );
+
+    let result = rewrite_type_async(
+        &ty,
+        &mut FailingAsyncRewriter { target },
+        &interner,
+    )
+    .await;
+
+    assert_eq!(result, Err("stop"));
 }
 
 #[test]

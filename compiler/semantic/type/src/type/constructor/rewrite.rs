@@ -1,3 +1,5 @@
+use std::{future::Future, pin::Pin};
+
 use pernixc_qbice::Interner;
 use qbice::storage::intern::Interned;
 
@@ -77,6 +79,68 @@ pub trait TypeRewriter {
     }
 }
 
+/// Asynchronously rewrites selected nodes in a type tree.
+///
+/// A returned replacement is used as-is and is not recursively rewritten.
+#[allow(unused_variables)]
+pub trait AsyncTypeRewriter: Send {
+    /// Error returned by the asynchronous rewrite operation.
+    type Error;
+
+    /// Rewrites an application type.
+    fn rewrite_application(
+        &mut self,
+        application: &Application,
+        ctx: RewriteContext,
+    ) -> impl Future<Output = Result<Option<Interned<Type>>, Self::Error>> + Send
+    {
+        async { Ok(None) }
+    }
+
+    /// Rewrites a generic parameter type.
+    fn rewrite_generic_parameter(
+        &mut self,
+        id: GenericParameterID,
+        ctx: RewriteContext,
+    ) -> impl Future<Output = Result<Option<Interned<Type>>, Self::Error>> + Send
+    {
+        async { Ok(None) }
+    }
+
+    /// Rewrites an inference variable type.
+    fn rewrite_inference_variable(
+        &mut self,
+        variable: InferenceVariable,
+        ctx: RewriteContext,
+    ) -> impl Future<Output = Result<Option<Interned<Type>>, Self::Error>> + Send
+    {
+        async { Ok(None) }
+    }
+
+    /// Rewrites a bound variable type.
+    fn rewrite_bound_variable(
+        &mut self,
+        variable: BoundVariable,
+        ctx: RewriteContext,
+    ) -> impl Future<Output = Result<Option<Interned<Type>>, Self::Error>> + Send
+    {
+        async { Ok(None) }
+    }
+
+    /// Rewrites a skolemized variable type.
+    fn rewrite_skolemized_variable(
+        &mut self,
+        variable: SkolemizedVariable,
+        ctx: RewriteContext,
+    ) -> impl Future<Output = Result<Option<Interned<Type>>, Self::Error>> + Send
+    {
+        async { Ok(None) }
+    }
+}
+
+type AsyncRewriteFuture<'a, E> =
+    Pin<Box<dyn Future<Output = Result<Option<Interned<Type>>, E>> + 'a>>;
+
 /// Rewrites a type using lazy clone-on-write traversal.
 pub fn rewrite_type_or_clone<R: TypeRewriter>(
     ty: &Interned<Type>,
@@ -99,6 +163,29 @@ pub fn rewrite_type<R: TypeRewriter>(
     rewrite_type_internal(ty, rewriter, interner, RewriteContext {
         binder_depth: 0,
     })
+}
+
+/// Asynchronously rewrites a type using lazy clone-on-write traversal.
+pub async fn rewrite_type_or_clone_async<R: AsyncTypeRewriter>(
+    ty: &Interned<Type>,
+    rewriter: &mut R,
+    interner: &impl Interner,
+) -> Result<Interned<Type>, R::Error> {
+    Ok(rewrite_type_async(ty, rewriter, interner)
+        .await?
+        .unwrap_or_else(|| ty.clone()))
+}
+
+/// Asynchronously rewrites a type.
+pub async fn rewrite_type_async<R: AsyncTypeRewriter>(
+    ty: &Interned<Type>,
+    rewriter: &mut R,
+    interner: &impl Interner,
+) -> Result<Option<Interned<Type>>, R::Error> {
+    rewrite_type_internal_async(ty, rewriter, interner, RewriteContext {
+        binder_depth: 0,
+    })
+    .await
 }
 
 fn rewrite_type_internal<R: TypeRewriter>(
@@ -131,6 +218,43 @@ fn rewrite_type_internal<R: TypeRewriter>(
             ctx,
         ),
     }
+}
+
+fn rewrite_type_internal_async<'a, R: AsyncTypeRewriter>(
+    ty: &'a Interned<Type>,
+    rewriter: &'a mut R,
+    interner: &'a impl Interner,
+    ctx: RewriteContext,
+) -> AsyncRewriteFuture<'a, R::Error> {
+    Box::pin(async move {
+        match &**ty {
+            Type::GenericParameter(id) => {
+                rewriter.rewrite_generic_parameter(*id, ctx).await
+            }
+
+            Type::InferenceVariable(variable) => {
+                rewriter.rewrite_inference_variable(*variable, ctx).await
+            }
+
+            Type::BoundVariable(variable) => {
+                rewriter.rewrite_bound_variable(*variable, ctx).await
+            }
+
+            Type::SkolemizedVariable(variable) => {
+                rewriter.rewrite_skolemized_variable(*variable, ctx).await
+            }
+
+            Type::Application(application) => {
+                rewrite_application_with_async_rewriter(
+                    application,
+                    rewriter,
+                    interner,
+                    ctx,
+                )
+                .await
+            }
+        }
+    })
 }
 
 /// Rewrites the direct arguments of an application using a failable
@@ -193,6 +317,51 @@ fn rewrite_application_with_rewriter<R: TypeRewriter>(
         .or_else(|| {
             rewritten_application.map(|application| {
                 interner.intern(Type::Application(application))
+            })
+        })
+}
+
+async fn rewrite_application_with_async_rewriter<R: AsyncTypeRewriter>(
+    application: &Application,
+    rewriter: &mut R,
+    interner: &impl Interner,
+    ctx: RewriteContext,
+) -> Result<Option<Interned<Type>>, R::Error> {
+    let argument_ctx = argument_context(application, ctx);
+    let mut new_arguments = None::<Vec<_>>;
+
+    for (index, argument) in application.arguments.iter().enumerate() {
+        let rewritten_argument = rewrite_type_internal_async(
+            argument,
+            rewriter,
+            interner,
+            argument_ctx,
+        )
+        .await?;
+
+        collect_rewritten_argument(
+            &mut new_arguments,
+            &application.arguments,
+            index,
+            argument,
+            rewritten_argument,
+        );
+    }
+
+    let rewritten_application =
+        rewritten_application(application, new_arguments);
+
+    rewriter
+        .rewrite_application(
+            rewritten_application.as_ref().unwrap_or(application),
+            ctx,
+        )
+        .await
+        .map(|rewritten_type| {
+            rewritten_type.or_else(|| {
+                rewritten_application.map(|application| {
+                    interner.intern(Type::Application(application))
+                })
             })
         })
 }
