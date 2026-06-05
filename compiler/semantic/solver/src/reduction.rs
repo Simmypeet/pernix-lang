@@ -22,6 +22,33 @@ impl Solver<'_> {
     ) -> Result<Option<(Interned<Type>, Constraints)>, OverflowError> {
         self.solve(&Reduction(ty)).await
     }
+
+    // due to the weird cyclic query error in rustc, we have to define the
+    // implementation with `+ Send` bounds
+    #[allow(clippy::manual_async_fn)]
+    fn reduce_type_impl(
+        &mut self,
+        ty: &Interned<Type>,
+    ) -> impl Future<
+        Output = Result<Option<(Interned<Type>, Constraints)>, OverflowError>,
+    > + Send {
+        async move {
+            if let Some(result) =
+                recurse_from_result(rewrite_inner(ty, self).await?, self)
+                    .await?
+            {
+                return Ok(Some(result));
+            }
+
+            if let Some(result) =
+                recurse_from_result(rewrite_step(ty, self).await?, self).await?
+            {
+                return Ok(Some(result));
+            }
+
+            recurse_from_result(rewrite_from_eq(ty, self).await?, self).await
+        }
+    }
 }
 
 impl Solve for Reduction {
@@ -31,25 +58,15 @@ impl Solve for Reduction {
         &self,
         solver: &mut Solver<'_>,
     ) -> Result<Self::Result, OverflowError> {
-        if let Some(result) =
-            recurse_from_result(rewrite_inner(&self.0, solver).await?, solver)
-                .await?
-        {
-            return Ok(Some(result));
-        }
-
-        if let Some(result) =
-            recurse_from_result(rewrite_step(&self.0, solver).await?, solver)
-                .await?
-        {
-            return Ok(Some(result));
-        }
-
-        recurse_from_result(rewrite_from_eq(&self.0, solver).await?, solver)
-            .await
+        solver.reduce_type_impl(&self.0).await
     }
 
     fn provisional_result(&self) -> Provisional<Self::Result> {
+        // A recursive reduction query means a rule can keep reintroducing the
+        // same reducible type, for example `T = (bool, T)`. Returning `None`
+        // would hide that non-termination, while returning the original type
+        // would let the recursive reducer keep expanding around it. Treat the
+        // cycle as overflow instead.
         Provisional::Bail
     }
 }
@@ -115,15 +132,13 @@ async fn try_match_eq(
     solver: &mut Solver<'_>,
 ) -> Option<(Interned<Type>, Constraints)> {
     let fresh_instantiation =
-        solver.instaitate_inference_variables(eq.binder().kinds());
+        solver.create_inference_instantiations(eq.binder().kinds());
 
-    let instantiated_lhs =
-        solver.replace_bound_variables_with(eq.left(), &fresh_instantiation);
+    let instantiated_lhs = solver.instantiate(eq.left(), &fresh_instantiation);
 
     let (subst, constrs) = solver.match_types(&instantiated_lhs, ty).await?;
 
-    let instantiated_rhs =
-        solver.replace_bound_variables_with(eq.right(), &fresh_instantiation);
+    let instantiated_rhs = solver.instantiate(eq.right(), &fresh_instantiation);
 
     Some((solver.apply_or_self(&subst, instantiated_rhs), constrs))
 }

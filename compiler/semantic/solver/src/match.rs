@@ -1,7 +1,10 @@
 use pernixc_type::{substitution::Substitution, r#type::Type};
 use qbice::storage::intern::Interned;
 
-use crate::{constraints::Constraints, solver::Solver};
+use crate::{
+    constraints::Constraints,
+    solver::{DoOccurCheck, Solver},
+};
 
 impl Solver<'_> {
     /// Computes a substitution `S` such that `S(head) == subject)`, if one
@@ -25,7 +28,12 @@ impl Solver<'_> {
                 if !x.is_bound_variable() =>
             {
                 Some((
-                    self.map_variable(*infer_var, subject.clone()).await?,
+                    self.map_variable(
+                        *infer_var,
+                        subject.clone(),
+                        DoOccurCheck::No,
+                    )
+                    .await?,
                     Constraints::default(),
                 ))
             }
@@ -58,10 +66,10 @@ impl Solver<'_> {
             _ => {
                 // if both are lifetime kinds and none of them are bound
                 // variables, return invariant constraints
-                if self.kind_of(head).await.is_lifetime()
-                    && self.kind_of(subject).await.is_lifetime()
-                    && !head.is_bound_variable()
+                if !head.is_bound_variable()
                     && !subject.is_bound_variable()
+                    && self.kind_of(head).await.is_lifetime()
+                    && self.kind_of(subject).await.is_lifetime()
                 {
                     Some((
                         Substitution::default(),

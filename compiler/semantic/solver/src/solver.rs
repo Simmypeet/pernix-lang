@@ -10,8 +10,8 @@ use pernixc_type::{
     predicate::Predicate,
     substitution::{Substitutable, Substitution},
     r#type::{
-        Type, bound::rewrite_bound_variables, constructor::Application,
-        context::TyContext, inference::InferenceVariable, kind::TyKind,
+        Type, bound::Instantiate, constructor::Application, context::TyContext,
+        inference::InferenceVariable, kind::TyKind,
     },
 };
 use qbice::{
@@ -148,6 +148,10 @@ impl Agree for Constraints {
     fn agree(&self, other: &Self) -> bool { self == other }
 }
 
+impl Agree for Substitution {
+    fn agree(&self, other: &Self) -> bool { self == other }
+}
+
 impl<T: Agree, U: Agree> Agree for (T, U) {
     fn agree(&self, other: &Self) -> bool {
         self.0.agree(&other.0) && self.1.agree(&other.1)
@@ -183,7 +187,7 @@ pub trait Solve: Clone + Eq + Hash + DynIdent {
     fn solve(
         &self,
         solver: &mut Solver,
-    ) -> impl Future<Output = Result<Self::Result, OverflowError>>;
+    ) -> impl Future<Output = Result<Self::Result, OverflowError>> + Send;
 
     fn provisional_result(&self) -> Provisional<Self::Result>;
 }
@@ -204,7 +208,7 @@ pub type BoundInstantiation = Vec<Interned<Type>>;
 impl Solver<'_> {
     /// Creates a fresh inference variables for each kind in `kinds`, and
     /// returns an array of all the created inference variables.
-    pub fn instaitate_inference_variables(
+    pub fn create_inference_instantiations(
         &mut self,
         kinds: impl Iterator<Item = TyKind>,
     ) -> BoundInstantiation {
@@ -216,13 +220,35 @@ impl Solver<'_> {
             .collect()
     }
 
+    /// Creates a fresh skolemized variables for each kind in `kinds`, and
+    /// returns an array of all the created inference variables.
+    pub fn create_skolem_instantiations(
+        &mut self,
+        kinds: impl Iterator<Item = TyKind>,
+    ) -> BoundInstantiation {
+        kinds
+            .map(|kind| {
+                let var = self.fresh_skolem_variable(kind);
+                self.intern(Type::SkolemizedVariable(var))
+            })
+            .collect()
+    }
+
+    pub fn compose_subst(
+        &mut self,
+        sub1: &mut Substitution,
+        sub2: Substitution,
+    ) {
+        sub1.compose(sub2, self.engine());
+    }
+
     #[must_use]
-    pub fn replace_bound_variables_with(
+    pub fn instantiate(
         &self,
         ty: &Interned<Type>,
         instantiations: &[Interned<Type>],
     ) -> Interned<Type> {
-        rewrite_bound_variables(ty, instantiations, self.engine())
+        ty.instantiate(instantiations, self.engine())
     }
 
     #[must_use]
@@ -242,11 +268,36 @@ impl Solver<'_> {
 
             Type::Application(application) => application
                 .arguments()
+                .iter()
                 .map(|x| self.max_universe_index(x))
                 .max()
                 .unwrap_or(UniverseIndex::root()),
         }
     }
+}
+
+fn occur_check(
+    inference_variable: InferenceVariable,
+    ty: &Interned<Type>,
+) -> bool {
+    match ty.as_ref() {
+        Type::InferenceVariable(var) => *var == inference_variable,
+
+        Type::BoundVariable(_)
+        | Type::GenericParameter(_)
+        | Type::SkolemizedVariable(_) => false,
+
+        Type::Application(application) => application
+            .arguments()
+            .iter()
+            .any(|arg| occur_check(inference_variable, arg)),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) enum DoOccurCheck {
+    Yes,
+    No,
 }
 
 impl<'a> Solver<'a> {
@@ -304,10 +355,11 @@ impl<'a> Solver<'a> {
         self.engine().intern(value)
     }
 
-    pub async fn map_variable(
+    pub(crate) async fn map_variable(
         &mut self,
         inference_variable: InferenceVariable,
         ty: Interned<Type>,
+        do_occur_check: DoOccurCheck,
     ) -> Option<Substitution> {
         let var_kind = self.get_inference_variable_kind(&inference_variable);
         let subject_kind = self.kind_of(&ty).await;
@@ -320,6 +372,12 @@ impl<'a> Solver<'a> {
         let subject_uni = self.max_universe_index(&ty);
 
         if var_uni < subject_uni {
+            return None;
+        }
+
+        if do_occur_check == DoOccurCheck::Yes
+            && occur_check(inference_variable, &ty)
+        {
             return None;
         }
 
