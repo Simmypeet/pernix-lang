@@ -445,7 +445,7 @@ impl Solver<'_> {
                         )))
                     }
 
-                    Constructor::Lifetime(lifetime) => {
+                    Constructor::Lifetime(_) => {
                         unreachable!(
                             "should've been caught by the lifetime case"
                         )
@@ -522,30 +522,73 @@ impl Solver<'_> {
             )));
         }
 
-        let mut subst = Substitution::new();
-        let mut constrs = Constraints::default();
+        todo!()
+    }
 
-        for (lesser_arg, greater_arg, variance) in pairs {
-            let substed_lesser =
-                lesser_arg.apply_or_self(&subst, self.engine());
-            let substed_greater =
-                greater_arg.apply_or_self(&subst, self.engine());
+    /// Exhaustively resolves a batch of subtype constraints.
+    ///
+    /// Each subtype constraint is solved into a step, then the learned
+    /// substitution and emitted constraints are accumulated. Constraints that
+    /// cannot make progress in the current round are returned in the `Step`
+    /// instead of causing the whole resolution to fail. If a round learns
+    /// something, those residual subtype constraints are rewritten once with
+    /// the accumulated substitution before the next round starts.
+    pub async fn resolve_subtypes(
+        &mut self,
+        mut subtypes: Vec<Subtype>,
+    ) -> Result<Step, OverflowError> {
+        let mut constraints = Constraints::default();
+        let mut substitution = Substitution::new();
 
-            let Some((mut new_subst, _, new_constrs)) = self
-                .solve(&Subtype::new(substed_lesser, substed_greater, variance))
-                .await?
-            else {
-                return Ok(None);
-            };
+        loop {
+            let mut residual_subtypes = Vec::new();
+            let mut has_progress = false;
 
-            self.compose_subst(&mut new_subst, subst);
-            subst = new_subst;
+            while let Some(subtype) = subtypes.pop() {
+                // A stuck subtype is kept for the next round. It may become
+                // solvable after this round's substitutions are composed.
+                let Some((
+                    mut step_substitution,
+                    new_subtypes,
+                    new_constraints,
+                )) = Box::pin(self.solve(&subtype)).await?
+                else {
+                    residual_subtypes.push(subtype);
+                    continue;
+                };
 
-            constrs = constrs.union_into(new_constrs);
+                has_progress = true;
+
+                // Lifetime constraints are accumulated as emitted; callers
+                // receive the learned substitution separately.
+                constraints = constraints.union_into(new_constraints);
+
+                // Newly decomposed subtype problems are solved in the same
+                // batch without rewriting them by the step substitution.
+                subtypes.extend(new_subtypes);
+
+                // Preserve composition order so the returned substitution
+                // represents everything learned by all successful steps.
+                self.compose_subst(&mut step_substitution, substitution);
+                substitution = step_substitution;
+            }
+
+            if residual_subtypes.is_empty() {
+                return Ok((substitution, Vec::new(), constraints));
+            }
+
+            if !has_progress {
+                return Ok((substitution, residual_subtypes, constraints));
+            }
+
+            // Normalize stuck constraints once per round, not after each
+            // individual step, to keep the worklist updates batched.
+            for residual_subtype in &mut residual_subtypes {
+                *residual_subtype = residual_subtype
+                    .apply_or_clone(&substitution, self.engine());
+            }
+
+            subtypes = residual_subtypes;
         }
-        // apply substitution to the constraints before returning.
-        constrs = constrs.apply_or_self(&subst, self.engine());
-
-        Ok(Some((subst, todo!(), constrs)))
     }
 }
