@@ -276,7 +276,7 @@ impl Solver<'_> {
     }
 }
 
-fn occur_check(
+pub(crate) fn occur_check(
     inference_variable: InferenceVariable,
     ty: &Interned<Type>,
 ) -> bool {
@@ -302,7 +302,7 @@ pub(crate) enum DoOccurCheck {
 
 impl<'a> Solver<'a> {
     #[must_use]
-    const fn engine(&self) -> &'a TrackedEngine { self.engine }
+    pub(crate) const fn engine(&self) -> &'a TrackedEngine { self.engine }
 
     #[must_use]
     pub fn destructure(

@@ -58,15 +58,24 @@ impl Solver<'_> {
         &mut self,
         kind: TyKind,
     ) -> InferenceVariable {
+        self.fresh_inference_variable_in_universe(kind, self.current_universe())
+    }
+
+    /// Creates a new inference variable with the given kind and universe.
+    pub(crate) fn fresh_inference_variable_in_universe(
+        &mut self,
+        kind: TyKind,
+        universe: UniverseIndex,
+    ) -> InferenceVariable {
         let id = InferenceVariable::new(
             self.variable_infos.inference_variables.counter,
         );
 
         self.variable_infos.inference_variables.counter += 1;
-        self.variable_infos.inference_variables.infos.insert(
-            id,
-            VariableInfo { kind, universe: self.current_universe() },
-        );
+        self.variable_infos
+            .inference_variables
+            .infos
+            .insert(id, VariableInfo { kind, universe });
 
         id
     }

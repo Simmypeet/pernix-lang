@@ -1,11 +1,21 @@
-use std::convert::AsRef;
+use std::convert::{AsRef, Infallible};
 
 use pernixc_type::{
+    generic_parameters::GenericParameterID,
     predicate::Subtype,
     substitution::Substitution,
     r#type::{
         Type,
-        constructor::{Application, Constructor, Mutability},
+        constructor::{
+            Application, Constructor, Mutability,
+            rewrite::{
+                AsyncTypeRewriter, RewriteContext, rewrite_type_or_clone_async,
+            },
+        },
+        context::TyContext,
+        inference::InferenceVariable,
+        kind::TyKind,
+        skolem::SkolemizedVariable,
     },
     variance::Variance,
 };
@@ -13,7 +23,10 @@ use qbice::storage::intern::Interned;
 
 use crate::{
     constraints::Constraints,
-    solver::{Agree, DoOccurCheck, OverflowError, Provisional, Solve, Solver},
+    solver::{
+        Agree, DoOccurCheck, OverflowError, Provisional, Solve, Solver,
+        occur_check, universe::UniverseIndex,
+    },
 };
 
 pub type Step = (Substitution, Vec<Subtype>, Constraints);
@@ -22,6 +35,12 @@ enum BindInferenceVariableSubtype {
     Bound(Step),
     Failed,
     NotApplicable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+enum InferenceVariableSubtypeSide {
+    Lesser,
+    Greater,
 }
 
 impl Agree for Step {
@@ -67,7 +86,7 @@ impl Solver<'_> {
                 )));
             }
 
-            match self.bind_inference_variable_subtype(subtype).await {
+            match self.bind_inference_variable_subtype(subtype).await? {
                 BindInferenceVariableSubtype::Bound(step) => {
                     return Ok(Some(step));
                 }
@@ -133,41 +152,214 @@ impl Solver<'_> {
     async fn bind_inference_variable_subtype(
         &mut self,
         subtype: &Subtype,
-    ) -> BindInferenceVariableSubtype {
-        // if one of them is an inference variable, directly map it to the
-        // other type.
-        let target = match (&**subtype.lesser(), &**subtype.greater()) {
-            (Type::InferenceVariable(infer_var), x)
-            | (x, Type::InferenceVariable(infer_var))
-                if !x.is_bound_variable()
-                    && !x.is_inference_variable()
-                    && !self.kind_of(x).await.is_lifetime() =>
-            {
-                let target = if subtype.lesser().is_inference_variable() {
-                    subtype.greater().clone()
-                } else {
-                    subtype.lesser().clone()
-                };
-
-                (*infer_var, target)
-            }
-
-            (_, _) => return BindInferenceVariableSubtype::NotApplicable,
-        };
-
-        let Some(subst) =
-            self.map_variable(target.0, target.1, DoOccurCheck::Yes).await
+    ) -> Result<BindInferenceVariableSubtype, OverflowError> {
+        let Some((infer_var, binding_target, side)) =
+            self.inference_variable_subtype_binding_target(subtype).await
         else {
-            return BindInferenceVariableSubtype::Failed;
+            return Ok(BindInferenceVariableSubtype::NotApplicable);
         };
 
-        BindInferenceVariableSubtype::Bound((
-            subst,
-            Vec::new(),
-            Constraints::default(),
-        ))
+        self.bind_inference_variable_to_target(
+            infer_var,
+            binding_target,
+            side,
+            subtype.variance(),
+        )
+        .await
     }
 
+    async fn inference_variable_subtype_binding_target(
+        &mut self,
+        subtype: &Subtype,
+    ) -> Option<(InferenceVariable, Interned<Type>, InferenceVariableSubtypeSide)>
+    {
+        if let Type::InferenceVariable(infer_var) = &**subtype.lesser()
+            && self.can_bind_inference_variable_to(subtype.greater()).await
+        {
+            return Some((
+                *infer_var,
+                subtype.greater().clone(),
+                InferenceVariableSubtypeSide::Lesser,
+            ));
+        }
+
+        if let Type::InferenceVariable(infer_var) = &**subtype.greater()
+            && self.can_bind_inference_variable_to(subtype.lesser()).await
+        {
+            return Some((
+                *infer_var,
+                subtype.lesser().clone(),
+                InferenceVariableSubtypeSide::Greater,
+            ));
+        }
+
+        None
+    }
+
+    async fn can_bind_inference_variable_to(
+        &mut self,
+        target: &Interned<Type>,
+    ) -> bool {
+        !target.is_bound_variable()
+            && !target.is_inference_variable()
+            && !self.kind_of(target).await.is_lifetime()
+    }
+
+    async fn bind_inference_variable_to_target(
+        &mut self,
+        infer_var: InferenceVariable,
+        binding_target: Interned<Type>,
+        side: InferenceVariableSubtypeSide,
+        variance: Variance,
+    ) -> Result<BindInferenceVariableSubtype, OverflowError> {
+        let Type::Application(_) = &*binding_target else {
+            let Some(subst) = self
+                .map_variable(infer_var, binding_target, DoOccurCheck::Yes)
+                .await
+            else {
+                return Ok(BindInferenceVariableSubtype::Failed);
+            };
+
+            return Ok(BindInferenceVariableSubtype::Bound((
+                subst,
+                Vec::new(),
+                Constraints::default(),
+            )));
+        };
+
+        if occur_check(infer_var, &binding_target) {
+            return Ok(BindInferenceVariableSubtype::Failed);
+        }
+
+        let binding_universe = self.get_inference_variable_universe(infer_var);
+        let intermediate_application = self
+            .freshen_application_inference_variables(
+                &binding_target,
+                binding_universe,
+            )
+            .await;
+
+        let Some(subst) = self
+            .map_variable(
+                infer_var,
+                intermediate_application.clone(),
+                DoOccurCheck::Yes,
+            )
+            .await
+        else {
+            return Ok(BindInferenceVariableSubtype::Failed);
+        };
+
+        let subtype_problem = match side {
+            InferenceVariableSubtypeSide::Lesser => Subtype::new(
+                intermediate_application.clone(),
+                binding_target,
+                variance,
+            ),
+            InferenceVariableSubtypeSide::Greater => Subtype::new(
+                binding_target,
+                intermediate_application.clone(),
+                variance,
+            ),
+        };
+
+        let Some((mut new_subst, subtypes, constraints)) =
+            Box::pin(self.solve(&subtype_problem)).await?
+        else {
+            return Ok(BindInferenceVariableSubtype::Failed);
+        };
+
+        self.compose_subst(&mut new_subst, subst);
+
+        Ok(BindInferenceVariableSubtype::Bound((
+            new_subst,
+            subtypes,
+            constraints,
+        )))
+    }
+
+    async fn freshen_application_inference_variables(
+        &mut self,
+        ty: &Interned<Type>,
+        universe: UniverseIndex,
+    ) -> Interned<Type> {
+        let engine = self.engine();
+        let mut rewriter =
+            FreshInferenceVariableRewriter { solver: self, universe };
+
+        rewrite_type_or_clone_async(ty, &mut rewriter, engine)
+            .await
+            .unwrap_or_else(|err| match err {})
+    }
+}
+
+struct FreshInferenceVariableRewriter<'solver, 'engine> {
+    solver: &'solver mut Solver<'engine>,
+    universe: UniverseIndex,
+}
+
+impl AsyncTypeRewriter for FreshInferenceVariableRewriter<'_, '_> {
+    type Error = Infallible;
+
+    async fn rewrite_application(
+        &mut self,
+        application: &Application,
+        _: RewriteContext,
+    ) -> Result<Option<Interned<Type>>, Self::Error> {
+        if let Constructor::Lifetime(_) = application.constructor() {
+            return Ok(Some(self.fresh_inference_variable(TyKind::Lifetime)));
+        }
+
+        Ok(None)
+    }
+
+    async fn rewrite_inference_variable(
+        &mut self,
+        variable: InferenceVariable,
+        _: RewriteContext,
+    ) -> Result<Option<Interned<Type>>, Self::Error> {
+        let kind = self.solver.get_inference_variable_kind(&variable);
+
+        Ok(Some(self.fresh_inference_variable(kind)))
+    }
+
+    async fn rewrite_generic_parameter(
+        &mut self,
+        id: GenericParameterID,
+        _: RewriteContext,
+    ) -> Result<Option<Interned<Type>>, Self::Error> {
+        let ty = Type::GenericParameter(id);
+
+        Ok(self
+            .solver
+            .kind_of(&ty)
+            .await
+            .is_lifetime()
+            .then(|| self.fresh_inference_variable(TyKind::Lifetime)))
+    }
+
+    async fn rewrite_skolemized_variable(
+        &mut self,
+        variable: SkolemizedVariable,
+        _: RewriteContext,
+    ) -> Result<Option<Interned<Type>>, Self::Error> {
+        let kind = self.solver.get_skolemized_variable_kind(&variable);
+
+        Ok(kind.is_lifetime().then(|| self.fresh_inference_variable(kind)))
+    }
+}
+
+impl FreshInferenceVariableRewriter<'_, '_> {
+    fn fresh_inference_variable(&mut self, kind: TyKind) -> Interned<Type> {
+        let fresh_var = self
+            .solver
+            .fresh_inference_variable_in_universe(kind, self.universe);
+
+        self.solver.intern(Type::InferenceVariable(fresh_var))
+    }
+}
+
+impl Solver<'_> {
     async fn try_reduce(
         &mut self,
         lesser: &Interned<Type>,
