@@ -1,5 +1,6 @@
 use pernixc_type::{
     predicate::{Equality, Predicate},
+    substitution::Substitutable,
     r#type::{Type, rewrite::rewrite_application},
 };
 use qbice::storage::intern::Interned;
@@ -79,7 +80,7 @@ async fn rewrite_step(
         return Ok(None);
     };
 
-    Ok(solver.reduce_step(ap).await.map(|x| (x, Constraints::default())))
+    Ok(ap.reduce(solver.engine()).await.map(|x| (x, Constraints::default())))
 }
 
 async fn rewrite_inner(
@@ -140,7 +141,7 @@ async fn try_match_eq(
 
     let instantiated_rhs = solver.instantiate(eq.right(), &fresh_instantiation);
 
-    Some((solver.apply_or_self(&subst, instantiated_rhs), constrs))
+    Some((instantiated_rhs.apply_or_self(&subst, solver.engine()), constrs))
 }
 
 async fn rewrite_from_eq(

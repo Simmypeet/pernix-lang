@@ -1,4 +1,7 @@
-use pernixc_type::{substitution::Substitution, r#type::Type};
+use pernixc_type::{
+    substitution::{Substitutable, Substitution},
+    r#type::Type,
+};
 use qbice::storage::intern::Interned;
 
 use crate::{
@@ -27,28 +30,35 @@ impl Solver<'_> {
             (Type::InferenceVariable(infer_var), x)
                 if !x.is_bound_variable() =>
             {
-                Some((
-                    self.map_variable(
+                if !self
+                    .can_bind_inference_variable_to_type(
                         *infer_var,
-                        subject.clone(),
+                        subject,
                         DoOccurCheck::No,
                     )
-                    .await?,
+                    .await
+                {
+                    return None;
+                }
+
+                Some((
+                    Substitution::singleton(*infer_var, subject.clone()),
                     Constraints::default(),
                 ))
             }
 
             (Type::Application(left_a), Type::Application(right_a)) => {
-                let iter = self.destructure(left_a, right_a)?;
+                let iter = left_a.destructure(right_a, self.engine())?;
 
                 let mut subst = Substitution::new();
                 let mut constraint = Constraints::default();
 
                 Box::pin(async move {
                     for (head_ty, subject_ty) in iter {
-                        let head_ty = self.apply_or_clone(&subst, &head_ty);
+                        let head_ty =
+                            head_ty.apply_or_clone(&subst, self.engine());
                         let subject_ty =
-                            self.apply_or_clone(&subst, &subject_ty);
+                            subject_ty.apply_or_clone(&subst, self.engine());
 
                         let (new_subst, new_constraints) =
                             self.match_types(&head_ty, &subject_ty).await?;
@@ -57,7 +67,8 @@ impl Solver<'_> {
                         constraint.extend(new_constraints);
                     }
 
-                    constraint = self.apply_or_self(&subst, constraint);
+                    constraint =
+                        constraint.apply_or_self(&subst, self.engine());
                     Some((subst, constraint))
                 })
                 .await

@@ -3,7 +3,7 @@ use std::convert::{AsRef, Infallible};
 use pernixc_type::{
     generic_parameters::GenericParameterID,
     predicate::Subtype,
-    substitution::Substitution,
+    substitution::{Substitutable, Substitution},
     r#type::{
         Type,
         constructor::{
@@ -25,7 +25,7 @@ use crate::{
     constraints::Constraints,
     solver::{
         Agree, DoOccurCheck, OverflowError, Provisional, Solve, Solver,
-        occur_check, universe::UniverseIndex,
+        universe::UniverseIndex,
     },
 };
 
@@ -212,13 +212,19 @@ impl Solver<'_> {
         side: InferenceVariableSubtypeSide,
         variance: Variance,
     ) -> Result<BindInferenceVariableSubtype, OverflowError> {
+        if !self
+            .can_bind_inference_variable_to_type(
+                infer_var,
+                &binding_target,
+                DoOccurCheck::Yes,
+            )
+            .await
+        {
+            return Ok(BindInferenceVariableSubtype::Failed);
+        }
+
         let Type::Application(_) = &*binding_target else {
-            let Some(subst) = self
-                .map_variable(infer_var, binding_target, DoOccurCheck::Yes)
-                .await
-            else {
-                return Ok(BindInferenceVariableSubtype::Failed);
-            };
+            let subst = Substitution::singleton(infer_var, binding_target);
 
             return Ok(BindInferenceVariableSubtype::Bound((
                 subst,
@@ -226,10 +232,6 @@ impl Solver<'_> {
                 Constraints::default(),
             )));
         };
-
-        if occur_check(infer_var, &binding_target) {
-            return Ok(BindInferenceVariableSubtype::Failed);
-        }
 
         let binding_universe = self.get_inference_variable_universe(infer_var);
         let intermediate_application = self
@@ -239,16 +241,10 @@ impl Solver<'_> {
             )
             .await;
 
-        let Some(subst) = self
-            .map_variable(
-                infer_var,
-                intermediate_application.clone(),
-                DoOccurCheck::Yes,
-            )
-            .await
-        else {
-            return Ok(BindInferenceVariableSubtype::Failed);
-        };
+        let subst = Substitution::singleton(
+            infer_var,
+            intermediate_application.clone(),
+        );
 
         let subtype_problem = match side {
             InferenceVariableSubtypeSide::Lesser => Subtype::new(
@@ -406,7 +402,8 @@ impl Solver<'_> {
         greater_ap: &Application,
         variance: Variance,
     ) -> Result<Option<Step>, OverflowError> {
-        let Some(iter) = self.destructure(lesser_ap, greater_ap) else {
+        let Some(iter) = lesser_ap.destructure(greater_ap, self.engine())
+        else {
             // can't destructure, so try reducing and trying again
             return Box::pin(self.try_reduce(lesser, greater, variance)).await;
         };
@@ -529,8 +526,10 @@ impl Solver<'_> {
         let mut constrs = Constraints::default();
 
         for (lesser_arg, greater_arg, variance) in pairs {
-            let substed_lesser = self.apply_or_self(&subst, lesser_arg);
-            let substed_greater = self.apply_or_self(&subst, greater_arg);
+            let substed_lesser =
+                lesser_arg.apply_or_self(&subst, self.engine());
+            let substed_greater =
+                greater_arg.apply_or_self(&subst, self.engine());
 
             let Some((mut new_subst, _, new_constrs)) = self
                 .solve(&Subtype::new(substed_lesser, substed_greater, variance))
@@ -545,7 +544,7 @@ impl Solver<'_> {
             constrs = constrs.union_into(new_constrs);
         }
         // apply substitution to the constraints before returning.
-        constrs = self.apply_or_self(&subst, constrs);
+        constrs = constrs.apply_or_self(&subst, self.engine());
 
         Ok(Some((subst, todo!(), constrs)))
     }

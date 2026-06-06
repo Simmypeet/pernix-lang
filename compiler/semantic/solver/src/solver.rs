@@ -7,10 +7,11 @@ use std::{
 use pernixc_hash::FxHashMap;
 use pernixc_qbice::TrackedEngine;
 use pernixc_type::{
+    self,
     predicate::Predicate,
-    substitution::{Substitutable, Substitution},
+    substitution::Substitution,
     r#type::{
-        Type, bound::Instantiate, constructor::Application, context::TyContext,
+        Type, bound::Instantiate, context::TyContext,
         inference::InferenceVariable, kind::TyKind,
     },
 };
@@ -302,17 +303,7 @@ pub(crate) enum DoOccurCheck {
 
 impl<'a> Solver<'a> {
     #[must_use]
-    pub(crate) const fn engine(&self) -> &'a TrackedEngine { self.engine }
-
-    #[must_use]
-    pub fn destructure(
-        &self,
-        left_ap: &'a Application,
-        right_ap: &'a Application,
-    ) -> Option<impl Iterator<Item = (Interned<Type>, Interned<Type>)> + 'a>
-    {
-        left_ap.destructure(right_ap, self.engine())
-    }
+    pub const fn engine(&self) -> &'a TrackedEngine { self.engine }
 
     pub fn premise_predicates(
         &self,
@@ -320,30 +311,7 @@ impl<'a> Solver<'a> {
         self.premise.iter()
     }
 
-    pub async fn reduce_step(
-        &mut self,
-        ap: &Application,
-    ) -> Option<Interned<Type>> {
-        ap.reduce(self.engine).await
-    }
-
     #[must_use]
-    pub fn apply_or_clone<T: Substitutable + Clone>(
-        &self,
-        subst: &Substitution,
-        ty: &T,
-    ) -> T {
-        ty.apply_or_clone(subst, self.engine())
-    }
-
-    pub fn apply_or_self<T: Substitutable>(
-        &self,
-        subst: &Substitution,
-        ty: T,
-    ) -> T {
-        ty.apply_or_self(subst, self.engine())
-    }
-
     pub async fn kind_of(&self, ty: &Type) -> TyKind {
         ty.kind(self.engine(), self).await
     }
@@ -355,33 +323,33 @@ impl<'a> Solver<'a> {
         self.engine().intern(value)
     }
 
-    pub(crate) async fn map_variable(
+    pub(crate) async fn can_bind_inference_variable_to_type(
         &mut self,
         inference_variable: InferenceVariable,
-        ty: Interned<Type>,
+        ty: &Interned<Type>,
         do_occur_check: DoOccurCheck,
-    ) -> Option<Substitution> {
+    ) -> bool {
         let var_kind = self.get_inference_variable_kind(&inference_variable);
-        let subject_kind = self.kind_of(&ty).await;
+        let subject_kind = self.kind_of(ty).await;
 
         if var_kind != subject_kind {
-            return None;
+            return false;
         }
 
         let var_uni = self.get_inference_variable_universe(inference_variable);
-        let subject_uni = self.max_universe_index(&ty);
+        let subject_uni = self.max_universe_index(ty);
 
         if var_uni < subject_uni {
-            return None;
+            return false;
         }
 
         if do_occur_check == DoOccurCheck::Yes
-            && occur_check(inference_variable, &ty)
+            && occur_check(inference_variable, ty)
         {
-            return None;
+            return false;
         }
 
-        Some(Substitution::singleton(inference_variable, ty))
+        true
     }
 
     pub(crate) async fn solve<Q: Solve>(
