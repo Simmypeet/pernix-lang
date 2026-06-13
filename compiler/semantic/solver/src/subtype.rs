@@ -31,6 +31,9 @@ use crate::{
 
 mod application;
 
+#[cfg(test)]
+mod test;
+
 pub type Step = (Substitution, Vec<Subtype>, Constraints);
 
 enum BindInferenceVariableSubtype {
