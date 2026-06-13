@@ -1,4 +1,4 @@
-use std::convert::{AsRef, Infallible};
+use std::convert::Infallible;
 
 use pernixc_type::{
     generic_parameters::GenericParameterID,
@@ -7,7 +7,7 @@ use pernixc_type::{
     r#type::{
         Type,
         constructor::{
-            Application, Constructor, Mutability,
+            Application, Constructor,
             rewrite::{
                 AsyncTypeRewriter, RewriteContext, rewrite_type_or_clone_async,
             },
@@ -28,6 +28,8 @@ use crate::{
         universe::UniverseIndex,
     },
 };
+
+mod application;
 
 pub type Step = (Substitution, Vec<Subtype>, Constraints);
 
@@ -392,137 +394,6 @@ impl Solver<'_> {
 
         // otherwise, we have no information to learn from this
         Ok(None)
-    }
-
-    async fn handle_application(
-        &mut self,
-        lesser: &Interned<Type>,
-        greater: &Interned<Type>,
-        lesser_ap: &Application,
-        greater_ap: &Application,
-        variance: Variance,
-    ) -> Result<Option<Step>, OverflowError> {
-        let Some(iter) = lesser_ap.destructure(greater_ap, self.engine())
-        else {
-            // can't destructure, so try reducing and trying again
-            return Box::pin(self.try_reduce(lesser, greater, variance)).await;
-        };
-
-        self.new_universe(
-            async |solver| -> Result<Option<Step>, OverflowError> {
-                let lesser_inst = lesser_ap
-                    .binder()
-                    .map(|x| solver.create_inference_instantiations(x.kinds()));
-                let greater_inst = greater_ap
-                    .binder()
-                    .map(|x| solver.create_skolem_instantiations(x.kinds()));
-
-                let mut new_iter = iter.map(|(l, g)| {
-                    (
-                        lesser_inst.as_ref().map_or_else(
-                            || l.clone(),
-                            |insts| solver.instantiate(&l, insts),
-                        ),
-                        greater_inst.as_ref().map_or_else(
-                            || g.clone(),
-                            |insts| solver.instantiate(&g, insts),
-                        ),
-                    )
-                });
-
-                match lesser_ap.constructor() {
-                    Constructor::AnonymousTraitInstance(_)
-                    | Constructor::Primitive(_) => {
-                        assert!(
-                            lesser_ap.arguments().is_empty()
-                                && greater_ap.arguments().is_empty()
-                        );
-
-                        Ok(Some((
-                            Substitution::new(),
-                            Vec::new(),
-                            Constraints::default(),
-                        )))
-                    }
-
-                    Constructor::Lifetime(_) => {
-                        unreachable!(
-                            "should've been caught by the lifetime case"
-                        )
-                    }
-
-                    Constructor::Reference(reference) => {
-                        let (lt_l, lt_g) =
-                            new_iter.next().expect("expect lifetime component");
-                        let (ty_l, ty_g) =
-                            new_iter.next().expect("expect type component");
-
-                        assert!(new_iter.next().is_none());
-
-                        Box::pin(
-                            solver.handle_subtype_of_arguments(
-                                [
-                                    (lt_l, lt_g, Variance::Covariant),
-                                    (
-                                        ty_l,
-                                        ty_g,
-                                        if reference.mutability()
-                                            == Mutability::Mutable
-                                        {
-                                            Variance::Invariant
-                                        } else {
-                                            Variance::Covariant
-                                        },
-                                    ),
-                                ]
-                                .into_iter(),
-                                lesser_inst.as_ref().map(AsRef::as_ref),
-                                greater_inst.as_ref().map(AsRef::as_ref),
-                            ),
-                        )
-                        .await
-                    }
-
-                    Constructor::Symbolic(symbolic) => todo!(),
-
-                    Constructor::Tuple(tuple) => todo!(),
-
-                    Constructor::FunctionPointer(function_pointer) => todo!(),
-
-                    Constructor::AnonymousTraitInstance(
-                        anonymous_trait_instance,
-                    ) => todo!(),
-
-                    Constructor::InstanceAssociated(instance_associated) => {
-                        todo!()
-                    }
-                }
-            },
-        )
-        .await?;
-
-        todo!()
-    }
-
-    async fn handle_subtype_of_arguments(
-        &mut self,
-        pairs: impl Iterator<Item = (Interned<Type>, Interned<Type>, Variance)>,
-        lesser_inst: Option<&[Interned<Type>]>,
-        greater_inst: Option<&[Interned<Type>]>,
-    ) -> Result<Option<Step>, OverflowError> {
-        // if has no higher-ranked stuffs invovled, break down the problem into
-        // smaller subproblems
-        if lesser_inst.is_none_or(<[_]>::is_empty)
-            && greater_inst.is_none_or(<[_]>::is_empty)
-        {
-            return Ok(Some((
-                Substitution::new(),
-                pairs.map(|(l, r, v)| Subtype::new(l, r, v)).collect(),
-                Constraints::default(),
-            )));
-        }
-
-        todo!()
     }
 
     /// Exhaustively resolves a batch of subtype constraints.

@@ -11,8 +11,7 @@ use pernixc_type::{
     predicate::Predicate,
     substitution::Substitution,
     r#type::{
-        Type, bound::Instantiate, context::TyContext,
-        inference::InferenceVariable, kind::TyKind,
+        Type, context::TyContext, inference::InferenceVariable, kind::TyKind,
     },
 };
 use qbice::{
@@ -241,15 +240,6 @@ impl Solver<'_> {
         sub2: Substitution,
     ) {
         sub1.compose(sub2, self.engine());
-    }
-
-    #[must_use]
-    pub fn instantiate(
-        &self,
-        ty: &Interned<Type>,
-        instantiations: &[Interned<Type>],
-    ) -> Interned<Type> {
-        ty.instantiate(instantiations, self.engine())
     }
 
     #[must_use]

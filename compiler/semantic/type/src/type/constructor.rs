@@ -148,6 +148,11 @@ pub struct Symbolic {
     symbolic_id: GlobalSymbolID,
 }
 
+impl Symbolic {
+    #[must_use]
+    pub const fn symbol_id(&self) -> GlobalSymbolID { self.symbolic_id }
+}
+
 /// Represents a tuple type constructor, such as `(T1, T2, T3)`. Which can
 /// include `Unpacked` elements.
 ///
@@ -214,6 +219,13 @@ pub struct InstanceAssociated {
     trait_associated_id: GlobalSymbolID,
 }
 
+impl InstanceAssociated {
+    #[must_use]
+    pub const fn trait_associated_id(&self) -> GlobalSymbolID {
+        self.trait_associated_id
+    }
+}
+
 /// Refers to an instance that is coupled with a trait when user writes
 /// `this.Associated` syntax.
 ///
@@ -248,6 +260,11 @@ pub struct InstanceAssociated {
 )]
 pub struct AnonymousTraitInstance {
     trait_id: GlobalSymbolID,
+}
+
+impl AnonymousTraitInstance {
+    #[must_use]
+    pub const fn trait_id(&self) -> GlobalSymbolID { self.trait_id }
 }
 
 /// Represents a function pointer, such as `fn(T1, T2) -> T3`.

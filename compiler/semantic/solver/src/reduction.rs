@@ -1,7 +1,7 @@
 use pernixc_type::{
     predicate::{Equality, Predicate},
     substitution::Substitutable,
-    r#type::{Type, rewrite::rewrite_application},
+    r#type::{Type, bound::Instantiate, rewrite::rewrite_application},
 };
 use qbice::storage::intern::Interned;
 
@@ -135,11 +135,13 @@ async fn try_match_eq(
     let fresh_instantiation =
         solver.create_inference_instantiations(eq.binder().kinds());
 
-    let instantiated_lhs = solver.instantiate(eq.left(), &fresh_instantiation);
+    let instantiated_lhs =
+        eq.left().instantiate(&fresh_instantiation, solver.engine());
 
     let (subst, constrs) = solver.match_types(&instantiated_lhs, ty).await?;
 
-    let instantiated_rhs = solver.instantiate(eq.right(), &fresh_instantiation);
+    let instantiated_rhs =
+        eq.right().instantiate(&fresh_instantiation, solver.engine());
 
     Some((instantiated_rhs.apply_or_self(&subst, solver.engine()), constrs))
 }
