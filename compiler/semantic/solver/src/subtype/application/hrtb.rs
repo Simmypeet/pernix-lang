@@ -23,7 +23,12 @@ use crate::{
 
 #[derive(Debug, Clone, Copy)]
 enum HrtbInstantiation {
+    // The subtype side is existential and the supertype side is universal:
+    // `for<a> T[a] <: for<b> U[b]` becomes `T[?a] <: U[!b]`.
     LesserInferenceGreaterSkolem,
+
+    // Used for contravariant positions and the second invariant pass, where
+    // the subtype/supertype roles are observed through the flipped variance.
     LesserSkolemGreaterInference,
 }
 
@@ -62,6 +67,9 @@ impl Solver<'_> {
             }
 
             Variance::Invariant => {
+                // Invariant HRTB must prove both directions, but each proof is
+                // still an invariant argument solve. Only binder polarity is
+                // swapped between the two runs.
                 let Some((mut substitution, residual_subtypes, constraints)) =
                     Box::pin(self.handle_hrtb_application_run(
                         lesser_ap,
@@ -77,6 +85,9 @@ impl Solver<'_> {
 
                 assert!(residual_subtypes.is_empty());
 
+                // The second direction sees any external knowledge learned by
+                // the first direction, but gets fresh HRTB variables of its
+                // own.
                 let engine = self.engine();
                 let substituted_arguments = arguments
                     .iter()
@@ -133,6 +144,8 @@ impl Solver<'_> {
         instantiation: HrtbInstantiation,
     ) -> Result<Option<Step>, OverflowError> {
         self.new_universe(async |solver| {
+            // The fresh universe labels every inference/skolem variable created
+            // for this run so leak checking and cleanup can recognize them.
             let run_universe = solver.current_universe();
             let (lesser_inst, greater_inst) = match instantiation {
                 HrtbInstantiation::LesserInferenceGreaterSkolem => (
@@ -169,9 +182,8 @@ impl Solver<'_> {
                         ),
                     )
                 }),
-                lesser_inst.as_deref(),
-                greater_inst.as_deref(),
                 variance,
+                true,
             ))
             .await?;
 
@@ -187,8 +199,7 @@ impl Solver<'_> {
         (mut substitution, residual_subtypes, constraints): Step,
         run_universe: UniverseIndex,
     ) -> Option<Step> {
-        let engine = self.engine();
-        let constraints = constraints.apply_or_clone(&substitution, engine);
+        // Substitutions aren't allowed to map the inference lifetime variables
 
         if residual_subtypes.is_empty() {
             if !self.hrtb_leak_check(&constraints, run_universe) {
@@ -201,6 +212,8 @@ impl Solver<'_> {
         let constraints =
             self.clean_hrtb_constraints(&constraints, run_universe);
 
+        // HRTB variables are local proof artifacts. A successful step must not
+        // expose them through the substitution map returned to callers.
         substitution.retain(|variable, ty| {
             !self.is_internal_substitution_variable(variable, run_universe)
                 && !self.contains_internal_hrtb_variable(ty, run_universe)
@@ -216,6 +229,10 @@ impl Solver<'_> {
     ) -> bool {
         let graph = Self::constraint_graph(constraints);
 
+        // Edges are directed as written by `Outlives::new(lesser, greater)`.
+        // An internal skolem must not reach an external node, nor a different
+        // internal skolem; either path would let a universally-bound lifetime
+        // escape the function-pointer binder.
         for start in graph.keys() {
             let Type::SkolemizedVariable(skolem) = &**start else {
                 continue;
@@ -277,6 +294,8 @@ impl Solver<'_> {
         let static_lifetime = self.static_lifetime();
 
         for source in graph.keys() {
+            // Compress paths through internal inference variables so removing
+            // `?x` from `A -> ?x -> B` still leaves the observable `A -> B`.
             let mut seen = FxHashSet::default();
             let mut stack = vec![source.clone()];
 
@@ -322,6 +341,9 @@ impl Solver<'_> {
             return;
         }
 
+        // `R: !s` is the observable remnant of proving an external lifetime
+        // outlives every choice of the bound lifetime. That is equivalent to
+        // requiring `R: 'static`.
         if self.is_internal_lifetime_skolem_type(&greater, run_universe)
             && !self.contains_internal_hrtb_variable(&lesser, run_universe)
         {

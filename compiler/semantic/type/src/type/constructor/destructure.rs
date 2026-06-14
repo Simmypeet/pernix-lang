@@ -9,7 +9,7 @@ type RegularDestructure<'a> = std::iter::Zip<
     std::iter::Cloned<std::slice::Iter<'a, Interned<Type>>>,
 >;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum Destructure<'a> {
     Regular(RegularDestructure<'a>),
     OneSidedTuple(OneSidedTupleDestructure<'a>),
@@ -41,7 +41,7 @@ enum OneSidedTupleState {
     Done,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct OneSidedTupleDestructure<'a> {
     from_arguments: &'a [Interned<Type>],
     to_arguments: &'a [Interned<Type>],

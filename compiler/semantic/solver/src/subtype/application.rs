@@ -49,9 +49,8 @@ impl Solver<'_> {
         Box::pin(self.handle_application_arguments(
             lesser_ap,
             arguments.into_iter(),
-            None,
-            None,
             variance,
+            false,
         ))
         .await
     }
@@ -60,9 +59,8 @@ impl Solver<'_> {
         &mut self,
         lesser_ap: &Application,
         mut arguments: impl Iterator<Item = (Interned<Type>, Interned<Type>)>,
-        lesser_inst: Option<&[Interned<Type>]>,
-        greater_inst: Option<&[Interned<Type>]>,
         variance: Variance,
+        resolve_immediately: bool,
     ) -> Result<Option<Step>, OverflowError> {
         match lesser_ap.constructor() {
             Constructor::Primitive(_)
@@ -108,8 +106,7 @@ impl Solver<'_> {
                             ),
                         ]
                         .into_iter(),
-                        lesser_inst,
-                        greater_inst,
+                        resolve_immediately,
                     ),
                 )
                 .await
@@ -119,9 +116,8 @@ impl Solver<'_> {
                 Box::pin(self.handle_symbolic_arguments(
                     *symbolic,
                     arguments,
-                    lesser_inst,
-                    greater_inst,
                     variance,
+                    resolve_immediately,
                 ))
                 .await
             }
@@ -131,8 +127,7 @@ impl Solver<'_> {
                     arguments.map(|(lesser, greater)| {
                         (lesser, greater, variance.xfrom(Variance::Covariant))
                     }),
-                    lesser_inst,
-                    greater_inst,
+                    resolve_immediately,
                 ))
                 .await
             }
@@ -151,8 +146,7 @@ impl Solver<'_> {
 
                         (lesser, greater, variance.xfrom(argument_variance))
                     }),
-                    lesser_inst,
-                    greater_inst,
+                    resolve_immediately,
                 ))
                 .await
             }
@@ -162,8 +156,7 @@ impl Solver<'_> {
                     arguments.map(|(lesser, greater)| {
                         (lesser, greater, variance.xfrom(Variance::Invariant))
                     }),
-                    lesser_inst,
-                    greater_inst,
+                    resolve_immediately,
                 ))
                 .await
             }
@@ -174,9 +167,8 @@ impl Solver<'_> {
         &mut self,
         symbolic: Symbolic,
         arguments: impl Iterator<Item = (Interned<Type>, Interned<Type>)>,
-        lesser_inst: Option<&[Interned<Type>]>,
-        greater_inst: Option<&[Interned<Type>]>,
         variance: Variance,
+        resolve_immediately: bool,
     ) -> Result<Option<Step>, OverflowError> {
         let kind = self.engine().get_kind(symbolic.symbol_id()).await;
 
@@ -199,8 +191,7 @@ impl Solver<'_> {
                             )
                         },
                     ),
-                    lesser_inst,
-                    greater_inst,
+                    resolve_immediately,
                 ))
                 .await
             }
@@ -210,8 +201,7 @@ impl Solver<'_> {
                     arguments.map(|(lesser, greater)| {
                         (lesser, greater, variance.xfrom(Variance::Invariant))
                     }),
-                    lesser_inst,
-                    greater_inst,
+                    resolve_immediately,
                 ))
                 .await
             }
@@ -247,14 +237,11 @@ impl Solver<'_> {
     async fn handle_subtype_of_arguments(
         &mut self,
         pairs: impl Iterator<Item = (Interned<Type>, Interned<Type>, Variance)>,
-        lesser_inst: Option<&[Interned<Type>]>,
-        greater_inst: Option<&[Interned<Type>]>,
+        resolve_immediately: bool,
     ) -> Result<Option<Step>, OverflowError> {
         let subtypes = pairs.map(|(l, r, v)| Subtype::new(l, r, v)).collect();
 
-        if lesser_inst.is_none_or(<[_]>::is_empty)
-            && greater_inst.is_none_or(<[_]>::is_empty)
-        {
+        if !resolve_immediately {
             return Ok(Some((
                 Substitution::new(),
                 subtypes,
