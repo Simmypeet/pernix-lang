@@ -5,7 +5,6 @@ use pernixc_type::{
     substitution::Substitution,
     r#type::{
         Type,
-        bound::Instantiate,
         constructor::{Application, Constructor, Mutability, Symbolic},
     },
     variance::{Variance, get_variances},
@@ -17,6 +16,8 @@ use crate::{
     solver::{OverflowError, Solver},
     subtype::Step,
 };
+
+mod hrtb;
 
 impl Solver<'_> {
     pub(super) async fn handle_application(
@@ -32,36 +33,26 @@ impl Solver<'_> {
             return Box::pin(self.try_reduce(lesser, greater, variance)).await;
         };
 
-        self.new_universe(async |solver| {
-            let lesser_inst = lesser_ap
-                .binder()
-                .map(|x| solver.create_inference_instantiations(x.kinds()));
-            let greater_inst = greater_ap
-                .binder()
-                .map(|x| solver.create_skolem_instantiations(x.kinds()));
+        let arguments = iter.collect::<Vec<_>>();
 
-            let engine = solver.engine();
+        let has_binder =
+            lesser_ap.binder().is_some_and(|binder| !binder.is_empty())
+                || greater_ap.binder().is_some_and(|binder| !binder.is_empty());
 
-            Box::pin(solver.handle_application_arguments(
-                lesser_ap,
-                iter.map(|(l, g)| {
-                    (
-                        lesser_inst.as_ref().map_or_else(
-                            || l.clone(),
-                            |insts| l.instantiate(insts, engine),
-                        ),
-                        greater_inst.as_ref().map_or_else(
-                            || g.clone(),
-                            |insts| g.instantiate(insts, engine),
-                        ),
-                    )
-                }),
-                lesser_inst.as_deref(),
-                greater_inst.as_deref(),
-                variance,
+        if has_binder {
+            return Box::pin(self.handle_hrtb_application(
+                lesser_ap, greater_ap, &arguments, variance,
             ))
-            .await
-        })
+            .await;
+        }
+
+        Box::pin(self.handle_application_arguments(
+            lesser_ap,
+            arguments.into_iter(),
+            None,
+            None,
+            variance,
+        ))
         .await
     }
 

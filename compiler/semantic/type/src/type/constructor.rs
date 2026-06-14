@@ -290,6 +290,11 @@ pub struct FunctionPointer {
     binder: Binder,
 }
 
+impl FunctionPointer {
+    #[must_use]
+    pub const fn new(binder: Binder) -> Self { Self { binder } }
+}
+
 #[derive(
     Debug,
     Clone,

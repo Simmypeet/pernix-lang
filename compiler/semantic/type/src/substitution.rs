@@ -64,6 +64,19 @@ impl Substitution {
         }
     }
 
+    pub fn retain(
+        &mut self,
+        mut f: impl FnMut(Variable, &Interned<Type>) -> bool,
+    ) {
+        self.0.retain(|variable, ty| f(*variable, ty));
+    }
+
+    pub fn iter(
+        &self,
+    ) -> impl Iterator<Item = (Variable, &Interned<Type>)> + '_ {
+        self.0.iter().map(|(variable, ty)| (*variable, ty))
+    }
+
     pub(crate) async fn append_generic_arguments(
         &mut self,
         symbol_id: GlobalSymbolID,

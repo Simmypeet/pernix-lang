@@ -156,6 +156,13 @@ impl Application {
                 &other.arguments,
                 engine,
             )
+        } else if let (
+            Constructor::FunctionPointer(_),
+            Constructor::FunctionPointer(_),
+        ) = (&self.constructor, &other.constructor)
+        {
+            Self::destructure_regular(&self.arguments, &other.arguments)
+                .map(Destructure::Regular)
         } else if self.constructor == other.constructor {
             Self::destructure_regular(&self.arguments, &other.arguments)
                 .map(Destructure::Regular)

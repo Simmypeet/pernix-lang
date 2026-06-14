@@ -104,6 +104,12 @@ impl Outlives {
     pub const fn new(lesser: Interned<Type>, greater: Interned<Type>) -> Self {
         Self { lesser, greater }
     }
+
+    #[must_use]
+    pub const fn lesser(&self) -> &Interned<Type> { &self.lesser }
+
+    #[must_use]
+    pub const fn greater(&self) -> &Interned<Type> { &self.greater }
 }
 
 impl Substitutable for Outlives {

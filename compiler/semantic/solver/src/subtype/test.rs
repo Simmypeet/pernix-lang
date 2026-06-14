@@ -6,10 +6,12 @@ use pernixc_type::{
     substitution::Substitution,
     r#type::{
         Type,
+        bound::{Binder, BoundVariable},
         constructor::{
-            Application, Constructor, Lifetime, Mutability, Primitive,
-            Reference, Tuple,
+            Application, Constructor, FunctionPointer, Lifetime, Mutability,
+            Primitive, Reference, Tuple,
         },
+        kind::TyKind,
     },
     variance::Variance,
 };
@@ -22,6 +24,7 @@ use crate::{
     constraints::Constraints,
     premise::Premise,
     solver::{OverflowError, Solver},
+    subtype::Step,
 };
 
 async fn create_engine() -> TrackedEngine {
@@ -50,6 +53,10 @@ fn lifetime(lifetime: Lifetime, engine: &TrackedEngine) -> Interned<Type> {
     )))
 }
 
+fn bound_lifetime(index: usize, engine: &TrackedEngine) -> Interned<Type> {
+    engine.intern(Type::BoundVariable(BoundVariable::new(0, index)))
+}
+
 fn tuple(
     arguments: Vec<Interned<Type>>,
     engine: &TrackedEngine,
@@ -60,6 +67,8 @@ fn tuple(
     )))
 }
 
+fn unit(engine: &TrackedEngine) -> Interned<Type> { tuple(Vec::new(), engine) }
+
 fn reference(
     lifetime: Interned<Type>,
     pointee: Interned<Type>,
@@ -69,6 +78,19 @@ fn reference(
     engine.intern(Type::Application(Application::new(
         Constructor::Reference(Reference::new(mutability)),
         engine.intern_unsized(vec![lifetime, pointee]),
+    )))
+}
+
+fn function_pointer(
+    lifetimes: usize,
+    arguments: Vec<Interned<Type>>,
+    engine: &TrackedEngine,
+) -> Interned<Type> {
+    engine.intern(Type::Application(Application::new(
+        Constructor::FunctionPointer(FunctionPointer::new(Binder::new(
+            engine.intern_unsized(vec![TyKind::Lifetime; lifetimes]),
+        ))),
+        engine.intern_unsized(arguments),
     )))
 }
 
@@ -87,6 +109,43 @@ async fn resolve_one(
     assert_eq!(residual_subtypes, Vec::new());
 
     Ok(constraints)
+}
+
+async fn resolve_step(
+    lesser: Interned<Type>,
+    greater: Interned<Type>,
+    variance: Variance,
+    engine: &TrackedEngine,
+) -> Result<Step, OverflowError> {
+    Solver::new(&Premise::default(), engine)
+        .resolve_subtypes(vec![Subtype::new(lesser, greater, variance)])
+        .await
+}
+
+fn contains_variable(ty: &Interned<Type>) -> bool {
+    match &**ty {
+        Type::InferenceVariable(_) | Type::SkolemizedVariable(_) => true,
+        Type::Application(application) => {
+            application.arguments().iter().any(contains_variable)
+        }
+        Type::GenericParameter(_) | Type::BoundVariable(_) => false,
+    }
+}
+
+fn assert_no_variables_in_step(
+    substitution: &Substitution,
+    residual_subtypes: &[Subtype],
+    constraints: &Constraints,
+) {
+    assert!(substitution.iter().all(|(_, ty)| !contains_variable(ty)));
+    assert!(residual_subtypes.iter().all(|subtype| {
+        !contains_variable(subtype.lesser())
+            && !contains_variable(subtype.greater())
+    }));
+    assert!(constraints.clone().into_iter().all(|constraint| {
+        !contains_variable(constraint.lesser())
+            && !contains_variable(constraint.greater())
+    }));
 }
 
 // input: ('static) <: ('erased) @ Covariant
@@ -224,4 +283,481 @@ async fn mutable_reference_pointees_are_invariant() {
         constraints,
         Constraints::lifetimes_eq(static_lifetime, erased_lifetime)
     );
+}
+
+// input:
+// for<'a> fn(&'a u32, &'a u32) -> () <:
+// for<'b, 'c> fn(&'b u32, &'c u32) -> () @ Covariant
+// premise: {}
+// output: {}
+#[tokio::test]
+async fn higher_ranked_lifetime_arguments_can_split() {
+    let engine = create_engine().await;
+    let u32_type = primitive(Primitive::Uint32, &engine);
+    let lhs_lifetime = bound_lifetime(0, &engine);
+    let rhs_first_lifetime = bound_lifetime(0, &engine);
+    let rhs_second_lifetime = bound_lifetime(1, &engine);
+
+    let lesser = function_pointer(
+        1,
+        vec![
+            reference(
+                lhs_lifetime.clone(),
+                u32_type.clone(),
+                Mutability::Immutable,
+                &engine,
+            ),
+            reference(
+                lhs_lifetime,
+                u32_type.clone(),
+                Mutability::Immutable,
+                &engine,
+            ),
+            unit(&engine),
+        ],
+        &engine,
+    );
+    let greater = function_pointer(
+        2,
+        vec![
+            reference(
+                rhs_first_lifetime,
+                u32_type.clone(),
+                Mutability::Immutable,
+                &engine,
+            ),
+            reference(
+                rhs_second_lifetime,
+                u32_type,
+                Mutability::Immutable,
+                &engine,
+            ),
+            unit(&engine),
+        ],
+        &engine,
+    );
+
+    let (substitution, residual_subtypes, constraints) =
+        resolve_step(lesser, greater, Variance::Covariant, &engine)
+            .await
+            .unwrap();
+
+    assert_eq!(substitution, Substitution::new());
+    assert_eq!(residual_subtypes, Vec::new());
+    assert_eq!(constraints, Constraints::default());
+}
+
+// input:
+// for<'a> fn(&'a u32, &'a u32) -> &'a u32 <:
+// for<'b, 'c> fn(&'b u32, &'c u32) -> &'b u32 @ Covariant
+// premise: {}
+// output: stuck subtype problem
+#[tokio::test]
+async fn higher_ranked_lifetime_return_cannot_split_argument_identity() {
+    let engine = create_engine().await;
+    let u32_type = primitive(Primitive::Uint32, &engine);
+    let lhs_lifetime = bound_lifetime(0, &engine);
+    let rhs_first_lifetime = bound_lifetime(0, &engine);
+    let rhs_second_lifetime = bound_lifetime(1, &engine);
+
+    let lesser = function_pointer(
+        1,
+        vec![
+            reference(
+                lhs_lifetime.clone(),
+                u32_type.clone(),
+                Mutability::Immutable,
+                &engine,
+            ),
+            reference(
+                lhs_lifetime.clone(),
+                u32_type.clone(),
+                Mutability::Immutable,
+                &engine,
+            ),
+            reference(
+                lhs_lifetime,
+                u32_type.clone(),
+                Mutability::Immutable,
+                &engine,
+            ),
+        ],
+        &engine,
+    );
+    let greater = function_pointer(
+        2,
+        vec![
+            reference(
+                rhs_first_lifetime.clone(),
+                u32_type.clone(),
+                Mutability::Immutable,
+                &engine,
+            ),
+            reference(
+                rhs_second_lifetime,
+                u32_type.clone(),
+                Mutability::Immutable,
+                &engine,
+            ),
+            reference(
+                rhs_first_lifetime,
+                u32_type,
+                Mutability::Immutable,
+                &engine,
+            ),
+        ],
+        &engine,
+    );
+
+    let (_, residual_subtypes, _) =
+        resolve_step(lesser, greater, Variance::Covariant, &engine)
+            .await
+            .unwrap();
+
+    assert!(!residual_subtypes.is_empty());
+}
+
+// input: for<'a> fn(&'a u32) -> () <: fn(&'static u32) -> () @ Covariant
+// premise: {}
+// output: {}
+#[tokio::test]
+async fn mixed_ranked_and_unranked_function_pointers_destructure() {
+    let engine = create_engine().await;
+    let u32_type = primitive(Primitive::Uint32, &engine);
+    let ranked_lifetime = bound_lifetime(0, &engine);
+    let static_lifetime = lifetime(Lifetime::Static, &engine);
+
+    let lesser = function_pointer(
+        1,
+        vec![
+            reference(
+                ranked_lifetime,
+                u32_type.clone(),
+                Mutability::Immutable,
+                &engine,
+            ),
+            unit(&engine),
+        ],
+        &engine,
+    );
+    let greater = function_pointer(
+        0,
+        vec![
+            reference(
+                static_lifetime,
+                u32_type,
+                Mutability::Immutable,
+                &engine,
+            ),
+            unit(&engine),
+        ],
+        &engine,
+    );
+
+    let (_, residual_subtypes, _) =
+        resolve_step(lesser, greater, Variance::Covariant, &engine)
+            .await
+            .unwrap();
+
+    assert_eq!(residual_subtypes, Vec::new());
+}
+
+// input: fn(&'static u32) -> () <: for<'a> fn(&'a u32) -> () @ Covariant
+// premise: {}
+// output: stuck subtype problem
+#[tokio::test]
+async fn covariant_hrtb_rejects_skolem_to_external_leak() {
+    let engine = create_engine().await;
+    let u32_type = primitive(Primitive::Uint32, &engine);
+    let ranked_lifetime = bound_lifetime(0, &engine);
+    let static_lifetime = lifetime(Lifetime::Static, &engine);
+
+    let lesser = function_pointer(
+        0,
+        vec![
+            reference(
+                static_lifetime,
+                u32_type.clone(),
+                Mutability::Immutable,
+                &engine,
+            ),
+            unit(&engine),
+        ],
+        &engine,
+    );
+    let greater = function_pointer(
+        1,
+        vec![
+            reference(
+                ranked_lifetime,
+                u32_type,
+                Mutability::Immutable,
+                &engine,
+            ),
+            unit(&engine),
+        ],
+        &engine,
+    );
+
+    let (_, residual_subtypes, _) =
+        resolve_step(lesser, greater, Variance::Covariant, &engine)
+            .await
+            .unwrap();
+
+    assert!(!residual_subtypes.is_empty());
+}
+
+// input:
+// fn(&'static u32) -> () <: for<'a> fn(&'a u32) -> () @ Contravariant
+// premise: {}
+// output: {}
+#[tokio::test]
+async fn contravariant_top_level_variance_flips_hrtb_sides() {
+    let engine = create_engine().await;
+    let u32_type = primitive(Primitive::Uint32, &engine);
+    let ranked_lifetime = bound_lifetime(0, &engine);
+    let static_lifetime = lifetime(Lifetime::Static, &engine);
+
+    let lesser = function_pointer(
+        0,
+        vec![
+            reference(
+                static_lifetime,
+                u32_type.clone(),
+                Mutability::Immutable,
+                &engine,
+            ),
+            unit(&engine),
+        ],
+        &engine,
+    );
+    let greater = function_pointer(
+        1,
+        vec![
+            reference(
+                ranked_lifetime,
+                u32_type,
+                Mutability::Immutable,
+                &engine,
+            ),
+            unit(&engine),
+        ],
+        &engine,
+    );
+
+    let (_, residual_subtypes, _) =
+        resolve_step(lesser, greater, Variance::Contravariant, &engine)
+            .await
+            .unwrap();
+
+    assert_eq!(residual_subtypes, Vec::new());
+}
+
+// input:
+// for<'a> fn(&'a u32) -> &'a u32 <:
+// for<'b> fn(&'b u32) -> &'b u32 @ Invariant
+// premise: {}
+// output: {}
+#[tokio::test]
+async fn invariant_hrtb_uses_independent_directional_runs() {
+    let engine = create_engine().await;
+    let u32_type = primitive(Primitive::Uint32, &engine);
+    let lhs_lifetime = bound_lifetime(0, &engine);
+    let rhs_lifetime = bound_lifetime(0, &engine);
+
+    let lesser = function_pointer(
+        1,
+        vec![
+            reference(
+                lhs_lifetime.clone(),
+                u32_type.clone(),
+                Mutability::Immutable,
+                &engine,
+            ),
+            reference(
+                lhs_lifetime,
+                u32_type.clone(),
+                Mutability::Immutable,
+                &engine,
+            ),
+        ],
+        &engine,
+    );
+    let greater = function_pointer(
+        1,
+        vec![
+            reference(
+                rhs_lifetime.clone(),
+                u32_type.clone(),
+                Mutability::Immutable,
+                &engine,
+            ),
+            reference(rhs_lifetime, u32_type, Mutability::Immutable, &engine),
+        ],
+        &engine,
+    );
+
+    let (substitution, residual_subtypes, constraints) =
+        resolve_step(lesser, greater, Variance::Invariant, &engine)
+            .await
+            .unwrap();
+
+    assert_eq!(substitution, Substitution::new());
+    assert_eq!(residual_subtypes, Vec::new());
+    assert_eq!(constraints, Constraints::default());
+}
+
+// input: fn() -> &'static u32 <: for<'a> fn() -> &'a u32 @ Covariant
+// premise: {}
+// output: no inference or skolem variables in the returned step
+#[tokio::test]
+async fn hrtb_step_does_not_expose_internal_variables() {
+    let engine = create_engine().await;
+    let u32_type = primitive(Primitive::Uint32, &engine);
+    let ranked_lifetime = bound_lifetime(0, &engine);
+    let static_lifetime = lifetime(Lifetime::Static, &engine);
+
+    let lesser = function_pointer(
+        0,
+        vec![
+            unit(&engine),
+            reference(
+                static_lifetime,
+                u32_type.clone(),
+                Mutability::Immutable,
+                &engine,
+            ),
+        ],
+        &engine,
+    );
+    let greater = function_pointer(
+        1,
+        vec![
+            unit(&engine),
+            reference(
+                ranked_lifetime,
+                u32_type,
+                Mutability::Immutable,
+                &engine,
+            ),
+        ],
+        &engine,
+    );
+
+    let (substitution, residual_subtypes, constraints) =
+        resolve_step(lesser, greater, Variance::Covariant, &engine)
+            .await
+            .unwrap();
+
+    assert_no_variables_in_step(
+        &substitution,
+        &residual_subtypes,
+        &constraints,
+    );
+}
+
+// input: fn() -> &'static u32 <: for<'a> fn() -> &'a u32 @ Covariant
+// premise: {}
+// output: 'static: 'static
+#[tokio::test]
+async fn external_to_skolem_return_obligation_rewrites_to_static() {
+    let engine = create_engine().await;
+    let u32_type = primitive(Primitive::Uint32, &engine);
+    let ranked_lifetime = bound_lifetime(0, &engine);
+    let static_lifetime = lifetime(Lifetime::Static, &engine);
+
+    let lesser = function_pointer(
+        0,
+        vec![
+            unit(&engine),
+            reference(
+                static_lifetime.clone(),
+                u32_type.clone(),
+                Mutability::Immutable,
+                &engine,
+            ),
+        ],
+        &engine,
+    );
+    let greater = function_pointer(
+        1,
+        vec![
+            unit(&engine),
+            reference(
+                ranked_lifetime,
+                u32_type,
+                Mutability::Immutable,
+                &engine,
+            ),
+        ],
+        &engine,
+    );
+
+    let (_, residual_subtypes, constraints) =
+        resolve_step(lesser, greater, Variance::Covariant, &engine)
+            .await
+            .unwrap();
+
+    assert_eq!(residual_subtypes, Vec::new());
+    assert_eq!(
+        constraints,
+        Constraints::lifetimes_outlives(
+            static_lifetime.clone(),
+            static_lifetime
+        )
+    );
+}
+
+// input:
+// for<'a> fn(&'a u32) -> &'a u32 <:
+// for<'b> fn(&'b u32) -> &'b u32 @ Bivariant
+// premise: {}
+// output: {}
+#[tokio::test]
+async fn bivariant_hrtb_function_pointers_do_not_emit_work() {
+    let engine = create_engine().await;
+    let u32_type = primitive(Primitive::Uint32, &engine);
+    let lhs_lifetime = bound_lifetime(0, &engine);
+    let rhs_lifetime = bound_lifetime(0, &engine);
+
+    let lesser = function_pointer(
+        1,
+        vec![
+            reference(
+                lhs_lifetime.clone(),
+                u32_type.clone(),
+                Mutability::Immutable,
+                &engine,
+            ),
+            reference(
+                lhs_lifetime,
+                u32_type.clone(),
+                Mutability::Immutable,
+                &engine,
+            ),
+        ],
+        &engine,
+    );
+    let greater = function_pointer(
+        1,
+        vec![
+            reference(
+                rhs_lifetime.clone(),
+                u32_type.clone(),
+                Mutability::Immutable,
+                &engine,
+            ),
+            reference(rhs_lifetime, u32_type, Mutability::Immutable, &engine),
+        ],
+        &engine,
+    );
+
+    let (substitution, residual_subtypes, constraints) =
+        resolve_step(lesser, greater, Variance::Bivariant, &engine)
+            .await
+            .unwrap();
+
+    assert_eq!(substitution, Substitution::new());
+    assert_eq!(residual_subtypes, Vec::new());
+    assert_eq!(constraints, Constraints::default());
 }
