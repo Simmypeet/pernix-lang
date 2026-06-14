@@ -278,9 +278,8 @@ impl Solver<'_> {
         run_universes: &[UniverseIndex],
     ) -> bool {
         // Edges are directed as written by `Outlives::new(lesser, greater)`.
-        // An internal skolem must not reach an external node, nor a different
-        // internal skolem; either path would let a universally-bound lifetime
-        // escape the function-pointer binder.
+        // A bound skolem may only reach itself or inference variables created
+        // for the same HRTB proof. Anything else leaks the universal lifetime.
         for start in graph.keys() {
             let Type::SkolemizedVariable(skolem) = &**start else {
                 continue;
@@ -298,29 +297,13 @@ impl Solver<'_> {
                     continue;
                 }
 
-                if next != *start {
-                    match &*next {
-                        Type::SkolemizedVariable(other_skolem)
-                            if self.is_internal_lifetime_skolem(
-                                *other_skolem,
-                                run_universes,
-                            ) && other_skolem != skolem =>
-                        {
-                            return false;
-                        }
-
-                        ty if !self
-                            .is_internal_hrtb_variable(ty, run_universes) =>
-                        {
-                            return false;
-                        }
-
-                        Type::GenericParameter(_)
-                        | Type::InferenceVariable(_)
-                        | Type::BoundVariable(_)
-                        | Type::SkolemizedVariable(_)
-                        | Type::Application(_) => {}
-                    }
+                if next != *start
+                    && !self.is_internal_lifetime_inference_type(
+                        &next,
+                        run_universes,
+                    )
+                {
+                    return false;
                 }
 
                 if let Some(edges) = graph.get(&next) {
@@ -454,24 +437,6 @@ impl Solver<'_> {
                 })
             }
             Type::GenericParameter(_) | Type::BoundVariable(_) => false,
-        }
-    }
-
-    fn is_internal_hrtb_variable(
-        &self,
-        ty: &Type,
-        run_universes: &[UniverseIndex],
-    ) -> bool {
-        match ty {
-            Type::InferenceVariable(variable) => {
-                self.is_internal_lifetime_inference(*variable, run_universes)
-            }
-            Type::SkolemizedVariable(variable) => {
-                self.is_internal_lifetime_skolem(*variable, run_universes)
-            }
-            Type::GenericParameter(_)
-            | Type::BoundVariable(_)
-            | Type::Application(_) => false,
         }
     }
 
