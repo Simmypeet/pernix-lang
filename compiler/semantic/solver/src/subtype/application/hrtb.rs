@@ -17,7 +17,7 @@ use qbice::storage::intern::Interned;
 
 use crate::{
     constraints::Constraints,
-    solver::{OverflowError, Solver, universe::UniverseIndex},
+    solver::{OverflowError, Solver},
     subtype::Step,
 };
 
@@ -36,7 +36,21 @@ enum HrtbInstantiation {
 
 struct HrtbRun {
     step: Step,
-    universe: UniverseIndex,
+    variables: HrtbVariables,
+}
+
+#[derive(Debug, Clone, Default)]
+struct HrtbVariables {
+    inference_lifetimes: FxHashSet<InferenceVariable>,
+    skolem_lifetimes: FxHashSet<SkolemizedVariable>,
+}
+
+impl HrtbVariables {
+    fn union_into(mut self, other: Self) -> Self {
+        self.inference_lifetimes.extend(other.inference_lifetimes);
+        self.skolem_lifetimes.extend(other.skolem_lifetimes);
+        self
+    }
 }
 
 impl Solver<'_> {
@@ -76,7 +90,7 @@ impl Solver<'_> {
                     return Ok(None);
                 };
 
-                Ok(self.clean_hrtb_step(run.step, &[run.universe]))
+                Ok(self.clean_hrtb_step(run.step, &run.variables))
             }
 
             Variance::Invariant => {
@@ -119,10 +133,10 @@ impl Solver<'_> {
 
         // The second direction sees any external knowledge learned by the
         // first direction, but gets fresh HRTB variables of its own.
-        let first_external_substitution = self
-            .external_hrtb_substitution(first_run.step.0.clone(), &[
-                first_run.universe
-            ]);
+        let first_external_substitution = Self::external_hrtb_substitution(
+            first_run.step.0.clone(),
+            &first_run.variables,
+        );
         let engine = self.engine();
         let substituted_arguments = arguments
             .iter()
@@ -164,9 +178,9 @@ impl Solver<'_> {
             Vec::new(),
             first_constraints.union_into(second_constraints),
         );
-        let universes = [first_run.universe, second_run.universe];
+        let variables = first_run.variables.union_into(second_run.variables);
 
-        Ok(self.clean_hrtb_step(step, &universes))
+        Ok(self.clean_hrtb_step(step, &variables))
     }
 
     async fn handle_hrtb_application_run(
@@ -178,9 +192,6 @@ impl Solver<'_> {
         instantiation: HrtbInstantiation,
     ) -> Result<Option<HrtbRun>, OverflowError> {
         self.new_universe(async |solver| {
-            // The fresh universe labels every inference/skolem variable created
-            // for this run so leak checking and cleanup can recognize them.
-            let run_universe = solver.current_universe();
             let (lesser_inst, greater_inst) = match instantiation {
                 HrtbInstantiation::LesserInferenceGreaterSkolem => (
                     lesser_ap.binder().map(|x| {
@@ -199,6 +210,12 @@ impl Solver<'_> {
                     }),
                 ),
             };
+            let variables = solver.hrtb_variables_from_instantiations(
+                lesser_inst
+                    .iter()
+                    .flatten()
+                    .chain(greater_inst.iter().flatten()),
+            );
 
             let engine = solver.engine();
 
@@ -223,7 +240,7 @@ impl Solver<'_> {
 
             let Some(step) = step else { return Ok(None) };
 
-            Ok(Some(HrtbRun { step, universe: run_universe }))
+            Ok(Some(HrtbRun { step, variables }))
         })
         .await
     }
@@ -231,7 +248,7 @@ impl Solver<'_> {
     fn clean_hrtb_step(
         &mut self,
         (mut substitution, residual_subtypes, constraints): Step,
-        run_universes: &[UniverseIndex],
+        variables: &HrtbVariables,
     ) -> Option<Step> {
         if !residual_subtypes.is_empty() {
             return None;
@@ -243,39 +260,37 @@ impl Solver<'_> {
         let constraints = constraints.apply_or_clone(&substitution, engine);
         let graph = Self::constraint_graph(&constraints);
 
-        if !self.hrtb_leak_check(&graph, run_universes) {
+        if !Self::hrtb_leak_check(&graph, variables) {
             return None;
         }
 
-        let constraints = self.clean_hrtb_constraints(&graph, run_universes);
+        let constraints = self.clean_hrtb_constraints(&graph, variables);
 
         // HRTB variables are local proof artifacts. A successful step must not
         // expose them through the substitution map returned to callers.
         substitution.retain(|variable, ty| {
-            !self.is_internal_substitution_variable(variable, run_universes)
-                && !self.contains_internal_hrtb_variable(ty, run_universes)
+            !Self::is_internal_substitution_variable(variable, variables)
+                && !Self::contains_internal_hrtb_variable(ty, variables)
         });
 
         Some((substitution, Vec::new(), constraints))
     }
 
     fn external_hrtb_substitution(
-        &self,
         mut substitution: Substitution,
-        run_universes: &[UniverseIndex],
+        variables: &HrtbVariables,
     ) -> Substitution {
         substitution.retain(|variable, ty| {
-            !self.is_internal_substitution_variable(variable, run_universes)
-                && !self.contains_internal_hrtb_variable(ty, run_universes)
+            !Self::is_internal_substitution_variable(variable, variables)
+                && !Self::contains_internal_hrtb_variable(ty, variables)
         });
 
         substitution
     }
 
     fn hrtb_leak_check(
-        &self,
         graph: &ConstraintGraph,
-        run_universes: &[UniverseIndex],
+        variables: &HrtbVariables,
     ) -> bool {
         // Edges are directed as written by `Outlives::new(lesser, greater)`.
         // A bound skolem may only reach itself or inference variables created
@@ -285,7 +300,7 @@ impl Solver<'_> {
                 continue;
             };
 
-            if !self.is_internal_lifetime_skolem(*skolem, run_universes) {
+            if !variables.skolem_lifetimes.contains(skolem) {
                 continue;
             }
 
@@ -298,9 +313,8 @@ impl Solver<'_> {
                 }
 
                 if next != *start
-                    && !self.is_internal_lifetime_inference_type(
-                        &next,
-                        run_universes,
+                    && !Self::is_internal_lifetime_inference_type(
+                        &next, variables,
                     )
                 {
                     return false;
@@ -318,7 +332,7 @@ impl Solver<'_> {
     fn clean_hrtb_constraints(
         &self,
         graph: &ConstraintGraph,
-        run_universes: &[UniverseIndex],
+        variables: &HrtbVariables,
     ) -> Constraints {
         let mut cleaned = Constraints::new();
         let static_lifetime = self.static_lifetime();
@@ -335,17 +349,16 @@ impl Solver<'_> {
                 }
 
                 if next != *source {
-                    self.push_clean_hrtb_constraint(
+                    Self::push_clean_hrtb_constraint(
                         &mut cleaned,
                         source.clone(),
                         next.clone(),
                         static_lifetime.clone(),
-                        run_universes,
+                        variables,
                     );
                 }
 
-                if (self
-                    .is_internal_lifetime_inference_type(&next, run_universes)
+                if (Self::is_internal_lifetime_inference_type(&next, variables)
                     || next == *source)
                     && let Some(edges) = graph.get(&next)
                 {
@@ -358,15 +371,14 @@ impl Solver<'_> {
     }
 
     fn push_clean_hrtb_constraint(
-        &self,
         cleaned: &mut Constraints,
         lesser: Interned<Type>,
         greater: Interned<Type>,
         static_lifetime: Interned<Type>,
-        run_universes: &[UniverseIndex],
+        variables: &HrtbVariables,
     ) {
-        if self.is_internal_lifetime_inference_type(&lesser, run_universes)
-            || self.is_internal_lifetime_inference_type(&greater, run_universes)
+        if Self::is_internal_lifetime_inference_type(&lesser, variables)
+            || Self::is_internal_lifetime_inference_type(&greater, variables)
         {
             return;
         }
@@ -374,15 +386,15 @@ impl Solver<'_> {
         // `R: !s` is the observable remnant of proving an external lifetime
         // outlives every choice of the bound lifetime. That is equivalent to
         // requiring `R: 'static`.
-        if self.is_internal_lifetime_skolem_type(&greater, run_universes)
-            && !self.contains_internal_hrtb_variable(&lesser, run_universes)
+        if Self::is_internal_lifetime_skolem_type(&greater, variables)
+            && !Self::contains_internal_hrtb_variable(&lesser, variables)
         {
             cleaned.extend([Outlives::new(lesser, static_lifetime)]);
             return;
         }
 
-        if self.contains_internal_hrtb_variable(&lesser, run_universes)
-            || self.contains_internal_hrtb_variable(&greater, run_universes)
+        if Self::contains_internal_hrtb_variable(&lesser, variables)
+            || Self::contains_internal_hrtb_variable(&greater, variables)
         {
             return;
         }
@@ -403,37 +415,65 @@ impl Solver<'_> {
         graph
     }
 
-    fn is_internal_substitution_variable(
+    fn hrtb_variables_from_instantiations<'a>(
         &self,
+        instantiations: impl Iterator<Item = &'a Interned<Type>>,
+    ) -> HrtbVariables {
+        let mut variables = HrtbVariables::default();
+
+        for instantiation in instantiations {
+            match &**instantiation {
+                Type::InferenceVariable(variable)
+                    if self.get_inference_variable_kind(variable)
+                        == TyKind::Lifetime =>
+                {
+                    variables.inference_lifetimes.insert(*variable);
+                }
+
+                Type::SkolemizedVariable(variable)
+                    if self.get_skolemized_variable_kind(variable)
+                        == TyKind::Lifetime =>
+                {
+                    variables.skolem_lifetimes.insert(*variable);
+                }
+
+                Type::GenericParameter(_)
+                | Type::InferenceVariable(_)
+                | Type::BoundVariable(_)
+                | Type::SkolemizedVariable(_)
+                | Type::Application(_) => {}
+            }
+        }
+
+        variables
+    }
+
+    fn is_internal_substitution_variable(
         variable: Variable,
-        run_universes: &[UniverseIndex],
+        variables: &HrtbVariables,
     ) -> bool {
         match variable {
             Variable::Inference(variable) => {
-                self.is_internal_lifetime_inference(variable, run_universes)
+                variables.inference_lifetimes.contains(&variable)
             }
             Variable::Generic(_) => false,
         }
     }
 
     fn contains_internal_hrtb_variable(
-        &self,
         ty: &Interned<Type>,
-        run_universes: &[UniverseIndex],
+        variables: &HrtbVariables,
     ) -> bool {
         match &**ty {
             Type::InferenceVariable(variable) => {
-                self.is_internal_lifetime_inference(*variable, run_universes)
+                variables.inference_lifetimes.contains(variable)
             }
             Type::SkolemizedVariable(variable) => {
-                self.is_internal_lifetime_skolem(*variable, run_universes)
+                variables.skolem_lifetimes.contains(variable)
             }
             Type::Application(application) => {
                 application.arguments().iter().any(|argument| {
-                    self.contains_internal_hrtb_variable(
-                        argument,
-                        run_universes,
-                    )
+                    Self::contains_internal_hrtb_variable(argument, variables)
                 })
             }
             Type::GenericParameter(_) | Type::BoundVariable(_) => false,
@@ -441,13 +481,12 @@ impl Solver<'_> {
     }
 
     fn is_internal_lifetime_inference_type(
-        &self,
         ty: &Interned<Type>,
-        run_universes: &[UniverseIndex],
+        variables: &HrtbVariables,
     ) -> bool {
         match &**ty {
             Type::InferenceVariable(variable) => {
-                self.is_internal_lifetime_inference(*variable, run_universes)
+                variables.inference_lifetimes.contains(variable)
             }
             Type::GenericParameter(_)
             | Type::BoundVariable(_)
@@ -457,37 +496,18 @@ impl Solver<'_> {
     }
 
     fn is_internal_lifetime_skolem_type(
-        &self,
         ty: &Interned<Type>,
-        run_universes: &[UniverseIndex],
+        variables: &HrtbVariables,
     ) -> bool {
         match &**ty {
             Type::SkolemizedVariable(variable) => {
-                self.is_internal_lifetime_skolem(*variable, run_universes)
+                variables.skolem_lifetimes.contains(variable)
             }
             Type::GenericParameter(_)
             | Type::InferenceVariable(_)
             | Type::BoundVariable(_)
             | Type::Application(_) => false,
         }
-    }
-
-    fn is_internal_lifetime_inference(
-        &self,
-        variable: InferenceVariable,
-        run_universes: &[UniverseIndex],
-    ) -> bool {
-        run_universes.contains(&self.get_inference_variable_universe(variable))
-            && self.get_inference_variable_kind(&variable) == TyKind::Lifetime
-    }
-
-    fn is_internal_lifetime_skolem(
-        &self,
-        variable: SkolemizedVariable,
-        run_universes: &[UniverseIndex],
-    ) -> bool {
-        run_universes.contains(&self.get_skolemized_variable_universe(variable))
-            && self.get_skolemized_variable_kind(&variable) == TyKind::Lifetime
     }
 
     fn static_lifetime(&self) -> Interned<Type> {
