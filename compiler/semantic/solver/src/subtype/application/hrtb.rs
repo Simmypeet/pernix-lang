@@ -51,6 +51,55 @@ impl HrtbVariables {
         self.skolem_lifetimes.extend(other.skolem_lifetimes);
         self
     }
+
+    fn is_internal_substitution_variable(&self, variable: Variable) -> bool {
+        match variable {
+            Variable::Inference(variable) => {
+                self.inference_lifetimes.contains(&variable)
+            }
+            Variable::Generic(_) => false,
+        }
+    }
+
+    fn contains_internal_hrtb_variable(&self, ty: &Interned<Type>) -> bool {
+        match &**ty {
+            Type::InferenceVariable(variable) => {
+                self.inference_lifetimes.contains(variable)
+            }
+            Type::SkolemizedVariable(variable) => {
+                self.skolem_lifetimes.contains(variable)
+            }
+            Type::Application(application) => application
+                .arguments()
+                .iter()
+                .any(|argument| self.contains_internal_hrtb_variable(argument)),
+            Type::GenericParameter(_) | Type::BoundVariable(_) => false,
+        }
+    }
+
+    fn is_internal_lifetime_inference_type(&self, ty: &Interned<Type>) -> bool {
+        match &**ty {
+            Type::InferenceVariable(variable) => {
+                self.inference_lifetimes.contains(variable)
+            }
+            Type::GenericParameter(_)
+            | Type::BoundVariable(_)
+            | Type::SkolemizedVariable(_)
+            | Type::Application(_) => false,
+        }
+    }
+
+    fn is_internal_lifetime_skolem_type(&self, ty: &Interned<Type>) -> bool {
+        match &**ty {
+            Type::SkolemizedVariable(variable) => {
+                self.skolem_lifetimes.contains(variable)
+            }
+            Type::GenericParameter(_)
+            | Type::InferenceVariable(_)
+            | Type::BoundVariable(_)
+            | Type::Application(_) => false,
+        }
+    }
 }
 
 impl Solver<'_> {
@@ -269,8 +318,8 @@ impl Solver<'_> {
         // HRTB variables are local proof artifacts. A successful step must not
         // expose them through the substitution map returned to callers.
         substitution.retain(|variable, ty| {
-            !Self::is_internal_substitution_variable(variable, variables)
-                && !Self::contains_internal_hrtb_variable(ty, variables)
+            !variables.is_internal_substitution_variable(variable)
+                && !variables.contains_internal_hrtb_variable(ty)
         });
 
         Some((substitution, Vec::new(), constraints))
@@ -281,8 +330,8 @@ impl Solver<'_> {
         variables: &HrtbVariables,
     ) -> Substitution {
         substitution.retain(|variable, ty| {
-            !Self::is_internal_substitution_variable(variable, variables)
-                && !Self::contains_internal_hrtb_variable(ty, variables)
+            !variables.is_internal_substitution_variable(variable)
+                && !variables.contains_internal_hrtb_variable(ty)
         });
 
         substitution
@@ -313,9 +362,7 @@ impl Solver<'_> {
                 }
 
                 if next != *start
-                    && !Self::is_internal_lifetime_inference_type(
-                        &next, variables,
-                    )
+                    && !variables.is_internal_lifetime_inference_type(&next)
                 {
                     return false;
                 }
@@ -358,7 +405,7 @@ impl Solver<'_> {
                     );
                 }
 
-                if (Self::is_internal_lifetime_inference_type(&next, variables)
+                if (variables.is_internal_lifetime_inference_type(&next)
                     || next == *source)
                     && let Some(edges) = graph.get(&next)
                 {
@@ -377,8 +424,8 @@ impl Solver<'_> {
         static_lifetime: Interned<Type>,
         variables: &HrtbVariables,
     ) {
-        if Self::is_internal_lifetime_inference_type(&lesser, variables)
-            || Self::is_internal_lifetime_inference_type(&greater, variables)
+        if variables.is_internal_lifetime_inference_type(&lesser)
+            || variables.is_internal_lifetime_inference_type(&greater)
         {
             return;
         }
@@ -386,15 +433,15 @@ impl Solver<'_> {
         // `R: !s` is the observable remnant of proving an external lifetime
         // outlives every choice of the bound lifetime. That is equivalent to
         // requiring `R: 'static`.
-        if Self::is_internal_lifetime_skolem_type(&greater, variables)
-            && !Self::contains_internal_hrtb_variable(&lesser, variables)
+        if variables.is_internal_lifetime_skolem_type(&greater)
+            && !variables.contains_internal_hrtb_variable(&lesser)
         {
             cleaned.extend([Outlives::new(lesser, static_lifetime)]);
             return;
         }
 
-        if Self::contains_internal_hrtb_variable(&lesser, variables)
-            || Self::contains_internal_hrtb_variable(&greater, variables)
+        if variables.contains_internal_hrtb_variable(&lesser)
+            || variables.contains_internal_hrtb_variable(&greater)
         {
             return;
         }
@@ -446,68 +493,6 @@ impl Solver<'_> {
         }
 
         variables
-    }
-
-    fn is_internal_substitution_variable(
-        variable: Variable,
-        variables: &HrtbVariables,
-    ) -> bool {
-        match variable {
-            Variable::Inference(variable) => {
-                variables.inference_lifetimes.contains(&variable)
-            }
-            Variable::Generic(_) => false,
-        }
-    }
-
-    fn contains_internal_hrtb_variable(
-        ty: &Interned<Type>,
-        variables: &HrtbVariables,
-    ) -> bool {
-        match &**ty {
-            Type::InferenceVariable(variable) => {
-                variables.inference_lifetimes.contains(variable)
-            }
-            Type::SkolemizedVariable(variable) => {
-                variables.skolem_lifetimes.contains(variable)
-            }
-            Type::Application(application) => {
-                application.arguments().iter().any(|argument| {
-                    Self::contains_internal_hrtb_variable(argument, variables)
-                })
-            }
-            Type::GenericParameter(_) | Type::BoundVariable(_) => false,
-        }
-    }
-
-    fn is_internal_lifetime_inference_type(
-        ty: &Interned<Type>,
-        variables: &HrtbVariables,
-    ) -> bool {
-        match &**ty {
-            Type::InferenceVariable(variable) => {
-                variables.inference_lifetimes.contains(variable)
-            }
-            Type::GenericParameter(_)
-            | Type::BoundVariable(_)
-            | Type::SkolemizedVariable(_)
-            | Type::Application(_) => false,
-        }
-    }
-
-    fn is_internal_lifetime_skolem_type(
-        ty: &Interned<Type>,
-        variables: &HrtbVariables,
-    ) -> bool {
-        match &**ty {
-            Type::SkolemizedVariable(variable) => {
-                variables.skolem_lifetimes.contains(variable)
-            }
-            Type::GenericParameter(_)
-            | Type::InferenceVariable(_)
-            | Type::BoundVariable(_)
-            | Type::Application(_) => false,
-        }
     }
 
     fn static_lifetime(&self) -> Interned<Type> {
