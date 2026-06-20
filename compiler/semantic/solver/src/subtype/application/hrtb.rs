@@ -1,7 +1,7 @@
 use pernixc_hash::{FxHashMap, FxHashSet};
 use pernixc_type::{
     predicate::Outlives,
-    substitution::{Substitutable, Substitution, Variable},
+    substitution::{Substitutable, Substitution},
     r#type::{
         Type,
         bound::Instantiate,
@@ -52,15 +52,6 @@ impl HrtbVariables {
         self.inference_lifetimes.extend(other.inference_lifetimes);
         self.skolem_lifetimes.extend(other.skolem_lifetimes);
         self
-    }
-
-    fn is_internal_substitution_variable(&self, variable: Variable) -> bool {
-        match variable {
-            Variable::Inference(variable) => {
-                self.inference_lifetimes.contains(&variable)
-            }
-            Variable::Generic(_) => false,
-        }
     }
 
     fn contains_internal_hrtb_variable(&self, ty: &Interned<Type>) -> bool {

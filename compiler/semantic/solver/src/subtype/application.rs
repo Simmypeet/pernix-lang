@@ -37,6 +37,28 @@ impl Solver<'_> {
         greater_ap: &Application,
         variance: Variance,
     ) -> Result<Option<Step>, OverflowError> {
+        // URGENT: We shouldn't allow destructuring the instance-associated.
+        // Okay, instance-associated types are analogous to trait-associated
+        // types right? So, I'll explain it here.
+        //
+        // Imagine we have trait named `Col` with an associated type `Elm`.
+        // Let's say we have a relation `Col.Elm[Set[Int32]] ~
+        // Col.Elm[Vec[Int32]]`. If we destructure this relation, we'll get
+        // `Set[Int32] ~ Vec[Int32]` as a subgoal, which will never be solvable.
+        //
+        // This is because, we'll never know that after reduction, the
+        // `Col.Elm[Set[Int32]]` and `Col.Elm[Vec[Int32]]` will reduce to the
+        // same type, and since we have break down the relation into
+        // `Set[Int32] ~ Vec[Int32]`, we'll lose the information that they might
+        // reduce to the same type.
+        //
+        // On second thought, I'm not saying we shouldn't allow destructuring
+        // instance-associated types at all, but we should fix the "loss of
+        // information" issue.
+        //
+        // One immediate fix that comes to mind is to, resolve the sub-problems
+        // immediately so that we don't lose the information that there're
+        // instance-associated types involved.
         let Some(iter) = lesser_ap.destructure(greater_ap, self.engine())
         else {
             return Box::pin(self.try_reduce(lesser, greater, variance)).await;
