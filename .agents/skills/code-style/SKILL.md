@@ -27,6 +27,12 @@ that we don't control).
 **Rationale**: This makes the compiler helps notify us when there's a new
 variant added to the enum and where we need to handle it.
 
+# Never use `Interned::new_duplicating` or `Interned::new_duplicating_unsized` in the main codebase
+
+**Rationale**: The main purpose of `Interned` is to deduplicate data and save
+memory. Using `Interned::new_duplicating*` always allocates new memory and
+doesn't deduplicate anything. It's fine to use it in tests or benchmarks where we don't care about memory usage.
+
 # Always run `cargo clippy`
 
 **Rationale**: Clippy can catch many common programming mistakes. And the CI

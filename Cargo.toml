@@ -23,6 +23,8 @@ members = [
     "compiler/semantic/symbol",
     "compiler/semantic/symbol_impl",
     "compiler/semantic/term",
+    "compiler/semantic/type",
+    "compiler/semantic/solver",
     "compiler/semantic/type_system",
     "compiler/semantic/resolution",
     "compiler/semantic/corelib",

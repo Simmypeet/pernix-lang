@@ -1,0 +1,24 @@
+[package]
+name = "pernixc_type"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+pernixc_qbice.path = "../../base/qbice"
+pernixc_symbol.path = "../symbol"
+pernixc_lexical.path = "../../syntax/lexical"
+pernixc_arena.path = "../../base/arena"
+pernixc_hash.path = "../../base/hash"
+enum-as-inner.workspace = true
+derive_more.workspace = true
+qbice.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+pernixc_target = { path = "../../base/target" }
+
+[lints]
+workspace = true
