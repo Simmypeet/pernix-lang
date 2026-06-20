@@ -15,6 +15,7 @@ use pernixc_type::{
 };
 use qbice::storage::intern::Interned;
 
+use super::ResolveStrategy;
 use crate::{
     constraints::Constraints,
     solver::{OverflowError, Solver},
@@ -35,7 +36,8 @@ enum HrtbInstantiation {
 }
 
 struct HrtbRun {
-    step: Step,
+    substitution: Substitution,
+    constraints: Constraints,
     variables: HrtbVariables,
 }
 
@@ -111,6 +113,8 @@ impl Solver<'_> {
         variance: Variance,
     ) -> Result<Option<Step>, OverflowError> {
         match variance {
+            // for the contravariant and covariant cases, a single run with
+            // appropriate instantiation is sufficient.
             Variance::Covariant | Variance::Contravariant => {
                 let instantiation = match variance {
                     Variance::Covariant => {
@@ -139,7 +143,11 @@ impl Solver<'_> {
                     return Ok(None);
                 };
 
-                Ok(self.clean_hrtb_step(run.step, &run.variables))
+                Ok(self.clean_hrtb_step(
+                    run.substitution,
+                    &run.constraints,
+                    &run.variables,
+                ))
             }
 
             Variance::Invariant => {
@@ -157,6 +165,10 @@ impl Solver<'_> {
         }
     }
 
+    /// Runs higher-ranked subtyping proof for Invariant ambient variance. This
+    /// requires proving both directions of the subtyping relationship by
+    /// running `handle_hrtb_application_run` twice with opposite instantiation
+    /// strategies, then combining the results.
     async fn handle_invariant_hrtb_application(
         &mut self,
         lesser_ap: &Application,
@@ -178,22 +190,15 @@ impl Solver<'_> {
             return Ok(None);
         };
 
-        assert!(first_run.step.1.is_empty());
-
-        // The second direction sees any external knowledge learned by the
-        // first direction, but gets fresh HRTB variables of its own.
-        let first_external_substitution = Self::external_hrtb_substitution(
-            first_run.step.0.clone(),
-            &first_run.variables,
-        );
         let engine = self.engine();
+        let first_substitution = first_run.substitution;
+
         let substituted_arguments = arguments
             .iter()
             .map(|(lesser, greater)| {
                 (
-                    lesser.apply_or_clone(&first_external_substitution, engine),
-                    greater
-                        .apply_or_clone(&first_external_substitution, engine),
+                    lesser.apply_or_clone(&first_substitution, engine),
+                    greater.apply_or_clone(&first_substitution, engine),
                 )
             })
             .collect::<Vec<_>>();
@@ -210,28 +215,23 @@ impl Solver<'_> {
             return Ok(None);
         };
 
-        assert!(second_run.step.1.is_empty());
-
-        let (first_substitution, _first_residual_subtypes, first_constraints) =
-            first_run.step;
-        let (
-            mut second_substitution,
-            _second_residual_subtypes,
-            second_constraints,
-        ) = second_run.step;
+        // Residual subtypes are guaranteed to be empty
+        let mut second_substitution = second_run.substitution;
 
         self.compose_subst(&mut second_substitution, first_substitution);
 
-        let step = (
-            second_substitution,
-            Vec::new(),
-            first_constraints.union_into(second_constraints),
-        );
         let variables = first_run.variables.union_into(second_run.variables);
+        let constraints =
+            first_run.constraints.union_into(second_run.constraints);
 
-        Ok(self.clean_hrtb_step(step, &variables))
+        Ok(self.clean_hrtb_step(second_substitution, &constraints, &variables))
     }
 
+    /// Runs the higher-ranked subtyping proof for the given application and
+    /// arguments. Depending on the `instantiation` strategy, lesser/greater
+    /// binders are instantiated with either inference variables or skolem
+    /// variables. Then the set of subtypes is solved with the instantiated
+    /// arguments with the result as [`HrtbRun`] if successful.
     async fn handle_hrtb_application_run(
         &mut self,
         lesser_ap: &Application,
@@ -283,31 +283,42 @@ impl Solver<'_> {
                     )
                 }),
                 variance,
-                true,
+                ResolveStrategy::ResolveImmediately,
             ))
             .await?;
 
-            let Some(step) = step else { return Ok(None) };
+            let Some((substitution, residual, constraints)) = step else {
+                return Ok(None);
+            };
 
-            Ok(Some(HrtbRun { step, variables }))
+            assert!(residual.is_empty());
+
+            Ok(Some(HrtbRun { substitution, constraints, variables }))
         })
         .await
     }
 
+    /// Run leak check and clean up the resulting constraints from the HRTB
+    /// proof run
     fn clean_hrtb_step(
         &mut self,
-        (mut substitution, residual_subtypes, constraints): Step,
+        substitution: Substitution,
+        constraints: &Constraints,
         variables: &HrtbVariables,
     ) -> Option<Step> {
-        if !residual_subtypes.is_empty() {
-            return None;
-        }
-
-        let engine = self.engine();
-        // Substitutions can turn `?x: !s` into `R: !s`; leak checking must see
-        // the final constraints, not the pre-substitution obligations.
-        let constraints = constraints.apply_or_clone(&substitution, engine);
-        let graph = Self::constraint_graph(&constraints);
+        // NOTE: You might think that we should apply the substitutions on the
+        // constraints before the leack check first, but we actually don't need
+        // it because:
+        //
+        // 1a. Currently, in **Subtyping Relation**, lifetimes can never be
+        //    mapped by substitution. However, in other relations like **Match**
+        //    still does, but it's not relevant here.
+        // 2a. The `Constraints` generated here can only be in the form of
+        //    `lifetime: lifetime` and since (1a) holds, the substitution won't
+        //    change the shape of constraints.
+        //
+        // Proof? Trust me bro :-)
+        let graph = Self::constraint_graph(constraints);
 
         if !Self::hrtb_leak_check(&graph, variables) {
             return None;
@@ -315,26 +326,25 @@ impl Solver<'_> {
 
         let constraints = self.clean_hrtb_constraints(&graph, variables);
 
-        // HRTB variables are local proof artifacts. A successful step must not
-        // expose them through the substitution map returned to callers.
-        substitution.retain(|variable, ty| {
-            !variables.is_internal_substitution_variable(variable)
-                && !variables.contains_internal_hrtb_variable(ty)
-        });
+        // NOTE: here we directly return the original substitution without
+        // eliminating the internal variables, because:
+        //
+        // 1b. We currently assume that all higher-ranked variables are
+        //    lifetimes, even though we have infrastructure to support other
+        //    kinds. If we happens to change this assumption in the future, we
+        //    might need to revisit this decision.
+        // 2b. The internal higher-ranked variables will never be in the
+        //    codomain of the substitution, because:
+        //    2.1b Since (1b) and (1a) holds, it means that all domains of the
+        //      substitution will always have root universe.
+        //    2.2b Therefore, internal higher-ranked variables that are created
+        //      in a higher universe will never be substituted due to universe
+        //      checks.
+        // 3b. Therefore, the subsitution will never mention any internal
+        //    higher-ranked variables, and thus we can safely return it without
+        //    eliminating them.
 
         Some((substitution, Vec::new(), constraints))
-    }
-
-    fn external_hrtb_substitution(
-        mut substitution: Substitution,
-        variables: &HrtbVariables,
-    ) -> Substitution {
-        substitution.retain(|variable, ty| {
-            !variables.is_internal_substitution_variable(variable)
-                && !variables.contains_internal_hrtb_variable(ty)
-        });
-
-        substitution
     }
 
     fn hrtb_leak_check(

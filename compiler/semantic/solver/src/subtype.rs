@@ -206,7 +206,11 @@ impl Solver<'_> {
         target: &Interned<Type>,
     ) -> bool {
         !target.is_bound_variable()
+            // NOTE: we also don't force two inference variables to unify in 
+            // `Subtype`
             && !target.is_inference_variable()
+            // NOTE: in `Subtype` relation, we NEVER construct a substitution
+            // that maps a inference variable of lifetime kind!
             && !self.kind_of(target).await.is_lifetime()
     }
 

@@ -19,6 +19,15 @@ use crate::{
 
 mod hrtb;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ResolveStrategy {
+    /// Exhaustively resolves the set of subtypes immediately until no more
+    /// residual subtypes remain. If successful, returns `Ok(Some(Step))` with
+    /// zero residual subtypes.
+    ResolveImmediately,
+    DeferResolution,
+}
+
 impl Solver<'_> {
     pub(super) async fn handle_application(
         &mut self,
@@ -39,28 +48,33 @@ impl Solver<'_> {
             lesser_ap.binder().is_some_and(|binder| !binder.is_empty())
                 || greater_ap.binder().is_some_and(|binder| !binder.is_empty());
 
+        // if the application doesn't have any higher-ranked binders, we can
+        // simply breaking down the application into its arguments and add them
+        // as subtyping subgoals.
         if has_binder {
-            return Box::pin(self.handle_hrtb_application(
+            Box::pin(self.handle_hrtb_application(
                 lesser_ap, greater_ap, &arguments, variance,
             ))
-            .await;
+            .await
+        } else {
+            Box::pin(self.handle_application_arguments(
+                lesser_ap,
+                arguments.into_iter(),
+                variance,
+                ResolveStrategy::DeferResolution,
+            ))
+            .await
         }
-
-        Box::pin(self.handle_application_arguments(
-            lesser_ap,
-            arguments.into_iter(),
-            variance,
-            false,
-        ))
-        .await
     }
 
+    /// Handles the matched application arguments by calculating the correct
+    /// variance for each argument.
     async fn handle_application_arguments(
         &mut self,
         lesser_ap: &Application,
         mut arguments: impl Iterator<Item = (Interned<Type>, Interned<Type>)>,
         variance: Variance,
-        resolve_immediately: bool,
+        resolve_strategy: ResolveStrategy,
     ) -> Result<Option<Step>, OverflowError> {
         match lesser_ap.constructor() {
             Constructor::Primitive(_)
@@ -88,7 +102,7 @@ impl Solver<'_> {
                 assert!(arguments.next().is_none());
 
                 Box::pin(
-                    self.handle_subtype_of_arguments(
+                    self.handle_set_of_subtypes(
                         [
                             (lt_l, lt_g, variance.xfrom(Variance::Covariant)),
                             (
@@ -106,7 +120,7 @@ impl Solver<'_> {
                             ),
                         ]
                         .into_iter(),
-                        resolve_immediately,
+                        resolve_strategy,
                     ),
                 )
                 .await
@@ -117,17 +131,17 @@ impl Solver<'_> {
                     *symbolic,
                     arguments,
                     variance,
-                    resolve_immediately,
+                    resolve_strategy,
                 ))
                 .await
             }
 
             Constructor::Tuple(_) => {
-                Box::pin(self.handle_subtype_of_arguments(
+                Box::pin(self.handle_set_of_subtypes(
                     arguments.map(|(lesser, greater)| {
                         (lesser, greater, variance.xfrom(Variance::Covariant))
                     }),
-                    resolve_immediately,
+                    resolve_strategy,
                 ))
                 .await
             }
@@ -136,7 +150,7 @@ impl Solver<'_> {
                 let argument_count = lesser_ap.arguments().len();
                 assert!(argument_count > 0);
 
-                Box::pin(self.handle_subtype_of_arguments(
+                Box::pin(self.handle_set_of_subtypes(
                     arguments.enumerate().map(|(index, (lesser, greater))| {
                         let argument_variance = if index + 1 == argument_count {
                             Variance::Covariant
@@ -146,17 +160,17 @@ impl Solver<'_> {
 
                         (lesser, greater, variance.xfrom(argument_variance))
                     }),
-                    resolve_immediately,
+                    resolve_strategy,
                 ))
                 .await
             }
 
             Constructor::InstanceAssociated(_) => {
-                Box::pin(self.handle_subtype_of_arguments(
+                Box::pin(self.handle_set_of_subtypes(
                     arguments.map(|(lesser, greater)| {
                         (lesser, greater, variance.xfrom(Variance::Invariant))
                     }),
-                    resolve_immediately,
+                    resolve_strategy,
                 ))
                 .await
             }
@@ -168,7 +182,7 @@ impl Solver<'_> {
         symbolic: Symbolic,
         arguments: impl Iterator<Item = (Interned<Type>, Interned<Type>)>,
         variance: Variance,
-        resolve_immediately: bool,
+        resolve_strategy: ResolveStrategy,
     ) -> Result<Option<Step>, OverflowError> {
         let kind = self.engine().get_kind(symbolic.symbol_id()).await;
 
@@ -181,7 +195,7 @@ impl Solver<'_> {
                 let variances =
                     self.engine().get_variances(symbolic.symbol_id()).await;
 
-                Box::pin(self.handle_subtype_of_arguments(
+                Box::pin(self.handle_set_of_subtypes(
                     arguments.zip(generic_parameters.iter()).map(
                         |((lesser, greater), (id, _))| {
                             (
@@ -191,17 +205,17 @@ impl Solver<'_> {
                             )
                         },
                     ),
-                    resolve_immediately,
+                    resolve_strategy,
                 ))
                 .await
             }
 
             Kind::Instance => {
-                Box::pin(self.handle_subtype_of_arguments(
+                Box::pin(self.handle_set_of_subtypes(
                     arguments.map(|(lesser, greater)| {
                         (lesser, greater, variance.xfrom(Variance::Invariant))
                     }),
-                    resolve_immediately,
+                    resolve_strategy,
                 ))
                 .await
             }
@@ -234,28 +248,32 @@ impl Solver<'_> {
         }
     }
 
-    async fn handle_subtype_of_arguments(
+    /// Either resolves the set of subtypes immediately, or returns them as
+    /// subgoals to be resolved later, depending on the `resolve_immediately`
+    /// flag.
+    async fn handle_set_of_subtypes(
         &mut self,
         pairs: impl Iterator<Item = (Interned<Type>, Interned<Type>, Variance)>,
-        resolve_immediately: bool,
+        resolve_strategy: ResolveStrategy,
     ) -> Result<Option<Step>, OverflowError> {
         let subtypes = pairs.map(|(l, r, v)| Subtype::new(l, r, v)).collect();
 
-        if !resolve_immediately {
-            return Ok(Some((
+        match resolve_strategy {
+            ResolveStrategy::ResolveImmediately => Ok(Some((
                 Substitution::new(),
                 subtypes,
                 Constraints::default(),
-            )));
-        }
+            ))),
+            ResolveStrategy::DeferResolution => {
+                let (substitution, residual_subtypes, constraints) =
+                    Box::pin(self.resolve_subtypes(subtypes)).await?;
 
-        let (substitution, residual_subtypes, constraints) =
-            Box::pin(self.resolve_subtypes(subtypes)).await?;
-
-        if residual_subtypes.is_empty() {
-            Ok(Some((substitution, Vec::new(), constraints)))
-        } else {
-            Ok(None)
+                if residual_subtypes.is_empty() {
+                    Ok(Some((substitution, Vec::new(), constraints)))
+                } else {
+                    Ok(None)
+                }
+            }
         }
     }
 }
