@@ -282,7 +282,9 @@ impl Solver<'_> {
                 return Ok(None);
             };
 
-            assert!(residual.is_empty());
+            if !residual.is_empty() {
+                return Ok(None);
+            }
 
             Ok(Some(HrtbRun { substitution, constraints, variables }))
         })

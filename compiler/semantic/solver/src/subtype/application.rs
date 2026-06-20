@@ -281,12 +281,12 @@ impl Solver<'_> {
         let subtypes = pairs.map(|(l, r, v)| Subtype::new(l, r, v)).collect();
 
         match resolve_strategy {
-            ResolveStrategy::ResolveImmediately => Ok(Some((
+            ResolveStrategy::DeferResolution => Ok(Some((
                 Substitution::new(),
                 subtypes,
                 Constraints::default(),
             ))),
-            ResolveStrategy::DeferResolution => {
+            ResolveStrategy::ResolveImmediately => {
                 let (substitution, residual_subtypes, constraints) =
                     Box::pin(self.resolve_subtypes(subtypes)).await?;
 
