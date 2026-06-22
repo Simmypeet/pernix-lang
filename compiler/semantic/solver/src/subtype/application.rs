@@ -57,9 +57,24 @@ impl Solver<'_> {
             ))
             .await
         } else {
-            // A failed argument subproblem must fail the destructuring of an
-            // instance-associated application. Deferring it would discard the
-            // enclosing application, which may still be reducible as a whole.
+            // Instance-associated applications may reduce to the same type
+            // even when their corresponding arguments are not subtypes. For
+            // example, consider a trait `Col` with an associated type `Elm`
+            // and the relation:
+            //
+            // `Col.Elm[Set[Int32]] <: Col.Elm[Vec[Int32]]`
+            //
+            // Both associated types may reduce to `Int32`, so the relation can
+            // hold even though `Set[Int32] <: Vec[Int32]` does not.
+            //
+            // If the applications were destructured and that argument
+            // subproblem were deferred, the enclosing associated applications
+            // would be discarded. The solver would then only retain the
+            // unsolvable `Set[Int32] <: Vec[Int32]` subproblem and lose the
+            // opportunity to reduce the original associated types.
+            // Therefore every argument subproblem must solve immediately; if
+            // one is stuck, destructuring fails and the caller retains the
+            // original relation for a later reduction attempt.
             let resolve_strategy = match lesser_ap.constructor() {
                 Constructor::InstanceAssociated(_) => {
                     ResolveStrategy::ResolveImmediately
