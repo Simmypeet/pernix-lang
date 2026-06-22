@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use pernixc_qbice::{Engine, InMemoryFactory, TrackedEngine};
+use pernixc_symbol::GlobalSymbolID;
 use pernixc_type::{
     predicate::Subtype,
     substitution::Substitution,
@@ -8,8 +9,8 @@ use pernixc_type::{
         Type,
         bound::{Binder, BoundVariable},
         constructor::{
-            Application, Constructor, FunctionPointer, Lifetime, Mutability,
-            Primitive, Reference, Tuple,
+            Application, Constructor, FunctionPointer, InstanceAssociated,
+            Lifetime, Mutability, Primitive, Reference, Tuple,
         },
         kind::TyKind,
     },
@@ -94,6 +95,41 @@ fn function_pointer(
     )))
 }
 
+fn instance_associated(
+    arguments: Vec<Interned<Type>>,
+    engine: &TrackedEngine,
+) -> Interned<Type> {
+    engine.intern(Type::Application(Application::new(
+        Constructor::InstanceAssociated(InstanceAssociated::new(
+            GlobalSymbolID::default(),
+        )),
+        engine.intern_unsized(arguments),
+    )))
+}
+
+async fn destructure_application(
+    lesser: &Interned<Type>,
+    greater: &Interned<Type>,
+    engine: &TrackedEngine,
+) -> Result<Option<Step>, OverflowError> {
+    let Type::Application(lesser_application) = &**lesser else {
+        panic!("expected application");
+    };
+    let Type::Application(greater_application) = &**greater else {
+        panic!("expected application");
+    };
+
+    Solver::new(&Premise::default(), engine)
+        .handle_application(
+            lesser,
+            greater,
+            lesser_application,
+            greater_application,
+            Variance::Covariant,
+        )
+        .await
+}
+
 async fn resolve_one(
     lesser: Interned<Type>,
     greater: Interned<Type>,
@@ -146,6 +182,54 @@ fn assert_no_variables_in_step(
         !contains_variable(constraint.lesser())
             && !contains_variable(constraint.greater())
     }));
+}
+
+#[tokio::test]
+async fn instance_associated_arguments_must_be_solved_immediately() {
+    let engine = create_engine().await;
+    let common_instance = primitive(Primitive::Bool, &engine);
+    let lesser = instance_associated(
+        vec![common_instance.clone(), primitive(Primitive::Int32, &engine)],
+        &engine,
+    );
+    let greater = instance_associated(
+        vec![common_instance, primitive(Primitive::Float32, &engine)],
+        &engine,
+    );
+
+    assert_eq!(
+        destructure_application(&lesser, &greater, &engine).await.unwrap(),
+        None
+    );
+}
+
+#[tokio::test]
+async fn solved_instance_associated_arguments_are_not_deferred() {
+    let engine = create_engine().await;
+    let common_instance = primitive(Primitive::Bool, &engine);
+    let static_lifetime = lifetime(Lifetime::Static, &engine);
+    let erased_lifetime = lifetime(Lifetime::Erased, &engine);
+    let lesser = instance_associated(
+        vec![common_instance.clone(), static_lifetime.clone()],
+        &engine,
+    );
+    let greater = instance_associated(
+        vec![common_instance, erased_lifetime.clone()],
+        &engine,
+    );
+
+    let (substitution, residual_subtypes, constraints) =
+        destructure_application(&lesser, &greater, &engine)
+            .await
+            .unwrap()
+            .expect("arguments should solve immediately");
+
+    assert_eq!(substitution, Substitution::new());
+    assert_eq!(residual_subtypes, Vec::new());
+    assert_eq!(
+        constraints,
+        Constraints::lifetimes_eq(static_lifetime, erased_lifetime)
+    );
 }
 
 // input: ('static) <: ('erased) @ Covariant

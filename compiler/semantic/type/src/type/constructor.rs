@@ -221,6 +221,11 @@ pub struct InstanceAssociated {
 
 impl InstanceAssociated {
     #[must_use]
+    pub const fn new(trait_associated_id: GlobalSymbolID) -> Self {
+        Self { trait_associated_id }
+    }
+
+    #[must_use]
     pub const fn trait_associated_id(&self) -> GlobalSymbolID {
         self.trait_associated_id
     }
