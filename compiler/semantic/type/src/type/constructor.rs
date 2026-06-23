@@ -150,6 +150,11 @@ pub struct Symbolic {
 
 impl Symbolic {
     #[must_use]
+    pub const fn new(symbolic_id: GlobalSymbolID) -> Self {
+        Self { symbolic_id }
+    }
+
+    #[must_use]
     pub const fn symbol_id(&self) -> GlobalSymbolID { self.symbolic_id }
 }
 
@@ -221,6 +226,11 @@ pub struct InstanceAssociated {
 
 impl InstanceAssociated {
     #[must_use]
+    pub const fn new(trait_associated_id: GlobalSymbolID) -> Self {
+        Self { trait_associated_id }
+    }
+
+    #[must_use]
     pub const fn trait_associated_id(&self) -> GlobalSymbolID {
         self.trait_associated_id
     }
@@ -263,6 +273,9 @@ pub struct AnonymousTraitInstance {
 }
 
 impl AnonymousTraitInstance {
+    #[must_use]
+    pub const fn new(trait_id: GlobalSymbolID) -> Self { Self { trait_id } }
+
     #[must_use]
     pub const fn trait_id(&self) -> GlobalSymbolID { self.trait_id }
 }

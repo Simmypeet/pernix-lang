@@ -148,6 +148,10 @@ impl Agree for Constraints {
     fn agree(&self, other: &Self) -> bool { self == other }
 }
 
+impl Agree for bool {
+    fn agree(&self, other: &Self) -> bool { self == other }
+}
+
 impl Agree for Substitution {
     fn agree(&self, other: &Self) -> bool { self == other }
 }
