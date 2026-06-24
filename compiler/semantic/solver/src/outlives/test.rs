@@ -13,11 +13,7 @@ use pernixc_type::{
     r#type::{
         Type,
         bound::{Binder, BoundVariable},
-        constructor::{
-            AnonymousTraitInstance, Application, Constructor, FunctionPointer,
-            InstanceAssociated, Lifetime, Mutability, Primitive, Reference,
-            Symbolic, Tuple,
-        },
+        constructor::{Lifetime, Primitive},
         kind::TyKind,
     },
 };
@@ -104,34 +100,15 @@ async fn create_engine() -> TrackedEngine {
     Arc::new(engine).tracked().await
 }
 
-fn application(
-    constructor: Constructor,
-    arguments: impl IntoIterator<Item = Interned<Type>>,
-    engine: &TrackedEngine,
-) -> Interned<Type> {
-    engine.intern(Type::Application(Application::new(
-        constructor,
-        engine.intern_unsized(arguments.into_iter().collect::<Vec<_>>()),
-    )))
-}
-
-fn primitive(primitive: Primitive, engine: &TrackedEngine) -> Interned<Type> {
-    application(Constructor::Primitive(primitive), [], engine)
-}
-
-fn lifetime(lifetime: Lifetime, engine: &TrackedEngine) -> Interned<Type> {
-    application(Constructor::Lifetime(lifetime), [], engine)
-}
-
 fn generic(
     owner: GlobalSymbolID,
     index: u64,
     engine: &TrackedEngine,
 ) -> Interned<Type> {
-    engine.intern(Type::GenericParameter(GenericParameterID::new(
-        owner,
-        ID::<GenericParameter>::new(index),
-    )))
+    Type::new_generic_parameter(
+        GenericParameterID::new(owner, ID::<GenericParameter>::new(index)),
+        engine,
+    )
 }
 
 fn lifetime_parameter(index: u64, engine: &TrackedEngine) -> Interned<Type> {
@@ -144,80 +121,6 @@ fn type_parameter(index: u64, engine: &TrackedEngine) -> Interned<Type> {
 
 fn instance_parameter(index: u64, engine: &TrackedEngine) -> Interned<Type> {
     generic(INSTANCE_SYMBOL_ID, index, engine)
-}
-
-fn reference(
-    lifetime: Interned<Type>,
-    pointee: Interned<Type>,
-    engine: &TrackedEngine,
-) -> Interned<Type> {
-    application(
-        Constructor::Reference(Reference::new(Mutability::Immutable)),
-        [lifetime, pointee],
-        engine,
-    )
-}
-
-fn tuple(
-    arguments: impl IntoIterator<Item = Interned<Type>>,
-    engine: &TrackedEngine,
-) -> Interned<Type> {
-    application(
-        Constructor::Tuple(Tuple::new(engine.intern_unsized(Vec::new()))),
-        arguments,
-        engine,
-    )
-}
-
-fn symbolic(
-    arguments: impl IntoIterator<Item = Interned<Type>>,
-    engine: &TrackedEngine,
-) -> Interned<Type> {
-    application(
-        Constructor::Symbolic(Symbolic::new(INSTANCE_SYMBOL_ID)),
-        arguments,
-        engine,
-    )
-}
-
-fn anonymous_instance(engine: &TrackedEngine) -> Interned<Type> {
-    application(
-        Constructor::AnonymousTraitInstance(AnonymousTraitInstance::new(
-            TRAIT_ID,
-        )),
-        [],
-        engine,
-    )
-}
-
-fn associated(
-    instance: Interned<Type>,
-    arguments: impl IntoIterator<Item = Interned<Type>>,
-    engine: &TrackedEngine,
-) -> Interned<Type> {
-    application(
-        Constructor::InstanceAssociated(InstanceAssociated::new(ASSOCIATED_ID)),
-        std::iter::once(instance).chain(arguments),
-        engine,
-    )
-}
-
-fn function_pointer(
-    bound_lifetimes: usize,
-    arguments: impl IntoIterator<Item = Interned<Type>>,
-    engine: &TrackedEngine,
-) -> Interned<Type> {
-    application(
-        Constructor::FunctionPointer(FunctionPointer::new(Binder::new(
-            engine.intern_unsized(vec![TyKind::Lifetime; bound_lifetimes]),
-        ))),
-        arguments,
-        engine,
-    )
-}
-
-fn bound_lifetime(index: usize, engine: &TrackedEngine) -> Interned<Type> {
-    engine.intern(Type::BoundVariable(BoundVariable::new(0, index)))
 }
 
 fn outlives(lesser: Interned<Type>, greater: Interned<Type>) -> Predicate {
@@ -254,8 +157,8 @@ async fn prove(
 #[tokio::test]
 async fn lifetime_reflexivity_static_and_erased() {
     let engine = create_engine().await;
-    let erased = lifetime(Lifetime::Erased, &engine);
-    let static_lifetime = lifetime(Lifetime::Static, &engine);
+    let erased = Type::new_lifetime(Lifetime::Erased, &engine);
+    let static_lifetime = Type::new_lifetime(Lifetime::Static, &engine);
 
     assert!(
         prove(&Premise::default(), erased.clone(), erased.clone(), &engine,)
@@ -269,7 +172,7 @@ async fn lifetime_reflexivity_static_and_erased() {
         !prove(
             &Premise::default(),
             erased,
-            lifetime(Lifetime::Static, &engine),
+            Type::new_lifetime(Lifetime::Static, &engine),
             &engine,
         )
         .await
@@ -319,7 +222,10 @@ async fn ordinary_terms_require_every_component() {
     let a = lifetime_parameter(0, &engine);
     let ty = type_parameter(0, &engine);
     let bound = lifetime_parameter(1, &engine);
-    let subject = tuple([reference(a.clone(), ty.clone(), &engine)], &engine);
+    let subject = Type::new_tuple(
+        [Type::new_immutable_reference(a.clone(), ty.clone(), &engine)],
+        &engine,
+    );
     let mut premise = Premise::default();
     premise.insert(outlives(a, bound.clone()));
 
@@ -330,7 +236,7 @@ async fn ordinary_terms_require_every_component() {
     assert!(
         prove(
             &Premise::default(),
-            primitive(Primitive::Bool, &engine),
+            Type::new_primitive(Primitive::Bool, &engine),
             lifetime_parameter(2, &engine),
             &engine,
         )
@@ -346,7 +252,8 @@ async fn symbolic_instance_arguments_are_components() {
     let engine = create_engine().await;
     let argument = type_parameter(0, &engine);
     let bound = lifetime_parameter(0, &engine);
-    let subject = symbolic([argument.clone()], &engine);
+    let subject =
+        Type::new_symbolic(INSTANCE_SYMBOL_ID, [argument.clone()], &engine);
     let mut premise = Premise::default();
 
     assert!(!prove(&premise, subject.clone(), bound.clone(), &engine).await);
@@ -362,16 +269,14 @@ async fn function_pointer_ignores_bound_lifetimes_but_keeps_free_components() {
     let engine = create_engine().await;
     let free = type_parameter(0, &engine);
     let bound = lifetime_parameter(0, &engine);
-    let subject = function_pointer(
+    let subject = Type::new_function_pointer_with_higher_ranked_lifetimes(
         1,
-        [
-            reference(
-                bound_lifetime(0, &engine),
-                primitive(Primitive::Bool, &engine),
-                &engine,
-            ),
-            free.clone(),
-        ],
+        [Type::new_immutable_reference(
+            Type::new_bound_variable(BoundVariable::new(0, 0), &engine),
+            Type::new_primitive(Primitive::Bool, &engine),
+            &engine,
+        )],
+        free.clone(),
         &engine,
     );
     let mut premise = Premise::default();
@@ -391,12 +296,12 @@ async fn inference_and_skolem_variables_are_rigid_components() {
     let mut solver = Solver::new(&premise, &engine);
     let inference = solver.fresh_inference_variable(TyKind::Type);
     let skolem = solver.fresh_skolem_variable(TyKind::Type);
-    let bound = lifetime(Lifetime::Static, &engine);
+    let bound = Type::new_lifetime(Lifetime::Static, &engine);
 
     assert!(
         !solver
             .outlives(&Outlives::new(
-                engine.intern(Type::InferenceVariable(inference)),
+                Type::new_inference_variable(inference, &engine),
                 bound.clone(),
             ))
             .await
@@ -405,7 +310,7 @@ async fn inference_and_skolem_variables_are_rigid_components() {
     assert!(
         !solver
             .outlives(&Outlives::new(
-                engine.intern(Type::SkolemizedVariable(skolem)),
+                Type::new_skolemized_variable(skolem, &engine),
                 bound,
             ))
             .await
@@ -424,7 +329,10 @@ async fn composite_premise_entails_each_component() {
     let bound = lifetime_parameter(1, &engine);
     let mut premise = Premise::default();
     premise.insert(outlives(
-        tuple([reference(a.clone(), ty.clone(), &engine)], &engine),
+        Type::new_tuple(
+            [Type::new_immutable_reference(a.clone(), ty.clone(), &engine)],
+            &engine,
+        ),
         bound.clone(),
     ));
 
@@ -441,7 +349,12 @@ async fn associated_premise_is_atomic() {
     let instance = instance_parameter(0, &engine);
     let argument = lifetime_parameter(0, &engine);
     let bound = lifetime_parameter(1, &engine);
-    let associated = associated(instance.clone(), [argument.clone()], &engine);
+    let associated = Type::new_instance_associated(
+        ASSOCIATED_ID,
+        instance.clone(),
+        [argument.clone()],
+        &engine,
+    );
     let mut premise = Premise::default();
     premise.insert(outlives(associated.clone(), bound.clone()));
 
@@ -459,10 +372,17 @@ async fn nested_associated_component_remains_atomic() {
     let instance = instance_parameter(0, &engine);
     let argument = lifetime_parameter(0, &engine);
     let bound = lifetime_parameter(1, &engine);
-    let associated = associated(instance.clone(), [argument.clone()], &engine);
+    let associated = Type::new_instance_associated(
+        ASSOCIATED_ID,
+        instance.clone(),
+        [argument.clone()],
+        &engine,
+    );
     let mut premise = Premise::default();
-    premise
-        .insert(outlives(tuple([associated.clone()], &engine), bound.clone()));
+    premise.insert(outlives(
+        Type::new_tuple([associated.clone()], &engine),
+        bound.clone(),
+    ));
 
     assert!(prove(&premise, associated, bound.clone(), &engine).await);
     assert!(!prove(&premise, instance, bound.clone(), &engine).await);
@@ -478,7 +398,12 @@ async fn associated_goal_falls_back_to_argument_components() {
     let instance = instance_parameter(0, &engine);
     let argument = lifetime_parameter(0, &engine);
     let bound = lifetime_parameter(1, &engine);
-    let associated = associated(instance.clone(), [argument.clone()], &engine);
+    let associated = Type::new_instance_associated(
+        ASSOCIATED_ID,
+        instance.clone(),
+        [argument.clone()],
+        &engine,
+    );
     let mut premise = Premise::default();
     premise.insert(outlives(instance, bound.clone()));
 
@@ -493,12 +418,17 @@ async fn associated_goal_falls_back_to_argument_components() {
 #[tokio::test]
 async fn associated_goal_can_be_reduced_by_equality() {
     let engine = create_engine().await;
-    let associated = associated(anonymous_instance(&engine), [], &engine);
+    let associated = Type::new_instance_associated(
+        ASSOCIATED_ID,
+        Type::new_anonymous_trait_instance(TRAIT_ID, &engine),
+        [],
+        &engine,
+    );
     let bound = lifetime_parameter(0, &engine);
     let mut premise = Premise::default();
     premise.insert(equality(
         associated.clone(),
-        primitive(Primitive::Bool, &engine),
+        Type::new_primitive(Primitive::Bool, &engine),
         &engine,
     ));
 
@@ -514,9 +444,19 @@ async fn premise_matching_checks_lifetime_equality_constraints() {
     let a = lifetime_parameter(0, &engine);
     let b = lifetime_parameter(1, &engine);
     let bound = lifetime_parameter(2, &engine);
-    let instance = anonymous_instance(&engine);
-    let premise_associated = associated(instance.clone(), [a.clone()], &engine);
-    let goal_associated = associated(instance, [b.clone()], &engine);
+    let instance = Type::new_anonymous_trait_instance(TRAIT_ID, &engine);
+    let premise_associated = Type::new_instance_associated(
+        ASSOCIATED_ID,
+        instance.clone(),
+        [a.clone()],
+        &engine,
+    );
+    let goal_associated = Type::new_instance_associated(
+        ASSOCIATED_ID,
+        instance,
+        [b.clone()],
+        &engine,
+    );
     let mut premise = Premise::default();
     premise.insert(outlives(premise_associated, bound.clone()));
 
@@ -542,11 +482,15 @@ async fn premise_matching_rejects_inference_variable_substitution() {
     let empty_premise = Premise::default();
     let mut variable_solver = Solver::new(&empty_premise, &engine);
     let inference = variable_solver.fresh_inference_variable(TyKind::Type);
-    let inference = engine.intern(Type::InferenceVariable(inference));
+    let inference = Type::new_inference_variable(inference, &engine);
     let bound = lifetime_parameter(0, &engine);
     premise.insert(outlives(inference, bound.clone()));
 
-    let _ =
-        prove(&premise, primitive(Primitive::Bool, &engine), bound, &engine)
-            .await;
+    let _ = prove(
+        &premise,
+        Type::new_primitive(Primitive::Bool, &engine),
+        bound,
+        &engine,
+    )
+    .await;
 }

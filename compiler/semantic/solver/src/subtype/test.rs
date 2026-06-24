@@ -1,25 +1,16 @@
-use std::sync::Arc;
-
-use pernixc_qbice::{Engine, InMemoryFactory, TrackedEngine};
+use pernixc_qbice::{TrackedEngine, create_minimal_engine as create_engine};
 use pernixc_symbol::GlobalSymbolID;
 use pernixc_type::{
     predicate::Subtype,
     substitution::Substitution,
     r#type::{
         Type,
-        bound::{Binder, BoundVariable},
-        constructor::{
-            Application, Constructor, FunctionPointer, InstanceAssociated,
-            Lifetime, Mutability, Primitive, Reference, Tuple,
-        },
-        kind::TyKind,
+        bound::BoundVariable,
+        constructor::{Lifetime, Mutability, Primitive},
     },
     variance::Variance,
 };
-use qbice::{
-    serialize::Plugin, stable_hash::SeededStableHasherBuilder,
-    storage::intern::Interned,
-};
+use qbice::storage::intern::Interned;
 
 use crate::{
     constraints::Constraints,
@@ -27,85 +18,6 @@ use crate::{
     solver::{OverflowError, Solver},
     subtype::Step,
 };
-
-async fn create_engine() -> TrackedEngine {
-    let engine = Engine::new_with(
-        Plugin::default(),
-        InMemoryFactory,
-        SeededStableHasherBuilder::new(0),
-    )
-    .await
-    .unwrap();
-
-    Arc::new(engine).tracked().await
-}
-
-fn primitive(primitive: Primitive, engine: &TrackedEngine) -> Interned<Type> {
-    engine.intern(Type::Application(Application::new(
-        Constructor::Primitive(primitive),
-        engine.intern_unsized(Vec::<Interned<Type>>::new()),
-    )))
-}
-
-fn lifetime(lifetime: Lifetime, engine: &TrackedEngine) -> Interned<Type> {
-    engine.intern(Type::Application(Application::new(
-        Constructor::Lifetime(lifetime),
-        engine.intern_unsized(Vec::<Interned<Type>>::new()),
-    )))
-}
-
-fn bound_lifetime(index: usize, engine: &TrackedEngine) -> Interned<Type> {
-    engine.intern(Type::BoundVariable(BoundVariable::new(0, index)))
-}
-
-fn tuple(
-    arguments: Vec<Interned<Type>>,
-    engine: &TrackedEngine,
-) -> Interned<Type> {
-    engine.intern(Type::Application(Application::new(
-        Constructor::Tuple(Tuple::new(engine.intern_unsized(Vec::new()))),
-        engine.intern_unsized(arguments),
-    )))
-}
-
-fn unit(engine: &TrackedEngine) -> Interned<Type> { tuple(Vec::new(), engine) }
-
-fn reference(
-    lifetime: Interned<Type>,
-    pointee: Interned<Type>,
-    mutability: Mutability,
-    engine: &TrackedEngine,
-) -> Interned<Type> {
-    engine.intern(Type::Application(Application::new(
-        Constructor::Reference(Reference::new(mutability)),
-        engine.intern_unsized(vec![lifetime, pointee]),
-    )))
-}
-
-fn function_pointer(
-    lifetimes: usize,
-    arguments: Vec<Interned<Type>>,
-    engine: &TrackedEngine,
-) -> Interned<Type> {
-    engine.intern(Type::Application(Application::new(
-        Constructor::FunctionPointer(FunctionPointer::new(Binder::new(
-            engine.intern_unsized(vec![TyKind::Lifetime; lifetimes]),
-        ))),
-        engine.intern_unsized(arguments),
-    )))
-}
-
-fn instance_associated(
-    arguments: Vec<Interned<Type>>,
-    engine: &TrackedEngine,
-) -> Interned<Type> {
-    engine.intern(Type::Application(Application::new(
-        Constructor::InstanceAssociated(InstanceAssociated::new(
-            GlobalSymbolID::default(),
-        )),
-        engine.intern_unsized(arguments),
-    )))
-}
 
 async fn destructure_application(
     lesser: &Interned<Type>,
@@ -187,13 +99,17 @@ fn assert_no_variables_in_step(
 #[tokio::test]
 async fn instance_associated_arguments_must_be_solved_immediately() {
     let engine = create_engine().await;
-    let common_instance = primitive(Primitive::Bool, &engine);
-    let lesser = instance_associated(
-        vec![common_instance.clone(), primitive(Primitive::Int32, &engine)],
+    let common_instance = Type::new_primitive(Primitive::Bool, &engine);
+    let lesser = Type::new_instance_associated(
+        GlobalSymbolID::default(),
+        common_instance.clone(),
+        [Type::new_primitive(Primitive::Int32, &engine)],
         &engine,
     );
-    let greater = instance_associated(
-        vec![common_instance, primitive(Primitive::Float32, &engine)],
+    let greater = Type::new_instance_associated(
+        GlobalSymbolID::default(),
+        common_instance,
+        [Type::new_primitive(Primitive::Float32, &engine)],
         &engine,
     );
 
@@ -206,15 +122,19 @@ async fn instance_associated_arguments_must_be_solved_immediately() {
 #[tokio::test]
 async fn solved_instance_associated_arguments_are_not_deferred() {
     let engine = create_engine().await;
-    let common_instance = primitive(Primitive::Bool, &engine);
-    let static_lifetime = lifetime(Lifetime::Static, &engine);
-    let erased_lifetime = lifetime(Lifetime::Erased, &engine);
-    let lesser = instance_associated(
-        vec![common_instance.clone(), static_lifetime.clone()],
+    let common_instance = Type::new_primitive(Primitive::Bool, &engine);
+    let static_lifetime = Type::new_lifetime(Lifetime::Static, &engine);
+    let erased_lifetime = Type::new_lifetime(Lifetime::Erased, &engine);
+    let lesser = Type::new_instance_associated(
+        GlobalSymbolID::default(),
+        common_instance.clone(),
+        [static_lifetime.clone()],
         &engine,
     );
-    let greater = instance_associated(
-        vec![common_instance, erased_lifetime.clone()],
+    let greater = Type::new_instance_associated(
+        GlobalSymbolID::default(),
+        common_instance,
+        [erased_lifetime.clone()],
         &engine,
     );
 
@@ -238,12 +158,12 @@ async fn solved_instance_associated_arguments_are_not_deferred() {
 #[tokio::test]
 async fn tuple_arguments_follow_parent_covariance() {
     let engine = create_engine().await;
-    let static_lifetime = lifetime(Lifetime::Static, &engine);
-    let erased_lifetime = lifetime(Lifetime::Erased, &engine);
+    let static_lifetime = Type::new_lifetime(Lifetime::Static, &engine);
+    let erased_lifetime = Type::new_lifetime(Lifetime::Erased, &engine);
 
     let constraints = resolve_one(
-        tuple(vec![static_lifetime.clone()], &engine),
-        tuple(vec![erased_lifetime.clone()], &engine),
+        Type::new_tuple(vec![static_lifetime.clone()], &engine),
+        Type::new_tuple(vec![erased_lifetime.clone()], &engine),
         Variance::Covariant,
         &engine,
     )
@@ -262,12 +182,12 @@ async fn tuple_arguments_follow_parent_covariance() {
 #[tokio::test]
 async fn tuple_arguments_flip_under_parent_contravariance() {
     let engine = create_engine().await;
-    let static_lifetime = lifetime(Lifetime::Static, &engine);
-    let erased_lifetime = lifetime(Lifetime::Erased, &engine);
+    let static_lifetime = Type::new_lifetime(Lifetime::Static, &engine);
+    let erased_lifetime = Type::new_lifetime(Lifetime::Erased, &engine);
 
     let constraints = resolve_one(
-        tuple(vec![static_lifetime.clone()], &engine),
-        tuple(vec![erased_lifetime.clone()], &engine),
+        Type::new_tuple(vec![static_lifetime.clone()], &engine),
+        Type::new_tuple(vec![erased_lifetime.clone()], &engine),
         Variance::Contravariant,
         &engine,
     )
@@ -286,12 +206,12 @@ async fn tuple_arguments_flip_under_parent_contravariance() {
 #[tokio::test]
 async fn tuple_arguments_become_equal_under_parent_invariance() {
     let engine = create_engine().await;
-    let static_lifetime = lifetime(Lifetime::Static, &engine);
-    let erased_lifetime = lifetime(Lifetime::Erased, &engine);
+    let static_lifetime = Type::new_lifetime(Lifetime::Static, &engine);
+    let erased_lifetime = Type::new_lifetime(Lifetime::Erased, &engine);
 
     let constraints = resolve_one(
-        tuple(vec![static_lifetime.clone()], &engine),
-        tuple(vec![erased_lifetime.clone()], &engine),
+        Type::new_tuple(vec![static_lifetime.clone()], &engine),
+        Type::new_tuple(vec![erased_lifetime.clone()], &engine),
         Variance::Invariant,
         &engine,
     )
@@ -312,8 +232,14 @@ async fn tuple_arguments_are_ignored_under_parent_bivariance() {
     let engine = create_engine().await;
 
     let constraints = resolve_one(
-        tuple(vec![lifetime(Lifetime::Static, &engine)], &engine),
-        tuple(vec![lifetime(Lifetime::Erased, &engine)], &engine),
+        Type::new_tuple(
+            vec![Type::new_lifetime(Lifetime::Static, &engine)],
+            &engine,
+        ),
+        Type::new_tuple(
+            vec![Type::new_lifetime(Lifetime::Erased, &engine)],
+            &engine,
+        ),
         Variance::Bivariant,
         &engine,
     )
@@ -329,15 +255,16 @@ async fn tuple_arguments_are_ignored_under_parent_bivariance() {
 #[tokio::test]
 async fn mutable_reference_pointees_are_invariant() {
     let engine = create_engine().await;
-    let static_lifetime = lifetime(Lifetime::Static, &engine);
-    let erased_lifetime = lifetime(Lifetime::Erased, &engine);
-    let common_reference_lifetime = lifetime(Lifetime::Static, &engine);
-    let bool_type = primitive(Primitive::Bool, &engine);
+    let static_lifetime = Type::new_lifetime(Lifetime::Static, &engine);
+    let erased_lifetime = Type::new_lifetime(Lifetime::Erased, &engine);
+    let common_reference_lifetime =
+        Type::new_lifetime(Lifetime::Static, &engine);
+    let bool_type = Type::new_primitive(Primitive::Bool, &engine);
 
     let constraints = resolve_one(
-        reference(
+        Type::new_reference(
             common_reference_lifetime.clone(),
-            reference(
+            Type::new_reference(
                 static_lifetime.clone(),
                 bool_type.clone(),
                 Mutability::Immutable,
@@ -346,9 +273,9 @@ async fn mutable_reference_pointees_are_invariant() {
             Mutability::Mutable,
             &engine,
         ),
-        reference(
+        Type::new_reference(
             common_reference_lifetime,
-            reference(
+            Type::new_reference(
                 erased_lifetime.clone(),
                 bool_type,
                 Mutability::Immutable,
@@ -377,47 +304,50 @@ async fn mutable_reference_pointees_are_invariant() {
 #[tokio::test]
 async fn higher_ranked_lifetime_arguments_can_split() {
     let engine = create_engine().await;
-    let u32_type = primitive(Primitive::Uint32, &engine);
-    let lhs_lifetime = bound_lifetime(0, &engine);
-    let rhs_first_lifetime = bound_lifetime(0, &engine);
-    let rhs_second_lifetime = bound_lifetime(1, &engine);
+    let u32_type = Type::new_primitive(Primitive::Uint32, &engine);
+    let lhs_lifetime =
+        Type::new_bound_variable(BoundVariable::new(0, 0), &engine);
+    let rhs_first_lifetime =
+        Type::new_bound_variable(BoundVariable::new(0, 0), &engine);
+    let rhs_second_lifetime =
+        Type::new_bound_variable(BoundVariable::new(0, 1), &engine);
 
-    let lesser = function_pointer(
+    let lesser = Type::new_function_pointer_with_higher_ranked_lifetimes(
         1,
-        vec![
-            reference(
+        [
+            Type::new_reference(
                 lhs_lifetime.clone(),
                 u32_type.clone(),
                 Mutability::Immutable,
                 &engine,
             ),
-            reference(
+            Type::new_reference(
                 lhs_lifetime,
                 u32_type.clone(),
                 Mutability::Immutable,
                 &engine,
             ),
-            unit(&engine),
         ],
+        Type::new_tuple([], &engine),
         &engine,
     );
-    let greater = function_pointer(
+    let greater = Type::new_function_pointer_with_higher_ranked_lifetimes(
         2,
-        vec![
-            reference(
+        [
+            Type::new_reference(
                 rhs_first_lifetime,
                 u32_type.clone(),
                 Mutability::Immutable,
                 &engine,
             ),
-            reference(
+            Type::new_reference(
                 rhs_second_lifetime,
                 u32_type,
                 Mutability::Immutable,
                 &engine,
             ),
-            unit(&engine),
         ],
+        Type::new_tuple([], &engine),
         &engine,
     );
 
@@ -439,57 +369,60 @@ async fn higher_ranked_lifetime_arguments_can_split() {
 #[tokio::test]
 async fn higher_ranked_lifetime_return_cannot_split_argument_identity() {
     let engine = create_engine().await;
-    let u32_type = primitive(Primitive::Uint32, &engine);
-    let lhs_lifetime = bound_lifetime(0, &engine);
-    let rhs_first_lifetime = bound_lifetime(0, &engine);
-    let rhs_second_lifetime = bound_lifetime(1, &engine);
+    let u32_type = Type::new_primitive(Primitive::Uint32, &engine);
+    let lhs_lifetime =
+        Type::new_bound_variable(BoundVariable::new(0, 0), &engine);
+    let rhs_first_lifetime =
+        Type::new_bound_variable(BoundVariable::new(0, 0), &engine);
+    let rhs_second_lifetime =
+        Type::new_bound_variable(BoundVariable::new(0, 1), &engine);
 
-    let lesser = function_pointer(
+    let lesser = Type::new_function_pointer_with_higher_ranked_lifetimes(
         1,
-        vec![
-            reference(
+        [
+            Type::new_reference(
                 lhs_lifetime.clone(),
                 u32_type.clone(),
                 Mutability::Immutable,
                 &engine,
             ),
-            reference(
+            Type::new_reference(
                 lhs_lifetime.clone(),
-                u32_type.clone(),
-                Mutability::Immutable,
-                &engine,
-            ),
-            reference(
-                lhs_lifetime,
                 u32_type.clone(),
                 Mutability::Immutable,
                 &engine,
             ),
         ],
+        Type::new_reference(
+            lhs_lifetime,
+            u32_type.clone(),
+            Mutability::Immutable,
+            &engine,
+        ),
         &engine,
     );
-    let greater = function_pointer(
+    let greater = Type::new_function_pointer_with_higher_ranked_lifetimes(
         2,
-        vec![
-            reference(
+        [
+            Type::new_reference(
                 rhs_first_lifetime.clone(),
                 u32_type.clone(),
                 Mutability::Immutable,
                 &engine,
             ),
-            reference(
+            Type::new_reference(
                 rhs_second_lifetime,
                 u32_type.clone(),
                 Mutability::Immutable,
                 &engine,
             ),
-            reference(
-                rhs_first_lifetime,
-                u32_type,
-                Mutability::Immutable,
-                &engine,
-            ),
         ],
+        Type::new_reference(
+            rhs_first_lifetime,
+            u32_type,
+            Mutability::Immutable,
+            &engine,
+        ),
         &engine,
     );
 
@@ -507,34 +440,30 @@ async fn higher_ranked_lifetime_return_cannot_split_argument_identity() {
 #[tokio::test]
 async fn mixed_ranked_and_unranked_function_pointers_destructure() {
     let engine = create_engine().await;
-    let u32_type = primitive(Primitive::Uint32, &engine);
-    let ranked_lifetime = bound_lifetime(0, &engine);
-    let static_lifetime = lifetime(Lifetime::Static, &engine);
+    let u32_type = Type::new_primitive(Primitive::Uint32, &engine);
+    let ranked_lifetime =
+        Type::new_bound_variable(BoundVariable::new(0, 0), &engine);
+    let static_lifetime = Type::new_lifetime(Lifetime::Static, &engine);
 
-    let lesser = function_pointer(
+    let lesser = Type::new_function_pointer_with_higher_ranked_lifetimes(
         1,
-        vec![
-            reference(
-                ranked_lifetime,
-                u32_type.clone(),
-                Mutability::Immutable,
-                &engine,
-            ),
-            unit(&engine),
-        ],
+        [Type::new_reference(
+            ranked_lifetime,
+            u32_type.clone(),
+            Mutability::Immutable,
+            &engine,
+        )],
+        Type::new_tuple([], &engine),
         &engine,
     );
-    let greater = function_pointer(
-        0,
-        vec![
-            reference(
-                static_lifetime,
-                u32_type,
-                Mutability::Immutable,
-                &engine,
-            ),
-            unit(&engine),
-        ],
+    let greater = Type::new_function_pointer(
+        [Type::new_reference(
+            static_lifetime,
+            u32_type,
+            Mutability::Immutable,
+            &engine,
+        )],
+        Type::new_tuple([], &engine),
         &engine,
     );
 
@@ -552,34 +481,30 @@ async fn mixed_ranked_and_unranked_function_pointers_destructure() {
 #[tokio::test]
 async fn covariant_hrtb_rejects_skolem_to_external_leak() {
     let engine = create_engine().await;
-    let u32_type = primitive(Primitive::Uint32, &engine);
-    let ranked_lifetime = bound_lifetime(0, &engine);
-    let static_lifetime = lifetime(Lifetime::Static, &engine);
+    let u32_type = Type::new_primitive(Primitive::Uint32, &engine);
+    let ranked_lifetime =
+        Type::new_bound_variable(BoundVariable::new(0, 0), &engine);
+    let static_lifetime = Type::new_lifetime(Lifetime::Static, &engine);
 
-    let lesser = function_pointer(
-        0,
-        vec![
-            reference(
-                static_lifetime,
-                u32_type.clone(),
-                Mutability::Immutable,
-                &engine,
-            ),
-            unit(&engine),
-        ],
+    let lesser = Type::new_function_pointer(
+        [Type::new_reference(
+            static_lifetime,
+            u32_type.clone(),
+            Mutability::Immutable,
+            &engine,
+        )],
+        Type::new_tuple([], &engine),
         &engine,
     );
-    let greater = function_pointer(
+    let greater = Type::new_function_pointer_with_higher_ranked_lifetimes(
         1,
-        vec![
-            reference(
-                ranked_lifetime,
-                u32_type,
-                Mutability::Immutable,
-                &engine,
-            ),
-            unit(&engine),
-        ],
+        [Type::new_reference(
+            ranked_lifetime,
+            u32_type,
+            Mutability::Immutable,
+            &engine,
+        )],
+        Type::new_tuple([], &engine),
         &engine,
     );
 
@@ -598,34 +523,30 @@ async fn covariant_hrtb_rejects_skolem_to_external_leak() {
 #[tokio::test]
 async fn contravariant_top_level_variance_flips_hrtb_sides() {
     let engine = create_engine().await;
-    let u32_type = primitive(Primitive::Uint32, &engine);
-    let ranked_lifetime = bound_lifetime(0, &engine);
-    let static_lifetime = lifetime(Lifetime::Static, &engine);
+    let u32_type = Type::new_primitive(Primitive::Uint32, &engine);
+    let ranked_lifetime =
+        Type::new_bound_variable(BoundVariable::new(0, 0), &engine);
+    let static_lifetime = Type::new_lifetime(Lifetime::Static, &engine);
 
-    let lesser = function_pointer(
-        0,
-        vec![
-            reference(
-                static_lifetime,
-                u32_type.clone(),
-                Mutability::Immutable,
-                &engine,
-            ),
-            unit(&engine),
-        ],
+    let lesser = Type::new_function_pointer(
+        [Type::new_reference(
+            static_lifetime,
+            u32_type.clone(),
+            Mutability::Immutable,
+            &engine,
+        )],
+        Type::new_tuple([], &engine),
         &engine,
     );
-    let greater = function_pointer(
+    let greater = Type::new_function_pointer_with_higher_ranked_lifetimes(
         1,
-        vec![
-            reference(
-                ranked_lifetime,
-                u32_type,
-                Mutability::Immutable,
-                &engine,
-            ),
-            unit(&engine),
-        ],
+        [Type::new_reference(
+            ranked_lifetime,
+            u32_type,
+            Mutability::Immutable,
+            &engine,
+        )],
+        Type::new_tuple([], &engine),
         &engine,
     );
 
@@ -645,39 +566,42 @@ async fn contravariant_top_level_variance_flips_hrtb_sides() {
 #[tokio::test]
 async fn invariant_hrtb_uses_independent_directional_runs() {
     let engine = create_engine().await;
-    let u32_type = primitive(Primitive::Uint32, &engine);
-    let lhs_lifetime = bound_lifetime(0, &engine);
-    let rhs_lifetime = bound_lifetime(0, &engine);
+    let u32_type = Type::new_primitive(Primitive::Uint32, &engine);
+    let lhs_lifetime =
+        Type::new_bound_variable(BoundVariable::new(0, 0), &engine);
+    let rhs_lifetime =
+        Type::new_bound_variable(BoundVariable::new(0, 0), &engine);
 
-    let lesser = function_pointer(
+    let lesser = Type::new_function_pointer_with_higher_ranked_lifetimes(
         1,
-        vec![
-            reference(
-                lhs_lifetime.clone(),
-                u32_type.clone(),
-                Mutability::Immutable,
-                &engine,
-            ),
-            reference(
-                lhs_lifetime,
-                u32_type.clone(),
-                Mutability::Immutable,
-                &engine,
-            ),
-        ],
+        [Type::new_reference(
+            lhs_lifetime.clone(),
+            u32_type.clone(),
+            Mutability::Immutable,
+            &engine,
+        )],
+        Type::new_reference(
+            lhs_lifetime,
+            u32_type.clone(),
+            Mutability::Immutable,
+            &engine,
+        ),
         &engine,
     );
-    let greater = function_pointer(
+    let greater = Type::new_function_pointer_with_higher_ranked_lifetimes(
         1,
-        vec![
-            reference(
-                rhs_lifetime.clone(),
-                u32_type.clone(),
-                Mutability::Immutable,
-                &engine,
-            ),
-            reference(rhs_lifetime, u32_type, Mutability::Immutable, &engine),
-        ],
+        [Type::new_reference(
+            rhs_lifetime.clone(),
+            u32_type.clone(),
+            Mutability::Immutable,
+            &engine,
+        )],
+        Type::new_reference(
+            rhs_lifetime,
+            u32_type,
+            Mutability::Immutable,
+            &engine,
+        ),
         &engine,
     );
 
@@ -697,34 +621,30 @@ async fn invariant_hrtb_uses_independent_directional_runs() {
 #[tokio::test]
 async fn hrtb_step_does_not_expose_internal_variables() {
     let engine = create_engine().await;
-    let u32_type = primitive(Primitive::Uint32, &engine);
-    let ranked_lifetime = bound_lifetime(0, &engine);
-    let static_lifetime = lifetime(Lifetime::Static, &engine);
+    let u32_type = Type::new_primitive(Primitive::Uint32, &engine);
+    let ranked_lifetime =
+        Type::new_bound_variable(BoundVariable::new(0, 0), &engine);
+    let static_lifetime = Type::new_lifetime(Lifetime::Static, &engine);
 
-    let lesser = function_pointer(
-        0,
-        vec![
-            unit(&engine),
-            reference(
-                static_lifetime,
-                u32_type.clone(),
-                Mutability::Immutable,
-                &engine,
-            ),
-        ],
+    let lesser = Type::new_function_pointer(
+        [Type::new_tuple([], &engine)],
+        Type::new_reference(
+            static_lifetime,
+            u32_type.clone(),
+            Mutability::Immutable,
+            &engine,
+        ),
         &engine,
     );
-    let greater = function_pointer(
+    let greater = Type::new_function_pointer_with_higher_ranked_lifetimes(
         1,
-        vec![
-            unit(&engine),
-            reference(
-                ranked_lifetime,
-                u32_type,
-                Mutability::Immutable,
-                &engine,
-            ),
-        ],
+        [Type::new_tuple([], &engine)],
+        Type::new_reference(
+            ranked_lifetime,
+            u32_type,
+            Mutability::Immutable,
+            &engine,
+        ),
         &engine,
     );
 
@@ -746,34 +666,30 @@ async fn hrtb_step_does_not_expose_internal_variables() {
 #[tokio::test]
 async fn external_to_skolem_return_obligation_rewrites_to_static() {
     let engine = create_engine().await;
-    let u32_type = primitive(Primitive::Uint32, &engine);
-    let ranked_lifetime = bound_lifetime(0, &engine);
-    let static_lifetime = lifetime(Lifetime::Static, &engine);
+    let u32_type = Type::new_primitive(Primitive::Uint32, &engine);
+    let ranked_lifetime =
+        Type::new_bound_variable(BoundVariable::new(0, 0), &engine);
+    let static_lifetime = Type::new_lifetime(Lifetime::Static, &engine);
 
-    let lesser = function_pointer(
-        0,
-        vec![
-            unit(&engine),
-            reference(
-                static_lifetime.clone(),
-                u32_type.clone(),
-                Mutability::Immutable,
-                &engine,
-            ),
-        ],
+    let lesser = Type::new_function_pointer(
+        [Type::new_tuple([], &engine)],
+        Type::new_reference(
+            static_lifetime.clone(),
+            u32_type.clone(),
+            Mutability::Immutable,
+            &engine,
+        ),
         &engine,
     );
-    let greater = function_pointer(
+    let greater = Type::new_function_pointer_with_higher_ranked_lifetimes(
         1,
-        vec![
-            unit(&engine),
-            reference(
-                ranked_lifetime,
-                u32_type,
-                Mutability::Immutable,
-                &engine,
-            ),
-        ],
+        [Type::new_tuple([], &engine)],
+        Type::new_reference(
+            ranked_lifetime,
+            u32_type,
+            Mutability::Immutable,
+            &engine,
+        ),
         &engine,
     );
 
@@ -800,39 +716,42 @@ async fn external_to_skolem_return_obligation_rewrites_to_static() {
 #[tokio::test]
 async fn bivariant_hrtb_function_pointers_do_not_emit_work() {
     let engine = create_engine().await;
-    let u32_type = primitive(Primitive::Uint32, &engine);
-    let lhs_lifetime = bound_lifetime(0, &engine);
-    let rhs_lifetime = bound_lifetime(0, &engine);
+    let u32_type = Type::new_primitive(Primitive::Uint32, &engine);
+    let lhs_lifetime =
+        Type::new_bound_variable(BoundVariable::new(0, 0), &engine);
+    let rhs_lifetime =
+        Type::new_bound_variable(BoundVariable::new(0, 0), &engine);
 
-    let lesser = function_pointer(
+    let lesser = Type::new_function_pointer_with_higher_ranked_lifetimes(
         1,
-        vec![
-            reference(
-                lhs_lifetime.clone(),
-                u32_type.clone(),
-                Mutability::Immutable,
-                &engine,
-            ),
-            reference(
-                lhs_lifetime,
-                u32_type.clone(),
-                Mutability::Immutable,
-                &engine,
-            ),
-        ],
+        [Type::new_reference(
+            lhs_lifetime.clone(),
+            u32_type.clone(),
+            Mutability::Immutable,
+            &engine,
+        )],
+        Type::new_reference(
+            lhs_lifetime,
+            u32_type.clone(),
+            Mutability::Immutable,
+            &engine,
+        ),
         &engine,
     );
-    let greater = function_pointer(
+    let greater = Type::new_function_pointer_with_higher_ranked_lifetimes(
         1,
-        vec![
-            reference(
-                rhs_lifetime.clone(),
-                u32_type.clone(),
-                Mutability::Immutable,
-                &engine,
-            ),
-            reference(rhs_lifetime, u32_type, Mutability::Immutable, &engine),
-        ],
+        [Type::new_reference(
+            rhs_lifetime.clone(),
+            u32_type.clone(),
+            Mutability::Immutable,
+            &engine,
+        )],
+        Type::new_reference(
+            rhs_lifetime,
+            u32_type,
+            Mutability::Immutable,
+            &engine,
+        ),
         &engine,
     );
 

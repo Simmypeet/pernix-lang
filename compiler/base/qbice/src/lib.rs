@@ -8,6 +8,7 @@ use linkme::distributed_slice;
 use qbice::{
     Identifiable, StableHash,
     program::Registration,
+    serialize::Plugin,
     stable_hash::{SeededStableHasherBuilder, Sip128Hasher},
     storage::{
         self,
@@ -59,6 +60,23 @@ pub type TrackedEngine = qbice::TrackedEngine<Config>;
 /// Type alias for the [`qbice::InputSession`] with configuration set to
 /// [`Config`].
 pub type InputSession = qbice::InputSession<Config>;
+
+/// Creates a tracked engine with an in-memory database and no registered
+/// executors.
+#[must_use]
+pub async fn create_minimal_engine() -> TrackedEngine {
+    Arc::new(
+        Engine::new_with(
+            Plugin::default(),
+            InMemoryFactory,
+            SeededStableHasherBuilder::new(0),
+        )
+        .await
+        .unwrap(),
+    )
+    .tracked()
+    .await
+}
 
 /// Distributed slice for registering all the executors required for Pernix
 /// compiler.
