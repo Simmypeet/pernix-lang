@@ -51,6 +51,15 @@ pub struct GenericParameter {
 
 impl GenericParameter {
     #[must_use]
+    pub const fn new(
+        name: Interned<str>,
+        span: Option<RelativeSpan>,
+        kind: GenericParameterKind,
+    ) -> Self {
+        Self { name, span, kind }
+    }
+
+    #[must_use]
     pub const fn kind(&self) -> TyKind {
         match &self.kind {
             GenericParameterKind::Lifetime => TyKind::Lifetime,
@@ -74,6 +83,11 @@ impl GenericParameter {
 )]
 pub struct InstanceParameterKind {
     trait_ref: Option<Symbol>,
+}
+
+impl InstanceParameterKind {
+    #[must_use]
+    pub const fn new(trait_ref: Option<Symbol>) -> Self { Self { trait_ref } }
 }
 
 #[derive(
@@ -110,6 +124,17 @@ pub struct GenericParameters {
 }
 
 impl GenericParameters {
+    #[must_use]
+    pub fn new(parameters: impl IntoIterator<Item = GenericParameter>) -> Self {
+        let mut arena = OrderedArena::new();
+
+        for parameter in parameters {
+            arena.insert(parameter);
+        }
+
+        Self { parameters: arena }
+    }
+
     #[must_use]
     pub fn len(&self) -> usize { self.parameters.len() }
 

@@ -92,10 +92,10 @@ impl Substitutable for Equality {
     Decode,
 )]
 pub struct Outlives {
-    /// Can either has a kind of lifetime or a kind of type.
+    /// Must have lifetime, type, or instance kind.
     lesser: Interned<Type>,
 
-    /// Must always has a kind of lifetime.
+    /// Must have lifetime kind.
     greater: Interned<Type>,
 }
 

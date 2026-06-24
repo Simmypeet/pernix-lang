@@ -17,6 +17,8 @@ thiserror.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true
+pernixc_arena.path = "../../base/arena"
+pernixc_target.path = "../../base/target"
 
 [lints]
 workspace = true
