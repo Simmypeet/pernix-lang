@@ -16,10 +16,7 @@ use crate::{
         GenericParameters,
     },
     instance_associated,
-    r#type::{
-        Type,
-        constructor::{Primitive, Tuple},
-    },
+    r#type::{Type, constructor::Primitive},
 };
 
 const INSTANCE_SYMBOL_ID: GlobalSymbolID =
@@ -171,16 +168,16 @@ impl executor::Executor<instance_associated::Key, Config>
         engine: &TrackedEngine,
     ) -> Interned<Type> {
         match key.symbol_id {
-            INSTANCE_ASSOC_MIXED_SYMBOL_ID => tuple_type(
-                &[
-                    generic_parameter_type(
+            INSTANCE_ASSOC_MIXED_SYMBOL_ID => Type::new_tuple(
+                [
+                    Type::new_generic_parameter(
                         GenericParameterID::new(
                             INSTANCE_SYMBOL_ID,
                             ID::<GenericParameter>::new(0),
                         ),
                         engine,
                     ),
-                    generic_parameter_type(
+                    Type::new_generic_parameter(
                         GenericParameterID::new(
                             INSTANCE_ASSOC_MIXED_SYMBOL_ID,
                             ID::<GenericParameter>::new(0),
@@ -188,18 +185,19 @@ impl executor::Executor<instance_associated::Key, Config>
                         engine,
                     ),
                 ],
-                &[],
                 engine,
             ),
 
             INSTANCE_ASSOC_INSTANCE_PARAM_SYMBOL_ID
-            | INSTANCE_ASSOC_NON_TYPE_KIND_SYMBOL_ID => generic_parameter_type(
-                GenericParameterID::new(
-                    INSTANCE_SYMBOL_ID,
-                    ID::<GenericParameter>::new(0),
-                ),
-                engine,
-            ),
+            | INSTANCE_ASSOC_NON_TYPE_KIND_SYMBOL_ID => {
+                Type::new_generic_parameter(
+                    GenericParameterID::new(
+                        INSTANCE_SYMBOL_ID,
+                        ID::<GenericParameter>::new(0),
+                    ),
+                    engine,
+                )
+            }
 
             _ => panic!(
                 "unexpected instance associated symbol: {:?}",
@@ -227,56 +225,16 @@ async fn create_test_engine() -> TrackedEngine {
     Arc::new(engine).tracked().await
 }
 
-fn intern_primitive(
-    primitive: Primitive,
-    engine: &TrackedEngine,
-) -> Interned<Type> {
-    engine.intern(Type::Application(Application {
-        constructor: Constructor::Primitive(primitive),
-        arguments: engine.intern_unsized(Vec::<Interned<Type>>::new()),
-    }))
-}
-
-fn generic_parameter_type(
-    parameter_id: GenericParameterID,
-    engine: &TrackedEngine,
-) -> Interned<Type> {
-    engine.intern(Type::GenericParameter(parameter_id))
-}
-
-fn symbolic_type(
-    symbolic_id: GlobalSymbolID,
-    arguments: &[Interned<Type>],
-    engine: &TrackedEngine,
-) -> Interned<Type> {
-    engine.intern(Type::Application(Application {
-        constructor: Constructor::Symbolic(Symbolic { symbolic_id }),
-        arguments: engine.intern_unsized(arguments.to_vec()),
-    }))
-}
-
-fn tuple_type(
-    arguments: &[Interned<Type>],
-    unpacked_positions: &[usize],
-    engine: &TrackedEngine,
-) -> Interned<Type> {
-    engine.intern(Type::Application(Application {
-        constructor: Constructor::Tuple(Tuple {
-            unpacked_positions: engine
-                .intern_unsized(unpacked_positions.to_vec()),
-        }),
-        arguments: engine.intern_unsized(arguments.to_vec()),
-    }))
-}
-
 fn tuple_application(
     arguments: &[Interned<Type>],
     unpacked_positions: &[usize],
     engine: &TrackedEngine,
 ) -> Application {
-    let Type::Application(application) =
-        &*tuple_type(arguments, unpacked_positions, engine)
-    else {
+    let Type::Application(application) = &*Type::new_tuple_with_unpack(
+        (arguments).iter().cloned(),
+        (unpacked_positions).iter().copied(),
+        engine,
+    ) else {
         panic!("expected tuple application");
     };
 
@@ -309,17 +267,16 @@ async fn reduce_tuple_flattens_unpacked_tuple_argument() {
 
     let reduced = tuple_application(
         &[
-            intern_primitive(Primitive::Int32, &engine),
-            tuple_type(
-                &[
-                    intern_primitive(Primitive::Bool, &engine),
-                    intern_primitive(Primitive::Float32, &engine),
-                    intern_primitive(Primitive::Usize, &engine),
+            Type::new_primitive(Primitive::Int32, &engine),
+            Type::new_tuple(
+                [
+                    Type::new_primitive(Primitive::Bool, &engine),
+                    Type::new_primitive(Primitive::Float32, &engine),
+                    Type::new_primitive(Primitive::Usize, &engine),
                 ],
-                &[],
                 &engine,
             ),
-            intern_primitive(Primitive::Uint64, &engine),
+            Type::new_primitive(Primitive::Uint64, &engine),
         ],
         &[1],
         &engine,
@@ -330,16 +287,15 @@ async fn reduce_tuple_flattens_unpacked_tuple_argument() {
 
     assert_eq!(
         reduced,
-        tuple_type(
-            &[
-                intern_primitive(Primitive::Int32, &engine),
-                intern_primitive(Primitive::Bool, &engine),
-                intern_primitive(Primitive::Float32, &engine),
-                intern_primitive(Primitive::Usize, &engine),
-                intern_primitive(Primitive::Uint64, &engine),
+        Type::new_tuple(
+            [
+                Type::new_primitive(Primitive::Int32, &engine),
+                Type::new_primitive(Primitive::Bool, &engine),
+                Type::new_primitive(Primitive::Float32, &engine),
+                Type::new_primitive(Primitive::Usize, &engine),
+                Type::new_primitive(Primitive::Uint64, &engine),
             ],
-            &[],
-            &engine,
+            &engine
         )
     );
 }
@@ -350,9 +306,9 @@ async fn reduce_tuple_returns_none_for_non_tuple_unpacked_argument() {
 
     let original = tuple_application(
         &[
-            intern_primitive(Primitive::Int32, &engine),
-            intern_primitive(Primitive::Bool, &engine),
-            intern_primitive(Primitive::Uint64, &engine),
+            Type::new_primitive(Primitive::Int32, &engine),
+            Type::new_primitive(Primitive::Bool, &engine),
+            Type::new_primitive(Primitive::Uint64, &engine),
         ],
         &[1],
         &engine,
@@ -367,17 +323,17 @@ async fn reduce_tuple_preserves_inner_unpacked_positions() {
 
     let reduced = tuple_application(
         &[
-            intern_primitive(Primitive::Int32, &engine),
-            tuple_type(
-                &[
-                    intern_primitive(Primitive::Bool, &engine),
-                    intern_primitive(Primitive::Float32, &engine),
-                    intern_primitive(Primitive::Usize, &engine),
+            Type::new_primitive(Primitive::Int32, &engine),
+            Type::new_tuple_with_unpack(
+                [
+                    Type::new_primitive(Primitive::Bool, &engine),
+                    Type::new_primitive(Primitive::Float32, &engine),
+                    Type::new_primitive(Primitive::Usize, &engine),
                 ],
-                &[1],
+                [1],
                 &engine,
             ),
-            intern_primitive(Primitive::Uint64, &engine),
+            Type::new_primitive(Primitive::Uint64, &engine),
         ],
         &[1],
         &engine,
@@ -388,16 +344,16 @@ async fn reduce_tuple_preserves_inner_unpacked_positions() {
 
     assert_eq!(
         reduced,
-        tuple_type(
-            &[
-                intern_primitive(Primitive::Int32, &engine),
-                intern_primitive(Primitive::Bool, &engine),
-                intern_primitive(Primitive::Float32, &engine),
-                intern_primitive(Primitive::Usize, &engine),
-                intern_primitive(Primitive::Uint64, &engine),
+        Type::new_tuple_with_unpack(
+            [
+                Type::new_primitive(Primitive::Int32, &engine),
+                Type::new_primitive(Primitive::Bool, &engine),
+                Type::new_primitive(Primitive::Float32, &engine),
+                Type::new_primitive(Primitive::Usize, &engine),
+                Type::new_primitive(Primitive::Uint64, &engine),
             ],
-            &[2],
-            &engine,
+            [2],
+            &engine
         )
     );
 }
@@ -408,16 +364,15 @@ async fn reduce_tuple_shifts_later_unpacked_positions() {
 
     let reduced = tuple_application(
         &[
-            intern_primitive(Primitive::Int32, &engine),
-            tuple_type(
-                &[
-                    intern_primitive(Primitive::Bool, &engine),
-                    intern_primitive(Primitive::Float32, &engine),
+            Type::new_primitive(Primitive::Int32, &engine),
+            Type::new_tuple(
+                [
+                    Type::new_primitive(Primitive::Bool, &engine),
+                    Type::new_primitive(Primitive::Float32, &engine),
                 ],
-                &[],
                 &engine,
             ),
-            intern_primitive(Primitive::Uint64, &engine),
+            Type::new_primitive(Primitive::Uint64, &engine),
         ],
         &[1, 2],
         &engine,
@@ -428,15 +383,15 @@ async fn reduce_tuple_shifts_later_unpacked_positions() {
 
     assert_eq!(
         reduced,
-        tuple_type(
-            &[
-                intern_primitive(Primitive::Int32, &engine),
-                intern_primitive(Primitive::Bool, &engine),
-                intern_primitive(Primitive::Float32, &engine),
-                intern_primitive(Primitive::Uint64, &engine),
+        Type::new_tuple_with_unpack(
+            [
+                Type::new_primitive(Primitive::Int32, &engine),
+                Type::new_primitive(Primitive::Bool, &engine),
+                Type::new_primitive(Primitive::Float32, &engine),
+                Type::new_primitive(Primitive::Uint64, &engine),
             ],
-            &[3],
-            &engine,
+            [3],
+            &engine
         )
     );
 }
@@ -446,9 +401,9 @@ async fn reduce_instance_associated_substitutes_instance_generic_argument() {
     let engine = create_test_engine().await;
 
     let reduced = instance_associated_application(
-        symbolic_type(
+        Type::new_symbolic(
             INSTANCE_SYMBOL_ID,
-            &[intern_primitive(Primitive::Bool, &engine)],
+            [Type::new_primitive(Primitive::Bool, &engine)],
             &engine,
         ),
         TRAIT_ASSOC_INSTANCE_PARAM_SYMBOL_ID,
@@ -459,7 +414,7 @@ async fn reduce_instance_associated_substitutes_instance_generic_argument() {
     .await
     .unwrap();
 
-    assert_eq!(reduced, intern_primitive(Primitive::Bool, &engine));
+    assert_eq!(reduced, Type::new_primitive(Primitive::Bool, &engine));
 }
 
 #[tokio::test]
@@ -467,13 +422,13 @@ async fn reduce_instance_associated_substitutes_associated_generic_arguments() {
     let engine = create_test_engine().await;
 
     let reduced = instance_associated_application(
-        symbolic_type(
+        Type::new_symbolic(
             INSTANCE_SYMBOL_ID,
-            &[intern_primitive(Primitive::Bool, &engine)],
+            [Type::new_primitive(Primitive::Bool, &engine)],
             &engine,
         ),
         TRAIT_ASSOC_MIXED_SYMBOL_ID,
-        &[intern_primitive(Primitive::Uint64, &engine)],
+        &[Type::new_primitive(Primitive::Uint64, &engine)],
         &engine,
     )
     .reduce(&engine)
@@ -482,13 +437,12 @@ async fn reduce_instance_associated_substitutes_associated_generic_arguments() {
 
     assert_eq!(
         reduced,
-        tuple_type(
-            &[
-                intern_primitive(Primitive::Bool, &engine),
-                intern_primitive(Primitive::Uint64, &engine),
+        Type::new_tuple(
+            [
+                Type::new_primitive(Primitive::Bool, &engine),
+                Type::new_primitive(Primitive::Uint64, &engine),
             ],
-            &[],
-            &engine,
+            &engine
         )
     );
 }
@@ -498,9 +452,9 @@ async fn reduce_instance_associated_does_not_require_type_kind() {
     let engine = create_test_engine().await;
 
     let reduced = instance_associated_application(
-        symbolic_type(
+        Type::new_symbolic(
             INSTANCE_SYMBOL_ID,
-            &[intern_primitive(Primitive::Bool, &engine)],
+            [Type::new_primitive(Primitive::Bool, &engine)],
             &engine,
         ),
         TRAIT_ASSOC_NON_TYPE_KIND_SYMBOL_ID,
@@ -511,7 +465,7 @@ async fn reduce_instance_associated_does_not_require_type_kind() {
     .await
     .unwrap();
 
-    assert_eq!(reduced, intern_primitive(Primitive::Bool, &engine));
+    assert_eq!(reduced, Type::new_primitive(Primitive::Bool, &engine));
 }
 
 #[tokio::test]
@@ -520,9 +474,9 @@ async fn reduce_instance_associated_does_not_recurse_into_inner_instance() {
 
     let inner_instance =
         engine.intern(Type::Application(instance_associated_application(
-            symbolic_type(
+            Type::new_symbolic(
                 INSTANCE_SYMBOL_ID,
-                &[intern_primitive(Primitive::Bool, &engine)],
+                [Type::new_primitive(Primitive::Bool, &engine)],
                 &engine,
             ),
             TRAIT_ASSOC_RECURSIVE_INNER_SYMBOL_ID,

@@ -1,21 +1,10 @@
 #![allow(clippy::trivially_copy_pass_by_ref)]
-use std::sync::Arc;
-
-use pernixc_qbice::{Engine, InMemoryFactory, TrackedEngine};
-use qbice::{serialize::Plugin, stable_hash::SeededStableHasherBuilder};
+use pernixc_qbice::{
+    TrackedEngine, create_minimal_engine as create_test_engine,
+};
 
 use super::*;
 use crate::r#type::constructor::Primitive;
-
-fn intern_primitive(
-    primitive: Primitive,
-    engine: &TrackedEngine,
-) -> Interned<Type> {
-    engine.intern(Type::Application(Application {
-        constructor: Constructor::Primitive(primitive),
-        arguments: engine.intern_unsized(Vec::<Interned<Type>>::new()),
-    }))
-}
 
 fn primitive_application(
     primitive: Primitive,
@@ -33,13 +22,11 @@ fn tuple_type(
     unpacked_positions: &[usize],
     engine: &TrackedEngine,
 ) -> Interned<Type> {
-    engine.intern(Type::Application(Application {
-        constructor: Constructor::Tuple(Tuple {
-            unpacked_positions: engine
-                .intern_unsized(unpacked_positions.to_vec()),
-        }),
-        arguments: engine.intern_unsized(arguments.to_vec()),
-    }))
+    Type::new_tuple_with_unpack(
+        arguments.iter().cloned(),
+        unpacked_positions.iter().copied(),
+        engine,
+    )
 }
 
 fn tuple_application(
@@ -56,20 +43,6 @@ fn tuple_application(
     application.clone()
 }
 
-async fn create_test_engine() -> TrackedEngine {
-    Arc::new(
-        Engine::new_with(
-            Plugin::default(),
-            InMemoryFactory,
-            SeededStableHasherBuilder::new(0),
-        )
-        .await
-        .unwrap(),
-    )
-    .tracked()
-    .await
-}
-
 #[tokio::test]
 async fn destructure_same_non_tuple_constructor() {
     // lhs: int32<(bool, float32)>, rhs: int32<(usize, uint64)>
@@ -78,16 +51,16 @@ async fn destructure_same_non_tuple_constructor() {
     let lhs = primitive_application(
         Primitive::Int32,
         &[
-            intern_primitive(Primitive::Bool, &engine),
-            intern_primitive(Primitive::Float32, &engine),
+            Type::new_primitive(Primitive::Bool, &engine),
+            Type::new_primitive(Primitive::Float32, &engine),
         ],
         &engine,
     );
     let rhs = primitive_application(
         Primitive::Int32,
         &[
-            intern_primitive(Primitive::Usize, &engine),
-            intern_primitive(Primitive::Uint64, &engine),
+            Type::new_primitive(Primitive::Usize, &engine),
+            Type::new_primitive(Primitive::Uint64, &engine),
         ],
         &engine,
     );
@@ -97,12 +70,12 @@ async fn destructure_same_non_tuple_constructor() {
 
     assert_eq!(destructured, vec![
         (
-            intern_primitive(Primitive::Bool, &engine),
-            intern_primitive(Primitive::Usize, &engine),
+            Type::new_primitive(Primitive::Bool, &engine),
+            Type::new_primitive(Primitive::Usize, &engine),
         ),
         (
-            intern_primitive(Primitive::Float32, &engine),
-            intern_primitive(Primitive::Uint64, &engine),
+            Type::new_primitive(Primitive::Float32, &engine),
+            Type::new_primitive(Primitive::Uint64, &engine),
         ),
     ]);
 }
@@ -114,12 +87,12 @@ async fn destructure_different_non_tuple_constructors_fails() {
     let engine = create_test_engine().await;
     let lhs = primitive_application(
         Primitive::Int32,
-        &[intern_primitive(Primitive::Int32, &engine)],
+        &[Type::new_primitive(Primitive::Int32, &engine)],
         &engine,
     );
     let rhs = primitive_application(
         Primitive::Bool,
-        &[intern_primitive(Primitive::Int32, &engine)],
+        &[Type::new_primitive(Primitive::Int32, &engine)],
         &engine,
     );
 
@@ -134,14 +107,14 @@ async fn destructure_same_non_tuple_constructor_with_different_arity_fails() {
     let lhs = primitive_application(
         Primitive::Int32,
         &[
-            intern_primitive(Primitive::Bool, &engine),
-            intern_primitive(Primitive::Float32, &engine),
+            Type::new_primitive(Primitive::Bool, &engine),
+            Type::new_primitive(Primitive::Float32, &engine),
         ],
         &engine,
     );
     let rhs = primitive_application(
         Primitive::Int32,
-        &[intern_primitive(Primitive::Usize, &engine)],
+        &[Type::new_primitive(Primitive::Usize, &engine)],
         &engine,
     );
 
@@ -155,16 +128,16 @@ async fn destructure_plain_tuples() {
     let engine = create_test_engine().await;
     let lhs = tuple_application(
         &[
-            intern_primitive(Primitive::Int32, &engine),
-            intern_primitive(Primitive::Bool, &engine),
+            Type::new_primitive(Primitive::Int32, &engine),
+            Type::new_primitive(Primitive::Bool, &engine),
         ],
         &[],
         &engine,
     );
     let rhs = tuple_application(
         &[
-            intern_primitive(Primitive::Float32, &engine),
-            intern_primitive(Primitive::Usize, &engine),
+            Type::new_primitive(Primitive::Float32, &engine),
+            Type::new_primitive(Primitive::Usize, &engine),
         ],
         &[],
         &engine,
@@ -175,12 +148,12 @@ async fn destructure_plain_tuples() {
 
     assert_eq!(destructured, vec![
         (
-            intern_primitive(Primitive::Int32, &engine),
-            intern_primitive(Primitive::Float32, &engine),
+            Type::new_primitive(Primitive::Int32, &engine),
+            Type::new_primitive(Primitive::Float32, &engine),
         ),
         (
-            intern_primitive(Primitive::Bool, &engine),
-            intern_primitive(Primitive::Usize, &engine),
+            Type::new_primitive(Primitive::Bool, &engine),
+            Type::new_primitive(Primitive::Usize, &engine),
         ),
     ]);
 }
@@ -192,19 +165,19 @@ async fn destructure_tuple_with_unpacked_right_hand_side() {
     let engine = create_test_engine().await;
     let lhs = tuple_application(
         &[
-            intern_primitive(Primitive::Int32, &engine),
-            intern_primitive(Primitive::Bool, &engine),
-            intern_primitive(Primitive::Float32, &engine),
-            intern_primitive(Primitive::Usize, &engine),
+            Type::new_primitive(Primitive::Int32, &engine),
+            Type::new_primitive(Primitive::Bool, &engine),
+            Type::new_primitive(Primitive::Float32, &engine),
+            Type::new_primitive(Primitive::Usize, &engine),
         ],
         &[],
         &engine,
     );
     let rhs = tuple_application(
         &[
-            intern_primitive(Primitive::Uint32, &engine),
-            intern_primitive(Primitive::Int64, &engine),
-            intern_primitive(Primitive::Uint64, &engine),
+            Type::new_primitive(Primitive::Uint32, &engine),
+            Type::new_primitive(Primitive::Int64, &engine),
+            Type::new_primitive(Primitive::Uint64, &engine),
         ],
         &[1],
         &engine,
@@ -215,23 +188,23 @@ async fn destructure_tuple_with_unpacked_right_hand_side() {
 
     assert_eq!(destructured, vec![
         (
-            intern_primitive(Primitive::Int32, &engine),
-            intern_primitive(Primitive::Uint32, &engine),
+            Type::new_primitive(Primitive::Int32, &engine),
+            Type::new_primitive(Primitive::Uint32, &engine),
         ),
         (
             tuple_type(
                 &[
-                    intern_primitive(Primitive::Bool, &engine),
-                    intern_primitive(Primitive::Float32, &engine),
+                    Type::new_primitive(Primitive::Bool, &engine),
+                    Type::new_primitive(Primitive::Float32, &engine),
                 ],
                 &[],
                 &engine,
             ),
-            intern_primitive(Primitive::Int64, &engine),
+            Type::new_primitive(Primitive::Int64, &engine),
         ),
         (
-            intern_primitive(Primitive::Usize, &engine),
-            intern_primitive(Primitive::Uint64, &engine),
+            Type::new_primitive(Primitive::Usize, &engine),
+            Type::new_primitive(Primitive::Uint64, &engine),
         ),
     ]);
 }
@@ -243,19 +216,19 @@ async fn destructure_tuple_with_unpacked_left_hand_side() {
     let engine = create_test_engine().await;
     let lhs = tuple_application(
         &[
-            intern_primitive(Primitive::Uint32, &engine),
-            intern_primitive(Primitive::Int64, &engine),
-            intern_primitive(Primitive::Uint64, &engine),
+            Type::new_primitive(Primitive::Uint32, &engine),
+            Type::new_primitive(Primitive::Int64, &engine),
+            Type::new_primitive(Primitive::Uint64, &engine),
         ],
         &[1],
         &engine,
     );
     let rhs = tuple_application(
         &[
-            intern_primitive(Primitive::Int32, &engine),
-            intern_primitive(Primitive::Bool, &engine),
-            intern_primitive(Primitive::Float32, &engine),
-            intern_primitive(Primitive::Usize, &engine),
+            Type::new_primitive(Primitive::Int32, &engine),
+            Type::new_primitive(Primitive::Bool, &engine),
+            Type::new_primitive(Primitive::Float32, &engine),
+            Type::new_primitive(Primitive::Usize, &engine),
         ],
         &[],
         &engine,
@@ -266,23 +239,23 @@ async fn destructure_tuple_with_unpacked_left_hand_side() {
 
     assert_eq!(destructured, vec![
         (
-            intern_primitive(Primitive::Uint32, &engine),
-            intern_primitive(Primitive::Int32, &engine),
+            Type::new_primitive(Primitive::Uint32, &engine),
+            Type::new_primitive(Primitive::Int32, &engine),
         ),
         (
-            intern_primitive(Primitive::Int64, &engine),
+            Type::new_primitive(Primitive::Int64, &engine),
             tuple_type(
                 &[
-                    intern_primitive(Primitive::Bool, &engine),
-                    intern_primitive(Primitive::Float32, &engine),
+                    Type::new_primitive(Primitive::Bool, &engine),
+                    Type::new_primitive(Primitive::Float32, &engine),
                 ],
                 &[],
                 &engine,
             ),
         ),
         (
-            intern_primitive(Primitive::Uint64, &engine),
-            intern_primitive(Primitive::Usize, &engine),
+            Type::new_primitive(Primitive::Uint64, &engine),
+            Type::new_primitive(Primitive::Usize, &engine),
         ),
     ]);
 }
@@ -294,17 +267,17 @@ async fn destructure_tuple_with_unpacked_left_hand_side_to_empty_tuple() {
     let engine = create_test_engine().await;
     let lhs = tuple_application(
         &[
-            intern_primitive(Primitive::Uint32, &engine),
-            intern_primitive(Primitive::Int64, &engine),
-            intern_primitive(Primitive::Uint64, &engine),
+            Type::new_primitive(Primitive::Uint32, &engine),
+            Type::new_primitive(Primitive::Int64, &engine),
+            Type::new_primitive(Primitive::Uint64, &engine),
         ],
         &[0],
         &engine,
     );
     let rhs = tuple_application(
         &[
-            intern_primitive(Primitive::Int32, &engine),
-            intern_primitive(Primitive::Bool, &engine),
+            Type::new_primitive(Primitive::Int32, &engine),
+            Type::new_primitive(Primitive::Bool, &engine),
         ],
         &[],
         &engine,
@@ -315,16 +288,16 @@ async fn destructure_tuple_with_unpacked_left_hand_side_to_empty_tuple() {
 
     assert_eq!(destructured, vec![
         (
-            intern_primitive(Primitive::Uint32, &engine),
+            Type::new_primitive(Primitive::Uint32, &engine),
             tuple_type(&[], &[], &engine),
         ),
         (
-            intern_primitive(Primitive::Int64, &engine),
-            intern_primitive(Primitive::Int32, &engine),
+            Type::new_primitive(Primitive::Int64, &engine),
+            Type::new_primitive(Primitive::Int32, &engine),
         ),
         (
-            intern_primitive(Primitive::Uint64, &engine),
-            intern_primitive(Primitive::Bool, &engine),
+            Type::new_primitive(Primitive::Uint64, &engine),
+            Type::new_primitive(Primitive::Bool, &engine),
         ),
     ]);
 }
@@ -336,18 +309,18 @@ async fn destructure_same_tuple_shape_pairs_element_wise() {
     let engine = create_test_engine().await;
     let lhs = tuple_application(
         &[
-            intern_primitive(Primitive::Int32, &engine),
-            intern_primitive(Primitive::Bool, &engine),
-            intern_primitive(Primitive::Float32, &engine),
+            Type::new_primitive(Primitive::Int32, &engine),
+            Type::new_primitive(Primitive::Bool, &engine),
+            Type::new_primitive(Primitive::Float32, &engine),
         ],
         &[1],
         &engine,
     );
     let rhs = tuple_application(
         &[
-            intern_primitive(Primitive::Uint32, &engine),
-            intern_primitive(Primitive::Int64, &engine),
-            intern_primitive(Primitive::Uint64, &engine),
+            Type::new_primitive(Primitive::Uint32, &engine),
+            Type::new_primitive(Primitive::Int64, &engine),
+            Type::new_primitive(Primitive::Uint64, &engine),
         ],
         &[1],
         &engine,
@@ -358,16 +331,16 @@ async fn destructure_same_tuple_shape_pairs_element_wise() {
 
     assert_eq!(destructured, vec![
         (
-            intern_primitive(Primitive::Int32, &engine),
-            intern_primitive(Primitive::Uint32, &engine),
+            Type::new_primitive(Primitive::Int32, &engine),
+            Type::new_primitive(Primitive::Uint32, &engine),
         ),
         (
-            intern_primitive(Primitive::Bool, &engine),
-            intern_primitive(Primitive::Int64, &engine),
+            Type::new_primitive(Primitive::Bool, &engine),
+            Type::new_primitive(Primitive::Int64, &engine),
         ),
         (
-            intern_primitive(Primitive::Float32, &engine),
-            intern_primitive(Primitive::Uint64, &engine),
+            Type::new_primitive(Primitive::Float32, &engine),
+            Type::new_primitive(Primitive::Uint64, &engine),
         ),
     ]);
 }
@@ -380,19 +353,19 @@ async fn destructure_grouped_tuple_preserves_other_unpacked_position() {
     let engine = create_test_engine().await;
     let lhs = tuple_application(
         &[
-            intern_primitive(Primitive::Int32, &engine),
-            intern_primitive(Primitive::Bool, &engine),
-            intern_primitive(Primitive::Float32, &engine),
+            Type::new_primitive(Primitive::Int32, &engine),
+            Type::new_primitive(Primitive::Bool, &engine),
+            Type::new_primitive(Primitive::Float32, &engine),
         ],
         &[1],
         &engine,
     );
     let rhs = tuple_application(
         &[
-            intern_primitive(Primitive::Uint32, &engine),
-            intern_primitive(Primitive::Int64, &engine),
-            intern_primitive(Primitive::Uint64, &engine),
-            intern_primitive(Primitive::Isize, &engine),
+            Type::new_primitive(Primitive::Uint32, &engine),
+            Type::new_primitive(Primitive::Int64, &engine),
+            Type::new_primitive(Primitive::Uint64, &engine),
+            Type::new_primitive(Primitive::Isize, &engine),
         ],
         &[2],
         &engine,
@@ -403,23 +376,23 @@ async fn destructure_grouped_tuple_preserves_other_unpacked_position() {
 
     assert_eq!(destructured, vec![
         (
-            intern_primitive(Primitive::Int32, &engine),
-            intern_primitive(Primitive::Uint32, &engine),
+            Type::new_primitive(Primitive::Int32, &engine),
+            Type::new_primitive(Primitive::Uint32, &engine),
         ),
         (
-            intern_primitive(Primitive::Bool, &engine),
+            Type::new_primitive(Primitive::Bool, &engine),
             tuple_type(
                 &[
-                    intern_primitive(Primitive::Int64, &engine),
-                    intern_primitive(Primitive::Uint64, &engine),
+                    Type::new_primitive(Primitive::Int64, &engine),
+                    Type::new_primitive(Primitive::Uint64, &engine),
                 ],
                 &[1],
                 &engine,
             ),
         ),
         (
-            intern_primitive(Primitive::Float32, &engine),
-            intern_primitive(Primitive::Isize, &engine),
+            Type::new_primitive(Primitive::Float32, &engine),
+            Type::new_primitive(Primitive::Isize, &engine),
         ),
     ]);
 }
@@ -432,19 +405,19 @@ async fn destructure_tuple_mismatch_fails_when_other_unpacked_is_outside_range()
     let engine = create_test_engine().await;
     let lhs = tuple_application(
         &[
-            intern_primitive(Primitive::Int32, &engine),
-            intern_primitive(Primitive::Bool, &engine),
-            intern_primitive(Primitive::Float32, &engine),
+            Type::new_primitive(Primitive::Int32, &engine),
+            Type::new_primitive(Primitive::Bool, &engine),
+            Type::new_primitive(Primitive::Float32, &engine),
         ],
         &[1],
         &engine,
     );
     let rhs = tuple_application(
         &[
-            intern_primitive(Primitive::Uint32, &engine),
-            intern_primitive(Primitive::Int64, &engine),
-            intern_primitive(Primitive::Uint64, &engine),
-            intern_primitive(Primitive::Isize, &engine),
+            Type::new_primitive(Primitive::Uint32, &engine),
+            Type::new_primitive(Primitive::Int64, &engine),
+            Type::new_primitive(Primitive::Uint64, &engine),
+            Type::new_primitive(Primitive::Isize, &engine),
         ],
         &[0],
         &engine,
@@ -460,18 +433,18 @@ async fn destructure_tuple_with_invalid_multiple_unpacked_positions_fails() {
     let engine = create_test_engine().await;
     let lhs = tuple_application(
         &[
-            intern_primitive(Primitive::Int32, &engine),
-            intern_primitive(Primitive::Bool, &engine),
-            intern_primitive(Primitive::Float32, &engine),
+            Type::new_primitive(Primitive::Int32, &engine),
+            Type::new_primitive(Primitive::Bool, &engine),
+            Type::new_primitive(Primitive::Float32, &engine),
         ],
         &[0, 2],
         &engine,
     );
     let rhs = tuple_application(
         &[
-            intern_primitive(Primitive::Uint32, &engine),
-            intern_primitive(Primitive::Int64, &engine),
-            intern_primitive(Primitive::Uint64, &engine),
+            Type::new_primitive(Primitive::Uint32, &engine),
+            Type::new_primitive(Primitive::Int64, &engine),
+            Type::new_primitive(Primitive::Uint64, &engine),
         ],
         &[],
         &engine,
@@ -488,19 +461,19 @@ async fn destructure_tuple_with_ambiguous_unpacked_match_fails() {
     let engine = create_test_engine().await;
     let lhs = tuple_application(
         &[
-            intern_primitive(Primitive::Int32, &engine),
-            intern_primitive(Primitive::Bool, &engine),
-            intern_primitive(Primitive::Float32, &engine),
-            intern_primitive(Primitive::Usize, &engine),
+            Type::new_primitive(Primitive::Int32, &engine),
+            Type::new_primitive(Primitive::Bool, &engine),
+            Type::new_primitive(Primitive::Float32, &engine),
+            Type::new_primitive(Primitive::Usize, &engine),
         ],
         &[0],
         &engine,
     );
     let rhs = tuple_application(
         &[
-            intern_primitive(Primitive::Uint32, &engine),
-            intern_primitive(Primitive::Isize, &engine),
-            intern_primitive(Primitive::Uint64, &engine),
+            Type::new_primitive(Primitive::Uint32, &engine),
+            Type::new_primitive(Primitive::Isize, &engine),
+            Type::new_primitive(Primitive::Uint64, &engine),
         ],
         &[2],
         &engine,

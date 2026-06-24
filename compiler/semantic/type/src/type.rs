@@ -1,12 +1,22 @@
 use enum_as_inner::EnumAsInner;
 use pernixc_qbice::TrackedEngine;
-use qbice::{Decode, Encode, Identifiable, StableHash};
+use pernixc_symbol::GlobalSymbolID;
+use qbice::{
+    Decode, Encode, Identifiable, StableHash, storage::intern::Interned,
+};
 
 use crate::{
     generic_parameters::{GenericParameterID, get_generic_parameters},
     r#type::{
-        bound::BoundVariable, constructor::Application, context::TyContext,
-        inference::InferenceVariable, skolem::SkolemizedVariable,
+        bound::{Binder, BoundVariable},
+        constructor::{
+            AnonymousTraitInstance, Application, Constructor, FunctionPointer,
+            InstanceAssociated, Lifetime, Mutability, Primitive, Reference,
+            Symbolic, Tuple,
+        },
+        context::TyContext,
+        inference::InferenceVariable,
+        skolem::SkolemizedVariable,
     },
 };
 
@@ -46,6 +56,219 @@ pub enum Type {
 }
 
 impl Type {
+    /// Interns a type constructor application with the given arguments.
+    #[must_use]
+    pub fn new_application(
+        constructor: Constructor,
+        arguments: impl IntoIterator<Item = Interned<Self>>,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        engine.intern(Self::Application(Application::new(
+            constructor,
+            engine.intern_unsized(arguments.into_iter().collect::<Vec<_>>()),
+        )))
+    }
+
+    /// Interns a primitive type.
+    #[must_use]
+    pub fn new_primitive(
+        primitive: Primitive,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        Self::new_application(Constructor::Primitive(primitive), [], engine)
+    }
+
+    /// Interns a simple lifetime type.
+    #[must_use]
+    pub fn new_lifetime(
+        lifetime: Lifetime,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        Self::new_application(Constructor::Lifetime(lifetime), [], engine)
+    }
+
+    /// Interns a reference type.
+    #[must_use]
+    pub fn new_reference(
+        lifetime: Interned<Self>,
+        pointee: Interned<Self>,
+        mutability: Mutability,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        Self::new_application(
+            Constructor::Reference(Reference::new(mutability)),
+            [lifetime, pointee],
+            engine,
+        )
+    }
+
+    /// Interns an immutable reference type.
+    #[must_use]
+    pub fn new_immutable_reference(
+        lifetime: Interned<Self>,
+        pointee: Interned<Self>,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        Self::new_reference(lifetime, pointee, Mutability::Immutable, engine)
+    }
+
+    /// Interns a symbolic type with its generic arguments.
+    #[must_use]
+    pub fn new_symbolic(
+        symbol_id: GlobalSymbolID,
+        arguments: impl IntoIterator<Item = Interned<Self>>,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        Self::new_application(
+            Constructor::Symbolic(Symbolic::new(symbol_id)),
+            arguments,
+            engine,
+        )
+    }
+
+    /// Interns a tuple type without unpacked elements.
+    #[must_use]
+    pub fn new_tuple(
+        arguments: impl IntoIterator<Item = Interned<Self>>,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        Self::new_tuple_with_unpack(arguments, [], engine)
+    }
+
+    /// Interns a tuple type, including the positions of unpacked elements.
+    #[must_use]
+    pub fn new_tuple_with_unpack(
+        arguments: impl IntoIterator<Item = Interned<Self>>,
+        unpacked_positions: impl IntoIterator<Item = usize>,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        Self::new_application(
+            Constructor::Tuple(Tuple::new(engine.intern_unsized(
+                unpacked_positions.into_iter().collect::<Vec<_>>(),
+            ))),
+            arguments,
+            engine,
+        )
+    }
+
+    /// Interns a function pointer type without bound variables.
+    #[must_use]
+    pub fn new_function_pointer(
+        argument_types: impl IntoIterator<Item = Interned<Self>>,
+        return_type: Interned<Self>,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        Self::new_function_pointer_with_binder(
+            Binder::new(engine.intern_unsized(Vec::new())),
+            argument_types,
+            return_type,
+            engine,
+        )
+    }
+
+    /// Interns a function pointer type with the given binder.
+    #[must_use]
+    pub fn new_function_pointer_with_binder(
+        binder: Binder,
+        argument_types: impl IntoIterator<Item = Interned<Self>>,
+        return_type: Interned<Self>,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        Self::new_application(
+            Constructor::FunctionPointer(FunctionPointer::new(binder)),
+            argument_types.into_iter().chain(std::iter::once(return_type)),
+            engine,
+        )
+    }
+
+    /// Interns a function pointer type binding the given number of
+    /// higher-ranked lifetimes.
+    #[must_use]
+    pub fn new_function_pointer_with_higher_ranked_lifetimes(
+        higher_ranked_lifetime_count: usize,
+        argument_types: impl IntoIterator<Item = Interned<Self>>,
+        return_type: Interned<Self>,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        Self::new_function_pointer_with_binder(
+            Binder::new(engine.intern_unsized(vec![
+                kind::TyKind::Lifetime;
+                higher_ranked_lifetime_count
+            ])),
+            argument_types,
+            return_type,
+            engine,
+        )
+    }
+
+    /// Interns the anonymous instance of a trait.
+    #[must_use]
+    pub fn new_anonymous_trait_instance(
+        trait_id: GlobalSymbolID,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        Self::new_application(
+            Constructor::AnonymousTraitInstance(AnonymousTraitInstance::new(
+                trait_id,
+            )),
+            [],
+            engine,
+        )
+    }
+
+    /// Interns an instance-associated type or instance.
+    #[must_use]
+    pub fn new_instance_associated(
+        associated_id: GlobalSymbolID,
+        instance: Interned<Self>,
+        arguments: impl IntoIterator<Item = Interned<Self>>,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        Self::new_application(
+            Constructor::InstanceAssociated(InstanceAssociated::new(
+                associated_id,
+            )),
+            std::iter::once(instance).chain(arguments),
+            engine,
+        )
+    }
+
+    /// Interns a generic parameter type.
+    #[must_use]
+    pub fn new_generic_parameter(
+        parameter_id: GenericParameterID,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        engine.intern(Self::GenericParameter(parameter_id))
+    }
+
+    /// Interns an inference variable type.
+    #[must_use]
+    pub fn new_inference_variable(
+        variable: InferenceVariable,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        engine.intern(Self::InferenceVariable(variable))
+    }
+
+    /// Interns a bound variable type.
+    #[must_use]
+    pub fn new_bound_variable(
+        variable: BoundVariable,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        engine.intern(Self::BoundVariable(variable))
+    }
+
+    /// Interns a skolemized variable type.
+    #[must_use]
+    pub fn new_skolemized_variable(
+        variable: SkolemizedVariable,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        engine.intern(Self::SkolemizedVariable(variable))
+    }
+
     pub async fn kind(
         &self,
         engine: &TrackedEngine,

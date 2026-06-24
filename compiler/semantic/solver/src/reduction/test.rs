@@ -1,75 +1,23 @@
-use std::sync::Arc;
-
-use pernixc_qbice::{Engine, InMemoryFactory, TrackedEngine};
+use pernixc_qbice::{
+    TrackedEngine, create_minimal_engine as create_test_engine,
+};
 use pernixc_type::{
     predicate::{Equality, Predicate},
     r#type::{
         Type,
         bound::{Binder, BoundVariable},
-        constructor::{
-            Application, Constructor, Mutability, Primitive, Reference, Tuple,
-        },
+        constructor::Primitive,
         kind::TyKind,
         skolem::SkolemizedVariable,
     },
 };
-use qbice::{
-    serialize::Plugin, stable_hash::SeededStableHasherBuilder,
-    storage::intern::Interned,
-};
+use qbice::storage::intern::Interned;
 
 use crate::{
     constraints::Constraints,
     premise::Premise,
     solver::{OverflowError, Solver},
 };
-
-async fn create_test_engine() -> TrackedEngine {
-    let engine = Engine::new_with(
-        Plugin::default(),
-        InMemoryFactory,
-        SeededStableHasherBuilder::new(0),
-    )
-    .await
-    .unwrap();
-
-    Arc::new(engine).tracked().await
-}
-
-fn primitive(primitive: Primitive, engine: &TrackedEngine) -> Interned<Type> {
-    engine.intern(Type::Application(Application::new(
-        Constructor::Primitive(primitive),
-        engine.intern_unsized(Vec::<Interned<Type>>::new()),
-    )))
-}
-
-fn reference(
-    lifetime: Interned<Type>,
-    pointee: Interned<Type>,
-    engine: &TrackedEngine,
-) -> Interned<Type> {
-    engine.intern(Type::Application(Application::new(
-        Constructor::Reference(Reference::new(Mutability::Immutable)),
-        engine.intern_unsized(vec![lifetime, pointee]),
-    )))
-}
-
-fn skolem_lifetime(id: u64, engine: &TrackedEngine) -> Interned<Type> {
-    engine.intern(Type::SkolemizedVariable(SkolemizedVariable::new(id)))
-}
-
-fn tuple(
-    arguments: &[Interned<Type>],
-    unpacked_positions: &[usize],
-    engine: &TrackedEngine,
-) -> Interned<Type> {
-    engine.intern(Type::Application(Application::new(
-        Constructor::Tuple(Tuple::new(
-            engine.intern_unsized(unpacked_positions.to_vec()),
-        )),
-        engine.intern_unsized(arguments.to_vec()),
-    )))
-}
 
 fn equality(
     left: Interned<Type>,
@@ -90,14 +38,6 @@ fn higher_ranked_equality(
         left,
         right,
     ))
-}
-
-fn bound_type(index: usize, engine: &TrackedEngine) -> Interned<Type> {
-    engine.intern(Type::BoundVariable(BoundVariable::new(0, index)))
-}
-
-fn bound_lifetime(index: usize, engine: &TrackedEngine) -> Interned<Type> {
-    bound_type(index, engine)
 }
 
 async fn reduce_type(
@@ -130,24 +70,23 @@ async fn reduce_type_with_lifetime_skolems(
 async fn reduce_type_recursively_reduces_nested_applications() {
     let engine = create_test_engine().await;
 
-    let inner = tuple(
-        &[
-            primitive(Primitive::Int32, &engine),
-            tuple(
-                &[
-                    primitive(Primitive::Bool, &engine),
-                    primitive(Primitive::Float32, &engine),
+    let inner = Type::new_tuple_with_unpack(
+        [
+            Type::new_primitive(Primitive::Int32, &engine),
+            Type::new_tuple(
+                [
+                    Type::new_primitive(Primitive::Bool, &engine),
+                    Type::new_primitive(Primitive::Float32, &engine),
                 ],
-                &[],
                 &engine,
             ),
-            primitive(Primitive::Uint64, &engine),
+            Type::new_primitive(Primitive::Uint64, &engine),
         ],
-        &[1],
+        [1],
         &engine,
     );
 
-    let subject = tuple(&[inner], &[0], &engine);
+    let subject = Type::new_tuple_with_unpack([inner], [0], &engine);
 
     let (reduced, constraints) =
         reduce_type(subject, &Premise::default(), &engine)
@@ -157,15 +96,14 @@ async fn reduce_type_recursively_reduces_nested_applications() {
 
     assert_eq!(
         reduced,
-        tuple(
-            &[
-                primitive(Primitive::Int32, &engine),
-                primitive(Primitive::Bool, &engine),
-                primitive(Primitive::Float32, &engine),
-                primitive(Primitive::Uint64, &engine),
+        Type::new_tuple(
+            [
+                Type::new_primitive(Primitive::Int32, &engine),
+                Type::new_primitive(Primitive::Bool, &engine),
+                Type::new_primitive(Primitive::Float32, &engine),
+                Type::new_primitive(Primitive::Uint64, &engine),
             ],
-            &[],
-            &engine,
+            &engine
         )
     );
     assert_eq!(constraints, Constraints::default());
@@ -180,19 +118,19 @@ async fn reduce_type_emits_lifetime_constraints_from_equality_match() {
     let mut premise = Premise::default();
 
     premise.insert(equality(
-        reference(
-            skolem_lifetime(0, &engine),
-            primitive(Primitive::Bool, &engine),
+        Type::new_immutable_reference(
+            Type::new_skolemized_variable(SkolemizedVariable::new(0), &engine),
+            Type::new_primitive(Primitive::Bool, &engine),
             &engine,
         ),
-        primitive(Primitive::Bool, &engine),
+        Type::new_primitive(Primitive::Bool, &engine),
         &engine,
     ));
 
     let (reduced, constraints) = reduce_type_with_lifetime_skolems(
-        reference(
-            skolem_lifetime(1, &engine),
-            primitive(Primitive::Bool, &engine),
+        Type::new_immutable_reference(
+            Type::new_skolemized_variable(SkolemizedVariable::new(1), &engine),
+            Type::new_primitive(Primitive::Bool, &engine),
             &engine,
         ),
         &premise,
@@ -203,12 +141,12 @@ async fn reduce_type_emits_lifetime_constraints_from_equality_match() {
     .unwrap()
     .unwrap();
 
-    assert_eq!(reduced, primitive(Primitive::Bool, &engine));
+    assert_eq!(reduced, Type::new_primitive(Primitive::Bool, &engine));
     assert_eq!(
         constraints,
         Constraints::lifetimes_eq(
-            skolem_lifetime(0, &engine),
-            skolem_lifetime(1, &engine),
+            Type::new_skolemized_variable(SkolemizedVariable::new(0), &engine),
+            Type::new_skolemized_variable(SkolemizedVariable::new(1), &engine),
         )
     );
 }
@@ -223,15 +161,19 @@ async fn reduce_type_emits_lifetime_constraints_with_higher_ranked_equality() {
 
     premise.insert(higher_ranked_equality(
         &[TyKind::Type],
-        reference(skolem_lifetime(0, &engine), bound_type(0, &engine), &engine),
-        bound_type(0, &engine),
+        Type::new_immutable_reference(
+            Type::new_skolemized_variable(SkolemizedVariable::new(0), &engine),
+            Type::new_bound_variable(BoundVariable::new(0, 0), &engine),
+            &engine,
+        ),
+        Type::new_bound_variable(BoundVariable::new(0, 0), &engine),
         &engine,
     ));
 
     let (reduced, constraints) = reduce_type_with_lifetime_skolems(
-        reference(
-            skolem_lifetime(1, &engine),
-            primitive(Primitive::Int32, &engine),
+        Type::new_immutable_reference(
+            Type::new_skolemized_variable(SkolemizedVariable::new(1), &engine),
+            Type::new_primitive(Primitive::Int32, &engine),
             &engine,
         ),
         &premise,
@@ -242,12 +184,12 @@ async fn reduce_type_emits_lifetime_constraints_with_higher_ranked_equality() {
     .unwrap()
     .unwrap();
 
-    assert_eq!(reduced, primitive(Primitive::Int32, &engine));
+    assert_eq!(reduced, Type::new_primitive(Primitive::Int32, &engine));
     assert_eq!(
         constraints,
         Constraints::lifetimes_eq(
-            skolem_lifetime(0, &engine),
-            skolem_lifetime(1, &engine),
+            Type::new_skolemized_variable(SkolemizedVariable::new(0), &engine),
+            Type::new_skolemized_variable(SkolemizedVariable::new(1), &engine),
         )
     );
 }
@@ -262,19 +204,19 @@ async fn reduce_type_instantiates_higher_ranked_lifetime() {
 
     premise.insert(higher_ranked_equality(
         &[TyKind::Lifetime],
-        reference(
-            bound_lifetime(0, &engine),
-            primitive(Primitive::Bool, &engine),
+        Type::new_immutable_reference(
+            Type::new_bound_variable(BoundVariable::new(0, 0), &engine),
+            Type::new_primitive(Primitive::Bool, &engine),
             &engine,
         ),
-        primitive(Primitive::Bool, &engine),
+        Type::new_primitive(Primitive::Bool, &engine),
         &engine,
     ));
 
     let (reduced, constraints) = reduce_type_with_lifetime_skolems(
-        reference(
-            skolem_lifetime(0, &engine),
-            primitive(Primitive::Bool, &engine),
+        Type::new_immutable_reference(
+            Type::new_skolemized_variable(SkolemizedVariable::new(0), &engine),
+            Type::new_primitive(Primitive::Bool, &engine),
             &engine,
         ),
         &premise,
@@ -285,7 +227,7 @@ async fn reduce_type_instantiates_higher_ranked_lifetime() {
     .unwrap()
     .unwrap();
 
-    assert_eq!(reduced, primitive(Primitive::Bool, &engine));
+    assert_eq!(reduced, Type::new_primitive(Primitive::Bool, &engine));
     assert_eq!(constraints, Constraints::default());
 }
 
@@ -299,23 +241,23 @@ async fn reduce_type_substitutes_higher_ranked_lifetime_in_output() {
 
     premise.insert(higher_ranked_equality(
         &[TyKind::Lifetime],
-        reference(
-            bound_lifetime(0, &engine),
-            primitive(Primitive::Bool, &engine),
+        Type::new_immutable_reference(
+            Type::new_bound_variable(BoundVariable::new(0, 0), &engine),
+            Type::new_primitive(Primitive::Bool, &engine),
             &engine,
         ),
-        reference(
-            bound_lifetime(0, &engine),
-            primitive(Primitive::Int32, &engine),
+        Type::new_immutable_reference(
+            Type::new_bound_variable(BoundVariable::new(0, 0), &engine),
+            Type::new_primitive(Primitive::Int32, &engine),
             &engine,
         ),
         &engine,
     ));
 
     let (reduced, constraints) = reduce_type_with_lifetime_skolems(
-        reference(
-            skolem_lifetime(0, &engine),
-            primitive(Primitive::Bool, &engine),
+        Type::new_immutable_reference(
+            Type::new_skolemized_variable(SkolemizedVariable::new(0), &engine),
+            Type::new_primitive(Primitive::Bool, &engine),
             &engine,
         ),
         &premise,
@@ -328,10 +270,10 @@ async fn reduce_type_substitutes_higher_ranked_lifetime_in_output() {
 
     assert_eq!(
         reduced,
-        reference(
-            skolem_lifetime(0, &engine),
-            primitive(Primitive::Int32, &engine),
-            &engine,
+        Type::new_immutable_reference(
+            Type::new_skolemized_variable(SkolemizedVariable::new(0), &engine),
+            Type::new_primitive(Primitive::Int32, &engine),
+            &engine
         )
     );
     assert_eq!(constraints, Constraints::default());
@@ -348,56 +290,59 @@ async fn reduce_type_substitutes_multiple_higher_ranked_lifetimes() {
 
     premise.insert(higher_ranked_equality(
         &[TyKind::Lifetime, TyKind::Lifetime],
-        tuple(
-            &[
-                reference(
-                    bound_lifetime(0, &engine),
-                    primitive(Primitive::Bool, &engine),
+        Type::new_tuple(
+            [
+                Type::new_immutable_reference(
+                    Type::new_bound_variable(BoundVariable::new(0, 0), &engine),
+                    Type::new_primitive(Primitive::Bool, &engine),
                     &engine,
                 ),
-                reference(
-                    bound_lifetime(1, &engine),
-                    primitive(Primitive::Int32, &engine),
+                Type::new_immutable_reference(
+                    Type::new_bound_variable(BoundVariable::new(0, 1), &engine),
+                    Type::new_primitive(Primitive::Int32, &engine),
                     &engine,
                 ),
             ],
-            &[],
             &engine,
         ),
-        tuple(
-            &[
-                reference(
-                    bound_lifetime(1, &engine),
-                    primitive(Primitive::Uint64, &engine),
+        Type::new_tuple(
+            [
+                Type::new_immutable_reference(
+                    Type::new_bound_variable(BoundVariable::new(0, 1), &engine),
+                    Type::new_primitive(Primitive::Uint64, &engine),
                     &engine,
                 ),
-                reference(
-                    bound_lifetime(0, &engine),
-                    primitive(Primitive::Int32, &engine),
+                Type::new_immutable_reference(
+                    Type::new_bound_variable(BoundVariable::new(0, 0), &engine),
+                    Type::new_primitive(Primitive::Int32, &engine),
                     &engine,
                 ),
             ],
-            &[],
             &engine,
         ),
         &engine,
     ));
 
     let (reduced, constraints) = reduce_type_with_lifetime_skolems(
-        tuple(
-            &[
-                reference(
-                    skolem_lifetime(0, &engine),
-                    primitive(Primitive::Bool, &engine),
+        Type::new_tuple(
+            [
+                Type::new_immutable_reference(
+                    Type::new_skolemized_variable(
+                        SkolemizedVariable::new(0),
+                        &engine,
+                    ),
+                    Type::new_primitive(Primitive::Bool, &engine),
                     &engine,
                 ),
-                reference(
-                    skolem_lifetime(1, &engine),
-                    primitive(Primitive::Int32, &engine),
+                Type::new_immutable_reference(
+                    Type::new_skolemized_variable(
+                        SkolemizedVariable::new(1),
+                        &engine,
+                    ),
+                    Type::new_primitive(Primitive::Int32, &engine),
                     &engine,
                 ),
             ],
-            &[],
             &engine,
         ),
         &premise,
@@ -410,21 +355,26 @@ async fn reduce_type_substitutes_multiple_higher_ranked_lifetimes() {
 
     assert_eq!(
         reduced,
-        tuple(
-            &[
-                reference(
-                    skolem_lifetime(1, &engine),
-                    primitive(Primitive::Uint64, &engine),
-                    &engine,
+        Type::new_tuple(
+            [
+                Type::new_immutable_reference(
+                    Type::new_skolemized_variable(
+                        SkolemizedVariable::new(1),
+                        &engine
+                    ),
+                    Type::new_primitive(Primitive::Uint64, &engine),
+                    &engine
                 ),
-                reference(
-                    skolem_lifetime(0, &engine),
-                    primitive(Primitive::Int32, &engine),
-                    &engine,
+                Type::new_immutable_reference(
+                    Type::new_skolemized_variable(
+                        SkolemizedVariable::new(0),
+                        &engine
+                    ),
+                    Type::new_primitive(Primitive::Int32, &engine),
+                    &engine
                 ),
             ],
-            &[],
-            &engine,
+            &engine
         )
     );
     assert_eq!(constraints, Constraints::default());
@@ -440,41 +390,45 @@ async fn reduce_type_emits_constraints_for_repeated_higher_ranked_lifetime() {
 
     premise.insert(higher_ranked_equality(
         &[TyKind::Lifetime],
-        tuple(
-            &[
-                reference(
-                    bound_lifetime(0, &engine),
-                    primitive(Primitive::Int32, &engine),
+        Type::new_tuple(
+            [
+                Type::new_immutable_reference(
+                    Type::new_bound_variable(BoundVariable::new(0, 0), &engine),
+                    Type::new_primitive(Primitive::Int32, &engine),
                     &engine,
                 ),
-                reference(
-                    bound_lifetime(0, &engine),
-                    primitive(Primitive::Int32, &engine),
+                Type::new_immutable_reference(
+                    Type::new_bound_variable(BoundVariable::new(0, 0), &engine),
+                    Type::new_primitive(Primitive::Int32, &engine),
                     &engine,
                 ),
             ],
-            &[],
             &engine,
         ),
-        primitive(Primitive::Bool, &engine),
+        Type::new_primitive(Primitive::Bool, &engine),
         &engine,
     ));
 
     let (reduced, constraints) = reduce_type_with_lifetime_skolems(
-        tuple(
-            &[
-                reference(
-                    skolem_lifetime(1, &engine),
-                    primitive(Primitive::Int32, &engine),
+        Type::new_tuple(
+            [
+                Type::new_immutable_reference(
+                    Type::new_skolemized_variable(
+                        SkolemizedVariable::new(1),
+                        &engine,
+                    ),
+                    Type::new_primitive(Primitive::Int32, &engine),
                     &engine,
                 ),
-                reference(
-                    skolem_lifetime(2, &engine),
-                    primitive(Primitive::Int32, &engine),
+                Type::new_immutable_reference(
+                    Type::new_skolemized_variable(
+                        SkolemizedVariable::new(2),
+                        &engine,
+                    ),
+                    Type::new_primitive(Primitive::Int32, &engine),
                     &engine,
                 ),
             ],
-            &[],
             &engine,
         ),
         &premise,
@@ -485,12 +439,12 @@ async fn reduce_type_emits_constraints_for_repeated_higher_ranked_lifetime() {
     .unwrap()
     .unwrap();
 
-    assert_eq!(reduced, primitive(Primitive::Bool, &engine));
+    assert_eq!(reduced, Type::new_primitive(Primitive::Bool, &engine));
     assert_eq!(
         constraints,
         Constraints::lifetimes_eq(
-            skolem_lifetime(1, &engine),
-            skolem_lifetime(2, &engine),
+            Type::new_skolemized_variable(SkolemizedVariable::new(1), &engine),
+            Type::new_skolemized_variable(SkolemizedVariable::new(2), &engine),
         )
     );
 }
@@ -506,41 +460,45 @@ async fn reduce_type_emits_constraints_for_repeated_lifetime_with_type_output()
 
     premise.insert(higher_ranked_equality(
         &[TyKind::Lifetime, TyKind::Type],
-        tuple(
-            &[
-                reference(
-                    bound_lifetime(0, &engine),
-                    bound_type(1, &engine),
+        Type::new_tuple(
+            [
+                Type::new_immutable_reference(
+                    Type::new_bound_variable(BoundVariable::new(0, 0), &engine),
+                    Type::new_bound_variable(BoundVariable::new(0, 1), &engine),
                     &engine,
                 ),
-                reference(
-                    bound_lifetime(0, &engine),
-                    bound_type(1, &engine),
+                Type::new_immutable_reference(
+                    Type::new_bound_variable(BoundVariable::new(0, 0), &engine),
+                    Type::new_bound_variable(BoundVariable::new(0, 1), &engine),
                     &engine,
                 ),
             ],
-            &[],
             &engine,
         ),
-        bound_type(1, &engine),
+        Type::new_bound_variable(BoundVariable::new(0, 1), &engine),
         &engine,
     ));
 
     let (reduced, constraints) = reduce_type_with_lifetime_skolems(
-        tuple(
-            &[
-                reference(
-                    skolem_lifetime(1, &engine),
-                    primitive(Primitive::Uint64, &engine),
+        Type::new_tuple(
+            [
+                Type::new_immutable_reference(
+                    Type::new_skolemized_variable(
+                        SkolemizedVariable::new(1),
+                        &engine,
+                    ),
+                    Type::new_primitive(Primitive::Uint64, &engine),
                     &engine,
                 ),
-                reference(
-                    skolem_lifetime(2, &engine),
-                    primitive(Primitive::Uint64, &engine),
+                Type::new_immutable_reference(
+                    Type::new_skolemized_variable(
+                        SkolemizedVariable::new(2),
+                        &engine,
+                    ),
+                    Type::new_primitive(Primitive::Uint64, &engine),
                     &engine,
                 ),
             ],
-            &[],
             &engine,
         ),
         &premise,
@@ -551,12 +509,12 @@ async fn reduce_type_emits_constraints_for_repeated_lifetime_with_type_output()
     .unwrap()
     .unwrap();
 
-    assert_eq!(reduced, primitive(Primitive::Uint64, &engine));
+    assert_eq!(reduced, Type::new_primitive(Primitive::Uint64, &engine));
     assert_eq!(
         constraints,
         Constraints::lifetimes_eq(
-            skolem_lifetime(1, &engine),
-            skolem_lifetime(2, &engine),
+            Type::new_skolemized_variable(SkolemizedVariable::new(1), &engine),
+            Type::new_skolemized_variable(SkolemizedVariable::new(2), &engine),
         )
     );
 }
@@ -571,13 +529,19 @@ async fn reduce_type_instantiates_higher_ranked_equality() {
 
     premise.insert(higher_ranked_equality(
         &[TyKind::Type],
-        tuple(&[bound_type(0, &engine)], &[], &engine),
-        bound_type(0, &engine),
+        Type::new_tuple(
+            [Type::new_bound_variable(BoundVariable::new(0, 0), &engine)],
+            &engine,
+        ),
+        Type::new_bound_variable(BoundVariable::new(0, 0), &engine),
         &engine,
     ));
 
     let (reduced, constraints) = reduce_type(
-        tuple(&[primitive(Primitive::Bool, &engine)], &[], &engine),
+        Type::new_tuple(
+            [Type::new_primitive(Primitive::Bool, &engine)],
+            &engine,
+        ),
         &premise,
         &engine,
     )
@@ -585,7 +549,7 @@ async fn reduce_type_instantiates_higher_ranked_equality() {
     .unwrap()
     .unwrap();
 
-    assert_eq!(reduced, primitive(Primitive::Bool, &engine));
+    assert_eq!(reduced, Type::new_primitive(Primitive::Bool, &engine));
     assert_eq!(constraints, Constraints::default());
 }
 
@@ -599,27 +563,31 @@ async fn reduce_type_substitutes_multiple_higher_ranked_variables() {
 
     premise.insert(higher_ranked_equality(
         &[TyKind::Type, TyKind::Type],
-        tuple(
-            &[
-                bound_type(0, &engine),
-                bound_type(1, &engine),
-                primitive(Primitive::Bool, &engine),
+        Type::new_tuple(
+            [
+                Type::new_bound_variable(BoundVariable::new(0, 0), &engine),
+                Type::new_bound_variable(BoundVariable::new(0, 1), &engine),
+                Type::new_primitive(Primitive::Bool, &engine),
             ],
-            &[],
             &engine,
         ),
-        tuple(&[bound_type(1, &engine), bound_type(0, &engine)], &[], &engine),
+        Type::new_tuple(
+            [
+                Type::new_bound_variable(BoundVariable::new(0, 1), &engine),
+                Type::new_bound_variable(BoundVariable::new(0, 0), &engine),
+            ],
+            &engine,
+        ),
         &engine,
     ));
 
     let (reduced, constraints) = reduce_type(
-        tuple(
-            &[
-                primitive(Primitive::Int8, &engine),
-                primitive(Primitive::Float32, &engine),
-                primitive(Primitive::Bool, &engine),
+        Type::new_tuple(
+            [
+                Type::new_primitive(Primitive::Int8, &engine),
+                Type::new_primitive(Primitive::Float32, &engine),
+                Type::new_primitive(Primitive::Bool, &engine),
             ],
-            &[],
             &engine,
         ),
         &premise,
@@ -631,13 +599,12 @@ async fn reduce_type_substitutes_multiple_higher_ranked_variables() {
 
     assert_eq!(
         reduced,
-        tuple(
-            &[
-                primitive(Primitive::Float32, &engine),
-                primitive(Primitive::Int8, &engine),
+        Type::new_tuple(
+            [
+                Type::new_primitive(Primitive::Float32, &engine),
+                Type::new_primitive(Primitive::Int8, &engine),
             ],
-            &[],
-            &engine,
+            &engine
         )
     );
     assert_eq!(constraints, Constraints::default());
@@ -653,39 +620,40 @@ async fn reduce_type_continues_after_higher_ranked_equality() {
 
     premise.insert(higher_ranked_equality(
         &[TyKind::Type],
-        tuple(&[bound_type(0, &engine)], &[], &engine),
-        bound_type(0, &engine),
+        Type::new_tuple(
+            [Type::new_bound_variable(BoundVariable::new(0, 0), &engine)],
+            &engine,
+        ),
+        Type::new_bound_variable(BoundVariable::new(0, 0), &engine),
         &engine,
     ));
 
-    let reducible = tuple(
-        &[tuple(
-            &[
-                primitive(Primitive::Int32, &engine),
-                primitive(Primitive::Bool, &engine),
+    let reducible = Type::new_tuple_with_unpack(
+        [Type::new_tuple(
+            [
+                Type::new_primitive(Primitive::Int32, &engine),
+                Type::new_primitive(Primitive::Bool, &engine),
             ],
-            &[],
             &engine,
         )],
-        &[0],
+        [0],
         &engine,
     );
 
     let (reduced, constraints) =
-        reduce_type(tuple(&[reducible], &[], &engine), &premise, &engine)
+        reduce_type(Type::new_tuple([reducible], &engine), &premise, &engine)
             .await
             .unwrap()
             .unwrap();
 
     assert_eq!(
         reduced,
-        tuple(
-            &[
-                primitive(Primitive::Int32, &engine),
-                primitive(Primitive::Bool, &engine),
+        Type::new_tuple(
+            [
+                Type::new_primitive(Primitive::Int32, &engine),
+                Type::new_primitive(Primitive::Bool, &engine),
             ],
-            &[],
-            &engine,
+            &engine
         )
     );
     assert_eq!(constraints, Constraints::default());
@@ -700,23 +668,26 @@ async fn reduce_type_transitively_reduces_equality_chain() {
     let mut premise = Premise::default();
 
     premise.insert(equality(
-        primitive(Primitive::Int8, &engine),
-        primitive(Primitive::Int16, &engine),
+        Type::new_primitive(Primitive::Int8, &engine),
+        Type::new_primitive(Primitive::Int16, &engine),
         &engine,
     ));
     premise.insert(equality(
-        primitive(Primitive::Int16, &engine),
-        primitive(Primitive::Bool, &engine),
+        Type::new_primitive(Primitive::Int16, &engine),
+        Type::new_primitive(Primitive::Bool, &engine),
         &engine,
     ));
 
-    let (reduced, constraints) =
-        reduce_type(primitive(Primitive::Int8, &engine), &premise, &engine)
-            .await
-            .unwrap()
-            .unwrap();
+    let (reduced, constraints) = reduce_type(
+        Type::new_primitive(Primitive::Int8, &engine),
+        &premise,
+        &engine,
+    )
+    .await
+    .unwrap()
+    .unwrap();
 
-    assert_eq!(reduced, primitive(Primitive::Bool, &engine));
+    assert_eq!(reduced, Type::new_primitive(Primitive::Bool, &engine));
     assert_eq!(constraints, Constraints::default());
 }
 
@@ -729,37 +700,38 @@ async fn reduce_type_reduces_type_reached_by_equality() {
     let mut premise = Premise::default();
 
     premise.insert(equality(
-        primitive(Primitive::Int8, &engine),
-        tuple(
-            &[tuple(
-                &[
-                    primitive(Primitive::Int32, &engine),
-                    primitive(Primitive::Bool, &engine),
+        Type::new_primitive(Primitive::Int8, &engine),
+        Type::new_tuple_with_unpack(
+            [Type::new_tuple(
+                [
+                    Type::new_primitive(Primitive::Int32, &engine),
+                    Type::new_primitive(Primitive::Bool, &engine),
                 ],
-                &[],
                 &engine,
             )],
-            &[0],
+            [0],
             &engine,
         ),
         &engine,
     ));
 
-    let (reduced, constraints) =
-        reduce_type(primitive(Primitive::Int8, &engine), &premise, &engine)
-            .await
-            .unwrap()
-            .unwrap();
+    let (reduced, constraints) = reduce_type(
+        Type::new_primitive(Primitive::Int8, &engine),
+        &premise,
+        &engine,
+    )
+    .await
+    .unwrap()
+    .unwrap();
 
     assert_eq!(
         reduced,
-        tuple(
-            &[
-                primitive(Primitive::Int32, &engine),
-                primitive(Primitive::Bool, &engine),
+        Type::new_tuple(
+            [
+                Type::new_primitive(Primitive::Int32, &engine),
+                Type::new_primitive(Primitive::Bool, &engine),
             ],
-            &[],
-            &engine,
+            &engine
         )
     );
     assert_eq!(constraints, Constraints::default());
@@ -774,10 +746,15 @@ async fn reduce_type_overflows_on_self_expanding_equality() {
     let mut premise = Premise::default();
 
     premise.insert(equality(
-        skolem_lifetime(1, &engine),
-        tuple(
-            &[primitive(Primitive::Bool, &engine), skolem_lifetime(1, &engine)],
-            &[],
+        Type::new_skolemized_variable(SkolemizedVariable::new(1), &engine),
+        Type::new_tuple(
+            [
+                Type::new_primitive(Primitive::Bool, &engine),
+                Type::new_skolemized_variable(
+                    SkolemizedVariable::new(1),
+                    &engine,
+                ),
+            ],
             &engine,
         ),
         &engine,
@@ -785,7 +762,7 @@ async fn reduce_type_overflows_on_self_expanding_equality() {
 
     assert!(
         reduce_type_with_lifetime_skolems(
-            skolem_lifetime(1, &engine),
+            Type::new_skolemized_variable(SkolemizedVariable::new(1), &engine),
             &premise,
             &engine,
             2,
