@@ -107,8 +107,11 @@ impl Solver<'_> {
             };
 
             assert!(
-                !contains_inference_variable(premise.lesser())
-                    && !contains_inference_variable(premise.greater()),
+                !premise.lesser().as_ref().contains_inference_variable()
+                    && !premise
+                        .greater()
+                        .as_ref()
+                        .contains_inference_variable(),
                 "outlives premises must not contain inference variables"
             );
 
@@ -279,18 +282,6 @@ const fn is_static_lifetime(ty: &Type) -> bool {
                 Constructor::Lifetime(Lifetime::Static)
             )
     )
-}
-
-fn contains_inference_variable(ty: &Interned<Type>) -> bool {
-    match &**ty {
-        Type::InferenceVariable(_) => true,
-        Type::Application(application) => {
-            application.arguments().iter().any(contains_inference_variable)
-        }
-        Type::GenericParameter(_)
-        | Type::BoundVariable(_)
-        | Type::SkolemizedVariable(_) => false,
-    }
 }
 
 #[cfg(test)]

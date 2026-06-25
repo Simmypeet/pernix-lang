@@ -269,6 +269,42 @@ impl Type {
         engine.intern(Self::SkolemizedVariable(variable))
     }
 
+    /// Returns whether this type recursively contains any inference variable.
+    #[must_use]
+    pub fn contains_inference_variable(&self) -> bool {
+        self.contains_inference_variable_matching(|_| true)
+    }
+
+    /// Returns whether this type recursively contains any inference variable
+    /// that satisfies the given predicate.
+    pub fn contains_inference_variable_matching(
+        &self,
+        mut predicate: impl FnMut(InferenceVariable) -> bool,
+    ) -> bool {
+        self.contains_inference_variable_matching_impl(&mut predicate)
+    }
+
+    fn contains_inference_variable_matching_impl(
+        &self,
+        predicate: &mut impl FnMut(InferenceVariable) -> bool,
+    ) -> bool {
+        match self {
+            Self::InferenceVariable(variable) => predicate(*variable),
+
+            Self::BoundVariable(_)
+            | Self::GenericParameter(_)
+            | Self::SkolemizedVariable(_) => false,
+
+            Self::Application(application) => {
+                application.arguments().iter().any(|argument| {
+                    argument
+                        .as_ref()
+                        .contains_inference_variable_matching_impl(predicate)
+                })
+            }
+        }
+    }
+
     pub async fn kind(
         &self,
         engine: &TrackedEngine,
