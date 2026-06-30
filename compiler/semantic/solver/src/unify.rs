@@ -262,7 +262,7 @@ impl Solver<'_> {
                 has_progress = true;
                 constraints = constraints.union_into(new_constraints);
 
-                self.compose_subst(&mut step_substitution, substitution);
+                step_substitution.compose(substitution, self.engine());
                 substitution = step_substitution;
             }
 

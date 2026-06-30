@@ -274,7 +274,7 @@ impl Solver<'_> {
             return Ok(BindInferenceVariableSubtype::Failed);
         };
 
-        self.compose_subst(&mut new_subst, subst);
+        new_subst.compose(subst, self.engine());
 
         Ok(BindInferenceVariableSubtype::Bound((
             new_subst,
@@ -447,7 +447,7 @@ impl Solver<'_> {
 
                 // Preserve composition order so the returned substitution
                 // represents everything learned by all successful steps.
-                self.compose_subst(&mut step_substitution, substitution);
+                step_substitution.compose(substitution, self.engine());
                 substitution = step_substitution;
             }
 

@@ -209,7 +209,7 @@ impl Solver<'_> {
         // Residual subtypes are guaranteed to be empty
         let mut second_substitution = second_run.substitution;
 
-        self.compose_subst(&mut second_substitution, first_substitution);
+        second_substitution.compose(first_substitution, self.engine());
 
         let variables = first_run.variables.union_into(second_run.variables);
         let constraints =
