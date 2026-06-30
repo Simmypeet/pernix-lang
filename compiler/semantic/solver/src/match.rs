@@ -62,6 +62,9 @@ impl Solver<'_> {
 
                 Box::pin(async move {
                     for (head_ty, subject_ty) in iter {
+                        // Applying the accumulated substitution here makes
+                        // repeated inference variables compare against their
+                        // first matched type instead of being rebound.
                         let head_ty =
                             head_ty.apply_or_clone(&subst, self.engine());
                         let subject_ty =
