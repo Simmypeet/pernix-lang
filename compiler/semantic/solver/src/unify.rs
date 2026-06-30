@@ -59,8 +59,8 @@ impl Substitutable for Unify {
 impl Solver<'_> {
     pub async fn unify(
         &mut self,
-        left: Interned<Type>,
-        right: Interned<Type>,
+        left: Interned<Type2>,
+        right: Interned<Type2>,
     ) -> Result<Option<(Substitution, Constraints)>, OverflowError> {
         self.solve(&Unify::new(left, right)).await
     }

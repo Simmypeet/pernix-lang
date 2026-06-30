@@ -1,5 +1,8 @@
-use pernixc_qbice::create_minimal_engine as create_test_engine;
-use pernixc_type::r#type::{Type2, constructor::Primitive};
+use pernixc_qbice::{
+    TrackedEngine, create_minimal_engine as create_test_engine,
+};
+use pernixc_type::r#type::{Type2, constructor::Primitive, kind::TyKind};
+use qbice::storage::intern::Interned;
 
 use crate::{premise::Premise, solver::Solver};
 
@@ -28,13 +31,13 @@ async fn function_pointer_binders_must_match_exactly() {
 fn repeated_inference_tuple(
     solver: &mut Solver,
     engine: &TrackedEngine,
-) -> Interned<Type> {
-    let variable = Type::new_inference_variable(
+) -> Interned<Type2> {
+    let variable = Type2::new_inference_variable(
         solver.fresh_inference_variable(TyKind::Type),
         engine,
     );
 
-    Type::new_tuple([variable.clone(), variable], engine)
+    Type2::new_tuple([variable.clone(), variable], engine)
 }
 
 // Input: match (?T, ?T) against (Int32, Int32).
@@ -46,10 +49,10 @@ async fn repeated_inference_variable_matches_consistent_arguments() {
     let premise = Premise::default();
     let mut solver = Solver::new(&premise, &engine);
     let head = repeated_inference_tuple(&mut solver, &engine);
-    let subject = Type::new_tuple(
+    let subject = Type2::new_tuple(
         [
-            Type::new_primitive(Primitive::Int32, &engine),
-            Type::new_primitive(Primitive::Int32, &engine),
+            Type2::new_primitive(Primitive::Int32, &engine),
+            Type2::new_primitive(Primitive::Int32, &engine),
         ],
         &engine,
     );
@@ -66,10 +69,10 @@ async fn repeated_inference_variable_rejects_inconsistent_arguments() {
     let premise = Premise::default();
     let mut solver = Solver::new(&premise, &engine);
     let head = repeated_inference_tuple(&mut solver, &engine);
-    let subject = Type::new_tuple(
+    let subject = Type2::new_tuple(
         [
-            Type::new_primitive(Primitive::Int32, &engine),
-            Type::new_primitive(Primitive::Bool, &engine),
+            Type2::new_primitive(Primitive::Int32, &engine),
+            Type2::new_primitive(Primitive::Bool, &engine),
         ],
         &engine,
     );

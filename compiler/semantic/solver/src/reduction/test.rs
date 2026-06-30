@@ -284,6 +284,7 @@ async fn reduce_type_substitutes_higher_ranked_lifetime_in_output() {
 //          (&'b uint64, &'a int32)
 // output: (&skolem(1) uint64, &skolem(0) int32), {}
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn reduce_type_substitutes_multiple_higher_ranked_lifetimes() {
     let engine = create_test_engine().await;
     let mut premise = Premise::default();

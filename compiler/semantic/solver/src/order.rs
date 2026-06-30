@@ -4,8 +4,8 @@ use pernixc_symbol::GlobalSymbolID;
 use pernixc_type::{
     generic_parameters::GenericParameterID,
     substitution::{Substitutable, Substitution},
-    symbol::{TraitRef, get_trait_ref_of_instance_symbol},
-    r#type::Type,
+    symbol::{TraitRef2, get_trait_ref_of_instance_symbol2},
+    r#type::Type2,
 };
 use qbice::{
     Decode, Encode, Query, StableHash, executor, program::Registration,
@@ -47,8 +47,8 @@ impl Solver<'_> {
     /// the other.
     pub async fn order_trait_refs(
         &mut self,
-        left: &TraitRef,
-        right: &TraitRef,
+        left: &TraitRef2,
+        right: &TraitRef2,
     ) -> Result<Order, OverflowError> {
         if left.trait_id() != right.trait_id()
             || left.generic_arguments().len() != right.generic_arguments().len()
@@ -84,8 +84,8 @@ impl Solver<'_> {
 
     async fn match_trait_refs(
         &mut self,
-        head: &TraitRef,
-        subject: &TraitRef,
+        head: &TraitRef2,
+        subject: &TraitRef2,
         side: InstantiationSide,
     ) -> Result<bool, OverflowError> {
         self.new_universe(async |solver| {
@@ -129,7 +129,7 @@ impl Solver<'_> {
 
     async fn instantiate_trait_ref_generics(
         &mut self,
-        trait_ref: &TraitRef,
+        trait_ref: &TraitRef2,
         mode: InstantiationMode,
     ) -> Substitution {
         let mut generic_parameters = Vec::new();
@@ -142,16 +142,16 @@ impl Solver<'_> {
 
         for generic_parameter in generic_parameters {
             let generic_parameter_ty =
-                Type::new_generic_parameter(generic_parameter, self.engine());
+                Type2::new_generic_parameter(generic_parameter, self.engine());
             let kind = self.kind_of(&generic_parameter_ty).await;
             let replacement = match mode {
                 InstantiationMode::Infer => {
                     let variable = self.fresh_inference_variable(kind);
-                    self.intern(Type::InferenceVariable(variable))
+                    self.intern(Type2::InferenceVariable(variable))
                 }
                 InstantiationMode::Skolem => {
                     let variable = self.fresh_skolem_variable(kind);
-                    self.intern(Type::SkolemizedVariable(variable))
+                    self.intern(Type2::SkolemizedVariable(variable))
                 }
             };
 
@@ -175,25 +175,25 @@ enum InstantiationMode {
 }
 
 fn collect_generic_parameters(
-    ty: &Interned<Type>,
+    ty: &Interned<Type2>,
     generic_parameters: &mut Vec<GenericParameterID>,
 ) {
     match ty.as_ref() {
-        Type::GenericParameter(id) => {
+        Type2::GenericParameter(id) => {
             if !generic_parameters.contains(id) {
                 generic_parameters.push(*id);
             }
         }
 
-        Type::Application(application) => {
+        Type2::Application(application) => {
             for argument in application.arguments().iter() {
                 collect_generic_parameters(argument, generic_parameters);
             }
         }
 
-        Type::InferenceVariable(_)
-        | Type::BoundVariable(_)
-        | Type::SkolemizedVariable(_) => {}
+        Type2::InferenceVariable(_)
+        | Type2::BoundVariable(_)
+        | Type2::SkolemizedVariable(_) => {}
     }
 }
 
@@ -230,8 +230,8 @@ pub async fn instance_order_executor(
     tracked_engine: &TrackedEngine,
 ) -> Result<Option<Order>, OverflowError> {
     let (Some(lhs_generic_arguments), Some(rhs_generic_arguments)) = (
-        tracked_engine.get_trait_ref_of_instance_symbol(*this).await,
-        tracked_engine.get_trait_ref_of_instance_symbol(*other).await,
+        tracked_engine.get_trait_ref_of_instance_symbol2(*this).await,
+        tracked_engine.get_trait_ref_of_instance_symbol2(*other).await,
     ) else {
         return Ok(None);
     };

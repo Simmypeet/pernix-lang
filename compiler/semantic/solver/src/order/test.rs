@@ -7,10 +7,10 @@ use pernixc_target::TargetID;
 use pernixc_type::{
     generic_parameters::{
         self, GenericParameter, GenericParameterID, GenericParameterKind,
-        GenericParameters,
+        GenericParameters2,
     },
-    symbol::TraitRef,
-    r#type::{Type, constructor::Primitive},
+    symbol::TraitRef2,
+    r#type::{Type2, constructor::Primitive},
 };
 use qbice::{
     executor, serialize::Plugin, stable_hash::SeededStableHasherBuilder,
@@ -39,10 +39,10 @@ impl executor::Executor<generic_parameters::Key, Config>
         &self,
         key: &generic_parameters::Key,
         engine: &TrackedEngine,
-    ) -> Interned<GenericParameters> {
+    ) -> Interned<GenericParameters2> {
         match key.symbol_id {
             LEFT_GENERIC_OWNER_ID | RIGHT_GENERIC_OWNER_ID => {
-                engine.intern(GenericParameters::new((0..4).map(|index| {
+                engine.intern(GenericParameters2::new((0..4).map(|index| {
                     GenericParameter::new(
                         engine.intern_unsized(format!("T{index}")),
                         None,
@@ -51,7 +51,7 @@ impl executor::Executor<generic_parameters::Key, Config>
                 })))
             }
 
-            _ => engine.intern(GenericParameters::new([])),
+            _ => engine.intern(GenericParameters2::new([])),
         }
     }
 }
@@ -71,8 +71,8 @@ async fn create_engine() -> TrackedEngine {
 }
 
 async fn order(
-    left: TraitRef,
-    right: TraitRef,
+    left: TraitRef2,
+    right: TraitRef2,
     engine: &TrackedEngine,
 ) -> Result<Order, OverflowError> {
     Solver::new(&Premise::default(), engine)
@@ -81,17 +81,17 @@ async fn order(
 }
 
 fn trait_ref(
-    arguments: impl IntoIterator<Item = Interned<Type>>,
+    arguments: impl IntoIterator<Item = Interned<Type2>>,
     engine: &TrackedEngine,
-) -> TraitRef {
-    TraitRef::new(
+) -> TraitRef2 {
+    TraitRef2::new(
         TRAIT_ID,
         engine.intern_unsized(arguments.into_iter().collect::<Vec<_>>()),
     )
 }
 
-fn left_generic(index: u64, engine: &TrackedEngine) -> Interned<Type> {
-    Type::new_generic_parameter(
+fn left_generic(index: u64, engine: &TrackedEngine) -> Interned<Type2> {
+    Type2::new_generic_parameter(
         GenericParameterID::new(
             LEFT_GENERIC_OWNER_ID,
             ID::<GenericParameter>::new(index),
@@ -100,8 +100,8 @@ fn left_generic(index: u64, engine: &TrackedEngine) -> Interned<Type> {
     )
 }
 
-fn right_generic(index: u64, engine: &TrackedEngine) -> Interned<Type> {
-    Type::new_generic_parameter(
+fn right_generic(index: u64, engine: &TrackedEngine) -> Interned<Type2> {
+    Type2::new_generic_parameter(
         GenericParameterID::new(
             RIGHT_GENERIC_OWNER_ID,
             ID::<GenericParameter>::new(index),
@@ -110,12 +110,12 @@ fn right_generic(index: u64, engine: &TrackedEngine) -> Interned<Type> {
     )
 }
 
-fn int(engine: &TrackedEngine) -> Interned<Type> {
-    Type::new_primitive(Primitive::Int32, engine)
+fn int(engine: &TrackedEngine) -> Interned<Type2> {
+    Type2::new_primitive(Primitive::Int32, engine)
 }
 
-fn bool(engine: &TrackedEngine) -> Interned<Type> {
-    Type::new_primitive(Primitive::Bool, engine)
+fn bool(engine: &TrackedEngine) -> Interned<Type2> {
+    Type2::new_primitive(Primitive::Bool, engine)
 }
 
 // Input: left = Trait[T], right = Trait[Int32].

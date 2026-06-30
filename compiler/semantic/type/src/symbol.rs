@@ -42,12 +42,12 @@ impl Substitutable for Symbol2 {
     }
 }
 
-impl Symbol {
+impl Symbol2 {
     /// Creates a new symbol reference with the given generic arguments.
     #[must_use]
     pub const fn new(
         symbol_id: GlobalSymbolID,
-        generic_arguments: Interned<[Interned<Type>]>,
+        generic_arguments: Interned<[Interned<Type2>]>,
     ) -> Self {
         Self { symbol_id, generic_arguments }
     }
@@ -58,7 +58,7 @@ impl Symbol {
 
     /// Returns the generic arguments supplied to this symbol reference.
     #[must_use]
-    pub const fn generic_arguments(&self) -> &Interned<[Interned<Type>]> {
+    pub const fn generic_arguments(&self) -> &Interned<[Interned<Type2>]> {
         &self.generic_arguments
     }
 
@@ -94,19 +94,19 @@ impl Symbol {
 )]
 pub struct TraitRef2(Symbol2);
 
-impl TraitRef {
+impl TraitRef2 {
     /// Creates a new trait reference.
     #[must_use]
     pub const fn new(
         trait_id: GlobalSymbolID,
-        generic_arguments: Interned<[Interned<Type>]>,
+        generic_arguments: Interned<[Interned<Type2>]>,
     ) -> Self {
-        Self(Symbol::new(trait_id, generic_arguments))
+        Self(Symbol2::new(trait_id, generic_arguments))
     }
 
     /// Creates a new trait reference from the given symbol reference.
     #[must_use]
-    pub const fn from_symbol(symbol: Symbol) -> Self { Self(symbol) }
+    pub const fn from_symbol(symbol: Symbol2) -> Self { Self(symbol) }
 
     /// Returns the referenced trait ID.
     #[must_use]
@@ -114,7 +114,7 @@ impl TraitRef {
 
     /// Returns the generic arguments supplied to the trait.
     #[must_use]
-    pub const fn generic_arguments(&self) -> &Interned<[Interned<Type>]> {
+    pub const fn generic_arguments(&self) -> &Interned<[Interned<Type2>]> {
         self.0.generic_arguments()
     }
 
@@ -128,7 +128,7 @@ impl TraitRef {
     }
 }
 
-impl Substitutable for TraitRef {
+impl Substitutable for TraitRef2 {
     fn apply(
         &self,
         subst: &Substitution,
@@ -154,8 +154,8 @@ impl Substitutable for TraitRef {
     Decode,
     Query,
 )]
-#[value(Option<Interned<TraitRef>>)]
-#[extend(name = get_trait_ref_of_instance_symbol, by_val)]
+#[value(Option<Interned<TraitRef2>>)]
+#[extend(name = get_trait_ref_of_instance_symbol2, by_val)]
 pub struct TraitRefKey {
     /// The global ID of the instance symbol.
     pub symbol_id: GlobalSymbolID,
