@@ -12,6 +12,8 @@ mod destructure;
 mod reduction;
 pub mod rewrite;
 
+pub use destructure::{BinderEquality, DestructureOptions};
+
 /// Simple primitive types
 ///
 /// Kind: Type
