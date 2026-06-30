@@ -1931,7 +1931,9 @@ dependencies = [
 name = "pernixc_solver"
 version = "0.1.0-beta.2"
 dependencies = [
+ "derive-new",
  "enum-as-inner",
+ "linkme",
  "pernixc_arena",
  "pernixc_hash",
  "pernixc_qbice",

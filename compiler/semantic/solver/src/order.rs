@@ -1,19 +1,40 @@
+use linkme::distributed_slice;
+use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
+use pernixc_symbol::GlobalSymbolID;
 use pernixc_type::{
     generic_parameters::GenericParameterID,
     substitution::{Substitutable, Substitution},
-    symbol::TraitRef,
+    symbol::{TraitRef, get_trait_ref_of_instance_symbol},
     r#type::Type,
 };
-use qbice::storage::intern::Interned;
+use qbice::{
+    Decode, Encode, Query, StableHash, executor, program::Registration,
+    storage::intern::Interned,
+};
 
-use crate::solver::{OverflowError, Solver};
+use crate::{
+    premise::Premise,
+    solver::{OverflowError, Solver},
+};
 
 /// The ordering between two trait references.
 ///
 /// The result is read relative to the left operand. For example,
 /// [`Order::MoreGeneral`] means the left trait reference is more general than
 /// the right trait reference.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Encode,
+    Decode,
+    StableHash,
+)]
 pub enum Order {
     Incompatible,
     MoreGeneral,
@@ -175,6 +196,65 @@ fn collect_generic_parameters(
         | Type::SkolemizedVariable(_) => {}
     }
 }
+
+/// A query for retrieving the order (level of specificity) between two
+/// `instance`'s trait ref arguments.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+    Query,
+    derive_new::new,
+)]
+#[value(Result<Option<Order>, OverflowError>)]
+#[extend(name = get_instance_order, by_val)]
+pub struct InstanceOrderKey {
+    /// The `this` in the [`Environment::order`]
+    pub this: GlobalSymbolID,
+    /// The `other` in the [`Environment::order`]
+    pub other: GlobalSymbolID,
+}
+
+/// The executor for the [`InstanceOrderExecutor`] query.
+#[executor(config = Config)]
+pub async fn instance_order_executor(
+    InstanceOrderKey { this, other }: &InstanceOrderKey,
+    tracked_engine: &TrackedEngine,
+) -> Result<Option<Order>, OverflowError> {
+    let (Some(lhs_generic_arguments), Some(rhs_generic_arguments)) = (
+        tracked_engine.get_trait_ref_of_instance_symbol(*this).await,
+        tracked_engine.get_trait_ref_of_instance_symbol(*other).await,
+    ) else {
+        return Ok(None);
+    };
+
+    if lhs_generic_arguments.trait_id() != rhs_generic_arguments.trait_id() {
+        return Ok(None);
+    }
+
+    let default_premise = Premise::default();
+    let mut default_solver = Solver::new(&default_premise, tracked_engine);
+
+    match default_solver
+        .order_trait_refs(&lhs_generic_arguments, &rhs_generic_arguments)
+        .await
+    {
+        Ok(order) => Ok(Some(order)),
+        Err(overflow) => Err(overflow),
+    }
+}
+
+#[distributed_slice(PERNIX_PROGRAM)]
+static INSTANCE_ORDER_EXECUTOR: Registration<Config> =
+    Registration::new::<InstanceOrderKey, InstanceOrderExecutor>();
 
 #[cfg(test)]
 mod test;

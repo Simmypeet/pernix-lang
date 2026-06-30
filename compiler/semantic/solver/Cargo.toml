@@ -14,6 +14,8 @@ pernixc_hash.path = "../../base/hash"
 enum-as-inner.workspace = true
 qbice.workspace = true
 thiserror.workspace = true
+derive-new.workspace = true
+linkme.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true
