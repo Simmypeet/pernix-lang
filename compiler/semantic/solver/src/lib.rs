@@ -6,3 +6,4 @@ pub mod premise;
 pub mod reduction;
 pub mod solver;
 pub mod subtype;
+pub mod unify;
