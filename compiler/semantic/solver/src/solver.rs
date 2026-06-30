@@ -238,13 +238,6 @@ impl Solver<'_> {
             .collect()
     }
 
-    pub fn compose_subst(
-        &mut self,
-        sub1: &mut Substitution,
-        sub2: Substitution,
-    ) {
-        sub1.compose(sub2, self.engine());
-    }
 
     #[must_use]
     pub fn max_universe_index(&self, ty: &Type) -> UniverseIndex {
