@@ -6,7 +6,7 @@ use qbice::{
 };
 
 use crate::{
-    generic_parameters::{GenericParameterID, get_generic_parameters},
+    generic_parameters::{GenericParameterID, get_generic_parameters2},
     r#type::{
         bound::{Binder, BoundVariable},
         constructor::{
@@ -47,7 +47,7 @@ pub use constructor::rewrite;
     Identifiable,
     EnumAsInner,
 )]
-pub enum Type {
+pub enum Type2 {
     GenericParameter(GenericParameterID),
     InferenceVariable(InferenceVariable),
     BoundVariable(BoundVariable),
@@ -55,7 +55,7 @@ pub enum Type {
     Application(Application),
 }
 
-impl Type {
+impl Type2 {
     /// Interns a type constructor application with the given arguments.
     #[must_use]
     pub fn new_application(
@@ -312,7 +312,7 @@ impl Type {
     ) -> kind::TyKind {
         match self {
             Self::GenericParameter(member_id) => engine
-                .get_generic_parameters(member_id.parent_id())
+                .get_generic_parameters2(member_id.parent_id())
                 .await[member_id.id()]
             .kind(),
 

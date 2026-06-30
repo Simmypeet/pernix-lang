@@ -1,7 +1,7 @@
 use pernixc_type::{
-    predicate::{Equality, Predicate},
+    predicate::{Equality, Predicate2},
     substitution::Substitutable,
-    r#type::{Type, bound::Instantiate, rewrite::rewrite_application},
+    r#type::{Type2, bound::Instantiate, rewrite::rewrite_application},
 };
 use qbice::storage::intern::Interned;
 
@@ -11,7 +11,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Reduction(Interned<Type>);
+pub struct Reduction(Interned<Type2>);
 
 impl Solver<'_> {
     /// Reduces the given type as much as possible using the reduction rules,
@@ -19,8 +19,8 @@ impl Solver<'_> {
     /// satisfied for the reduction to hold.
     pub async fn reduce_type(
         &mut self,
-        ty: Interned<Type>,
-    ) -> Result<Option<(Interned<Type>, Constraints)>, OverflowError> {
+        ty: Interned<Type2>,
+    ) -> Result<Option<(Interned<Type2>, Constraints)>, OverflowError> {
         self.solve(&Reduction(ty)).await
     }
 
@@ -29,9 +29,9 @@ impl Solver<'_> {
     #[allow(clippy::manual_async_fn)]
     fn reduce_type_impl(
         &mut self,
-        ty: &Interned<Type>,
+        ty: &Interned<Type2>,
     ) -> impl Future<
-        Output = Result<Option<(Interned<Type>, Constraints)>, OverflowError>,
+        Output = Result<Option<(Interned<Type2>, Constraints)>, OverflowError>,
     > + Send {
         async move {
             if let Some(result) =
@@ -53,7 +53,7 @@ impl Solver<'_> {
 }
 
 impl Solve for Reduction {
-    type Result = Option<(Interned<Type>, Constraints)>;
+    type Result = Option<(Interned<Type2>, Constraints)>;
 
     async fn solve(
         &self,
@@ -73,10 +73,10 @@ impl Solve for Reduction {
 }
 
 async fn rewrite_step(
-    ty: &Interned<Type>,
+    ty: &Interned<Type2>,
     solver: &mut Solver<'_>,
-) -> Result<Option<(Interned<Type>, Constraints)>, OverflowError> {
-    let Type::Application(ap) = &**ty else {
+) -> Result<Option<(Interned<Type2>, Constraints)>, OverflowError> {
+    let Type2::Application(ap) = &**ty else {
         return Ok(None);
     };
 
@@ -84,10 +84,10 @@ async fn rewrite_step(
 }
 
 async fn rewrite_inner(
-    ty: &Interned<Type>,
+    ty: &Interned<Type2>,
     solver: &mut Solver<'_>,
-) -> Result<Option<(Interned<Type>, Constraints)>, OverflowError> {
-    let Type::Application(ap) = &**ty else {
+) -> Result<Option<(Interned<Type2>, Constraints)>, OverflowError> {
+    let Type2::Application(ap) = &**ty else {
         return Ok(None);
     };
 
@@ -104,13 +104,13 @@ async fn rewrite_inner(
         }
     })
     .await?
-    .map(|x| (solver.intern(Type::Application(x)), constrs)))
+    .map(|x| (solver.intern(Type2::Application(x)), constrs)))
 }
 
 async fn recurse_from_result(
-    rule_result: Option<(Interned<Type>, Constraints)>,
+    rule_result: Option<(Interned<Type2>, Constraints)>,
     solver: &mut Solver<'_>,
-) -> Result<Option<(Interned<Type>, Constraints)>, OverflowError> {
+) -> Result<Option<(Interned<Type2>, Constraints)>, OverflowError> {
     if let Some((reduced_ty, constrs)) = rule_result {
         let further_reduced =
             Box::pin(solver.solve(&Reduction(reduced_ty.clone()))).await?;
@@ -128,10 +128,10 @@ async fn recurse_from_result(
 }
 
 async fn try_match_eq(
-    ty: &Interned<Type>,
+    ty: &Interned<Type2>,
     eq: &Equality,
     solver: &mut Solver<'_>,
-) -> Option<(Interned<Type>, Constraints)> {
+) -> Option<(Interned<Type2>, Constraints)> {
     let fresh_instantiation =
         solver.create_inference_instantiations(eq.binder().kinds());
 
@@ -147,11 +147,11 @@ async fn try_match_eq(
 }
 
 async fn rewrite_from_eq(
-    ty: &Interned<Type>,
+    ty: &Interned<Type2>,
     solver: &mut Solver<'_>,
-) -> Result<Option<(Interned<Type>, Constraints)>, OverflowError> {
+) -> Result<Option<(Interned<Type2>, Constraints)>, OverflowError> {
     for pred in solver.premise_predicates() {
-        let Predicate::Equality(eq) = pred else {
+        let Predicate2::Equality(eq) = pred else {
             continue;
         };
 

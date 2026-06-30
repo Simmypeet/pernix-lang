@@ -1,8 +1,5 @@
-use pernixc_qbice::{
-    TrackedEngine, create_minimal_engine as create_test_engine,
-};
-use pernixc_type::r#type::{Type, constructor::Primitive, kind::TyKind};
-use qbice::storage::intern::Interned;
+use pernixc_qbice::create_minimal_engine as create_test_engine;
+use pernixc_type::r#type::{Type2, constructor::Primitive};
 
 use crate::{premise::Premise, solver::Solver};
 
@@ -12,14 +9,14 @@ use crate::{premise::Premise, solver::Solver};
 #[tokio::test]
 async fn function_pointer_binders_must_match_exactly() {
     let engine = create_test_engine().await;
-    let bool_type = Type::new_primitive(Primitive::Bool, &engine);
-    let head = Type::new_function_pointer_with_higher_ranked_lifetimes(
+    let bool_type = Type2::new_primitive(Primitive::Bool, &engine);
+    let head = Type2::new_function_pointer_with_higher_ranked_lifetimes(
         1,
         [],
         bool_type.clone(),
         &engine,
     );
-    let subject = Type::new_function_pointer([], bool_type, &engine);
+    let subject = Type2::new_function_pointer([], bool_type, &engine);
     let premise = Premise::default();
 
     let result =

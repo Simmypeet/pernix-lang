@@ -2,10 +2,10 @@ use pernixc_qbice::{
     TrackedEngine, create_minimal_engine as create_test_engine,
 };
 use pernixc_type::{
-    predicate::{Equality, Predicate},
+    predicate::{Equality, Predicate2},
     substitution::Substitution,
     r#type::{
-        Type,
+        Type2,
         bound::{Binder, BoundVariable},
         constructor::{Lifetime, Mutability, Primitive},
         kind::TyKind,
@@ -29,11 +29,11 @@ async fn resolve(
 }
 
 fn equality(
-    left: Interned<Type>,
-    right: Interned<Type>,
+    left: Interned<Type2>,
+    right: Interned<Type2>,
     engine: &TrackedEngine,
-) -> Predicate {
-    Predicate::Equality(Equality::new(
+) -> Predicate2 {
+    Predicate2::Equality(Equality::new(
         Binder::new(engine.intern_unsized(Vec::new())),
         left,
         right,
@@ -46,7 +46,7 @@ fn equality(
 #[tokio::test]
 async fn syntactic_equality_succeeds_without_work() {
     let engine = create_test_engine().await;
-    let ty = Type::new_primitive(Primitive::Bool, &engine);
+    let ty = Type2::new_primitive(Primitive::Bool, &engine);
 
     let (substitution, residual_unifications, constraints) =
         resolve(vec![Unify::new(ty.clone(), ty)], &Premise::default(), &engine)
@@ -64,8 +64,8 @@ async fn syntactic_equality_succeeds_without_work() {
 #[tokio::test]
 async fn primitive_mismatch_remains_residual() {
     let engine = create_test_engine().await;
-    let left = Type::new_primitive(Primitive::Bool, &engine);
-    let right = Type::new_primitive(Primitive::Int32, &engine);
+    let left = Type2::new_primitive(Primitive::Bool, &engine);
+    let right = Type2::new_primitive(Primitive::Int32, &engine);
 
     let (substitution, residual_unifications, constraints) = resolve(
         vec![Unify::new(left.clone(), right.clone())],
@@ -86,10 +86,10 @@ async fn primitive_mismatch_remains_residual() {
 #[tokio::test]
 async fn tuple_mismatch_remains_original_residual() {
     let engine = create_test_engine().await;
-    let bool_type = Type::new_primitive(Primitive::Bool, &engine);
-    let int32 = Type::new_primitive(Primitive::Int32, &engine);
-    let left = Type::new_tuple([bool_type], &engine);
-    let right = Type::new_tuple([int32], &engine);
+    let bool_type = Type2::new_primitive(Primitive::Bool, &engine);
+    let int32 = Type2::new_primitive(Primitive::Int32, &engine);
+    let left = Type2::new_tuple([bool_type], &engine);
+    let right = Type2::new_tuple([int32], &engine);
 
     let (substitution, residual_unifications, constraints) = resolve(
         vec![Unify::new(left.clone(), right.clone())],
@@ -110,8 +110,8 @@ async fn tuple_mismatch_remains_original_residual() {
 #[tokio::test]
 async fn lifetime_mismatch_emits_equality_constraints() {
     let engine = create_test_engine().await;
-    let static_lifetime = Type::new_lifetime(Lifetime::Static, &engine);
-    let erased_lifetime = Type::new_lifetime(Lifetime::Erased, &engine);
+    let static_lifetime = Type2::new_lifetime(Lifetime::Static, &engine);
+    let erased_lifetime = Type2::new_lifetime(Lifetime::Erased, &engine);
 
     let (substitution, residual_unifications, constraints) = resolve(
         vec![Unify::new(static_lifetime.clone(), erased_lifetime.clone())],
@@ -138,8 +138,8 @@ async fn unifies_inference_variable_with_known_type() {
     let premise = Premise::default();
     let mut solver = Solver::new(&premise, &engine);
     let variable = solver.fresh_inference_variable(TyKind::Type);
-    let inference = Type::new_inference_variable(variable, &engine);
-    let known = Type::new_primitive(Primitive::Bool, &engine);
+    let inference = Type2::new_inference_variable(variable, &engine);
+    let known = Type2::new_primitive(Primitive::Bool, &engine);
 
     let (substitution, residual_unifications, constraints) = solver
         .resolve_unifications(vec![Unify::new(inference, known.clone())])
@@ -160,8 +160,8 @@ async fn unifies_lifetime_inference_variable() {
     let premise = Premise::default();
     let mut solver = Solver::new(&premise, &engine);
     let variable = solver.fresh_inference_variable(TyKind::Lifetime);
-    let inference = Type::new_inference_variable(variable, &engine);
-    let known = Type::new_lifetime(Lifetime::Static, &engine);
+    let inference = Type2::new_inference_variable(variable, &engine);
+    let known = Type2::new_lifetime(Lifetime::Static, &engine);
 
     let (substitution, residual_unifications, constraints) = solver
         .resolve_unifications(vec![Unify::new(inference, known.clone())])
@@ -183,8 +183,8 @@ async fn unifies_two_inference_variables() {
     let mut solver = Solver::new(&premise, &engine);
     let left_variable = solver.fresh_inference_variable(TyKind::Type);
     let right_variable = solver.fresh_inference_variable(TyKind::Type);
-    let left = Type::new_inference_variable(left_variable, &engine);
-    let right = Type::new_inference_variable(right_variable, &engine);
+    let left = Type2::new_inference_variable(left_variable, &engine);
+    let right = Type2::new_inference_variable(right_variable, &engine);
 
     let (substitution, residual_unifications, constraints) = solver
         .resolve_unifications(vec![Unify::new(left, right.clone())])
@@ -205,11 +205,11 @@ async fn solve_unifies_application_arguments_eagerly() {
     let premise = Premise::default();
     let mut solver = Solver::new(&premise, &engine);
     let variable = solver.fresh_inference_variable(TyKind::Type);
-    let inference = Type::new_inference_variable(variable, &engine);
-    let bool_type = Type::new_primitive(Primitive::Bool, &engine);
+    let inference = Type2::new_inference_variable(variable, &engine);
+    let bool_type = Type2::new_primitive(Primitive::Bool, &engine);
 
-    let left = Type::new_tuple([inference], &engine);
-    let right = Type::new_tuple([bool_type.clone()], &engine);
+    let left = Type2::new_tuple([inference], &engine);
+    let right = Type2::new_tuple([bool_type.clone()], &engine);
 
     let (substitution, constraints) = solver
         .solve(&Unify::new(left, right))
@@ -230,8 +230,8 @@ async fn occur_check_failure_remains_residual() {
     let premise = Premise::default();
     let mut solver = Solver::new(&premise, &engine);
     let variable = solver.fresh_inference_variable(TyKind::Type);
-    let inference = Type::new_inference_variable(variable, &engine);
-    let recursive = Type::new_tuple([inference.clone()], &engine);
+    let inference = Type2::new_inference_variable(variable, &engine);
+    let recursive = Type2::new_tuple([inference.clone()], &engine);
 
     let (substitution, residual_unifications, constraints) = solver
         .resolve_unifications(vec![Unify::new(inference.clone(), recursive)])
@@ -253,13 +253,13 @@ async fn tuple_and_reference_arguments_are_unified_invariantly() {
     let premise = Premise::default();
     let mut solver = Solver::new(&premise, &engine);
     let variable = solver.fresh_inference_variable(TyKind::Type);
-    let inference = Type::new_inference_variable(variable, &engine);
-    let bool_type = Type::new_primitive(Primitive::Bool, &engine);
-    let static_lifetime = Type::new_lifetime(Lifetime::Static, &engine);
-    let erased_lifetime = Type::new_lifetime(Lifetime::Erased, &engine);
+    let inference = Type2::new_inference_variable(variable, &engine);
+    let bool_type = Type2::new_primitive(Primitive::Bool, &engine);
+    let static_lifetime = Type2::new_lifetime(Lifetime::Static, &engine);
+    let erased_lifetime = Type2::new_lifetime(Lifetime::Erased, &engine);
 
-    let left = Type::new_tuple(
-        [Type::new_reference(
+    let left = Type2::new_tuple(
+        [Type2::new_reference(
             static_lifetime.clone(),
             inference,
             Mutability::Immutable,
@@ -267,8 +267,8 @@ async fn tuple_and_reference_arguments_are_unified_invariantly() {
         )],
         &engine,
     );
-    let right = Type::new_tuple(
-        [Type::new_reference(
+    let right = Type2::new_tuple(
+        [Type2::new_reference(
             erased_lifetime.clone(),
             bool_type.clone(),
             Mutability::Immutable,
@@ -296,8 +296,8 @@ async fn tuple_and_reference_arguments_are_unified_invariantly() {
 #[tokio::test]
 async fn bound_variables_must_match_exactly() {
     let engine = create_test_engine().await;
-    let first = Type::new_bound_variable(BoundVariable::new(0, 0), &engine);
-    let second = Type::new_bound_variable(BoundVariable::new(0, 1), &engine);
+    let first = Type2::new_bound_variable(BoundVariable::new(0, 0), &engine);
+    let second = Type2::new_bound_variable(BoundVariable::new(0, 1), &engine);
 
     let (substitution, residual_unifications, constraints) = resolve(
         vec![Unify::new(first.clone(), second.clone())],
@@ -318,14 +318,14 @@ async fn bound_variables_must_match_exactly() {
 #[tokio::test]
 async fn function_pointer_binders_must_match_exactly() {
     let engine = create_test_engine().await;
-    let bool_type = Type::new_primitive(Primitive::Bool, &engine);
-    let left = Type::new_function_pointer_with_higher_ranked_lifetimes(
+    let bool_type = Type2::new_primitive(Primitive::Bool, &engine);
+    let left = Type2::new_function_pointer_with_higher_ranked_lifetimes(
         1,
         [],
         bool_type.clone(),
         &engine,
     );
-    let right = Type::new_function_pointer([], bool_type, &engine);
+    let right = Type2::new_function_pointer([], bool_type, &engine);
 
     let (substitution, residual_unifications, constraints) = resolve(
         vec![Unify::new(left.clone(), right.clone())],
@@ -347,8 +347,8 @@ async fn function_pointer_binders_must_match_exactly() {
 async fn reduction_fallback_can_prove_equality() {
     let engine = create_test_engine().await;
     let mut premise = Premise::default();
-    let int32 = Type::new_primitive(Primitive::Int32, &engine);
-    let bool_type = Type::new_primitive(Primitive::Bool, &engine);
+    let int32 = Type2::new_primitive(Primitive::Int32, &engine);
+    let bool_type = Type2::new_primitive(Primitive::Bool, &engine);
 
     premise.insert(equality(int32.clone(), bool_type.clone(), &engine));
 
@@ -369,17 +369,17 @@ async fn reduction_fallback_can_prove_equality() {
 async fn reduction_fallback_accumulates_constraints() {
     let engine = create_test_engine().await;
     let mut premise = Premise::default();
-    let static_lifetime = Type::new_lifetime(Lifetime::Static, &engine);
-    let erased_lifetime = Type::new_lifetime(Lifetime::Erased, &engine);
-    let int32 = Type::new_primitive(Primitive::Int32, &engine);
-    let bool_type = Type::new_primitive(Primitive::Bool, &engine);
-    let reduced = Type::new_reference(
+    let static_lifetime = Type2::new_lifetime(Lifetime::Static, &engine);
+    let erased_lifetime = Type2::new_lifetime(Lifetime::Erased, &engine);
+    let int32 = Type2::new_primitive(Primitive::Int32, &engine);
+    let bool_type = Type2::new_primitive(Primitive::Bool, &engine);
+    let reduced = Type2::new_reference(
         static_lifetime.clone(),
         bool_type.clone(),
         Mutability::Immutable,
         &engine,
     );
-    let subject = Type::new_reference(
+    let subject = Type2::new_reference(
         erased_lifetime.clone(),
         bool_type.clone(),
         Mutability::Immutable,

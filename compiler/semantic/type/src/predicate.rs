@@ -4,9 +4,9 @@ use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
 use crate::{
     substitution::{Substitutable, Substitution},
-    symbol::Symbol,
-    r#type::{Type, bound::Binder},
-    variance::Variance,
+    symbol::Symbol2,
+    r#type::{Type2, bound::Binder},
+    variance::Variance2,
 };
 
 /// A basic type equality predicate, can also be used for rewriting.
@@ -26,16 +26,16 @@ use crate::{
 )]
 pub struct Equality {
     binder: Binder,
-    left: Interned<Type>,
-    right: Interned<Type>,
+    left: Interned<Type2>,
+    right: Interned<Type2>,
 }
 
 impl Equality {
     #[must_use]
     pub const fn new(
         binder: Binder,
-        left: Interned<Type>,
-        right: Interned<Type>,
+        left: Interned<Type2>,
+        right: Interned<Type2>,
     ) -> Self {
         Self { binder, left, right }
     }
@@ -43,9 +43,9 @@ impl Equality {
     #[must_use]
     pub const fn binder(&self) -> &Binder { &self.binder }
     #[must_use]
-    pub const fn left(&self) -> &Interned<Type> { &self.left }
+    pub const fn left(&self) -> &Interned<Type2> { &self.left }
     #[must_use]
-    pub const fn right(&self) -> &Interned<Type> { &self.right }
+    pub const fn right(&self) -> &Interned<Type2> { &self.right }
 }
 
 impl Substitutable for Equality {
@@ -93,23 +93,26 @@ impl Substitutable for Equality {
 )]
 pub struct Outlives {
     /// Must have lifetime, type, or instance kind.
-    lesser: Interned<Type>,
+    lesser: Interned<Type2>,
 
     /// Must have lifetime kind.
-    greater: Interned<Type>,
+    greater: Interned<Type2>,
 }
 
 impl Outlives {
     #[must_use]
-    pub const fn new(lesser: Interned<Type>, greater: Interned<Type>) -> Self {
+    pub const fn new(
+        lesser: Interned<Type2>,
+        greater: Interned<Type2>,
+    ) -> Self {
         Self { lesser, greater }
     }
 
     #[must_use]
-    pub const fn lesser(&self) -> &Interned<Type> { &self.lesser }
+    pub const fn lesser(&self) -> &Interned<Type2> { &self.lesser }
 
     #[must_use]
-    pub const fn greater(&self) -> &Interned<Type> { &self.greater }
+    pub const fn greater(&self) -> &Interned<Type2> { &self.greater }
 }
 
 impl Substitutable for Outlives {
@@ -154,7 +157,7 @@ impl Substitutable for Outlives {
     Decode,
 )]
 pub struct Tuple {
-    operand: Interned<Type>,
+    operand: Interned<Type2>,
 }
 
 impl Substitutable for Tuple {
@@ -201,7 +204,7 @@ pub enum MarkerPolar {
 pub struct Marker {
     polar: MarkerPolar,
     binder: Binder,
-    symbol: Symbol,
+    symbol: Symbol2,
 }
 
 impl Substitutable for Marker {
@@ -233,29 +236,29 @@ impl Substitutable for Marker {
     Decode,
 )]
 pub struct Subtype {
-    less: Interned<Type>,
-    greater: Interned<Type>,
-    variance: Variance,
+    less: Interned<Type2>,
+    greater: Interned<Type2>,
+    variance: Variance2,
 }
 
 impl Subtype {
     #[must_use]
     pub const fn new(
-        less: Interned<Type>,
-        greater: Interned<Type>,
-        variance: Variance,
+        less: Interned<Type2>,
+        greater: Interned<Type2>,
+        variance: Variance2,
     ) -> Self {
         Self { less, greater, variance }
     }
 
     #[must_use]
-    pub const fn lesser(&self) -> &Interned<Type> { &self.less }
+    pub const fn lesser(&self) -> &Interned<Type2> { &self.less }
 
     #[must_use]
-    pub const fn greater(&self) -> &Interned<Type> { &self.greater }
+    pub const fn greater(&self) -> &Interned<Type2> { &self.greater }
 
     #[must_use]
-    pub const fn variance(&self) -> Variance { self.variance }
+    pub const fn variance(&self) -> Variance2 { self.variance }
 }
 
 impl Substitutable for Subtype {
@@ -301,14 +304,14 @@ impl Substitutable for Subtype {
     derive_more::From,
 )]
 #[allow(missing_docs)]
-pub enum Predicate {
+pub enum Predicate2 {
     Outlives(Outlives),
     Tuple(Tuple),
     Marker(Marker),
     Equality(Equality),
 }
 
-impl Substitutable for Predicate {
+impl Substitutable for Predicate2 {
     fn apply(
         &self,
         subst: &Substitution,

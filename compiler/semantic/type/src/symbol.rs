@@ -6,7 +6,7 @@ use qbice::{
 
 use crate::{
     substitution::{Substitutable, Substitution},
-    r#type::Type,
+    r#type::Type2,
 };
 
 #[derive(
@@ -22,12 +22,12 @@ use crate::{
     Encode,
     Decode,
 )]
-pub struct Symbol {
+pub struct Symbol2 {
     symbol_id: GlobalSymbolID,
-    generic_arguments: Interned<[Interned<Type>]>,
+    generic_arguments: Interned<[Interned<Type2>]>,
 }
 
-impl Substitutable for Symbol {
+impl Substitutable for Symbol2 {
     fn apply(
         &self,
         subst: &Substitution,
@@ -92,7 +92,7 @@ impl Symbol {
     Encode,
     Decode,
 )]
-pub struct TraitRef(Symbol);
+pub struct TraitRef2(Symbol2);
 
 impl TraitRef {
     /// Creates a new trait reference.
@@ -134,7 +134,7 @@ impl Substitutable for TraitRef {
         subst: &Substitution,
         interner: &impl pernixc_qbice::Interner,
     ) -> Option<Self> {
-        self.0.apply(subst, interner).map(TraitRef)
+        self.0.apply(subst, interner).map(TraitRef2)
     }
 }
 

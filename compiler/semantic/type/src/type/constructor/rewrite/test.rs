@@ -9,7 +9,7 @@ use crate::{
     generic_parameters::{GenericParameter, GenericParameterID},
     substitution::{Substitutable, Substitution},
     r#type::{
-        Type,
+        Type2,
         bound::{Binder, BoundVariable, Instantiate},
         constructor::{FunctionPointer, Primitive},
     },
@@ -25,29 +25,29 @@ fn generic_parameter_id(index: u64) -> GenericParameterID {
 fn generic_parameter_type(
     id: GenericParameterID,
     interner: &impl Interner,
-) -> Interned<Type> {
-    interner.intern(Type::GenericParameter(id))
+) -> Interned<Type2> {
+    interner.intern(Type2::GenericParameter(id))
 }
 
 fn bound_variable_type(
     depth: usize,
     index: usize,
     interner: &impl Interner,
-) -> Interned<Type> {
-    interner.intern(Type::BoundVariable(BoundVariable::new(depth, index)))
+) -> Interned<Type2> {
+    interner.intern(Type2::BoundVariable(BoundVariable::new(depth, index)))
 }
 
 fn primitive_type(
     primitive: Primitive,
     interner: &impl Interner,
-) -> Interned<Type> {
+) -> Interned<Type2> {
     application_type(Constructor::Primitive(primitive), &[], interner)
 }
 
 fn function_pointer_type(
-    arguments: &[Interned<Type>],
+    arguments: &[Interned<Type2>],
     interner: &impl Interner,
-) -> Interned<Type> {
+) -> Interned<Type2> {
     application_type(
         Constructor::FunctionPointer(FunctionPointer {
             binder: Binder::new(interner.intern_unsized(
@@ -61,32 +61,32 @@ fn function_pointer_type(
 
 fn application_type(
     constructor: Constructor,
-    arguments: &[Interned<Type>],
+    arguments: &[Interned<Type2>],
     interner: &impl Interner,
-) -> Interned<Type> {
-    interner.intern(Type::Application(Application {
+) -> Interned<Type2> {
+    interner.intern(Type2::Application(Application {
         constructor,
         arguments: interner.intern_unsized(arguments.to_vec()),
     }))
 }
 
-fn as_application(ty: &Interned<Type>) -> &Application {
-    let Type::Application(application) = ty.as_ref() else {
+fn as_application(ty: &Interned<Type2>) -> &Application {
+    let Type2::Application(application) = ty.as_ref() else {
         panic!("expected application");
     };
 
     application
 }
 
-fn as_bound_variable(ty: &Interned<Type>) -> BoundVariable {
-    let Type::BoundVariable(variable) = ty.as_ref() else {
+fn as_bound_variable(ty: &Interned<Type2>) -> BoundVariable {
+    let Type2::BoundVariable(variable) = ty.as_ref() else {
         panic!("expected bound variable");
     };
 
     *variable
 }
 
-fn same_type_handle(lhs: &Interned<Type>, rhs: &Interned<Type>) -> bool {
+fn same_type_handle(lhs: &Interned<Type2>, rhs: &Interned<Type2>) -> bool {
     std::ptr::eq(lhs.as_ref(), rhs.as_ref())
 }
 
@@ -111,7 +111,7 @@ fn noop_rewriter_returns_original_type() {
 
 struct GenericParameterRewriter {
     target: GenericParameterID,
-    replacement: Interned<Type>,
+    replacement: Interned<Type2>,
 }
 
 impl TypeRewriter for GenericParameterRewriter {
@@ -119,7 +119,7 @@ impl TypeRewriter for GenericParameterRewriter {
         &mut self,
         id: GenericParameterID,
         _: RewriteContext,
-    ) -> Option<Interned<Type>> {
+    ) -> Option<Interned<Type2>> {
         (id == self.target).then(|| self.replacement.clone())
     }
 }
@@ -165,8 +165,8 @@ fn rewrite_nested_generic_parameter_preserves_unchanged_siblings() {
 
 struct ApplicationRewriter {
     target_constructor: Constructor,
-    replacement: Interned<Type>,
-    argument_replacement: Interned<Type>,
+    replacement: Interned<Type2>,
+    argument_replacement: Interned<Type2>,
     visited_generic_parameters: usize,
     saw_rewritten_argument: bool,
 }
@@ -174,8 +174,8 @@ struct ApplicationRewriter {
 struct AsyncApplicationRewriter {
     target: GenericParameterID,
     target_constructor: Constructor,
-    replacement: Interned<Type>,
-    argument_replacement: Interned<Type>,
+    replacement: Interned<Type2>,
+    argument_replacement: Interned<Type2>,
     saw_argument_binder_depth: Option<usize>,
     saw_rewritten_argument: bool,
 }
@@ -187,7 +187,7 @@ impl AsyncTypeRewriter for AsyncApplicationRewriter {
         &mut self,
         application: &Application,
         _: RewriteContext,
-    ) -> Result<Option<Interned<Type>>, Self::Error> {
+    ) -> Result<Option<Interned<Type2>>, Self::Error> {
         if application.constructor() == &self.target_constructor {
             self.saw_rewritten_argument = same_type_handle(
                 &application.arguments()[0],
@@ -203,7 +203,7 @@ impl AsyncTypeRewriter for AsyncApplicationRewriter {
         &mut self,
         id: GenericParameterID,
         ctx: RewriteContext,
-    ) -> Result<Option<Interned<Type>>, Self::Error> {
+    ) -> Result<Option<Interned<Type2>>, Self::Error> {
         if id == self.target {
             self.saw_argument_binder_depth = Some(ctx.binder_depth());
             Ok(Some(self.argument_replacement.clone()))
@@ -224,7 +224,7 @@ impl TypeRewriter for ApplicationRewriter {
         &mut self,
         application: &Application,
         _: RewriteContext,
-    ) -> Option<Interned<Type>> {
+    ) -> Option<Interned<Type2>> {
         if application.constructor() == &self.target_constructor {
             self.saw_rewritten_argument = same_type_handle(
                 &application.arguments()[0],
@@ -240,7 +240,7 @@ impl TypeRewriter for ApplicationRewriter {
         &mut self,
         _: GenericParameterID,
         _: RewriteContext,
-    ) -> Option<Interned<Type>> {
+    ) -> Option<Interned<Type2>> {
         self.visited_generic_parameters += 1;
         Some(self.argument_replacement.clone())
     }
@@ -343,7 +343,7 @@ impl AsyncTypeRewriter for FailingAsyncRewriter {
         &mut self,
         id: GenericParameterID,
         _: RewriteContext,
-    ) -> Result<Option<Interned<Type>>, Self::Error> {
+    ) -> Result<Option<Interned<Type2>>, Self::Error> {
         if id == self.target { Err("stop") } else { Ok(None) }
     }
 }
@@ -408,7 +408,7 @@ impl TypeRewriter for BinderDepthRecorder {
         &mut self,
         id: GenericParameterID,
         ctx: RewriteContext,
-    ) -> Option<Interned<Type>> {
+    ) -> Option<Interned<Type2>> {
         self.records.push((id, ctx.binder_depth()));
         None
     }
@@ -495,7 +495,7 @@ async fn rewrite_application_returns_callback_error() {
     );
 
     let result = rewrite_application(as_application(&ty), async |_| {
-        Err::<Option<Interned<Type>>, _>("stop")
+        Err::<Option<Interned<Type2>>, _>("stop")
     })
     .await;
 
@@ -575,7 +575,7 @@ fn instantiate_interned_slice_of_types() {
     let interner = DuplicatingInterner;
     let replacement = primitive_type(Primitive::Bool, &interner);
     let unchanged = primitive_type(Primitive::Int16, &interner);
-    let arguments: Interned<[Interned<Type>]> = interner.intern_unsized(vec![
+    let arguments: Interned<[Interned<Type2>]> = interner.intern_unsized(vec![
         bound_variable_type(0, 0, &interner),
         unchanged.clone(),
     ]);

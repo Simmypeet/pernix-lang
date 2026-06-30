@@ -4,9 +4,9 @@ use pernixc_symbol::GlobalSymbolID;
 use qbice::{Identifiable, StableHash, storage::intern::Interned};
 
 use crate::{
-    generic_parameters::{GenericParameterID, get_generic_parameters},
+    generic_parameters::{GenericParameterID, get_generic_parameters2},
     r#type::{
-        Type,
+        Type2,
         constructor::rewrite::{RewriteContext, TypeRewriter},
         inference::InferenceVariable,
         rewrite::rewrite_type,
@@ -20,14 +20,14 @@ pub enum Variable {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct Substitution(FxHashMap<Variable, Interned<Type>>);
+pub struct Substitution(FxHashMap<Variable, Interned<Type2>>);
 
 impl Substitution {
     #[must_use]
     pub fn new() -> Self { Self::default() }
 
     #[must_use]
-    pub fn singleton(variable: InferenceVariable, ty: Interned<Type>) -> Self {
+    pub fn singleton(variable: InferenceVariable, ty: Interned<Type2>) -> Self {
         let mut map = FxHashMap::default();
         map.insert(Variable::Inference(variable), ty);
         Self(map)
@@ -36,7 +36,7 @@ impl Substitution {
     pub fn insert_generic(
         &mut self,
         id: GenericParameterID,
-        ty: Interned<Type>,
+        ty: Interned<Type2>,
     ) {
         assert!(self.0.insert(Variable::Generic(id), ty).is_none());
     }
@@ -66,24 +66,24 @@ impl Substitution {
 
     pub fn retain(
         &mut self,
-        mut f: impl FnMut(Variable, &Interned<Type>) -> bool,
+        mut f: impl FnMut(Variable, &Interned<Type2>) -> bool,
     ) {
         self.0.retain(|variable, ty| f(*variable, ty));
     }
 
     pub fn iter(
         &self,
-    ) -> impl Iterator<Item = (Variable, &Interned<Type>)> + '_ {
+    ) -> impl Iterator<Item = (Variable, &Interned<Type2>)> + '_ {
         self.0.iter().map(|(variable, ty)| (*variable, ty))
     }
 
     pub(crate) async fn append_generic_arguments(
         &mut self,
         symbol_id: GlobalSymbolID,
-        generic_arguments: &[Interned<Type>],
+        generic_arguments: &[Interned<Type2>],
         engine: &TrackedEngine,
     ) {
-        let generic_params = engine.get_generic_parameters(symbol_id).await;
+        let generic_params = engine.get_generic_parameters2(symbol_id).await;
 
         assert!(generic_params.len() == generic_arguments.len());
 
@@ -105,7 +105,7 @@ impl TypeRewriter for &Substitution {
         &mut self,
         variable: InferenceVariable,
         _ctx: RewriteContext,
-    ) -> Option<Interned<Type>> {
+    ) -> Option<Interned<Type2>> {
         self.0.get(&Variable::Inference(variable)).cloned()
     }
 
@@ -113,7 +113,7 @@ impl TypeRewriter for &Substitution {
         &mut self,
         id: GenericParameterID,
         _ctx: RewriteContext,
-    ) -> Option<Interned<Type>> {
+    ) -> Option<Interned<Type2>> {
         self.0.get(&Variable::Generic(id)).cloned()
     }
 }
@@ -153,7 +153,7 @@ pub trait Substitutable {
     }
 }
 
-impl Substitutable for Interned<Type> {
+impl Substitutable for Interned<Type2> {
     fn apply(
         &self,
         mut subst: &Substitution,

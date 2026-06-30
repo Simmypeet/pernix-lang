@@ -5,7 +5,7 @@ use pernixc_qbice::Interner;
 use pernixc_type::{
     predicate::Outlives,
     substitution::{Substitutable, Substitution},
-    r#type::Type,
+    r#type::Type2,
 };
 use qbice::storage::intern::Interned;
 
@@ -57,7 +57,7 @@ impl Constraints {
     pub fn new() -> Self { Self::default() }
 
     #[must_use]
-    pub fn lifetimes_eq(a: Interned<Type>, b: Interned<Type>) -> Self {
+    pub fn lifetimes_eq(a: Interned<Type2>, b: Interned<Type2>) -> Self {
         let mut lifetime_eq = Self::new();
 
         lifetime_eq.0.insert(Outlives::new(a.clone(), b.clone()));
@@ -68,8 +68,8 @@ impl Constraints {
 
     #[must_use]
     pub fn lifetimes_outlives(
-        lesser: Interned<Type>,
-        greater: Interned<Type>,
+        lesser: Interned<Type2>,
+        greater: Interned<Type2>,
     ) -> Self {
         let mut lifetime_eq = Self::new();
 

@@ -1,9 +1,9 @@
 use std::future::Future;
 
 use pernixc_type::{
-    predicate::{Outlives, Predicate},
+    predicate::{Outlives, Predicate2},
     r#type::{
-        Type,
+        Type2,
         constructor::{Constructor, Lifetime},
     },
 };
@@ -63,7 +63,7 @@ impl Solver<'_> {
             }
 
             match &**outlives.lesser() {
-                Type::Application(application) => {
+                Type2::Application(application) => {
                     match application.constructor() {
                         Constructor::InstanceAssociated(_) => {
                             self.instance_associated_outlives(outlives).await
@@ -86,10 +86,10 @@ impl Solver<'_> {
                     }
                 }
 
-                Type::GenericParameter(_)
-                | Type::InferenceVariable(_)
-                | Type::BoundVariable(_)
-                | Type::SkolemizedVariable(_) => Ok(false),
+                Type2::GenericParameter(_)
+                | Type2::InferenceVariable(_)
+                | Type2::BoundVariable(_)
+                | Type2::SkolemizedVariable(_) => Ok(false),
             }
         }
     }
@@ -102,7 +102,7 @@ impl Solver<'_> {
             self.kind_of(goal.lesser()).await.is_lifetime();
 
         for predicate in self.premise_predicates() {
-            let Predicate::Outlives(premise) = predicate else {
+            let Predicate2::Outlives(premise) = predicate else {
                 continue;
             };
 
@@ -175,7 +175,7 @@ impl Solver<'_> {
             return Ok(true);
         }
 
-        let Type::Application(application) = &**outlives.lesser() else {
+        let Type2::Application(application) = &**outlives.lesser() else {
             unreachable!("the caller only passes instance-associated types");
         };
 
@@ -190,8 +190,8 @@ impl Solver<'_> {
 
     async fn all_components_outlive(
         &mut self,
-        components: impl IntoIterator<Item = Interned<Type>>,
-        greater: &Interned<Type>,
+        components: impl IntoIterator<Item = Interned<Type2>>,
+        greater: &Interned<Type2>,
     ) -> Result<bool, OverflowError> {
         for component in components {
             if !Box::pin(self.solve(&Outlives::new(component, greater.clone())))
@@ -218,30 +218,30 @@ impl Solver<'_> {
     }
 }
 
-fn outlives_components(ty: &Interned<Type>) -> Vec<Interned<Type>> {
+fn outlives_components(ty: &Interned<Type2>) -> Vec<Interned<Type2>> {
     let mut components = Vec::new();
     push_outlives_components(ty, 0, &mut components);
     components
 }
 
 fn push_outlives_components(
-    ty: &Interned<Type>,
+    ty: &Interned<Type2>,
     binder_depth: usize,
-    components: &mut Vec<Interned<Type>>,
+    components: &mut Vec<Interned<Type2>>,
 ) {
     match &**ty {
-        Type::GenericParameter(_)
-        | Type::InferenceVariable(_)
-        | Type::SkolemizedVariable(_) => components.push(ty.clone()),
+        Type2::GenericParameter(_)
+        | Type2::InferenceVariable(_)
+        | Type2::SkolemizedVariable(_) => components.push(ty.clone()),
 
-        Type::BoundVariable(variable) => {
+        Type2::BoundVariable(variable) => {
             assert!(
                 variable.depth() < binder_depth,
                 "outlives component traversal found an escaping bound variable"
             );
         }
 
-        Type::Application(application) => match application.constructor() {
+        Type2::Application(application) => match application.constructor() {
             Constructor::Lifetime(_) | Constructor::InstanceAssociated(_) => {
                 components.push(ty.clone());
             }
@@ -273,10 +273,10 @@ fn push_outlives_components(
     }
 }
 
-const fn is_static_lifetime(ty: &Type) -> bool {
+const fn is_static_lifetime(ty: &Type2) -> bool {
     matches!(
         ty,
-        Type::Application(application)
+        Type2::Application(application)
             if matches!(
                 application.constructor(),
                 Constructor::Lifetime(Lifetime::Static)

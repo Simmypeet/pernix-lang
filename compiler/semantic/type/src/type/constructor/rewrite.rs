@@ -7,7 +7,7 @@ use super::{Application, Constructor};
 use crate::{
     generic_parameters::GenericParameterID,
     r#type::{
-        Type, bound::BoundVariable, inference::InferenceVariable,
+        Type2, bound::BoundVariable, inference::InferenceVariable,
         skolem::SkolemizedVariable,
     },
 };
@@ -38,7 +38,7 @@ pub trait TypeRewriter {
         &mut self,
         application: &Application,
         ctx: RewriteContext,
-    ) -> Option<Interned<Type>> {
+    ) -> Option<Interned<Type2>> {
         None
     }
 
@@ -47,7 +47,7 @@ pub trait TypeRewriter {
         &mut self,
         id: GenericParameterID,
         ctx: RewriteContext,
-    ) -> Option<Interned<Type>> {
+    ) -> Option<Interned<Type2>> {
         None
     }
 
@@ -56,7 +56,7 @@ pub trait TypeRewriter {
         &mut self,
         variable: InferenceVariable,
         ctx: RewriteContext,
-    ) -> Option<Interned<Type>> {
+    ) -> Option<Interned<Type2>> {
         None
     }
 
@@ -65,7 +65,7 @@ pub trait TypeRewriter {
         &mut self,
         variable: BoundVariable,
         ctx: RewriteContext,
-    ) -> Option<Interned<Type>> {
+    ) -> Option<Interned<Type2>> {
         None
     }
 
@@ -74,7 +74,7 @@ pub trait TypeRewriter {
         &mut self,
         variable: SkolemizedVariable,
         ctx: RewriteContext,
-    ) -> Option<Interned<Type>> {
+    ) -> Option<Interned<Type2>> {
         None
     }
 }
@@ -92,7 +92,7 @@ pub trait AsyncTypeRewriter: Send {
         &mut self,
         application: &Application,
         ctx: RewriteContext,
-    ) -> impl Future<Output = Result<Option<Interned<Type>>, Self::Error>> + Send
+    ) -> impl Future<Output = Result<Option<Interned<Type2>>, Self::Error>> + Send
     {
         async { Ok(None) }
     }
@@ -102,7 +102,7 @@ pub trait AsyncTypeRewriter: Send {
         &mut self,
         id: GenericParameterID,
         ctx: RewriteContext,
-    ) -> impl Future<Output = Result<Option<Interned<Type>>, Self::Error>> + Send
+    ) -> impl Future<Output = Result<Option<Interned<Type2>>, Self::Error>> + Send
     {
         async { Ok(None) }
     }
@@ -112,7 +112,7 @@ pub trait AsyncTypeRewriter: Send {
         &mut self,
         variable: InferenceVariable,
         ctx: RewriteContext,
-    ) -> impl Future<Output = Result<Option<Interned<Type>>, Self::Error>> + Send
+    ) -> impl Future<Output = Result<Option<Interned<Type2>>, Self::Error>> + Send
     {
         async { Ok(None) }
     }
@@ -122,7 +122,7 @@ pub trait AsyncTypeRewriter: Send {
         &mut self,
         variable: BoundVariable,
         ctx: RewriteContext,
-    ) -> impl Future<Output = Result<Option<Interned<Type>>, Self::Error>> + Send
+    ) -> impl Future<Output = Result<Option<Interned<Type2>>, Self::Error>> + Send
     {
         async { Ok(None) }
     }
@@ -132,7 +132,7 @@ pub trait AsyncTypeRewriter: Send {
         &mut self,
         variable: SkolemizedVariable,
         ctx: RewriteContext,
-    ) -> impl Future<Output = Result<Option<Interned<Type>>, Self::Error>> + Send
+    ) -> impl Future<Output = Result<Option<Interned<Type2>>, Self::Error>> + Send
     {
         async { Ok(None) }
     }
@@ -140,10 +140,10 @@ pub trait AsyncTypeRewriter: Send {
 
 /// Rewrites a type using lazy clone-on-write traversal.
 pub fn rewrite_type_or_clone<R: TypeRewriter>(
-    ty: &Interned<Type>,
+    ty: &Interned<Type2>,
     rewriter: &mut R,
     interner: &impl Interner,
-) -> Interned<Type> {
+) -> Interned<Type2> {
     rewrite_type_internal(ty, rewriter, interner, RewriteContext {
         binder_depth: 0,
     })
@@ -153,10 +153,10 @@ pub fn rewrite_type_or_clone<R: TypeRewriter>(
 /// Rewrites an instance associated type application into the associated type of
 /// the instance's trait, if possible.
 pub fn rewrite_type<R: TypeRewriter>(
-    ty: &Interned<Type>,
+    ty: &Interned<Type2>,
     rewriter: &mut R,
     interner: &impl Interner,
-) -> Option<Interned<Type>> {
+) -> Option<Interned<Type2>> {
     rewrite_type_internal(ty, rewriter, interner, RewriteContext {
         binder_depth: 0,
     })
@@ -164,10 +164,10 @@ pub fn rewrite_type<R: TypeRewriter>(
 
 /// Asynchronously rewrites a type using lazy clone-on-write traversal.
 pub async fn rewrite_type_or_clone_async<R: AsyncTypeRewriter>(
-    ty: &Interned<Type>,
+    ty: &Interned<Type2>,
     rewriter: &mut R,
     interner: &(impl Interner + Sync),
-) -> Result<Interned<Type>, R::Error> {
+) -> Result<Interned<Type2>, R::Error> {
     Ok(rewrite_type_async(ty, rewriter, interner)
         .await?
         .unwrap_or_else(|| ty.clone()))
@@ -175,10 +175,10 @@ pub async fn rewrite_type_or_clone_async<R: AsyncTypeRewriter>(
 
 /// Asynchronously rewrites a type.
 pub async fn rewrite_type_async<R: AsyncTypeRewriter>(
-    ty: &Interned<Type>,
+    ty: &Interned<Type2>,
     rewriter: &mut R,
     interner: &(impl Interner + Sync),
-) -> Result<Option<Interned<Type>>, R::Error> {
+) -> Result<Option<Interned<Type2>>, R::Error> {
     rewrite_type_internal_async(ty, rewriter, interner, RewriteContext {
         binder_depth: 0,
     })
@@ -186,29 +186,29 @@ pub async fn rewrite_type_async<R: AsyncTypeRewriter>(
 }
 
 fn rewrite_type_internal<R: TypeRewriter>(
-    ty: &Interned<Type>,
+    ty: &Interned<Type2>,
     rewriter: &mut R,
     interner: &impl Interner,
     ctx: RewriteContext,
-) -> Option<Interned<Type>> {
+) -> Option<Interned<Type2>> {
     match &**ty {
-        Type::GenericParameter(id) => {
+        Type2::GenericParameter(id) => {
             rewriter.rewrite_generic_parameter(*id, ctx)
         }
 
-        Type::InferenceVariable(variable) => {
+        Type2::InferenceVariable(variable) => {
             rewriter.rewrite_inference_variable(*variable, ctx)
         }
 
-        Type::BoundVariable(variable) => {
+        Type2::BoundVariable(variable) => {
             rewriter.rewrite_bound_variable(*variable, ctx)
         }
 
-        Type::SkolemizedVariable(variable) => {
+        Type2::SkolemizedVariable(variable) => {
             rewriter.rewrite_skolemized_variable(*variable, ctx)
         }
 
-        Type::Application(application) => rewrite_application_with_rewriter(
+        Type2::Application(application) => rewrite_application_with_rewriter(
             application,
             rewriter,
             interner,
@@ -218,30 +218,30 @@ fn rewrite_type_internal<R: TypeRewriter>(
 }
 
 async fn rewrite_type_internal_async<R: AsyncTypeRewriter>(
-    ty: &Interned<Type>,
+    ty: &Interned<Type2>,
     rewriter: &mut R,
     interner: &impl Interner,
     ctx: RewriteContext,
-) -> Result<Option<Interned<Type>>, R::Error> {
+) -> Result<Option<Interned<Type2>>, R::Error> {
     Box::pin(async move {
         match &**ty {
-            Type::GenericParameter(id) => {
+            Type2::GenericParameter(id) => {
                 rewriter.rewrite_generic_parameter(*id, ctx).await
             }
 
-            Type::InferenceVariable(variable) => {
+            Type2::InferenceVariable(variable) => {
                 rewriter.rewrite_inference_variable(*variable, ctx).await
             }
 
-            Type::BoundVariable(variable) => {
+            Type2::BoundVariable(variable) => {
                 rewriter.rewrite_bound_variable(*variable, ctx).await
             }
 
-            Type::SkolemizedVariable(variable) => {
+            Type2::SkolemizedVariable(variable) => {
                 rewriter.rewrite_skolemized_variable(*variable, ctx).await
             }
 
-            Type::Application(application) => {
+            Type2::Application(application) => {
                 rewrite_application_with_async_rewriter(
                     application,
                     rewriter,
@@ -262,8 +262,8 @@ async fn rewrite_type_internal_async<R: AsyncTypeRewriter>(
 pub async fn rewrite_application<E>(
     application: &Application,
     mut rewrite_argument: impl AsyncFnMut(
-        &Interned<Type>,
-    ) -> Result<Option<Interned<Type>>, E>,
+        &Interned<Type2>,
+    ) -> Result<Option<Interned<Type2>>, E>,
 ) -> Result<Option<Application>, E> {
     let mut new_arguments = None::<Vec<_>>;
 
@@ -287,7 +287,7 @@ fn rewrite_application_with_rewriter<R: TypeRewriter>(
     rewriter: &mut R,
     interner: &impl Interner,
     ctx: RewriteContext,
-) -> Option<Interned<Type>> {
+) -> Option<Interned<Type2>> {
     let argument_ctx = argument_context(application, ctx);
     let mut new_arguments = None::<Vec<_>>;
 
@@ -314,7 +314,7 @@ fn rewrite_application_with_rewriter<R: TypeRewriter>(
         )
         .or_else(|| {
             rewritten_application.map(|application| {
-                interner.intern(Type::Application(application))
+                interner.intern(Type2::Application(application))
             })
         })
 }
@@ -324,7 +324,7 @@ async fn rewrite_application_with_async_rewriter<R: AsyncTypeRewriter>(
     rewriter: &mut R,
     interner: &impl Interner,
     ctx: RewriteContext,
-) -> Result<Option<Interned<Type>>, R::Error> {
+) -> Result<Option<Interned<Type2>>, R::Error> {
     let argument_ctx = argument_context(application, ctx);
     let mut new_arguments = None::<Vec<_>>;
 
@@ -358,7 +358,7 @@ async fn rewrite_application_with_async_rewriter<R: AsyncTypeRewriter>(
         .map(|rewritten_type| {
             rewritten_type.or_else(|| {
                 rewritten_application.map(|application| {
-                    interner.intern(Type::Application(application))
+                    interner.intern(Type2::Application(application))
                 })
             })
         })
@@ -381,11 +381,11 @@ const fn argument_context(
 }
 
 fn collect_rewritten_argument(
-    new_arguments: &mut Option<Vec<Interned<Type>>>,
-    current_arguments: &[Interned<Type>],
+    new_arguments: &mut Option<Vec<Interned<Type2>>>,
+    current_arguments: &[Interned<Type2>],
     index: usize,
-    argument: &Interned<Type>,
-    rewritten_argument: Option<Interned<Type>>,
+    argument: &Interned<Type2>,
+    rewritten_argument: Option<Interned<Type2>>,
 ) {
     match (rewritten_argument, new_arguments.as_mut()) {
         (None, None) => {}
@@ -413,7 +413,7 @@ fn collect_rewritten_argument(
 
 fn rewritten_application(
     application: &Application,
-    new_arguments: Option<Vec<Interned<Type>>>,
+    new_arguments: Option<Vec<Interned<Type2>>>,
 ) -> Option<Application> {
     new_arguments.map(|arguments| Application {
         constructor: application.constructor.clone(),

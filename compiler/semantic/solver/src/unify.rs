@@ -2,7 +2,7 @@ use pernixc_qbice::Interner;
 use pernixc_type::{
     substitution::{Substitutable, Substitution},
     r#type::{
-        Type, constructor::DestructureOptions, inference::InferenceVariable,
+        Type2, constructor::DestructureOptions, inference::InferenceVariable,
     },
 };
 use qbice::storage::intern::Interned;
@@ -17,21 +17,21 @@ mod test;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Unify {
-    left: Interned<Type>,
-    right: Interned<Type>,
+    left: Interned<Type2>,
+    right: Interned<Type2>,
 }
 
 impl Unify {
     #[must_use]
-    pub const fn new(left: Interned<Type>, right: Interned<Type>) -> Self {
+    pub const fn new(left: Interned<Type2>, right: Interned<Type2>) -> Self {
         Self { left, right }
     }
 
     #[must_use]
-    pub const fn left(&self) -> &Interned<Type> { &self.left }
+    pub const fn left(&self) -> &Interned<Type2> { &self.left }
 
     #[must_use]
-    pub const fn right(&self) -> &Interned<Type> { &self.right }
+    pub const fn right(&self) -> &Interned<Type2> { &self.right }
 }
 
 impl Substitutable for Unify {
@@ -123,7 +123,7 @@ impl Solver<'_> {
             }
 
             match (&*unify.left, &*unify.right) {
-                (Type::Application(left_ap), Type::Application(right_ap)) => {
+                (Type2::Application(left_ap), Type2::Application(right_ap)) => {
                     let Some(iter) = left_ap.destructure(
                         right_ap,
                         DestructureOptions::require_equal_binders(),
@@ -158,20 +158,20 @@ impl Solver<'_> {
                 }
 
                 (
-                    Type::BoundVariable(_)
-                    | Type::GenericParameter(_)
-                    | Type::SkolemizedVariable(_),
+                    Type2::BoundVariable(_)
+                    | Type2::GenericParameter(_)
+                    | Type2::SkolemizedVariable(_),
                     _,
                 )
                 | (
                     _,
-                    Type::BoundVariable(_)
-                    | Type::GenericParameter(_)
-                    | Type::SkolemizedVariable(_),
+                    Type2::BoundVariable(_)
+                    | Type2::GenericParameter(_)
+                    | Type2::SkolemizedVariable(_),
                 ) => Box::pin(self.try_reduce_unify(unify)).await,
 
-                (Type::InferenceVariable(_), _)
-                | (_, Type::InferenceVariable(_)) => {
+                (Type2::InferenceVariable(_), _)
+                | (_, Type2::InferenceVariable(_)) => {
                     unreachable!("inference variables are handled earlier")
                 }
             }
@@ -182,7 +182,7 @@ impl Solver<'_> {
         &mut self,
         unify: &Unify,
     ) -> Result<BindInferenceVariable, OverflowError> {
-        if let Type::InferenceVariable(infer_var) = &*unify.left {
+        if let Type2::InferenceVariable(infer_var) = &*unify.left {
             return self
                 .bind_inference_variable_to_unify_target(
                     *infer_var,
@@ -191,7 +191,7 @@ impl Solver<'_> {
                 .await;
         }
 
-        if let Type::InferenceVariable(infer_var) = &*unify.right {
+        if let Type2::InferenceVariable(infer_var) = &*unify.right {
             return self
                 .bind_inference_variable_to_unify_target(
                     *infer_var,
@@ -206,7 +206,7 @@ impl Solver<'_> {
     async fn bind_inference_variable_to_unify_target(
         &mut self,
         infer_var: InferenceVariable,
-        target: Interned<Type>,
+        target: Interned<Type2>,
     ) -> Result<BindInferenceVariable, OverflowError> {
         if !self
             .can_bind_inference_variable_to_type(
