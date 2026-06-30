@@ -1,15 +1,15 @@
 use pernixc_symbol::kind::{Kind, get_kind};
 use pernixc_type::{
-    generic_parameters::get_generic_parameters,
+    generic_parameters::get_generic_parameters2,
     predicate::Subtype,
     substitution::Substitution,
     r#type::{
-        Type,
+        Type2,
         constructor::{
             Application, Constructor, DestructureOptions, Mutability, Symbolic,
         },
     },
-    variance::{Variance, get_variances},
+    variance::{Variance2, get_variances2},
 };
 use qbice::storage::intern::Interned;
 
@@ -33,11 +33,11 @@ enum ResolveStrategy {
 impl Solver<'_> {
     pub(super) async fn handle_application(
         &mut self,
-        lesser: &Interned<Type>,
-        greater: &Interned<Type>,
+        lesser: &Interned<Type2>,
+        greater: &Interned<Type2>,
         lesser_ap: &Application,
         greater_ap: &Application,
-        variance: Variance,
+        variance: Variance2,
     ) -> Result<Option<Step>, OverflowError> {
         let Some(iter) = lesser_ap.destructure(
             greater_ap,
@@ -110,8 +110,8 @@ impl Solver<'_> {
     async fn handle_application_arguments(
         &mut self,
         lesser_ap: &Application,
-        mut arguments: impl Iterator<Item = (Interned<Type>, Interned<Type>)>,
-        variance: Variance,
+        mut arguments: impl Iterator<Item = (Interned<Type2>, Interned<Type2>)>,
+        variance: Variance2,
         resolve_strategy: ResolveStrategy,
     ) -> Result<Option<Step>, OverflowError> {
         match lesser_ap.constructor() {
@@ -142,7 +142,7 @@ impl Solver<'_> {
                 Box::pin(
                     self.handle_set_of_subtypes(
                         [
-                            (lt_l, lt_g, variance.xfrom(Variance::Covariant)),
+                            (lt_l, lt_g, variance.xfrom(Variance2::Covariant)),
                             (
                                 ty_l,
                                 ty_g,
@@ -150,9 +150,9 @@ impl Solver<'_> {
                                     if reference.mutability()
                                         == Mutability::Mutable
                                     {
-                                        Variance::Invariant
+                                        Variance2::Invariant
                                     } else {
-                                        Variance::Covariant
+                                        Variance2::Covariant
                                     },
                                 ),
                             ),
@@ -177,7 +177,7 @@ impl Solver<'_> {
             Constructor::Tuple(_) => {
                 Box::pin(self.handle_set_of_subtypes(
                     arguments.map(|(lesser, greater)| {
-                        (lesser, greater, variance.xfrom(Variance::Covariant))
+                        (lesser, greater, variance.xfrom(Variance2::Covariant))
                     }),
                     resolve_strategy,
                 ))
@@ -191,9 +191,9 @@ impl Solver<'_> {
                 Box::pin(self.handle_set_of_subtypes(
                     arguments.enumerate().map(|(index, (lesser, greater))| {
                         let argument_variance = if index + 1 == argument_count {
-                            Variance::Covariant
+                            Variance2::Covariant
                         } else {
-                            Variance::Contravariant
+                            Variance2::Contravariant
                         };
 
                         (lesser, greater, variance.xfrom(argument_variance))
@@ -206,7 +206,7 @@ impl Solver<'_> {
             Constructor::InstanceAssociated(_) => {
                 Box::pin(self.handle_set_of_subtypes(
                     arguments.map(|(lesser, greater)| {
-                        (lesser, greater, variance.xfrom(Variance::Invariant))
+                        (lesser, greater, variance.xfrom(Variance2::Invariant))
                     }),
                     resolve_strategy,
                 ))
@@ -218,8 +218,8 @@ impl Solver<'_> {
     async fn handle_symbolic_arguments(
         &mut self,
         symbolic: Symbolic,
-        arguments: impl Iterator<Item = (Interned<Type>, Interned<Type>)>,
-        variance: Variance,
+        arguments: impl Iterator<Item = (Interned<Type2>, Interned<Type2>)>,
+        variance: Variance2,
         resolve_strategy: ResolveStrategy,
     ) -> Result<Option<Step>, OverflowError> {
         let kind = self.engine().get_kind(symbolic.symbol_id()).await;
@@ -228,10 +228,10 @@ impl Solver<'_> {
             Kind::Struct | Kind::Enum => {
                 let generic_parameters = self
                     .engine()
-                    .get_generic_parameters(symbolic.symbol_id())
+                    .get_generic_parameters2(symbolic.symbol_id())
                     .await;
                 let variances =
-                    self.engine().get_variances(symbolic.symbol_id()).await;
+                    self.engine().get_variances2(symbolic.symbol_id()).await;
 
                 Box::pin(self.handle_set_of_subtypes(
                     arguments.zip(generic_parameters.iter()).map(
@@ -251,7 +251,7 @@ impl Solver<'_> {
             Kind::Instance => {
                 Box::pin(self.handle_set_of_subtypes(
                     arguments.map(|(lesser, greater)| {
-                        (lesser, greater, variance.xfrom(Variance::Invariant))
+                        (lesser, greater, variance.xfrom(Variance2::Invariant))
                     }),
                     resolve_strategy,
                 ))
@@ -291,7 +291,7 @@ impl Solver<'_> {
     /// flag.
     async fn handle_set_of_subtypes(
         &mut self,
-        pairs: impl Iterator<Item = (Interned<Type>, Interned<Type>, Variance)>,
+        pairs: impl Iterator<Item = (Interned<Type2>, Interned<Type2>, Variance2)>,
         resolve_strategy: ResolveStrategy,
     ) -> Result<Option<Step>, OverflowError> {
         let subtypes = pairs.map(|(l, r, v)| Subtype::new(l, r, v)).collect();

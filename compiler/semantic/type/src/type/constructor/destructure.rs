@@ -2,7 +2,7 @@ use pernixc_qbice::TrackedEngine;
 use qbice::storage::intern::Interned;
 
 use super::{Application, Constructor, Tuple, TupleShape};
-use crate::r#type::Type;
+use crate::r#type::Type2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinderEquality {
@@ -28,8 +28,8 @@ impl DestructureOptions {
 }
 
 type RegularDestructure<'a> = std::iter::Zip<
-    std::iter::Cloned<std::slice::Iter<'a, Interned<Type>>>,
-    std::iter::Cloned<std::slice::Iter<'a, Interned<Type>>>,
+    std::iter::Cloned<std::slice::Iter<'a, Interned<Type2>>>,
+    std::iter::Cloned<std::slice::Iter<'a, Interned<Type2>>>,
 >;
 
 #[derive(Debug, Clone)]
@@ -39,7 +39,7 @@ enum Destructure<'a> {
 }
 
 impl Iterator for Destructure<'_> {
-    type Item = (Interned<Type>, Interned<Type>);
+    type Item = (Interned<Type2>, Interned<Type2>);
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
@@ -66,8 +66,8 @@ enum OneSidedTupleState {
 
 #[derive(Debug, Clone)]
 struct OneSidedTupleDestructure<'a> {
-    from_arguments: &'a [Interned<Type>],
-    to_arguments: &'a [Interned<Type>],
+    from_arguments: &'a [Interned<Type2>],
+    to_arguments: &'a [Interned<Type2>],
     unpacked_position: usize,
     to_unpack_range: std::ops::Range<usize>,
     to_unpacked_position: Option<usize>,
@@ -101,7 +101,7 @@ impl OneSidedTupleDestructure<'_> {
 }
 
 impl Iterator for OneSidedTupleDestructure<'_> {
-    type Item = (Interned<Type>, Interned<Type>);
+    type Item = (Interned<Type2>, Interned<Type2>);
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.state {
@@ -168,7 +168,7 @@ impl Application {
         other: &'a Self,
         options: DestructureOptions,
         engine: &'a TrackedEngine,
-    ) -> Option<impl Iterator<Item = (Interned<Type>, Interned<Type>)> + 'a>
+    ) -> Option<impl Iterator<Item = (Interned<Type2>, Interned<Type2>)> + 'a>
     {
         if let (Constructor::Tuple(lhs), Constructor::Tuple(rhs)) =
             (&self.constructor, &other.constructor)
@@ -202,8 +202,8 @@ impl Application {
     }
 
     fn destructure_regular<'a>(
-        lhs: &'a [Interned<Type>],
-        rhs: &'a [Interned<Type>],
+        lhs: &'a [Interned<Type2>],
+        rhs: &'a [Interned<Type2>],
     ) -> Option<RegularDestructure<'a>> {
         (lhs.len() == rhs.len())
             .then(|| lhs.iter().cloned().zip(rhs.iter().cloned()))
@@ -211,9 +211,9 @@ impl Application {
 
     fn destructure_tuples<'a>(
         lhs_tuple: &Tuple,
-        lhs_arguments: &'a [Interned<Type>],
+        lhs_arguments: &'a [Interned<Type2>],
         rhs_tuple: &Tuple,
-        rhs_arguments: &'a [Interned<Type>],
+        rhs_arguments: &'a [Interned<Type2>],
         engine: &'a TrackedEngine,
     ) -> Option<Destructure<'a>> {
         let lhs_shape = lhs_tuple.shape()?;
@@ -260,9 +260,9 @@ impl Application {
     }
 
     fn destructure_one_sided_tuple<'a>(
-        from_arguments: &'a [Interned<Type>],
+        from_arguments: &'a [Interned<Type2>],
         unpacked_position: usize,
-        to_arguments: &'a [Interned<Type>],
+        to_arguments: &'a [Interned<Type2>],
         to_shape: TupleShape,
         engine: &'a TrackedEngine,
         swap: bool,
@@ -303,11 +303,11 @@ impl Application {
     }
 
     fn intern_tuple_range(
-        arguments: &[Interned<Type>],
+        arguments: &[Interned<Type2>],
         range: std::ops::Range<usize>,
         unpacked_position: Option<usize>,
         engine: &TrackedEngine,
-    ) -> Interned<Type> {
+    ) -> Interned<Type2> {
         let unpacked_positions = match unpacked_position {
             Some(position) if range.contains(&position) => {
                 engine.intern_unsized(vec![position - range.start])
@@ -315,17 +315,17 @@ impl Application {
             Some(_) | None => engine.intern_unsized(Vec::<usize>::new()),
         };
 
-        engine.intern(Type::Application(Self {
+        engine.intern(Type2::Application(Self {
             constructor: Constructor::Tuple(Tuple { unpacked_positions }),
             arguments: engine.intern_unsized(arguments[range].to_vec()),
         }))
     }
 
     const fn destructured_pair(
-        lhs: Interned<Type>,
-        rhs: Interned<Type>,
+        lhs: Interned<Type2>,
+        rhs: Interned<Type2>,
         swap: bool,
-    ) -> (Interned<Type>, Interned<Type>) {
+    ) -> (Interned<Type2>, Interned<Type2>) {
         if swap { (rhs, lhs) } else { (lhs, rhs) }
     }
 }

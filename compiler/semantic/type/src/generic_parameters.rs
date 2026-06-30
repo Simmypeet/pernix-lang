@@ -7,7 +7,7 @@ use qbice::{
     Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned,
 };
 
-use crate::{symbol::Symbol, r#type::kind::TyKind};
+use crate::{symbol::Symbol2, r#type::kind::TyKind};
 
 /// Key for querying generic parameters for a given global symbol ID.
 #[derive(
@@ -24,8 +24,8 @@ use crate::{symbol::Symbol, r#type::kind::TyKind};
     Decode,
     Query,
 )]
-#[value(Interned<GenericParameters>)]
-#[extend(name = get_generic_parameters, by_val)]
+#[value(Interned<GenericParameters2>)]
+#[extend(name = get_generic_parameters2, by_val)]
 pub struct Key {
     /// The global symbol ID to get the generic parameters for.
     pub symbol_id: GlobalSymbolID,
@@ -82,12 +82,12 @@ impl GenericParameter {
     Decode,
 )]
 pub struct InstanceParameterKind {
-    trait_ref: Option<Symbol>,
+    trait_ref: Option<Symbol2>,
 }
 
 impl InstanceParameterKind {
     #[must_use]
-    pub const fn new(trait_ref: Option<Symbol>) -> Self { Self { trait_ref } }
+    pub const fn new(trait_ref: Option<Symbol2>) -> Self { Self { trait_ref } }
 }
 
 #[derive(
@@ -119,11 +119,11 @@ pub enum GenericParameterKind {
     Decode,
     derive_more::Index,
 )]
-pub struct GenericParameters {
+pub struct GenericParameters2 {
     parameters: OrderedArena<GenericParameter>,
 }
 
-impl GenericParameters {
+impl GenericParameters2 {
     #[must_use]
     pub fn new(parameters: impl IntoIterator<Item = GenericParameter>) -> Self {
         let mut arena = OrderedArena::new();

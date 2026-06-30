@@ -6,7 +6,7 @@ use pernixc_symbol::{
 };
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
-use crate::r#type::{Type, bound::Binder, kind::TyKind};
+use crate::r#type::{Type2, bound::Binder, kind::TyKind};
 
 mod destructure;
 mod reduction;
@@ -348,20 +348,20 @@ pub enum Constructor {
 )]
 pub struct Application {
     constructor: Constructor,
-    arguments: Interned<[Interned<Type>]>,
+    arguments: Interned<[Interned<Type2>]>,
 }
 
 impl Application {
     #[must_use]
     pub const fn new(
         constructor: Constructor,
-        arguments: Interned<[Interned<Type>]>,
+        arguments: Interned<[Interned<Type2>]>,
     ) -> Self {
         Self { constructor, arguments }
     }
 
     #[must_use]
-    pub const fn arguments(&self) -> &Interned<[Interned<Type>]> {
+    pub const fn arguments(&self) -> &Interned<[Interned<Type2>]> {
         &self.arguments
     }
 

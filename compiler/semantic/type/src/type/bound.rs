@@ -4,7 +4,7 @@ use qbice::{
 };
 
 use crate::r#type::{
-    Type,
+    Type2,
     kind::TyKind,
     rewrite::{
         RewriteContext, TypeRewriter, rewrite_type, rewrite_type_or_clone,
@@ -67,7 +67,7 @@ impl Binder {
     pub fn instantiate<T: Instantiate + Clone>(
         &self,
         value: &T,
-        replacements: &[Interned<Type>],
+        replacements: &[Interned<Type2>],
         interner: &impl Interner,
     ) -> T {
         assert_eq!(self.bound_vars.len(), replacements.len());
@@ -112,7 +112,7 @@ impl BoundVariable {
 }
 
 struct BoundVariableRewriter<'a, I> {
-    replacements: &'a [Interned<Type>],
+    replacements: &'a [Interned<Type2>],
     interner: &'a I,
 }
 
@@ -121,7 +121,7 @@ impl<I: Interner> TypeRewriter for BoundVariableRewriter<'_, I> {
         &mut self,
         variable: BoundVariable,
         ctx: RewriteContext,
-    ) -> Option<Interned<Type>> {
+    ) -> Option<Interned<Type2>> {
         if variable.depth != ctx.binder_depth() {
             return None;
         }
@@ -146,9 +146,9 @@ impl<I: Interner> TypeRewriter for ShiftFreeBoundVariableRewriter<'_, I> {
         &mut self,
         variable: BoundVariable,
         ctx: RewriteContext,
-    ) -> Option<Interned<Type>> {
+    ) -> Option<Interned<Type2>> {
         (variable.depth >= ctx.binder_depth()).then(|| {
-            self.interner.intern(Type::BoundVariable(BoundVariable::new(
+            self.interner.intern(Type2::BoundVariable(BoundVariable::new(
                 variable.depth + self.amount,
                 variable.index,
             )))
@@ -157,10 +157,10 @@ impl<I: Interner> TypeRewriter for ShiftFreeBoundVariableRewriter<'_, I> {
 }
 
 fn shift_free_bound_variables(
-    ty: &Interned<Type>,
+    ty: &Interned<Type2>,
     amount: usize,
     interner: &impl Interner,
-) -> Interned<Type> {
+) -> Interned<Type2> {
     if amount == 0 {
         return ty.clone();
     }
@@ -185,7 +185,7 @@ pub trait Instantiate {
     #[must_use]
     fn try_instantiate(
         &self,
-        replacements: &[Interned<Type>],
+        replacements: &[Interned<Type2>],
         interner: &impl Interner,
     ) -> Option<Self>
     where
@@ -196,7 +196,7 @@ pub trait Instantiate {
     #[must_use]
     fn instantiate(
         &self,
-        replacements: &[Interned<Type>],
+        replacements: &[Interned<Type2>],
         interner: &impl Interner,
     ) -> Self
     where
@@ -207,10 +207,10 @@ pub trait Instantiate {
     }
 }
 
-impl Instantiate for Interned<Type> {
+impl Instantiate for Interned<Type2> {
     fn try_instantiate(
         &self,
-        replacements: &[Interned<Type>],
+        replacements: &[Interned<Type2>],
         interner: &impl Interner,
     ) -> Option<Self>
     where
@@ -229,7 +229,7 @@ impl<T: Instantiate + StableHash + Send + Sync + 'static + Identifiable + Clone>
 {
     fn try_instantiate(
         &self,
-        replacements: &[Interned<Type>],
+        replacements: &[Interned<Type2>],
         interner: &impl Interner,
     ) -> Option<Self>
     where

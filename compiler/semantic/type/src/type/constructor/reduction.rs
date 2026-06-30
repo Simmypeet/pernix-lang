@@ -4,9 +4,9 @@ use qbice::storage::intern::Interned;
 
 use super::{Application, Constructor, Tuple};
 use crate::{
-    instance_associated::get_instance_associated_type,
+    instance_associated::get_instance_associated_type2,
     substitution::{Substitutable, Substitution},
-    r#type::{Type, constructor::Symbolic},
+    r#type::{Type2, constructor::Symbolic},
 };
 
 impl Application {
@@ -14,7 +14,7 @@ impl Application {
     pub async fn reduce(
         &self,
         engine: &TrackedEngine,
-    ) -> Option<Interned<Type>> {
+    ) -> Option<Interned<Type2>> {
         match &self.constructor {
             Constructor::Symbolic(_)
             | Constructor::Primitive(_)
@@ -31,7 +31,7 @@ impl Application {
                 if !tuple.unpacked_positions.iter().any(|position| {
                     matches!(
                         &*self.arguments[*position],
-                        Type::Application(Self {
+                        Type2::Application(Self {
                             constructor: Constructor::Tuple(_),
                             ..
                         })
@@ -40,7 +40,7 @@ impl Application {
                     return None;
                 }
 
-                Some(engine.intern(Type::Application(
+                Some(engine.intern(Type2::Application(
                     self.reduce_tuple(tuple, engine),
                 )))
             }
@@ -90,7 +90,7 @@ impl Application {
         &self,
         inst_assoc: &super::InstanceAssociated,
         engine: &TrackedEngine,
-    ) -> Option<Interned<Type>> {
+    ) -> Option<Interned<Type2>> {
         let instance = &self.arguments[0];
         let (symbol_id, generic_args) = instance.as_symbolic()?;
 
@@ -116,14 +116,14 @@ impl Application {
             .await;
 
         let instance_associated_type = engine
-            .get_instance_associated_type(instance_associated_symbol_id)
+            .get_instance_associated_type2(instance_associated_symbol_id)
             .await;
 
         Some(instance_associated_type.apply_or_clone(&substitution, engine))
     }
 }
 
-impl Type {
+impl Type2 {
     #[must_use]
     pub fn as_tuple(&self) -> Option<(&Tuple, &[Interned<Self>])> {
         if let Self::Application(Application {

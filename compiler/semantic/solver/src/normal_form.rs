@@ -1,4 +1,4 @@
-use pernixc_type::r#type::{Type, context::TyContext, kind::TyKind};
+use pernixc_type::r#type::{Type2, context::TyContext, kind::TyKind};
 use qbice::storage::intern::Interned;
 
 use crate::{
@@ -14,8 +14,8 @@ impl Solver<'_> {
     /// inference variable.
     pub async fn normal_form(
         &mut self,
-        ty: Interned<Type>,
-    ) -> Result<Option<(Interned<Type>, Constraints)>, OverflowError> {
+        ty: Interned<Type2>,
+    ) -> Result<Option<(Interned<Type2>, Constraints)>, OverflowError> {
         let (normalized, constraints) = self
             .reduce_type(ty.clone())
             .await?

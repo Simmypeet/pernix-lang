@@ -8,10 +8,10 @@ use pernixc_hash::FxHashMap;
 use pernixc_qbice::TrackedEngine;
 use pernixc_type::{
     self,
-    predicate::Predicate,
+    predicate::Predicate2,
     substitution::Substitution,
     r#type::{
-        Type, context::TyContext, inference::InferenceVariable, kind::TyKind,
+        Type2, context::TyContext, inference::InferenceVariable, kind::TyKind,
     },
 };
 use qbice::{
@@ -140,7 +140,7 @@ pub trait Agree {
     fn agree(&self, other: &Self) -> bool;
 }
 
-impl Agree for Type {
+impl Agree for Type2 {
     fn agree(&self, other: &Self) -> bool { self == other }
 }
 
@@ -207,7 +207,7 @@ enum CurrentStatus<Q> {
     NonStarted,
 }
 
-pub type BoundInstantiation = Vec<Interned<Type>>;
+pub type BoundInstantiation = Vec<Interned<Type2>>;
 
 impl Solver<'_> {
     /// Creates a fresh inference variables for each kind in `kinds`, and
@@ -219,7 +219,7 @@ impl Solver<'_> {
         kinds
             .map(|kind| {
                 let var = self.fresh_inference_variable(kind);
-                self.intern(Type::InferenceVariable(var))
+                self.intern(Type2::InferenceVariable(var))
             })
             .collect()
     }
@@ -233,27 +233,27 @@ impl Solver<'_> {
         kinds
             .map(|kind| {
                 let var = self.fresh_skolem_variable(kind);
-                self.intern(Type::SkolemizedVariable(var))
+                self.intern(Type2::SkolemizedVariable(var))
             })
             .collect()
     }
 
     #[must_use]
-    pub fn max_universe_index(&self, ty: &Type) -> UniverseIndex {
+    pub fn max_universe_index(&self, ty: &Type2) -> UniverseIndex {
         match ty {
-            Type::BoundVariable(_) | Type::GenericParameter(_) => {
+            Type2::BoundVariable(_) | Type2::GenericParameter(_) => {
                 UniverseIndex::root()
             }
 
-            Type::InferenceVariable(inference_variable) => {
+            Type2::InferenceVariable(inference_variable) => {
                 self.get_inference_variable_universe(*inference_variable)
             }
 
-            Type::SkolemizedVariable(skolemized_variable) => {
+            Type2::SkolemizedVariable(skolemized_variable) => {
                 self.get_skolemized_variable_universe(*skolemized_variable)
             }
 
-            Type::Application(application) => application
+            Type2::Application(application) => application
                 .arguments()
                 .iter()
                 .map(|x| self.max_universe_index(x))
@@ -265,16 +265,16 @@ impl Solver<'_> {
 
 pub(crate) fn occur_check(
     inference_variable: InferenceVariable,
-    ty: &Interned<Type>,
+    ty: &Interned<Type2>,
 ) -> bool {
     match ty.as_ref() {
-        Type::InferenceVariable(var) => *var == inference_variable,
+        Type2::InferenceVariable(var) => *var == inference_variable,
 
-        Type::BoundVariable(_)
-        | Type::GenericParameter(_)
-        | Type::SkolemizedVariable(_) => false,
+        Type2::BoundVariable(_)
+        | Type2::GenericParameter(_)
+        | Type2::SkolemizedVariable(_) => false,
 
-        Type::Application(application) => application
+        Type2::Application(application) => application
             .arguments()
             .iter()
             .any(|arg| occur_check(inference_variable, arg)),
@@ -293,12 +293,12 @@ impl<'a> Solver<'a> {
 
     pub fn premise_predicates(
         &self,
-    ) -> impl Iterator<Item = &'a Predicate> + 'a {
+    ) -> impl Iterator<Item = &'a Predicate2> + 'a {
         self.premise.iter()
     }
 
     #[must_use]
-    pub async fn kind_of(&self, ty: &Type) -> TyKind {
+    pub async fn kind_of(&self, ty: &Type2) -> TyKind {
         ty.kind(self.engine(), self).await
     }
 
@@ -312,7 +312,7 @@ impl<'a> Solver<'a> {
     pub(crate) async fn can_bind_inference_variable_to_type(
         &mut self,
         inference_variable: InferenceVariable,
-        ty: &Interned<Type>,
+        ty: &Interned<Type2>,
         do_occur_check: DoOccurCheck,
     ) -> bool {
         let var_kind = self.get_inference_variable_kind(&inference_variable);

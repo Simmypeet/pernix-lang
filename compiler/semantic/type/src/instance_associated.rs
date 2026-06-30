@@ -1,7 +1,7 @@
 use pernixc_symbol::GlobalSymbolID;
 use qbice::{Decode, Encode, Query, StableHash, storage::intern::Interned};
 
-use crate::r#type::Type;
+use crate::r#type::Type2;
 
 #[derive(
     Debug,
@@ -17,8 +17,8 @@ use crate::r#type::Type;
     Decode,
     Query,
 )]
-#[value(Interned<Type>)]
-#[extend(name = get_instance_associated_type, by_val)]
+#[value(Interned<Type2>)]
+#[extend(name = get_instance_associated_type2, by_val)]
 pub struct Key {
     pub symbol_id: GlobalSymbolID,
 }

@@ -3,7 +3,7 @@ use pernixc_type::{
     predicate::Outlives,
     substitution::{Substitutable, Substitution},
     r#type::{
-        Type,
+        Type2,
         bound::Instantiate,
         constructor::{Application, Constructor, Lifetime},
         context::TyContext,
@@ -11,7 +11,7 @@ use pernixc_type::{
         kind::TyKind,
         skolem::SkolemizedVariable,
     },
-    variance::Variance,
+    variance::Variance2,
 };
 use qbice::storage::intern::Interned;
 
@@ -22,7 +22,7 @@ use crate::{
     subtype::Step,
 };
 
-type ConstraintGraph = FxHashMap<Interned<Type>, FxHashSet<Interned<Type>>>;
+type ConstraintGraph = FxHashMap<Interned<Type2>, FxHashSet<Interned<Type2>>>;
 
 #[derive(Debug, Clone, Copy)]
 enum HrtbInstantiation {
@@ -54,43 +54,46 @@ impl HrtbVariables {
         self
     }
 
-    fn contains_internal_hrtb_variable(&self, ty: &Interned<Type>) -> bool {
+    fn contains_internal_hrtb_variable(&self, ty: &Interned<Type2>) -> bool {
         match &**ty {
-            Type::InferenceVariable(variable) => {
+            Type2::InferenceVariable(variable) => {
                 self.inference_lifetimes.contains(variable)
             }
-            Type::SkolemizedVariable(variable) => {
+            Type2::SkolemizedVariable(variable) => {
                 self.skolem_lifetimes.contains(variable)
             }
-            Type::Application(application) => application
+            Type2::Application(application) => application
                 .arguments()
                 .iter()
                 .any(|argument| self.contains_internal_hrtb_variable(argument)),
-            Type::GenericParameter(_) | Type::BoundVariable(_) => false,
+            Type2::GenericParameter(_) | Type2::BoundVariable(_) => false,
         }
     }
 
-    fn is_internal_lifetime_inference_type(&self, ty: &Interned<Type>) -> bool {
+    fn is_internal_lifetime_inference_type(
+        &self,
+        ty: &Interned<Type2>,
+    ) -> bool {
         match &**ty {
-            Type::InferenceVariable(variable) => {
+            Type2::InferenceVariable(variable) => {
                 self.inference_lifetimes.contains(variable)
             }
-            Type::GenericParameter(_)
-            | Type::BoundVariable(_)
-            | Type::SkolemizedVariable(_)
-            | Type::Application(_) => false,
+            Type2::GenericParameter(_)
+            | Type2::BoundVariable(_)
+            | Type2::SkolemizedVariable(_)
+            | Type2::Application(_) => false,
         }
     }
 
-    fn is_internal_lifetime_skolem_type(&self, ty: &Interned<Type>) -> bool {
+    fn is_internal_lifetime_skolem_type(&self, ty: &Interned<Type2>) -> bool {
         match &**ty {
-            Type::SkolemizedVariable(variable) => {
+            Type2::SkolemizedVariable(variable) => {
                 self.skolem_lifetimes.contains(variable)
             }
-            Type::GenericParameter(_)
-            | Type::InferenceVariable(_)
-            | Type::BoundVariable(_)
-            | Type::Application(_) => false,
+            Type2::GenericParameter(_)
+            | Type2::InferenceVariable(_)
+            | Type2::BoundVariable(_)
+            | Type2::Application(_) => false,
         }
     }
 }
@@ -100,21 +103,21 @@ impl Solver<'_> {
         &mut self,
         lesser_ap: &Application,
         greater_ap: &Application,
-        arguments: &[(Interned<Type>, Interned<Type>)],
-        variance: Variance,
+        arguments: &[(Interned<Type2>, Interned<Type2>)],
+        variance: Variance2,
     ) -> Result<Option<Step>, OverflowError> {
         match variance {
             // for the contravariant and covariant cases, a single run with
             // appropriate instantiation is sufficient.
-            Variance::Covariant | Variance::Contravariant => {
+            Variance2::Covariant | Variance2::Contravariant => {
                 let instantiation = match variance {
-                    Variance::Covariant => {
+                    Variance2::Covariant => {
                         HrtbInstantiation::LesserInferenceGreaterSkolem
                     }
-                    Variance::Contravariant => {
+                    Variance2::Contravariant => {
                         HrtbInstantiation::LesserSkolemGreaterInference
                     }
-                    Variance::Invariant | Variance::Bivariant => {
+                    Variance2::Invariant | Variance2::Bivariant => {
                         unreachable!(
                             "invariant and bivariant are handled separately"
                         )
@@ -141,14 +144,14 @@ impl Solver<'_> {
                 ))
             }
 
-            Variance::Invariant => {
+            Variance2::Invariant => {
                 Box::pin(self.handle_invariant_hrtb_application(
                     lesser_ap, greater_ap, arguments,
                 ))
                 .await
             }
 
-            Variance::Bivariant => Ok(Some((
+            Variance2::Bivariant => Ok(Some((
                 Substitution::new(),
                 Vec::new(),
                 Constraints::default(),
@@ -164,7 +167,7 @@ impl Solver<'_> {
         &mut self,
         lesser_ap: &Application,
         greater_ap: &Application,
-        arguments: &[(Interned<Type>, Interned<Type>)],
+        arguments: &[(Interned<Type2>, Interned<Type2>)],
     ) -> Result<Option<Step>, OverflowError> {
         // Invariant HRTB must prove both directions, but each proof is still an
         // invariant argument solve. Only binder polarity is swapped between the
@@ -173,7 +176,7 @@ impl Solver<'_> {
             lesser_ap,
             greater_ap,
             arguments,
-            Variance::Invariant,
+            Variance2::Invariant,
             HrtbInstantiation::LesserInferenceGreaterSkolem,
         ))
         .await?
@@ -198,7 +201,7 @@ impl Solver<'_> {
             lesser_ap,
             greater_ap,
             &substituted_arguments,
-            Variance::Invariant,
+            Variance2::Invariant,
             HrtbInstantiation::LesserSkolemGreaterInference,
         ))
         .await?
@@ -227,8 +230,8 @@ impl Solver<'_> {
         &mut self,
         lesser_ap: &Application,
         greater_ap: &Application,
-        arguments: &[(Interned<Type>, Interned<Type>)],
-        variance: Variance,
+        arguments: &[(Interned<Type2>, Interned<Type2>)],
+        variance: Variance2,
         instantiation: HrtbInstantiation,
     ) -> Result<Option<HrtbRun>, OverflowError> {
         self.new_universe(async |solver| {
@@ -348,7 +351,7 @@ impl Solver<'_> {
         // A bound skolem may only reach itself or inference variables created
         // for the same HRTB proof. Anything else leaks the universal lifetime.
         for start in graph.keys() {
-            let Type::SkolemizedVariable(skolem) = &**start else {
+            let Type2::SkolemizedVariable(skolem) = &**start else {
                 continue;
             };
 
@@ -422,9 +425,9 @@ impl Solver<'_> {
 
     fn push_clean_hrtb_constraint(
         cleaned: &mut Constraints,
-        lesser: Interned<Type>,
-        greater: Interned<Type>,
-        static_lifetime: Interned<Type>,
+        lesser: Interned<Type2>,
+        greater: Interned<Type2>,
+        static_lifetime: Interned<Type2>,
         variables: &HrtbVariables,
     ) {
         if variables.is_internal_lifetime_inference_type(&lesser)
@@ -453,7 +456,7 @@ impl Solver<'_> {
     }
 
     fn constraint_graph(constraints: &Constraints) -> ConstraintGraph {
-        let mut graph = FxHashMap::<Interned<Type>, FxHashSet<_>>::default();
+        let mut graph = FxHashMap::<Interned<Type2>, FxHashSet<_>>::default();
 
         for constraint in constraints.clone() {
             graph
@@ -467,41 +470,41 @@ impl Solver<'_> {
 
     fn hrtb_variables_from_instantiations<'a>(
         &self,
-        instantiations: impl Iterator<Item = &'a Interned<Type>>,
+        instantiations: impl Iterator<Item = &'a Interned<Type2>>,
     ) -> HrtbVariables {
         let mut variables = HrtbVariables::default();
 
         for instantiation in instantiations {
             match &**instantiation {
-                Type::InferenceVariable(variable)
+                Type2::InferenceVariable(variable)
                     if self.get_inference_variable_kind(variable)
                         == TyKind::Lifetime =>
                 {
                     variables.inference_lifetimes.insert(*variable);
                 }
 
-                Type::SkolemizedVariable(variable)
+                Type2::SkolemizedVariable(variable)
                     if self.get_skolemized_variable_kind(variable)
                         == TyKind::Lifetime =>
                 {
                     variables.skolem_lifetimes.insert(*variable);
                 }
 
-                Type::GenericParameter(_)
-                | Type::InferenceVariable(_)
-                | Type::BoundVariable(_)
-                | Type::SkolemizedVariable(_)
-                | Type::Application(_) => {}
+                Type2::GenericParameter(_)
+                | Type2::InferenceVariable(_)
+                | Type2::BoundVariable(_)
+                | Type2::SkolemizedVariable(_)
+                | Type2::Application(_) => {}
             }
         }
 
         variables
     }
 
-    fn static_lifetime(&self) -> Interned<Type> {
-        self.intern(Type::Application(Application::new(
+    fn static_lifetime(&self) -> Interned<Type2> {
+        self.intern(Type2::Application(Application::new(
             Constructor::Lifetime(Lifetime::Static),
-            self.engine().intern_unsized(Vec::<Interned<Type>>::new()),
+            self.engine().intern_unsized(Vec::<Interned<Type2>>::new()),
         )))
     }
 }

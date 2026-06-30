@@ -1,6 +1,6 @@
 use pernixc_type::{
     substitution::{Substitutable, Substitution},
-    r#type::{Type, constructor::DestructureOptions},
+    r#type::{Type2, constructor::DestructureOptions},
 };
 use qbice::storage::intern::Interned;
 
@@ -21,8 +21,8 @@ impl Solver<'_> {
     /// constraint `a: 'b` and `b: 'a`.
     pub async fn match_types(
         &mut self,
-        head: &Interned<Type>,
-        subject: &Interned<Type>,
+        head: &Interned<Type2>,
+        subject: &Interned<Type2>,
     ) -> Option<(Substitution, Constraints)> {
         // quickly check for syntactic equality
         if head == subject {
@@ -30,7 +30,7 @@ impl Solver<'_> {
         }
 
         match (&**head, &**subject) {
-            (Type::InferenceVariable(infer_var), x)
+            (Type2::InferenceVariable(infer_var), x)
                 if !x.is_bound_variable() =>
             {
                 if !self
@@ -50,7 +50,7 @@ impl Solver<'_> {
                 ))
             }
 
-            (Type::Application(left_a), Type::Application(right_a)) => {
+            (Type2::Application(left_a), Type2::Application(right_a)) => {
                 let iter = left_a.destructure(
                     right_a,
                     DestructureOptions::require_equal_binders(),

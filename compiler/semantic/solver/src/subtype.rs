@@ -5,7 +5,7 @@ use pernixc_type::{
     predicate::Subtype,
     substitution::{Substitutable, Substitution},
     r#type::{
-        Type,
+        Type2,
         constructor::{
             Application, Constructor,
             rewrite::{
@@ -17,7 +17,7 @@ use pernixc_type::{
         kind::TyKind,
         skolem::SkolemizedVariable,
     },
-    variance::Variance,
+    variance::Variance2,
 };
 use qbice::storage::intern::Interned;
 
@@ -107,19 +107,21 @@ impl Solver<'_> {
                 && self.kind_of(subtype.greater()).await.is_lifetime()
             {
                 let constraints = match subtype.variance() {
-                    Variance::Covariant => Constraints::lifetimes_outlives(
+                    Variance2::Covariant => Constraints::lifetimes_outlives(
                         subtype.lesser().clone(),
                         subtype.greater().clone(),
                     ),
-                    Variance::Contravariant => Constraints::lifetimes_outlives(
-                        subtype.greater().clone(),
+                    Variance2::Contravariant => {
+                        Constraints::lifetimes_outlives(
+                            subtype.greater().clone(),
+                            subtype.lesser().clone(),
+                        )
+                    }
+                    Variance2::Invariant => Constraints::lifetimes_eq(
                         subtype.lesser().clone(),
-                    ),
-                    Variance::Invariant => Constraints::lifetimes_eq(
-                        subtype.lesser().clone(),
                         subtype.greater().clone(),
                     ),
-                    Variance::Bivariant => Constraints::default(),
+                    Variance2::Bivariant => Constraints::default(),
                 };
 
                 return Ok(Some((
@@ -131,7 +133,7 @@ impl Solver<'_> {
 
             match (&**subtype.lesser(), &**subtype.greater()) {
                 // this is a tough one
-                (Type::Application(left_ap), Type::Application(right_ap)) => {
+                (Type2::Application(left_ap), Type2::Application(right_ap)) => {
                     self.handle_application(
                         subtype.lesser(),
                         subtype.greater(),
@@ -176,9 +178,12 @@ impl Solver<'_> {
     async fn inference_variable_subtype_binding_target(
         &mut self,
         subtype: &Subtype,
-    ) -> Option<(InferenceVariable, Interned<Type>, InferenceVariableSubtypeSide)>
-    {
-        if let Type::InferenceVariable(infer_var) = &**subtype.lesser()
+    ) -> Option<(
+        InferenceVariable,
+        Interned<Type2>,
+        InferenceVariableSubtypeSide,
+    )> {
+        if let Type2::InferenceVariable(infer_var) = &**subtype.lesser()
             && self.can_bind_inference_variable_to(subtype.greater()).await
         {
             return Some((
@@ -188,7 +193,7 @@ impl Solver<'_> {
             ));
         }
 
-        if let Type::InferenceVariable(infer_var) = &**subtype.greater()
+        if let Type2::InferenceVariable(infer_var) = &**subtype.greater()
             && self.can_bind_inference_variable_to(subtype.lesser()).await
         {
             return Some((
@@ -203,7 +208,7 @@ impl Solver<'_> {
 
     async fn can_bind_inference_variable_to(
         &mut self,
-        target: &Interned<Type>,
+        target: &Interned<Type2>,
     ) -> bool {
         !target.is_bound_variable()
             // NOTE: we also don't force two inference variables to unify in 
@@ -217,9 +222,9 @@ impl Solver<'_> {
     async fn bind_inference_variable_to_target(
         &mut self,
         infer_var: InferenceVariable,
-        binding_target: Interned<Type>,
+        binding_target: Interned<Type2>,
         side: InferenceVariableSubtypeSide,
-        variance: Variance,
+        variance: Variance2,
     ) -> Result<BindInferenceVariableSubtype, OverflowError> {
         if !self
             .can_bind_inference_variable_to_type(
@@ -232,7 +237,7 @@ impl Solver<'_> {
             return Ok(BindInferenceVariableSubtype::Failed);
         }
 
-        let Type::Application(_) = &*binding_target else {
+        let Type2::Application(_) = &*binding_target else {
             let subst = Substitution::singleton(infer_var, binding_target);
 
             return Ok(BindInferenceVariableSubtype::Bound((
@@ -285,9 +290,9 @@ impl Solver<'_> {
 
     async fn freshen_application_inference_variables(
         &mut self,
-        ty: &Interned<Type>,
+        ty: &Interned<Type2>,
         universe: UniverseIndex,
-    ) -> Interned<Type> {
+    ) -> Interned<Type2> {
         let engine = self.engine();
         let mut rewriter =
             FreshInferenceVariableRewriter { solver: self, universe };
@@ -310,7 +315,7 @@ impl AsyncTypeRewriter for FreshInferenceVariableRewriter<'_, '_> {
         &mut self,
         application: &Application,
         _: RewriteContext,
-    ) -> Result<Option<Interned<Type>>, Self::Error> {
+    ) -> Result<Option<Interned<Type2>>, Self::Error> {
         if let Constructor::Lifetime(_) = application.constructor() {
             return Ok(Some(self.fresh_inference_variable(TyKind::Lifetime)));
         }
@@ -322,7 +327,7 @@ impl AsyncTypeRewriter for FreshInferenceVariableRewriter<'_, '_> {
         &mut self,
         variable: InferenceVariable,
         _: RewriteContext,
-    ) -> Result<Option<Interned<Type>>, Self::Error> {
+    ) -> Result<Option<Interned<Type2>>, Self::Error> {
         let kind = self.solver.get_inference_variable_kind(&variable);
 
         Ok(Some(self.fresh_inference_variable(kind)))
@@ -332,8 +337,8 @@ impl AsyncTypeRewriter for FreshInferenceVariableRewriter<'_, '_> {
         &mut self,
         id: GenericParameterID,
         _: RewriteContext,
-    ) -> Result<Option<Interned<Type>>, Self::Error> {
-        let ty = Type::GenericParameter(id);
+    ) -> Result<Option<Interned<Type2>>, Self::Error> {
+        let ty = Type2::GenericParameter(id);
 
         Ok(self
             .solver
@@ -347,7 +352,7 @@ impl AsyncTypeRewriter for FreshInferenceVariableRewriter<'_, '_> {
         &mut self,
         variable: SkolemizedVariable,
         _: RewriteContext,
-    ) -> Result<Option<Interned<Type>>, Self::Error> {
+    ) -> Result<Option<Interned<Type2>>, Self::Error> {
         let kind = self.solver.get_skolemized_variable_kind(&variable);
 
         Ok(kind.is_lifetime().then(|| self.fresh_inference_variable(kind)))
@@ -355,21 +360,21 @@ impl AsyncTypeRewriter for FreshInferenceVariableRewriter<'_, '_> {
 }
 
 impl FreshInferenceVariableRewriter<'_, '_> {
-    fn fresh_inference_variable(&mut self, kind: TyKind) -> Interned<Type> {
+    fn fresh_inference_variable(&mut self, kind: TyKind) -> Interned<Type2> {
         let fresh_var = self
             .solver
             .fresh_inference_variable_in_universe(kind, self.universe);
 
-        self.solver.intern(Type::InferenceVariable(fresh_var))
+        self.solver.intern(Type2::InferenceVariable(fresh_var))
     }
 }
 
 impl Solver<'_> {
     async fn try_reduce(
         &mut self,
-        lesser: &Interned<Type>,
-        greater: &Interned<Type>,
-        variance: Variance,
+        lesser: &Interned<Type2>,
+        greater: &Interned<Type2>,
+        variance: Variance2,
     ) -> Result<Option<Step>, OverflowError> {
         // lazily reduce the lesser type and try again.
         if let Some((reduced_lesser, constrs)) =

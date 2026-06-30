@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use pernixc_symbol::GlobalSymbolID;
-use pernixc_type::predicate::Predicate;
+use pernixc_type::predicate::Predicate2;
 use qbice::{Decode, Encode, Identifiable, StableHash};
 
 /// This is equivalence to "given"s in Haskell terminologies. It represents a
@@ -18,16 +18,16 @@ use qbice::{Decode, Encode, Identifiable, StableHash};
     Identifiable,
 )]
 pub struct Premise {
-    predicates: BTreeSet<Predicate>,
+    predicates: BTreeSet<Predicate2>,
     query_site: GlobalSymbolID,
 }
 
 impl Premise {
-    pub fn insert(&mut self, predicate: Predicate) -> bool {
+    pub fn insert(&mut self, predicate: Predicate2) -> bool {
         self.predicates.insert(predicate)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &Predicate> {
+    pub fn iter(&self) -> impl Iterator<Item = &Predicate2> {
         self.predicates.iter()
     }
 }

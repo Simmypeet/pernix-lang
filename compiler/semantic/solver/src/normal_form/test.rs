@@ -2,9 +2,9 @@ use pernixc_qbice::{
     TrackedEngine, create_minimal_engine as create_test_engine,
 };
 use pernixc_type::{
-    predicate::{Equality, Predicate},
+    predicate::{Equality, Predicate2},
     r#type::{
-        Type,
+        Type2,
         bound::{Binder, BoundVariable},
         constructor::Primitive,
         kind::TyKind,
@@ -20,20 +20,20 @@ use crate::{
 };
 
 fn equality(
-    left: Interned<Type>,
-    right: Interned<Type>,
+    left: Interned<Type2>,
+    right: Interned<Type2>,
     engine: &TrackedEngine,
-) -> Predicate {
+) -> Predicate2 {
     higher_ranked_equality(&[], left, right, engine)
 }
 
 fn higher_ranked_equality(
     bound_vars: &[TyKind],
-    left: Interned<Type>,
-    right: Interned<Type>,
+    left: Interned<Type2>,
+    right: Interned<Type2>,
     engine: &TrackedEngine,
-) -> Predicate {
-    Predicate::Equality(Equality::new(
+) -> Predicate2 {
+    Predicate2::Equality(Equality::new(
         Binder::new(engine.intern_unsized(bound_vars.to_vec())),
         left,
         right,
@@ -41,19 +41,19 @@ fn higher_ranked_equality(
 }
 
 async fn normal_form(
-    ty: Interned<Type>,
+    ty: Interned<Type2>,
     premise: &Premise,
     engine: &TrackedEngine,
-) -> Result<Option<(Interned<Type>, Constraints)>, OverflowError> {
+) -> Result<Option<(Interned<Type2>, Constraints)>, OverflowError> {
     Solver::new(premise, engine).normal_form(ty).await
 }
 
 async fn normal_form_with_lifetime_skolems(
-    ty: Interned<Type>,
+    ty: Interned<Type2>,
     premise: &Premise,
     engine: &TrackedEngine,
     skolem_count: usize,
-) -> Result<Option<(Interned<Type>, Constraints)>, OverflowError> {
+) -> Result<Option<(Interned<Type2>, Constraints)>, OverflowError> {
     let mut solver = Solver::new(premise, engine);
 
     for _ in 0..skolem_count {
@@ -69,7 +69,7 @@ async fn normal_form_with_lifetime_skolems(
 #[tokio::test]
 async fn returns_irreducible_type() {
     let engine = create_test_engine().await;
-    let subject = Type::new_primitive(Primitive::Bool, &engine);
+    let subject = Type2::new_primitive(Primitive::Bool, &engine);
 
     let (normalized, constraints) =
         normal_form(subject.clone(), &Premise::default(), &engine)
@@ -87,12 +87,12 @@ async fn returns_irreducible_type() {
 #[tokio::test]
 async fn recursively_reduces_type() {
     let engine = create_test_engine().await;
-    let subject = Type::new_tuple_with_unpack(
-        [Type::new_tuple_with_unpack(
-            [Type::new_tuple(
+    let subject = Type2::new_tuple_with_unpack(
+        [Type2::new_tuple_with_unpack(
+            [Type2::new_tuple(
                 [
-                    Type::new_primitive(Primitive::Int32, &engine),
-                    Type::new_primitive(Primitive::Bool, &engine),
+                    Type2::new_primitive(Primitive::Int32, &engine),
+                    Type2::new_primitive(Primitive::Bool, &engine),
                 ],
                 &engine,
             )],
@@ -111,10 +111,10 @@ async fn recursively_reduces_type() {
 
     assert_eq!(
         normalized,
-        Type::new_tuple(
+        Type2::new_tuple(
             [
-                Type::new_primitive(Primitive::Int32, &engine),
-                Type::new_primitive(Primitive::Bool, &engine),
+                Type2::new_primitive(Primitive::Int32, &engine),
+                Type2::new_primitive(Primitive::Bool, &engine),
             ],
             &engine,
         )
@@ -131,19 +131,19 @@ async fn preserves_lifetime_constraints() {
     let mut premise = Premise::default();
 
     premise.insert(equality(
-        Type::new_immutable_reference(
-            Type::new_skolemized_variable(SkolemizedVariable::new(0), &engine),
-            Type::new_primitive(Primitive::Bool, &engine),
+        Type2::new_immutable_reference(
+            Type2::new_skolemized_variable(SkolemizedVariable::new(0), &engine),
+            Type2::new_primitive(Primitive::Bool, &engine),
             &engine,
         ),
-        Type::new_primitive(Primitive::Bool, &engine),
+        Type2::new_primitive(Primitive::Bool, &engine),
         &engine,
     ));
 
     let (normalized, constraints) = normal_form_with_lifetime_skolems(
-        Type::new_immutable_reference(
-            Type::new_skolemized_variable(SkolemizedVariable::new(1), &engine),
-            Type::new_primitive(Primitive::Bool, &engine),
+        Type2::new_immutable_reference(
+            Type2::new_skolemized_variable(SkolemizedVariable::new(1), &engine),
+            Type2::new_primitive(Primitive::Bool, &engine),
             &engine,
         ),
         &premise,
@@ -154,12 +154,12 @@ async fn preserves_lifetime_constraints() {
     .unwrap()
     .unwrap();
 
-    assert_eq!(normalized, Type::new_primitive(Primitive::Bool, &engine));
+    assert_eq!(normalized, Type2::new_primitive(Primitive::Bool, &engine));
     assert_eq!(
         constraints,
         Constraints::lifetimes_eq(
-            Type::new_skolemized_variable(SkolemizedVariable::new(0), &engine),
-            Type::new_skolemized_variable(SkolemizedVariable::new(1), &engine),
+            Type2::new_skolemized_variable(SkolemizedVariable::new(0), &engine),
+            Type2::new_skolemized_variable(SkolemizedVariable::new(1), &engine),
         )
     );
 }
@@ -172,7 +172,7 @@ async fn rejects_direct_type_inference_variable() {
     let engine = create_test_engine().await;
     let premise = Premise::default();
     let mut solver = Solver::new(&premise, &engine);
-    let inference = Type::new_inference_variable(
+    let inference = Type2::new_inference_variable(
         solver.fresh_inference_variable(TyKind::Type),
         &engine,
     );
@@ -188,7 +188,7 @@ async fn rejects_direct_instance_inference_variable() {
     let engine = create_test_engine().await;
     let premise = Premise::default();
     let mut solver = Solver::new(&premise, &engine);
-    let inference = Type::new_inference_variable(
+    let inference = Type2::new_inference_variable(
         solver.fresh_inference_variable(TyKind::Instance),
         &engine,
     );
@@ -204,14 +204,14 @@ async fn rejects_nested_type_inference_variable() {
     let engine = create_test_engine().await;
     let premise = Premise::default();
     let mut solver = Solver::new(&premise, &engine);
-    let inference = Type::new_inference_variable(
+    let inference = Type2::new_inference_variable(
         solver.fresh_inference_variable(TyKind::Type),
         &engine,
     );
 
     assert_eq!(
         solver
-            .normal_form(Type::new_tuple([inference], &engine))
+            .normal_form(Type2::new_tuple([inference], &engine))
             .await
             .unwrap(),
         None
@@ -226,13 +226,13 @@ async fn accepts_lifetime_inference_variable_argument() {
     let engine = create_test_engine().await;
     let premise = Premise::default();
     let mut solver = Solver::new(&premise, &engine);
-    let lifetime = Type::new_inference_variable(
+    let lifetime = Type2::new_inference_variable(
         solver.fresh_inference_variable(TyKind::Lifetime),
         &engine,
     );
-    let subject = Type::new_immutable_reference(
+    let subject = Type2::new_immutable_reference(
         lifetime,
-        Type::new_primitive(Primitive::Bool, &engine),
+        Type2::new_primitive(Primitive::Bool, &engine),
         &engine,
     );
 
@@ -253,25 +253,25 @@ async fn accepts_inference_eliminated_by_reduction() {
 
     premise.insert(higher_ranked_equality(
         &[TyKind::Type],
-        Type::new_tuple(
-            [Type::new_bound_variable(BoundVariable::new(0, 0), &engine)],
+        Type2::new_tuple(
+            [Type2::new_bound_variable(BoundVariable::new(0, 0), &engine)],
             &engine,
         ),
-        Type::new_primitive(Primitive::Bool, &engine),
+        Type2::new_primitive(Primitive::Bool, &engine),
         &engine,
     ));
 
     let mut solver = Solver::new(&premise, &engine);
-    let inference = Type::new_inference_variable(
+    let inference = Type2::new_inference_variable(
         solver.fresh_inference_variable(TyKind::Type),
         &engine,
     );
-    let subject = Type::new_tuple([inference], &engine);
+    let subject = Type2::new_tuple([inference], &engine);
 
     let (normalized, constraints) =
         solver.normal_form(subject).await.unwrap().unwrap();
 
-    assert_eq!(normalized, Type::new_primitive(Primitive::Bool, &engine));
+    assert_eq!(normalized, Type2::new_primitive(Primitive::Bool, &engine));
     assert_eq!(constraints, Constraints::default());
 }
 
@@ -284,11 +284,11 @@ async fn propagates_reduction_overflow() {
     let mut premise = Premise::default();
 
     premise.insert(equality(
-        Type::new_skolemized_variable(SkolemizedVariable::new(1), &engine),
-        Type::new_tuple(
+        Type2::new_skolemized_variable(SkolemizedVariable::new(1), &engine),
+        Type2::new_tuple(
             [
-                Type::new_primitive(Primitive::Bool, &engine),
-                Type::new_skolemized_variable(
+                Type2::new_primitive(Primitive::Bool, &engine),
+                Type2::new_skolemized_variable(
                     SkolemizedVariable::new(1),
                     &engine,
                 ),
@@ -300,7 +300,7 @@ async fn propagates_reduction_overflow() {
 
     assert!(
         normal_form_with_lifetime_skolems(
-            Type::new_skolemized_variable(SkolemizedVariable::new(1), &engine),
+            Type2::new_skolemized_variable(SkolemizedVariable::new(1), &engine),
             &premise,
             &engine,
             2,

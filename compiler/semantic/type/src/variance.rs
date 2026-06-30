@@ -24,7 +24,7 @@ use crate::generic_parameters::GenericParameter;
     Decode,
     Identifiable,
 )]
-pub enum Variance {
+pub enum Variance2 {
     /// The term is covariant and can be changed to a subtype.
     ///
     /// This is the most common variance; that is, the lifetime can be changed
@@ -48,7 +48,7 @@ pub enum Variance {
     Bivariant,
 }
 
-impl Variance {
+impl Variance2 {
     /// Combines the two variances in terms of the variance of the parent and
     /// the variance of the child.
     ///
@@ -109,16 +109,16 @@ impl Variance {
     Decode,
     Identifiable,
 )]
-pub struct Variances {
-    variances_by_generic_parameter: FxHashMap<ID<GenericParameter>, Variance>,
+pub struct Variances2 {
+    variances_by_generic_parameter: FxHashMap<ID<GenericParameter>, Variance2>,
 }
 
-impl Variances {
+impl Variances2 {
     #[must_use]
     pub fn get_variacne_of(
         &self,
         generic_parameter_id: ID<GenericParameter>,
-    ) -> Variance {
+    ) -> Variance2 {
         *self.variances_by_generic_parameter.get(&generic_parameter_id).unwrap()
     }
 }
@@ -138,8 +138,8 @@ impl Variances {
     Decode,
     Query,
 )]
-#[value(Interned<Variances>)]
-#[extend(name = get_variances, by_val)]
+#[value(Interned<Variances2>)]
+#[extend(name = get_variances2, by_val)]
 pub struct Key {
     /// The global ID of the struct or enum symbol.
     pub symbol_id: GlobalSymbolID,
