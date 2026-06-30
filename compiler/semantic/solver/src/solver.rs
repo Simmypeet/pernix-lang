@@ -238,7 +238,6 @@ impl Solver<'_> {
             .collect()
     }
 
-
     #[must_use]
     pub fn max_universe_index(&self, ty: &Type) -> UniverseIndex {
         match ty {
