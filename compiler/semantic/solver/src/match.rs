@@ -1,6 +1,6 @@
 use pernixc_type::{
     substitution::{Substitutable, Substitution},
-    r#type::Type,
+    r#type::{Type, constructor::DestructureOptions},
 };
 use qbice::storage::intern::Interned;
 
@@ -8,6 +8,9 @@ use crate::{
     constraints::Constraints,
     solver::{DoOccurCheck, Solver},
 };
+
+#[cfg(test)]
+mod test;
 
 impl Solver<'_> {
     /// Computes a substitution `S` such that `S(head) == subject)`, if one
@@ -48,7 +51,11 @@ impl Solver<'_> {
             }
 
             (Type::Application(left_a), Type::Application(right_a)) => {
-                let iter = left_a.destructure(right_a, self.engine())?;
+                let iter = left_a.destructure(
+                    right_a,
+                    DestructureOptions::require_equal_binders(),
+                    self.engine(),
+                )?;
 
                 let mut subst = Substitution::new();
                 let mut constraint = Constraints::default();

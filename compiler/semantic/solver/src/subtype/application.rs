@@ -5,7 +5,9 @@ use pernixc_type::{
     substitution::Substitution,
     r#type::{
         Type,
-        constructor::{Application, Constructor, Mutability, Symbolic},
+        constructor::{
+            Application, Constructor, DestructureOptions, Mutability, Symbolic,
+        },
     },
     variance::{Variance, get_variances},
 };
@@ -37,8 +39,11 @@ impl Solver<'_> {
         greater_ap: &Application,
         variance: Variance,
     ) -> Result<Option<Step>, OverflowError> {
-        let Some(iter) = lesser_ap.destructure(greater_ap, self.engine())
-        else {
+        let Some(iter) = lesser_ap.destructure(
+            greater_ap,
+            DestructureOptions::ignore_binders(),
+            self.engine(),
+        ) else {
             return Box::pin(self.try_reduce(lesser, greater, variance)).await;
         };
 
