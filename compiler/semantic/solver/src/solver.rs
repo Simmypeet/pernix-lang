@@ -291,6 +291,10 @@ impl<'a> Solver<'a> {
     #[must_use]
     pub const fn engine(&self) -> &'a TrackedEngine { self.engine }
 
+    pub const fn premise_query_site(&self) -> pernixc_symbol::GlobalSymbolID {
+        self.premise.query_site()
+    }
+
     pub fn premise_predicates(
         &self,
     ) -> impl Iterator<Item = &'a Predicate2> + 'a {
