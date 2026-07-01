@@ -12,5 +12,8 @@ fxhash.workspace = true
 linkme.workspace = true
 enum-as-inner.workspace = true
 
+[dev-dependencies]
+tokio.workspace = true
+
 [lints]
 workspace = true

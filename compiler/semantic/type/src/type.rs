@@ -119,8 +119,24 @@ impl Type2 {
         arguments: impl IntoIterator<Item = Interned<Self>>,
         engine: &TrackedEngine,
     ) -> Interned<Self> {
+        Self::new_symbolic_with_binder(
+            symbol_id,
+            Binder::new(engine.intern_unsized(Vec::new())),
+            arguments,
+            engine,
+        )
+    }
+
+    /// Interns a symbolic type whose arguments are under the given binder.
+    #[must_use]
+    pub fn new_symbolic_with_binder(
+        symbol_id: GlobalSymbolID,
+        binder: Binder,
+        arguments: impl IntoIterator<Item = Interned<Self>>,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
         Self::new_application(
-            Constructor::Symbolic(Symbolic::new(symbol_id)),
+            Constructor::Symbolic(Symbolic::new(symbol_id, binder)),
             arguments,
             engine,
         )

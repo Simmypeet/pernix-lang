@@ -180,6 +180,18 @@ impl Application {
                 &other.arguments,
                 engine,
             )
+        } else if let (Constructor::Symbolic(lhs), Constructor::Symbolic(rhs)) =
+            (&self.constructor, &other.constructor)
+        {
+            if lhs.symbol_id() != rhs.symbol_id()
+                || (options.binder_equality == BinderEquality::RequireEqual
+                    && lhs.binder() != rhs.binder())
+            {
+                return None;
+            }
+
+            Self::destructure_regular(&self.arguments, &other.arguments)
+                .map(Destructure::Regular)
         } else if let (
             Constructor::FunctionPointer(lhs),
             Constructor::FunctionPointer(rhs),

@@ -1,7 +1,7 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use pernixc_arena::ID;
-use pernixc_qbice::{Config, Engine, TrackedEngine};
+use pernixc_qbice::{Engine, PrecomputedExecutor, TrackedEngine};
 use pernixc_symbol::{GlobalSymbolID, SymbolID};
 use pernixc_target::TargetID;
 use pernixc_type::{
@@ -10,10 +10,10 @@ use pernixc_type::{
         GenericParameters2,
     },
     symbol::TraitRef2,
-    r#type::{Type2, constructor::Primitive},
+    r#type::{Type2, bound::Binder, constructor::Primitive},
 };
 use qbice::{
-    executor, serialize::Plugin, stable_hash::SeededStableHasherBuilder,
+    serialize::Plugin, stable_hash::SeededStableHasherBuilder,
     storage::intern::Interned,
 };
 
@@ -30,32 +30,6 @@ const LEFT_GENERIC_OWNER_ID: GlobalSymbolID =
 const RIGHT_GENERIC_OWNER_ID: GlobalSymbolID =
     TargetID::TEST.make_global(SymbolID::from_u128(3));
 
-struct GenericParametersExecutor;
-
-impl executor::Executor<generic_parameters::Key, Config>
-    for GenericParametersExecutor
-{
-    async fn execute(
-        &self,
-        key: &generic_parameters::Key,
-        engine: &TrackedEngine,
-    ) -> Interned<GenericParameters2> {
-        match key.symbol_id {
-            LEFT_GENERIC_OWNER_ID | RIGHT_GENERIC_OWNER_ID => {
-                engine.intern(GenericParameters2::new((0..4).map(|index| {
-                    GenericParameter::new(
-                        engine.intern_unsized(format!("T{index}")),
-                        None,
-                        GenericParameterKind::Type,
-                    )
-                })))
-            }
-
-            _ => engine.intern(GenericParameters2::new([])),
-        }
-    }
-}
-
 async fn create_engine() -> TrackedEngine {
     let mut engine = Engine::new_with(
         Plugin::default(),
@@ -65,7 +39,30 @@ async fn create_engine() -> TrackedEngine {
     .await
     .unwrap();
 
-    engine.register_executor(Arc::new(GenericParametersExecutor));
+    let generic_parameters = || {
+        Interned::new_duplicating(GenericParameters2::new((0..4).map(
+            |index| {
+                GenericParameter::new(
+                    Interned::new_duplicating_unsized(format!("T{index}")),
+                    None,
+                    GenericParameterKind::Type,
+                )
+            },
+        )))
+    };
+
+    engine.register_executor(Arc::new(PrecomputedExecutor::new(
+        HashMap::from([
+            (
+                generic_parameters::Key { symbol_id: LEFT_GENERIC_OWNER_ID },
+                generic_parameters(),
+            ),
+            (
+                generic_parameters::Key { symbol_id: RIGHT_GENERIC_OWNER_ID },
+                generic_parameters(),
+            ),
+        ]),
+    )));
 
     Arc::new(engine).tracked().await
 }
@@ -87,6 +84,7 @@ fn trait_ref(
     TraitRef2::new(
         TRAIT_ID,
         engine.intern_unsized(arguments.into_iter().collect::<Vec<_>>()),
+        Binder::new(engine.intern_unsized(Vec::new())),
     )
 }
 

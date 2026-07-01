@@ -136,7 +136,6 @@ impl Reference {
 #[derive(
     Debug,
     Clone,
-    Copy,
     PartialEq,
     Eq,
     PartialOrd,
@@ -148,16 +147,21 @@ impl Reference {
 )]
 pub struct Symbolic {
     symbolic_id: GlobalSymbolID,
+    binder: Binder,
 }
 
 impl Symbolic {
     #[must_use]
-    pub const fn new(symbolic_id: GlobalSymbolID) -> Self {
-        Self { symbolic_id }
+    pub const fn new(symbolic_id: GlobalSymbolID, binder: Binder) -> Self {
+        Self { symbolic_id, binder }
     }
 
     #[must_use]
     pub const fn symbol_id(&self) -> GlobalSymbolID { self.symbolic_id }
+
+    /// Returns the variables bound over the symbolic arguments.
+    #[must_use]
+    pub const fn binder(&self) -> &Binder { &self.binder }
 }
 
 /// Represents a tuple type constructor, such as `(T1, T2, T3)`. Which can
@@ -368,8 +372,14 @@ impl Application {
     #[must_use]
     pub const fn binder(&self) -> Option<&Binder> {
         match &self.constructor {
+            Constructor::Symbolic(symbolic) => Some(&symbolic.binder),
             Constructor::FunctionPointer(fp) => Some(&fp.binder),
-            _ => None,
+            Constructor::Primitive(_)
+            | Constructor::Lifetime(_)
+            | Constructor::Reference(_)
+            | Constructor::Tuple(_)
+            | Constructor::AnonymousTraitInstance(_)
+            | Constructor::InstanceAssociated(_) => None,
         }
     }
 
@@ -377,7 +387,7 @@ impl Application {
     pub const fn constructor(&self) -> &Constructor { &self.constructor }
 
     pub async fn kind(&self, engine: &TrackedEngine) -> TyKind {
-        match self.constructor {
+        match &self.constructor {
             Constructor::Tuple(_)
             | Constructor::Primitive(_)
             | Constructor::FunctionPointer(_)
