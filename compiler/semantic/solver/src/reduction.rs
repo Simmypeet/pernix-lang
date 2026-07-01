@@ -138,7 +138,7 @@ async fn try_match_eq(
     let instantiated_lhs =
         eq.left().instantiate(&fresh_instantiation, solver.engine());
 
-    let (subst, constrs) = solver.match_types(&instantiated_lhs, ty).await?;
+    let (subst, constrs) = solver.match_type(&instantiated_lhs, ty).await?;
 
     let instantiated_rhs =
         eq.right().instantiate(&fresh_instantiation, solver.engine());

@@ -125,7 +125,7 @@ impl Solver<'_> {
                     }
                 } else {
                     let Some((substitution, constraints)) =
-                        self.match_types(&component, goal.lesser()).await
+                        self.match_type(&component, goal.lesser()).await
                     else {
                         continue;
                     };

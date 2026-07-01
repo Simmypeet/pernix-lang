@@ -23,7 +23,7 @@ async fn function_pointer_binders_must_match_exactly() {
     let premise = Premise::default();
 
     let result =
-        Solver::new(&premise, &engine).match_types(&head, &subject).await;
+        Solver::new(&premise, &engine).match_type(&head, &subject).await;
 
     assert!(result.is_none());
 }
@@ -57,7 +57,7 @@ async fn repeated_inference_variable_matches_consistent_arguments() {
         &engine,
     );
 
-    assert!(solver.match_types(&head, &subject).await.is_some());
+    assert!(solver.match_type(&head, &subject).await.is_some());
 }
 
 // Input: match (?T, ?T) against (Int32, Bool).
@@ -77,5 +77,5 @@ async fn repeated_inference_variable_rejects_inconsistent_arguments() {
         &engine,
     );
 
-    assert!(solver.match_types(&head, &subject).await.is_none());
+    assert!(solver.match_type(&head, &subject).await.is_none());
 }
