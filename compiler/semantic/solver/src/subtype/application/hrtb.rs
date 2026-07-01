@@ -1,16 +1,6 @@
-use pernixc_hash::{FxHashMap, FxHashSet};
 use pernixc_type::{
-    predicate::Outlives,
     substitution::{Substitutable, Substitution},
-    r#type::{
-        Type2,
-        bound::Instantiate,
-        constructor::{Application, Constructor, Lifetime},
-        context::TyContext,
-        inference::InferenceVariable,
-        kind::TyKind,
-        skolem::SkolemizedVariable,
-    },
+    r#type::{Type2, bound::Instantiate, constructor::Application},
     variance::Variance2,
 };
 use qbice::storage::intern::Interned;
@@ -18,11 +8,10 @@ use qbice::storage::intern::Interned;
 use super::ResolveStrategy;
 use crate::{
     constraints::Constraints,
+    hrtb::HrtbVariables,
     solver::{OverflowError, Solver},
     subtype::Step,
 };
-
-type ConstraintGraph = FxHashMap<Interned<Type2>, FxHashSet<Interned<Type2>>>;
 
 #[derive(Debug, Clone, Copy)]
 enum HrtbInstantiation {
@@ -39,63 +28,6 @@ struct HrtbRun {
     substitution: Substitution,
     constraints: Constraints,
     variables: HrtbVariables,
-}
-
-#[derive(Debug, Clone, Default)]
-struct HrtbVariables {
-    inference_lifetimes: FxHashSet<InferenceVariable>,
-    skolem_lifetimes: FxHashSet<SkolemizedVariable>,
-}
-
-impl HrtbVariables {
-    fn union_into(mut self, other: Self) -> Self {
-        self.inference_lifetimes.extend(other.inference_lifetimes);
-        self.skolem_lifetimes.extend(other.skolem_lifetimes);
-        self
-    }
-
-    fn contains_internal_hrtb_variable(&self, ty: &Interned<Type2>) -> bool {
-        match &**ty {
-            Type2::InferenceVariable(variable) => {
-                self.inference_lifetimes.contains(variable)
-            }
-            Type2::SkolemizedVariable(variable) => {
-                self.skolem_lifetimes.contains(variable)
-            }
-            Type2::Application(application) => application
-                .arguments()
-                .iter()
-                .any(|argument| self.contains_internal_hrtb_variable(argument)),
-            Type2::GenericParameter(_) | Type2::BoundVariable(_) => false,
-        }
-    }
-
-    fn is_internal_lifetime_inference_type(
-        &self,
-        ty: &Interned<Type2>,
-    ) -> bool {
-        match &**ty {
-            Type2::InferenceVariable(variable) => {
-                self.inference_lifetimes.contains(variable)
-            }
-            Type2::GenericParameter(_)
-            | Type2::BoundVariable(_)
-            | Type2::SkolemizedVariable(_)
-            | Type2::Application(_) => false,
-        }
-    }
-
-    fn is_internal_lifetime_skolem_type(&self, ty: &Interned<Type2>) -> bool {
-        match &**ty {
-            Type2::SkolemizedVariable(variable) => {
-                self.skolem_lifetimes.contains(variable)
-            }
-            Type2::GenericParameter(_)
-            | Type2::InferenceVariable(_)
-            | Type2::BoundVariable(_)
-            | Type2::Application(_) => false,
-        }
-    }
 }
 
 impl Solver<'_> {
@@ -314,13 +246,8 @@ impl Solver<'_> {
         //    change the shape of constraints.
         //
         // Proof? Trust me bro :-)
-        let graph = Self::constraint_graph(constraints);
-
-        if !Self::hrtb_leak_check(&graph, variables) {
-            return None;
-        }
-
-        let constraints = self.clean_hrtb_constraints(&graph, variables);
+        let constraints =
+            self.check_and_clean_hrtb_constraints(constraints, variables)?;
 
         // NOTE: here we directly return the original substitution without
         // eliminating the internal variables, because:
@@ -341,170 +268,5 @@ impl Solver<'_> {
         //    eliminating them.
 
         Some((substitution, Vec::new(), constraints))
-    }
-
-    fn hrtb_leak_check(
-        graph: &ConstraintGraph,
-        variables: &HrtbVariables,
-    ) -> bool {
-        // Edges are directed as written by `Outlives::new(lesser, greater)`.
-        // A bound skolem may only reach itself or inference variables created
-        // for the same HRTB proof. Anything else leaks the universal lifetime.
-        for start in graph.keys() {
-            let Type2::SkolemizedVariable(skolem) = &**start else {
-                continue;
-            };
-
-            if !variables.skolem_lifetimes.contains(skolem) {
-                continue;
-            }
-
-            let mut seen = FxHashSet::default();
-            let mut stack = vec![start.clone()];
-
-            while let Some(next) = stack.pop() {
-                if !seen.insert(next.clone()) {
-                    continue;
-                }
-
-                if next != *start
-                    && !variables.is_internal_lifetime_inference_type(&next)
-                {
-                    return false;
-                }
-
-                if let Some(edges) = graph.get(&next) {
-                    stack.extend(edges.iter().cloned());
-                }
-            }
-        }
-
-        true
-    }
-
-    fn clean_hrtb_constraints(
-        &self,
-        graph: &ConstraintGraph,
-        variables: &HrtbVariables,
-    ) -> Constraints {
-        let mut cleaned = Constraints::new();
-        let static_lifetime = self.static_lifetime();
-
-        for source in graph.keys() {
-            // Compress paths through internal inference variables so removing
-            // `?x` from `A -> ?x -> B` still leaves the observable `A -> B`.
-            let mut seen = FxHashSet::default();
-            let mut stack = vec![source.clone()];
-
-            while let Some(next) = stack.pop() {
-                if !seen.insert(next.clone()) {
-                    continue;
-                }
-
-                if next != *source {
-                    Self::push_clean_hrtb_constraint(
-                        &mut cleaned,
-                        source.clone(),
-                        next.clone(),
-                        static_lifetime.clone(),
-                        variables,
-                    );
-                }
-
-                if (variables.is_internal_lifetime_inference_type(&next)
-                    || next == *source)
-                    && let Some(edges) = graph.get(&next)
-                {
-                    stack.extend(edges.iter().cloned());
-                }
-            }
-        }
-
-        cleaned
-    }
-
-    fn push_clean_hrtb_constraint(
-        cleaned: &mut Constraints,
-        lesser: Interned<Type2>,
-        greater: Interned<Type2>,
-        static_lifetime: Interned<Type2>,
-        variables: &HrtbVariables,
-    ) {
-        if variables.is_internal_lifetime_inference_type(&lesser)
-            || variables.is_internal_lifetime_inference_type(&greater)
-        {
-            return;
-        }
-
-        // `R: !s` is the observable remnant of proving an external lifetime
-        // outlives every choice of the bound lifetime. That is equivalent to
-        // requiring `R: 'static`.
-        if variables.is_internal_lifetime_skolem_type(&greater)
-            && !variables.contains_internal_hrtb_variable(&lesser)
-        {
-            cleaned.extend([Outlives::new(lesser, static_lifetime)]);
-            return;
-        }
-
-        if variables.contains_internal_hrtb_variable(&lesser)
-            || variables.contains_internal_hrtb_variable(&greater)
-        {
-            return;
-        }
-
-        cleaned.extend([Outlives::new(lesser, greater)]);
-    }
-
-    fn constraint_graph(constraints: &Constraints) -> ConstraintGraph {
-        let mut graph = FxHashMap::<Interned<Type2>, FxHashSet<_>>::default();
-
-        for constraint in constraints.clone() {
-            graph
-                .entry(constraint.lesser().clone())
-                .or_default()
-                .insert(constraint.greater().clone());
-        }
-
-        graph
-    }
-
-    fn hrtb_variables_from_instantiations<'a>(
-        &self,
-        instantiations: impl Iterator<Item = &'a Interned<Type2>>,
-    ) -> HrtbVariables {
-        let mut variables = HrtbVariables::default();
-
-        for instantiation in instantiations {
-            match &**instantiation {
-                Type2::InferenceVariable(variable)
-                    if self.get_inference_variable_kind(variable)
-                        == TyKind::Lifetime =>
-                {
-                    variables.inference_lifetimes.insert(*variable);
-                }
-
-                Type2::SkolemizedVariable(variable)
-                    if self.get_skolemized_variable_kind(variable)
-                        == TyKind::Lifetime =>
-                {
-                    variables.skolem_lifetimes.insert(*variable);
-                }
-
-                Type2::GenericParameter(_)
-                | Type2::InferenceVariable(_)
-                | Type2::BoundVariable(_)
-                | Type2::SkolemizedVariable(_)
-                | Type2::Application(_) => {}
-            }
-        }
-
-        variables
-    }
-
-    fn static_lifetime(&self) -> Interned<Type2> {
-        self.intern(Type2::Application(Application::new(
-            Constructor::Lifetime(Lifetime::Static),
-            self.engine().intern_unsized(Vec::<Interned<Type2>>::new()),
-        )))
     }
 }
