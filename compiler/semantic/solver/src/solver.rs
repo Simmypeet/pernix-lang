@@ -291,6 +291,7 @@ impl<'a> Solver<'a> {
     #[must_use]
     pub const fn engine(&self) -> &'a TrackedEngine { self.engine }
 
+    #[must_use]
     pub const fn premise_query_site(&self) -> pernixc_symbol::GlobalSymbolID {
         self.premise.query_site()
     }

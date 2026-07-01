@@ -88,6 +88,11 @@ pub struct InstanceParameterKind {
 impl InstanceParameterKind {
     #[must_use]
     pub const fn new(trait_ref: Option<Symbol2>) -> Self { Self { trait_ref } }
+
+    #[must_use]
+    pub const fn trait_ref(&self) -> Option<&Symbol2> {
+        self.trait_ref.as_ref()
+    }
 }
 
 #[derive(
@@ -145,6 +150,19 @@ impl GenericParameters2 {
         &self,
     ) -> impl Iterator<Item = (ID<GenericParameter>, &GenericParameter)> {
         self.parameters.iter()
+    }
+
+    pub fn instance_parameters(
+        &self,
+    ) -> impl Iterator<Item = (ID<GenericParameter>, &InstanceParameterKind)>
+    {
+        self.parameters.iter().filter_map(|(id, parameter)| {
+            let GenericParameterKind::Instance(kind) = &parameter.kind else {
+                return None;
+            };
+
+            Some((id, kind))
+        })
     }
 
     #[cfg(test)]
