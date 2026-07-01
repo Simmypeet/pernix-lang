@@ -10,7 +10,7 @@ use pernixc_type::{
         GenericParameters2,
     },
     symbol::TraitRef2,
-    r#type::{Type2, constructor::Primitive},
+    r#type::{Type2, bound::Binder, constructor::Primitive},
 };
 use qbice::{
     executor, serialize::Plugin, stable_hash::SeededStableHasherBuilder,
@@ -87,6 +87,7 @@ fn trait_ref(
     TraitRef2::new(
         TRAIT_ID,
         engine.intern_unsized(arguments.into_iter().collect::<Vec<_>>()),
+        Binder::new(engine.intern_unsized(Vec::new())),
     )
 }
 

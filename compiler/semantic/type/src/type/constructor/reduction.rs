@@ -140,7 +140,7 @@ impl Type2 {
     #[must_use]
     pub fn as_symbolic(&self) -> Option<(GlobalSymbolID, &[Interned<Self>])> {
         if let Self::Application(Application {
-            constructor: Constructor::Symbolic(Symbolic { symbolic_id }),
+            constructor: Constructor::Symbolic(Symbolic { symbolic_id, .. }),
             arguments,
         }) = &self
         {

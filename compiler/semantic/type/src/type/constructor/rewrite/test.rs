@@ -1,5 +1,5 @@
 use pernixc_arena::ID;
-use pernixc_qbice::{DuplicatingInterner, Interner};
+use pernixc_qbice::create_minimal_engine as create_test_engine;
 use pernixc_symbol::{GlobalSymbolID, SymbolID};
 use pernixc_target::TargetID;
 use qbice::storage::intern::Interned;
@@ -11,7 +11,7 @@ use crate::{
     r#type::{
         Type2,
         bound::{Binder, BoundVariable, Instantiate},
-        constructor::{FunctionPointer, Primitive},
+        constructor::Primitive,
     },
 };
 
@@ -20,54 +20,6 @@ const SYMBOL_ID: GlobalSymbolID =
 
 fn generic_parameter_id(index: u64) -> GenericParameterID {
     GenericParameterID::new(SYMBOL_ID, ID::<GenericParameter>::new(index))
-}
-
-fn generic_parameter_type(
-    id: GenericParameterID,
-    interner: &impl Interner,
-) -> Interned<Type2> {
-    interner.intern(Type2::GenericParameter(id))
-}
-
-fn bound_variable_type(
-    depth: usize,
-    index: usize,
-    interner: &impl Interner,
-) -> Interned<Type2> {
-    interner.intern(Type2::BoundVariable(BoundVariable::new(depth, index)))
-}
-
-fn primitive_type(
-    primitive: Primitive,
-    interner: &impl Interner,
-) -> Interned<Type2> {
-    application_type(Constructor::Primitive(primitive), &[], interner)
-}
-
-fn function_pointer_type(
-    arguments: &[Interned<Type2>],
-    interner: &impl Interner,
-) -> Interned<Type2> {
-    application_type(
-        Constructor::FunctionPointer(FunctionPointer {
-            binder: Binder::new(interner.intern_unsized(
-                vec![crate::r#type::kind::TyKind::Type; arguments.len()],
-            )),
-        }),
-        arguments,
-        interner,
-    )
-}
-
-fn application_type(
-    constructor: Constructor,
-    arguments: &[Interned<Type2>],
-    interner: &impl Interner,
-) -> Interned<Type2> {
-    interner.intern(Type2::Application(Application {
-        constructor,
-        arguments: interner.intern_unsized(arguments.to_vec()),
-    }))
 }
 
 fn as_application(ty: &Interned<Type2>) -> &Application {
@@ -94,17 +46,21 @@ struct NoopRewriter;
 
 impl TypeRewriter for NoopRewriter {}
 
-#[test]
-fn noop_rewriter_returns_original_type() {
-    let interner = DuplicatingInterner;
-    let argument = generic_parameter_type(generic_parameter_id(0), &interner);
-    let ty = application_type(
+// input: int32[T0] rewritten by a no-op rewriter
+// premise: {}
+// output: the original interned type
+#[tokio::test]
+async fn noop_rewriter_returns_original_type() {
+    let engine = create_test_engine().await;
+    let argument =
+        Type2::new_generic_parameter(generic_parameter_id(0), &engine);
+    let ty = Type2::new_application(
         Constructor::Primitive(Primitive::Int32),
-        &[argument],
-        &interner,
+        [argument],
+        &engine,
     );
 
-    let rewritten = rewrite_type_or_clone(&ty, &mut NoopRewriter, &interner);
+    let rewritten = rewrite_type_or_clone(&ty, &mut NoopRewriter, &engine);
 
     assert!(same_type_handle(&ty, &rewritten));
 }
@@ -124,23 +80,27 @@ impl TypeRewriter for GenericParameterRewriter {
     }
 }
 
-#[test]
-fn rewrite_nested_generic_parameter_preserves_unchanged_siblings() {
-    let interner = DuplicatingInterner;
+// input: int32[T1, int16[T0], float32], rewriting T0 to bool
+// premise: {}
+// output: int32[T1, int16[bool], float32] with unchanged nodes preserved
+#[tokio::test]
+async fn rewrite_nested_generic_parameter_preserves_unchanged_siblings() {
+    let engine = create_test_engine().await;
     let target = generic_parameter_id(0);
-    let unchanged = generic_parameter_type(generic_parameter_id(1), &interner);
-    let target_type = generic_parameter_type(target, &interner);
-    let replacement = primitive_type(Primitive::Bool, &interner);
-    let nested = application_type(
+    let unchanged =
+        Type2::new_generic_parameter(generic_parameter_id(1), &engine);
+    let target_type = Type2::new_generic_parameter(target, &engine);
+    let replacement = Type2::new_primitive(Primitive::Bool, &engine);
+    let nested = Type2::new_application(
         Constructor::Primitive(Primitive::Int16),
-        &[target_type],
-        &interner,
+        [target_type],
+        &engine,
     );
-    let trailing = primitive_type(Primitive::Float32, &interner);
-    let ty = application_type(
+    let trailing = Type2::new_primitive(Primitive::Float32, &engine);
+    let ty = Type2::new_application(
         Constructor::Primitive(Primitive::Int32),
-        &[unchanged.clone(), nested.clone(), trailing.clone()],
-        &interner,
+        [unchanged.clone(), nested.clone(), trailing.clone()],
+        &engine,
     );
 
     let rewritten = rewrite_type_or_clone(
@@ -149,7 +109,7 @@ fn rewrite_nested_generic_parameter_preserves_unchanged_siblings() {
             target,
             replacement: replacement.clone(),
         },
-        &interner,
+        &engine,
     );
 
     assert!(!same_type_handle(&ty, &rewritten));
@@ -246,35 +206,47 @@ impl TypeRewriter for ApplicationRewriter {
     }
 }
 
+// input: int32[T0] rewritten asynchronously by a no-op rewriter
+// premise: {}
+// output: no replacement
 #[tokio::test]
 async fn async_type_rewriter_uses_async_traversal() {
-    let interner = DuplicatingInterner;
-    let ty = application_type(
+    let engine = create_test_engine().await;
+    let ty = Type2::new_application(
         Constructor::Primitive(Primitive::Int32),
-        &[generic_parameter_type(generic_parameter_id(0), &interner)],
-        &interner,
+        [Type2::new_generic_parameter(generic_parameter_id(0), &engine)],
+        &engine,
     );
 
-    let rewritten = rewrite_type_async(&ty, &mut AsyncNoopRewriter, &interner)
-        .await
-        .unwrap();
+    let rewritten =
+        rewrite_type_async(&ty, &mut AsyncNoopRewriter, &engine).await.unwrap();
 
     assert!(rewritten.is_none());
 }
 
+// input: for<T>. fn(int16[T0]), rewriting T0 to uint8 and int16[_] to bool
+// premise: {}
+// output: for<T>. fn(bool), with T0 visited at binder depth 1
 #[tokio::test]
 async fn async_application_rewriter_runs_after_rewriting_arguments() {
-    let interner = DuplicatingInterner;
+    let engine = create_test_engine().await;
     let target = generic_parameter_id(0);
     let target_constructor = Constructor::Primitive(Primitive::Int16);
-    let replacement = primitive_type(Primitive::Bool, &interner);
-    let argument_replacement = primitive_type(Primitive::Uint8, &interner);
-    let nested = application_type(
+    let replacement = Type2::new_primitive(Primitive::Bool, &engine);
+    let argument_replacement = Type2::new_primitive(Primitive::Uint8, &engine);
+    let nested = Type2::new_application(
         target_constructor.clone(),
-        &[generic_parameter_type(target, &interner)],
-        &interner,
+        [Type2::new_generic_parameter(target, &engine)],
+        &engine,
     );
-    let ty = function_pointer_type(&[nested], &interner);
+    let ty = Type2::new_function_pointer_with_binder(
+        Binder::new(
+            engine.intern_unsized(vec![crate::r#type::kind::TyKind::Type]),
+        ),
+        [],
+        nested,
+        &engine,
+    );
     let mut rewriter = AsyncApplicationRewriter {
         target,
         target_constructor,
@@ -284,9 +256,8 @@ async fn async_application_rewriter_runs_after_rewriting_arguments() {
         saw_rewritten_argument: false,
     };
 
-    let rewritten = rewrite_type_or_clone_async(&ty, &mut rewriter, &interner)
-        .await
-        .unwrap();
+    let rewritten =
+        rewrite_type_or_clone_async(&ty, &mut rewriter, &engine).await.unwrap();
 
     let rewritten_application = as_application(&rewritten);
     assert!(same_type_handle(
@@ -297,21 +268,24 @@ async fn async_application_rewriter_runs_after_rewriting_arguments() {
     assert!(rewriter.saw_rewritten_argument);
 }
 
-#[test]
-fn application_rewriter_runs_after_rewriting_arguments() {
-    let interner = DuplicatingInterner;
+// input: int32[int16[T0]], rewriting T0 to uint8 and int16[_] to bool
+// premise: {}
+// output: int32[bool], with the application callback observing uint8
+#[tokio::test]
+async fn application_rewriter_runs_after_rewriting_arguments() {
+    let engine = create_test_engine().await;
     let target_constructor = Constructor::Primitive(Primitive::Int16);
-    let replacement = primitive_type(Primitive::Bool, &interner);
-    let argument_replacement = primitive_type(Primitive::Uint8, &interner);
-    let nested = application_type(
+    let replacement = Type2::new_primitive(Primitive::Bool, &engine);
+    let argument_replacement = Type2::new_primitive(Primitive::Uint8, &engine);
+    let nested = Type2::new_application(
         target_constructor.clone(),
-        &[generic_parameter_type(generic_parameter_id(0), &interner)],
-        &interner,
+        [Type2::new_generic_parameter(generic_parameter_id(0), &engine)],
+        &engine,
     );
-    let ty = application_type(
+    let ty = Type2::new_application(
         Constructor::Primitive(Primitive::Int32),
-        &[nested],
-        &interner,
+        [nested],
+        &engine,
     );
     let mut rewriter = ApplicationRewriter {
         target_constructor,
@@ -321,7 +295,7 @@ fn application_rewriter_runs_after_rewriting_arguments() {
         saw_rewritten_argument: false,
     };
 
-    let rewritten = rewrite_type_or_clone(&ty, &mut rewriter, &interner);
+    let rewritten = rewrite_type_or_clone(&ty, &mut rewriter, &engine);
 
     let rewritten_application = as_application(&rewritten);
     assert!(same_type_handle(
@@ -348,44 +322,48 @@ impl AsyncTypeRewriter for FailingAsyncRewriter {
     }
 }
 
+// input: int32[T0] rewritten by a callback that fails on T0
+// premise: {}
+// output: error "stop"
 #[tokio::test]
 async fn async_type_rewriter_returns_rewriter_error() {
-    let interner = DuplicatingInterner;
+    let engine = create_test_engine().await;
     let target = generic_parameter_id(0);
-    let argument = generic_parameter_type(target, &interner);
-    let ty = application_type(
+    let argument = Type2::new_generic_parameter(target, &engine);
+    let ty = Type2::new_application(
         Constructor::Primitive(Primitive::Int32),
-        &[argument],
-        &interner,
+        [argument],
+        &engine,
     );
 
-    let result = rewrite_type_async(
-        &ty,
-        &mut FailingAsyncRewriter { target },
-        &interner,
-    )
-    .await;
+    let result =
+        rewrite_type_async(&ty, &mut FailingAsyncRewriter { target }, &engine)
+            .await;
 
     assert_eq!(result, Err("stop"));
 }
 
-#[test]
-fn instantiation_replaces_generic_parameter_and_leaves_missing_unchanged() {
-    let interner = DuplicatingInterner;
+// input: int32[T0, T1] substituted with { T0 = bool }
+// premise: {}
+// output: int32[bool, T1], with T1 preserved
+#[tokio::test]
+async fn instantiation_replaces_generic_parameter_and_leaves_missing_unchanged()
+{
+    let engine = create_test_engine().await;
     let target = generic_parameter_id(0);
     let missing = generic_parameter_id(1);
-    let target_type = generic_parameter_type(target, &interner);
-    let missing_type = generic_parameter_type(missing, &interner);
-    let replacement = primitive_type(Primitive::Bool, &interner);
-    let ty = application_type(
+    let target_type = Type2::new_generic_parameter(target, &engine);
+    let missing_type = Type2::new_generic_parameter(missing, &engine);
+    let replacement = Type2::new_primitive(Primitive::Bool, &engine);
+    let ty = Type2::new_application(
         Constructor::Primitive(Primitive::Int32),
-        &[target_type, missing_type.clone()],
-        &interner,
+        [target_type, missing_type.clone()],
+        &engine,
     );
     let mut instantiation = Substitution::default();
     instantiation.insert_generic(target, replacement.clone());
 
-    let instantiated = ty.apply_or_clone(&instantiation, &interner);
+    let instantiated = ty.apply_or_clone(&instantiation, &engine);
 
     let instantiated_application = as_application(&instantiated);
     assert!(same_type_handle(
@@ -414,31 +392,39 @@ impl TypeRewriter for BinderDepthRecorder {
     }
 }
 
-#[test]
-fn binder_depth_tracks_function_pointer_nesting() {
-    let interner = DuplicatingInterner;
+// input: int32[T0, for<T>. fn(T1, for<U>. fn(T2))]
+// premise: {}
+// output: T0, T1, and T2 visited at binder depths 0, 1, and 2
+#[tokio::test]
+async fn binder_depth_tracks_function_pointer_nesting() {
+    let engine = create_test_engine().await;
     let outside = generic_parameter_id(0);
     let inside_one = generic_parameter_id(1);
     let inside_two = generic_parameter_id(2);
-    let nested_function_pointer = function_pointer_type(
-        &[generic_parameter_type(inside_two, &interner)],
-        &interner,
+    let nested_function_pointer = Type2::new_function_pointer_with_binder(
+        Binder::new(
+            engine.intern_unsized(vec![crate::r#type::kind::TyKind::Type]),
+        ),
+        [],
+        Type2::new_generic_parameter(inside_two, &engine),
+        &engine,
     );
-    let function_pointer = function_pointer_type(
-        &[
-            generic_parameter_type(inside_one, &interner),
-            nested_function_pointer,
-        ],
-        &interner,
+    let function_pointer = Type2::new_function_pointer_with_binder(
+        Binder::new(
+            engine.intern_unsized(vec![crate::r#type::kind::TyKind::Type; 2]),
+        ),
+        [Type2::new_generic_parameter(inside_one, &engine)],
+        nested_function_pointer,
+        &engine,
     );
-    let ty = application_type(
+    let ty = Type2::new_application(
         Constructor::Primitive(Primitive::Int32),
-        &[generic_parameter_type(outside, &interner), function_pointer],
-        &interner,
+        [Type2::new_generic_parameter(outside, &engine), function_pointer],
+        &engine,
     );
     let mut recorder = BinderDepthRecorder::default();
 
-    let rewritten = rewrite_type_or_clone(&ty, &mut recorder, &interner);
+    let rewritten = rewrite_type_or_clone(&ty, &mut recorder, &engine);
 
     assert!(same_type_handle(&ty, &rewritten));
     assert_eq!(recorder.records, vec![
@@ -448,15 +434,24 @@ fn binder_depth_tracks_function_pointer_nesting() {
     ]);
 }
 
+// input: for<T, U>. fn(T0, int16), rewriting T0 to bool
+// premise: {}
+// output: for<T, U>. fn(bool, int16), after visiting both arguments
 #[tokio::test]
 async fn rewrite_application_supports_async_failable_rewrite() {
-    let interner = DuplicatingInterner;
+    let engine = create_test_engine().await;
     let target = generic_parameter_id(0);
-    let target_type = generic_parameter_type(target, &interner);
-    let unchanged = primitive_type(Primitive::Int16, &interner);
-    let replacement = primitive_type(Primitive::Bool, &interner);
-    let function_pointer =
-        function_pointer_type(&[target_type, unchanged.clone()], &interner);
+    let target_type = Type2::new_generic_parameter(target, &engine);
+    let unchanged = Type2::new_primitive(Primitive::Int16, &engine);
+    let replacement = Type2::new_primitive(Primitive::Bool, &engine);
+    let function_pointer = Type2::new_function_pointer_with_binder(
+        Binder::new(
+            engine.intern_unsized(vec![crate::r#type::kind::TyKind::Type; 2]),
+        ),
+        [target_type],
+        unchanged.clone(),
+        &engine,
+    );
     let application = as_application(&function_pointer);
     let mut visited_count = 0;
 
@@ -484,14 +479,18 @@ async fn rewrite_application_supports_async_failable_rewrite() {
     assert!(same_type_handle(&rewritten_application.arguments[1], &unchanged));
 }
 
+// input: int32[T0] rewritten by a failing argument callback
+// premise: {}
+// output: error "stop"
 #[tokio::test]
 async fn rewrite_application_returns_callback_error() {
-    let interner = DuplicatingInterner;
-    let argument = generic_parameter_type(generic_parameter_id(0), &interner);
-    let ty = application_type(
+    let engine = create_test_engine().await;
+    let argument =
+        Type2::new_generic_parameter(generic_parameter_id(0), &engine);
+    let ty = Type2::new_application(
         Constructor::Primitive(Primitive::Int32),
-        &[argument],
-        &interner,
+        [argument],
+        &engine,
     );
 
     let result = rewrite_application(as_application(&ty), async |_| {
@@ -502,27 +501,36 @@ async fn rewrite_application_returns_callback_error() {
     assert_eq!(result, Err("stop"));
 }
 
-#[test]
-fn instantiate_respects_nested_binders() {
-    let interner = DuplicatingInterner;
-    let replacement_zero = primitive_type(Primitive::Bool, &interner);
-    let replacement_one = primitive_type(Primitive::Int16, &interner);
-    let nested_inner_bound = bound_variable_type(0, 0, &interner);
-    let nested_outer_bound = bound_variable_type(1, 0, &interner);
-    let nested_function_pointer = function_pointer_type(
-        &[nested_inner_bound.clone(), nested_outer_bound],
-        &interner,
+// input: int32[^0.0, for<T>. fn(^0.0, ^1.0), ^0.1]
+// premise: instantiate outer binder with [bool, int16]
+// output: int32[bool, for<T>. fn(^0.0, bool), int16]
+#[tokio::test]
+async fn instantiate_respects_nested_binders() {
+    let engine = create_test_engine().await;
+    let replacement_zero = Type2::new_primitive(Primitive::Bool, &engine);
+    let replacement_one = Type2::new_primitive(Primitive::Int16, &engine);
+    let nested_inner_bound =
+        Type2::new_bound_variable(BoundVariable::new(0, 0), &engine);
+    let nested_outer_bound =
+        Type2::new_bound_variable(BoundVariable::new(1, 0), &engine);
+    let nested_function_pointer = Type2::new_function_pointer_with_binder(
+        Binder::new(
+            engine.intern_unsized(vec![crate::r#type::kind::TyKind::Type; 2]),
+        ),
+        [nested_inner_bound.clone()],
+        nested_outer_bound,
+        &engine,
     );
-    let ty = application_type(
+    let ty = Type2::new_application(
         Constructor::Primitive(Primitive::Int32),
-        &[
-            bound_variable_type(0, 0, &interner),
+        [
+            Type2::new_bound_variable(BoundVariable::new(0, 0), &engine),
             nested_function_pointer,
-            bound_variable_type(0, 1, &interner),
+            Type2::new_bound_variable(BoundVariable::new(0, 1), &engine),
         ],
-        &interner,
+        &engine,
     );
-    let binder = Binder::new(interner.intern_unsized([
+    let binder = Binder::new(engine.intern_unsized([
         crate::r#type::kind::TyKind::Type,
         crate::r#type::kind::TyKind::Type,
     ]));
@@ -530,7 +538,7 @@ fn instantiate_respects_nested_binders() {
     let rewritten = binder.instantiate(
         &ty,
         &[replacement_zero.clone(), replacement_one.clone()],
-        &interner,
+        &engine,
     );
 
     let rewritten_application = as_application(&rewritten);
@@ -554,58 +562,106 @@ fn instantiate_respects_nested_binders() {
     ));
 }
 
-#[test]
-fn instantiate_leaves_missing_replacement_unchanged() {
-    let interner = DuplicatingInterner;
-    let missing = bound_variable_type(0, 1, &interner);
-    let ty = application_type(
-        Constructor::Primitive(Primitive::Int32),
-        std::slice::from_ref(&missing),
-        &interner,
+// input: Symbolic[^0.0, ^1.0]
+// premise: instantiate outer binder with [bool]
+// output: Symbolic[^0.0, bool]
+#[tokio::test]
+async fn instantiate_respects_symbolic_binders() {
+    let engine = create_test_engine().await;
+    let replacement = Type2::new_primitive(Primitive::Bool, &engine);
+    let inner_bound =
+        Type2::new_bound_variable(BoundVariable::new(0, 0), &engine);
+    let outer_bound =
+        Type2::new_bound_variable(BoundVariable::new(1, 0), &engine);
+    let nested_symbolic = Type2::new_symbolic_with_binder(
+        SYMBOL_ID,
+        Binder::new(
+            engine.intern_unsized(vec![crate::r#type::kind::TyKind::Type; 2]),
+        ),
+        [inner_bound.clone(), outer_bound],
+        &engine,
+    );
+    let binder = Binder::new(
+        engine.intern_unsized(vec![crate::r#type::kind::TyKind::Type]),
     );
 
-    let rewritten = ty.instantiate(&[], &interner);
+    let rewritten = binder.instantiate(
+        &nested_symbolic,
+        std::slice::from_ref(&replacement),
+        &engine,
+    );
+
+    let rewritten = as_application(&rewritten);
+    assert!(same_type_handle(&rewritten.arguments[0], &inner_bound));
+    assert!(same_type_handle(&rewritten.arguments[1], &replacement));
+}
+
+// input: int32[^0.1] instantiated with no replacements
+// premise: {}
+// output: int32[^0.1], with the missing replacement preserved
+#[tokio::test]
+async fn instantiate_leaves_missing_replacement_unchanged() {
+    let engine = create_test_engine().await;
+    let missing = Type2::new_bound_variable(BoundVariable::new(0, 1), &engine);
+    let ty = Type2::new_application(
+        Constructor::Primitive(Primitive::Int32),
+        [missing.clone()],
+        &engine,
+    );
+
+    let rewritten = ty.instantiate(&[], &engine);
 
     let rewritten_application = as_application(&rewritten);
     assert!(same_type_handle(&rewritten_application.arguments[0], &missing));
 }
 
-#[test]
-fn instantiate_interned_slice_of_types() {
-    let interner = DuplicatingInterner;
-    let replacement = primitive_type(Primitive::Bool, &interner);
-    let unchanged = primitive_type(Primitive::Int16, &interner);
-    let arguments: Interned<[Interned<Type2>]> = interner.intern_unsized(vec![
-        bound_variable_type(0, 0, &interner),
+// input: [^0.0, int16]
+// premise: instantiate with [bool]
+// output: [bool, int16]
+#[tokio::test]
+async fn instantiate_interned_slice_of_types() {
+    let engine = create_test_engine().await;
+    let replacement = Type2::new_primitive(Primitive::Bool, &engine);
+    let unchanged = Type2::new_primitive(Primitive::Int16, &engine);
+    let arguments: Interned<[Interned<Type2>]> = engine.intern_unsized(vec![
+        Type2::new_bound_variable(BoundVariable::new(0, 0), &engine),
         unchanged.clone(),
     ]);
 
     let instantiated =
-        arguments.instantiate(std::slice::from_ref(&replacement), &interner);
+        arguments.instantiate(std::slice::from_ref(&replacement), &engine);
 
     assert!(same_type_handle(&instantiated[0], &replacement));
     assert!(same_type_handle(&instantiated[1], &unchanged));
 }
 
-#[test]
-fn instantiate_shifts_free_bound_variables_in_replacement() {
-    let interner = DuplicatingInterner;
-    let replacement = bound_variable_type(0, 7, &interner);
-    let nested_function_pointer = function_pointer_type(
-        &[bound_variable_type(1, 0, &interner)],
-        &interner,
+// input: int32[for<T>. fn(^1.0)]
+// premise: instantiate ^0.0 with free variable ^0.7
+// output: int32[for<T>. fn(^1.7)]
+#[tokio::test]
+async fn instantiate_shifts_free_bound_variables_in_replacement() {
+    let engine = create_test_engine().await;
+    let replacement =
+        Type2::new_bound_variable(BoundVariable::new(0, 7), &engine);
+    let nested_function_pointer = Type2::new_function_pointer_with_binder(
+        Binder::new(
+            engine.intern_unsized(vec![crate::r#type::kind::TyKind::Type]),
+        ),
+        [],
+        Type2::new_bound_variable(BoundVariable::new(1, 0), &engine),
+        &engine,
     );
-    let ty = application_type(
+    let ty = Type2::new_application(
         Constructor::Primitive(Primitive::Int32),
-        &[nested_function_pointer],
-        &interner,
+        [nested_function_pointer],
+        &engine,
     );
     let binder = Binder::new(
-        interner.intern_unsized(vec![crate::r#type::kind::TyKind::Type]),
+        engine.intern_unsized(vec![crate::r#type::kind::TyKind::Type]),
     );
 
     let rewritten =
-        binder.instantiate(&ty, std::slice::from_ref(&replacement), &interner);
+        binder.instantiate(&ty, std::slice::from_ref(&replacement), &engine);
 
     let rewritten_application = as_application(&rewritten);
     let rewritten_nested = as_application(&rewritten_application.arguments[0]);

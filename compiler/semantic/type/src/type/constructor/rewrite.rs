@@ -369,11 +369,12 @@ const fn argument_context(
     ctx: RewriteContext,
 ) -> RewriteContext {
     match application.constructor {
-        Constructor::FunctionPointer(_) => ctx.enter_binder(),
+        Constructor::Symbolic(_) | Constructor::FunctionPointer(_) => {
+            ctx.enter_binder()
+        }
         Constructor::Primitive(_)
         | Constructor::Lifetime(_)
         | Constructor::Reference(_)
-        | Constructor::Symbolic(_)
         | Constructor::Tuple(_)
         | Constructor::AnonymousTraitInstance(_)
         | Constructor::InstanceAssociated(_) => ctx,

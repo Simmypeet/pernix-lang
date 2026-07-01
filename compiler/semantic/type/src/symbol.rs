@@ -6,7 +6,7 @@ use qbice::{
 
 use crate::{
     substitution::{Substitutable, Substitution},
-    r#type::Type2,
+    r#type::{Type2, bound::Binder},
 };
 
 #[derive(
@@ -92,7 +92,10 @@ impl Symbol2 {
     Encode,
     Decode,
 )]
-pub struct TraitRef2(Symbol2);
+pub struct TraitRef2 {
+    symbol: Symbol2,
+    binder: Binder,
+}
 
 impl TraitRef2 {
     /// Creates a new trait reference.
@@ -100,23 +103,30 @@ impl TraitRef2 {
     pub const fn new(
         trait_id: GlobalSymbolID,
         generic_arguments: Interned<[Interned<Type2>]>,
+        binder: Binder,
     ) -> Self {
-        Self(Symbol2::new(trait_id, generic_arguments))
+        Self { symbol: Symbol2::new(trait_id, generic_arguments), binder }
     }
 
     /// Creates a new trait reference from the given symbol reference.
     #[must_use]
-    pub const fn from_symbol(symbol: Symbol2) -> Self { Self(symbol) }
+    pub const fn from_symbol(symbol: Symbol2, binder: Binder) -> Self {
+        Self { symbol, binder }
+    }
 
     /// Returns the referenced trait ID.
     #[must_use]
-    pub const fn trait_id(&self) -> GlobalSymbolID { self.0.symbol_id() }
+    pub const fn trait_id(&self) -> GlobalSymbolID { self.symbol.symbol_id() }
 
     /// Returns the generic arguments supplied to the trait.
     #[must_use]
     pub const fn generic_arguments(&self) -> &Interned<[Interned<Type2>]> {
-        self.0.generic_arguments()
+        self.symbol.generic_arguments()
     }
+
+    /// Returns the variables bound over the trait's generic arguments.
+    #[must_use]
+    pub const fn binder(&self) -> &Binder { &self.binder }
 
     /// Creates a substitution from the trait's generic parameters to its
     /// supplied generic arguments.
@@ -124,7 +134,7 @@ impl TraitRef2 {
         &self,
         engine: &TrackedEngine,
     ) -> Substitution {
-        self.0.create_substitution(engine).await
+        self.symbol.create_substitution(engine).await
     }
 }
 
@@ -134,7 +144,9 @@ impl Substitutable for TraitRef2 {
         subst: &Substitution,
         interner: &impl pernixc_qbice::Interner,
     ) -> Option<Self> {
-        self.0.apply(subst, interner).map(TraitRef2)
+        self.symbol
+            .apply(subst, interner)
+            .map(|symbol| Self { symbol, binder: self.binder.clone() })
     }
 }
 

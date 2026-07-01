@@ -166,7 +166,7 @@ impl Solver<'_> {
 
             Constructor::Symbolic(symbolic) => {
                 Box::pin(self.handle_symbolic_arguments(
-                    *symbolic,
+                    symbolic.clone(),
                     arguments,
                     variance,
                     resolve_strategy,
