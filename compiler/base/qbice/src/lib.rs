@@ -1,6 +1,9 @@
 //! Configuration for qbice specific to Pernix.
 
-use std::{borrow::Borrow, hash::BuildHasherDefault, path::Path, sync::Arc};
+use std::{
+    borrow::Borrow, collections::HashMap, hash::BuildHasherDefault, path::Path,
+    sync::Arc,
+};
 
 use enum_as_inner::EnumAsInner;
 use fxhash::FxHasher64;
@@ -60,6 +63,39 @@ pub type TrackedEngine = qbice::TrackedEngine<Config>;
 /// Type alias for the [`qbice::InputSession`] with configuration set to
 /// [`Config`].
 pub type InputSession = qbice::InputSession<Config>;
+
+/// An executor that returns precomputed query outputs from a map.
+///
+/// # Panics
+///
+/// Panics when executing a query for which no output was provided.
+#[derive(Debug)]
+pub struct PrecomputedExecutor<Q: qbice::Query> {
+    outputs: HashMap<Q, Q::Value>,
+}
+
+impl<Q: qbice::Query> PrecomputedExecutor<Q> {
+    /// Creates an executor backed by the provided query outputs.
+    #[must_use]
+    pub const fn new(outputs: HashMap<Q, Q::Value>) -> Self { Self { outputs } }
+}
+
+impl<Q: qbice::Query, C: qbice::Config> qbice::executor::Executor<Q, C>
+    for PrecomputedExecutor<Q>
+{
+    async fn execute(
+        &self,
+        query: &Q,
+        _engine: &qbice::TrackedEngine<C>,
+    ) -> Q::Value {
+        self.outputs
+            .get(query)
+            .unwrap_or_else(|| {
+                panic!("no precomputed output was injected for query {query:?}")
+            })
+            .clone()
+    }
+}
 
 /// Creates a tracked engine with an in-memory database and no registered
 /// executors.
@@ -537,5 +573,67 @@ impl<P: AsRef<Path>> StorageEngineFactory for IncrementalStorageEngine<P> {
             .build()
             .open(serialization_plugin)
             .map(StorageEngine::DbBacked)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::{collections::HashMap, sync::Arc};
+
+    use qbice::{Decode, Encode, Query, StableHash, serialize::Plugin};
+
+    use super::{
+        Engine, InMemoryFactory, PrecomputedExecutor,
+        SeededStableHasherBuilder, TrackedEngine,
+    };
+
+    #[derive(
+        Debug,
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Hash,
+        StableHash,
+        Encode,
+        Decode,
+        Query,
+    )]
+    #[value(String)]
+    struct TestQuery(u32);
+
+    async fn engine_with(outputs: HashMap<TestQuery, String>) -> TrackedEngine {
+        let mut engine = Engine::new_with(
+            Plugin::default(),
+            InMemoryFactory,
+            SeededStableHasherBuilder::new(0),
+        )
+        .await
+        .unwrap();
+
+        engine.register_executor(Arc::new(PrecomputedExecutor::new(outputs)));
+        Arc::new(engine).tracked().await
+    }
+
+    #[tokio::test]
+    async fn returns_output_associated_with_query() {
+        let engine = engine_with(HashMap::from([
+            (TestQuery(1), "first".into()),
+            (TestQuery(2), "second".into()),
+        ]))
+        .await;
+
+        assert_eq!(engine.query(&TestQuery(2)).await, "second");
+    }
+
+    #[tokio::test]
+    #[should_panic(
+        expected = "no precomputed output was injected for query TestQuery(2)"
+    )]
+    async fn panics_when_query_has_no_precomputed_output() {
+        let engine =
+            engine_with(HashMap::from([(TestQuery(1), "first".into())])).await;
+
+        engine.query(&TestQuery(2)).await;
     }
 }
