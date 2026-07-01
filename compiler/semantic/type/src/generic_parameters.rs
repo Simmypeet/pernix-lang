@@ -7,7 +7,7 @@ use qbice::{
     Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned,
 };
 
-use crate::{symbol::Symbol2, r#type::kind::TyKind};
+use crate::{symbol::TraitRef2, r#type::kind::TyKind};
 
 /// Key for querying generic parameters for a given global symbol ID.
 #[derive(
@@ -67,6 +67,16 @@ impl GenericParameter {
             GenericParameterKind::Instance(_) => TyKind::Instance,
         }
     }
+
+    /// If the generic parameter is an instance parameter, returns the
+    /// [`TraitRef2`] associated with it. Otherwise, returns `None`.
+    #[must_use]
+    pub const fn as_trait_ref_instance(&self) -> Option<&TraitRef2> {
+        match &self.kind {
+            GenericParameterKind::Instance(instance) => instance.trait_ref(),
+            _ => None,
+        }
+    }
 }
 
 #[derive(
@@ -82,15 +92,17 @@ impl GenericParameter {
     Decode,
 )]
 pub struct InstanceParameterKind {
-    trait_ref: Option<Symbol2>,
+    trait_ref: Option<TraitRef2>,
 }
 
 impl InstanceParameterKind {
     #[must_use]
-    pub const fn new(trait_ref: Option<Symbol2>) -> Self { Self { trait_ref } }
+    pub const fn new(trait_ref: Option<TraitRef2>) -> Self {
+        Self { trait_ref }
+    }
 
     #[must_use]
-    pub const fn trait_ref(&self) -> Option<&Symbol2> {
+    pub const fn trait_ref(&self) -> Option<&TraitRef2> {
         self.trait_ref.as_ref()
     }
 }
@@ -150,19 +162,6 @@ impl GenericParameters2 {
         &self,
     ) -> impl Iterator<Item = (ID<GenericParameter>, &GenericParameter)> {
         self.parameters.iter()
-    }
-
-    pub fn instance_parameters(
-        &self,
-    ) -> impl Iterator<Item = (ID<GenericParameter>, &InstanceParameterKind)>
-    {
-        self.parameters.iter().filter_map(|(id, parameter)| {
-            let GenericParameterKind::Instance(kind) = &parameter.kind else {
-                return None;
-            };
-
-            Some((id, kind))
-        })
     }
 
     #[cfg(test)]
