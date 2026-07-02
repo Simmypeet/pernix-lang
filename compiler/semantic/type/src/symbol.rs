@@ -170,6 +170,20 @@ impl Substitutable for TraitRef2 {
 
 /// Query key for retrieving the homogeneous trait reference implemented by an
 /// instance declaration.
+///
+/// NOTE: The query returning `Symbol2` instead of `TraitRef2` is intentional.
+/// This is because the trait reference in an instance declaration is always
+/// binder-free. So you'll never see something like:
+///
+/// ```pnx
+/// # `for['x]` is prohibited!
+/// pub inst Foo[A]: for['x] Bar['x, A]:
+///     pass
+///
+/// # Instead, you'll see:
+/// pub inst Foo['x, A]: Bar['x, A]:
+///     pass
+/// ```
 #[derive(
     Debug,
     Clone,
@@ -184,7 +198,7 @@ impl Substitutable for TraitRef2 {
     Decode,
     Query,
 )]
-#[value(Option<Interned<TraitRef2>>)]
+#[value(Option<Interned<Symbol2>>)]
 #[extend(name = get_trait_ref_of_instance_symbol2, by_val)]
 pub struct TraitRefKey {
     /// The global ID of the instance symbol.
