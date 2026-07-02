@@ -13,6 +13,8 @@ use crate::{
     solver::{Agree, OverflowError, Provisional, Solve, Solver},
 };
 
+mod normal_form;
+
 /// A request to resolve an instance implementing a trait reference.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ResolveInstance {
