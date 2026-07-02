@@ -19,6 +19,11 @@ impl Solver<'_> {
     /// Lifetime constraints are generated if two lifetimes mismatch, for
     /// example, lifetime `a` and `b` such that `a != b` would generate the
     /// constraint `a: 'b` and `b: 'a`.
+    ///
+    /// Note that using match operation, it doesn't attempt to reduce the types
+    /// at all. This is because `reduce` operation defined in the solver
+    /// requires the call to this function. Therefore, if we call `reduce` here,
+    /// it will cause a circular call and end up in overflowing the stack.
     pub async fn match_type(
         &mut self,
         head: &Interned<Type2>,

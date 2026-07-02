@@ -1,4 +1,4 @@
-use pernixc_qbice::TrackedEngine;
+use pernixc_qbice::{Interner, TrackedEngine};
 use pernixc_symbol::GlobalSymbolID;
 use qbice::{
     Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned,
@@ -128,6 +128,24 @@ impl TraitRef2 {
     #[must_use]
     pub const fn binder(&self) -> &Binder { &self.binder }
 
+    /// Instantiates the variables bound by this trait reference and returns the
+    /// resulting binder-free symbol reference.
+    #[must_use]
+    pub fn instantiate(
+        &self,
+        replacements: &[Interned<Type2>],
+        interner: &impl Interner,
+    ) -> Symbol2 {
+        Symbol2::new(
+            self.trait_id(),
+            self.binder.instantiate(
+                self.generic_arguments(),
+                replacements,
+                interner,
+            ),
+        )
+    }
+
     /// Creates a substitution from the trait's generic parameters to its
     /// supplied generic arguments.
     pub async fn create_substitution(
@@ -152,6 +170,20 @@ impl Substitutable for TraitRef2 {
 
 /// Query key for retrieving the homogeneous trait reference implemented by an
 /// instance declaration.
+///
+/// NOTE: The query returning `Symbol2` instead of `TraitRef2` is intentional.
+/// This is because the trait reference in an instance declaration is always
+/// binder-free. So you'll never see something like:
+///
+/// ```pnx
+/// # `for['x]` is prohibited!
+/// pub inst Foo[A]: for['x] Bar['x, A]:
+///     pass
+///
+/// # Instead, you'll see:
+/// pub inst Foo['x, A]: Bar['x, A]:
+///     pass
+/// ```
 #[derive(
     Debug,
     Clone,
@@ -166,7 +198,7 @@ impl Substitutable for TraitRef2 {
     Decode,
     Query,
 )]
-#[value(Option<Interned<TraitRef2>>)]
+#[value(Option<Interned<Symbol2>>)]
 #[extend(name = get_trait_ref_of_instance_symbol2, by_val)]
 pub struct TraitRefKey {
     /// The global ID of the instance symbol.

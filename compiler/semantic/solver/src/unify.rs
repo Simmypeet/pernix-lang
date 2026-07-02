@@ -250,7 +250,7 @@ impl Solver<'_> {
         Ok(None)
     }
 
-    pub async fn resolve_unifications(
+    pub async fn resolve_unification_constraints(
         &mut self,
         mut unifications: Vec<Unify>,
     ) -> Result<(Substitution, Vec<Unify>, Constraints), OverflowError> {

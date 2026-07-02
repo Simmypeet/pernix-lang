@@ -4,7 +4,7 @@ use pernixc_symbol::GlobalSymbolID;
 use pernixc_type::{
     generic_parameters::GenericParameterID,
     substitution::{Substitutable, Substitution},
-    symbol::{TraitRef2, get_trait_ref_of_instance_symbol2},
+    symbol::{Symbol2, get_trait_ref_of_instance_symbol2},
     r#type::Type2,
 };
 use qbice::{
@@ -47,10 +47,10 @@ impl Solver<'_> {
     /// the other.
     pub async fn order_trait_refs(
         &mut self,
-        left: &TraitRef2,
-        right: &TraitRef2,
+        left: &Symbol2,
+        right: &Symbol2,
     ) -> Result<Order, OverflowError> {
-        if left.trait_id() != right.trait_id()
+        if left.symbol_id() != right.symbol_id()
             || left.generic_arguments().len() != right.generic_arguments().len()
         {
             return Ok(Order::Incompatible);
@@ -84,8 +84,8 @@ impl Solver<'_> {
 
     async fn match_trait_refs(
         &mut self,
-        head: &TraitRef2,
-        subject: &TraitRef2,
+        head: &Symbol2,
+        subject: &Symbol2,
         side: InstantiationSide,
     ) -> Result<bool, OverflowError> {
         self.new_universe(async |solver| {
@@ -129,7 +129,7 @@ impl Solver<'_> {
 
     async fn instantiate_trait_ref_generics(
         &mut self,
-        trait_ref: &TraitRef2,
+        trait_ref: &Symbol2,
         mode: InstantiationMode,
     ) -> Substitution {
         let mut generic_parameters = Vec::new();
@@ -236,7 +236,7 @@ pub async fn instance_order_executor(
         return Ok(None);
     };
 
-    if lhs_generic_arguments.trait_id() != rhs_generic_arguments.trait_id() {
+    if lhs_generic_arguments.symbol_id() != rhs_generic_arguments.symbol_id() {
         return Ok(None);
     }
 
