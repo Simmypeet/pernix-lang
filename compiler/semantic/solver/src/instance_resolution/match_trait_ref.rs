@@ -3,7 +3,6 @@ use pernixc_type::symbol::{Symbol2, TraitRef2};
 use crate::{
     constraints::Constraints,
     solver::{OverflowError, Solver},
-    unify::Unify,
 };
 
 impl Solver<'_> {
@@ -30,18 +29,21 @@ impl Solver<'_> {
 
         let target = target.instantiate(&instantiations, self.engine());
 
-        let unifications = target
-            .generic_arguments()
-            .iter()
-            .zip(request.generic_arguments().iter())
-            .map(|(target, request)| {
-                Unify::new(target.clone(), request.clone())
-            })
-            .collect();
+        // NOTE: we use match here because we expect that the `target` is fully
+        // reduced and of course the `request` is also fully reduced
+        let Some((_, constrs)) = self
+            .match_types(
+                target
+                    .generic_arguments()
+                    .iter()
+                    .cloned()
+                    .zip(request.generic_arguments().iter().cloned()),
+            )
+            .await
+        else {
+            return Ok(None);
+        };
 
-        let (_, residual_unifications, constrs) =
-            self.resolve_unification_constraints(unifications).await?;
-
-        Ok(residual_unifications.is_empty().then_some(constrs))
+        Ok(Some(constrs))
     }
 }
