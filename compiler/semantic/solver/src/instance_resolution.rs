@@ -1,8 +1,10 @@
 use std::{future::Future, sync::Arc};
 
+use pernixc_lexical::tree::RelativeSpan;
 use pernixc_symbol::GlobalSymbolID;
 use pernixc_type::{
-    generic_parameters::GenericParameterID, symbol::TraitRef2, r#type::Type2,
+    generic_parameters::GenericParameterID, predicate::Predicate2,
+    symbol::TraitRef2, r#type::Type2,
 };
 use qbice::storage::intern::Interned;
 
@@ -130,6 +132,35 @@ impl ResolvedInstance {
     pub const fn source(&self) -> InstanceSource { self.source }
 }
 
+/// A predicate from an instance's `where` clause that could not be satisfied.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnsatisfiedPredicate {
+    predicate: Predicate2,
+    predicate_declaration_span: Option<RelativeSpan>,
+}
+
+impl UnsatisfiedPredicate {
+    /// Creates an unsatisfied predicate.
+    #[must_use]
+    pub const fn new(
+        predicate: Predicate2,
+        predicate_declaration_span: Option<RelativeSpan>,
+    ) -> Self {
+        Self { predicate, predicate_declaration_span }
+    }
+
+    /// Returns the instantiated predicate that could not be satisfied.
+    #[must_use]
+    pub const fn predicate(&self) -> &Predicate2 { &self.predicate }
+
+    /// Returns where the predicate was declared, when source information is
+    /// available.
+    #[must_use]
+    pub const fn predicate_declaration_span(&self) -> Option<&RelativeSpan> {
+        self.predicate_declaration_span.as_ref()
+    }
+}
+
 /// An error produced while resolving an instance.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolveError {
@@ -148,6 +179,15 @@ pub enum ResolveError {
     /// A requested trait argument could not be reduced to a closed normal
     /// form, or the normalization constraints could not be satisfied.
     NormalFormFailure,
+
+    /// One or more predicates from the selected instance's `where` clause
+    /// could not be satisfied. The contained predicates have already been
+    /// instantiated for the selected instance.
+    UnsatisfiedPredicates(Arc<[UnsatisfiedPredicate]>),
+
+    /// The higher-ranked leak check failed because the selected instance is
+    /// not general enough for the requested trait reference.
+    HigherRankedLeakCheckFailure,
 }
 
 /// Failures encountered while resolving a candidate's instance parameters.

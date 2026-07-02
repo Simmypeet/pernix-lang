@@ -1937,6 +1937,7 @@ dependencies = [
  "linkme",
  "pernixc_arena",
  "pernixc_hash",
+ "pernixc_lexical",
  "pernixc_qbice",
  "pernixc_semantic_element",
  "pernixc_symbol",

@@ -8,6 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 pernixc_qbice.path = "../../base/qbice"
+pernixc_lexical.path = "../../syntax/lexical"
 pernixc_type.path = "../type"
 pernixc_symbol.path = "../symbol"
 pernixc_semantic_element.path = "../semantic_element"
