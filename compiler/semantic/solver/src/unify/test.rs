@@ -25,7 +25,9 @@ async fn resolve(
     premise: &Premise,
     engine: &TrackedEngine,
 ) -> Result<(Substitution, Vec<Unify>, Constraints), OverflowError> {
-    Solver::new(premise, engine).resolve_unifications(unifications).await
+    Solver::new(premise, engine)
+        .resolve_unification_constraints(unifications)
+        .await
 }
 
 fn equality(
@@ -142,7 +144,10 @@ async fn unifies_inference_variable_with_known_type() {
     let known = Type2::new_primitive(Primitive::Bool, &engine);
 
     let (substitution, residual_unifications, constraints) = solver
-        .resolve_unifications(vec![Unify::new(inference, known.clone())])
+        .resolve_unification_constraints(vec![Unify::new(
+            inference,
+            known.clone(),
+        )])
         .await
         .unwrap();
 
@@ -164,7 +169,10 @@ async fn unifies_lifetime_inference_variable() {
     let known = Type2::new_lifetime(Lifetime::Static, &engine);
 
     let (substitution, residual_unifications, constraints) = solver
-        .resolve_unifications(vec![Unify::new(inference, known.clone())])
+        .resolve_unification_constraints(vec![Unify::new(
+            inference,
+            known.clone(),
+        )])
         .await
         .unwrap();
 
@@ -187,7 +195,7 @@ async fn unifies_two_inference_variables() {
     let right = Type2::new_inference_variable(right_variable, &engine);
 
     let (substitution, residual_unifications, constraints) = solver
-        .resolve_unifications(vec![Unify::new(left, right.clone())])
+        .resolve_unification_constraints(vec![Unify::new(left, right.clone())])
         .await
         .unwrap();
 
@@ -234,7 +242,10 @@ async fn occur_check_failure_remains_residual() {
     let recursive = Type2::new_tuple([inference.clone()], &engine);
 
     let (substitution, residual_unifications, constraints) = solver
-        .resolve_unifications(vec![Unify::new(inference.clone(), recursive)])
+        .resolve_unification_constraints(vec![Unify::new(
+            inference.clone(),
+            recursive,
+        )])
         .await
         .unwrap();
 
@@ -278,7 +289,7 @@ async fn tuple_and_reference_arguments_are_unified_invariantly() {
     );
 
     let (substitution, residual_unifications, constraints) = solver
-        .resolve_unifications(vec![Unify::new(left, right)])
+        .resolve_unification_constraints(vec![Unify::new(left, right)])
         .await
         .unwrap();
 

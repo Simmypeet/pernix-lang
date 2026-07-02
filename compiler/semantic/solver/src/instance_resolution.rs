@@ -13,6 +13,7 @@ use crate::{
     solver::{Agree, OverflowError, Provisional, Solve, Solver},
 };
 
+mod match_trait_ref;
 mod normal_form;
 mod skolemize;
 
