@@ -157,6 +157,7 @@ impl Substitutable for Outlives {
     Decode,
 )]
 pub struct Tuple {
+    binder: Binder,
     operand: Interned<Type2>,
 }
 
@@ -166,7 +167,9 @@ impl Substitutable for Tuple {
         subst: &Substitution,
         interner: &impl Interner,
     ) -> Option<Self> {
-        self.operand.apply(subst, interner).map(|operand| Self { operand })
+        self.operand
+            .apply(subst, interner)
+            .map(|operand| Self { binder: self.binder.clone(), operand })
     }
 }
 
