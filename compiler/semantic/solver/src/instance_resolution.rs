@@ -16,6 +16,7 @@ use crate::{
 mod match_trait_ref;
 mod normal_form;
 mod skolemize;
+mod unify_trait_ref;
 
 /// A request to resolve an instance implementing a trait reference.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
