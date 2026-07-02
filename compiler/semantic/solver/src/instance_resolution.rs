@@ -19,6 +19,8 @@ mod normal_form;
 mod skolemize;
 mod unify_trait_ref;
 
+pub use deduce_instance_symbol::DeducedInstanceSymbol;
+
 /// A request to resolve an instance implementing a trait reference.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ResolveInstance {

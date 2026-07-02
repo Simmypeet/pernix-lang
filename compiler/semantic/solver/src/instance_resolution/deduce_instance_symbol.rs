@@ -14,6 +14,45 @@ use crate::{
     solver::{OverflowError, Solver},
 };
 
+/// The generic deduction and diagnostics produced for an instance symbol.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeducedInstanceSymbol {
+    substitution: Substitution,
+    constraints: Constraints,
+    soft_errors: Vec<ResolveSoftError>,
+}
+
+impl DeducedInstanceSymbol {
+    const fn new(
+        substitution: Substitution,
+        constraints: Constraints,
+        soft_errors: Vec<ResolveSoftError>,
+    ) -> Self {
+        Self { substitution, constraints, soft_errors }
+    }
+
+    /// Returns the deduced generic substitution.
+    #[must_use]
+    pub const fn substitution(&self) -> &Substitution { &self.substitution }
+
+    /// Returns the constraints accumulated while deducing the symbol.
+    #[must_use]
+    pub const fn constraints(&self) -> &Constraints { &self.constraints }
+
+    /// Returns the non-fatal errors from recursively resolved instances.
+    #[must_use]
+    pub fn soft_errors(&self) -> &[ResolveSoftError] { &self.soft_errors }
+
+    /// Decomposes this result into its substitution, constraints, and soft
+    /// errors.
+    #[must_use]
+    pub fn into_parts(
+        self,
+    ) -> (Substitution, Constraints, Vec<ResolveSoftError>) {
+        (self.substitution, self.constraints, self.soft_errors)
+    }
+}
+
 impl Solver<'_> {
     /// Deduces the generic arguments of an instance symbol from an expected
     /// trait reference.
@@ -26,10 +65,7 @@ impl Solver<'_> {
         &mut self,
         symbol_id: GlobalSymbolID,
         expected_trait_ref: Symbol2,
-    ) -> Result<
-        Option<(Substitution, Constraints, Vec<ResolveSoftError>)>,
-        OverflowError,
-    > {
+    ) -> Result<Option<DeducedInstanceSymbol>, OverflowError> {
         let Some(instance_trait_ref) =
             self.engine().get_trait_ref_of_instance_symbol2(symbol_id).await
         else {
@@ -85,24 +121,21 @@ impl Solver<'_> {
             return Ok(None);
         }
 
-        let Some((unification, recursive_constraints, soft_errors)) =
-            resolve_instance_parameters(
-                self,
-                symbol_id,
-                &generic_parameters,
-                instance_parameters,
-                unification,
-            )
-            .await?
+        let Some(mut deduction) = resolve_instance_parameters(
+            self,
+            symbol_id,
+            &generic_parameters,
+            instance_parameters,
+            unification,
+        )
+        .await?
         else {
             return Ok(None);
         };
 
-        Ok(Some((
-            unification,
-            constraints.union_into(recursive_constraints),
-            soft_errors,
-        )))
+        deduction.constraints = constraints.union_into(deduction.constraints);
+
+        Ok(Some(deduction))
     }
 }
 
@@ -114,10 +147,7 @@ async fn resolve_instance_parameters(
     generic_parameters: &GenericParameters2,
     instance_parameters: Vec<ParameterInference>,
     mut substitution: Substitution,
-) -> Result<
-    Option<(Substitution, Constraints, Vec<ResolveSoftError>)>,
-    OverflowError,
-> {
+) -> Result<Option<DeducedInstanceSymbol>, OverflowError> {
     let mut constraints = Constraints::default();
     let mut soft_errors = Vec::new();
 
@@ -162,7 +192,7 @@ async fn resolve_instance_parameters(
         substitution = recursive_substitution;
     }
 
-    Ok(Some((substitution, constraints, soft_errors)))
+    Ok(Some(DeducedInstanceSymbol::new(substitution, constraints, soft_errors)))
 }
 
 fn get_required_parameters(
