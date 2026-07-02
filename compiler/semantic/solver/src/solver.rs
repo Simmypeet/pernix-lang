@@ -6,8 +6,12 @@ use std::{
 
 use pernixc_hash::FxHashMap;
 use pernixc_qbice::TrackedEngine;
+use pernixc_symbol::GlobalSymbolID;
 use pernixc_type::{
     self,
+    generic_parameters::{
+        GenericParameterID, GenericParameters2, get_generic_parameters2,
+    },
     predicate::Predicate2,
     substitution::Substitution,
     r#type::{
@@ -210,6 +214,45 @@ enum CurrentStatus<Q> {
 pub type BoundInstantiation = Vec<Interned<Type2>>;
 
 impl Solver<'_> {
+    /// Creates a substitution from every generic parameter owned by
+    /// `symbol_id` to a fresh inference variable of the same kind.
+    ///
+    /// This includes lifetime, type, and instance parameters.
+    pub async fn fresh_generic_substitution(
+        &mut self,
+        symbol_id: GlobalSymbolID,
+    ) -> Substitution {
+        let generic_parameters =
+            self.engine().get_generic_parameters2(symbol_id).await;
+
+        self.fresh_generic_substitution_with_parameters(
+            symbol_id,
+            &generic_parameters,
+        )
+    }
+
+    /// Creates a substitution from the supplied generic parameters to fresh
+    /// inference variables of the same kinds.
+    ///
+    /// This includes lifetime, type, and instance parameters.
+    pub fn fresh_generic_substitution_with_parameters(
+        &mut self,
+        symbol_id: GlobalSymbolID,
+        generic_parameters: &GenericParameters2,
+    ) -> Substitution {
+        let mut substitution = Substitution::new();
+
+        for (id, parameter) in generic_parameters.iter() {
+            let variable = self.fresh_inference_variable(parameter.kind());
+            substitution.insert_generic(
+                GenericParameterID::new(symbol_id, id),
+                self.intern(Type2::InferenceVariable(variable)),
+            );
+        }
+
+        substitution
+    }
+
     /// Creates a fresh inference variables for each kind in `kinds`, and
     /// returns an array of all the created inference variables.
     pub fn create_inference_instantiations(
