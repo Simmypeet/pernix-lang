@@ -9,8 +9,8 @@ use pernixc_type::{
         self, GenericParameter, GenericParameterID, GenericParameterKind,
         GenericParameters2,
     },
-    symbol::TraitRef2,
-    r#type::{Type2, bound::Binder, constructor::Primitive},
+    symbol::Symbol2,
+    r#type::{Type2, constructor::Primitive},
 };
 use qbice::{
     serialize::Plugin, stable_hash::SeededStableHasherBuilder,
@@ -68,8 +68,8 @@ async fn create_engine() -> TrackedEngine {
 }
 
 async fn order(
-    left: TraitRef2,
-    right: TraitRef2,
+    left: Symbol2,
+    right: Symbol2,
     engine: &TrackedEngine,
 ) -> Result<Order, OverflowError> {
     Solver::new(&Premise::default(), engine)
@@ -77,14 +77,13 @@ async fn order(
         .await
 }
 
-fn trait_ref(
+fn symbol(
     arguments: impl IntoIterator<Item = Interned<Type2>>,
     engine: &TrackedEngine,
-) -> TraitRef2 {
-    TraitRef2::new(
+) -> Symbol2 {
+    Symbol2::new(
         TRAIT_ID,
         engine.intern_unsized(arguments.into_iter().collect::<Vec<_>>()),
-        Binder::new(engine.intern_unsized(Vec::new())),
     )
 }
 
@@ -122,8 +121,8 @@ fn bool(engine: &TrackedEngine) -> Interned<Type2> {
 #[tokio::test]
 async fn generic_trait_ref_is_more_general_than_concrete() {
     let engine = create_engine().await;
-    let generic = trait_ref([left_generic(0, &engine)], &engine);
-    let concrete = trait_ref([int(&engine)], &engine);
+    let generic = symbol([left_generic(0, &engine)], &engine);
+    let concrete = symbol([int(&engine)], &engine);
 
     assert_eq!(
         order(generic, concrete, &engine).await.unwrap(),
@@ -137,8 +136,8 @@ async fn generic_trait_ref_is_more_general_than_concrete() {
 #[tokio::test]
 async fn concrete_trait_ref_is_more_specific_than_generic() {
     let engine = create_engine().await;
-    let concrete = trait_ref([int(&engine)], &engine);
-    let generic = trait_ref([right_generic(0, &engine)], &engine);
+    let concrete = symbol([int(&engine)], &engine);
+    let generic = symbol([right_generic(0, &engine)], &engine);
 
     assert_eq!(
         order(concrete, generic, &engine).await.unwrap(),
@@ -152,8 +151,8 @@ async fn concrete_trait_ref_is_more_specific_than_generic() {
 #[tokio::test]
 async fn different_concrete_arguments_are_incompatible() {
     let engine = create_engine().await;
-    let int_ref = trait_ref([int(&engine)], &engine);
-    let bool_ref = trait_ref([bool(&engine)], &engine);
+    let int_ref = symbol([int(&engine)], &engine);
+    let bool_ref = symbol([bool(&engine)], &engine);
 
     assert_eq!(
         order(int_ref, bool_ref, &engine).await.unwrap(),
@@ -167,8 +166,8 @@ async fn different_concrete_arguments_are_incompatible() {
 #[tokio::test]
 async fn alpha_equivalent_generics_are_ambiguous() {
     let engine = create_engine().await;
-    let left = trait_ref([left_generic(0, &engine)], &engine);
-    let right = trait_ref([right_generic(0, &engine)], &engine);
+    let left = symbol([left_generic(0, &engine)], &engine);
+    let right = symbol([right_generic(0, &engine)], &engine);
 
     assert_eq!(order(left, right, &engine).await.unwrap(), Order::Ambiguous);
 }
@@ -179,11 +178,9 @@ async fn alpha_equivalent_generics_are_ambiguous() {
 #[tokio::test]
 async fn repeated_parameter_must_match_consistently() {
     let engine = create_engine().await;
-    let repeated = trait_ref(
-        [left_generic(0, &engine), left_generic(0, &engine)],
-        &engine,
-    );
-    let mixed = trait_ref([int(&engine), bool(&engine)], &engine);
+    let repeated =
+        symbol([left_generic(0, &engine), left_generic(0, &engine)], &engine);
+    let mixed = symbol([int(&engine), bool(&engine)], &engine);
 
     assert_eq!(
         order(repeated, mixed, &engine).await.unwrap(),
@@ -197,8 +194,8 @@ async fn repeated_parameter_must_match_consistently() {
 #[tokio::test]
 async fn cross_shape_overlap_is_ambiguous() {
     let engine = create_engine().await;
-    let left = trait_ref([int(&engine), left_generic(0, &engine)], &engine);
-    let right = trait_ref([right_generic(0, &engine), int(&engine)], &engine);
+    let left = symbol([int(&engine), left_generic(0, &engine)], &engine);
+    let right = symbol([right_generic(0, &engine), int(&engine)], &engine);
 
     assert_eq!(order(left, right, &engine).await.unwrap(), Order::Ambiguous);
 }

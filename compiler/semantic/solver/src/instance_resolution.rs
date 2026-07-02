@@ -113,6 +113,7 @@ pub enum InstanceSource {
 pub struct ResolvedInstance {
     instance: Interned<Type2>,
     source: InstanceSource,
+    soft_errors: Arc<[ResolveSoftError]>,
 }
 
 impl ResolvedInstance {
@@ -121,8 +122,9 @@ impl ResolvedInstance {
     pub const fn new(
         instance: Interned<Type2>,
         source: InstanceSource,
+        soft_errors: Arc<[ResolveSoftError]>,
     ) -> Self {
-        Self { instance, source }
+        Self { instance, source, soft_errors }
     }
 
     /// Returns the resolved instance type.
@@ -136,13 +138,54 @@ impl ResolvedInstance {
     /// Returns where the instance was selected from.
     #[must_use]
     pub const fn source(&self) -> InstanceSource { self.source }
+
+    /// Returns the non-fatal errors encountered while resolving this instance.
+    #[must_use]
+    pub fn soft_errors(&self) -> &[ResolveSoftError] { &self.soft_errors }
+}
+
+/// A non-fatal error encountered while resolving an instance.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ResolveSoftError {
+    /// A predicate from a selected instance's `where` clause could not be
+    /// satisfied.
+    UnsatisfiedPredicate(UnsatisfiedPredicate),
+}
+
+/// One level in a nested instance-resolution trace.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct InstanceResolutionFrame {
+    instance_symbol: GlobalSymbolID,
+    trait_ref: TraitRef2,
+}
+
+impl InstanceResolutionFrame {
+    /// Creates a resolution frame for an instance candidate.
+    #[must_use]
+    pub const fn new(
+        instance_symbol: GlobalSymbolID,
+        trait_ref: TraitRef2,
+    ) -> Self {
+        Self { instance_symbol, trait_ref }
+    }
+
+    /// Returns the instance symbol selected at this resolution level.
+    #[must_use]
+    pub const fn instance_symbol(&self) -> GlobalSymbolID {
+        self.instance_symbol
+    }
+
+    /// Returns the trait reference being solved at this resolution level.
+    #[must_use]
+    pub const fn trait_ref(&self) -> &TraitRef2 { &self.trait_ref }
 }
 
 /// A predicate from an instance's `where` clause that could not be satisfied.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct UnsatisfiedPredicate {
     predicate: Predicate2,
     predicate_declaration_span: Option<RelativeSpan>,
+    instance_resolution_stack: Arc<[InstanceResolutionFrame]>,
 }
 
 impl UnsatisfiedPredicate {
@@ -151,8 +194,13 @@ impl UnsatisfiedPredicate {
     pub const fn new(
         predicate: Predicate2,
         predicate_declaration_span: Option<RelativeSpan>,
+        instance_resolution_stack: Arc<[InstanceResolutionFrame]>,
     ) -> Self {
-        Self { predicate, predicate_declaration_span }
+        Self {
+            predicate,
+            predicate_declaration_span,
+            instance_resolution_stack,
+        }
     }
 
     /// Returns the instantiated predicate that could not be satisfied.
@@ -164,6 +212,14 @@ impl UnsatisfiedPredicate {
     #[must_use]
     pub const fn predicate_declaration_span(&self) -> Option<&RelativeSpan> {
         self.predicate_declaration_span.as_ref()
+    }
+
+    /// Returns the instance resolutions traversed before reaching this
+    /// predicate, ordered from the outermost resolution to the instance
+    /// declaring it.
+    #[must_use]
+    pub fn instance_resolution_stack(&self) -> &[InstanceResolutionFrame] {
+        &self.instance_resolution_stack
     }
 }
 
@@ -185,11 +241,6 @@ pub enum ResolveError {
     /// A requested trait argument could not be reduced to a closed normal
     /// form, or the normalization constraints could not be satisfied.
     NormalFormFailure,
-
-    /// One or more predicates from the selected instance's `where` clause
-    /// could not be satisfied. The contained predicates have already been
-    /// instantiated for the selected instance.
-    UnsatisfiedPredicates(Arc<[UnsatisfiedPredicate]>),
 
     /// The higher-ranked leak check failed because the selected instance is
     /// not general enough for the requested trait reference.
