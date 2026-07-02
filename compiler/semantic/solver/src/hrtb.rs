@@ -29,6 +29,10 @@ impl HrtbVariables {
         self
     }
 
+    fn is_empty(&self) -> bool {
+        self.inference_lifetimes.is_empty() && self.skolem_lifetimes.is_empty()
+    }
+
     fn contains_internal_variable(&self, ty: &Interned<Type2>) -> bool {
         match &**ty {
             Type2::InferenceVariable(variable) => {
@@ -88,10 +92,15 @@ impl Solver<'_> {
 
     pub(crate) fn check_and_clean_hrtb_constraints(
         &self,
-        constraints: &Constraints,
+        constraints: Constraints,
         variables: &HrtbVariables,
     ) -> Option<Constraints> {
-        let graph = constraint_graph(constraints);
+        // don't do any work if there are no HRTB variables
+        if variables.is_empty() {
+            return Some(constraints);
+        }
+
+        let graph = constraint_graph(&constraints);
         leak_check(&graph, variables)
             .then(|| self.clean_hrtb_constraints(&graph, variables))
     }

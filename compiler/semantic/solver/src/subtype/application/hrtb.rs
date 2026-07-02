@@ -71,7 +71,7 @@ impl Solver<'_> {
 
                 Ok(self.clean_hrtb_step(
                     run.substitution,
-                    &run.constraints,
+                    run.constraints,
                     &run.variables,
                 ))
             }
@@ -150,7 +150,7 @@ impl Solver<'_> {
         let constraints =
             first_run.constraints.union_into(second_run.constraints);
 
-        Ok(self.clean_hrtb_step(second_substitution, &constraints, &variables))
+        Ok(self.clean_hrtb_step(second_substitution, constraints, &variables))
     }
 
     /// Runs the higher-ranked subtyping proof for the given application and
@@ -231,7 +231,7 @@ impl Solver<'_> {
     fn clean_hrtb_step(
         &mut self,
         substitution: Substitution,
-        constraints: &Constraints,
+        constraints: Constraints,
         variables: &HrtbVariables,
     ) -> Option<Step> {
         // NOTE: You might think that we should apply the substitutions on the
