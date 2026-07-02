@@ -14,6 +14,7 @@ use crate::{
 };
 
 mod normal_form;
+mod skolemize;
 
 /// A request to resolve an instance implementing a trait reference.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

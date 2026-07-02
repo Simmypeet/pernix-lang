@@ -1,4 +1,4 @@
-use pernixc_qbice::TrackedEngine;
+use pernixc_qbice::{Interner, TrackedEngine};
 use pernixc_symbol::GlobalSymbolID;
 use qbice::{
     Decode, Encode, Identifiable, Query, StableHash, storage::intern::Interned,
@@ -127,6 +127,24 @@ impl TraitRef2 {
     /// Returns the variables bound over the trait's generic arguments.
     #[must_use]
     pub const fn binder(&self) -> &Binder { &self.binder }
+
+    /// Instantiates the variables bound by this trait reference and returns the
+    /// resulting binder-free symbol reference.
+    #[must_use]
+    pub fn instantiate(
+        &self,
+        replacements: &[Interned<Type2>],
+        interner: &impl Interner,
+    ) -> Symbol2 {
+        Symbol2::new(
+            self.trait_id(),
+            self.binder.instantiate(
+                self.generic_arguments(),
+                replacements,
+                interner,
+            ),
+        )
+    }
 
     /// Creates a substitution from the trait's generic parameters to its
     /// supplied generic arguments.
