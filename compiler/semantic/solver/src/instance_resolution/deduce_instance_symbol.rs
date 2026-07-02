@@ -10,6 +10,7 @@ use pernixc_type::{
 
 use crate::{
     constraints::Constraints,
+    instance_resolution::{InstanceResolutionFrame, ResolveSoftError},
     solver::{OverflowError, Solver},
 };
 
@@ -19,14 +20,14 @@ impl Solver<'_> {
     ///
     /// Returns `None` when the instance does not implement the expected trait,
     /// unification fails, or a lifetime/type parameter cannot be deduced.
-    /// Instance parameters are permitted to remain undeduced and are returned
-    /// in declaration order.
+    /// Instance parameters that are not deduced by unification are resolved
+    /// recursively in declaration order.
     pub async fn deduce_instance_symbol(
         &mut self,
         symbol_id: GlobalSymbolID,
         expected_trait_ref: Symbol2,
     ) -> Result<
-        Option<(Substitution, Constraints, Vec<GenericParameterID>)>,
+        Option<(Substitution, Constraints, Vec<ResolveSoftError>)>,
         OverflowError,
     > {
         let Some(instance_trait_ref) =
@@ -69,6 +70,7 @@ impl Solver<'_> {
         let instantiated_trait_ref = instance_trait_ref
             .as_ref()
             .apply_or_clone(&generic_to_inference, self.engine());
+
         let Some((mut unification, constraints)) = self
             .unify_trait_ref(instantiated_trait_ref, expected_trait_ref)
             .await?
@@ -83,27 +85,85 @@ impl Solver<'_> {
             return Ok(None);
         }
 
-        let undeduced_instance_parameters = instance_parameters
-            .into_iter()
-            .filter_map(|(parameter_id, inference)| {
-                let remains_undeduced =
-                    unification.get_generic(parameter_id).is_some_and(|ty| {
-                        matches!(
-                            ty.as_ref(),
-                            Type2::InferenceVariable(variable)
-                                if *variable == inference
-                        )
-                    });
+        let Some((unification, recursive_constraints, soft_errors)) =
+            resolve_instance_parameters(
+                self,
+                symbol_id,
+                &generic_parameters,
+                instance_parameters,
+                unification,
+            )
+            .await?
+        else {
+            return Ok(None);
+        };
 
-                remains_undeduced.then_some(parameter_id)
-            })
-            .collect();
-
-        Ok(Some((unification, constraints, undeduced_instance_parameters)))
+        Ok(Some((
+            unification,
+            constraints.union_into(recursive_constraints),
+            soft_errors,
+        )))
     }
 }
 
 type ParameterInference = (GenericParameterID, InferenceVariable);
+
+async fn resolve_instance_parameters(
+    solver: &mut Solver<'_>,
+    symbol_id: GlobalSymbolID,
+    generic_parameters: &GenericParameters2,
+    instance_parameters: Vec<ParameterInference>,
+    mut substitution: Substitution,
+) -> Result<
+    Option<(Substitution, Constraints, Vec<ResolveSoftError>)>,
+    OverflowError,
+> {
+    let mut constraints = Constraints::default();
+    let mut soft_errors = Vec::new();
+
+    for (parameter_id, inference) in instance_parameters {
+        let remains_undeduced =
+            substitution.get_generic(parameter_id).is_some_and(|ty| {
+                ty.as_ref() == &Type2::InferenceVariable(inference)
+            });
+
+        if !remains_undeduced {
+            continue;
+        }
+
+        let Some(trait_ref) = generic_parameters[parameter_id.id()]
+            .as_trait_ref_instance()
+            .map(|trait_ref| {
+                trait_ref.apply_or_clone(&substitution, solver.engine())
+            })
+        else {
+            return Ok(None);
+        };
+
+        let Ok((resolved_instance, recursive_constraints)) =
+            solver.resolve_instance(trait_ref.clone()).await?
+        else {
+            return Ok(None);
+        };
+
+        let frame = InstanceResolutionFrame::new(symbol_id, trait_ref);
+        soft_errors.extend(
+            resolved_instance.soft_errors().iter().cloned().map(|error| {
+                error.prepend_instance_resolution_frame(frame.clone())
+            }),
+        );
+        constraints = constraints.union_into(recursive_constraints);
+
+        let mut recursive_substitution = Substitution::singleton(
+            inference,
+            resolved_instance.instance().clone(),
+        );
+        recursive_substitution.compose(substitution, solver.engine());
+        substitution = recursive_substitution;
+    }
+
+    Ok(Some((substitution, constraints, soft_errors)))
+}
 
 fn get_required_parameters(
     symbol_id: GlobalSymbolID,
@@ -132,10 +192,7 @@ fn are_required_parameters_deduced(
 ) -> bool {
     required_parameters.iter().all(|(parameter_id, inference)| {
         substitution.get_generic(*parameter_id).is_some_and(|ty| {
-            !matches!(
-                ty.as_ref(),
-                Type2::InferenceVariable(variable) if variable == inference
-            )
+            ty.as_ref() != &Type2::InferenceVariable(*inference)
         })
     })
 }
@@ -144,13 +201,11 @@ fn get_parameter_inference(
     substitution: &Substitution,
     parameter_id: GenericParameterID,
 ) -> InferenceVariable {
-    let Type2::InferenceVariable(inference) = substitution
+    substitution
         .get_generic(parameter_id)
         .expect("all generic parameters must be instantiated")
         .as_ref()
-    else {
-        unreachable!("generic parameters must map to inference variables");
-    };
-
-    *inference
+        .as_inference_variable()
+        .copied()
+        .unwrap()
 }

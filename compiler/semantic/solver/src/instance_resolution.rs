@@ -152,6 +152,28 @@ pub enum ResolveSoftError {
     UnsatisfiedPredicate(UnsatisfiedPredicate),
 }
 
+impl ResolveSoftError {
+    fn prepend_instance_resolution_frame(
+        self,
+        frame: InstanceResolutionFrame,
+    ) -> Self {
+        match self {
+            Self::UnsatisfiedPredicate(mut unsatisfied) => {
+                let mut stack = Vec::with_capacity(
+                    unsatisfied.instance_resolution_stack.len() + 1,
+                );
+                stack.push(frame);
+                stack.extend(
+                    unsatisfied.instance_resolution_stack.iter().cloned(),
+                );
+                unsatisfied.instance_resolution_stack = Arc::from(stack);
+
+                Self::UnsatisfiedPredicate(unsatisfied)
+            }
+        }
+    }
+}
+
 /// One level in a nested instance-resolution trace.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct InstanceResolutionFrame {
