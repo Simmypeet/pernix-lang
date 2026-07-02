@@ -125,7 +125,7 @@ impl Solver<'_> {
                     }
                 } else {
                     let Some((substitution, constraints)) =
-                        self.match_types(&component, goal.lesser()).await
+                        self.match_type(&component, goal.lesser()).await
                     else {
                         continue;
                     };
@@ -204,7 +204,7 @@ impl Solver<'_> {
         Ok(true)
     }
 
-    async fn all_constraints_hold(
+    pub(crate) async fn all_constraints_hold(
         &mut self,
         constraints: Constraints,
     ) -> Result<bool, OverflowError> {

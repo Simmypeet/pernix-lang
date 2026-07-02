@@ -8,8 +8,10 @@ rust-version.workspace = true
 
 [dependencies]
 pernixc_qbice.path = "../../base/qbice"
+pernixc_lexical.path = "../../syntax/lexical"
 pernixc_type.path = "../type"
 pernixc_symbol.path = "../symbol"
+pernixc_semantic_element.path = "../semantic_element"
 pernixc_hash.path = "../../base/hash"
 enum-as-inner.workspace = true
 qbice.workspace = true

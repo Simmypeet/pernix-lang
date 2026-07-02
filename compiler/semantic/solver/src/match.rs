@@ -19,7 +19,7 @@ impl Solver<'_> {
     /// Lifetime constraints are generated if two lifetimes mismatch, for
     /// example, lifetime `a` and `b` such that `a != b` would generate the
     /// constraint `a: 'b` and `b: 'a`.
-    pub async fn match_types(
+    pub async fn match_type(
         &mut self,
         head: &Interned<Type2>,
         subject: &Interned<Type2>,
@@ -57,31 +57,7 @@ impl Solver<'_> {
                     self.engine(),
                 )?;
 
-                let mut subst = Substitution::new();
-                let mut constraint = Constraints::default();
-
-                Box::pin(async move {
-                    for (head_ty, subject_ty) in iter {
-                        // Applying the accumulated substitution here makes
-                        // repeated inference variables compare against their
-                        // first matched type instead of being rebound.
-                        let head_ty =
-                            head_ty.apply_or_clone(&subst, self.engine());
-                        let subject_ty =
-                            subject_ty.apply_or_clone(&subst, self.engine());
-
-                        let (new_subst, new_constraints) =
-                            self.match_types(&head_ty, &subject_ty).await?;
-
-                        subst.merge(&new_subst);
-                        constraint.extend(new_constraints);
-                    }
-
-                    constraint =
-                        constraint.apply_or_self(&subst, self.engine());
-                    Some((subst, constraint))
-                })
-                .await
+                Box::pin(self.match_types(iter)).await
             }
 
             _ => {
@@ -104,5 +80,28 @@ impl Solver<'_> {
                 }
             }
         }
+    }
+
+    /// Iterates through each pair of types and call [`Self::match_type`]
+    /// on them.
+    pub async fn match_types(
+        &mut self,
+        pairs: impl IntoIterator<Item = (Interned<Type2>, Interned<Type2>)>,
+    ) -> Option<(Substitution, Constraints)> {
+        let mut subst = Substitution::new();
+        let mut constraints = Constraints::default();
+
+        for (head, subject) in pairs {
+            let head = head.apply_or_clone(&subst, self.engine());
+            let subject = subject.apply_or_clone(&subst, self.engine());
+
+            let (new_subst, new_constraints) =
+                self.match_type(&head, &subject).await?;
+
+            subst.merge(&new_subst);
+            constraints.extend(new_constraints);
+        }
+
+        Some((subst, constraints))
     }
 }

@@ -101,6 +101,8 @@ impl Solver<'_> {
 
             // if they are both lifetimes, return constraints according to the
             // variance
+
+            // TODO: should we include a universe name check here?
             if !subtype.lesser().is_bound_variable()
                 && !subtype.greater().is_bound_variable()
                 && self.kind_of(subtype.lesser()).await.is_lifetime()

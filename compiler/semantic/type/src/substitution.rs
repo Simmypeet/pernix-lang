@@ -41,6 +41,14 @@ impl Substitution {
         assert!(self.0.insert(Variable::Generic(id), ty).is_none());
     }
 
+    #[must_use]
+    pub fn get_generic(
+        &self,
+        id: GenericParameterID,
+    ) -> Option<&Interned<Type2>> {
+        self.0.get(&Variable::Generic(id))
+    }
+
     /// Composes `sub2` into `self` such that `self(sub2(x)) = composedSelf(x)`.
     pub fn compose(&mut self, mut sub2: Self, interner: &impl Interner) {
         self.0.reserve(sub2.0.len());
