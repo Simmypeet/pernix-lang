@@ -3,7 +3,9 @@ use std::sync::Arc;
 use linkme::distributed_slice;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
 use pernixc_semantic_element::{
-    global_instances::get_global_instances_of, import::get_import_map,
+    global_instances::get_global_instances_of,
+    import::get_import_map,
+    where_clause2::{self, get_where_clause2},
 };
 use pernixc_symbol::{
     GlobalSymbolID,
@@ -12,8 +14,10 @@ use pernixc_symbol::{
 };
 use pernixc_type::{
     generic_parameters::{GenericParameterID, get_generic_parameters2},
-    symbol::Symbol2,
-    r#type::Type2,
+    predicate::Predicate2,
+    substitution::{Substitutable, Substitution},
+    symbol::{Symbol2, TraitRef2},
+    r#type::{Type2, bound::Binder},
 };
 use qbice::{
     Decode, Encode, Query, StableHash, executor, program::Registration,
@@ -21,11 +25,14 @@ use qbice::{
 };
 
 use crate::{
+    constraints::Constraints,
     instance_resolution::{
-        DeducedInstanceSymbol, InstanceSource, ResolveError,
-        ResolveInstanceResult, ResolvedInstance,
+        DeducedInstanceSymbol, InstanceResolutionFrame, InstanceSource,
+        ResolveError, ResolveInstanceResult, ResolveSoftError,
+        ResolvedInstance, UnsatisfiedPredicate,
     },
     order::{Order, get_instance_order},
+    predicate::PredicateError,
     solver::{OverflowError, Solver},
 };
 
@@ -66,7 +73,22 @@ impl Solver<'_> {
         let (symbol_id, deduction) = current_maximas.pop().unwrap();
         let generic_parameters =
             self.engine().get_generic_parameters2(symbol_id).await;
-        let (substitution, constraints, soft_errors) = deduction.into_parts();
+        let (substitution, mut constraints, mut soft_errors) =
+            deduction.into_parts();
+
+        let where_clause = self.engine().get_where_clause2(symbol_id).await;
+        let trait_ref = TraitRef2::from_symbol(
+            trait_ref,
+            Binder::new(self.engine().intern_unsized([])),
+        );
+        self.check_selected_instance_predicates(
+            &where_clause,
+            &substitution,
+            InstanceResolutionFrame::new(symbol_id, trait_ref),
+            &mut constraints,
+            &mut soft_errors,
+        )
+        .await?;
 
         let generic_arguments = generic_parameters.iter().map(|(id, _)| {
             substitution
@@ -85,6 +107,49 @@ impl Solver<'_> {
             ),
             constraints,
         )))
+    }
+
+    async fn check_selected_instance_predicates(
+        &mut self,
+        where_clause: &[where_clause2::Predicate],
+        substitution: &Substitution,
+        frame: InstanceResolutionFrame,
+        constraints: &mut Constraints,
+        soft_errors: &mut Vec<ResolveSoftError>,
+    ) -> Result<(), OverflowError> {
+        for declared_predicate in where_clause {
+            let predicate = declared_predicate
+                .predicate
+                .apply_or_clone(substitution, self.engine());
+
+            match &predicate {
+                Predicate2::Outlives(outlives) => {
+                    constraints.insert(outlives.clone());
+                }
+                Predicate2::Tuple(_)
+                | Predicate2::Marker(_)
+                | Predicate2::Equality(_) => {
+                    match self.solve_predicate(predicate.clone()).await? {
+                        Ok(predicate_constraints) => {
+                            constraints.extend(predicate_constraints);
+                        }
+                        Err(PredicateError::Unsolvable) => {
+                            soft_errors.push(
+                                ResolveSoftError::UnsatisfiedPredicate(
+                                    UnsatisfiedPredicate::new(
+                                        predicate,
+                                        declared_predicate.span,
+                                        Arc::from([frame.clone()]),
+                                    ),
+                                ),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
     async fn find_maximal_global_instance_candidates(
