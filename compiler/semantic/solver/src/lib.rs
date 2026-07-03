@@ -5,6 +5,7 @@ pub mod r#match;
 pub mod normal_form;
 pub mod order;
 pub mod outlives;
+pub mod predicate;
 pub mod premise;
 pub mod reduction;
 pub mod solver;

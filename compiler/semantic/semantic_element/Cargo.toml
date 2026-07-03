@@ -13,6 +13,7 @@ pernixc_hash = { path = "../../base/hash" }
 pernixc_target = { path = "../../base/target" }
 pernixc_lexical = { path = "../../syntax/lexical" }
 pernixc_term = { path = "../term" }
+pernixc_type = { path = "../type" }
 pernixc_symbol = { path = "../symbol" }
 pernixc_qbice = { path = "../../base/qbice" }
 pernixc_extend = { path = "../../base/extend" }

@@ -77,6 +77,10 @@ impl Constraints {
 
         lifetime_eq
     }
+
+    pub fn insert(&mut self, constraint: Outlives) {
+        self.0.insert(constraint);
+    }
 }
 
 impl Extend<Outlives> for Constraints {
