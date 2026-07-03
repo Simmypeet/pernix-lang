@@ -24,3 +24,4 @@ pub mod type_alias;
 pub mod variance;
 pub mod variant;
 pub mod where_clause;
+pub mod where_clause2;

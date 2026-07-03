@@ -1899,6 +1899,7 @@ dependencies = [
  "pernixc_symbol",
  "pernixc_target",
  "pernixc_term",
+ "pernixc_type",
  "qbice",
 ]
 
