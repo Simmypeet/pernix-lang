@@ -117,11 +117,12 @@ impl Solver<'_> {
             };
             let constraints =
                 normalization_constraints.union_into(resolution_constraints);
-            let hrtb_variables =
-                self.hrtb_variables_from_instantiations(skolems.iter());
-            let Some(constraints) = self
-                .check_and_clean_hrtb_constraints(constraints, &hrtb_variables)
-            else {
+            let Some(constraints) = self.lite_leak_check(
+                constraints,
+                skolems
+                    .iter()
+                    .map(|x| x.as_skolemized_variable().copied().unwrap()),
+            ) else {
                 return Ok(Err(ResolveError::HigherRankedLeakCheckFailure));
             };
 
