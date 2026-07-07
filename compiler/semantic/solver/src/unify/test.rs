@@ -17,6 +17,7 @@ use crate::{
     constraints::Constraints,
     premise::Premise,
     solver::{OverflowError, Solver},
+    type_relation::TypeRelation,
     unify::Unify,
 };
 
@@ -84,14 +85,14 @@ async fn primitive_mismatch_remains_residual() {
 
 // input: (bool) == (int32)
 // premise: {}
-// output: {}, residual (bool) == (int32), {}
+// output: {}, residual bool == int32, {}
 #[tokio::test]
-async fn tuple_mismatch_remains_original_residual() {
+async fn tuple_mismatch_keeps_decomposed_residual() {
     let engine = create_test_engine().await;
     let bool_type = Type2::new_primitive(Primitive::Bool, &engine);
     let int32 = Type2::new_primitive(Primitive::Int32, &engine);
-    let left = Type2::new_tuple([bool_type], &engine);
-    let right = Type2::new_tuple([int32], &engine);
+    let left = Type2::new_tuple([bool_type.clone()], &engine);
+    let right = Type2::new_tuple([int32.clone()], &engine);
 
     let (substitution, residual_unifications, constraints) = resolve(
         vec![Unify::new(left.clone(), right.clone())],
@@ -102,7 +103,7 @@ async fn tuple_mismatch_remains_original_residual() {
     .unwrap();
 
     assert_eq!(substitution, Substitution::new());
-    assert_eq!(residual_unifications, vec![Unify::new(left, right)]);
+    assert_eq!(residual_unifications, vec![Unify::new(bool_type, int32)]);
     assert_eq!(constraints, Constraints::default());
 }
 
@@ -219,13 +220,13 @@ async fn solve_unifies_application_arguments_eagerly() {
     let left = Type2::new_tuple([inference], &engine);
     let right = Type2::new_tuple([bool_type.clone()], &engine);
 
-    let (substitution, constraints) = solver
-        .solve(&Unify::new(left, right))
+    let (substitution, residual_type_relations, constraints) = solver
+        .resolve_type_relations(vec![TypeRelation::invariant(left, right)])
         .await
-        .unwrap()
-        .expect("tuple arguments should unify eagerly");
+        .unwrap();
 
     assert_eq!(substitution, Substitution::singleton(variable, bool_type));
+    assert_eq!(residual_type_relations, Vec::new());
     assert_eq!(constraints, Constraints::default());
 }
 
@@ -325,9 +326,9 @@ async fn bound_variables_must_match_exactly() {
 
 // input: for<'a> fn() -> bool == fn() -> bool
 // premise: {}
-// output: {}, residual original equality, {}
+// output: {}, no residual unifications, {}
 #[tokio::test]
-async fn function_pointer_binders_must_match_exactly() {
+async fn function_pointer_binders_are_related_by_type_relation() {
     let engine = create_test_engine().await;
     let bool_type = Type2::new_primitive(Primitive::Bool, &engine);
     let left = Type2::new_function_pointer_with_higher_ranked_lifetimes(
@@ -347,7 +348,7 @@ async fn function_pointer_binders_must_match_exactly() {
     .unwrap();
 
     assert_eq!(substitution, Substitution::new());
-    assert_eq!(residual_unifications, vec![Unify::new(left, right)]);
+    assert_eq!(residual_unifications, Vec::new());
     assert_eq!(constraints, Constraints::default());
 }
 

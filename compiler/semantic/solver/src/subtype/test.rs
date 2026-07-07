@@ -16,7 +16,7 @@ use crate::{
     constraints::Constraints,
     premise::Premise,
     solver::{OverflowError, Solver},
-    subtype::Step,
+    type_relation::{Step, TypeRelation},
 };
 
 async fn destructure_application(
@@ -66,7 +66,9 @@ async fn resolve_step(
     engine: &TrackedEngine,
 ) -> Result<Step, OverflowError> {
     Solver::new(&Premise::default(), engine)
-        .resolve_subtypes(vec![Subtype::new(lesser, greater, variance)])
+        .resolve_type_relations(vec![TypeRelation::new(
+            lesser, greater, variance,
+        )])
         .await
 }
 
@@ -82,7 +84,7 @@ fn contains_variable(ty: &Interned<Type2>) -> bool {
 
 fn assert_no_variables_in_step(
     substitution: &Substitution,
-    residual_subtypes: &[Subtype],
+    residual_subtypes: &[TypeRelation],
     constraints: &Constraints,
 ) {
     assert!(substitution.iter().all(|(_, ty)| !contains_variable(ty)));

@@ -53,6 +53,13 @@ impl HrtbVariables {
         matches!(&**ty, Type2::InferenceVariable(variable) if self.inference_lifetimes.contains(variable))
     }
 
+    pub(crate) fn is_internal_inference_variable(
+        &self,
+        variable: InferenceVariable,
+    ) -> bool {
+        self.inference_lifetimes.contains(&variable)
+    }
+
     fn is_internal_skolem(&self, ty: &Interned<Type2>) -> bool {
         matches!(&**ty, Type2::SkolemizedVariable(variable) if self.skolem_lifetimes.contains(variable))
     }

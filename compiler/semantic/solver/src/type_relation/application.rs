@@ -1,7 +1,6 @@
 use pernixc_symbol::kind::{Kind, get_kind};
 use pernixc_type::{
     generic_parameters::get_generic_parameters2,
-    predicate::Subtype,
     substitution::Substitution,
     r#type::{
         Type2,
@@ -16,22 +15,22 @@ use qbice::storage::intern::Interned;
 use crate::{
     constraints::Constraints,
     solver::{OverflowError, Solver},
-    subtype::Step,
+    type_relation::{Step, TypeRelation},
 };
 
 mod hrtb;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ResolveStrategy {
-    /// Exhaustively resolves the set of subtypes immediately until no more
-    /// residual subtypes remain. If successful, returns `Ok(Some(Step))` with
-    /// zero residual subtypes.
+    /// Exhaustively resolves the set of relations immediately until no more
+    /// residual relations remain. If successful, returns `Ok(Some(Step))` with
+    /// zero residual relations.
     ResolveImmediately,
     DeferResolution,
 }
 
 impl Solver<'_> {
-    pub(super) async fn handle_application(
+    pub(crate) async fn handle_application(
         &mut self,
         lesser: &Interned<Type2>,
         greater: &Interned<Type2>,
@@ -55,7 +54,7 @@ impl Solver<'_> {
 
         // if the application doesn't have any higher-ranked binders, we can
         // simply breaking down the application into its arguments and add them
-        // as subtyping subgoals.
+        // as relation subgoals.
         if has_binder {
             Box::pin(self.handle_hrtb_application(
                 lesser_ap, greater_ap, &arguments, variance,
@@ -63,7 +62,7 @@ impl Solver<'_> {
             .await
         } else {
             // Instance-associated applications may reduce to the same type
-            // even when their corresponding arguments are not subtypes. For
+            // even when their corresponding arguments are not related. For
             // example, consider a trait `Col` with an associated type `Elm`
             // and the relation:
             //
@@ -140,7 +139,7 @@ impl Solver<'_> {
                 assert!(arguments.next().is_none());
 
                 Box::pin(
-                    self.handle_set_of_subtypes(
+                    self.handle_set_of_relations(
                         [
                             (lt_l, lt_g, variance.xfrom(Variance2::Covariant)),
                             (
@@ -175,7 +174,7 @@ impl Solver<'_> {
             }
 
             Constructor::Tuple(_) => {
-                Box::pin(self.handle_set_of_subtypes(
+                Box::pin(self.handle_set_of_relations(
                     arguments.map(|(lesser, greater)| {
                         (lesser, greater, variance.xfrom(Variance2::Covariant))
                     }),
@@ -188,7 +187,7 @@ impl Solver<'_> {
                 let argument_count = lesser_ap.arguments().len();
                 assert!(argument_count > 0);
 
-                Box::pin(self.handle_set_of_subtypes(
+                Box::pin(self.handle_set_of_relations(
                     arguments.enumerate().map(|(index, (lesser, greater))| {
                         let argument_variance = if index + 1 == argument_count {
                             Variance2::Covariant
@@ -204,7 +203,7 @@ impl Solver<'_> {
             }
 
             Constructor::InstanceAssociated(_) => {
-                Box::pin(self.handle_set_of_subtypes(
+                Box::pin(self.handle_set_of_relations(
                     arguments.map(|(lesser, greater)| {
                         (lesser, greater, variance.xfrom(Variance2::Invariant))
                     }),
@@ -233,7 +232,7 @@ impl Solver<'_> {
                 let variances =
                     self.engine().get_variances2(symbolic.symbol_id()).await;
 
-                Box::pin(self.handle_set_of_subtypes(
+                Box::pin(self.handle_set_of_relations(
                     arguments.zip(generic_parameters.iter()).map(
                         |((lesser, greater), (id, _))| {
                             (
@@ -249,7 +248,7 @@ impl Solver<'_> {
             }
 
             Kind::Instance => {
-                Box::pin(self.handle_set_of_subtypes(
+                Box::pin(self.handle_set_of_relations(
                     arguments.map(|(lesser, greater)| {
                         (lesser, greater, variance.xfrom(Variance2::Invariant))
                     }),
@@ -286,27 +285,29 @@ impl Solver<'_> {
         }
     }
 
-    /// Either resolves the set of subtypes immediately, or returns them as
-    /// subgoals to be resolved later, depending on the `resolve_immediately`
-    /// flag.
-    async fn handle_set_of_subtypes(
+    /// Either resolves the set of type relations immediately, or returns them
+    /// as subgoals to be resolved later, depending on the
+    /// `resolve_immediately` flag.
+    async fn handle_set_of_relations(
         &mut self,
         pairs: impl Iterator<Item = (Interned<Type2>, Interned<Type2>, Variance2)>,
         resolve_strategy: ResolveStrategy,
     ) -> Result<Option<Step>, OverflowError> {
-        let subtypes = pairs.map(|(l, r, v)| Subtype::new(l, r, v)).collect();
+        let type_relations =
+            pairs.map(|(l, r, v)| TypeRelation::new(l, r, v)).collect();
 
         match resolve_strategy {
             ResolveStrategy::DeferResolution => Ok(Some((
                 Substitution::new(),
-                subtypes,
+                type_relations,
                 Constraints::default(),
             ))),
             ResolveStrategy::ResolveImmediately => {
-                let (substitution, residual_subtypes, constraints) =
-                    Box::pin(self.resolve_subtypes(subtypes)).await?;
+                let (substitution, residual_type_relations, constraints) =
+                    Box::pin(self.resolve_type_relations(type_relations))
+                        .await?;
 
-                if residual_subtypes.is_empty() {
+                if residual_type_relations.is_empty() {
                     Ok(Some((substitution, Vec::new(), constraints)))
                 } else {
                     Ok(None)

@@ -1,5 +1,5 @@
 use pernixc_type::{
-    substitution::{Substitutable, Substitution},
+    substitution::{Substitutable, Substitution, Variable},
     r#type::{Type2, bound::Instantiate, constructor::Application},
     variance::Variance2,
 };
@@ -10,17 +10,17 @@ use crate::{
     constraints::Constraints,
     hrtb::HrtbVariables,
     solver::{OverflowError, Solver},
-    subtype::Step,
+    type_relation::Step,
 };
 
 #[derive(Debug, Clone, Copy)]
 enum HrtbInstantiation {
-    // The subtype side is existential and the supertype side is universal:
+    // The left side is existential and the right side is universal:
     // `for<a> T[a] <: for<b> U[b]` becomes `T[?a] <: U[!b]`.
     LesserInferenceGreaterSkolem,
 
     // Used for contravariant positions and the second invariant pass, where
-    // the subtype/supertype roles are observed through the flipped variance.
+    // the left/right roles are observed through the flipped variance.
     LesserSkolemGreaterInference,
 }
 
@@ -91,9 +91,9 @@ impl Solver<'_> {
         }
     }
 
-    /// Runs higher-ranked subtyping proof for Invariant ambient variance. This
-    /// requires proving both directions of the subtyping relationship by
-    /// running `handle_hrtb_application_run` twice with opposite instantiation
+    /// Runs higher-ranked relation proof for Invariant ambient variance. This
+    /// requires proving both directions of the relationship by running
+    /// `handle_hrtb_application_run` twice with opposite instantiation
     /// strategies, then combining the results.
     async fn handle_invariant_hrtb_application(
         &mut self,
@@ -156,7 +156,7 @@ impl Solver<'_> {
     /// Runs the higher-ranked subtyping proof for the given application and
     /// arguments. Depending on the `instantiation` strategy, lesser/greater
     /// binders are instantiated with either inference variables or skolem
-    /// variables. Then the set of subtypes is solved with the instantiated
+    /// variables. Then the set of relations is solved with the instantiated
     /// arguments with the result as [`HrtbRun`] if successful.
     async fn handle_hrtb_application_run(
         &mut self,
@@ -230,42 +230,25 @@ impl Solver<'_> {
     /// proof run
     fn clean_hrtb_step(
         &mut self,
-        substitution: Substitution,
+        mut substitution: Substitution,
         constraints: Constraints,
         variables: &HrtbVariables,
     ) -> Option<Step> {
-        // NOTE: You might think that we should apply the substitutions on the
-        // constraints before the leack check first, but we actually don't need
-        // it because:
-        //
-        // 1a. Currently, in **Subtyping Relation**, lifetimes can never be
-        //    mapped by substitution. However, in other relations like **Match**
-        //    still does, but it's not relevant here.
-        // 2a. The `Constraints` generated here can only be in the form of
-        //    `lifetime: lifetime` and since (1a) holds, the substitution won't
-        //    change the shape of constraints.
-        //
-        // Proof? Trust me bro :-)
+        // HRTB constraints are generated from instantiated lifetime variables.
+        // They are cleaned against the proof-local variables before any of
+        // those variables can escape to callers.
         let constraints =
             self.check_and_clean_hrtb_constraints(constraints, variables)?;
 
-        // NOTE: here we directly return the original substitution without
-        // eliminating the internal variables, because:
-        //
-        // 1b. We currently assume that all higher-ranked variables are
-        //    lifetimes, even though we have infrastructure to support other
-        //    kinds. If we happens to change this assumption in the future, we
-        //    might need to revisit this decision.
-        // 2b. The internal higher-ranked variables will never be in the
-        //    codomain of the substitution, because:
-        //    2.1b Since (1b) and (1a) holds, it means that all domains of the
-        //      substitution will always have root universe.
-        //    2.2b Therefore, internal higher-ranked variables that are created
-        //      in a higher universe will never be substituted due to universe
-        //      checks.
-        // 3b. Therefore, the subsitution will never mention any internal
-        //    higher-ranked variables, and thus we can safely return it without
-        //    eliminating them.
+        // Invariant type relations can bind internal HRTB inference lifetimes
+        // while proving the local relation. Those variables are proof-local,
+        // so their substitutions must not escape the HRTB run.
+        substitution.retain(|variable, _| match variable {
+            Variable::Inference(inference_variable) => {
+                !variables.is_internal_inference_variable(inference_variable)
+            }
+            Variable::Generic(_) => true,
+        });
 
         Some((substitution, Vec::new(), constraints))
     }
