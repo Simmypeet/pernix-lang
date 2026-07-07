@@ -141,14 +141,18 @@ impl Solver<'_> {
             return Ok(None);
         };
 
-        // Residual subtypes are guaranteed to be empty
+        let constraints = first_run
+            .constraints
+            // apply the substitution from the second run to the constraints
+            // from the first run as well
+            .apply_or_self(&second_run.substitution, self.engine())
+            .union_into(second_run.constraints);
+
         let mut second_substitution = second_run.substitution;
 
         second_substitution.compose(first_substitution, self.engine());
 
         let variables = first_run.variables.union_into(second_run.variables);
-        let constraints =
-            first_run.constraints.union_into(second_run.constraints);
 
         Ok(self.clean_hrtb_step(second_substitution, constraints, &variables))
     }

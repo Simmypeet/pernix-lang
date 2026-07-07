@@ -146,6 +146,12 @@ impl Solver<'_> {
         relation: &TypeRelation,
     ) -> impl Future<Output = Result<Option<Step>, OverflowError>> + Send {
         async move {
+            assert!(
+                !relation.lesser().is_bound_variable()
+                    && !relation.greater().is_bound_variable(),
+                "found un-instantiated bound variable in type relation:"
+            );
+
             // if they are syntactically equal, we are done.
             if relation.lesser() == relation.greater() {
                 return Ok(Some((
@@ -166,10 +172,10 @@ impl Solver<'_> {
             // if they are both lifetimes, return constraints according to the
             // variance
 
-            // TODO: should we include a universe name check here?
-            if !relation.lesser().is_bound_variable()
-                && !relation.greater().is_bound_variable()
-                && self.kind_of(relation.lesser()).await.is_lifetime()
+            // NOTE: we don't need universe nameability checks here because
+            // "leak-checker" we take care of that, which requires more semantic
+            // information.
+            if self.kind_of(relation.lesser()).await.is_lifetime()
                 && self.kind_of(relation.greater()).await.is_lifetime()
             {
                 let constraints = match relation.variance() {
@@ -287,17 +293,17 @@ impl Solver<'_> {
         target: &Interned<Type2>,
         variance: Variance2,
     ) -> bool {
-        if variance == Variance2::Invariant {
-            return !target.is_bound_variable();
-        }
-
-        !target.is_bound_variable()
-            // NOTE: we also don't force two inference variables to unify in 
-            // non-invariant type relations.
-            && !target.is_inference_variable()
-            // NOTE: in non-invariant type relations, we NEVER construct a
-            // substitution that maps a inference variable of lifetime kind.
-            && !self.kind_of(target).await.is_lifetime()
+        // NOTE: invariant (strictly-equal) allows merging two inference
+        // variables
+        (variance == Variance2::Invariant)
+            || (
+                // NOTE: we also don't force two inference variables to unify in
+                // non-invariant type relations.
+                !target.is_inference_variable()
+                // NOTE: in non-invariant type relations, we NEVER construct a
+                // substitution that maps a inference variable of lifetime kind.
+                && !self.kind_of(target).await.is_lifetime()
+            )
     }
 
     async fn bind_inference_variable_to_target(
@@ -327,10 +333,8 @@ impl Solver<'_> {
         }
 
         let Type2::Application(_) = &*binding_target else {
-            let subst = Substitution::singleton(infer_var, binding_target);
-
             return Ok(BindInferenceVariableRelation::Bound((
-                subst,
+                Substitution::singleton(infer_var, binding_target),
                 Vec::new(),
                 Constraints::default(),
             )));
@@ -396,11 +400,11 @@ impl Solver<'_> {
                 ))
                 .await?
         {
-            return Ok(Some((
-                subst,
-                sub_problem,
-                constrs.union_into(new_constrs),
-            )));
+            let final_constrs = constrs
+                .apply_or_self(&subst, self.engine())
+                .union_into(new_constrs);
+
+            return Ok(Some((subst, sub_problem, final_constrs)));
         }
 
         // lazily reduce the greater type and try again.
@@ -414,11 +418,11 @@ impl Solver<'_> {
                 ))
                 .await?
         {
-            return Ok(Some((
-                subst,
-                sub_problem,
-                constrs.union_into(new_constrs),
-            )));
+            let final_constrs = constrs
+                .apply_or_self(&subst, self.engine())
+                .union_into(new_constrs);
+
+            return Ok(Some((subst, sub_problem, final_constrs)));
         }
 
         // otherwise, we have no information to learn from this
@@ -474,10 +478,16 @@ impl Solver<'_> {
             }
 
             if residual_relations.is_empty() {
+                constraints =
+                    constraints.apply_or_self(&substitution, self.engine());
+
                 return Ok((substitution, Vec::new(), constraints));
             }
 
             if !has_progress {
+                constraints =
+                    constraints.apply_or_self(&substitution, self.engine());
+
                 return Ok((substitution, residual_relations, constraints));
             }
 
