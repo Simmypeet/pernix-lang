@@ -306,13 +306,11 @@ impl Solver<'_> {
             )
     }
 
-    async fn bind_inference_variable_to_target(
+    async fn bind_with_check(
         &mut self,
         infer_var: InferenceVariable,
         binding_target: Interned<Type2>,
-        side: InferenceVariableRelationSide,
-        variance: Variance2,
-    ) -> Result<BindInferenceVariableRelation, OverflowError> {
+    ) -> BindInferenceVariableRelation {
         if !self
             .can_bind_inference_variable_to_type(
                 infer_var,
@@ -321,32 +319,62 @@ impl Solver<'_> {
             )
             .await
         {
-            return Ok(BindInferenceVariableRelation::Failed);
+            return BindInferenceVariableRelation::Failed;
         }
 
+        BindInferenceVariableRelation::Bound((
+            Substitution::singleton(infer_var, binding_target),
+            Vec::new(),
+            Constraints::default(),
+        ))
+    }
+
+    async fn bind_inference_variable_to_target(
+        &mut self,
+        infer_var: InferenceVariable,
+        binding_target: Interned<Type2>,
+        side: InferenceVariableRelationSide,
+        variance: Variance2,
+    ) -> Result<BindInferenceVariableRelation, OverflowError> {
         if variance == Variance2::Invariant {
-            return Ok(BindInferenceVariableRelation::Bound((
-                Substitution::singleton(infer_var, binding_target),
-                Vec::new(),
-                Constraints::default(),
-            )));
+            return Ok(self.bind_with_check(infer_var, binding_target).await);
         }
 
         let Type2::Application(_) = &*binding_target else {
-            return Ok(BindInferenceVariableRelation::Bound((
-                Substitution::singleton(infer_var, binding_target),
-                Vec::new(),
-                Constraints::default(),
-            )));
+            return Ok(self.bind_with_check(infer_var, binding_target).await);
         };
 
         let binding_universe = self.get_inference_variable_universe(infer_var);
+
+        // NOTE: given `?T <: &'static int32 @ Covariant`, we first perform a
+        // generalization by replacing all the lifetimes in `&'static int32`
+        // with fresh inference variables.
+        //
+        // Making `?T := &'?0 int32`, then we solve the relation
+        // `&'?0 int32 <: &'static int32 @ Covariant` in the next step.
+        //
+        // Interestingly, we allow this binding `?T@U0 <: &'!P@U1 int32` to
+        // succeed even though `U1` is not nameable in `U0`. This is because we
+        // will generalize `?T@U0` to `&'?0@U0 int32` and then solve the
+        // relation `&'?0@U0 int32 <: &'!P@U1 int32`. Whether this relation is
+        // solvable depends on the "leak-checker".
         let intermediate_application = self
             .generalize_application_inference_variables(
                 &binding_target,
                 binding_universe,
             )
             .await;
+
+        if !self
+            .can_bind_inference_variable_to_type(
+                infer_var,
+                &intermediate_application,
+                DoOccurCheck::Yes,
+            )
+            .await
+        {
+            return Ok(BindInferenceVariableRelation::Failed);
+        }
 
         let subst = Substitution::singleton(
             infer_var,
