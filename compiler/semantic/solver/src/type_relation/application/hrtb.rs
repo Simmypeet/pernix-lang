@@ -1,6 +1,9 @@
 use pernixc_type::{
     substitution::{Substitutable, Substitution, Variable},
-    r#type::{Type2, bound::Instantiate, constructor::Application},
+    r#type::{
+        Type2, bound::Instantiate, constructor::Application,
+        universe::UniverseIndex,
+    },
     variance::Variance2,
 };
 use qbice::storage::intern::Interned;
@@ -8,7 +11,6 @@ use qbice::storage::intern::Interned;
 use super::ResolveStrategy;
 use crate::{
     constraints::Constraints,
-    hrtb::HrtbVariables,
     solver::{OverflowError, Solver},
     type_relation::Step,
 };
@@ -27,7 +29,6 @@ enum HrtbInstantiation {
 struct HrtbRun {
     substitution: Substitution,
     constraints: Constraints,
-    variables: HrtbVariables,
 }
 
 impl Solver<'_> {
@@ -38,57 +39,66 @@ impl Solver<'_> {
         arguments: &[(Interned<Type2>, Interned<Type2>)],
         variance: Variance2,
     ) -> Result<Option<Step>, OverflowError> {
-        match variance {
-            // for the contravariant and covariant cases, a single run with
-            // appropriate instantiation is sufficient.
-            Variance2::Covariant | Variance2::Contravariant => {
-                let instantiation = match variance {
-                    Variance2::Covariant => {
-                        HrtbInstantiation::LesserInferenceGreaterSkolem
-                    }
-                    Variance2::Contravariant => {
-                        HrtbInstantiation::LesserSkolemGreaterInference
-                    }
-                    Variance2::Invariant | Variance2::Bivariant => {
-                        unreachable!(
-                            "invariant and bivariant are handled separately"
-                        )
-                    }
-                };
+        self.new_universe(async |solver| {
+            let closing_universe = solver.current_universe();
 
-                let Some(run) = self
-                    .handle_hrtb_application_run(
+            match variance {
+                // for the contravariant and covariant cases, a single run with
+                // appropriate instantiation is sufficient.
+                Variance2::Covariant | Variance2::Contravariant => {
+                    let instantiation = match variance {
+                        Variance2::Covariant => {
+                            HrtbInstantiation::LesserInferenceGreaterSkolem
+                        }
+                        Variance2::Contravariant => {
+                            HrtbInstantiation::LesserSkolemGreaterInference
+                        }
+                        Variance2::Invariant | Variance2::Bivariant => {
+                            unreachable!(
+                                "invariant and bivariant are handled \
+                                 separately"
+                            )
+                        }
+                    };
+
+                    let Some(run) = solver
+                        .handle_hrtb_application_run(
+                            lesser_ap,
+                            greater_ap,
+                            arguments,
+                            variance,
+                            instantiation,
+                        )
+                        .await?
+                    else {
+                        return Ok(None);
+                    };
+
+                    Ok(solver.clean_hrtb_step(
+                        run.substitution,
+                        run.constraints,
+                        closing_universe,
+                    ))
+                }
+
+                Variance2::Invariant => {
+                    Box::pin(solver.handle_invariant_hrtb_application(
                         lesser_ap,
                         greater_ap,
                         arguments,
-                        variance,
-                        instantiation,
-                    )
-                    .await?
-                else {
-                    return Ok(None);
-                };
+                        closing_universe,
+                    ))
+                    .await
+                }
 
-                Ok(self.clean_hrtb_step(
-                    run.substitution,
-                    run.constraints,
-                    &run.variables,
-                ))
+                Variance2::Bivariant => Ok(Some((
+                    Substitution::new(),
+                    Vec::new(),
+                    Constraints::default(),
+                ))),
             }
-
-            Variance2::Invariant => {
-                Box::pin(self.handle_invariant_hrtb_application(
-                    lesser_ap, greater_ap, arguments,
-                ))
-                .await
-            }
-
-            Variance2::Bivariant => Ok(Some((
-                Substitution::new(),
-                Vec::new(),
-                Constraints::default(),
-            ))),
-        }
+        })
+        .await
     }
 
     /// Runs higher-ranked relation proof for Invariant ambient variance. This
@@ -100,6 +110,7 @@ impl Solver<'_> {
         lesser_ap: &Application,
         greater_ap: &Application,
         arguments: &[(Interned<Type2>, Interned<Type2>)],
+        closing_universe: UniverseIndex,
     ) -> Result<Option<Step>, OverflowError> {
         // Invariant HRTB must prove both directions, but each proof is still an
         // invariant argument solve. Only binder polarity is swapped between the
@@ -116,8 +127,8 @@ impl Solver<'_> {
             return Ok(None);
         };
 
-        let engine = self.engine();
         let first_substitution = first_run.substitution;
+        let engine = self.engine();
 
         let substituted_arguments = arguments
             .iter()
@@ -152,9 +163,11 @@ impl Solver<'_> {
 
         second_substitution.compose(first_substitution, self.engine());
 
-        let variables = first_run.variables.union_into(second_run.variables);
-
-        Ok(self.clean_hrtb_step(second_substitution, constraints, &variables))
+        Ok(self.clean_hrtb_step(
+            second_substitution,
+            constraints,
+            closing_universe,
+        ))
     }
 
     /// Runs the higher-ranked subtyping proof for the given application and
@@ -170,64 +183,54 @@ impl Solver<'_> {
         variance: Variance2,
         instantiation: HrtbInstantiation,
     ) -> Result<Option<HrtbRun>, OverflowError> {
-        self.new_universe(async |solver| {
-            let (lesser_inst, greater_inst) = match instantiation {
-                HrtbInstantiation::LesserInferenceGreaterSkolem => (
-                    lesser_ap.binder().map(|x| {
-                        solver.create_inference_instantiations(x.kinds())
-                    }),
-                    greater_ap.binder().map(|x| {
-                        solver.create_skolem_instantiations(x.kinds())
-                    }),
-                ),
-                HrtbInstantiation::LesserSkolemGreaterInference => (
-                    lesser_ap.binder().map(|x| {
-                        solver.create_skolem_instantiations(x.kinds())
-                    }),
-                    greater_ap.binder().map(|x| {
-                        solver.create_inference_instantiations(x.kinds())
-                    }),
-                ),
-            };
-            let variables = HrtbVariables::from_instantiations(
-                lesser_inst
-                    .iter()
-                    .flatten()
-                    .chain(greater_inst.iter().flatten()),
-            );
+        let (lesser_inst, greater_inst) = match instantiation {
+            HrtbInstantiation::LesserInferenceGreaterSkolem => (
+                lesser_ap
+                    .binder()
+                    .map(|x| self.create_inference_instantiations(x.kinds())),
+                greater_ap
+                    .binder()
+                    .map(|x| self.create_skolem_instantiations(x.kinds())),
+            ),
+            HrtbInstantiation::LesserSkolemGreaterInference => (
+                lesser_ap
+                    .binder()
+                    .map(|x| self.create_skolem_instantiations(x.kinds())),
+                greater_ap
+                    .binder()
+                    .map(|x| self.create_inference_instantiations(x.kinds())),
+            ),
+        };
+        let engine = self.engine();
 
-            let engine = solver.engine();
+        let step = Box::pin(self.handle_application_arguments(
+            lesser_ap,
+            arguments.iter().map(|(l, g)| {
+                (
+                    lesser_inst.as_ref().map_or_else(
+                        || l.clone(),
+                        |insts| l.instantiate(insts, engine),
+                    ),
+                    greater_inst.as_ref().map_or_else(
+                        || g.clone(),
+                        |insts| g.instantiate(insts, engine),
+                    ),
+                )
+            }),
+            variance,
+            ResolveStrategy::ResolveImmediately,
+        ))
+        .await?;
 
-            let step = Box::pin(solver.handle_application_arguments(
-                lesser_ap,
-                arguments.iter().map(|(l, g)| {
-                    (
-                        lesser_inst.as_ref().map_or_else(
-                            || l.clone(),
-                            |insts| l.instantiate(insts, engine),
-                        ),
-                        greater_inst.as_ref().map_or_else(
-                            || g.clone(),
-                            |insts| g.instantiate(insts, engine),
-                        ),
-                    )
-                }),
-                variance,
-                ResolveStrategy::ResolveImmediately,
-            ))
-            .await?;
+        let Some((substitution, residual, constraints)) = step else {
+            return Ok(None);
+        };
 
-            let Some((substitution, residual, constraints)) = step else {
-                return Ok(None);
-            };
+        if !residual.is_empty() {
+            return Ok(None);
+        }
 
-            if !residual.is_empty() {
-                return Ok(None);
-            }
-
-            Ok(Some(HrtbRun { substitution, constraints, variables }))
-        })
-        .await
+        Ok(Some(HrtbRun { substitution, constraints }))
     }
 
     /// Run leak check and clean up the resulting constraints from the HRTB
@@ -236,24 +239,74 @@ impl Solver<'_> {
         &mut self,
         mut substitution: Substitution,
         constraints: Constraints,
-        variables: &HrtbVariables,
+        closing_universe: UniverseIndex,
     ) -> Option<Step> {
         // HRTB constraints are generated from instantiated lifetime variables.
         // They are cleaned against the proof-local variables before any of
         // those variables can escape to callers.
-        let constraints =
-            self.check_and_clean_hrtb_constraints(constraints, variables)?;
+        let constraints = self
+            .check_and_clean_hrtb_constraints(constraints, closing_universe)?;
 
-        // Invariant type relations can bind internal HRTB inference lifetimes
-        // while proving the local relation. Those variables are proof-local,
-        // so their substitutions must not escape the HRTB run.
+        // Inference variables created in the closing universe are proof-local,
+        // including both binder instantiations and variables introduced while
+        // solving the local relation. Their substitutions must not escape the
+        // HRTB run.
         substitution.retain(|variable, _| match variable {
             Variable::Inference(inference_variable) => {
-                !variables.is_internal_inference_variable(inference_variable)
+                inference_variable.universe_index() != closing_universe
             }
             Variable::Generic(_) => true,
         });
 
         Some((substitution, Vec::new(), constraints))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use pernixc_qbice::create_minimal_engine as create_engine;
+    use pernixc_type::r#type::{
+        constructor::Primitive, inference::InferenceVariable, kind::TyKind,
+        universe::UniverseIndex,
+    };
+
+    use super::*;
+    use crate::premise::Premise;
+
+    // input: HRTB cleanup with ?T@U1 := bool and ?U@U0 := bool
+    // premise: U1 is the closing universe
+    // output: ?U@U0 := bool
+    #[tokio::test]
+    async fn hrtb_cleanup_removes_substitutions_keyed_by_closing_universe() {
+        let engine = create_engine().await;
+        let closing_universe = UniverseIndex::root().next();
+        let closing_variable =
+            InferenceVariable::new(0, TyKind::Type, closing_universe);
+        let external_variable =
+            InferenceVariable::new(1, TyKind::Type, UniverseIndex::root());
+        let bool_type = Type2::new_primitive(Primitive::Bool, &engine);
+
+        let mut substitution =
+            Substitution::singleton(closing_variable, bool_type.clone());
+        substitution.merge(&Substitution::singleton(
+            external_variable,
+            bool_type.clone(),
+        ));
+
+        let (substitution, residual_relations, constraints) =
+            Solver::new(&Premise::default(), &engine)
+                .clean_hrtb_step(
+                    substitution,
+                    Constraints::default(),
+                    closing_universe,
+                )
+                .unwrap();
+
+        assert_eq!(
+            substitution,
+            Substitution::singleton(external_variable, bool_type)
+        );
+        assert_eq!(residual_relations, Vec::new());
+        assert_eq!(constraints, Constraints::default());
     }
 }

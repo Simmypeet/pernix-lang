@@ -24,8 +24,7 @@ use pernixc_hash::{FxHashMap, FxHashSet};
 use pernixc_type::{
     predicate::Outlives,
     r#type::{
-        Type2, constructor::Lifetime, inference::InferenceVariable,
-        kind::TyKind, skolem::SkolemizedVariable,
+        Type2, constructor::Lifetime, kind::TyKind, universe::UniverseIndex,
     },
 };
 use qbice::storage::intern::Interned;
@@ -34,103 +33,27 @@ use crate::{constraints::Constraints, solver::Solver};
 
 type ConstraintGraph = FxHashMap<Interned<Type2>, FxHashSet<Interned<Type2>>>;
 
-#[derive(Debug, Clone, Default)]
-pub(crate) struct HrtbVariables {
-    inference_lifetimes: FxHashSet<InferenceVariable>,
-    skolem_lifetimes: FxHashSet<SkolemizedVariable>,
-}
-
-impl HrtbVariables {
-    pub(crate) fn from_instantiations<'a>(
-        instantiations: impl Iterator<Item = &'a Interned<Type2>>,
-    ) -> Self {
-        let mut variables = Self::default();
-
-        for instantiation in instantiations {
-            match &**instantiation {
-                Type2::InferenceVariable(variable)
-                    if variable.kind() == TyKind::Lifetime =>
-                {
-                    variables.inference_lifetimes.insert(*variable);
-                }
-                Type2::SkolemizedVariable(variable)
-                    if variable.kind() == TyKind::Lifetime =>
-                {
-                    variables.skolem_lifetimes.insert(*variable);
-                }
-                Type2::GenericParameter(_)
-                | Type2::InferenceVariable(_)
-                | Type2::BoundVariable(_)
-                | Type2::SkolemizedVariable(_)
-                | Type2::Application(_) => {}
-            }
-        }
-
-        variables
-    }
-
-    pub(crate) fn union_into(mut self, other: Self) -> Self {
-        self.inference_lifetimes.extend(other.inference_lifetimes);
-        self.skolem_lifetimes.extend(other.skolem_lifetimes);
-        self
-    }
-
-    fn is_empty(&self) -> bool {
-        self.inference_lifetimes.is_empty() && self.skolem_lifetimes.is_empty()
-    }
-
-    fn contains_internal_variable(&self, ty: &Interned<Type2>) -> bool {
-        match &**ty {
-            Type2::InferenceVariable(variable) => {
-                self.inference_lifetimes.contains(variable)
-            }
-            Type2::SkolemizedVariable(variable) => {
-                self.skolem_lifetimes.contains(variable)
-            }
-            Type2::Application(application) => application
-                .arguments()
-                .iter()
-                .any(|argument| self.contains_internal_variable(argument)),
-            Type2::GenericParameter(_) | Type2::BoundVariable(_) => false,
-        }
-    }
-
-    fn is_internal_inference(&self, ty: &Interned<Type2>) -> bool {
-        matches!(&**ty, Type2::InferenceVariable(variable) if self.inference_lifetimes.contains(variable))
-    }
-
-    pub(crate) fn is_internal_inference_variable(
-        &self,
-        variable: InferenceVariable,
-    ) -> bool {
-        self.inference_lifetimes.contains(&variable)
-    }
-
-    fn is_internal_skolem(&self, ty: &Interned<Type2>) -> bool {
-        matches!(&**ty, Type2::SkolemizedVariable(variable) if self.skolem_lifetimes.contains(variable))
-    }
-}
-
 impl Solver<'_> {
     pub(crate) fn check_and_clean_hrtb_constraints(
         &self,
         constraints: Constraints,
-        variables: &HrtbVariables,
+        closing_universe: UniverseIndex,
     ) -> Option<Constraints> {
+        let graph = constraint_graph(&constraints);
+
         // don't do any work if there are no HRTB variables
-        if variables.is_empty() {
+        if !contains_internal_variable_in_graph(&graph, closing_universe) {
             return Some(constraints);
         }
 
-        let graph = constraint_graph(&constraints);
-        leak_check(&graph, variables)
-            .then(|| self.clean_hrtb_constraints(&graph, variables))
+        leak_check(&graph, closing_universe)
+            .then(|| self.clean_hrtb_constraints(&graph, closing_universe))
     }
 
     fn clean_hrtb_constraints(
         &self,
         graph: &ConstraintGraph,
-        variables: &HrtbVariables,
+        closing_universe: UniverseIndex,
     ) -> Constraints {
         let mut cleaned = Constraints::new();
         let static_lifetime =
@@ -151,11 +74,12 @@ impl Solver<'_> {
                         source.clone(),
                         next.clone(),
                         static_lifetime.clone(),
-                        variables,
+                        closing_universe,
                     );
                 }
 
-                if (variables.is_internal_inference(&next) || next == *source)
+                if (is_internal_inference(&next, closing_universe)
+                    || next == *source)
                     && let Some(edges) = graph.get(&next)
                 {
                     stack.extend(edges.iter().cloned());
@@ -167,12 +91,12 @@ impl Solver<'_> {
     }
 }
 
-fn leak_check(graph: &ConstraintGraph, variables: &HrtbVariables) -> bool {
+fn leak_check(
+    graph: &ConstraintGraph,
+    closing_universe: UniverseIndex,
+) -> bool {
     for start in graph.keys() {
-        let Type2::SkolemizedVariable(skolem) = &**start else {
-            continue;
-        };
-        if !variables.skolem_lifetimes.contains(skolem) {
+        if !is_internal_skolem(start, closing_universe) {
             continue;
         }
 
@@ -182,7 +106,8 @@ fn leak_check(graph: &ConstraintGraph, variables: &HrtbVariables) -> bool {
             if !seen.insert(next.clone()) {
                 continue;
             }
-            if next != *start && !variables.is_internal_inference(&next) {
+            if next != *start && !is_internal_inference(&next, closing_universe)
+            {
                 return false;
             }
             if let Some(edges) = graph.get(&next) {
@@ -199,26 +124,82 @@ fn push_clean_constraint(
     lesser: Interned<Type2>,
     greater: Interned<Type2>,
     static_lifetime: Interned<Type2>,
-    variables: &HrtbVariables,
+    closing_universe: UniverseIndex,
 ) {
-    if variables.is_internal_inference(&lesser)
-        || variables.is_internal_inference(&greater)
+    if is_internal_inference(&lesser, closing_universe)
+        || is_internal_inference(&greater, closing_universe)
     {
         return;
     }
-    if variables.is_internal_skolem(&greater)
-        && !variables.contains_internal_variable(&lesser)
+    if is_internal_skolem(&greater, closing_universe)
+        && !contains_internal_variable(&lesser, closing_universe)
     {
         cleaned.extend([Outlives::new(lesser, static_lifetime)]);
         return;
     }
-    if variables.contains_internal_variable(&lesser)
-        || variables.contains_internal_variable(&greater)
+    if contains_internal_variable(&lesser, closing_universe)
+        || contains_internal_variable(&greater, closing_universe)
     {
         return;
     }
 
     cleaned.extend([Outlives::new(lesser, greater)]);
+}
+
+fn contains_internal_variable_in_graph(
+    graph: &ConstraintGraph,
+    closing_universe: UniverseIndex,
+) -> bool {
+    graph.iter().any(|(lesser, greaters)| {
+        contains_internal_variable(lesser, closing_universe)
+            || greaters.iter().any(|greater| {
+                contains_internal_variable(greater, closing_universe)
+            })
+    })
+}
+
+fn contains_internal_variable(
+    ty: &Interned<Type2>,
+    closing_universe: UniverseIndex,
+) -> bool {
+    match &**ty {
+        Type2::InferenceVariable(_) => {
+            is_internal_inference(ty, closing_universe)
+        }
+        Type2::SkolemizedVariable(_) => {
+            is_internal_skolem(ty, closing_universe)
+        }
+        Type2::Application(application) => {
+            application.arguments().iter().any(|argument| {
+                contains_internal_variable(argument, closing_universe)
+            })
+        }
+        Type2::GenericParameter(_) | Type2::BoundVariable(_) => false,
+    }
+}
+
+fn is_internal_inference(
+    ty: &Interned<Type2>,
+    closing_universe: UniverseIndex,
+) -> bool {
+    matches!(
+        &**ty,
+        Type2::InferenceVariable(variable)
+            if variable.kind() == TyKind::Lifetime
+                && variable.universe_index() == closing_universe
+    )
+}
+
+fn is_internal_skolem(
+    ty: &Interned<Type2>,
+    closing_universe: UniverseIndex,
+) -> bool {
+    matches!(
+        &**ty,
+        Type2::SkolemizedVariable(variable)
+            if variable.kind() == TyKind::Lifetime
+                && variable.universe_index() == closing_universe
+    )
 }
 
 fn constraint_graph(constraints: &Constraints) -> ConstraintGraph {
@@ -230,4 +211,79 @@ fn constraint_graph(constraints: &Constraints) -> ConstraintGraph {
             .insert(constraint.greater().clone());
     }
     graph
+}
+
+#[cfg(test)]
+mod test {
+    use pernixc_qbice::create_minimal_engine as create_engine;
+    use pernixc_type::r#type::{
+        constructor::Lifetime, inference::InferenceVariable, kind::TyKind,
+        skolem::SkolemizedVariable,
+    };
+
+    use super::*;
+    use crate::premise::Premise;
+
+    // input: 'static: ?a@U1, ?a@U1: 'erased
+    // premise: U1 is the closing universe
+    // output: 'static: 'erased
+    #[tokio::test]
+    async fn hrtb_cleanup_erases_inference_lifetimes_in_closing_universe() {
+        let engine = create_engine().await;
+        let closing_universe = UniverseIndex::root().next();
+        let static_lifetime = Type2::new_lifetime(Lifetime::Static, &engine);
+        let erased_lifetime = Type2::new_lifetime(Lifetime::Erased, &engine);
+        let inference_lifetime = Type2::new_inference_variable(
+            InferenceVariable::new(0, TyKind::Lifetime, closing_universe),
+            &engine,
+        );
+        let constraints = Constraints::lifetimes_outlives(
+            static_lifetime.clone(),
+            inference_lifetime.clone(),
+        )
+        .union_into(Constraints::lifetimes_outlives(
+            inference_lifetime,
+            erased_lifetime.clone(),
+        ));
+
+        let cleaned = Solver::new(&Premise::default(), &engine)
+            .check_and_clean_hrtb_constraints(constraints, closing_universe)
+            .unwrap();
+
+        assert_eq!(
+            cleaned,
+            Constraints::lifetimes_outlives(static_lifetime, erased_lifetime)
+        );
+    }
+
+    // input: !s@U1: ?a@U1, ?a@U1: 'static
+    // premise: U1 is the closing universe
+    // output: leak check failure
+    #[tokio::test]
+    async fn hrtb_leak_check_checks_skolems_in_closing_universe() {
+        let engine = create_engine().await;
+        let closing_universe = UniverseIndex::root().next();
+        let skolem_lifetime = Type2::new_skolemized_variable(
+            SkolemizedVariable::new(0, TyKind::Lifetime, closing_universe),
+            &engine,
+        );
+        let inference_lifetime = Type2::new_inference_variable(
+            InferenceVariable::new(1, TyKind::Lifetime, closing_universe),
+            &engine,
+        );
+        let static_lifetime = Type2::new_lifetime(Lifetime::Static, &engine);
+        let constraints = Constraints::lifetimes_outlives(
+            skolem_lifetime,
+            inference_lifetime.clone(),
+        )
+        .union_into(Constraints::lifetimes_outlives(
+            inference_lifetime,
+            static_lifetime,
+        ));
+
+        let cleaned = Solver::new(&Premise::default(), &engine)
+            .check_and_clean_hrtb_constraints(constraints, closing_universe);
+
+        assert_eq!(cleaned, None);
+    }
 }

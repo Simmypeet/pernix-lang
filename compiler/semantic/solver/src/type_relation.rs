@@ -173,8 +173,8 @@ impl Solver<'_> {
             // variance
 
             // NOTE: we don't need universe nameability checks here because
-            // "leak-checker" we take care of that, which requires more semantic
-            // information.
+            // "leak-checker" will take care of that, which requires more
+            // semantic information.
             if self.kind_of(relation.lesser()).await.is_lifetime()
                 && self.kind_of(relation.greater()).await.is_lifetime()
             {
@@ -505,14 +505,10 @@ impl Solver<'_> {
                 substitution = step_substitution;
             }
 
-            if residual_relations.is_empty() {
-                constraints =
-                    constraints.apply_or_self(&substitution, self.engine());
-
-                return Ok((substitution, Vec::new(), constraints));
-            }
-
-            if !has_progress {
+            if residual_relations.is_empty() || !has_progress {
+                // NOTE: we have to apply the substitution to the constraints
+                // because the constraints may contain inference variables that
+                // have been unified with other types in the substitution.
                 constraints =
                     constraints.apply_or_self(&substitution, self.engine());
 
