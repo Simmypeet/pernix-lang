@@ -135,20 +135,106 @@ async fn higher_ranked_cleanup_replaces_reachable_skolem_with_static() {
     );
 }
 
-/*
-input: {'a: ?x@U1, ?x@U1: ?y@U1}
-premise: U1 is the closing universe
-output: {}
- */
+// input: 'a: ?x@U1, ?x@U1: ?y@U1
+// premise: U1 is the closing universe
+// output: {}
+#[tokio::test]
+async fn higher_ranked_cleanup_drops_internal_inference_chain() {
+    let engine = create_engine().await;
+    let closing_universe = UniverseIndex::root().next();
+    let lifetime_parameter = lifetime_parameter(0, &engine);
+    let inference_x = Type2::new_inference_variable(
+        InferenceVariable::new(0, TyKind::Lifetime, closing_universe),
+        &engine,
+    );
+    let inference_y = Type2::new_inference_variable(
+        InferenceVariable::new(1, TyKind::Lifetime, closing_universe),
+        &engine,
+    );
+    let constraints = Constraints::lifetimes_outlives(
+        lifetime_parameter,
+        inference_x.clone(),
+    )
+    .union_into(Constraints::lifetimes_outlives(inference_x, inference_y));
 
-/*
-input: {!x@U1: ?y@U1, ?y@U1: ?z@U1}
-premise: U1 is the closing universe
-output: {}
- */
+    let cleaned = Solver::new(&Premise::default(), &engine)
+        .check_and_clean_higher_ranked_constraints(
+            constraints,
+            closing_universe,
+        )
+        .unwrap();
 
-/*
-input: {!x@U2: ?y@U2, ?y@U2: ?z@U1}
-premise: U2 is the closing universe
-output: leak check failure since !x reach ?z, which is in a lower universe
- */
+    assert_eq!(cleaned, Constraints::new());
+}
+
+// input: !x@U1: ?y@U1, ?y@U1: ?z@U1
+// premise: U1 is the closing universe
+// output: {}
+#[tokio::test]
+async fn higher_ranked_cleanup_drops_internal_skolem_to_inference_chain() {
+    let engine = create_engine().await;
+    let closing_universe = UniverseIndex::root().next();
+    let skolem_x = Type2::new_skolemized_variable(
+        SkolemizedVariable::new(0, TyKind::Lifetime, closing_universe),
+        &engine,
+    );
+    let inference_y = Type2::new_inference_variable(
+        InferenceVariable::new(1, TyKind::Lifetime, closing_universe),
+        &engine,
+    );
+    let inference_z = Type2::new_inference_variable(
+        InferenceVariable::new(2, TyKind::Lifetime, closing_universe),
+        &engine,
+    );
+    let constraints =
+        Constraints::lifetimes_outlives(skolem_x, inference_y.clone())
+            .union_into(Constraints::lifetimes_outlives(
+                inference_y,
+                inference_z,
+            ));
+
+    let cleaned = Solver::new(&Premise::default(), &engine)
+        .check_and_clean_higher_ranked_constraints(
+            constraints,
+            closing_universe,
+        )
+        .unwrap();
+
+    assert_eq!(cleaned, Constraints::new());
+}
+
+// input: !x@U2: ?y@U2, ?y@U2: ?z@U1
+// premise: U2 is the closing universe
+// output: leak check failure
+#[tokio::test]
+async fn higher_ranked_leak_check_rejects_reachable_lower_universe_inference() {
+    let engine = create_engine().await;
+    let closing_universe = UniverseIndex::root().next().next();
+    let lower_universe = UniverseIndex::root().next();
+    let skolem_x = Type2::new_skolemized_variable(
+        SkolemizedVariable::new(0, TyKind::Lifetime, closing_universe),
+        &engine,
+    );
+    let inference_y = Type2::new_inference_variable(
+        InferenceVariable::new(1, TyKind::Lifetime, closing_universe),
+        &engine,
+    );
+    let inference_z = Type2::new_inference_variable(
+        InferenceVariable::new(2, TyKind::Lifetime, lower_universe),
+        &engine,
+    );
+    let constraints =
+        Constraints::lifetimes_outlives(skolem_x, inference_y.clone())
+            .union_into(Constraints::lifetimes_outlives(
+                inference_y,
+                inference_z,
+            ));
+
+    let cleaned = Solver::new(&Premise::default(), &engine)
+        .check_and_clean_higher_ranked_constraints(
+            constraints,
+            closing_universe,
+        );
+
+    assert_eq!(cleaned, None);
+}
