@@ -85,28 +85,25 @@ impl Solver<'_> {
             // Therefore every argument subproblem must solve immediately; if
             // one is stuck, destructuring fails and the caller retains the
             // original relation for a later reduction attempt.
-            let (resolve_strategy, required_rigid) =
-                match lesser_ap.constructor() {
-                    Constructor::InstanceAssociated(_) => {
-                        (ResolveStrategy::ResolveImmediately, true)
-                    }
-                    Constructor::Primitive(_)
-                    | Constructor::Lifetime(_)
-                    | Constructor::Reference(_)
-                    | Constructor::Symbolic(_)
-                    | Constructor::Tuple(_)
-                    | Constructor::FunctionPointer(_)
-                    | Constructor::AnonymousTraitInstance(_) => {
-                        (ResolveStrategy::DeferResolution, false)
-                    }
-                };
+            let resolve_strategy = match lesser_ap.constructor() {
+                Constructor::InstanceAssociated(_) => {
+                    ResolveStrategy::ResolveImmediately
+                }
+                Constructor::Primitive(_)
+                | Constructor::Lifetime(_)
+                | Constructor::Reference(_)
+                | Constructor::Symbolic(_)
+                | Constructor::Tuple(_)
+                | Constructor::FunctionPointer(_)
+                | Constructor::AnonymousTraitInstance(_) => {
+                    ResolveStrategy::DeferResolution
+                }
+            };
 
             Box::pin(self.handle_application_arguments(
                 lesser_ap,
                 arguments.into_iter(),
-                flags.with_rigid_inference(
-                    flags.rigid_inference() || required_rigid,
-                ),
+                flags,
                 resolve_strategy,
             ))
             .await
