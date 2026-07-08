@@ -9,6 +9,7 @@ use pernixc_type::{
         constructor::Primitive,
         kind::TyKind,
         skolem::SkolemizedVariable,
+        universe::UniverseIndex,
     },
 };
 use qbice::storage::intern::Interned;
@@ -18,6 +19,10 @@ use crate::{
     premise::Premise,
     solver::{OverflowError, Solver},
 };
+
+fn lifetime_skolem(id: u64) -> SkolemizedVariable {
+    SkolemizedVariable::new(id, TyKind::Lifetime, UniverseIndex::root())
+}
 
 fn equality(
     left: Interned<Type2>,
@@ -119,7 +124,7 @@ async fn reduce_type_emits_lifetime_constraints_from_equality_match() {
 
     premise.insert(equality(
         Type2::new_immutable_reference(
-            Type2::new_skolemized_variable(SkolemizedVariable::new(0), &engine),
+            Type2::new_skolemized_variable(lifetime_skolem(0), &engine),
             Type2::new_primitive(Primitive::Bool, &engine),
             &engine,
         ),
@@ -129,7 +134,7 @@ async fn reduce_type_emits_lifetime_constraints_from_equality_match() {
 
     let (reduced, constraints) = reduce_type_with_lifetime_skolems(
         Type2::new_immutable_reference(
-            Type2::new_skolemized_variable(SkolemizedVariable::new(1), &engine),
+            Type2::new_skolemized_variable(lifetime_skolem(1), &engine),
             Type2::new_primitive(Primitive::Bool, &engine),
             &engine,
         ),
@@ -145,8 +150,8 @@ async fn reduce_type_emits_lifetime_constraints_from_equality_match() {
     assert_eq!(
         constraints,
         Constraints::lifetimes_eq(
-            Type2::new_skolemized_variable(SkolemizedVariable::new(0), &engine),
-            Type2::new_skolemized_variable(SkolemizedVariable::new(1), &engine),
+            Type2::new_skolemized_variable(lifetime_skolem(0), &engine),
+            Type2::new_skolemized_variable(lifetime_skolem(1), &engine),
         )
     );
 }
@@ -162,7 +167,7 @@ async fn reduce_type_emits_lifetime_constraints_with_higher_ranked_equality() {
     premise.insert(higher_ranked_equality(
         &[TyKind::Type],
         Type2::new_immutable_reference(
-            Type2::new_skolemized_variable(SkolemizedVariable::new(0), &engine),
+            Type2::new_skolemized_variable(lifetime_skolem(0), &engine),
             Type2::new_bound_variable(BoundVariable::new(0, 0), &engine),
             &engine,
         ),
@@ -172,7 +177,7 @@ async fn reduce_type_emits_lifetime_constraints_with_higher_ranked_equality() {
 
     let (reduced, constraints) = reduce_type_with_lifetime_skolems(
         Type2::new_immutable_reference(
-            Type2::new_skolemized_variable(SkolemizedVariable::new(1), &engine),
+            Type2::new_skolemized_variable(lifetime_skolem(1), &engine),
             Type2::new_primitive(Primitive::Int32, &engine),
             &engine,
         ),
@@ -188,8 +193,8 @@ async fn reduce_type_emits_lifetime_constraints_with_higher_ranked_equality() {
     assert_eq!(
         constraints,
         Constraints::lifetimes_eq(
-            Type2::new_skolemized_variable(SkolemizedVariable::new(0), &engine),
-            Type2::new_skolemized_variable(SkolemizedVariable::new(1), &engine),
+            Type2::new_skolemized_variable(lifetime_skolem(0), &engine),
+            Type2::new_skolemized_variable(lifetime_skolem(1), &engine),
         )
     );
 }
@@ -215,7 +220,7 @@ async fn reduce_type_instantiates_higher_ranked_lifetime() {
 
     let (reduced, constraints) = reduce_type_with_lifetime_skolems(
         Type2::new_immutable_reference(
-            Type2::new_skolemized_variable(SkolemizedVariable::new(0), &engine),
+            Type2::new_skolemized_variable(lifetime_skolem(0), &engine),
             Type2::new_primitive(Primitive::Bool, &engine),
             &engine,
         ),
@@ -256,7 +261,7 @@ async fn reduce_type_substitutes_higher_ranked_lifetime_in_output() {
 
     let (reduced, constraints) = reduce_type_with_lifetime_skolems(
         Type2::new_immutable_reference(
-            Type2::new_skolemized_variable(SkolemizedVariable::new(0), &engine),
+            Type2::new_skolemized_variable(lifetime_skolem(0), &engine),
             Type2::new_primitive(Primitive::Bool, &engine),
             &engine,
         ),
@@ -271,7 +276,7 @@ async fn reduce_type_substitutes_higher_ranked_lifetime_in_output() {
     assert_eq!(
         reduced,
         Type2::new_immutable_reference(
-            Type2::new_skolemized_variable(SkolemizedVariable::new(0), &engine),
+            Type2::new_skolemized_variable(lifetime_skolem(0), &engine),
             Type2::new_primitive(Primitive::Int32, &engine),
             &engine
         )
@@ -340,18 +345,12 @@ async fn reduce_type_substitutes_multiple_higher_ranked_lifetimes() {
         Type2::new_tuple(
             [
                 Type2::new_immutable_reference(
-                    Type2::new_skolemized_variable(
-                        SkolemizedVariable::new(0),
-                        &engine,
-                    ),
+                    Type2::new_skolemized_variable(lifetime_skolem(0), &engine),
                     Type2::new_primitive(Primitive::Bool, &engine),
                     &engine,
                 ),
                 Type2::new_immutable_reference(
-                    Type2::new_skolemized_variable(
-                        SkolemizedVariable::new(1),
-                        &engine,
-                    ),
+                    Type2::new_skolemized_variable(lifetime_skolem(1), &engine),
                     Type2::new_primitive(Primitive::Int32, &engine),
                     &engine,
                 ),
@@ -371,18 +370,12 @@ async fn reduce_type_substitutes_multiple_higher_ranked_lifetimes() {
         Type2::new_tuple(
             [
                 Type2::new_immutable_reference(
-                    Type2::new_skolemized_variable(
-                        SkolemizedVariable::new(1),
-                        &engine
-                    ),
+                    Type2::new_skolemized_variable(lifetime_skolem(1), &engine),
                     Type2::new_primitive(Primitive::Uint64, &engine),
                     &engine
                 ),
                 Type2::new_immutable_reference(
-                    Type2::new_skolemized_variable(
-                        SkolemizedVariable::new(0),
-                        &engine
-                    ),
+                    Type2::new_skolemized_variable(lifetime_skolem(0), &engine),
                     Type2::new_primitive(Primitive::Int32, &engine),
                     &engine
                 ),
@@ -432,18 +425,12 @@ async fn reduce_type_emits_constraints_for_repeated_higher_ranked_lifetime() {
         Type2::new_tuple(
             [
                 Type2::new_immutable_reference(
-                    Type2::new_skolemized_variable(
-                        SkolemizedVariable::new(1),
-                        &engine,
-                    ),
+                    Type2::new_skolemized_variable(lifetime_skolem(1), &engine),
                     Type2::new_primitive(Primitive::Int32, &engine),
                     &engine,
                 ),
                 Type2::new_immutable_reference(
-                    Type2::new_skolemized_variable(
-                        SkolemizedVariable::new(2),
-                        &engine,
-                    ),
+                    Type2::new_skolemized_variable(lifetime_skolem(2), &engine),
                     Type2::new_primitive(Primitive::Int32, &engine),
                     &engine,
                 ),
@@ -462,8 +449,8 @@ async fn reduce_type_emits_constraints_for_repeated_higher_ranked_lifetime() {
     assert_eq!(
         constraints,
         Constraints::lifetimes_eq(
-            Type2::new_skolemized_variable(SkolemizedVariable::new(1), &engine),
-            Type2::new_skolemized_variable(SkolemizedVariable::new(2), &engine),
+            Type2::new_skolemized_variable(lifetime_skolem(1), &engine),
+            Type2::new_skolemized_variable(lifetime_skolem(2), &engine),
         )
     );
 }
@@ -514,18 +501,12 @@ async fn reduce_type_emits_constraints_for_repeated_lifetime_with_type_output()
         Type2::new_tuple(
             [
                 Type2::new_immutable_reference(
-                    Type2::new_skolemized_variable(
-                        SkolemizedVariable::new(1),
-                        &engine,
-                    ),
+                    Type2::new_skolemized_variable(lifetime_skolem(1), &engine),
                     Type2::new_primitive(Primitive::Uint64, &engine),
                     &engine,
                 ),
                 Type2::new_immutable_reference(
-                    Type2::new_skolemized_variable(
-                        SkolemizedVariable::new(2),
-                        &engine,
-                    ),
+                    Type2::new_skolemized_variable(lifetime_skolem(2), &engine),
                     Type2::new_primitive(Primitive::Uint64, &engine),
                     &engine,
                 ),
@@ -544,8 +525,8 @@ async fn reduce_type_emits_constraints_for_repeated_lifetime_with_type_output()
     assert_eq!(
         constraints,
         Constraints::lifetimes_eq(
-            Type2::new_skolemized_variable(SkolemizedVariable::new(1), &engine),
-            Type2::new_skolemized_variable(SkolemizedVariable::new(2), &engine),
+            Type2::new_skolemized_variable(lifetime_skolem(1), &engine),
+            Type2::new_skolemized_variable(lifetime_skolem(2), &engine),
         )
     );
 }
@@ -777,14 +758,11 @@ async fn reduce_type_overflows_on_self_expanding_equality() {
     let mut premise = Premise::default();
 
     premise.insert(equality(
-        Type2::new_skolemized_variable(SkolemizedVariable::new(1), &engine),
+        Type2::new_skolemized_variable(lifetime_skolem(1), &engine),
         Type2::new_tuple(
             [
                 Type2::new_primitive(Primitive::Bool, &engine),
-                Type2::new_skolemized_variable(
-                    SkolemizedVariable::new(1),
-                    &engine,
-                ),
+                Type2::new_skolemized_variable(lifetime_skolem(1), &engine),
             ],
             &engine,
         ),
@@ -793,7 +771,7 @@ async fn reduce_type_overflows_on_self_expanding_equality() {
 
     assert!(
         reduce_type_with_lifetime_skolems(
-            Type2::new_skolemized_variable(SkolemizedVariable::new(1), &engine),
+            Type2::new_skolemized_variable(lifetime_skolem(1), &engine),
             &premise,
             &engine,
             2,

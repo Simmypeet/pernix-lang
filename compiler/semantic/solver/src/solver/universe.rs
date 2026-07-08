@@ -1,19 +1,10 @@
+use pernixc_type::r#type::universe::UniverseIndex;
+
 use crate::solver::Solver;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Universe {
     current_universe: UniverseIndex,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct UniverseIndex(usize);
-
-impl UniverseIndex {
-    #[must_use]
-    pub const fn root() -> Self { Self(0) }
-
-    #[must_use]
-    pub const fn next(&self) -> Self { Self(self.0 + 1) }
 }
 
 impl Solver<'_> {

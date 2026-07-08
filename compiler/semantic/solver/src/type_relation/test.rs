@@ -1,5 +1,10 @@
-use pernixc_qbice::{TrackedEngine, create_minimal_engine as create_engine};
-use pernixc_symbol::GlobalSymbolID;
+use std::sync::Arc;
+
+use pernixc_qbice::{
+    Config, Engine, InMemoryFactory, TrackedEngine,
+    create_minimal_engine as create_engine,
+};
+use pernixc_symbol::{GlobalSymbolID, kind::Kind};
 use pernixc_type::{
     predicate::Subtype,
     substitution::Substitution,
@@ -7,17 +12,49 @@ use pernixc_type::{
         Type2,
         bound::BoundVariable,
         constructor::{Lifetime, Mutability, Primitive},
+        kind::TyKind,
     },
     variance::Variance2,
 };
-use qbice::storage::intern::Interned;
+use qbice::{
+    executor, serialize::Plugin, stable_hash::SeededStableHasherBuilder,
+    storage::intern::Interned,
+};
 
 use crate::{
     constraints::Constraints,
     premise::Premise,
     solver::{OverflowError, Solver},
-    subtype::Step,
+    type_relation::{Step, TypeRelation},
 };
+
+struct AssociatedTypeKindExecutor;
+
+impl executor::Executor<pernixc_symbol::kind::Key, Config>
+    for AssociatedTypeKindExecutor
+{
+    async fn execute(
+        &self,
+        _: &pernixc_symbol::kind::Key,
+        _: &TrackedEngine,
+    ) -> Kind {
+        Kind::InstanceAssociatedType
+    }
+}
+
+async fn create_engine_with_associated_type_kind() -> TrackedEngine {
+    let mut engine = Engine::new_with(
+        Plugin::default(),
+        InMemoryFactory,
+        SeededStableHasherBuilder::new(0),
+    )
+    .await
+    .unwrap();
+
+    engine.register_executor(Arc::new(AssociatedTypeKindExecutor));
+
+    Arc::new(engine).tracked().await
+}
 
 async fn destructure_application(
     lesser: &Interned<Type2>,
@@ -31,14 +68,14 @@ async fn destructure_application(
         panic!("expected application");
     };
 
+    let relation = TypeRelation::new(
+        lesser.clone(),
+        greater.clone(),
+        Variance2::Covariant,
+    );
+
     Solver::new(&Premise::default(), engine)
-        .handle_application(
-            lesser,
-            greater,
-            lesser_application,
-            greater_application,
-            Variance2::Covariant,
-        )
+        .handle_application(&relation, lesser_application, greater_application)
         .await
 }
 
@@ -66,7 +103,9 @@ async fn resolve_step(
     engine: &TrackedEngine,
 ) -> Result<Step, OverflowError> {
     Solver::new(&Premise::default(), engine)
-        .resolve_subtypes(vec![Subtype::new(lesser, greater, variance)])
+        .resolve_type_relations(vec![TypeRelation::new(
+            lesser, greater, variance,
+        )])
         .await
 }
 
@@ -82,7 +121,7 @@ fn contains_variable(ty: &Interned<Type2>) -> bool {
 
 fn assert_no_variables_in_step(
     substitution: &Substitution,
-    residual_subtypes: &[Subtype],
+    residual_subtypes: &[TypeRelation],
     constraints: &Constraints,
 ) {
     assert!(substitution.iter().all(|(_, ty)| !contains_variable(ty)));
@@ -94,6 +133,30 @@ fn assert_no_variables_in_step(
         !contains_variable(constraint.lesser())
             && !contains_variable(constraint.greater())
     }));
+}
+
+#[tokio::test]
+async fn rigid_inference_does_not_bind_inference_variable() {
+    let engine = create_engine().await;
+    let premise = Premise::default();
+    let mut solver = Solver::new(&premise, &engine);
+    let variable = solver.fresh_inference_variable(TyKind::Type);
+    let inference = Type2::new_inference_variable(variable, &engine);
+    let known = Type2::new_primitive(Primitive::Bool, &engine);
+
+    let (substitution, residual_subtypes, constraints) = solver
+        .resolve_type_relations(vec![TypeRelation::new_rigid(
+            inference.clone(),
+            known,
+            Variance2::Invariant,
+        )])
+        .await
+        .unwrap();
+
+    assert_eq!(substitution, Substitution::new());
+    assert_eq!(residual_subtypes.len(), 1);
+    assert_eq!(residual_subtypes[0].left(), &inference);
+    assert_eq!(constraints, Constraints::default());
 }
 
 #[tokio::test]
@@ -117,6 +180,89 @@ async fn instance_associated_arguments_must_be_solved_immediately() {
         destructure_application(&lesser, &greater, &engine).await.unwrap(),
         None
     );
+}
+
+#[tokio::test]
+async fn instance_associated_arguments_do_not_bind_inference_variables() {
+    let engine = create_engine().await;
+    let premise = Premise::default();
+    let mut solver = Solver::new(&premise, &engine);
+    let variable = solver.fresh_inference_variable(TyKind::Type);
+    let inference = Type2::new_inference_variable(variable, &engine);
+    let common_instance = Type2::new_primitive(Primitive::Bool, &engine);
+    let lesser = Type2::new_instance_associated(
+        GlobalSymbolID::default(),
+        common_instance.clone(),
+        [inference],
+        &engine,
+    );
+    let greater = Type2::new_instance_associated(
+        GlobalSymbolID::default(),
+        common_instance,
+        [Type2::new_primitive(Primitive::Int32, &engine)],
+        &engine,
+    );
+
+    let Type2::Application(lesser_application) = &*lesser else {
+        panic!("expected application");
+    };
+    let Type2::Application(greater_application) = &*greater else {
+        panic!("expected application");
+    };
+
+    let relation = TypeRelation::new(
+        lesser.clone(),
+        greater.clone(),
+        Variance2::Covariant,
+    );
+    let step = solver
+        .handle_application(&relation, lesser_application, greater_application)
+        .await
+        .unwrap();
+
+    assert_eq!(step, None);
+}
+
+// input: I::Assoc[?a] = I::Assoc[int32]
+// premise: instance-associated arguments are destructured rigidly
+// output: no ?a := int32 substitution; original relation remains stuck
+#[tokio::test]
+async fn instance_associated_equality_does_not_unify_inference_arguments() {
+    let engine = create_engine_with_associated_type_kind().await;
+    let premise = Premise::default();
+    let mut solver = Solver::new(&premise, &engine);
+    let variable = solver.fresh_inference_variable(TyKind::Type);
+    let inference = Type2::new_inference_variable(variable, &engine);
+    let common_instance = Type2::new_primitive(Primitive::Bool, &engine);
+    let lesser = Type2::new_instance_associated(
+        GlobalSymbolID::default(),
+        common_instance.clone(),
+        [inference],
+        &engine,
+    );
+    let greater = Type2::new_instance_associated(
+        GlobalSymbolID::default(),
+        common_instance,
+        [Type2::new_primitive(Primitive::Int32, &engine)],
+        &engine,
+    );
+
+    let (substitution, residual_subtypes, constraints) = solver
+        .resolve_type_relations(vec![TypeRelation::new(
+            lesser.clone(),
+            greater.clone(),
+            Variance2::Invariant,
+        )])
+        .await
+        .unwrap();
+
+    assert_eq!(substitution, Substitution::new());
+    assert_eq!(residual_subtypes, vec![TypeRelation::new(
+        lesser,
+        greater,
+        Variance2::Invariant
+    )]);
+    assert_eq!(constraints, Constraints::default());
 }
 
 #[tokio::test]

@@ -1,4 +1,4 @@
-use pernixc_type::r#type::{Type2, context::TyContext, kind::TyKind};
+use pernixc_type::r#type::{Type2, kind::TyKind};
 use qbice::storage::intern::Interned;
 
 use crate::{
@@ -24,10 +24,7 @@ impl Solver<'_> {
         let contains_type_or_instance_inference = normalized
             .as_ref()
             .contains_inference_variable_matching(|variable| {
-                matches!(
-                    self.get_inference_variable_kind(&variable),
-                    TyKind::Type | TyKind::Instance
-                )
+                matches!(variable.kind(), TyKind::Type | TyKind::Instance)
             });
 
         Ok((!contains_type_or_instance_inference)

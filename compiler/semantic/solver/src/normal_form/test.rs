@@ -9,6 +9,7 @@ use pernixc_type::{
         constructor::Primitive,
         kind::TyKind,
         skolem::SkolemizedVariable,
+        universe::UniverseIndex,
     },
 };
 use qbice::storage::intern::Interned;
@@ -18,6 +19,10 @@ use crate::{
     premise::Premise,
     solver::{OverflowError, Solver},
 };
+
+fn lifetime_skolem(id: u64) -> SkolemizedVariable {
+    SkolemizedVariable::new(id, TyKind::Lifetime, UniverseIndex::root())
+}
 
 fn equality(
     left: Interned<Type2>,
@@ -132,7 +137,7 @@ async fn preserves_lifetime_constraints() {
 
     premise.insert(equality(
         Type2::new_immutable_reference(
-            Type2::new_skolemized_variable(SkolemizedVariable::new(0), &engine),
+            Type2::new_skolemized_variable(lifetime_skolem(0), &engine),
             Type2::new_primitive(Primitive::Bool, &engine),
             &engine,
         ),
@@ -142,7 +147,7 @@ async fn preserves_lifetime_constraints() {
 
     let (normalized, constraints) = normal_form_with_lifetime_skolems(
         Type2::new_immutable_reference(
-            Type2::new_skolemized_variable(SkolemizedVariable::new(1), &engine),
+            Type2::new_skolemized_variable(lifetime_skolem(1), &engine),
             Type2::new_primitive(Primitive::Bool, &engine),
             &engine,
         ),
@@ -158,8 +163,8 @@ async fn preserves_lifetime_constraints() {
     assert_eq!(
         constraints,
         Constraints::lifetimes_eq(
-            Type2::new_skolemized_variable(SkolemizedVariable::new(0), &engine),
-            Type2::new_skolemized_variable(SkolemizedVariable::new(1), &engine),
+            Type2::new_skolemized_variable(lifetime_skolem(0), &engine),
+            Type2::new_skolemized_variable(lifetime_skolem(1), &engine),
         )
     );
 }
@@ -284,14 +289,11 @@ async fn propagates_reduction_overflow() {
     let mut premise = Premise::default();
 
     premise.insert(equality(
-        Type2::new_skolemized_variable(SkolemizedVariable::new(1), &engine),
+        Type2::new_skolemized_variable(lifetime_skolem(1), &engine),
         Type2::new_tuple(
             [
                 Type2::new_primitive(Primitive::Bool, &engine),
-                Type2::new_skolemized_variable(
-                    SkolemizedVariable::new(1),
-                    &engine,
-                ),
+                Type2::new_skolemized_variable(lifetime_skolem(1), &engine),
             ],
             &engine,
         ),
@@ -300,7 +302,7 @@ async fn propagates_reduction_overflow() {
 
     assert!(
         normal_form_with_lifetime_skolems(
-            Type2::new_skolemized_variable(SkolemizedVariable::new(1), &engine),
+            Type2::new_skolemized_variable(lifetime_skolem(1), &engine),
             &premise,
             &engine,
             2,
