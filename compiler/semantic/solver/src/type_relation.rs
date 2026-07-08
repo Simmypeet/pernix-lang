@@ -14,6 +14,9 @@ use crate::{
 mod application;
 mod generalization;
 
+#[cfg(test)]
+mod test;
+
 pub type Step = (Substitution, Vec<TypeRelation>, Constraints);
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

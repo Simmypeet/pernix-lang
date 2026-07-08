@@ -9,6 +9,5 @@ pub mod predicate;
 pub mod premise;
 pub mod reduction;
 pub mod solver;
-pub mod subtype;
 pub mod type_relation;
 pub mod unify;
