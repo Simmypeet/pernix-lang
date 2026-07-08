@@ -1,5 +1,7 @@
 use qbice::{Decode, Encode, StableHash};
 
+use crate::r#type::{kind::TyKind, universe::UniverseIndex};
+
 #[derive(
     Debug,
     Clone,
@@ -13,9 +15,24 @@ use qbice::{Decode, Encode, StableHash};
     Encode,
     Decode,
 )]
-pub struct SkolemizedVariable(u64);
+pub struct SkolemizedVariable {
+    id: u64,
+    kind: TyKind,
+    universe: UniverseIndex,
+}
 
 impl SkolemizedVariable {
     #[must_use]
-    pub const fn new(id: u64) -> Self { Self(id) }
+    pub const fn new(id: u64, kind: TyKind, universe: UniverseIndex) -> Self {
+        Self { id, kind, universe }
+    }
+
+    #[must_use]
+    pub const fn id(&self) -> u64 { self.id }
+
+    #[must_use]
+    pub const fn kind(&self) -> TyKind { self.kind }
+
+    #[must_use]
+    pub const fn universe_index(&self) -> UniverseIndex { self.universe }
 }

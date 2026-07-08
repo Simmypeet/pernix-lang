@@ -189,7 +189,7 @@ impl Solver<'_> {
                     }),
                 ),
             };
-            let variables = solver.hrtb_variables_from_instantiations(
+            let variables = HrtbVariables::from_instantiations(
                 lesser_inst
                     .iter()
                     .flatten()

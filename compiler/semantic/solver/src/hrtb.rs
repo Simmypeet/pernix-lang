@@ -16,16 +16,16 @@
 //!    lifetime.
 //!
 //! Furthermore, it erases all the created temporary instantiations of higher-
-//! ranked lifetimes. For instance, `'a: '?0, '?0: 'b`, where `'?0` is a 
-//! temporary instantiation of a higher-ranked lifetime, will be erased to 
+//! ranked lifetimes. For instance, `'a: '?0, '?0: 'b`, where `'?0` is a
+//! temporary instantiation of a higher-ranked lifetime, will be erased to
 //! `'a: 'b` if it passes the leak check.
 
 use pernixc_hash::{FxHashMap, FxHashSet};
 use pernixc_type::{
     predicate::Outlives,
     r#type::{
-        Type2, constructor::Lifetime, context::TyContext,
-        inference::InferenceVariable, kind::TyKind, skolem::SkolemizedVariable,
+        Type2, constructor::Lifetime, inference::InferenceVariable,
+        kind::TyKind, skolem::SkolemizedVariable,
     },
 };
 use qbice::storage::intern::Interned;
@@ -41,6 +41,34 @@ pub(crate) struct HrtbVariables {
 }
 
 impl HrtbVariables {
+    pub(crate) fn from_instantiations<'a>(
+        instantiations: impl Iterator<Item = &'a Interned<Type2>>,
+    ) -> Self {
+        let mut variables = Self::default();
+
+        for instantiation in instantiations {
+            match &**instantiation {
+                Type2::InferenceVariable(variable)
+                    if variable.kind() == TyKind::Lifetime =>
+                {
+                    variables.inference_lifetimes.insert(*variable);
+                }
+                Type2::SkolemizedVariable(variable)
+                    if variable.kind() == TyKind::Lifetime =>
+                {
+                    variables.skolem_lifetimes.insert(*variable);
+                }
+                Type2::GenericParameter(_)
+                | Type2::InferenceVariable(_)
+                | Type2::BoundVariable(_)
+                | Type2::SkolemizedVariable(_)
+                | Type2::Application(_) => {}
+            }
+        }
+
+        variables
+    }
+
     pub(crate) fn union_into(mut self, other: Self) -> Self {
         self.inference_lifetimes.extend(other.inference_lifetimes);
         self.skolem_lifetimes.extend(other.skolem_lifetimes);
@@ -84,37 +112,6 @@ impl HrtbVariables {
 }
 
 impl Solver<'_> {
-    pub(crate) fn hrtb_variables_from_instantiations<'a>(
-        &self,
-        instantiations: impl Iterator<Item = &'a Interned<Type2>>,
-    ) -> HrtbVariables {
-        let mut variables = HrtbVariables::default();
-
-        for instantiation in instantiations {
-            match &**instantiation {
-                Type2::InferenceVariable(variable)
-                    if self.get_inference_variable_kind(variable)
-                        == TyKind::Lifetime =>
-                {
-                    variables.inference_lifetimes.insert(*variable);
-                }
-                Type2::SkolemizedVariable(variable)
-                    if self.get_skolemized_variable_kind(variable)
-                        == TyKind::Lifetime =>
-                {
-                    variables.skolem_lifetimes.insert(*variable);
-                }
-                Type2::GenericParameter(_)
-                | Type2::InferenceVariable(_)
-                | Type2::BoundVariable(_)
-                | Type2::SkolemizedVariable(_)
-                | Type2::Application(_) => {}
-            }
-        }
-
-        variables
-    }
-
     pub(crate) fn check_and_clean_hrtb_constraints(
         &self,
         constraints: Constraints,

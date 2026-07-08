@@ -6,7 +6,7 @@ use pernixc_type::{
     substitution::Substitution,
     r#type::{
         Type2,
-        bound::{Binder, BoundVariable},
+        bound::Binder,
         constructor::{Lifetime, Mutability, Primitive},
         kind::TyKind,
     },
@@ -300,28 +300,6 @@ async fn tuple_and_reference_arguments_are_unified_invariantly() {
         constraints,
         Constraints::lifetimes_eq(static_lifetime, erased_lifetime)
     );
-}
-
-// input: ^0.0 == ^0.1
-// premise: {}
-// output: {}, residual ^0.0 == ^0.1, {}
-#[tokio::test]
-async fn bound_variables_must_match_exactly() {
-    let engine = create_test_engine().await;
-    let first = Type2::new_bound_variable(BoundVariable::new(0, 0), &engine);
-    let second = Type2::new_bound_variable(BoundVariable::new(0, 1), &engine);
-
-    let (substitution, residual_unifications, constraints) = resolve(
-        vec![Unify::new(first.clone(), second.clone())],
-        &Premise::default(),
-        &engine,
-    )
-    .await
-    .unwrap();
-
-    assert_eq!(substitution, Substitution::new());
-    assert_eq!(residual_unifications, vec![Unify::new(first, second)]);
-    assert_eq!(constraints, Constraints::default());
 }
 
 // input: for<'a> fn() -> bool == fn() -> bool

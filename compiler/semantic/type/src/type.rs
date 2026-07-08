@@ -14,18 +14,18 @@ use crate::{
             InstanceAssociated, Lifetime, Mutability, Primitive, Reference,
             Symbolic, Tuple,
         },
-        context::TyContext,
         inference::InferenceVariable,
         skolem::SkolemizedVariable,
+        universe::UniverseIndex,
     },
 };
 
 pub mod bound;
 pub mod constructor;
-pub mod context;
 pub mod inference;
 pub mod kind;
 pub mod skolem;
+pub mod universe;
 
 pub use constructor::rewrite;
 
@@ -321,11 +321,7 @@ impl Type2 {
         }
     }
 
-    pub async fn kind(
-        &self,
-        engine: &TrackedEngine,
-        ctx: &impl TyContext,
-    ) -> kind::TyKind {
+    pub async fn kind(&self, engine: &TrackedEngine) -> kind::TyKind {
         match self {
             Self::GenericParameter(member_id) => engine
                 .get_generic_parameters2(member_id.parent_id())
@@ -333,18 +329,38 @@ impl Type2 {
             .kind(),
 
             Self::InferenceVariable(inference_variable) => {
-                ctx.get_inference_variable_kind(inference_variable)
+                inference_variable.kind()
             }
 
             Self::Application(application) => application.kind(engine).await,
 
-            Self::BoundVariable(bound_var) => {
-                ctx.get_bound_variable_kind(bound_var)
+            Self::BoundVariable(_) => todo!(),
+
+            Self::SkolemizedVariable(skolemized_var) => skolemized_var.kind(),
+        }
+    }
+
+    #[must_use]
+    pub fn universe_index(&self) -> UniverseIndex {
+        match self {
+            Self::GenericParameter(_) | Self::BoundVariable(_) => {
+                UniverseIndex::root()
             }
 
-            Self::SkolemizedVariable(skolemized_var) => {
-                ctx.get_skolemized_variable_kind(skolemized_var)
+            Self::InferenceVariable(inference_variable) => {
+                inference_variable.universe_index()
             }
+
+            Self::SkolemizedVariable(skolemized_variable) => {
+                skolemized_variable.universe_index()
+            }
+
+            Self::Application(application) => application
+                .arguments()
+                .iter()
+                .map(|argument| argument.universe_index())
+                .max()
+                .unwrap_or(UniverseIndex::root()),
         }
     }
 }

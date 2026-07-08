@@ -15,7 +15,8 @@ use pernixc_type::{
     predicate::Predicate2,
     substitution::Substitution,
     r#type::{
-        Type2, context::TyContext, inference::InferenceVariable, kind::TyKind,
+        Type2, inference::InferenceVariable, kind::TyKind,
+        universe::UniverseIndex,
     },
 };
 use qbice::{
@@ -25,10 +26,7 @@ use qbice::{
 use crate::{
     constraints::Constraints,
     premise::Premise,
-    solver::{
-        universe::{Universe, UniverseIndex},
-        variable_info::VariableInfos,
-    },
+    solver::{universe::Universe, variable_info::VariableInfos},
 };
 
 pub mod universe;
@@ -283,26 +281,7 @@ impl Solver<'_> {
 
     #[must_use]
     pub fn max_universe_index(&self, ty: &Type2) -> UniverseIndex {
-        match ty {
-            Type2::BoundVariable(_) | Type2::GenericParameter(_) => {
-                UniverseIndex::root()
-            }
-
-            Type2::InferenceVariable(inference_variable) => {
-                self.get_inference_variable_universe(*inference_variable)
-            }
-
-            Type2::SkolemizedVariable(skolemized_variable) => {
-                self.get_skolemized_variable_universe(*skolemized_variable)
-            }
-
-            Type2::Application(application) => application
-                .arguments()
-                .iter()
-                .map(|x| self.max_universe_index(x))
-                .max()
-                .unwrap_or(UniverseIndex::root()),
-        }
+        ty.universe_index()
     }
 }
 
@@ -347,7 +326,7 @@ impl<'a> Solver<'a> {
 
     #[must_use]
     pub async fn kind_of(&self, ty: &Type2) -> TyKind {
-        ty.kind(self.engine(), self).await
+        ty.kind(self.engine()).await
     }
 
     pub fn intern<T>(&self, value: T) -> Interned<T>
@@ -363,14 +342,14 @@ impl<'a> Solver<'a> {
         ty: &Interned<Type2>,
         do_occur_check: DoOccurCheck,
     ) -> bool {
-        let var_kind = self.get_inference_variable_kind(&inference_variable);
+        let var_kind = inference_variable.kind();
         let subject_kind = self.kind_of(ty).await;
 
         if var_kind != subject_kind {
             return false;
         }
 
-        let var_uni = self.get_inference_variable_universe(inference_variable);
+        let var_uni = inference_variable.universe_index();
         let subject_uni = self.max_universe_index(ty);
 
         if var_uni < subject_uni {

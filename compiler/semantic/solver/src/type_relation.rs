@@ -344,7 +344,7 @@ impl Solver<'_> {
             return Ok(self.bind_with_check(infer_var, binding_target).await);
         };
 
-        let binding_universe = self.get_inference_variable_universe(infer_var);
+        let binding_universe = infer_var.universe_index();
 
         // NOTE: given `?T <: &'static int32 @ Covariant`, we first perform a
         // generalization by replacing all the lifetimes in `&'static int32`

@@ -10,15 +10,15 @@ use pernixc_type::{
                 AsyncTypeRewriter, RewriteContext, rewrite_type_or_clone_async,
             },
         },
-        context::TyContext,
         inference::InferenceVariable,
         kind::TyKind,
         skolem::SkolemizedVariable,
+        universe::UniverseIndex,
     },
 };
 use qbice::storage::intern::Interned;
 
-use crate::solver::{Solver, universe::UniverseIndex};
+use crate::solver::Solver;
 
 impl Solver<'_> {
     pub(super) async fn generalize_application_inference_variables(
@@ -61,7 +61,7 @@ impl AsyncTypeRewriter for GeneralizeInferenceVariableRewriter<'_, '_> {
         variable: InferenceVariable,
         _: RewriteContext,
     ) -> Result<Option<Interned<Type2>>, Self::Error> {
-        let kind = self.solver.get_inference_variable_kind(&variable);
+        let kind = variable.kind();
 
         Ok(Some(self.fresh_inference_variable(kind)))
     }
@@ -86,7 +86,7 @@ impl AsyncTypeRewriter for GeneralizeInferenceVariableRewriter<'_, '_> {
         variable: SkolemizedVariable,
         _: RewriteContext,
     ) -> Result<Option<Interned<Type2>>, Self::Error> {
-        let kind = self.solver.get_skolemized_variable_kind(&variable);
+        let kind = variable.kind();
 
         Ok(kind.is_lifetime().then(|| self.fresh_inference_variable(kind)))
     }
