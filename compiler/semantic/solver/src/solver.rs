@@ -306,7 +306,6 @@ pub(crate) fn occur_check(
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum DoOccurCheck {
     Yes,
-    No,
 }
 
 impl<'a> Solver<'a> {

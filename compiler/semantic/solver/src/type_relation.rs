@@ -135,6 +135,20 @@ impl TypeRelation {
     }
 
     #[must_use]
+    pub const fn new_matching(
+        head: Interned<Type2>,
+        subject: Interned<Type2>,
+    ) -> Self {
+        Self::new_with_flags(
+            head,
+            subject,
+            RelationFlags::new(Variance2::Invariant)
+                .with_greater_rigid_inference(true)
+                .with_reduce(false),
+        )
+    }
+
+    #[must_use]
     const fn new_with_flags(
         left: Interned<Type2>,
         right: Interned<Type2>,
@@ -628,8 +642,13 @@ impl Solver<'_> {
                 // receive the learned substitution separately.
                 constraints = constraints.union_into(new_constraints);
 
-                // Newly decomposed relations are solved in the same
-                // batch without rewriting them by the step substitution.
+                // Relations still in the active worklist must observe each
+                // successful step immediately so repeated inference variables
+                // are solved consistently within the same batch.
+                for relation in &mut type_relations {
+                    *relation = relation
+                        .apply_or_clone(&step_substitution, self.engine());
+                }
                 type_relations.extend(new_relations);
 
                 // Preserve composition order so the returned substitution

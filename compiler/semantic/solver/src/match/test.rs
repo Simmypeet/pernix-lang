@@ -8,9 +8,9 @@ use crate::{premise::Premise, solver::Solver};
 
 // input: match for<'a> fn() -> bool against fn() -> bool
 // premise: {}
-// output: no match
+// output: match succeeds through invariant type-relation solving
 #[tokio::test]
-async fn function_pointer_binders_must_match_exactly() {
+async fn function_pointer_binders_follow_type_relation_solving() {
     let engine = create_test_engine().await;
     let bool_type = Type2::new_primitive(Primitive::Bool, &engine);
     let head = Type2::new_function_pointer_with_higher_ranked_lifetimes(
@@ -25,7 +25,7 @@ async fn function_pointer_binders_must_match_exactly() {
     let result =
         Solver::new(&premise, &engine).match_type(&head, &subject).await;
 
-    assert!(result.is_none());
+    assert!(result.is_some());
 }
 
 fn repeated_inference_tuple(
@@ -74,6 +74,23 @@ async fn repeated_inference_variable_rejects_inconsistent_arguments() {
             Type2::new_primitive(Primitive::Int32, &engine),
             Type2::new_primitive(Primitive::Bool, &engine),
         ],
+        &engine,
+    );
+
+    assert!(solver.match_type(&head, &subject).await.is_none());
+}
+
+// input: match Int32 against ?T
+// premise: ?T appears only on the rigid subject side
+// output: no match
+#[tokio::test]
+async fn subject_inference_variable_is_not_bound() {
+    let engine = pernixc_qbice::create_minimal_engine().await;
+    let premise = Premise::default();
+    let mut solver = Solver::new(&premise, &engine);
+    let head = Type2::new_primitive(Primitive::Int32, &engine);
+    let subject = Type2::new_inference_variable(
+        solver.fresh_inference_variable(TyKind::Type),
         &engine,
     );
 
