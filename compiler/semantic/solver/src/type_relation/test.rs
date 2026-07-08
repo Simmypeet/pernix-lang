@@ -135,8 +135,11 @@ fn assert_no_variables_in_step(
     }));
 }
 
+// input: ?a = bool with both sides rigid
+// premise: ?a is on the lesser side
+// output: no ?a := bool substitution; relation remains stuck
 #[tokio::test]
-async fn rigid_inference_does_not_bind_inference_variable() {
+async fn rigid_inference_does_not_bind_lesser_inference_variable() {
     let engine = create_engine().await;
     let premise = Premise::default();
     let mut solver = Solver::new(&premise, &engine);
@@ -156,6 +159,62 @@ async fn rigid_inference_does_not_bind_inference_variable() {
     assert_eq!(substitution, Substitution::new());
     assert_eq!(residual_subtypes.len(), 1);
     assert_eq!(residual_subtypes[0].left(), &inference);
+    assert_eq!(constraints, Constraints::default());
+}
+
+// input: bool = ?a with only the lesser side rigid
+// premise: ?a is on the non-rigid greater side
+// output: ?a := bool
+#[tokio::test]
+async fn lesser_rigidity_does_not_block_greater_inference_variable() {
+    let engine = create_engine().await;
+    let premise = Premise::default();
+    let mut solver = Solver::new(&premise, &engine);
+    let variable = solver.fresh_inference_variable(TyKind::Type);
+    let inference = Type2::new_inference_variable(variable, &engine);
+    let known = Type2::new_primitive(Primitive::Bool, &engine);
+
+    let (substitution, residual_subtypes, constraints) = solver
+        .resolve_type_relations(vec![TypeRelation::new_with_rigidity(
+            known.clone(),
+            inference,
+            Variance2::Invariant,
+            true,
+            false,
+        )])
+        .await
+        .unwrap();
+
+    assert_eq!(substitution, Substitution::singleton(variable, known));
+    assert_eq!(residual_subtypes, Vec::new());
+    assert_eq!(constraints, Constraints::default());
+}
+
+// input: ?a = bool with only the greater side rigid
+// premise: ?a is on the non-rigid lesser side
+// output: ?a := bool
+#[tokio::test]
+async fn greater_rigidity_does_not_block_lesser_inference_variable() {
+    let engine = create_engine().await;
+    let premise = Premise::default();
+    let mut solver = Solver::new(&premise, &engine);
+    let variable = solver.fresh_inference_variable(TyKind::Type);
+    let inference = Type2::new_inference_variable(variable, &engine);
+    let known = Type2::new_primitive(Primitive::Bool, &engine);
+
+    let (substitution, residual_subtypes, constraints) = solver
+        .resolve_type_relations(vec![TypeRelation::new_with_rigidity(
+            inference,
+            known.clone(),
+            Variance2::Invariant,
+            false,
+            true,
+        )])
+        .await
+        .unwrap();
+
+    assert_eq!(substitution, Substitution::singleton(variable, known));
+    assert_eq!(residual_subtypes, Vec::new());
     assert_eq!(constraints, Constraints::default());
 }
 

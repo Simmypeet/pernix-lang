@@ -203,17 +203,21 @@ impl Solver<'_> {
             }
 
             Constructor::InstanceAssociated(_) => {
-                Box::pin(self.handle_set_of_relations(
-                    arguments.map(|(lesser, greater)| {
-                        (
-                            lesser,
-                            greater,
-                            flags.variance().xfrom(Variance2::Invariant),
-                        )
-                    }),
-                    flags.with_rigid_inference(true),
-                    resolve_strategy,
-                ))
+                Box::pin(
+                    self.handle_set_of_relations(
+                        arguments.map(|(lesser, greater)| {
+                            (
+                                lesser,
+                                greater,
+                                flags.variance().xfrom(Variance2::Invariant),
+                            )
+                        }),
+                        flags
+                            .with_lesser_rigid_inference(true)
+                            .with_greater_rigid_inference(true),
+                        resolve_strategy,
+                    ),
+                )
                 .await
             }
         }

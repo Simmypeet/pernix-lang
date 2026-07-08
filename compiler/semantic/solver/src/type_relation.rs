@@ -22,21 +22,34 @@ pub type Step = (Substitution, Vec<TypeRelation>, Constraints);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct RelationFlags {
     variance: Variance2,
-    rigid_inference: bool,
+    lesser_rigid_inference: bool,
+    greater_rigid_inference: bool,
     reduce: bool,
 }
 
 impl RelationFlags {
     #[must_use]
     pub const fn new(variance: Variance2) -> Self {
-        Self { variance, rigid_inference: false, reduce: true }
+        Self {
+            variance,
+            lesser_rigid_inference: false,
+            greater_rigid_inference: false,
+            reduce: true,
+        }
     }
 
     #[must_use]
     pub const fn variance(self) -> Variance2 { self.variance }
 
     #[must_use]
-    pub const fn rigid_inference(self) -> bool { self.rigid_inference }
+    pub const fn lesser_rigid_inference(self) -> bool {
+        self.lesser_rigid_inference
+    }
+
+    #[must_use]
+    pub const fn greater_rigid_inference(self) -> bool {
+        self.greater_rigid_inference
+    }
 
     #[must_use]
     pub const fn reduce(self) -> bool { self.reduce }
@@ -48,8 +61,20 @@ impl RelationFlags {
     }
 
     #[must_use]
-    pub const fn with_rigid_inference(mut self, rigid_inference: bool) -> Self {
-        self.rigid_inference = rigid_inference;
+    pub const fn with_lesser_rigid_inference(
+        mut self,
+        lesser_rigid_inference: bool,
+    ) -> Self {
+        self.lesser_rigid_inference = lesser_rigid_inference;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_greater_rigid_inference(
+        mut self,
+        greater_rigid_inference: bool,
+    ) -> Self {
+        self.greater_rigid_inference = greater_rigid_inference;
         self
     }
 
@@ -86,7 +111,9 @@ impl TypeRelation {
         Self::new_with_flags(
             left,
             right,
-            RelationFlags::new(variance).with_rigid_inference(true),
+            RelationFlags::new(variance)
+                .with_lesser_rigid_inference(true)
+                .with_greater_rigid_inference(true),
         )
     }
 
@@ -95,12 +122,15 @@ impl TypeRelation {
         left: Interned<Type2>,
         right: Interned<Type2>,
         variance: Variance2,
-        rigid_inference: bool,
+        lesser_rigid_inference: bool,
+        greater_rigid_inference: bool,
     ) -> Self {
         Self::new_with_flags(
             left,
             right,
-            RelationFlags::new(variance).with_rigid_inference(rigid_inference),
+            RelationFlags::new(variance)
+                .with_lesser_rigid_inference(lesser_rigid_inference)
+                .with_greater_rigid_inference(greater_rigid_inference),
         )
     }
 
@@ -137,7 +167,14 @@ impl TypeRelation {
     pub const fn variance(&self) -> Variance2 { self.flags.variance() }
 
     #[must_use]
-    pub const fn rigid_inference(&self) -> bool { self.flags.rigid_inference() }
+    pub const fn lesser_rigid_inference(&self) -> bool {
+        self.flags.lesser_rigid_inference()
+    }
+
+    #[must_use]
+    pub const fn greater_rigid_inference(&self) -> bool {
+        self.flags.greater_rigid_inference()
+    }
 
     #[must_use]
     pub const fn reduce(&self) -> bool { self.flags.reduce() }
@@ -254,14 +291,12 @@ impl Solver<'_> {
                 )));
             }
 
-            if !relation.rigid_inference() {
-                match self.bind_inference_variable_relation(relation).await? {
-                    BindInferenceVariableRelation::Bound(step) => {
-                        return Ok(Some(step));
-                    }
-                    BindInferenceVariableRelation::Failed => return Ok(None),
-                    BindInferenceVariableRelation::NotApplicable => {}
+            match self.bind_inference_variable_relation(relation).await? {
+                BindInferenceVariableRelation::Bound(step) => {
+                    return Ok(Some(step));
                 }
+                BindInferenceVariableRelation::Failed => return Ok(None),
+                BindInferenceVariableRelation::NotApplicable => {}
             }
 
             // if they are both lifetimes, return constraints according to the
@@ -343,7 +378,8 @@ impl Solver<'_> {
         Interned<Type2>,
         InferenceVariableRelationSide,
     )> {
-        if let Type2::InferenceVariable(infer_var) = &**relation.lesser()
+        if !relation.lesser_rigid_inference()
+            && let Type2::InferenceVariable(infer_var) = &**relation.lesser()
             && self
                 .can_bind_inference_variable_to(
                     relation.greater(),
@@ -358,7 +394,8 @@ impl Solver<'_> {
             ));
         }
 
-        if let Type2::InferenceVariable(infer_var) = &**relation.greater()
+        if !relation.greater_rigid_inference()
+            && let Type2::InferenceVariable(infer_var) = &**relation.greater()
             && self
                 .can_bind_inference_variable_to(
                     relation.lesser(),
