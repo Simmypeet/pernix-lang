@@ -278,6 +278,7 @@ impl Solver<'_> {
             binding_target,
             side,
             relation.variance(),
+            relation.rigid_inference(),
         )
         .await
     }
@@ -370,6 +371,7 @@ impl Solver<'_> {
         binding_target: Interned<Type2>,
         side: InferenceVariableRelationSide,
         variance: Variance2,
+        rigid_inference: bool,
     ) -> Result<BindInferenceVariableRelation, OverflowError> {
         if variance == Variance2::Invariant {
             return Ok(self.bind_with_check(infer_var, binding_target).await);
@@ -417,16 +419,22 @@ impl Solver<'_> {
         );
 
         let relation_problem = match side {
-            InferenceVariableRelationSide::Lesser => TypeRelation::new(
-                intermediate_application.clone(),
-                binding_target,
-                variance,
-            ),
-            InferenceVariableRelationSide::Greater => TypeRelation::new(
-                binding_target,
-                intermediate_application.clone(),
-                variance,
-            ),
+            InferenceVariableRelationSide::Lesser => {
+                TypeRelation::new_with_rigidity(
+                    intermediate_application.clone(),
+                    binding_target,
+                    variance,
+                    rigid_inference,
+                )
+            }
+            InferenceVariableRelationSide::Greater => {
+                TypeRelation::new_with_rigidity(
+                    binding_target,
+                    intermediate_application.clone(),
+                    variance,
+                    rigid_inference,
+                )
+            }
         };
 
         let Some((mut new_subst, relations, constraints)) =
