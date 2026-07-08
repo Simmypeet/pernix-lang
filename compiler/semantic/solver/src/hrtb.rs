@@ -1,13 +1,31 @@
+//! Handling leak-checking and cleaning up constraints from temporary
+//! higher-ranked variables.
+//!
+//! To be honest, at the time of writing this, I don't fully understand the
+//! concept of higher-ranked lifetimes and how they are considered "leaked".
+//! I summarize my understanding of the problem as follows:
+//!
+//! Leak check mainly deals with the problem of whether:
+//!
+//! 1. Skolemized lifetimes can reach (directly or transitively) to another
+//!    skolemized lifetimes (e.g. S1: S2)
+//! 2. Skolemized lifetimes can reach (directly or transitively) to the lifetime
+//!    that cannot name it (e.g. S1@U1: R@U0). This means that the skolemized
+//!    lifetimes cannot reach to the "outside lifetimes". In this case, the
+//!    "outside lifetimes" could be, `'a` lifetime parameter, or a `'static`
+//!    lifetime.
+//!
+//! Furthermore, it erases all the created temporary instantiations of higher-
+//! ranked lifetimes. For instance, `'a: '?0, '?0: 'b`, where `'?0` is a 
+//! temporary instantiation of a higher-ranked lifetime, will be erased to 
+//! `'a: 'b` if it passes the leak check.
+
 use pernixc_hash::{FxHashMap, FxHashSet};
 use pernixc_type::{
     predicate::Outlives,
     r#type::{
-        Type2,
-        constructor::{Application, Constructor, Lifetime},
-        context::TyContext,
-        inference::InferenceVariable,
-        kind::TyKind,
-        skolem::SkolemizedVariable,
+        Type2, constructor::Lifetime, context::TyContext,
+        inference::InferenceVariable, kind::TyKind, skolem::SkolemizedVariable,
     },
 };
 use qbice::storage::intern::Interned;
@@ -119,10 +137,7 @@ impl Solver<'_> {
     ) -> Constraints {
         let mut cleaned = Constraints::new();
         let static_lifetime =
-            self.intern(Type2::Application(Application::new(
-                Constructor::Lifetime(Lifetime::Static),
-                self.engine().intern_unsized(Vec::<Interned<Type2>>::new()),
-            )));
+            Type2::new_lifetime(Lifetime::Static, self.engine());
 
         for source in graph.keys() {
             let mut seen = FxHashSet::default();
