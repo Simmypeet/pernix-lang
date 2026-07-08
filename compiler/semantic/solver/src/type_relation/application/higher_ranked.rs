@@ -8,7 +8,7 @@ use pernixc_type::{
 };
 use qbice::storage::intern::Interned;
 
-use super::ResolveStrategy;
+use super::{RelationFlags, ResolveStrategy};
 use crate::{
     constraints::Constraints,
     solver::{OverflowError, Solver},
@@ -37,17 +37,16 @@ impl Solver<'_> {
         lesser_ap: &Application,
         greater_ap: &Application,
         arguments: &[(Interned<Type2>, Interned<Type2>)],
-        variance: Variance2,
-        rigid_inference: bool,
+        flags: RelationFlags,
     ) -> Result<Option<Step>, OverflowError> {
         self.new_universe(async |solver| {
             let closing_universe = solver.current_universe();
 
-            match variance {
+            match flags.variance {
                 // for the contravariant and covariant cases, a single run with
                 // appropriate instantiation is sufficient.
                 Variance2::Covariant | Variance2::Contravariant => {
-                    let instantiation = match variance {
+                    let instantiation = match flags.variance {
                         Variance2::Covariant => {
                             HigherRankedInstantiation::LesserInferenceGreaterSkolem
                         }
@@ -67,8 +66,7 @@ impl Solver<'_> {
                             lesser_ap,
                             greater_ap,
                             arguments,
-                            variance,
-                            rigid_inference,
+                            flags,
                             instantiation,
                         )
                         .await?
@@ -89,7 +87,7 @@ impl Solver<'_> {
                         greater_ap,
                         arguments,
                         closing_universe,
-                        rigid_inference,
+                        flags,
                     ))
                     .await
                 }
@@ -114,8 +112,11 @@ impl Solver<'_> {
         greater_ap: &Application,
         arguments: &[(Interned<Type2>, Interned<Type2>)],
         closing_universe: UniverseIndex,
-        rigid_inference: bool,
+        flags: RelationFlags,
     ) -> Result<Option<Step>, OverflowError> {
+        let invariant_flags =
+            RelationFlags { variance: Variance2::Invariant, ..flags };
+
         // Invariant higher-ranked relations must prove both directions, but
         // each proof is still an invariant argument solve. Only binder polarity
         // is swapped between the two runs.
@@ -124,8 +125,7 @@ impl Solver<'_> {
                 lesser_ap,
                 greater_ap,
                 arguments,
-                Variance2::Invariant,
-                rigid_inference,
+                invariant_flags,
                 HigherRankedInstantiation::LesserInferenceGreaterSkolem,
             ))
             .await?
@@ -151,8 +151,7 @@ impl Solver<'_> {
                 lesser_ap,
                 greater_ap,
                 &substituted_arguments,
-                Variance2::Invariant,
-                rigid_inference,
+                invariant_flags,
                 HigherRankedInstantiation::LesserSkolemGreaterInference,
             ))
             .await?
@@ -188,8 +187,7 @@ impl Solver<'_> {
         lesser_ap: &Application,
         greater_ap: &Application,
         arguments: &[(Interned<Type2>, Interned<Type2>)],
-        variance: Variance2,
-        rigid_inference: bool,
+        flags: RelationFlags,
         instantiation: HigherRankedInstantiation,
     ) -> Result<Option<HigherRankedRun>, OverflowError> {
         let (lesser_inst, greater_inst) = match instantiation {
@@ -226,8 +224,9 @@ impl Solver<'_> {
                     ),
                 )
             }),
-            variance,
-            rigid_inference,
+            flags.variance,
+            flags.rigid_inference,
+            flags.reduce,
             ResolveStrategy::ResolveImmediately,
         ))
         .await?;

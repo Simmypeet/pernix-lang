@@ -29,26 +29,37 @@ enum ResolveStrategy {
     DeferResolution,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RelationFlags {
+    variance: Variance2,
+    rigid_inference: bool,
+    reduce: bool,
+}
+
 impl Solver<'_> {
     pub(crate) async fn handle_application(
         &mut self,
-        lesser: &Interned<Type2>,
-        greater: &Interned<Type2>,
+        relation: &TypeRelation,
         lesser_ap: &Application,
         greater_ap: &Application,
-        variance: Variance2,
-        rigid_inference: bool,
     ) -> Result<Option<Step>, OverflowError> {
+        let flags = RelationFlags {
+            variance: relation.variance(),
+            rigid_inference: relation.rigid_inference(),
+            reduce: relation.reduce(),
+        };
+
         let Some(iter) = lesser_ap.destructure(
             greater_ap,
             DestructureOptions::ignore_binders(),
             self.engine(),
         ) else {
             return Box::pin(self.try_reduce(
-                lesser,
-                greater,
-                variance,
-                rigid_inference,
+                relation.lesser(),
+                relation.greater(),
+                flags.variance,
+                flags.rigid_inference,
+                flags.reduce,
             ))
             .await;
         };
@@ -64,11 +75,7 @@ impl Solver<'_> {
         // as relation subgoals.
         if has_binder {
             Box::pin(self.handle_higher_ranked_application(
-                lesser_ap,
-                greater_ap,
-                &arguments,
-                variance,
-                rigid_inference,
+                lesser_ap, greater_ap, &arguments, flags,
             ))
             .await
         } else {
@@ -109,8 +116,9 @@ impl Solver<'_> {
             Box::pin(self.handle_application_arguments(
                 lesser_ap,
                 arguments.into_iter(),
-                variance,
-                rigid_inference || required_rigid,
+                flags.variance,
+                flags.rigid_inference || required_rigid,
+                flags.reduce,
                 resolve_strategy,
             ))
             .await
@@ -125,6 +133,7 @@ impl Solver<'_> {
         mut arguments: impl Iterator<Item = (Interned<Type2>, Interned<Type2>)>,
         variance: Variance2,
         rigid_inference: bool,
+        reduce: bool,
         resolve_strategy: ResolveStrategy,
     ) -> Result<Option<Step>, OverflowError> {
         match lesser_ap.constructor() {
@@ -172,6 +181,7 @@ impl Solver<'_> {
                         ]
                         .into_iter(),
                         rigid_inference,
+                        reduce,
                         resolve_strategy,
                     ),
                 )
@@ -184,6 +194,7 @@ impl Solver<'_> {
                     arguments,
                     variance,
                     rigid_inference,
+                    reduce,
                     resolve_strategy,
                 ))
                 .await
@@ -195,6 +206,7 @@ impl Solver<'_> {
                         (lesser, greater, variance.xfrom(Variance2::Covariant))
                     }),
                     rigid_inference,
+                    reduce,
                     resolve_strategy,
                 ))
                 .await
@@ -215,6 +227,7 @@ impl Solver<'_> {
                         (lesser, greater, variance.xfrom(argument_variance))
                     }),
                     rigid_inference,
+                    reduce,
                     resolve_strategy,
                 ))
                 .await
@@ -226,6 +239,7 @@ impl Solver<'_> {
                         (lesser, greater, variance.xfrom(Variance2::Invariant))
                     }),
                     true,
+                    reduce,
                     resolve_strategy,
                 ))
                 .await
@@ -239,6 +253,7 @@ impl Solver<'_> {
         arguments: impl Iterator<Item = (Interned<Type2>, Interned<Type2>)>,
         variance: Variance2,
         rigid_inference: bool,
+        reduce: bool,
         resolve_strategy: ResolveStrategy,
     ) -> Result<Option<Step>, OverflowError> {
         let kind = self.engine().get_kind(symbolic.symbol_id()).await;
@@ -263,6 +278,7 @@ impl Solver<'_> {
                         },
                     ),
                     rigid_inference,
+                    reduce,
                     resolve_strategy,
                 ))
                 .await
@@ -274,6 +290,7 @@ impl Solver<'_> {
                         (lesser, greater, variance.xfrom(Variance2::Invariant))
                     }),
                     rigid_inference,
+                    reduce,
                     resolve_strategy,
                 ))
                 .await
@@ -314,11 +331,13 @@ impl Solver<'_> {
         &mut self,
         pairs: impl Iterator<Item = (Interned<Type2>, Interned<Type2>, Variance2)>,
         rigid_inference: bool,
+        reduce: bool,
         resolve_strategy: ResolveStrategy,
     ) -> Result<Option<Step>, OverflowError> {
         let type_relations = pairs
             .map(|(l, r, v)| {
                 TypeRelation::new_with_rigidity(l, r, v, rigid_inference)
+                    .with_reduce(reduce)
             })
             .collect();
 

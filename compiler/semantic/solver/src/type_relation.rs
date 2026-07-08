@@ -25,6 +25,7 @@ pub struct TypeRelation {
     right: Interned<Type2>,
     variance: Variance2,
     rigid_inference: bool,
+    reduce: bool,
 }
 
 impl TypeRelation {
@@ -34,7 +35,7 @@ impl TypeRelation {
         right: Interned<Type2>,
         variance: Variance2,
     ) -> Self {
-        Self { left, right, variance, rigid_inference: false }
+        Self { left, right, variance, rigid_inference: false, reduce: true }
     }
 
     #[must_use]
@@ -43,7 +44,7 @@ impl TypeRelation {
         right: Interned<Type2>,
         variance: Variance2,
     ) -> Self {
-        Self { left, right, variance, rigid_inference: true }
+        Self { left, right, variance, rigid_inference: true, reduce: true }
     }
 
     #[must_use]
@@ -53,7 +54,7 @@ impl TypeRelation {
         variance: Variance2,
         rigid_inference: bool,
     ) -> Self {
-        Self { left, right, variance, rigid_inference }
+        Self { left, right, variance, rigid_inference, reduce: true }
     }
 
     #[must_use]
@@ -81,6 +82,15 @@ impl TypeRelation {
 
     #[must_use]
     pub const fn rigid_inference(&self) -> bool { self.rigid_inference }
+
+    #[must_use]
+    pub const fn reduce(&self) -> bool { self.reduce }
+
+    #[must_use]
+    pub const fn with_reduce(mut self, reduce: bool) -> Self {
+        self.reduce = reduce;
+        self
+    }
 
     #[must_use]
     pub fn into_subtype(self) -> Subtype {
@@ -113,18 +123,21 @@ impl Substitutable for TypeRelation {
                 right,
                 variance: self.variance,
                 rigid_inference: self.rigid_inference,
+                reduce: self.reduce,
             }),
             (Some(left), None) => Some(Self {
                 left,
                 right: self.right.clone(),
                 variance: self.variance,
                 rigid_inference: self.rigid_inference,
+                reduce: self.reduce,
             }),
             (None, Some(right)) => Some(Self {
                 left: self.left.clone(),
                 right,
                 variance: self.variance,
                 rigid_inference: self.rigid_inference,
+                reduce: self.reduce,
             }),
             (None, None) => None,
         }
@@ -239,15 +252,7 @@ impl Solver<'_> {
             match (&**relation.lesser(), &**relation.greater()) {
                 // this is a tough one
                 (Type2::Application(left_ap), Type2::Application(right_ap)) => {
-                    self.handle_application(
-                        relation.lesser(),
-                        relation.greater(),
-                        left_ap,
-                        right_ap,
-                        relation.variance(),
-                        relation.rigid_inference(),
-                    )
-                    .await
+                    self.handle_application(relation, left_ap, right_ap).await
                 }
 
                 (_, _) => {
@@ -256,6 +261,7 @@ impl Solver<'_> {
                         relation.greater(),
                         relation.variance(),
                         relation.rigid_inference(),
+                        relation.reduce(),
                     ))
                     .await
                 }
@@ -279,6 +285,7 @@ impl Solver<'_> {
             side,
             relation.variance(),
             relation.rigid_inference(),
+            relation.reduce(),
         )
         .await
     }
@@ -372,6 +379,7 @@ impl Solver<'_> {
         side: InferenceVariableRelationSide,
         variance: Variance2,
         rigid_inference: bool,
+        reduce: bool,
     ) -> Result<BindInferenceVariableRelation, OverflowError> {
         if variance == Variance2::Invariant {
             return Ok(self.bind_with_check(infer_var, binding_target).await);
@@ -426,6 +434,7 @@ impl Solver<'_> {
                     variance,
                     rigid_inference,
                 )
+                .with_reduce(reduce)
             }
             InferenceVariableRelationSide::Greater => {
                 TypeRelation::new_with_rigidity(
@@ -434,6 +443,7 @@ impl Solver<'_> {
                     variance,
                     rigid_inference,
                 )
+                .with_reduce(reduce)
             }
         };
 
@@ -460,7 +470,12 @@ impl Solver<'_> {
         greater: &Interned<Type2>,
         variance: Variance2,
         rigid_inference: bool,
+        reduce: bool,
     ) -> Result<Option<Step>, OverflowError> {
+        if !reduce {
+            return Ok(None);
+        }
+
         // lazily reduce the lesser type and try again.
         if let Some((reduced_lesser, constrs)) =
             self.reduce_type(lesser.clone()).await?
@@ -471,8 +486,10 @@ impl Solver<'_> {
                         greater.clone(),
                         variance,
                     )
+                    .with_reduce(reduce)
                 } else {
                     TypeRelation::new(reduced_lesser, greater.clone(), variance)
+                        .with_reduce(reduce)
                 })
                 .await?
         {
@@ -493,8 +510,10 @@ impl Solver<'_> {
                         reduced_greater,
                         variance,
                     )
+                    .with_reduce(reduce)
                 } else {
                     TypeRelation::new(lesser.clone(), reduced_greater, variance)
+                        .with_reduce(reduce)
                 })
                 .await?
         {
