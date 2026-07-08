@@ -7,6 +7,7 @@ use pernixc_type::{
         Type2,
         bound::BoundVariable,
         constructor::{Lifetime, Mutability, Primitive},
+        kind::TyKind,
     },
     variance::Variance2,
 };
@@ -38,6 +39,7 @@ async fn destructure_application(
             lesser_application,
             greater_application,
             Variance2::Covariant,
+            false,
         )
         .await
 }
@@ -99,6 +101,30 @@ fn assert_no_variables_in_step(
 }
 
 #[tokio::test]
+async fn rigid_inference_does_not_bind_inference_variable() {
+    let engine = create_engine().await;
+    let premise = Premise::default();
+    let mut solver = Solver::new(&premise, &engine);
+    let variable = solver.fresh_inference_variable(TyKind::Type);
+    let inference = Type2::new_inference_variable(variable, &engine);
+    let known = Type2::new_primitive(Primitive::Bool, &engine);
+
+    let (substitution, residual_subtypes, constraints) = solver
+        .resolve_type_relations(vec![TypeRelation::new_rigid(
+            inference.clone(),
+            known,
+            Variance2::Invariant,
+        )])
+        .await
+        .unwrap();
+
+    assert_eq!(substitution, Substitution::new());
+    assert_eq!(residual_subtypes.len(), 1);
+    assert_eq!(residual_subtypes[0].left(), &inference);
+    assert_eq!(constraints, Constraints::default());
+}
+
+#[tokio::test]
 async fn instance_associated_arguments_must_be_solved_immediately() {
     let engine = create_engine().await;
     let common_instance = Type2::new_primitive(Primitive::Bool, &engine);
@@ -119,6 +145,49 @@ async fn instance_associated_arguments_must_be_solved_immediately() {
         destructure_application(&lesser, &greater, &engine).await.unwrap(),
         None
     );
+}
+
+#[tokio::test]
+async fn instance_associated_arguments_do_not_bind_inference_variables() {
+    let engine = create_engine().await;
+    let premise = Premise::default();
+    let mut solver = Solver::new(&premise, &engine);
+    let variable = solver.fresh_inference_variable(TyKind::Type);
+    let inference = Type2::new_inference_variable(variable, &engine);
+    let common_instance = Type2::new_primitive(Primitive::Bool, &engine);
+    let lesser = Type2::new_instance_associated(
+        GlobalSymbolID::default(),
+        common_instance.clone(),
+        [inference],
+        &engine,
+    );
+    let greater = Type2::new_instance_associated(
+        GlobalSymbolID::default(),
+        common_instance,
+        [Type2::new_primitive(Primitive::Int32, &engine)],
+        &engine,
+    );
+
+    let Type2::Application(lesser_application) = &*lesser else {
+        panic!("expected application");
+    };
+    let Type2::Application(greater_application) = &*greater else {
+        panic!("expected application");
+    };
+
+    let step = solver
+        .handle_application(
+            &lesser,
+            &greater,
+            lesser_application,
+            greater_application,
+            Variance2::Covariant,
+            false,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(step, None);
 }
 
 #[tokio::test]

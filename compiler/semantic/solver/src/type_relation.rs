@@ -24,6 +24,7 @@ pub struct TypeRelation {
     left: Interned<Type2>,
     right: Interned<Type2>,
     variance: Variance2,
+    rigid_inference: bool,
 }
 
 impl TypeRelation {
@@ -33,7 +34,26 @@ impl TypeRelation {
         right: Interned<Type2>,
         variance: Variance2,
     ) -> Self {
-        Self { left, right, variance }
+        Self { left, right, variance, rigid_inference: false }
+    }
+
+    #[must_use]
+    pub const fn new_rigid(
+        left: Interned<Type2>,
+        right: Interned<Type2>,
+        variance: Variance2,
+    ) -> Self {
+        Self { left, right, variance, rigid_inference: true }
+    }
+
+    #[must_use]
+    pub const fn new_with_rigidity(
+        left: Interned<Type2>,
+        right: Interned<Type2>,
+        variance: Variance2,
+        rigid_inference: bool,
+    ) -> Self {
+        Self { left, right, variance, rigid_inference }
     }
 
     #[must_use]
@@ -58,6 +78,9 @@ impl TypeRelation {
 
     #[must_use]
     pub const fn variance(&self) -> Variance2 { self.variance }
+
+    #[must_use]
+    pub const fn rigid_inference(&self) -> bool { self.rigid_inference }
 
     #[must_use]
     pub fn into_subtype(self) -> Subtype {
@@ -85,18 +108,23 @@ impl Substitutable for TypeRelation {
             self.left.apply(subst, interner),
             self.right.apply(subst, interner),
         ) {
-            (Some(left), Some(right)) => {
-                Some(Self { left, right, variance: self.variance })
-            }
+            (Some(left), Some(right)) => Some(Self {
+                left,
+                right,
+                variance: self.variance,
+                rigid_inference: self.rigid_inference,
+            }),
             (Some(left), None) => Some(Self {
                 left,
                 right: self.right.clone(),
                 variance: self.variance,
+                rigid_inference: self.rigid_inference,
             }),
             (None, Some(right)) => Some(Self {
                 left: self.left.clone(),
                 right,
                 variance: self.variance,
+                rigid_inference: self.rigid_inference,
             }),
             (None, None) => None,
         }
@@ -164,12 +192,14 @@ impl Solver<'_> {
                 )));
             }
 
-            match self.bind_inference_variable_relation(relation).await? {
-                BindInferenceVariableRelation::Bound(step) => {
-                    return Ok(Some(step));
+            if !relation.rigid_inference() {
+                match self.bind_inference_variable_relation(relation).await? {
+                    BindInferenceVariableRelation::Bound(step) => {
+                        return Ok(Some(step));
+                    }
+                    BindInferenceVariableRelation::Failed => return Ok(None),
+                    BindInferenceVariableRelation::NotApplicable => {}
                 }
-                BindInferenceVariableRelation::Failed => return Ok(None),
-                BindInferenceVariableRelation::NotApplicable => {}
             }
 
             // if they are both lifetimes, return constraints according to the
@@ -215,6 +245,7 @@ impl Solver<'_> {
                         left_ap,
                         right_ap,
                         relation.variance(),
+                        relation.rigid_inference(),
                     )
                     .await
                 }
@@ -224,6 +255,7 @@ impl Solver<'_> {
                         relation.lesser(),
                         relation.greater(),
                         relation.variance(),
+                        relation.rigid_inference(),
                     ))
                     .await
                 }
@@ -419,16 +451,21 @@ impl Solver<'_> {
         lesser: &Interned<Type2>,
         greater: &Interned<Type2>,
         variance: Variance2,
+        rigid_inference: bool,
     ) -> Result<Option<Step>, OverflowError> {
         // lazily reduce the lesser type and try again.
         if let Some((reduced_lesser, constrs)) =
             self.reduce_type(lesser.clone()).await?
             && let Some((subst, sub_problem, new_constrs)) = self
-                .solve(&TypeRelation::new(
-                    reduced_lesser,
-                    greater.clone(),
-                    variance,
-                ))
+                .solve(&if rigid_inference {
+                    TypeRelation::new_rigid(
+                        reduced_lesser,
+                        greater.clone(),
+                        variance,
+                    )
+                } else {
+                    TypeRelation::new(reduced_lesser, greater.clone(), variance)
+                })
                 .await?
         {
             let final_constrs = constrs
@@ -442,11 +479,15 @@ impl Solver<'_> {
         if let Some((reduced_greater, constrs)) =
             self.reduce_type(greater.clone()).await?
             && let Some((subst, sub_problem, new_constrs)) = self
-                .solve(&TypeRelation::new(
-                    lesser.clone(),
-                    reduced_greater,
-                    variance,
-                ))
+                .solve(&if rigid_inference {
+                    TypeRelation::new_rigid(
+                        lesser.clone(),
+                        reduced_greater,
+                        variance,
+                    )
+                } else {
+                    TypeRelation::new(lesser.clone(), reduced_greater, variance)
+                })
                 .await?
         {
             let final_constrs = constrs

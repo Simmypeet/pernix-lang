@@ -38,6 +38,7 @@ impl Solver<'_> {
         greater_ap: &Application,
         arguments: &[(Interned<Type2>, Interned<Type2>)],
         variance: Variance2,
+        rigid_inference: bool,
     ) -> Result<Option<Step>, OverflowError> {
         self.new_universe(async |solver| {
             let closing_universe = solver.current_universe();
@@ -67,6 +68,7 @@ impl Solver<'_> {
                             greater_ap,
                             arguments,
                             variance,
+                            rigid_inference,
                             instantiation,
                         )
                         .await?
@@ -87,6 +89,7 @@ impl Solver<'_> {
                         greater_ap,
                         arguments,
                         closing_universe,
+                        rigid_inference,
                     ))
                     .await
                 }
@@ -111,6 +114,7 @@ impl Solver<'_> {
         greater_ap: &Application,
         arguments: &[(Interned<Type2>, Interned<Type2>)],
         closing_universe: UniverseIndex,
+        rigid_inference: bool,
     ) -> Result<Option<Step>, OverflowError> {
         // Invariant higher-ranked relations must prove both directions, but
         // each proof is still an invariant argument solve. Only binder polarity
@@ -121,6 +125,7 @@ impl Solver<'_> {
                 greater_ap,
                 arguments,
                 Variance2::Invariant,
+                rigid_inference,
                 HigherRankedInstantiation::LesserInferenceGreaterSkolem,
             ))
             .await?
@@ -147,6 +152,7 @@ impl Solver<'_> {
                 greater_ap,
                 &substituted_arguments,
                 Variance2::Invariant,
+                rigid_inference,
                 HigherRankedInstantiation::LesserSkolemGreaterInference,
             ))
             .await?
@@ -183,6 +189,7 @@ impl Solver<'_> {
         greater_ap: &Application,
         arguments: &[(Interned<Type2>, Interned<Type2>)],
         variance: Variance2,
+        rigid_inference: bool,
         instantiation: HigherRankedInstantiation,
     ) -> Result<Option<HigherRankedRun>, OverflowError> {
         let (lesser_inst, greater_inst) = match instantiation {
@@ -220,6 +227,7 @@ impl Solver<'_> {
                 )
             }),
             variance,
+            rigid_inference,
             ResolveStrategy::ResolveImmediately,
         ))
         .await?;

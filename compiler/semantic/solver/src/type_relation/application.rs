@@ -37,13 +37,20 @@ impl Solver<'_> {
         lesser_ap: &Application,
         greater_ap: &Application,
         variance: Variance2,
+        rigid_inference: bool,
     ) -> Result<Option<Step>, OverflowError> {
         let Some(iter) = lesser_ap.destructure(
             greater_ap,
             DestructureOptions::ignore_binders(),
             self.engine(),
         ) else {
-            return Box::pin(self.try_reduce(lesser, greater, variance)).await;
+            return Box::pin(self.try_reduce(
+                lesser,
+                greater,
+                variance,
+                rigid_inference,
+            ))
+            .await;
         };
 
         let arguments = iter.collect::<Vec<_>>();
@@ -57,7 +64,11 @@ impl Solver<'_> {
         // as relation subgoals.
         if has_binder {
             Box::pin(self.handle_higher_ranked_application(
-                lesser_ap, greater_ap, &arguments, variance,
+                lesser_ap,
+                greater_ap,
+                &arguments,
+                variance,
+                rigid_inference,
             ))
             .await
         } else {
@@ -79,25 +90,27 @@ impl Solver<'_> {
             // Therefore every argument subproblem must solve immediately; if
             // one is stuck, destructuring fails and the caller retains the
             // original relation for a later reduction attempt.
-            let resolve_strategy = match lesser_ap.constructor() {
-                Constructor::InstanceAssociated(_) => {
-                    ResolveStrategy::ResolveImmediately
-                }
-                Constructor::Primitive(_)
-                | Constructor::Lifetime(_)
-                | Constructor::Reference(_)
-                | Constructor::Symbolic(_)
-                | Constructor::Tuple(_)
-                | Constructor::FunctionPointer(_)
-                | Constructor::AnonymousTraitInstance(_) => {
-                    ResolveStrategy::DeferResolution
-                }
-            };
+            let (resolve_strategy, required_rigid) =
+                match lesser_ap.constructor() {
+                    Constructor::InstanceAssociated(_) => {
+                        (ResolveStrategy::ResolveImmediately, true)
+                    }
+                    Constructor::Primitive(_)
+                    | Constructor::Lifetime(_)
+                    | Constructor::Reference(_)
+                    | Constructor::Symbolic(_)
+                    | Constructor::Tuple(_)
+                    | Constructor::FunctionPointer(_)
+                    | Constructor::AnonymousTraitInstance(_) => {
+                        (ResolveStrategy::DeferResolution, false)
+                    }
+                };
 
             Box::pin(self.handle_application_arguments(
                 lesser_ap,
                 arguments.into_iter(),
                 variance,
+                rigid_inference || required_rigid,
                 resolve_strategy,
             ))
             .await
@@ -111,6 +124,7 @@ impl Solver<'_> {
         lesser_ap: &Application,
         mut arguments: impl Iterator<Item = (Interned<Type2>, Interned<Type2>)>,
         variance: Variance2,
+        rigid_inference: bool,
         resolve_strategy: ResolveStrategy,
     ) -> Result<Option<Step>, OverflowError> {
         match lesser_ap.constructor() {
@@ -157,6 +171,7 @@ impl Solver<'_> {
                             ),
                         ]
                         .into_iter(),
+                        rigid_inference,
                         resolve_strategy,
                     ),
                 )
@@ -168,6 +183,7 @@ impl Solver<'_> {
                     symbolic.clone(),
                     arguments,
                     variance,
+                    rigid_inference,
                     resolve_strategy,
                 ))
                 .await
@@ -178,6 +194,7 @@ impl Solver<'_> {
                     arguments.map(|(lesser, greater)| {
                         (lesser, greater, variance.xfrom(Variance2::Covariant))
                     }),
+                    rigid_inference,
                     resolve_strategy,
                 ))
                 .await
@@ -197,6 +214,7 @@ impl Solver<'_> {
 
                         (lesser, greater, variance.xfrom(argument_variance))
                     }),
+                    rigid_inference,
                     resolve_strategy,
                 ))
                 .await
@@ -207,6 +225,7 @@ impl Solver<'_> {
                     arguments.map(|(lesser, greater)| {
                         (lesser, greater, variance.xfrom(Variance2::Invariant))
                     }),
+                    true,
                     resolve_strategy,
                 ))
                 .await
@@ -219,6 +238,7 @@ impl Solver<'_> {
         symbolic: Symbolic,
         arguments: impl Iterator<Item = (Interned<Type2>, Interned<Type2>)>,
         variance: Variance2,
+        rigid_inference: bool,
         resolve_strategy: ResolveStrategy,
     ) -> Result<Option<Step>, OverflowError> {
         let kind = self.engine().get_kind(symbolic.symbol_id()).await;
@@ -242,6 +262,7 @@ impl Solver<'_> {
                             )
                         },
                     ),
+                    rigid_inference,
                     resolve_strategy,
                 ))
                 .await
@@ -252,6 +273,7 @@ impl Solver<'_> {
                     arguments.map(|(lesser, greater)| {
                         (lesser, greater, variance.xfrom(Variance2::Invariant))
                     }),
+                    rigid_inference,
                     resolve_strategy,
                 ))
                 .await
@@ -291,10 +313,14 @@ impl Solver<'_> {
     async fn handle_set_of_relations(
         &mut self,
         pairs: impl Iterator<Item = (Interned<Type2>, Interned<Type2>, Variance2)>,
+        rigid_inference: bool,
         resolve_strategy: ResolveStrategy,
     ) -> Result<Option<Step>, OverflowError> {
-        let type_relations =
-            pairs.map(|(l, r, v)| TypeRelation::new(l, r, v)).collect();
+        let type_relations = pairs
+            .map(|(l, r, v)| {
+                TypeRelation::new_with_rigidity(l, r, v, rigid_inference)
+            })
+            .collect();
 
         match resolve_strategy {
             ResolveStrategy::DeferResolution => Ok(Some((
