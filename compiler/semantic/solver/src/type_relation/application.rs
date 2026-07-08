@@ -18,7 +18,7 @@ use crate::{
     type_relation::{Step, TypeRelation},
 };
 
-mod hrtb;
+mod higher_ranked;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ResolveStrategy {
@@ -56,7 +56,7 @@ impl Solver<'_> {
         // simply breaking down the application into its arguments and add them
         // as relation subgoals.
         if has_binder {
-            Box::pin(self.handle_hrtb_application(
+            Box::pin(self.handle_higher_ranked_application(
                 lesser_ap, greater_ap, &arguments, variance,
             ))
             .await

@@ -34,23 +34,24 @@ use crate::{constraints::Constraints, solver::Solver};
 type ConstraintGraph = FxHashMap<Interned<Type2>, FxHashSet<Interned<Type2>>>;
 
 impl Solver<'_> {
-    pub(crate) fn check_and_clean_hrtb_constraints(
+    pub(crate) fn check_and_clean_higher_ranked_constraints(
         &self,
         constraints: Constraints,
         closing_universe: UniverseIndex,
     ) -> Option<Constraints> {
         let graph = constraint_graph(&constraints);
 
-        // don't do any work if there are no HRTB variables
+        // don't do any work if there are no higher-ranked variables
         if !contains_internal_variable_in_graph(&graph, closing_universe) {
             return Some(constraints);
         }
 
-        leak_check(&graph, closing_universe)
-            .then(|| self.clean_hrtb_constraints(&graph, closing_universe))
+        leak_check(&graph, closing_universe).then(|| {
+            self.clean_higher_ranked_constraints(&graph, closing_universe)
+        })
     }
 
-    fn clean_hrtb_constraints(
+    fn clean_higher_ranked_constraints(
         &self,
         graph: &ConstraintGraph,
         closing_universe: UniverseIndex,
@@ -228,7 +229,8 @@ mod test {
     // premise: U1 is the closing universe
     // output: 'static: 'erased
     #[tokio::test]
-    async fn hrtb_cleanup_erases_inference_lifetimes_in_closing_universe() {
+    async fn higher_ranked_cleanup_erases_inference_lifetimes_in_closing_universe()
+     {
         let engine = create_engine().await;
         let closing_universe = UniverseIndex::root().next();
         let static_lifetime = Type2::new_lifetime(Lifetime::Static, &engine);
@@ -247,7 +249,10 @@ mod test {
         ));
 
         let cleaned = Solver::new(&Premise::default(), &engine)
-            .check_and_clean_hrtb_constraints(constraints, closing_universe)
+            .check_and_clean_higher_ranked_constraints(
+                constraints,
+                closing_universe,
+            )
             .unwrap();
 
         assert_eq!(
@@ -260,7 +265,7 @@ mod test {
     // premise: U1 is the closing universe
     // output: leak check failure
     #[tokio::test]
-    async fn hrtb_leak_check_checks_skolems_in_closing_universe() {
+    async fn higher_ranked_leak_check_checks_skolems_in_closing_universe() {
         let engine = create_engine().await;
         let closing_universe = UniverseIndex::root().next();
         let skolem_lifetime = Type2::new_skolemized_variable(
@@ -282,7 +287,10 @@ mod test {
         ));
 
         let cleaned = Solver::new(&Premise::default(), &engine)
-            .check_and_clean_hrtb_constraints(constraints, closing_universe);
+            .check_and_clean_higher_ranked_constraints(
+                constraints,
+                closing_universe,
+            );
 
         assert_eq!(cleaned, None);
     }

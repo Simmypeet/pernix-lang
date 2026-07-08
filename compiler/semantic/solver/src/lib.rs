@@ -1,6 +1,6 @@
 pub mod constraints;
-pub mod hrtb;
 pub mod instance_resolution;
+pub mod leak_check;
 pub mod r#match;
 pub mod normal_form;
 pub mod order;

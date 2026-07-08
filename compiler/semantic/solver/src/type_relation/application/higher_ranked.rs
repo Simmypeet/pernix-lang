@@ -16,7 +16,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Copy)]
-enum HrtbInstantiation {
+enum HigherRankedInstantiation {
     // The left side is existential and the right side is universal:
     // `for<a> T[a] <: for<b> U[b]` becomes `T[?a] <: U[!b]`.
     LesserInferenceGreaterSkolem,
@@ -26,13 +26,13 @@ enum HrtbInstantiation {
     LesserSkolemGreaterInference,
 }
 
-struct HrtbRun {
+struct HigherRankedRun {
     substitution: Substitution,
     constraints: Constraints,
 }
 
 impl Solver<'_> {
-    pub(super) async fn handle_hrtb_application(
+    pub(super) async fn handle_higher_ranked_application(
         &mut self,
         lesser_ap: &Application,
         greater_ap: &Application,
@@ -48,10 +48,10 @@ impl Solver<'_> {
                 Variance2::Covariant | Variance2::Contravariant => {
                     let instantiation = match variance {
                         Variance2::Covariant => {
-                            HrtbInstantiation::LesserInferenceGreaterSkolem
+                            HigherRankedInstantiation::LesserInferenceGreaterSkolem
                         }
                         Variance2::Contravariant => {
-                            HrtbInstantiation::LesserSkolemGreaterInference
+                            HigherRankedInstantiation::LesserSkolemGreaterInference
                         }
                         Variance2::Invariant | Variance2::Bivariant => {
                             unreachable!(
@@ -62,7 +62,7 @@ impl Solver<'_> {
                     };
 
                     let Some(run) = solver
-                        .handle_hrtb_application_run(
+                        .handle_higher_ranked_application_run(
                             lesser_ap,
                             greater_ap,
                             arguments,
@@ -74,7 +74,7 @@ impl Solver<'_> {
                         return Ok(None);
                     };
 
-                    Ok(solver.clean_hrtb_step(
+                    Ok(solver.clean_higher_ranked_step(
                         run.substitution,
                         run.constraints,
                         closing_universe,
@@ -82,7 +82,7 @@ impl Solver<'_> {
                 }
 
                 Variance2::Invariant => {
-                    Box::pin(solver.handle_invariant_hrtb_application(
+                    Box::pin(solver.handle_invariant_higher_ranked_application(
                         lesser_ap,
                         greater_ap,
                         arguments,
@@ -103,26 +103,27 @@ impl Solver<'_> {
 
     /// Runs higher-ranked relation proof for Invariant ambient variance. This
     /// requires proving both directions of the relationship by running
-    /// `handle_hrtb_application_run` twice with opposite instantiation
+    /// `handle_higher_ranked_application_run` twice with opposite instantiation
     /// strategies, then combining the results.
-    async fn handle_invariant_hrtb_application(
+    async fn handle_invariant_higher_ranked_application(
         &mut self,
         lesser_ap: &Application,
         greater_ap: &Application,
         arguments: &[(Interned<Type2>, Interned<Type2>)],
         closing_universe: UniverseIndex,
     ) -> Result<Option<Step>, OverflowError> {
-        // Invariant HRTB must prove both directions, but each proof is still an
-        // invariant argument solve. Only binder polarity is swapped between the
-        // two runs.
-        let Some(first_run) = Box::pin(self.handle_hrtb_application_run(
-            lesser_ap,
-            greater_ap,
-            arguments,
-            Variance2::Invariant,
-            HrtbInstantiation::LesserInferenceGreaterSkolem,
-        ))
-        .await?
+        // Invariant higher-ranked relations must prove both directions, but
+        // each proof is still an invariant argument solve. Only binder polarity
+        // is swapped between the two runs.
+        let Some(first_run) =
+            Box::pin(self.handle_higher_ranked_application_run(
+                lesser_ap,
+                greater_ap,
+                arguments,
+                Variance2::Invariant,
+                HigherRankedInstantiation::LesserInferenceGreaterSkolem,
+            ))
+            .await?
         else {
             return Ok(None);
         };
@@ -140,14 +141,15 @@ impl Solver<'_> {
             })
             .collect::<Vec<_>>();
 
-        let Some(second_run) = Box::pin(self.handle_hrtb_application_run(
-            lesser_ap,
-            greater_ap,
-            &substituted_arguments,
-            Variance2::Invariant,
-            HrtbInstantiation::LesserSkolemGreaterInference,
-        ))
-        .await?
+        let Some(second_run) =
+            Box::pin(self.handle_higher_ranked_application_run(
+                lesser_ap,
+                greater_ap,
+                &substituted_arguments,
+                Variance2::Invariant,
+                HigherRankedInstantiation::LesserSkolemGreaterInference,
+            ))
+            .await?
         else {
             return Ok(None);
         };
@@ -163,7 +165,7 @@ impl Solver<'_> {
 
         second_substitution.compose(first_substitution, self.engine());
 
-        Ok(self.clean_hrtb_step(
+        Ok(self.clean_higher_ranked_step(
             second_substitution,
             constraints,
             closing_universe,
@@ -174,17 +176,17 @@ impl Solver<'_> {
     /// arguments. Depending on the `instantiation` strategy, lesser/greater
     /// binders are instantiated with either inference variables or skolem
     /// variables. Then the set of relations is solved with the instantiated
-    /// arguments with the result as [`HrtbRun`] if successful.
-    async fn handle_hrtb_application_run(
+    /// arguments with the result as [`HigherRankedRun`] if successful.
+    async fn handle_higher_ranked_application_run(
         &mut self,
         lesser_ap: &Application,
         greater_ap: &Application,
         arguments: &[(Interned<Type2>, Interned<Type2>)],
         variance: Variance2,
-        instantiation: HrtbInstantiation,
-    ) -> Result<Option<HrtbRun>, OverflowError> {
+        instantiation: HigherRankedInstantiation,
+    ) -> Result<Option<HigherRankedRun>, OverflowError> {
         let (lesser_inst, greater_inst) = match instantiation {
-            HrtbInstantiation::LesserInferenceGreaterSkolem => (
+            HigherRankedInstantiation::LesserInferenceGreaterSkolem => (
                 lesser_ap
                     .binder()
                     .map(|x| self.create_inference_instantiations(x.kinds())),
@@ -192,7 +194,7 @@ impl Solver<'_> {
                     .binder()
                     .map(|x| self.create_skolem_instantiations(x.kinds())),
             ),
-            HrtbInstantiation::LesserSkolemGreaterInference => (
+            HigherRankedInstantiation::LesserSkolemGreaterInference => (
                 lesser_ap
                     .binder()
                     .map(|x| self.create_skolem_instantiations(x.kinds())),
@@ -230,27 +232,29 @@ impl Solver<'_> {
             return Ok(None);
         }
 
-        Ok(Some(HrtbRun { substitution, constraints }))
+        Ok(Some(HigherRankedRun { substitution, constraints }))
     }
 
-    /// Run leak check and clean up the resulting constraints from the HRTB
-    /// proof run
-    fn clean_hrtb_step(
+    /// Run leak check and clean up the resulting constraints from the
+    /// higher-ranked proof run.
+    fn clean_higher_ranked_step(
         &mut self,
         mut substitution: Substitution,
         constraints: Constraints,
         closing_universe: UniverseIndex,
     ) -> Option<Step> {
-        // HRTB constraints are generated from instantiated lifetime variables.
-        // They are cleaned against the proof-local variables before any of
-        // those variables can escape to callers.
-        let constraints = self
-            .check_and_clean_hrtb_constraints(constraints, closing_universe)?;
+        // Higher-ranked constraints are generated from instantiated lifetime
+        // variables. They are cleaned against the proof-local variables before
+        // any of those variables can escape to callers.
+        let constraints = self.check_and_clean_higher_ranked_constraints(
+            constraints,
+            closing_universe,
+        )?;
 
         // Inference variables created in the closing universe are proof-local,
         // including both binder instantiations and variables introduced while
         // solving the local relation. Their substitutions must not escape the
-        // HRTB run.
+        // higher-ranked run.
         substitution.retain(|variable, _| match variable {
             Variable::Inference(inference_variable) => {
                 inference_variable.universe_index() != closing_universe
@@ -273,11 +277,12 @@ mod test {
     use super::*;
     use crate::premise::Premise;
 
-    // input: HRTB cleanup with ?T@U1 := bool and ?U@U0 := bool
+    // input: higher-ranked cleanup with ?T@U1 := bool and ?U@U0 := bool
     // premise: U1 is the closing universe
     // output: ?U@U0 := bool
     #[tokio::test]
-    async fn hrtb_cleanup_removes_substitutions_keyed_by_closing_universe() {
+    async fn higher_ranked_cleanup_removes_substitutions_keyed_by_closing_universe()
+     {
         let engine = create_engine().await;
         let closing_universe = UniverseIndex::root().next();
         let closing_variable =
@@ -295,7 +300,7 @@ mod test {
 
         let (substitution, residual_relations, constraints) =
             Solver::new(&Premise::default(), &engine)
-                .clean_hrtb_step(
+                .clean_higher_ranked_step(
                     substitution,
                     Constraints::default(),
                     closing_universe,
