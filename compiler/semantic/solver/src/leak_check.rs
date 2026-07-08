@@ -3,6 +3,12 @@
 //!
 //! To be honest, at the time of writing this, I don't fully understand the
 //! concept of higher-ranked lifetimes and how they are considered "leaked".
+//!
+//! And I wouldn't like to spend too much time on this, because I think this
+//! is a very niche problem and I don't have much time to spend on it. And in
+//! this implementation, I mostly let LLM summarize the problem and implement
+//! it.
+//!
 //! I summarize my understanding of the problem as follows:
 //!
 //! Leak check mainly deals with the problem of whether:
@@ -215,83 +221,4 @@ fn constraint_graph(constraints: &Constraints) -> ConstraintGraph {
 }
 
 #[cfg(test)]
-mod test {
-    use pernixc_qbice::create_minimal_engine as create_engine;
-    use pernixc_type::r#type::{
-        constructor::Lifetime, inference::InferenceVariable, kind::TyKind,
-        skolem::SkolemizedVariable,
-    };
-
-    use super::*;
-    use crate::premise::Premise;
-
-    // input: 'static: ?a@U1, ?a@U1: 'erased
-    // premise: U1 is the closing universe
-    // output: 'static: 'erased
-    #[tokio::test]
-    async fn higher_ranked_cleanup_erases_inference_lifetimes_in_closing_universe()
-     {
-        let engine = create_engine().await;
-        let closing_universe = UniverseIndex::root().next();
-        let static_lifetime = Type2::new_lifetime(Lifetime::Static, &engine);
-        let erased_lifetime = Type2::new_lifetime(Lifetime::Erased, &engine);
-        let inference_lifetime = Type2::new_inference_variable(
-            InferenceVariable::new(0, TyKind::Lifetime, closing_universe),
-            &engine,
-        );
-        let constraints = Constraints::lifetimes_outlives(
-            static_lifetime.clone(),
-            inference_lifetime.clone(),
-        )
-        .union_into(Constraints::lifetimes_outlives(
-            inference_lifetime,
-            erased_lifetime.clone(),
-        ));
-
-        let cleaned = Solver::new(&Premise::default(), &engine)
-            .check_and_clean_higher_ranked_constraints(
-                constraints,
-                closing_universe,
-            )
-            .unwrap();
-
-        assert_eq!(
-            cleaned,
-            Constraints::lifetimes_outlives(static_lifetime, erased_lifetime)
-        );
-    }
-
-    // input: !s@U1: ?a@U1, ?a@U1: 'static
-    // premise: U1 is the closing universe
-    // output: leak check failure
-    #[tokio::test]
-    async fn higher_ranked_leak_check_checks_skolems_in_closing_universe() {
-        let engine = create_engine().await;
-        let closing_universe = UniverseIndex::root().next();
-        let skolem_lifetime = Type2::new_skolemized_variable(
-            SkolemizedVariable::new(0, TyKind::Lifetime, closing_universe),
-            &engine,
-        );
-        let inference_lifetime = Type2::new_inference_variable(
-            InferenceVariable::new(1, TyKind::Lifetime, closing_universe),
-            &engine,
-        );
-        let static_lifetime = Type2::new_lifetime(Lifetime::Static, &engine);
-        let constraints = Constraints::lifetimes_outlives(
-            skolem_lifetime,
-            inference_lifetime.clone(),
-        )
-        .union_into(Constraints::lifetimes_outlives(
-            inference_lifetime,
-            static_lifetime,
-        ));
-
-        let cleaned = Solver::new(&Premise::default(), &engine)
-            .check_and_clean_higher_ranked_constraints(
-                constraints,
-                closing_universe,
-            );
-
-        assert_eq!(cleaned, None);
-    }
-}
+mod test;
