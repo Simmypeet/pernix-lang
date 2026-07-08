@@ -8,11 +8,11 @@ use pernixc_type::{
 };
 use qbice::storage::intern::Interned;
 
-use super::{RelationFlags, ResolveStrategy};
+use super::ResolveStrategy;
 use crate::{
     constraints::Constraints,
     solver::{OverflowError, Solver},
-    type_relation::Step,
+    type_relation::{RelationFlags, Step},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -42,11 +42,11 @@ impl Solver<'_> {
         self.new_universe(async |solver| {
             let closing_universe = solver.current_universe();
 
-            match flags.variance {
+            match flags.variance() {
                 // for the contravariant and covariant cases, a single run with
                 // appropriate instantiation is sufficient.
                 Variance2::Covariant | Variance2::Contravariant => {
-                    let instantiation = match flags.variance {
+                    let instantiation = match flags.variance() {
                         Variance2::Covariant => {
                             HigherRankedInstantiation::LesserInferenceGreaterSkolem
                         }
@@ -114,8 +114,7 @@ impl Solver<'_> {
         closing_universe: UniverseIndex,
         flags: RelationFlags,
     ) -> Result<Option<Step>, OverflowError> {
-        let invariant_flags =
-            RelationFlags { variance: Variance2::Invariant, ..flags };
+        let invariant_flags = flags.with_variance(Variance2::Invariant);
 
         // Invariant higher-ranked relations must prove both directions, but
         // each proof is still an invariant argument solve. Only binder polarity
@@ -224,9 +223,7 @@ impl Solver<'_> {
                     ),
                 )
             }),
-            flags.variance,
-            flags.rigid_inference,
-            flags.reduce,
+            flags,
             ResolveStrategy::ResolveImmediately,
         ))
         .await?;

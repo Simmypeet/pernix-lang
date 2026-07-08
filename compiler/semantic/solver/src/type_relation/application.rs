@@ -5,7 +5,8 @@ use pernixc_type::{
     r#type::{
         Type2,
         constructor::{
-            Application, Constructor, DestructureOptions, Mutability, Symbolic,
+            Application, Constructor, DestructureOptions, Mutability,
+            Reference, Symbolic,
         },
     },
     variance::{Variance2, get_variances2},
@@ -15,7 +16,7 @@ use qbice::storage::intern::Interned;
 use crate::{
     constraints::Constraints,
     solver::{OverflowError, Solver},
-    type_relation::{Step, TypeRelation},
+    type_relation::{RelationFlags, Step, TypeRelation},
 };
 
 mod higher_ranked;
@@ -29,13 +30,6 @@ enum ResolveStrategy {
     DeferResolution,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct RelationFlags {
-    variance: Variance2,
-    rigid_inference: bool,
-    reduce: bool,
-}
-
 impl Solver<'_> {
     pub(crate) async fn handle_application(
         &mut self,
@@ -43,11 +37,7 @@ impl Solver<'_> {
         lesser_ap: &Application,
         greater_ap: &Application,
     ) -> Result<Option<Step>, OverflowError> {
-        let flags = RelationFlags {
-            variance: relation.variance(),
-            rigid_inference: relation.rigid_inference(),
-            reduce: relation.reduce(),
-        };
+        let flags = relation.flags();
 
         let Some(iter) = lesser_ap.destructure(
             greater_ap,
@@ -57,9 +47,7 @@ impl Solver<'_> {
             return Box::pin(self.try_reduce(
                 relation.lesser(),
                 relation.greater(),
-                flags.variance,
-                flags.rigid_inference,
-                flags.reduce,
+                flags,
             ))
             .await;
         };
@@ -116,9 +104,9 @@ impl Solver<'_> {
             Box::pin(self.handle_application_arguments(
                 lesser_ap,
                 arguments.into_iter(),
-                flags.variance,
-                flags.rigid_inference || required_rigid,
-                flags.reduce,
+                flags.with_rigid_inference(
+                    flags.rigid_inference() || required_rigid,
+                ),
                 resolve_strategy,
             ))
             .await
@@ -131,9 +119,7 @@ impl Solver<'_> {
         &mut self,
         lesser_ap: &Application,
         mut arguments: impl Iterator<Item = (Interned<Type2>, Interned<Type2>)>,
-        variance: Variance2,
-        rigid_inference: bool,
-        reduce: bool,
+        flags: RelationFlags,
         resolve_strategy: ResolveStrategy,
     ) -> Result<Option<Step>, OverflowError> {
         match lesser_ap.constructor() {
@@ -154,37 +140,19 @@ impl Solver<'_> {
             }
 
             Constructor::Reference(reference) => {
-                let (lt_l, lt_g) =
-                    arguments.next().expect("expect lifetime component");
-                let (ty_l, ty_g) =
-                    arguments.next().expect("expect type component");
+                let relations = Self::reference_argument_relations(
+                    *reference,
+                    &mut arguments,
+                    flags,
+                );
 
                 assert!(arguments.next().is_none());
 
-                Box::pin(
-                    self.handle_set_of_relations(
-                        [
-                            (lt_l, lt_g, variance.xfrom(Variance2::Covariant)),
-                            (
-                                ty_l,
-                                ty_g,
-                                variance.xfrom(
-                                    if reference.mutability()
-                                        == Mutability::Mutable
-                                    {
-                                        Variance2::Invariant
-                                    } else {
-                                        Variance2::Covariant
-                                    },
-                                ),
-                            ),
-                        ]
-                        .into_iter(),
-                        rigid_inference,
-                        reduce,
-                        resolve_strategy,
-                    ),
-                )
+                Box::pin(self.handle_set_of_relations(
+                    relations.into_iter(),
+                    flags,
+                    resolve_strategy,
+                ))
                 .await
             }
 
@@ -192,9 +160,7 @@ impl Solver<'_> {
                 Box::pin(self.handle_symbolic_arguments(
                     symbolic.clone(),
                     arguments,
-                    variance,
-                    rigid_inference,
-                    reduce,
+                    flags,
                     resolve_strategy,
                 ))
                 .await
@@ -203,10 +169,13 @@ impl Solver<'_> {
             Constructor::Tuple(_) => {
                 Box::pin(self.handle_set_of_relations(
                     arguments.map(|(lesser, greater)| {
-                        (lesser, greater, variance.xfrom(Variance2::Covariant))
+                        (
+                            lesser,
+                            greater,
+                            flags.variance().xfrom(Variance2::Covariant),
+                        )
                     }),
-                    rigid_inference,
-                    reduce,
+                    flags,
                     resolve_strategy,
                 ))
                 .await
@@ -224,10 +193,13 @@ impl Solver<'_> {
                             Variance2::Contravariant
                         };
 
-                        (lesser, greater, variance.xfrom(argument_variance))
+                        (
+                            lesser,
+                            greater,
+                            flags.variance().xfrom(argument_variance),
+                        )
                     }),
-                    rigid_inference,
-                    reduce,
+                    flags,
                     resolve_strategy,
                 ))
                 .await
@@ -236,10 +208,13 @@ impl Solver<'_> {
             Constructor::InstanceAssociated(_) => {
                 Box::pin(self.handle_set_of_relations(
                     arguments.map(|(lesser, greater)| {
-                        (lesser, greater, variance.xfrom(Variance2::Invariant))
+                        (
+                            lesser,
+                            greater,
+                            flags.variance().xfrom(Variance2::Invariant),
+                        )
                     }),
-                    true,
-                    reduce,
+                    flags.with_rigid_inference(true),
                     resolve_strategy,
                 ))
                 .await
@@ -247,13 +222,31 @@ impl Solver<'_> {
         }
     }
 
+    fn reference_argument_relations(
+        reference: Reference,
+        arguments: &mut impl Iterator<Item = (Interned<Type2>, Interned<Type2>)>,
+        flags: RelationFlags,
+    ) -> [(Interned<Type2>, Interned<Type2>, Variance2); 2] {
+        let (lt_l, lt_g) = arguments.next().expect("expect lifetime component");
+        let (ty_l, ty_g) = arguments.next().expect("expect type component");
+        let pointee_variance = if reference.mutability() == Mutability::Mutable
+        {
+            Variance2::Invariant
+        } else {
+            Variance2::Covariant
+        };
+
+        [
+            (lt_l, lt_g, flags.variance().xfrom(Variance2::Covariant)),
+            (ty_l, ty_g, flags.variance().xfrom(pointee_variance)),
+        ]
+    }
+
     async fn handle_symbolic_arguments(
         &mut self,
         symbolic: Symbolic,
         arguments: impl Iterator<Item = (Interned<Type2>, Interned<Type2>)>,
-        variance: Variance2,
-        rigid_inference: bool,
-        reduce: bool,
+        flags: RelationFlags,
         resolve_strategy: ResolveStrategy,
     ) -> Result<Option<Step>, OverflowError> {
         let kind = self.engine().get_kind(symbolic.symbol_id()).await;
@@ -273,12 +266,13 @@ impl Solver<'_> {
                             (
                                 lesser,
                                 greater,
-                                variance.xfrom(variances.get_variacne_of(id)),
+                                flags
+                                    .variance()
+                                    .xfrom(variances.get_variacne_of(id)),
                             )
                         },
                     ),
-                    rigid_inference,
-                    reduce,
+                    flags,
                     resolve_strategy,
                 ))
                 .await
@@ -287,10 +281,13 @@ impl Solver<'_> {
             Kind::Instance => {
                 Box::pin(self.handle_set_of_relations(
                     arguments.map(|(lesser, greater)| {
-                        (lesser, greater, variance.xfrom(Variance2::Invariant))
+                        (
+                            lesser,
+                            greater,
+                            flags.variance().xfrom(Variance2::Invariant),
+                        )
                     }),
-                    rigid_inference,
-                    reduce,
+                    flags,
                     resolve_strategy,
                 ))
                 .await
@@ -330,14 +327,12 @@ impl Solver<'_> {
     async fn handle_set_of_relations(
         &mut self,
         pairs: impl Iterator<Item = (Interned<Type2>, Interned<Type2>, Variance2)>,
-        rigid_inference: bool,
-        reduce: bool,
+        flags: RelationFlags,
         resolve_strategy: ResolveStrategy,
     ) -> Result<Option<Step>, OverflowError> {
         let type_relations = pairs
             .map(|(l, r, v)| {
-                TypeRelation::new_with_rigidity(l, r, v, rigid_inference)
-                    .with_reduce(reduce)
+                TypeRelation::new_with_flags(l, r, flags.with_variance(v))
             })
             .collect();
 
