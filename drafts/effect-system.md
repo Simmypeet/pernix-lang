@@ -1,138 +1,334 @@
 # Effect System
 
-## Introduction
+## Summary
 
-This document describes the effect system used in our programming language.
-In short, the effect system is very simple and is based on the row polymorphism
-or effect rows.
-
-Inspired from these papers:
-
-- [Extensible records with scoped labels](https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/scopedlabels.pdf): 
-  A brief introduction to row polymorphism and its "scoped labels" which are
-  used to represent effects in our system.
-- [Koka: Programming with Row-polymorphic Effect Types](https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/koka-effects-2013.pdf):
-  A real-world application of row polymorphism to effect systems in a 
-  programming language. Our effect system is heavily inspired by Koka's 
-  approach.
-
-## Effect System Overview
-
-In summary, our effect system is based on the Koka's Row-polymorphic Effect 
-Types. The collection of effects is represented as a row type. In Koka, it
-has the following syntax:
-
-```
-<io, exn, div>
-```
-
-In Koka, the effect constants, such as `io`, `exn`, and `div`, are used to 
-represent the **labels** of the effect row. This makes each field of the effect
-rows consists of only the **label**. This is in contrast to the traditional 
-records types, where each field consists of a **label** and a **type** like:
-
-```
-{ name: String, age: Int }
-```
-
-We take the idea of "records with scoped labels" and Koka's effect rows to 
-represent the effects in our programming language. Our modest modification is
-that we allow each field of the effect row to have a **nominal label** and a
-**effect type**. This is similar to the traditional record types, but we use
-the term "effect type" instead of "type" to emphasize that the field represents
-an effect rather than a value. The syntax of our effect rows is as follows:
-
-```
-{ Throw: std.Throw[Error], Async: std.Async, IO: std.IO, YieldOne: std.Yield, YieldTwo: std.Yield }
-```
-
-Of course, in the above example, the effect row becomes very long and verbose.
-To address this, we have a syntactic sugar that allows us to omit the nominal
-label and the label will be inferred from the name of the effect type. For 
-example, the above effect row can be written as:
-
-```
-{ std.Throw[Error], std.Async, std.IO, YieldOne: std.Yield, YieldTwo: std.Yield }
-```
-
-In practice, we would expect that most of the time, omitting the nominal label
-is sufficient and should rarely need to specify the nominal label.
-
-In the above example, notice that there are two occurrences of the `std.Yield`
-effect type with different nominal labels, `YieldOne` and `YieldTwo`. This is
-also a feature that allows us to have multiple distinct handlers for the same
-effect type. Conceptually, it allows us to do something like this:
+The effect system is based on row-polymorphic effect types. A function type
+contains both its value type and the effects that may be performed while
+evaluating it:
 
 ```pnx
-pub def yieldMulti() -> Unit \ {YieldOne: std.Yield, YieldTwo: std.Yield}:
+A -> B \ Effects
+```
+
+The main design is close to Koka's row-polymorphic effects, with one important
+adaptation: an effect row contains named effect slots. Each slot has:
+
+- a nominal label, used to invoke and handle the effect in source code; and
+- an effect signature, which defines the operations available through that
+  label.
+
+For example:
+
+```pnx
+{ Throw: std.Throw[Error], Async: std.Async, IO: std.IO }
+```
+
+This row says that the computation may throw `Error`, perform async operations,
+and perform I/O. The names `Throw`, `Async`, and `IO` are the labels of the
+effect slots. The types `std.Throw[Error]`, `std.Async`, and `std.IO` are the
+effect signatures.
+
+Most rows do not need explicit labels. When the label is omitted, it is derived
+from the effect signature name:
+
+```pnx
+{ std.Throw[Error], std.Async, std.IO }
+```
+
+is shorthand for:
+
+```pnx
+{ Throw: std.Throw[Error], Async: std.Async, IO: std.IO }
+```
+
+An explicit label is needed when the same effect signature appears more than
+once in the same row.
+
+## Terminology
+
+**Effect signature**
+
+An effect signature is a nominal type that declares a set of effect operations.
+For example, `std.Yield` may declare an operation named `yield`, while
+`std.Throw[Error]` may declare an operation named `throw`.
+
+**Effect label**
+
+An effect label is the source-level name of one effect slot in an effect row.
+The label is what code uses to invoke and handle operations:
+
+```pnx
+YieldOne.yield(1)
+```
+
+Here `YieldOne` is the label.
+
+**Effect slot**
+
+An effect slot is one row field of the form:
+
+```pnx
+Label: EffectSignature
+```
+
+For example:
+
+```pnx
+YieldOne: std.Yield
+```
+
+**Effect row**
+
+An effect row is a row of effect slots. It describes the effects a computation
+may perform.
+
+```pnx
+{ Console: std.Console, Throw: std.Throw[Error] }
+```
+
+**Effect row variable**
+
+An effect row variable stands for the unknown remainder of an effect row. It is
+used for effect polymorphism:
+
+```pnx
+{ std.Console | E }
+```
+
+This means "at least `std.Console`, plus whatever effects are in `E`".
+
+**Handler**
+
+A handler provides an implementation for the operations of one effect slot. A
+handler is selected by label, and the label determines which slot is removed
+from the row.
+
+## Effect Rows
+
+An effect row is written with braces:
+
+```pnx
+{ std.Console, std.Throw[Error] }
+```
+
+Rows can be closed or open.
+
+A closed row contains exactly the listed effect slots:
+
+```pnx
+{ std.Console, std.Throw[Error] }
+```
+
+An open row contains the listed effect slots plus an unknown tail:
+
+```pnx
+{ std.Console | E }
+```
+
+The row above means that the computation may perform console effects and any
+effects described by `E`.
+
+Rows are identified by labels, not only by effect signatures. Therefore these
+two rows are different:
+
+```pnx
+{ Left: std.Yield, Right: std.Yield }
+{ Yield: std.Yield }
+```
+
+The first row has two independent slots with the same signature. The second row
+has one slot.
+
+For the surface language, labels should be unique within a row. A row such as
+this should be rejected or reported as ambiguous:
+
+```pnx
+{ X: std.Console, X: std.IO }
+```
+
+This keeps operation lookup and handler selection simple: `X.operation(...)`
+always refers to exactly one slot.
+
+## Multiple Slots With The Same Signature
+
+The same effect signature can appear multiple times when each occurrence has a
+different label:
+
+```pnx
+{ YieldOne: std.Yield, YieldTwo: std.Yield }
+```
+
+This is useful when one computation needs two independent instances of the same
+effect interface. For example:
+
+```pnx
+pub def yieldMulti() -> Unit \ { YieldOne: std.Yield, YieldTwo: std.Yield }:
   YieldOne.yield(1)
   YieldTwo.yield(2)
   YieldOne.yield(3)
   YieldTwo.yield(4)
+```
 
+The labels distinguish the two `std.Yield` slots. A handler for `YieldOne`
+does not handle operations performed through `YieldTwo`.
 
-pub def main():
+```pnx
+pub def main() -> Unit \ { std.Console }:
   run:
     yieldMulti()
 
   with:
     handler YieldOne for std.Yield:
       def yield(v):
-        print("YieldOne: " + v)
+        Console.print("YieldOne: " + v)
         resume()
-    
+
     handler YieldTwo for std.Yield:
       def yield(v):
-        print("YieldTwo: " + v)
+        Console.print("YieldTwo: " + v)
         resume()
 ```
 
-Of course, the practical use case of having multiple distinct handlers for the 
-same effect type is not very common, and most of the time, we would expect that 
-there is only one handler for each effect type.
+In most programs, an effect signature will appear only once in a row, so the
+shorthand form is enough. Explicit labels are mainly for cases where a program
+needs multiple independent handlers for the same signature.
+
+## Invoking Effects
+
+An operation call is resolved through the effect label:
+
+```pnx
+Throw.throw(error)
+Console.print("hello")
+```
+
+If a function body calls `Console.print`, then the function's effect row must
+contain a `Console` slot whose signature defines `print`.
+
+Using shorthand, the function type can be written as:
+
+```pnx
+pub def sayHello() -> Unit \ { std.Console }:
+  Console.print("hello")
+```
+
+which is equivalent to:
+
+```pnx
+pub def sayHello() -> Unit \ { Console: std.Console }:
+  Console.print("hello")
+```
+
+## Handling Effects
+
+A handler handles one label at a time:
+
+```pnx
+handler YieldOne for std.Yield:
+  def yield(v):
+    resume()
+```
+
+Informally, if a computation has this type:
+
+```pnx
+A \ { YieldOne: std.Yield | E }
+```
+
+then handling `YieldOne` removes that slot and leaves the remaining effects:
+
+```pnx
+A \ E
+```
+
+The handler body may perform its own effects. Those effects are added to the
+resulting row. For example, if the handler prints to the console, then the
+handled computation may still require `std.Console`.
+
+Handlers are selected by label, not merely by effect signature. Given this row:
+
+```pnx
+{ YieldOne: std.Yield, YieldTwo: std.Yield }
+```
+
+a handler for `YieldOne` removes only `YieldOne`; the `YieldTwo` slot remains
+unhandled until another handler handles it.
 
 ## Effect Polymorphism
 
-The effect polymorphism is very trivial in our effect system. We can have a
-polymorphic effect row by using a type variable in the effect row. We give
-some examples below:
+Effect polymorphism is expressed with row variables. A higher-order function can
+preserve the effects of a callback by including the callback's row variable in
+its own effect row.
 
-```
-impl[T] Option[T]:
-    pub def mapAndSayHello[U, eff E](
-        self: Option[T], 
-        f: T -> U \ E
-    ) -> Option[U] \ { std.Console | E }:
-        match self:
-            case Some(value):
-                print("Hello!")
-                Some(f(value))
-            case None:
-                None
+### Simple Example
+
+A simple example is `map`, which applies a callback to the wrapped value of an
+`Option`:
+
+```pnx
+pub def map[a, b, E](opt: Option[a], f: a -> b \ E) -> Option[b] \ E:
+  return match opt:
+    case None:      None
+    case Some(x):   Some(f(x))
 ```
 
-Another example is:
+The effect row `E` is a variable that stands for the unknown effects of the
+callback. Since `map` has the same effect row as the callback, `map` is
+polymorphic in the callback's effects.
 
+A more complex example is a function that performs effects itself while also
+accepting a callback that may perform effects. Suppose we modify `map` so that
+it prints the value being mapped before calling the callback.
+
+### Mixing Effects from the Function and the Callback
+
+The function signature becomes:
+
+```pnx
+pub def map[a, b, E](
+  opt: Option[a], f: a -> b \ {std.Console | E}
+) -> Option[b] \ {std.Console | E}:
+  match opt:
+    case None: return None
+    case Some(x):
+      Console.print("mapping: " + x)
+      return Some(f(x))
 ```
-impl[T, E] Result[T, E]:
-    pub def mapAndSayHello[U, V, eff Ef](
-        self: Result[T, E],
-        ok: T -> U \ Ef,
-        err: E -> V \ Ef
-    ) -> Result[U, V] \ { std.Console | Ef }:
-        match self:
-            case Ok(value):
-                print("Hello!")
-                Ok(ok(value))
-            case Err(error):
-                print("Hello!")
-                Err(err(error))
+
+Here, the callback `f` may perform console effects and any other effects in `E`.
+A particular callback passed to `map` does not necessarily have to perform a
+console effect; the row `{std.Console | E}` is simply an over-approximation of
+the effects that `f` may perform.
+
+In the typing rule described by the Koka paper, the effect row of `f` must
+exactly match the effect row of `map`. This is why the effect row of `f` must
+mention `std.Console`, and it allows type inference to work correctly.
+
+We may want to investigate whether this restriction can be relaxed by allowing
+the effect row of `f` to be `E` instead of `{std.Console | E}`. That would
+change the signature of `map` to:
+
+```pnx
+pub def map[a, b, E](
+  opt: Option[a], f: a -> b \ E
+) -> Option[b] \ {std.Console | E}:
+  ...
 ```
 
-Of course, the above example requries both `ok` and `err` functions to have
-the same effect row `Ef`. This can be a limitation in some cases, but remember
-that type inference can always widen the effect row to include more effects.
-For example, if `ok` function invokes the effect `std.Yield` and `err` function
-invokes effect `std.Async` in the source code, the type inference will widen
-the effect row of both `ok` and `err` functions to be `{ std.Yield, std.Async }`.
+However, the following example demonstrates why this relaxation may not be a
+good idea. Suppose the relaxed signature is allowed, and the caller passes a
+callback that actually performs console effects:
 
+```pnx
+map(Some(1), x -> Console.print("mapping: " + x); x + 1)
+```
+
+The expression `x -> Console.print("mapping: " + x); x + 1` would have the
+effect row `{std.Console | ?e}` for some inferred row variable `?e`. This is a
+standard technique for making type inference work. If we instantiate the type
+variable `E` in the signature of `map` with `{std.Console | ?e}`, then the
+return type of `map` becomes
+`Option[b] \ {std.Console | {std.Console | ?e}}`, or equivalently,
+`Option[b] \ {std.Console, std.Console | ?e}`. The duplicated label is allowed
+in our system, but it is not ideal: the caller of `map` would have to handle
+the `std.Console` effect twice just to satisfy the type system.
