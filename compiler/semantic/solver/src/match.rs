@@ -1,12 +1,8 @@
-use pernixc_type::{
-    substitution::{Substitutable, Substitution},
-    r#type::{Type2, constructor::DestructureOptions},
-};
+use pernixc_type::{substitution::Substitution, r#type::Type2};
 use qbice::storage::intern::Interned;
 
 use crate::{
-    constraints::Constraints,
-    solver::{DoOccurCheck, Solver},
+    constraints::Constraints, solver::Solver, type_relation::TypeRelation,
 };
 
 #[cfg(test)]
@@ -34,79 +30,26 @@ impl Solver<'_> {
             return Some((Substitution::new(), Constraints::default()));
         }
 
-        match (&**head, &**subject) {
-            (Type2::InferenceVariable(infer_var), x)
-                if !x.is_bound_variable() =>
-            {
-                if !self
-                    .can_bind_inference_variable_to_type(
-                        *infer_var,
-                        subject,
-                        DoOccurCheck::No,
-                    )
-                    .await
-                {
-                    return None;
-                }
-
-                Some((
-                    Substitution::singleton(*infer_var, subject.clone()),
-                    Constraints::default(),
-                ))
-            }
-
-            (Type2::Application(left_a), Type2::Application(right_a)) => {
-                let iter = left_a.destructure(
-                    right_a,
-                    DestructureOptions::require_equal_binders(),
-                    self.engine(),
-                )?;
-
-                Box::pin(self.match_types(iter)).await
-            }
-
-            _ => {
-                // if both are lifetime kinds and none of them are bound
-                // variables, return invariant constraints
-                if !head.is_bound_variable()
-                    && !subject.is_bound_variable()
-                    && self.kind_of(head).await.is_lifetime()
-                    && self.kind_of(subject).await.is_lifetime()
-                {
-                    Some((
-                        Substitution::default(),
-                        Constraints::lifetimes_eq(
-                            head.clone(),
-                            subject.clone(),
-                        ),
-                    ))
-                } else {
-                    None
-                }
-            }
-        }
+        self.match_types([(head.clone(), subject.clone())]).await
     }
 
-    /// Iterates through each pair of types and call [`Self::match_type`]
-    /// on them.
+    /// Matches each pair of types as invariant type relations.
     pub async fn match_types(
         &mut self,
         pairs: impl IntoIterator<Item = (Interned<Type2>, Interned<Type2>)>,
     ) -> Option<(Substitution, Constraints)> {
-        let mut subst = Substitution::new();
-        let mut constraints = Constraints::default();
+        let type_relations = pairs
+            .into_iter()
+            .map(|(head, subject)| TypeRelation::new_matching(head, subject))
+            .collect();
 
-        for (head, subject) in pairs {
-            let head = head.apply_or_clone(&subst, self.engine());
-            let subject = subject.apply_or_clone(&subst, self.engine());
+        let (substitution, residual_relations, constraints) =
+            self.resolve_type_relations(type_relations).await.ok()?;
 
-            let (new_subst, new_constraints) =
-                self.match_type(&head, &subject).await?;
-
-            subst.merge(&new_subst);
-            constraints.extend(new_constraints);
+        if residual_relations.is_empty() {
+            Some((substitution, constraints))
+        } else {
+            None
         }
-
-        Some((subst, constraints))
     }
 }

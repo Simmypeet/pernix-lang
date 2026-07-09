@@ -39,67 +39,65 @@ impl Solver<'_> {
         arguments: &[(Interned<Type2>, Interned<Type2>)],
         flags: RelationFlags,
     ) -> Result<Option<Step>, OverflowError> {
-        self.new_universe(async |solver| {
-            let closing_universe = solver.current_universe();
+        let closing_universe =
+            lesser_ap.max_universe().max(greater_ap.max_universe()).next();
 
-            match flags.variance() {
-                // for the contravariant and covariant cases, a single run with
-                // appropriate instantiation is sufficient.
-                Variance2::Covariant | Variance2::Contravariant => {
-                    let instantiation = match flags.variance() {
-                        Variance2::Covariant => {
-                            HigherRankedInstantiation::LesserInferenceGreaterSkolem
-                        }
-                        Variance2::Contravariant => {
-                            HigherRankedInstantiation::LesserSkolemGreaterInference
-                        }
-                        Variance2::Invariant | Variance2::Bivariant => {
-                            unreachable!(
-                                "invariant and bivariant are handled \
-                                 separately"
-                            )
-                        }
-                    };
-
-                    let Some(run) = solver
-                        .handle_higher_ranked_application_run(
-                            lesser_ap,
-                            greater_ap,
-                            arguments,
-                            flags,
-                            instantiation,
+        match flags.variance() {
+            // for the contravariant and covariant cases, a single run with
+            // appropriate instantiation is sufficient.
+            Variance2::Covariant | Variance2::Contravariant => {
+                let instantiation = match flags.variance() {
+                    Variance2::Covariant => {
+                        HigherRankedInstantiation::LesserInferenceGreaterSkolem
+                    }
+                    Variance2::Contravariant => {
+                        HigherRankedInstantiation::LesserSkolemGreaterInference
+                    }
+                    Variance2::Invariant | Variance2::Bivariant => {
+                        unreachable!(
+                            "invariant and bivariant are handled separately"
                         )
-                        .await?
-                    else {
-                        return Ok(None);
-                    };
+                    }
+                };
 
-                    Ok(solver.clean_higher_ranked_step(
-                        run.substitution,
-                        run.constraints,
-                        closing_universe,
-                    ))
-                }
-
-                Variance2::Invariant => {
-                    Box::pin(solver.handle_invariant_higher_ranked_application(
+                let Some(run) = self
+                    .handle_higher_ranked_application_run(
                         lesser_ap,
                         greater_ap,
                         arguments,
-                        closing_universe,
                         flags,
-                    ))
-                    .await
-                }
+                        closing_universe,
+                        instantiation,
+                    )
+                    .await?
+                else {
+                    return Ok(None);
+                };
 
-                Variance2::Bivariant => Ok(Some((
-                    Substitution::new(),
-                    Vec::new(),
-                    Constraints::default(),
-                ))),
+                Ok(self.clean_higher_ranked_step(
+                    run.substitution,
+                    run.constraints,
+                    closing_universe,
+                ))
             }
-        })
-        .await
+
+            Variance2::Invariant => {
+                Box::pin(self.handle_invariant_higher_ranked_application(
+                    lesser_ap,
+                    greater_ap,
+                    arguments,
+                    closing_universe,
+                    flags,
+                ))
+                .await
+            }
+
+            Variance2::Bivariant => Ok(Some((
+                Substitution::new(),
+                Vec::new(),
+                Constraints::default(),
+            ))),
+        }
     }
 
     /// Runs higher-ranked relation proof for Invariant ambient variance. This
@@ -125,6 +123,7 @@ impl Solver<'_> {
                 greater_ap,
                 arguments,
                 invariant_flags,
+                closing_universe,
                 HigherRankedInstantiation::LesserInferenceGreaterSkolem,
             ))
             .await?
@@ -151,6 +150,7 @@ impl Solver<'_> {
                 greater_ap,
                 &substituted_arguments,
                 invariant_flags,
+                closing_universe,
                 HigherRankedInstantiation::LesserSkolemGreaterInference,
             ))
             .await?
@@ -187,24 +187,37 @@ impl Solver<'_> {
         greater_ap: &Application,
         arguments: &[(Interned<Type2>, Interned<Type2>)],
         flags: RelationFlags,
+        closing_universe: UniverseIndex,
         instantiation: HigherRankedInstantiation,
     ) -> Result<Option<HigherRankedRun>, OverflowError> {
         let (lesser_inst, greater_inst) = match instantiation {
             HigherRankedInstantiation::LesserInferenceGreaterSkolem => (
-                lesser_ap
-                    .binder()
-                    .map(|x| self.create_inference_instantiations(x.kinds())),
-                greater_ap
-                    .binder()
-                    .map(|x| self.create_skolem_instantiations(x.kinds())),
+                lesser_ap.binder().map(|x| {
+                    self.create_inference_instantiations_in_universe(
+                        x.kinds(),
+                        closing_universe,
+                    )
+                }),
+                greater_ap.binder().map(|x| {
+                    self.create_skolem_instantiations_in_universe(
+                        x.kinds(),
+                        closing_universe,
+                    )
+                }),
             ),
             HigherRankedInstantiation::LesserSkolemGreaterInference => (
-                lesser_ap
-                    .binder()
-                    .map(|x| self.create_skolem_instantiations(x.kinds())),
-                greater_ap
-                    .binder()
-                    .map(|x| self.create_inference_instantiations(x.kinds())),
+                lesser_ap.binder().map(|x| {
+                    self.create_skolem_instantiations_in_universe(
+                        x.kinds(),
+                        closing_universe,
+                    )
+                }),
+                greater_ap.binder().map(|x| {
+                    self.create_inference_instantiations_in_universe(
+                        x.kinds(),
+                        closing_universe,
+                    )
+                }),
             ),
         };
         let engine = self.engine();

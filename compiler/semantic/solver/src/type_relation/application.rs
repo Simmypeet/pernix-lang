@@ -5,8 +5,7 @@ use pernixc_type::{
     r#type::{
         Type2,
         constructor::{
-            Application, Constructor, DestructureOptions, Mutability,
-            Reference, Symbolic,
+            Application, Constructor, Mutability, Reference, Symbolic,
         },
     },
     variance::{Variance2, get_variances2},
@@ -39,11 +38,8 @@ impl Solver<'_> {
     ) -> Result<Option<Step>, OverflowError> {
         let flags = relation.flags();
 
-        let Some(iter) = lesser_ap.destructure(
-            greater_ap,
-            DestructureOptions::ignore_binders(),
-            self.engine(),
-        ) else {
+        let Some(iter) = lesser_ap.destructure(greater_ap, self.engine())
+        else {
             return Box::pin(self.try_reduce(
                 relation.lesser(),
                 relation.greater(),
@@ -203,17 +199,21 @@ impl Solver<'_> {
             }
 
             Constructor::InstanceAssociated(_) => {
-                Box::pin(self.handle_set_of_relations(
-                    arguments.map(|(lesser, greater)| {
-                        (
-                            lesser,
-                            greater,
-                            flags.variance().xfrom(Variance2::Invariant),
-                        )
-                    }),
-                    flags.with_rigid_inference(true),
-                    resolve_strategy,
-                ))
+                Box::pin(
+                    self.handle_set_of_relations(
+                        arguments.map(|(lesser, greater)| {
+                            (
+                                lesser,
+                                greater,
+                                flags.variance().xfrom(Variance2::Invariant),
+                            )
+                        }),
+                        flags
+                            .with_lesser_rigid_inference(true)
+                            .with_greater_rigid_inference(true),
+                        resolve_strategy,
+                    ),
+                )
                 .await
             }
         }

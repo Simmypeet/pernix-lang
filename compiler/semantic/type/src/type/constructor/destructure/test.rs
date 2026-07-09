@@ -2,9 +2,11 @@
 use pernixc_qbice::{
     TrackedEngine, create_minimal_engine as create_test_engine,
 };
+use pernixc_symbol::SymbolID;
+use pernixc_target::TargetID;
 
 use super::*;
-use crate::r#type::{constructor::Primitive, kind::TyKind};
+use crate::r#type::{bound::Binder, constructor::Primitive, kind::TyKind};
 
 fn primitive_application(
     primitive: Primitive,
@@ -73,10 +75,8 @@ async fn destructure_same_non_tuple_constructor() {
         &engine,
     );
 
-    let destructured = lhs
-        .destructure(&rhs, DestructureOptions::ignore_binders(), &engine)
-        .unwrap()
-        .collect::<Vec<_>>();
+    let destructured =
+        lhs.destructure(&rhs, &engine).unwrap().collect::<Vec<_>>();
 
     assert_eq!(destructured, vec![
         (
@@ -110,60 +110,37 @@ async fn destructure_function_pointers_can_ignore_binders() {
         &engine,
     ));
 
-    let destructured = lhs
-        .destructure(&rhs, DestructureOptions::ignore_binders(), &engine)
-        .unwrap()
-        .collect::<Vec<_>>();
+    let destructured =
+        lhs.destructure(&rhs, &engine).unwrap().collect::<Vec<_>>();
 
     assert_eq!(destructured, vec![(bool_type.clone(), bool_type)]);
 }
 
-// input: function pointers with equal and unequal binders
-// premise: {}
-// output: equal binders destructure; unequal binders fail
+// input: for<T>. Symbol[bool] vs Symbol[usize]
+// premise: both applications use the same symbol
+// output: destructures arguments while ignoring symbolic binders
 #[tokio::test]
-async fn destructure_function_pointers_can_require_equal_binders() {
+async fn destructure_symbolics_ignore_binders() {
     let engine = create_test_engine().await;
-    let bool_type = Type2::new_primitive(Primitive::Bool, &engine);
-    let lhs =
-        application(&Type2::new_function_pointer_with_higher_ranked_lifetimes(
-            1,
-            [],
-            bool_type.clone(),
-            &engine,
-        ));
-    let same =
-        application(&Type2::new_function_pointer_with_higher_ranked_lifetimes(
-            1,
-            [],
-            bool_type.clone(),
-            &engine,
-        ));
-    let different_kind = application(&Type2::new_function_pointer_with_binder(
-        crate::r#type::bound::Binder::new(
-            engine.intern_unsized(vec![TyKind::Type]),
-        ),
-        [],
-        bool_type,
+    let symbol_id = TargetID::TEST.make_global(SymbolID::from_u128(0));
+    let lhs_argument = Type2::new_primitive(Primitive::Bool, &engine);
+    let rhs_argument = Type2::new_primitive(Primitive::Usize, &engine);
+    let lhs = application(&Type2::new_symbolic_with_binder(
+        symbol_id,
+        Binder::new(engine.intern_unsized(vec![TyKind::Type])),
+        [lhs_argument.clone()],
+        &engine,
+    ));
+    let rhs = application(&Type2::new_symbolic(
+        symbol_id,
+        [rhs_argument.clone()],
         &engine,
     ));
 
-    assert!(
-        lhs.destructure(
-            &same,
-            DestructureOptions::require_equal_binders(),
-            &engine
-        )
-        .is_some()
-    );
-    assert!(
-        lhs.destructure(
-            &different_kind,
-            DestructureOptions::require_equal_binders(),
-            &engine
-        )
-        .is_none()
-    );
+    let destructured =
+        lhs.destructure(&rhs, &engine).unwrap().collect::<Vec<_>>();
+
+    assert_eq!(destructured, vec![(lhs_argument, rhs_argument)]);
 }
 
 #[tokio::test]
@@ -182,10 +159,7 @@ async fn destructure_different_non_tuple_constructors_fails() {
         &engine,
     );
 
-    assert!(
-        lhs.destructure(&rhs, DestructureOptions::ignore_binders(), &engine)
-            .is_none()
-    );
+    assert!(lhs.destructure(&rhs, &engine).is_none());
 }
 
 #[tokio::test]
@@ -207,10 +181,7 @@ async fn destructure_same_non_tuple_constructor_with_different_arity_fails() {
         &engine,
     );
 
-    assert!(
-        lhs.destructure(&rhs, DestructureOptions::ignore_binders(), &engine)
-            .is_none()
-    );
+    assert!(lhs.destructure(&rhs, &engine).is_none());
 }
 
 #[tokio::test]
@@ -235,10 +206,8 @@ async fn destructure_plain_tuples() {
         &engine,
     );
 
-    let destructured = lhs
-        .destructure(&rhs, DestructureOptions::ignore_binders(), &engine)
-        .unwrap()
-        .collect::<Vec<_>>();
+    let destructured =
+        lhs.destructure(&rhs, &engine).unwrap().collect::<Vec<_>>();
 
     assert_eq!(destructured, vec![
         (
@@ -277,10 +246,8 @@ async fn destructure_tuple_with_unpacked_right_hand_side() {
         &engine,
     );
 
-    let destructured = lhs
-        .destructure(&rhs, DestructureOptions::ignore_binders(), &engine)
-        .unwrap()
-        .collect::<Vec<_>>();
+    let destructured =
+        lhs.destructure(&rhs, &engine).unwrap().collect::<Vec<_>>();
 
     assert_eq!(destructured, vec![
         (
@@ -330,10 +297,8 @@ async fn destructure_tuple_with_unpacked_left_hand_side() {
         &engine,
     );
 
-    let destructured = lhs
-        .destructure(&rhs, DestructureOptions::ignore_binders(), &engine)
-        .unwrap()
-        .collect::<Vec<_>>();
+    let destructured =
+        lhs.destructure(&rhs, &engine).unwrap().collect::<Vec<_>>();
 
     assert_eq!(destructured, vec![
         (
@@ -381,10 +346,8 @@ async fn destructure_tuple_with_unpacked_left_hand_side_to_empty_tuple() {
         &engine,
     );
 
-    let destructured = lhs
-        .destructure(&rhs, DestructureOptions::ignore_binders(), &engine)
-        .unwrap()
-        .collect::<Vec<_>>();
+    let destructured =
+        lhs.destructure(&rhs, &engine).unwrap().collect::<Vec<_>>();
 
     assert_eq!(destructured, vec![
         (
@@ -426,10 +389,8 @@ async fn destructure_same_tuple_shape_pairs_element_wise() {
         &engine,
     );
 
-    let destructured = lhs
-        .destructure(&rhs, DestructureOptions::ignore_binders(), &engine)
-        .unwrap()
-        .collect::<Vec<_>>();
+    let destructured =
+        lhs.destructure(&rhs, &engine).unwrap().collect::<Vec<_>>();
 
     assert_eq!(destructured, vec![
         (
@@ -473,10 +434,8 @@ async fn destructure_grouped_tuple_preserves_other_unpacked_position() {
         &engine,
     );
 
-    let destructured = lhs
-        .destructure(&rhs, DestructureOptions::ignore_binders(), &engine)
-        .unwrap()
-        .collect::<Vec<_>>();
+    let destructured =
+        lhs.destructure(&rhs, &engine).unwrap().collect::<Vec<_>>();
 
     assert_eq!(destructured, vec![
         (
@@ -527,10 +486,7 @@ async fn destructure_tuple_mismatch_fails_when_other_unpacked_is_outside_range()
         &engine,
     );
 
-    assert!(
-        lhs.destructure(&rhs, DestructureOptions::ignore_binders(), &engine)
-            .is_none()
-    );
+    assert!(lhs.destructure(&rhs, &engine).is_none());
 }
 
 #[tokio::test]
@@ -557,10 +513,7 @@ async fn destructure_tuple_with_invalid_multiple_unpacked_positions_fails() {
         &engine,
     );
 
-    assert!(
-        lhs.destructure(&rhs, DestructureOptions::ignore_binders(), &engine)
-            .is_none()
-    );
+    assert!(lhs.destructure(&rhs, &engine).is_none());
 }
 
 #[tokio::test]
@@ -589,8 +542,5 @@ async fn destructure_tuple_with_ambiguous_unpacked_match_fails() {
         &engine,
     );
 
-    assert!(
-        lhs.destructure(&rhs, DestructureOptions::ignore_binders(), &engine)
-            .is_none()
-    );
+    assert!(lhs.destructure(&rhs, &engine).is_none());
 }

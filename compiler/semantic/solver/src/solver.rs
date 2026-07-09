@@ -257,9 +257,21 @@ impl Solver<'_> {
         &mut self,
         kinds: impl Iterator<Item = TyKind>,
     ) -> BoundInstantiation {
+        self.create_inference_instantiations_in_universe(
+            kinds,
+            self.current_universe(),
+        )
+    }
+
+    pub(crate) fn create_inference_instantiations_in_universe(
+        &mut self,
+        kinds: impl Iterator<Item = TyKind>,
+        universe: UniverseIndex,
+    ) -> BoundInstantiation {
         kinds
             .map(|kind| {
-                let var = self.fresh_inference_variable(kind);
+                let var =
+                    self.fresh_inference_variable_in_universe(kind, universe);
                 self.intern(Type2::InferenceVariable(var))
             })
             .collect()
@@ -271,9 +283,21 @@ impl Solver<'_> {
         &mut self,
         kinds: impl Iterator<Item = TyKind>,
     ) -> BoundInstantiation {
+        self.create_skolem_instantiations_in_universe(
+            kinds,
+            self.current_universe(),
+        )
+    }
+
+    pub(crate) fn create_skolem_instantiations_in_universe(
+        &mut self,
+        kinds: impl Iterator<Item = TyKind>,
+        universe: UniverseIndex,
+    ) -> BoundInstantiation {
         kinds
             .map(|kind| {
-                let var = self.fresh_skolem_variable(kind);
+                let var =
+                    self.fresh_skolem_variable_in_universe(kind, universe);
                 self.intern(Type2::SkolemizedVariable(var))
             })
             .collect()
@@ -281,7 +305,7 @@ impl Solver<'_> {
 
     #[must_use]
     pub fn max_universe_index(&self, ty: &Type2) -> UniverseIndex {
-        ty.universe_index()
+        ty.max_universe()
     }
 }
 
@@ -306,7 +330,6 @@ pub(crate) fn occur_check(
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum DoOccurCheck {
     Yes,
-    No,
 }
 
 impl<'a> Solver<'a> {

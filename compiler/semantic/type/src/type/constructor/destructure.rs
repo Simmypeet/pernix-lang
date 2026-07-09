@@ -4,29 +4,6 @@ use qbice::storage::intern::Interned;
 use super::{Application, Constructor, Tuple, TupleShape};
 use crate::r#type::Type2;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BinderEquality {
-    Ignore,
-    RequireEqual,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DestructureOptions {
-    binder_equality: BinderEquality,
-}
-
-impl DestructureOptions {
-    #[must_use]
-    pub const fn ignore_binders() -> Self {
-        Self { binder_equality: BinderEquality::Ignore }
-    }
-
-    #[must_use]
-    pub const fn require_equal_binders() -> Self {
-        Self { binder_equality: BinderEquality::RequireEqual }
-    }
-}
-
 type RegularDestructure<'a> = std::iter::Zip<
     std::iter::Cloned<std::slice::Iter<'a, Interned<Type2>>>,
     std::iter::Cloned<std::slice::Iter<'a, Interned<Type2>>>,
@@ -166,7 +143,6 @@ impl Application {
     pub fn destructure<'a>(
         &'a self,
         other: &'a Self,
-        options: DestructureOptions,
         engine: &'a TrackedEngine,
     ) -> Option<impl Iterator<Item = (Interned<Type2>, Interned<Type2>)> + 'a>
     {
@@ -183,26 +159,17 @@ impl Application {
         } else if let (Constructor::Symbolic(lhs), Constructor::Symbolic(rhs)) =
             (&self.constructor, &other.constructor)
         {
-            if lhs.symbol_id() != rhs.symbol_id()
-                || (options.binder_equality == BinderEquality::RequireEqual
-                    && lhs.binder() != rhs.binder())
-            {
+            if lhs.symbol_id() != rhs.symbol_id() {
                 return None;
             }
 
             Self::destructure_regular(&self.arguments, &other.arguments)
                 .map(Destructure::Regular)
         } else if let (
-            Constructor::FunctionPointer(lhs),
-            Constructor::FunctionPointer(rhs),
+            Constructor::FunctionPointer(_),
+            Constructor::FunctionPointer(_),
         ) = (&self.constructor, &other.constructor)
         {
-            if options.binder_equality == BinderEquality::RequireEqual
-                && lhs != rhs
-            {
-                return None;
-            }
-
             Self::destructure_regular(&self.arguments, &other.arguments)
                 .map(Destructure::Regular)
         } else if self.constructor == other.constructor {
