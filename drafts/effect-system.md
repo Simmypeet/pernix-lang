@@ -332,3 +332,116 @@ return type of `map` becomes
 `Option[b] \ {std.Console, std.Console | ?e}`. The duplicated label is allowed
 in our system, but it is not ideal: the caller of `map` would have to handle
 the `std.Console` effect twice just to satisfy the type system.
+
+## Trait/Instance Associated Effect Row
+
+Inspired by the [Flix's Associated Effect][flix-aef], we would like to allow
+a trait to declare an associated effect row, and allow instances to provide
+the concrete effect row. Note that, our trait-system is more like OCaml's
+module system or explicit dictionary passing than Haskell's type-class system,
+but the idea of associated effect row from Flix is still applicable to our 
+system.
+
+We can write a trait with an associated effect row something like this:
+
+```pnx
+pub trait Reader:
+  pub eff Aef
+  pub type Rd
+  def read(self: &mut this.Rd, buf: 8mut [uint8]) -> Int32 \ this.Aef
+```
+
+And some instance implementation of the trait can provide the concrete effect row:
+
+```pnx
+pub inst FileReader: Reader:
+  pub eff Aef = {std.Fs}
+  pub type Rd = File
+  pub def read(self: &mut File, buf: 8mut [uint8]) -> Int32 \ {std.Fs}:
+    ...
+```
+
+```pnx
+pub inst NetworkReader: Reader:
+  pub eff Aef = {std.Net}
+  pub type Rd = TcpStream
+  pub def read(self: &mut TcpStream, buf: 8mut [uint8]) -> Int32 \ {std.Net}:
+    ...
+```
+
+All sounds good, but the following example shows the limitation of this 
+approach when using the associated effect row in a higher-order function:
+
+```pnx
+pub def readTwo[inst I: Reader, inst J: Reader](
+  r1: &mut I.Rd, r2: &mut J.Rd, buf: 8mut [uint8]
+) ->  Int32 \ ???
+```
+
+What would we put in the effect row of `readTwo`? We want to express something
+like `I.Aef + J.Aef`, but we don't have such way to express it in row-polymorphic
+effect system as the row extension only allows one row variable in the tail,
+which means we couldn't write something like `{std.Console | I.Aef | J.Aef}`!
+
+We lose modularity and composability here.
+
+### Or Multiple Parameter Traits
+
+The above example shows that the associated effect row is not composable in a 
+higher-order function that takes multiple instances of the same trait. One 
+possible solution is to allow rewrite the trait such that it takes additional
+effect row parameters as follows:
+
+```pnx
+pub trait Reader[E]:
+  pub type Rd
+  def read(self: &mut this.Rd, buf: 8mut [uint8]) -> Int32 \ E
+```
+
+```pnx
+pub inst FileReader[R]: Reader[{std.Fs | R}]:
+  pub type Rd = File
+  pub def read(self: &mut File, buf: 8mut [uint8]) -> Int32 \ {std.Fs | R}:
+    ...
+```
+
+```pnx
+pub inst NetworkReader[Y]: Reader[{std.Net | Y}]:
+  pub type Rd = TcpStream
+  pub def read(self: &mut TcpStream, buf: 8mut [uint8]) -> Int32 \ {std.Net | Y}:
+    ...
+```
+
+```pnx
+pub def readTwo[E, inst I: Reader[E], inst J: Reader[E]](
+  r1: &mut I.Rd, r2: &mut J.Rd, buf: 8mut [uint8]
+) ->  Int32 \ E:
+  ...
+```
+
+This works! suppose we want instantiate `readTwo`, the instantiations would look like this:
+
+```pnx
+readTwo[{std.Fs, std.Net}, FileReader[{std.Net}], NetworkReader[{std.Fs}]]
+```
+
+Don't get confused that `FileReader[{std.Net}]` means that the `FileReader` uses
+`std.Net`. It simply means that the `FileReader[R]`'s effect row `R` is 
+instantiated with the effect row `{std.Net}`, which makes the trait signature of 
+`FileReader[{std.Net}]` to be `Reader[{std.Fs | {std.Net}}]`, or equivalently 
+`Reader[{std.Fs, std.Net}]`. The same applies to `NetworkReader[{std.Fs}]`.
+
+### Is This The Best Approach?
+
+The initial promise of the associated effect row is that it allows us to write
+a trait where an effect row can be left abstract and be filled in by the 
+instance/implementation. Associated effect row allows us to do that, but it 
+as shown in the above example, it limits the composability of the effect row. 
+And the alternative approach of allowing multiple effect row parameters in the
+trait allows us to compose the effect row, but it also makes the trait signature
+more complex and less elegant.
+
+This is an interesting open problem to explore, and we may want to investigate 
+more on this topic in the future.
+
+[flix-aef]: https://dl.acm.org/doi/epdf/10.1145/3656393
