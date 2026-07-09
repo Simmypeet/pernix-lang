@@ -132,7 +132,7 @@ async fn try_match_eq(
     eq: &Equality,
     solver: &mut Solver<'_>,
 ) -> Option<(Interned<Type2>, Constraints)> {
-    let max_universe = ty.universe_index();
+    let max_universe = ty.max_universe();
     let fresh_instantiation = solver
         .create_inference_instantiations_in_universe(
             eq.binder().kinds(),

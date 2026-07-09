@@ -39,8 +39,8 @@ impl Solver<'_> {
         arguments: &[(Interned<Type2>, Interned<Type2>)],
         flags: RelationFlags,
     ) -> Result<Option<Step>, OverflowError> {
-        let flags = flags.in_next_universe();
-        let closing_universe = flags.current_universe();
+        let closing_universe =
+            lesser_ap.max_universe().max(greater_ap.max_universe()).next();
 
         match flags.variance() {
             // for the contravariant and covariant cases, a single run with
@@ -66,6 +66,7 @@ impl Solver<'_> {
                         greater_ap,
                         arguments,
                         flags,
+                        closing_universe,
                         instantiation,
                     )
                     .await?
@@ -122,6 +123,7 @@ impl Solver<'_> {
                 greater_ap,
                 arguments,
                 invariant_flags,
+                closing_universe,
                 HigherRankedInstantiation::LesserInferenceGreaterSkolem,
             ))
             .await?
@@ -148,6 +150,7 @@ impl Solver<'_> {
                 greater_ap,
                 &substituted_arguments,
                 invariant_flags,
+                closing_universe,
                 HigherRankedInstantiation::LesserSkolemGreaterInference,
             ))
             .await?
@@ -184,21 +187,21 @@ impl Solver<'_> {
         greater_ap: &Application,
         arguments: &[(Interned<Type2>, Interned<Type2>)],
         flags: RelationFlags,
+        closing_universe: UniverseIndex,
         instantiation: HigherRankedInstantiation,
     ) -> Result<Option<HigherRankedRun>, OverflowError> {
-        let universe = flags.current_universe();
         let (lesser_inst, greater_inst) = match instantiation {
             HigherRankedInstantiation::LesserInferenceGreaterSkolem => (
                 lesser_ap.binder().map(|x| {
                     self.create_inference_instantiations_in_universe(
                         x.kinds(),
-                        universe,
+                        closing_universe,
                     )
                 }),
                 greater_ap.binder().map(|x| {
                     self.create_skolem_instantiations_in_universe(
                         x.kinds(),
-                        universe,
+                        closing_universe,
                     )
                 }),
             ),
@@ -206,13 +209,13 @@ impl Solver<'_> {
                 lesser_ap.binder().map(|x| {
                     self.create_skolem_instantiations_in_universe(
                         x.kinds(),
-                        universe,
+                        closing_universe,
                     )
                 }),
                 greater_ap.binder().map(|x| {
                     self.create_inference_instantiations_in_universe(
                         x.kinds(),
-                        universe,
+                        closing_universe,
                     )
                 }),
             ),

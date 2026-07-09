@@ -341,7 +341,7 @@ impl Type2 {
     }
 
     #[must_use]
-    pub fn universe_index(&self) -> UniverseIndex {
+    pub fn max_universe(&self) -> UniverseIndex {
         match self {
             Self::GenericParameter(_) | Self::BoundVariable(_) => {
                 UniverseIndex::root()
@@ -355,12 +355,7 @@ impl Type2 {
                 skolemized_variable.universe_index()
             }
 
-            Self::Application(application) => application
-                .arguments()
-                .iter()
-                .map(|argument| argument.universe_index())
-                .max()
-                .unwrap_or(UniverseIndex::root()),
+            Self::Application(application) => application.max_universe(),
         }
     }
 }

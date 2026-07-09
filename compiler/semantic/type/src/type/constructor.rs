@@ -6,7 +6,9 @@ use pernixc_symbol::{
 };
 use qbice::{Decode, Encode, StableHash, storage::intern::Interned};
 
-use crate::r#type::{Type2, bound::Binder, kind::TyKind};
+use crate::r#type::{
+    Type2, bound::Binder, kind::TyKind, universe::UniverseIndex,
+};
 
 mod destructure;
 mod reduction;
@@ -384,6 +386,15 @@ impl Application {
     #[must_use]
     pub const fn constructor(&self) -> &Constructor { &self.constructor }
 
+    #[must_use]
+    pub fn max_universe(&self) -> UniverseIndex {
+        self.arguments
+            .iter()
+            .map(|argument| argument.max_universe())
+            .max()
+            .unwrap_or(UniverseIndex::root())
+    }
+
     pub async fn kind(&self, engine: &TrackedEngine) -> TyKind {
         match &self.constructor {
             Constructor::Tuple(_)
@@ -423,5 +434,51 @@ impl Application {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use pernixc_qbice::create_minimal_engine as create_engine;
+
+    use super::*;
+    use crate::r#type::inference::InferenceVariable;
+
+    // input: fn(?T@U1, ?U@U2) -> bool
+    // premise: the application arguments contain inference variables in U1/U2
+    // output: U2
+    #[tokio::test]
+    async fn application_max_universe_returns_deepest_argument_universe() {
+        let engine = create_engine().await;
+        let lower_variable = InferenceVariable::new(
+            0,
+            TyKind::Type,
+            UniverseIndex::root().next(),
+        );
+        let higher_variable = InferenceVariable::new(
+            1,
+            TyKind::Type,
+            UniverseIndex::root().next().next(),
+        );
+        let bool_type = Type2::new_primitive(Primitive::Bool, &engine);
+        let lower_argument =
+            engine.intern(Type2::InferenceVariable(lower_variable));
+        let higher_argument =
+            engine.intern(Type2::InferenceVariable(higher_variable));
+        let empty_binder = || Binder::new(engine.intern_unsized(Vec::new()));
+
+        let application = Application::new(
+            Constructor::FunctionPointer(FunctionPointer::new(empty_binder())),
+            engine.intern_unsized(vec![
+                lower_argument,
+                higher_argument,
+                bool_type,
+            ]),
+        );
+
+        assert_eq!(
+            application.max_universe(),
+            UniverseIndex::root().next().next()
+        );
     }
 }

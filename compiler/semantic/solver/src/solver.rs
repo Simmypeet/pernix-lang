@@ -305,7 +305,7 @@ impl Solver<'_> {
 
     #[must_use]
     pub fn max_universe_index(&self, ty: &Type2) -> UniverseIndex {
-        ty.universe_index()
+        ty.max_universe()
     }
 }
 
