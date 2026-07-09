@@ -335,14 +335,13 @@ the `std.Console` effect twice just to satisfy the type system.
 
 ## Trait/Instance Associated Effect Row
 
-Inspired by the [Flix's Associated Effect][flix-aef], we would like to allow
-a trait to declare an associated effect row, and allow instances to provide
-the concrete effect row. Note that, our trait-system is more like OCaml's
-module system or explicit dictionary passing than Haskell's type-class system,
-but the idea of associated effect row from Flix is still applicable to our 
-system.
+Inspired by [Flix's associated effects][flix-aef], we would like to allow a
+trait to declare an associated effect row and let each instance provide the
+concrete row. Our trait system is closer to OCaml's module system or explicit
+dictionary passing than to Haskell's type-class system, but the idea of an
+associated effect row from Flix still applies.
 
-We can write a trait with an associated effect row something like this:
+For example, a trait with an associated effect row could be written like this:
 
 ```pnx
 pub trait Reader:
@@ -351,7 +350,7 @@ pub trait Reader:
   def read(self: &mut this.Rd, buf: 8mut [uint8]) -> Int32 \ this.Aef
 ```
 
-And some instance implementation of the trait can provide the concrete effect row:
+Each instance implementation can then provide a concrete effect row:
 
 ```pnx
 pub inst FileReader: Reader:
@@ -369,8 +368,8 @@ pub inst NetworkReader: Reader:
     ...
 ```
 
-All sounds good, but the following example shows the limitation of this 
-approach when using the associated effect row in a higher-order function:
+This looks good at first, but the following example shows a limitation of this
+approach when the associated effect row is used in a higher-order function:
 
 ```pnx
 pub def readTwo[inst I: Reader, inst J: Reader](
@@ -378,19 +377,17 @@ pub def readTwo[inst I: Reader, inst J: Reader](
 ) ->  Int32 \ ???
 ```
 
-What would we put in the effect row of `readTwo`? We want to express something
-like `I.Aef + J.Aef`, but we don't have such way to express it in row-polymorphic
-effect system as the row extension only allows one row variable in the tail,
-which means we couldn't write something like `{std.Console | I.Aef | J.Aef}`!
+What should we put in the effect row of `readTwo`? We want to express something
+like `I.Aef + J.Aef`, but the row-polymorphic effect system has no direct way
+to express that. Row extension only allows one row variable in the tail, so we
+could not write something like `{std.Console | I.Aef | J.Aef}`.
 
-We lose modularity and composability here.
+This is where we lose composability in the row-polymorphic effect system.
 
 ### Or Multiple Parameter Traits
 
-The above example shows that the associated effect row is not composable in a 
-higher-order function that takes multiple instances of the same trait. One 
-possible solution is to allow rewrite the trait such that it takes additional
-effect row parameters as follows:
+One possible solution is to rewrite the trait so that it takes an additional 
+effect row parameter:
 
 ```pnx
 pub trait Reader[E]:
@@ -419,29 +416,55 @@ pub def readTwo[E, inst I: Reader[E], inst J: Reader[E]](
   ...
 ```
 
-This works! suppose we want instantiate `readTwo`, the instantiations would look like this:
+This works. Suppose we want to instantiate `readTwo` with `FileReader` and 
+`NetworkReader`; the instantiation would look like this:
 
 ```pnx
 readTwo[{std.Fs, std.Net}, FileReader[{std.Net}], NetworkReader[{std.Fs}]]
 ```
 
-Don't get confused that `FileReader[{std.Net}]` means that the `FileReader` uses
-`std.Net`. It simply means that the `FileReader[R]`'s effect row `R` is 
-instantiated with the effect row `{std.Net}`, which makes the trait signature of 
-`FileReader[{std.Net}]` to be `Reader[{std.Fs | {std.Net}}]`, or equivalently 
+`FileReader[{std.Net}]` does not mean that `FileReader` itself uses `std.Net`.
+It means that the effect row parameter `R` in `FileReader[R]` is instantiated
+with `{std.Net}`. As a result, the trait signature of `FileReader[{std.Net}]`
+becomes `Reader[{std.Fs | {std.Net}}]`, or equivalently
 `Reader[{std.Fs, std.Net}]`. The same applies to `NetworkReader[{std.Fs}]`.
 
 ### Is This The Best Approach?
 
-The initial promise of the associated effect row is that it allows us to write
-a trait where an effect row can be left abstract and be filled in by the 
-instance/implementation. Associated effect row allows us to do that, but it 
-as shown in the above example, it limits the composability of the effect row. 
-And the alternative approach of allowing multiple effect row parameters in the
-trait allows us to compose the effect row, but it also makes the trait signature
-more complex and less elegant.
+The initial promise of an associated effect row is that it lets a trait leave an
+effect row abstract and have the instance implementation fill it in. Associated
+effect rows support that use case, but as the example above shows, they limit
+the composability of effect rows. The alternative approach of adding effect row
+parameters to the trait restores composability, but it also makes the trait
+signature more complex and less elegant.
 
-This is an interesting open problem to explore, and we may want to investigate 
-more on this topic in the future.
+This is an interesting open problem, and we may want to investigate it further
+in the future.
+
+## Flix's Set Formula
+
+Flix provides an alternative approach to effect systems through a concept called
+a **set formula**. In Koka, an effect is represented as a row of effect slots.
+In Flix, an effect is represented as a set of effect labels. The expressive
+part of Flix's effect system is that it supports set operations on those labels,
+such as union, intersection, and even difference. This means the problematic
+example from the trait/instance associated effect row section can be expressed
+naturally in Flix using set union:
+
+```flix
+def readTwo[I: Reader, J: Reader](
+  r1: &mut I.Rd, r2: &mut J.Rd, buf: 8mut [uint8]
+) -> Int32 \ I.Aef + J.Aef:
+  ...
+```
+
+Flix uses **boolean algebra** to reason about set formulas, with a **boolean
+unification** algorithm at the heart of its type inference. However, one major
+limitation of Flix's approach is that it does not support parameterized effect
+signatures, so an effect signature such as `std.Throw[Error]` cannot be
+expressed in Flix. It is also unclear how this approach would interact with
+subtyping and region variance. For example, how should boolean unification
+handle `std.Throw[&'a str]` and `std.Throw[&'b str]`?
 
 [flix-aef]: https://dl.acm.org/doi/epdf/10.1145/3656393
+
