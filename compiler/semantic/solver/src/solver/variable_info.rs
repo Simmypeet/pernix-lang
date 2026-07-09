@@ -22,10 +22,19 @@ impl Solver<'_> {
         &mut self,
         kind: TyKind,
     ) -> SkolemizedVariable {
+        self.fresh_skolem_variable_in_universe(kind, self.current_universe())
+    }
+
+    /// Creates a new skolemized variable with the given kind and universe.
+    pub(crate) const fn fresh_skolem_variable_in_universe(
+        &mut self,
+        kind: TyKind,
+        universe: UniverseIndex,
+    ) -> SkolemizedVariable {
         let id = SkolemizedVariable::new(
             self.variable_infos.skolemized_variables.counter,
             kind,
-            self.current_universe(),
+            universe,
         );
 
         self.variable_infos.skolemized_variables.counter += 1;

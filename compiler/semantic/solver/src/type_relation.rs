@@ -1,7 +1,7 @@
 use pernixc_type::{
     predicate::Subtype,
     substitution::{Substitutable, Substitution},
-    r#type::{Type2, inference::InferenceVariable},
+    r#type::{Type2, inference::InferenceVariable, universe::UniverseIndex},
     variance::Variance2,
 };
 use qbice::storage::intern::Interned;
@@ -25,6 +25,7 @@ struct RelationFlags {
     lesser_rigid_inference: bool,
     greater_rigid_inference: bool,
     reduce: bool,
+    universe: UniverseIndex,
 }
 
 impl RelationFlags {
@@ -35,6 +36,7 @@ impl RelationFlags {
             lesser_rigid_inference: false,
             greater_rigid_inference: false,
             reduce: true,
+            universe: UniverseIndex::root(),
         }
     }
 
@@ -53,6 +55,9 @@ impl RelationFlags {
 
     #[must_use]
     pub const fn reduce(self) -> bool { self.reduce }
+
+    #[must_use]
+    pub const fn current_universe(self) -> UniverseIndex { self.universe }
 
     #[must_use]
     pub const fn with_variance(mut self, variance: Variance2) -> Self {
@@ -81,6 +86,12 @@ impl RelationFlags {
     #[must_use]
     pub const fn with_reduce(mut self, reduce: bool) -> Self {
         self.reduce = reduce;
+        self
+    }
+
+    #[must_use]
+    pub const fn in_next_universe(mut self) -> Self {
+        self.universe = self.universe.next();
         self
     }
 }
