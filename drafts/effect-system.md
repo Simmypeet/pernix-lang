@@ -10,8 +10,9 @@ evaluating it:
 A -> B \ Effects
 ```
 
-The main design is close to Koka's row-polymorphic effects, with one important
-adaptation: an effect row contains named effect slots. Each slot has:
+The main design is close to [Koka's row-polymorphic][koka-row] effects (almost
+an exact replication), with one important adaptation: an effect row contains 
+named effect slots. Each slot has:
 
 - a nominal label, used to invoke and handle the effect in source code; and
 - an effect signature, which defines the operations available through that
@@ -441,6 +442,248 @@ signature more complex and less elegant.
 This is an interesting open problem, and we may want to investigate it further
 in the future.
 
+## Formal Grammar and Rules
+
+This section adapts Koka's core grammar and typing rules to summarize the
+central ideas behind our effect system. The [Koka paper][koka-row] and
+[Leijen's Scoped Labels][leijen-scoped-labels] are the main references for the 
+formal presentation of effect rows and their typing rules.
+
+We'll simply show the Type and Kind grammars, Row Equivalence rules, and the 
+core typing rules just enough to explain the main ideas. The unification and
+type inference rules are omitted here but are described in those references.
+
+### Basic Grammar
+
+The following is the portion of the kind grammar that is relevant to effects.
+The language has other kinds, but they are omitted here.
+
+```
+Kind ::= EffSig | EffRow
+```
+
+The main constructors for effect signatures and effect rows are:
+
+```
+Label ::= Identifier
+
+EffSigConstructor :: EffSig
+EffSigConstructor ::= std.Throw[Error] | std.Yield | std.Console | ...
+
+EffRowExtension :: EffSig -> EffRow -> EffRow
+EffRowExtension ::= { Label: _ | _ } 
+
+EffRowEmpty :: EffRow
+EffRowEmpty ::= {}
+```
+
+We also have inference row variables and associated effect-row kinds. They are
+straightforward extensions of this grammar and are omitted here.
+
+### Open or Closed Rows
+
+An `EffRow` is **open** when it has a tail variable and **closed** when it does
+not. A tail variable can be either a polymorphic effect-row variable or an
+associated effect-row variable. For example, the following are open rows:
+
+```
+{ std.Console | E }
+{ std.Console | I.Aef }
+E
+```
+
+In contrast, the following are closed rows:
+
+```
+{ std.Console | {} }
+{}
+```
+
+### Row Equivalence Rules
+
+The row equivalence rules are esssentially the same as 
+[Leijen's Scoped Labels][leijen-scoped-labels]. In essence, the row allows 
+duplicate labels, and the order of the labels does not matter but the order
+between the equal labels does matter. For instance, the following three
+rows are equivalent:
+
+```
+{ X: std.Console, Y: std.IO, X: std.Console }
+{ Y: std.IO, X: std.Console, X: std.Console }
+{ X: std.Console, X: std.Console, Y: std.IO }
+```
+
+However, these two rows aren't equivalent:
+
+```
+{ X: std.Console  }
+{ X: std.Console, X: std.Console }
+```
+
+And also these two rows aren't equivalent:
+
+```
+{ Y: std.Console, Y: std.IO }
+{ Y: std.IO, Y: std.Console }
+```
+
+### Core Typing Rules
+
+The following typing rules summarize the core ideas behind effect rows. The
+[Koka paper][koka-row] provides the complete formal presentation.
+
+
+### Expression Typing Rule With Effect
+
+We use the following notable expression-typing rules from Koka to explain the
+core ideas and relate them to our language. Our judgment has the form
+$\Gamma \vdash e : \tau \ | \ \epsilon$, read as: "under the context $\Gamma$,
+expression $e$ has type $\tau$ and effect row $\epsilon$." Throughout this
+section, $\tau$ denotes types, $\epsilon$ denotes effect rows, $e$ denotes
+expressions, and $\Gamma$ denotes a typing context.
+
+#### (VAR) Variable Typing Rule
+
+$$
+\frac{
+  \Gamma(\text{x}) = \tau
+}{
+  \Gamma \vdash \text{x} : \tau \ | \  \epsilon
+}
+$$
+
+The key idea is that a variable expression may be assigned any effect row
+$\epsilon$. For example, if `x` has type `Int32`, the expression `x` can have
+an effect row such as `{std.Console}`, `{std.IO}`, or the open row
+`{std.Console | E}`.
+
+#### (SEQ) Sequencing Typing Rule
+
+$$
+\frac{
+  \Gamma \vdash e_1 : \tau_1 \ | \ \epsilon
+  \quad
+  \Gamma, x: \tau_1 \vdash e_2 : \tau_2 \ | \ \epsilon
+}
+{
+  \Gamma \vdash x \leftarrow e_1; e_2 : \tau_2 \ | \ \epsilon
+}
+$$
+
+This rule captures variable declaration and sequencing. Both $e_1$ and $e_2$
+must have the same effect row $\epsilon$. This is not as restrictive as it may
+appear: other rules can extend an effect row, including (VAR) and the
+(CLOSED-APP) rule below.
+
+#### (CLOSED-APP) Closed-Effect-Row Application Typing Rule
+
+This rule deals with calling a function that has a closed effect row.
+
+The following auxiliary rule extends a closed effect row with another effect
+row. We write it as $\epsilon_1 + \epsilon_2 \ | \ \epsilon_3$, read as:
+"given the closed effect row $\epsilon_1$ and another effect row $\epsilon_2$,
+the resulting effect row is $\epsilon_3$."
+
+$$
+\frac{}
+{\langle\rangle + \epsilon \ | \ \epsilon}
+
+\quad
+
+\frac{\epsilon_1 + \epsilon_2 \ | \ \epsilon_3}
+{
+  \langle \text{Label}: \text{EffSig} \ | \ \epsilon_1 \rangle + \epsilon_2
+  \ | \ \langle \text{Label}: \text{EffSig} \ | \ \epsilon_3 \rangle
+}
+$$
+
+$\tau_1 \rightarrow \tau_2 \ \epsilon$ denotes a function type that accepts an
+argument of type $\tau_1$, returns a value of type $\tau_2$, and may perform the
+effects described by $\epsilon$. The closed-effect-row application rule is:
+
+$$
+\frac{
+  \Gamma \vdash e_1 : \tau_1 \to \tau_2 \ \epsilon_1 \ | \ \epsilon_3
+  \quad
+  \Gamma \vdash e_2 : \tau_1 \ | \ \epsilon_3
+  \quad 
+  \epsilon_1 \text{ is closed}
+  \quad
+  \epsilon_1 + \epsilon_2 \ | \ \epsilon_3
+} {
+  \Gamma \vdash e_1(e_2) : \tau_2 \ | \ \epsilon_3
+}
+$$
+
+Intuitively, if a function may perform the closed effect row $\epsilon_1$, its
+effects can be extended with an arbitrary effect row $\epsilon_2$ to obtain
+$\epsilon_3$.
+
+For example, consider two calls sequenced with (SEQ): `f` has the closed effect
+row `{std.Console}`, and `g` has the closed effect row `{std.Yield}`. Because
+(SEQ) requires both expressions to have the same effect row, the calls in
+`let x = f(...); g(...)` would otherwise be rejected. With (CLOSED-APP), we can
+extend `f`'s row to `{std.Console, std.Yield}` and `g`'s row to
+`{std.Yield, std.Console}`. The sequenced calls are therefore well typed.
+
+#### (OPEN-APP) Open-Effect-Row Application Typing Rule
+
+This rule applies when calling a function with an open effect row:
+
+$$
+\frac{
+  \Gamma \vdash e_1 : \tau_1 \to \tau_2 \ \epsilon \ | \ \epsilon
+  \quad
+  \Gamma \vdash e_2 : \tau_1 \ | \ \epsilon
+  \quad
+  \epsilon \text{ is open}
+} {
+  \Gamma \vdash e_1(e_2) : \tau_2 \ | \ \epsilon
+}
+$$
+
+Here, all effect rows are the same $\epsilon$. Because $\epsilon$ is open, it
+cannot be extended with another effect row. This contrasts with (CLOSED-APP),
+which can extend a closed effect row with another effect row.
+
+The following example illustrates the limitation of the open-effect-row
+application rule. As in the previous example, `f` and `g` are called in
+sequence with (SEQ). This time, `f` has the open effect row
+`{std.Console | E}`, and `g` has the open effect row `{std.Yield | E}`. This
+does not type check.
+
+#### (HANDLER) Effect Handler Typing Rule
+
+This rule describes handling an effect:
+
+$$
+\frac{
+  \Gamma \vdash e_1 : \tau \ | \ \langle \text{Label}: \text{EffSig} \ | \ \epsilon \rangle
+  \quad
+  \Gamma \vdash e_2 : \tau \ | \ \epsilon
+} { 
+  \Gamma \vdash \text{handle } e_1 \text{ with } \text{Label} : \text{EffSig}\ e_2 \ \tau \ | \ \epsilon
+}
+$$
+
+$e_1$ is the expression that may perform the effect, and $e_2$ is the handler
+for that effect.
+
+The rule removes the handled effect slot from the effect row of the expression
+being handled. The resulting row contains the remaining effects.
+
+#### (OP) Effect Operation Typing Rule
+
+This rule describes invoking an effect operation:
+
+$$
+\frac{
+  \Gamma \vdash e : \tau \ | \ \langle \text{Label}: \text{EffSig} \ | \ \epsilon \rangle
+} {
+  \Gamma \vdash \text{Label}.\text{operation}(e) : \tau \ | \ \langle \text{Label}: \text{EffSig} \ | \ \epsilon \rangle
+}
+$$
+
 ## Flix's Set Formula
 
 Flix provides an alternative approach to effect systems through a concept called
@@ -467,4 +710,5 @@ subtyping and region variance. For example, how should boolean unification
 handle `std.Throw[&'a str]` and `std.Throw[&'b str]`?
 
 [flix-aef]: https://dl.acm.org/doi/epdf/10.1145/3656393
-
+[koka-row]: https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/koka-effects-2013.pdf
+[leijen-scoped-labels]: https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/scopedlabels.pdf
