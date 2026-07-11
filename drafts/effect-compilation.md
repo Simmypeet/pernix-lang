@@ -607,5 +607,59 @@ coroutines. This representation has the following characteristics:
 
 ## Handlers 
 
+The most difficult part of effect compilation is already done: we have a 
+representation for suspended computations. The next step is to represent 
+handlers. 
+
+The handlers drive the execution of coroutines by repeatedly polling them and 
+providing answers to their yielded values.
+
+### Searching for the Right Handler
+
+Once the handler polls the coroutine and receives a yielded value, it inspects
+whether the yielded value is one that it can handle. If so, it dispatches the
+yielded value to the appropriate handler function. If not, it propagates the
+yielded value to the next handler in the stack.
+
+### Shallow vs Deep Handler
+
+Deep handler is the desired behavior: once the operation is intercepted by 
+the handler, the handler implicitly wraps the continuation and continues to
+intercept every subsequent operation. This is the behavior of most effect 
+systems since it avoids the need for the programmer to reinstall the handler
+after every operation. 
+
+However, wrapping the handler around the continuation is not trivial in a 
+systems programming language since handler might not outlive the continuation. 
+For example, consider the following code:
+
+```pnx
+let mut escapingResume = None
+scope:
+    let mut number = 0
+    let mut numberRef = &mut number
+
+    do:
+        Yield.yield(1)
+        Yield.yield(2)
+    
+    with:
+        handler Yield:
+            def yield(val):
+                *numberRef += val
+                escapingResume = Some(resume)
+
+# what if we resume the `escapingResume` continuation here assuming that we
+# have a deep handler? The `numberRef` reference is dangling since the scope
+# has already ended.
+```
+
+However, we wouldn't like to have shallow handlers either since it destroys
+the ergonomics. We propose a compromise: when resuming a continuation under
+a handler, the handler is automatically reinstalled since the handler is still
+in scope. Technically, this is a shallow handler, but the handler is only 
+reinstalled when the condition is safe.
+
 [rust-async-fn-recursive]: https://blog.rust-lang.org/2024/03/21/Rust-1.77.0/#support-for-recursion-in-async-fn
 [rust-pin-unpin]: https://blog.cloudflare.com/pin-and-unpin-in-rust/
+
