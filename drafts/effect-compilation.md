@@ -232,4 +232,29 @@ the inner coroutine, breaking the infinite-size cycle. The same issue arises
 with [Rust's `async fn`][rust-async-fn-recursive], where the programmer must
 explicitly box the inner coroutine with `Box::pin`.
 
+### Conclusion on Suspended Computations
+
+We settled on representing suspended computations as stackless state-machine
+coroutines. This representation has the following characteristics:
+
+1. The suspended computation is a first-class value that can be passed around.
+2. The suspended computation is modeled as a mutable state machine whose state
+  is updated in place. This contrasts with many existing effect systems, which
+  model suspended computations as immutable functions.
+3. A downside of this representation is that a continuation can be resumed at
+  most once. This follows from modeling suspended computations as mutable state
+  machines. Multiple resumptions are still possible: one simple approach is to
+  clone the state machine before resuming it. This sacrifices some generality
+  for efficiency, a tradeoff that is common in systems programming languages.
+4. The representation is stackless, meaning that suspending execution does not
+  manipulate the OS stack. This makes it efficient and portable.
+5. As with Rust's `async fn`, we must take great care with pointer stability.
+  The state machine can have interior references, so we need to ensure that
+  the state machine is not moved in memory while it is suspended. This is
+  the primary reason why [`Pin` and `Unpin`][rust-pin-unpin] exist in Rust.
+  However, this will not be a concern for the first prototype.
+
+## Handlers 
+
 [rust-async-fn-recursive]: https://blog.rust-lang.org/2024/03/21/Rust-1.77.0/#support-for-recursion-in-async-fn
+[rust-pin-unpin]: https://blog.cloudflare.com/pin-and-unpin-in-rust/
