@@ -1,34 +1,33 @@
 # Effect Compilation
 
-The main focus of the compilation is two fold:
+Effect compilation has two main concerns:
 
-1. How to represent the suspended computations efficiently in a system level programming language?
-2. How to represent the handlers that can intercept the operations?
+1. How can suspended computations be represented efficiently in a systems programming language?
+2. How can handlers that intercept operations be represented?
 
 ## Suspended Computations
 
 ### Rust `async fn` State Machine Case Study
 
-Rust `async fn` is a good and well-known case study for lowering suspendable
-code into an efficient representation. In Rust, every `await` point is a
-suspension point that stops the execution and returns control back to the
-caller. When the caller resumes the execution, the control flows back to the
-latest suspension point and continues the execution from there.
+Rust's `async fn` is a well-known example of lowering suspendable code into an
+efficient representation. In Rust, every `await` is a suspension point: it
+pauses execution and returns control to the caller. When the caller resumes
+execution, control returns to the most recent suspension point and continues
+from there.
 
-Rust lowers the `async fn` into a state machine that is represented as a normal
-efficient struct. The state machine is a first-class value and can be 
-passed around (with some nuances of `Pin` and `Unpin` types, but generally it 
-is a first-class value).
+Rust lowers an `async fn` into a state machine represented by an ordinary,
+efficient struct. The state machine is generally a first-class value that can
+be passed around, subject to the usual `Pin` and `Unpin` considerations.
 
-Rust doesn't manipulate the **OS Stack/Thread** to suspend the execution and
-treat the suspended computation as a first-class value. That's why they are
+Rust does not manipulate the **OS stack or thread** to suspend execution or to
+treat a suspended computation as a first-class value. This is why these are
 called **stackless** state machines.
 
 ### Stackless State Machine Coroutines
 
-Building on top of the Rust `async fn` state machine, we can represent the 
-effectful code using **stackless state machine coroutines**. We'll use 
-**coroutines** as the main representation of the effectful code.
+Building on Rust's `async fn` state-machine model, we can represent effectful
+code as **stackless state-machine coroutines**. We will use **coroutines** as
+the primary representation of effectful code.
 
 Rust's `Coroutine` trait is a good starting point:
 
@@ -49,11 +48,11 @@ pub trait Coroutine<R> {
 }
 ```
 
-Suppose we have an effect signature like this:
+Suppose we have the following effect signature:
 
 ```pnx
 pub eff Random:
-    fn nromal(range: Range[int32]) -> int32
+    fn normal(range: Range[int32]) -> int32
 ```
 
 And we have an effectful function that uses this effect by querying two
@@ -61,13 +60,13 @@ random numbers and returning their sum:
 
 ```pnx
 pub def addTwoRandoms() -> int32 \ {Random}:
-    let a = do Random.nromal(0..100)
-    let b = do Random.nromal(100..200)
+    let a = do Random.normal(0..100)
+    let b = do Random.normal(100..200)
     return a + b
 ```
 
-If we lower this effectful function into a coroutine code, it would still look
-very similar to the original code:
+Lowering this function to coroutine code produces something very similar to
+the original:
 
 ```pnx
 pub coroutine[yield Range[int32], resume int32] addTwoRandoms() -> int32:
@@ -76,7 +75,7 @@ pub coroutine[yield Range[int32], resume int32] addTwoRandoms() -> int32:
     return a + b
 ```
 
-If we lower this coroutine code into a Rust-ish state machine code, it would look like this:
+Lowering that coroutine to Rust-like state-machine code gives us:
 
 ```rust
 pub enum AddTwoRandomsState {
@@ -118,8 +117,9 @@ impl Coroutine<i32> for AddTwoRandomsState {
 }
 ```
 
-Of course, a function can perform multiple distinct operations, we can encode
-the `Yield` type as a sum type of all the operations that the function can perform. For example, if we have two effects `Random` and `Log`, we can encode the `Yield` type as follows:
+A function can, of course, perform multiple distinct operations. We can encode
+its `Yield` type as a sum type over every operation it may perform. For
+example, for the `Random` and `Log` effects:
 
 ```rust
 pub enum YieldType {
@@ -128,7 +128,9 @@ pub enum YieldType {
 }
 ```
 
-And consequently, the `R` resume type can also be a sum type of all the return types of the operations. For example, if `Random` returns `i32` and `Log` returns `()`, we can encode the `Return` type as follows:
+Correspondingly, the `R` resume type can be a sum type over the operations'
+return types. If `Random` returns `i32` and `Log` returns `()`, we can encode
+the `Return` type as follows:
 
 ```rust
 pub enum ReturnType {
@@ -139,13 +141,13 @@ pub enum ReturnType {
 
 ### Nested Coroutines and Recursion
 
-Is it common that an effectful operation is called deep down in the call stack.
-For instance, this example shows a function that calls another effectful function:
+Effectful operations are commonly invoked deep in the call stack. For example,
+the following function calls another effectful function:
 
 ```pnx
 pub def addTwoRandoms() -> int32 \ {Random}:
-    let a = do Random.nromal(0..100)
-    let b = do Random.nromal(100..200)
+    let a = do Random.normal(0..100)
+    let b = do Random.normal(100..200)
     return a + b
 
 pub def addFourRandoms() -> int32 \ {Random}:
@@ -154,7 +156,7 @@ pub def addFourRandoms() -> int32 \ {Random}:
     return a + b
 ```
 
-WHen we lower this code into a coroutine code, it would look like this:
+Lowering this code to coroutines gives us:
 
 ```pnx
 pub coroutine[yield Range[Int32], resume int32] addFourRandoms() -> int32:
@@ -188,27 +190,27 @@ pub coroutine[yield Range[Int32], resume int32] addFourRandoms() -> int32:
     return a + b
 ```
 
-Generally, we repeatedly poll the inner coroutine and propagate their yielded
-values to the outer coroutine. Once the inner coroutine completes, we can use its returned value to continue the execution.
+In general, we repeatedly poll the inner coroutine and propagate its yielded
+values through the outer coroutine. Once the inner coroutine completes, its
+return value lets the outer coroutine continue execution.
 
-The generated state machine code for the `addFourRandoms` function would 
-look like this:
+The generated state-machine representation of `addFourRandoms` would look like
+this:
 
 ```rust
 pub enum AddFourRandomsState {
     Start,
     PollingFirstAddTwoRandoms { first_coro: AddTwoRandomsState },
-    PollingSecondAddTwoRandoms { first_result: i32, second_coro AddTwoRandomsState },
+    PollingSecondAddTwoRandoms { first_result: i32, second_coro: AddTwoRandomsState },
     Returned,
 }
 ```
 
-We wouldn't go into the details of the translated function of the above 
-coroutine. The main idea is that we can represent the nested coroutines as a
-composition of generated enumerated states. 
+We will not examine the full translation of this coroutine. The key idea is
+that nested coroutines can be represented by composing generated enum states.
 
-We can quickly see why recursive coroutines are problematic and requires 
-indirection. For example, if we have a recursive function like this:
+This also shows why recursive coroutines are problematic: they require
+indirection. For example, consider this recursive function:
 
 ```pnx
 pub def effectfulCode() -> int32 \ {Random}:
@@ -225,10 +227,9 @@ pub enum EffectfulCodeState {
 }
 ```
 
-The above code is the classic infinite recursive type and the usual treatment
-is to box the inner coroutine to break the infinite recursion type size. The
-same problem is also present in [Rust's `async fn`][rust-async-fn-recursive] 
-and they require programmer to explicitly box (`Box::pin`) the inner coroutine 
-to break the infinite recursive type size.
+This is the classic infinitely recursive type. The usual solution is to box
+the inner coroutine, breaking the infinite-size cycle. The same issue arises
+with [Rust's `async fn`][rust-async-fn-recursive], where the programmer must
+explicitly box the inner coroutine with `Box::pin`.
 
 [rust-async-fn-recursive]: https://blog.rust-lang.org/2024/03/21/Rust-1.77.0/#support-for-recursion-in-async-fn
