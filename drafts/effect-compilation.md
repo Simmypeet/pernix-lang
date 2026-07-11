@@ -235,51 +235,30 @@ the inner coroutine, breaking the infinite-size cycle. The same issue arises
 with [Rust's `async fn`][rust-async-fn-recursive], where the programmer must
 explicitly box the inner coroutine with `Box::pin`.
 
-### Conclusion on Suspended Computations
+### Lowering the Coroutine Language into a Stackless State Machine
 
-We settled on representing suspended computations as stackless state-machine
-coroutines. This representation has the following characteristics:
+We must define a lowering pass that operates on a CFG with the following
+properties:
 
-1. The suspended computation is a first-class value that can be passed around.
-2. The suspended computation is modeled as a mutable state machine whose state
-  is updated in place. This contrasts with many existing effect systems, which
-  model suspended computations as immutable functions.
-3. A downside of this representation is that a continuation can be resumed at
-  most once. This follows from modeling suspended computations as mutable state
-  machines. Multiple resumptions are still possible: one simple approach is to
-  clone the state machine before resuming it. This sacrifices some generality
-  for efficiency, a tradeoff that is common in systems programming languages.
-4. The representation is stackless, meaning that suspending execution does not
-  manipulate the OS stack. This makes it efficient and portable.
-5. As with Rust's `async fn`, we must take great care with pointer stability.
-  The state machine can have interior references, so we need to ensure that
-  the state machine is not moved in memory while it is suspended. This is
-  the primary reason why [`Pin` and `Unpin`][rust-pin-unpin] exist in Rust.
-  However, this will not be a concern for the first prototype.
+1. Each *yield* instruction terminates its basic block. This naturally
+  partitions the CFG into regions separated by suspension points. Polling a
+  nested coroutine is also a suspension point, so, for simplicity, we treat it
+  like a yield instruction.
+2. At each yield instruction, we know which variables remain live because they
+  are used after the yield. These variables must be stored in the state machine
+  so that they are available when the coroutine resumes. A standard liveness
+  analysis can compute this set.
 
-### Lowering Coroutines Language Into a Stackless State Machine
+The lowering pass takes such a CFG and produces two components:
 
-We must define a pass that takes a CFG that has following properties:
-
-1. Has a *yield* instruction as a terminal instruction in a block. This nicely
-  partitions the CFG into blocks that are separated by suspension points. 
-  Polling nested coroutines is also considered a suspension point, so we'll 
-  treat them as yield instructions as well for the sake of simplicity.
-2. At each yield instruction, we must have a set of "live" variables that are
-  used after the yield. These variables must be saved in the state machine so
-  that they can be restored when the coroutine is resumed. Of course, this 
-  can be done with a simple liveness analysis pass.
-
-We'll then have a pass that takes such CFG and produces three components:
-
-1. A sum type state machine that represents the coroutine's state.
-3. A `step` function that dispatches on the state machine and executes the next 
+1. A sum type that represents the coroutine's state.
+2. A `step` function that dispatches on the state machine and executes the next
   block of code.
 
-The `step` functions will have these following signatures:
+The `step` function has the following signature:
 
 ```rust
-// for instance if we have the following effect signature
+// For example, suppose we have the following effect signatures:
 // 
 // pub eff Random:
 //   fn normal(range: Range[int32]) -> int32
@@ -287,8 +266,8 @@ The `step` functions will have these following signatures:
 // pub eff Log:
 //   fn log(msg: String) -> Unit
 //
-// and the effectful function has the following effect row {Random, Log}
-// then the YieldType and AnswerType will be as follows:
+// If an effectful function has the effect row {Random, Log}, its YieldType and
+// AnswerType are as follows:
 pub enum YieldType {
     RandomYield(Range<i32>),
     LogYield(String),
@@ -299,32 +278,30 @@ pub enum AnswerType {
     LogAnswer(()),
 }
 
-// whereas CoroutineState is defined as
+// CoroutineState is defined as follows:
 pub enum CoroutineState<Y, R> {
     Yielded(Y),
     Complete(R),
 }
 
-// the `FuncRetType` is the original return type of the effectful function
+// `FuncRetType` is the original return type of the effectful function.
 fn coro_step(coro: &mut Coro, handler_answer: AnswerType) 
     -> CoroutineState<YieldType, FuncRetType>
 ```
 
-Certainly, we'll have to generate `YieldType` and `AnswerType` for each
-effect row, but the details of that are not important for this discussion. 
+We must generate `YieldType` and `AnswerType` for each effect row, but those
+details are not important to this discussion.
 
-Surprisingly, the transformation from a CFG to `coro_step` is not too difficult.
+The transformation from a CFG to `coro_step` is relatively straightforward:
 
-1. For each variable that lives across a yield instruction, those variables will
-  live on the state machine instead of the native call stack. Meaning that 
-  memory load/store instructions on those variables will be replaced with memory 
-  load/store instructions on the state machine. This transformation should be
-  very straightforward.
-2. Yield instructions (located at terminal instructions) will be replaced with 
-  state machine updates and a `CoroutineState::Yielded` return.
-3. The `coro_step` function will have a `match` statement at the entry point
-  that dispatches on the state machine. Each branch of the `match` statement
-  will correspond to an unconditional jump to a basic block in the CFG.
+1. Variables that remain live across a yield are stored in the state machine
+  rather than on the native call stack. Loads and stores of these variables are
+  therefore rewritten to access the state machine's storage.
+2. Each yield instruction is replaced by a state-machine update followed by a
+  `CoroutineState::Yielded` return.
+3. At its entry point, `coro_step` uses a `match` statement to dispatch on the
+  current state. Each branch unconditionally jumps to the corresponding basic
+  block in the CFG.
 
 #### Compilation Example
 
@@ -359,16 +336,15 @@ pub def yieldAccumulateStep(nums: Vector[Int32]) -> Unit \ {Yield}:
                 return
 ```
 
-Assuming we have a `Yield` handler that prints out the yielded values and 
-always returns `true` and the input to the function is `[1, 2, 3]`, we would 
-expect the following output:
+Suppose a `Yield` handler prints every yielded value and always returns `true`.
+Given `[1, 2, 3]` as input, we would expect the following output:
 
 ```
 0 1 3 6
 ```
 
-Now transform this into an ordinary CFG with yield instructions as terminal
-instructions:
+We first transform the function into an ordinary CFG in which each yield
+instruction terminates its basic block:
 
 ```
 start:
@@ -412,7 +388,7 @@ if2_true:
     goto loop_header
 ```
 
-The generated state machine enum will look like this:
+The generated state-machine enum might initially look like this:
 
 ```rust
 enum CoroutineState {
@@ -432,8 +408,8 @@ enum CoroutineState {
 }
 ```
 
-However, the shown enum is generally for illustration. In practice, it should
-have been something like this:
+This enum is only illustrative. In practice, we would use a separate state tag
+and frame, as follows:
 
 ```rust
 pub enum State {
@@ -445,13 +421,12 @@ pub enum State {
 
 pub struct CoroutineState {
     state: State,
-    // Frame is some stack storage that can contain all the live variables at 
-    // each yield point. 
-    frame: Frame, 
+    // Frame is storage that can contain all variables live at each yield point.
+    frame: Frame,
 }
 ```
 
-And the step function will look like this in CFG form.
+In CFG form, the step function then looks like this:
 
 ```
 entry:
@@ -509,11 +484,10 @@ if2_true:
     goto loop_header
 ```
 
-One can see that the `coro_step` function is almost identical to the original 
-CFG.
+The resulting `coro_step` function closely resembles the original CFG.
 
-We would like to include one more example of an effectful function that calls 
-another effectful function. The following code is a simple example of that:
+The transformation becomes slightly more involved when one effectful function
+calls another. Consider the following example:
 
 ```pnx
 pub def yieldAccumulateStep(nums: Vector[Int32]) -> Unit \ {Yield}:
@@ -525,20 +499,20 @@ pub def indirect() -> Unit \ {Yield}:
     return result
 ```
 
-The generated state machine enum will look like this:
+The generated state-machine enum looks like this:
 
 ```rust
 pub enum CoroutineState {
     Start,
     PollingYieldAccumulateStep {
         yieldAccumulateStepCoro: YieldAccumulateStepState,
-    }
+    },
     Done,
 }
 ```
 
-
-The following is the `coro_step` function of `indirect` should give you a clearer picture of how this works:
+The `coro_step` function for `indirect` illustrates how the outer coroutine
+drives the inner one:
 
 ```
 entry:
@@ -582,32 +556,54 @@ yield_point_1:
     return CoroutineState.Complete(result)
 ```
 
-The transformation is a bit more involved, but the key idea is that:
+The key steps are as follows:
 
-1. When encountering call to effectful function, we obtain the coroutine state
-  machine and calls its `coro_step` function with the `AnswerType.Start` value. 
-  If the result is a `CoroutineState::Yielded`, we propagate that yield to the
-  caller. If the result is a `CoroutineState::Complete`, we continue execution.
-2. After the first `coro_step` call, we enter a polling loop that repeatedly 
-  calls the inner coroutine's `coro_step` function with the `handler_answer` 
-  value. Similarly, if the result is a `CoroutineState::Yielded`, we propagate 
-  that yield and if it's complete, we continue execution.
+1. When we encounter a call to an effectful function, we create its coroutine
+  state machine and call its `coro_step` function with `AnswerType::Start`. If
+  it returns `CoroutineState::Yielded`, we propagate the yield to the caller.
+  If it returns `CoroutineState::Complete`, we continue executing the outer
+  coroutine.
+2. After the initial `coro_step` call, the outer coroutine repeatedly polls the
+  inner coroutine with `handler_answer`. Each yielded value is propagated to
+  the caller. Once the inner coroutine completes, execution continues in the
+  outer coroutine.
 
 #### Conclusion on Lowering Coroutines
 
-This shows the main idea of lowering a CFG with yield instructions into a 
-`coro_step` function. The nuances of the transformation haven't discussed here
-are:
+This demonstrates the central idea behind lowering a CFG with yield
+instructions into a `coro_step` function. Two details remain to be addressed:
 
-1. The cleanup of the state machine if the coroutine is dropped before it 
-  completes. Apart from `coro_step`, we will also generate a `coro_drop` 
-  function that dispatches on the state machine and drops all the live 
-  variables. Moreover, it gets a bit more complicated if the live variables
-  are partially moved/initialized. This should be a straightforward extension.
-2. Generating a space-optimized `Frame` struct that can hold all the live 
-  variables at each yield point. There are some tedious requirements to ensure
-  that the variables are properly aligned and that those variables stored on
-  the frame should be pinned in memory..
+1. We must clean up the state machine if the coroutine is dropped before it
+  completes. In addition to `coro_step`, we will generate a `coro_drop`
+  function that dispatches on the current state and drops every live variable.
+  Partially moved or initialized variables make this logic more involved, but
+  the same basic approach still applies.
+2. We must generate a space-efficient `Frame` struct capable of storing the
+  variables live at each yield point. The frame must lay out and align these
+  variables correctly, and any frame values that require a stable address must
+  remain pinned in memory.
+
+### Conclusion on Suspended Computations
+
+We settled on representing suspended computations as stackless state-machine
+coroutines. This representation has the following characteristics:
+
+1. The suspended computation is a first-class value that can be passed around.
+2. The suspended computation is modeled as a mutable state machine whose state
+  is updated in place. This contrasts with many existing effect systems, which
+  model suspended computations as immutable functions.
+3. A downside of this representation is that a continuation can be resumed at
+  most once. This follows from modeling suspended computations as mutable state
+  machines. Multiple resumptions are still possible: one simple approach is to
+  clone the state machine before resuming it. This sacrifices some generality
+  for efficiency, a tradeoff that is common in systems programming languages.
+4. The representation is stackless, meaning that suspending execution does not
+  manipulate the OS stack. This makes it efficient and portable.
+5. As with Rust's `async fn`, we must take great care with pointer stability.
+  The state machine can have interior references, so we need to ensure that
+  the state machine is not moved in memory while it is suspended. This is
+  the primary reason why [`Pin` and `Unpin`][rust-pin-unpin] exist in Rust.
+  However, this will not be a concern for the first prototype.
 
 ## Handlers 
 
