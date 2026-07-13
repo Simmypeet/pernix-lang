@@ -605,33 +605,30 @@ coroutines. This representation has the following characteristics:
   the primary reason why [`Pin` and `Unpin`][rust-pin-unpin] exist in Rust.
   However, this will not be a concern for the first prototype.
 
-## Handlers 
+## Handlers
 
-The most difficult part of effect compilation is already done: we have a 
-representation for suspended computations. The next step is to represent 
-handlers. 
+The most difficult part of effect compilation is already complete: we have a
+representation for suspended computations. The next step is to represent the
+handlers that drive these computations.
 
-The handlers drive the execution of coroutines by repeatedly polling them and 
-providing answers to their yielded values.
+A handler repeatedly polls a coroutine and responds to the values it yields.
 
 ### Searching for the Right Handler
 
-Once the handler polls the coroutine and receives a yielded value, it inspects
-whether the yielded value is one that it can handle. If so, it dispatches the
-yielded value to the appropriate handler function. If not, it propagates the
-yielded value to the next handler in the stack.
+After polling a coroutine, a handler checks whether it can process the yielded
+value. If it can, it dispatches the value to the appropriate handler function.
+Otherwise, it propagates the value to the next handler in the stack.
 
-### Shallow vs Deep Handler
+### Shallow vs. Deep Handlers
 
-Deep handler is the desired behavior: once the operation is intercepted by 
-the handler, the handler implicitly wraps the continuation and continues to
-intercept every subsequent operation. This is the behavior of most effect 
-systems since it avoids the need for the programmer to reinstall the handler
-after every operation. 
+A deep handler provides the desired behavior: after intercepting an operation,
+it implicitly wraps the continuation and continues to intercept subsequent
+operations. Most effect systems use this behavior because it avoids requiring
+the programmer to reinstall the handler after every operation.
 
-However, wrapping the handler around the continuation is not trivial in a 
-systems programming language since handler might not outlive the continuation. 
-For example, consider the following code:
+In a systems programming language, however, wrapping a handler around a
+continuation is not straightforward because the handler might not outlive the
+continuation. Consider the following code:
 
 ```pnx
 let mut escapingResume = None
@@ -649,17 +646,101 @@ scope:
                 *numberRef += val
                 escapingResume = Some(resume)
 
-# what if we resume the `escapingResume` continuation here assuming that we
-# have a deep handler? The `numberRef` reference is dangling since the scope
-# has already ended.
+# What happens if we resume the `escapingResume` continuation here under the
+# assumption that the handler is deep? The `numberRef` reference is dangling
+# because its scope has already ended.
 ```
 
-However, we wouldn't like to have shallow handlers either since it destroys
-the ergonomics. We propose a compromise: when resuming a continuation under
-a handler, the handler is automatically reinstalled since the handler is still
-in scope. Technically, this is a shallow handler, but the handler is only 
-reinstalled when the condition is safe.
+Purely shallow handlers would also be undesirable because they make effectful
+code cumbersome to write. We therefore propose a compromise: when a
+continuation is resumed from within a handler, that handler is automatically
+reinstalled. At that point, the handler is still in scope, so reinstalling it is
+safe. This approach is technically shallow, but it provides deep-handler-like
+ergonomics whenever the handler can be safely reinstalled.
+
+### Lowering Handlers
+
+Lowering handlers is relatively straightforward. Consider the following
+effectful computation, which handles the `Random` and `Throw` effects:
+
+```pnx
+do:
+    someEffectfulFunction() # has an effect row {Random, Throw, Yield}
+with:
+    handler Random:
+        def normal(range):
+            resume(1)
+
+    handler Throw:
+        def throw(err):
+            do Throw.throw(err) # rethrow the error to the next handler
+```
+
+We lower this code into the following coroutine representation. `YieldType`
+represents the operations that the computation can yield, while `AnswerType`
+represents the values with which it can be resumed:
+
+```
+enum YieldType:
+    RandomYield(Range[int32]),
+    ThrowYield(ErrorType),
+    YieldYield(int32)
+
+enum AnswerType:
+    Start,
+    RandomAnswer(int32),
+    ThrowAnswer(!), # cannot resume a throw
+    YieldAnswer(Bool)
+
+coroutine[yield YieldType, resume AnswerType] handle(
+    yieldType: YieldType,
+    effectfulCoro: Coroutine[yield YieldType, resume AnswerType] -> Unit
+):
+    match yieldType:
+        as YieldType.RandomYield(range): # corresponds to the `Random` handler
+            rehandle(AnswerType.RandomAnswer(1), effectfulCoro) # resume with 1
+
+        as YieldType.ThrowYield(err): # corresponds to the `Throw` handler
+            yield YieldType.ThrowYield(err)
+
+        as _: # no handler for this yield type, propagate to the next handler
+            yield yieldType
+
+coroutine[yield YieldType, resume AnswerType] rehandle(
+    answerType: AnswerType,
+    effectfulCoro: Coroutine[yield YieldType, resume AnswerType] -> Unit
+):
+    let @pollRes = coro.resume(answerType)
+
+    match @pollRes:
+        as CoroutineState.Complete: 
+            return CoroutineState.Complete(@pollRes)
+        as CoroutineState.Yielded(yieldType): 
+            let handleCoro = handle(yieldType, effectfulCoro)
+            let mut @handleCoroAns = AnswerType.Start
+
+            loop:
+                let @pollRes = handleCoro.resume(@handleCoroAns)
+
+                match @pollRes:
+                    as CoroutineState.Complete: 
+                        return CoroutineState.Complete(@pollRes)
+                    as CoroutineState.Yielded(yieldType): 
+                        @handleCoroAns = yield yieldType
+```
+
+The `handle` coroutine dispatches operations to the appropriate handler and
+propagates unhandled operations to the next handler. When a handler resumes the
+effectful computation, `rehandle` polls it and passes each subsequent operation
+back to `handle`. This interaction provides the deep-handler-like behavior
+described above.
+
+However, `handle` and `rehandle` are mutually recursive coroutines: they
+repeatedly poll the effectful coroutine and the handler coroutine. This
+recursion requires boxing, which we want to avoid. Whether we can provide the
+same deep-handler-like behavior without boxing remains an open question.
+
 
 [rust-async-fn-recursive]: https://blog.rust-lang.org/2024/03/21/Rust-1.77.0/#support-for-recursion-in-async-fn
 [rust-pin-unpin]: https://blog.cloudflare.com/pin-and-unpin-in-rust/
-
+[koka-evidence-passing]: https://dl.acm.org/doi/abs/10.1145/3473576
