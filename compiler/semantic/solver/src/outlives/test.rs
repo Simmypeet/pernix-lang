@@ -14,7 +14,9 @@ use pernixc_type::{
         Type2,
         bound::{Binder, BoundVariable},
         constructor::{Lifetime, Primitive},
+        inference::InferenceVariable,
         kind::TyKind,
+        universe::UniverseIndex,
     },
 };
 use qbice::{
@@ -259,6 +261,34 @@ async fn symbolic_instance_arguments_are_components() {
     assert!(!prove(&premise, subject.clone(), bound.clone(), &engine).await);
     premise.insert(outlives(argument, bound.clone()));
     assert!(prove(&premise, subject, bound, &engine).await);
+}
+
+// input: {X: ?signature | ?tail}
+// premise: both row arguments are free variables
+// output: components [?signature, ?tail]
+#[tokio::test]
+async fn effect_row_arguments_are_outlives_components() {
+    let engine = create_engine().await;
+    let signature = Type2::new_inference_variable(
+        InferenceVariable::new(
+            0,
+            TyKind::EffectSignature,
+            UniverseIndex::root(),
+        ),
+        &engine,
+    );
+    let tail = Type2::new_inference_variable(
+        InferenceVariable::new(1, TyKind::EffectRow, UniverseIndex::root()),
+        &engine,
+    );
+    let row = Type2::new_effect_row_extend(
+        engine.intern_unsized("X".to_owned()),
+        signature.clone(),
+        tail.clone(),
+        &engine,
+    );
+
+    assert_eq!(super::outlives_components(&row), vec![signature, tail]);
 }
 
 // input: for<'a> fn(&'a bool, T): 'bound

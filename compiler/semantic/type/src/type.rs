@@ -10,9 +10,9 @@ use crate::{
     r#type::{
         bound::{Binder, BoundVariable},
         constructor::{
-            AnonymousTraitInstance, Application, Constructor, FunctionPointer,
-            InstanceAssociated, Lifetime, Mutability, Primitive, Reference,
-            Symbolic, Tuple,
+            AnonymousTraitInstance, Application, Constructor, EffectRowExtend,
+            FunctionPointer, InstanceAssociated, Lifetime, Mutability,
+            Primitive, Reference, Symbolic, Tuple,
         },
         inference::InferenceVariable,
         skolem::SkolemizedVariable,
@@ -217,6 +217,28 @@ impl Type2 {
         )
     }
 
+    /// Interns an effect-row extension. The effect signature is the first
+    /// argument and the row tail is the second argument.
+    #[must_use]
+    pub fn new_effect_row_extend(
+        label: Interned<str>,
+        effect_signature: Interned<Self>,
+        row_tail: Interned<Self>,
+        engine: &TrackedEngine,
+    ) -> Interned<Self> {
+        Self::new_application(
+            Constructor::EffectRowExtend(EffectRowExtend::new(label)),
+            [effect_signature, row_tail],
+            engine,
+        )
+    }
+
+    /// Interns the closed empty effect row.
+    #[must_use]
+    pub fn new_effect_row_empty(engine: &TrackedEngine) -> Interned<Self> {
+        Self::new_application(Constructor::EffectRowEmpty, [], engine)
+    }
+
     /// Interns the anonymous instance of a trait.
     #[must_use]
     pub fn new_anonymous_trait_instance(
@@ -357,5 +379,121 @@ impl Type2 {
 
             Self::Application(application) => application.max_universe(),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use pernixc_qbice::create_minimal_engine as create_engine;
+
+    use super::*;
+    use crate::r#type::{
+        inference::InferenceVariable, skolem::SkolemizedVariable,
+    };
+
+    // input: effect-signature inference/skolem and effect-row binder entries
+    // premise: {}
+    // output: each representation retains its effect kind
+    #[tokio::test]
+    async fn variable_representations_accept_effect_kinds() {
+        let engine = create_engine().await;
+        let inference = InferenceVariable::new(
+            0,
+            kind::TyKind::EffectSignature,
+            UniverseIndex::root(),
+        );
+        let skolem = SkolemizedVariable::new(
+            1,
+            kind::TyKind::EffectRow,
+            UniverseIndex::root(),
+        );
+        let binder = Binder::new(engine.intern_unsized(vec![
+            kind::TyKind::EffectSignature,
+            kind::TyKind::EffectRow,
+        ]));
+        let bound_signature =
+            Type2::new_bound_variable(BoundVariable::new(0, 0), &engine);
+        let bound_row =
+            Type2::new_bound_variable(BoundVariable::new(0, 1), &engine);
+        let replacements = [
+            Type2::new_inference_variable(inference, &engine),
+            Type2::new_skolemized_variable(skolem, &engine),
+        ];
+
+        assert_eq!(inference.kind(), kind::TyKind::EffectSignature);
+        assert_eq!(skolem.kind(), kind::TyKind::EffectRow);
+        assert_eq!(binder.kinds().collect::<Vec<_>>(), vec![
+            kind::TyKind::EffectSignature,
+            kind::TyKind::EffectRow
+        ]);
+        assert_eq!(
+            binder.instantiate(&bound_signature, &replacements, &engine),
+            replacements[0]
+        );
+        assert_eq!(
+            binder.instantiate(&bound_row, &replacements, &engine),
+            replacements[1]
+        );
+    }
+
+    // input: {X: ?signature | ?tail}
+    // premise: both arguments are inference variables
+    // output: occurs traversal finds either variable by predicate
+    #[tokio::test]
+    async fn effect_row_occurs_traversal_visits_both_arguments() {
+        let engine = create_engine().await;
+        let signature = InferenceVariable::new(
+            0,
+            kind::TyKind::EffectSignature,
+            UniverseIndex::root(),
+        );
+        let tail = InferenceVariable::new(
+            1,
+            kind::TyKind::EffectRow,
+            UniverseIndex::root(),
+        );
+        let row = Type2::new_effect_row_extend(
+            engine.intern_unsized("X".to_owned()),
+            Type2::new_inference_variable(signature, &engine),
+            Type2::new_inference_variable(tail, &engine),
+            &engine,
+        );
+
+        assert!(
+            row.contains_inference_variable_matching(|var| var == signature)
+        );
+        assert!(row.contains_inference_variable_matching(|var| var == tail));
+    }
+
+    // input: {X: ?signature@U1 | ?tail@U2}
+    // premise: U2 is deeper than U1
+    // output: U2
+    #[tokio::test]
+    async fn effect_row_max_universe_visits_both_arguments() {
+        let engine = create_engine().await;
+        let lower_universe = UniverseIndex::root().next();
+        let higher_universe = lower_universe.next();
+        let row = Type2::new_effect_row_extend(
+            engine.intern_unsized("X".to_owned()),
+            Type2::new_inference_variable(
+                InferenceVariable::new(
+                    0,
+                    kind::TyKind::EffectSignature,
+                    lower_universe,
+                ),
+                &engine,
+            ),
+            Type2::new_inference_variable(
+                InferenceVariable::new(
+                    1,
+                    kind::TyKind::EffectRow,
+                    higher_universe,
+                ),
+                &engine,
+            ),
+            &engine,
+        );
+
+        assert_eq!(row.max_universe(), higher_universe);
     }
 }

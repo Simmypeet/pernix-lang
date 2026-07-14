@@ -215,7 +215,8 @@ impl Solver<'_> {
     /// Creates a substitution from every generic parameter owned by
     /// `symbol_id` to a fresh inference variable of the same kind.
     ///
-    /// This includes lifetime, type, and instance parameters.
+    /// This includes lifetime, type, instance, effect-signature, and effect-row
+    /// parameters.
     pub async fn fresh_generic_substitution(
         &mut self,
         symbol_id: GlobalSymbolID,
@@ -232,7 +233,8 @@ impl Solver<'_> {
     /// Creates a substitution from the supplied generic parameters to fresh
     /// inference variables of the same kinds.
     ///
-    /// This includes lifetime, type, and instance parameters.
+    /// This includes lifetime, type, instance, effect-signature, and effect-row
+    /// parameters.
     pub fn fresh_generic_substitution_with_parameters(
         &mut self,
         symbol_id: GlobalSymbolID,

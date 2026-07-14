@@ -91,7 +91,9 @@ impl Solver<'_> {
                 | Constructor::Symbolic(_)
                 | Constructor::Tuple(_)
                 | Constructor::FunctionPointer(_)
-                | Constructor::AnonymousTraitInstance(_) => {
+                | Constructor::AnonymousTraitInstance(_)
+                | Constructor::EffectRowExtend(_)
+                | Constructor::EffectRowEmpty => {
                     ResolveStrategy::DeferResolution
                 }
             };
@@ -197,7 +199,9 @@ impl Solver<'_> {
                 ))
                 .await
             }
-
+            Constructor::EffectRowExtend(_) | Constructor::EffectRowEmpty => {
+                Ok(None)
+            }
             Constructor::InstanceAssociated(_) => {
                 Box::pin(
                     self.handle_set_of_relations(

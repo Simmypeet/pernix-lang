@@ -377,7 +377,9 @@ const fn argument_context(
         | Constructor::Reference(_)
         | Constructor::Tuple(_)
         | Constructor::AnonymousTraitInstance(_)
-        | Constructor::InstanceAssociated(_) => ctx,
+        | Constructor::InstanceAssociated(_)
+        | Constructor::EffectRowExtend(_)
+        | Constructor::EffectRowEmpty => ctx,
     }
 }
 

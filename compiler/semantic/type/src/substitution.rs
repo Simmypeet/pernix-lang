@@ -211,3 +211,58 @@ pub trait InPlaceSubstitutable {
         interner: &impl Interner,
     );
 }
+
+#[cfg(test)]
+mod test {
+    use pernixc_qbice::create_minimal_engine as create_engine;
+
+    use super::*;
+    use crate::r#type::{
+        constructor::Primitive, kind::TyKind, universe::UniverseIndex,
+    };
+
+    // input: {X: ?signature | ?tail} with both variables substituted
+    // premise: ?signature -> bool, ?tail -> {}
+    // output: {X: bool | {}}
+    #[tokio::test]
+    async fn substitution_recurses_through_both_effect_row_arguments() {
+        let engine = create_engine().await;
+        let signature_variable = InferenceVariable::new(
+            0,
+            TyKind::EffectSignature,
+            UniverseIndex::root(),
+        );
+        let tail_variable =
+            InferenceVariable::new(1, TyKind::EffectRow, UniverseIndex::root());
+        let label: Interned<str> = engine.intern_unsized("X".to_owned());
+        let row = Type2::new_effect_row_extend(
+            label.clone(),
+            Type2::new_inference_variable(signature_variable, &engine),
+            Type2::new_inference_variable(tail_variable, &engine),
+            &engine,
+        );
+        let replacement_signature =
+            Type2::new_primitive(Primitive::Bool, &engine);
+        let replacement_tail = Type2::new_effect_row_empty(&engine);
+        let mut substitution = Substitution::singleton(
+            signature_variable,
+            replacement_signature.clone(),
+        );
+        substitution.merge(&Substitution::singleton(
+            tail_variable,
+            replacement_tail.clone(),
+        ));
+
+        let substituted = row.apply_or_clone(&substitution, &engine);
+
+        assert_eq!(
+            substituted,
+            Type2::new_effect_row_extend(
+                label,
+                replacement_signature,
+                replacement_tail,
+                &engine,
+            )
+        );
+    }
+}

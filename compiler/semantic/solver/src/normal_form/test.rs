@@ -201,6 +201,38 @@ async fn rejects_direct_instance_inference_variable() {
     assert_eq!(solver.normal_form(inference).await.unwrap(), None);
 }
 
+// input: infer_effect_signature(0)
+// premise: {}
+// output: None
+#[tokio::test]
+async fn rejects_direct_effect_signature_inference_variable() {
+    let engine = create_test_engine().await;
+    let premise = Premise::default();
+    let mut solver = Solver::new(&premise, &engine);
+    let inference = Type2::new_inference_variable(
+        solver.fresh_inference_variable(TyKind::EffectSignature),
+        &engine,
+    );
+
+    assert_eq!(solver.normal_form(inference).await.unwrap(), None);
+}
+
+// input: infer_effect_row(0)
+// premise: {}
+// output: None
+#[tokio::test]
+async fn rejects_direct_effect_row_inference_variable() {
+    let engine = create_test_engine().await;
+    let premise = Premise::default();
+    let mut solver = Solver::new(&premise, &engine);
+    let inference = Type2::new_inference_variable(
+        solver.fresh_inference_variable(TyKind::EffectRow),
+        &engine,
+    );
+
+    assert_eq!(solver.normal_form(inference).await.unwrap(), None);
+}
+
 // input: (infer_type(0))
 // premise: {}
 // output: None

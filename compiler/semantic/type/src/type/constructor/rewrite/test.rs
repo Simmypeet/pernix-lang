@@ -46,6 +46,91 @@ struct NoopRewriter;
 
 impl TypeRewriter for NoopRewriter {}
 
+struct EffectRowArgumentRewriter {
+    signature_id: GenericParameterID,
+    tail_id: GenericParameterID,
+    signature: Interned<Type2>,
+    tail: Interned<Type2>,
+}
+
+impl TypeRewriter for EffectRowArgumentRewriter {
+    fn rewrite_generic_parameter(
+        &mut self,
+        id: GenericParameterID,
+        _: RewriteContext,
+    ) -> Option<Interned<Type2>> {
+        match id {
+            id if id == self.signature_id => Some(self.signature.clone()),
+            id if id == self.tail_id => Some(self.tail.clone()),
+            _ => None,
+        }
+    }
+}
+
+// input: {X: T0 | T1}
+// premise: rewrite T0 -> bool and T1 -> {}
+// output: {X: bool | {}}
+#[tokio::test]
+async fn rewriting_recurses_through_both_effect_row_arguments() {
+    let engine = create_test_engine().await;
+    let signature_id = generic_parameter_id(0);
+    let tail_id = generic_parameter_id(1);
+    let label: Interned<str> = engine.intern_unsized("X".to_owned());
+    let row = Type2::new_effect_row_extend(
+        label.clone(),
+        Type2::new_generic_parameter(signature_id, &engine),
+        Type2::new_generic_parameter(tail_id, &engine),
+        &engine,
+    );
+    let signature = Type2::new_primitive(Primitive::Bool, &engine);
+    let tail = Type2::new_effect_row_empty(&engine);
+
+    let rewritten = rewrite_type_or_clone(
+        &row,
+        &mut EffectRowArgumentRewriter {
+            signature_id,
+            tail_id,
+            signature: signature.clone(),
+            tail: tail.clone(),
+        },
+        &engine,
+    );
+
+    assert_eq!(
+        rewritten,
+        Type2::new_effect_row_extend(label, signature, tail, &engine)
+    );
+}
+
+// input: {X: ^0.0 | ^0.1}
+// premise: instantiate (EffectSignature, EffectRow) with (bool, {})
+// output: {X: bool | {}}
+#[tokio::test]
+async fn instantiation_recurses_through_both_effect_row_arguments() {
+    let engine = create_test_engine().await;
+    let label: Interned<str> = engine.intern_unsized("X".to_owned());
+    let row = Type2::new_effect_row_extend(
+        label.clone(),
+        Type2::new_bound_variable(BoundVariable::new(0, 0), &engine),
+        Type2::new_bound_variable(BoundVariable::new(0, 1), &engine),
+        &engine,
+    );
+    let binder = Binder::new(engine.intern_unsized(vec![
+        crate::r#type::kind::TyKind::EffectSignature,
+        crate::r#type::kind::TyKind::EffectRow,
+    ]));
+    let signature = Type2::new_primitive(Primitive::Bool, &engine);
+    let tail = Type2::new_effect_row_empty(&engine);
+
+    let instantiated =
+        binder.instantiate(&row, &[signature.clone(), tail.clone()], &engine);
+
+    assert_eq!(
+        instantiated,
+        Type2::new_effect_row_extend(label, signature, tail, &engine)
+    );
+}
+
 // input: int32[T0] rewritten by a no-op rewriter
 // premise: {}
 // output: the original interned type

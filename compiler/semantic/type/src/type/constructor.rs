@@ -314,6 +314,33 @@ impl FunctionPointer {
     pub const fn new(binder: Binder) -> Self { Self { binder } }
 }
 
+/// Extends an effect row with a labeled effect signature.
+///
+/// Kind: `(EffectSignature, EffectRow) -> EffectRow`
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Encode,
+    Decode,
+)]
+pub struct EffectRowExtend {
+    label: Interned<str>,
+}
+
+impl EffectRowExtend {
+    #[must_use]
+    pub const fn new(label: Interned<str>) -> Self { Self { label } }
+
+    #[must_use]
+    pub const fn label(&self) -> &Interned<str> { &self.label }
+}
+
 #[derive(
     Debug,
     Clone,
@@ -336,6 +363,8 @@ pub enum Constructor {
     FunctionPointer(FunctionPointer),
     AnonymousTraitInstance(AnonymousTraitInstance),
     InstanceAssociated(InstanceAssociated),
+    EffectRowExtend(EffectRowExtend),
+    EffectRowEmpty,
 }
 
 #[derive(
@@ -379,7 +408,9 @@ impl Application {
             | Constructor::Reference(_)
             | Constructor::Tuple(_)
             | Constructor::AnonymousTraitInstance(_)
-            | Constructor::InstanceAssociated(_) => None,
+            | Constructor::InstanceAssociated(_)
+            | Constructor::EffectRowExtend(_)
+            | Constructor::EffectRowEmpty => None,
         }
     }
 
@@ -408,9 +439,10 @@ impl Application {
                 match kind {
                     Kind::Struct | Kind::Enum => TyKind::Type,
                     Kind::Instance => TyKind::Instance,
+                    Kind::Effect => TyKind::EffectSignature,
 
                     _ => panic!(
-                        "Expected an ADT, primitive, or trait, but got a \
+                        "Expected an ADT, instance, or effect, but got a \
                          different kind"
                     ),
                 }
@@ -433,16 +465,128 @@ impl Application {
                     ),
                 }
             }
+
+            Constructor::EffectRowExtend(_) | Constructor::EffectRowEmpty => {
+                TyKind::EffectRow
+            }
         }
     }
 }
 
 #[cfg(test)]
 mod test {
-    use pernixc_qbice::create_minimal_engine as create_engine;
+    use std::sync::Arc;
+
+    use pernixc_qbice::{
+        Config, Engine, InMemoryFactory, TrackedEngine,
+        create_minimal_engine as create_engine,
+    };
+    use pernixc_symbol::SymbolID;
+    use pernixc_target::TargetID;
+    use qbice::{
+        executor, serialize::Plugin, stable_hash::SeededStableHasherBuilder,
+    };
 
     use super::*;
     use crate::r#type::inference::InferenceVariable;
+
+    const EFFECT_ID: GlobalSymbolID =
+        TargetID::TEST.make_global(SymbolID::from_u128(1));
+
+    struct EffectKindExecutor;
+
+    impl executor::Executor<pernixc_symbol::kind::Key, Config>
+        for EffectKindExecutor
+    {
+        async fn execute(
+            &self,
+            _: &pernixc_symbol::kind::Key,
+            _: &TrackedEngine,
+        ) -> Kind {
+            Kind::Effect
+        }
+    }
+
+    async fn create_effect_engine() -> TrackedEngine {
+        let mut engine = Engine::new_with(
+            Plugin::default(),
+            InMemoryFactory,
+            SeededStableHasherBuilder::new(0),
+        )
+        .await
+        .unwrap();
+
+        engine.register_executor(Arc::new(EffectKindExecutor));
+
+        Arc::new(engine).tracked().await
+    }
+
+    // input: Effect
+    // premise: Effect is a symbol with Kind::Effect
+    // output: EffectSignature
+    #[tokio::test]
+    async fn effect_symbolic_application_has_effect_signature_kind() {
+        let engine = create_effect_engine().await;
+        let effect = Type2::new_symbolic(EFFECT_ID, [], &engine);
+
+        assert_eq!(effect.kind(&engine).await, TyKind::EffectSignature);
+    }
+
+    // input: {} and {Console: Effect | {}}
+    // premise: Effect: EffectSignature
+    // output: EffectRow and EffectRow
+    #[tokio::test]
+    async fn effect_row_applications_have_effect_row_kind() {
+        let engine = create_effect_engine().await;
+        let empty = Type2::new_effect_row_empty(&engine);
+        let extended = Type2::new_effect_row_extend(
+            engine.intern_unsized("Console".to_owned()),
+            Type2::new_symbolic(EFFECT_ID, [], &engine),
+            empty.clone(),
+            &engine,
+        );
+
+        assert_eq!(empty.kind(&engine).await, TyKind::EffectRow);
+        assert_eq!(extended.kind(&engine).await, TyKind::EffectRow);
+    }
+
+    // input: {Console: Effect | tail}
+    // premise: the extension constructor takes (signature, tail)
+    // output: label Console and arguments [Effect, tail]
+    #[tokio::test]
+    async fn effect_row_extension_retains_label_and_argument_order() {
+        let engine = create_engine().await;
+        let label: Interned<str> = engine.intern_unsized("Console".to_owned());
+        let signature = Type2::new_inference_variable(
+            InferenceVariable::new(
+                0,
+                TyKind::EffectSignature,
+                UniverseIndex::root(),
+            ),
+            &engine,
+        );
+        let tail = Type2::new_inference_variable(
+            InferenceVariable::new(1, TyKind::EffectRow, UniverseIndex::root()),
+            &engine,
+        );
+        let row = Type2::new_effect_row_extend(
+            label.clone(),
+            signature.clone(),
+            tail.clone(),
+            &engine,
+        );
+
+        let Type2::Application(application) = row.as_ref() else {
+            panic!("expected effect-row application");
+        };
+        let Constructor::EffectRowExtend(extension) = application.constructor()
+        else {
+            panic!("expected effect-row extension");
+        };
+
+        assert_eq!(extension.label(), &label);
+        assert_eq!(&**application.arguments(), &[signature, tail]);
+    }
 
     // input: fn(?T@U1, ?U@U2) -> bool
     // premise: the application arguments contain inference variables in U1/U2

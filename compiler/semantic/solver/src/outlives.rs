@@ -76,7 +76,9 @@ impl Solver<'_> {
                         | Constructor::Symbolic(_)
                         | Constructor::Tuple(_)
                         | Constructor::FunctionPointer(_)
-                        | Constructor::AnonymousTraitInstance(_) => {
+                        | Constructor::AnonymousTraitInstance(_)
+                        | Constructor::EffectRowExtend(_)
+                        | Constructor::EffectRowEmpty => {
                             self.all_components_outlive(
                                 outlives_components(outlives.lesser()),
                                 outlives.greater(),
@@ -260,7 +262,9 @@ fn push_outlives_components(
             | Constructor::Reference(_)
             | Constructor::Symbolic(_)
             | Constructor::Tuple(_)
-            | Constructor::AnonymousTraitInstance(_) => {
+            | Constructor::AnonymousTraitInstance(_)
+            | Constructor::EffectRowExtend(_)
+            | Constructor::EffectRowEmpty => {
                 for argument in application.arguments().iter() {
                     push_outlives_components(
                         argument,

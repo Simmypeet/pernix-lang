@@ -20,4 +20,6 @@ pub enum TyKind {
     Type,
     Lifetime,
     Instance,
+    EffectSignature,
+    EffectRow,
 }

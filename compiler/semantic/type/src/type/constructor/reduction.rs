@@ -21,7 +21,9 @@ impl Application {
             | Constructor::Lifetime(_)
             | Constructor::AnonymousTraitInstance(_)
             | Constructor::FunctionPointer(_)
-            | Constructor::Reference(_) => None,
+            | Constructor::Reference(_)
+            | Constructor::EffectRowExtend(_)
+            | Constructor::EffectRowEmpty => None,
 
             Constructor::Tuple(tuple) => {
                 if tuple.unpacked_positions.is_empty() {

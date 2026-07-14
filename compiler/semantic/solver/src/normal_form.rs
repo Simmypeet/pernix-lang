@@ -10,8 +10,8 @@ impl Solver<'_> {
     /// Transforms the given type into its normal form, returning the lifetime
     /// constraints that need to be satisfied for the normalization to hold.
     ///
-    /// Returns `None` if the resulting normal form contains a type or instance
-    /// inference variable.
+    /// Returns `None` if the resulting normal form contains a type, instance,
+    /// effect-signature, or effect-row inference variable.
     pub async fn normal_form(
         &mut self,
         ty: Interned<Type2>,
@@ -21,13 +21,19 @@ impl Solver<'_> {
             .await?
             .unwrap_or((ty, Constraints::default()));
 
-        let contains_type_or_instance_inference = normalized
+        let contains_non_lifetime_inference = normalized
             .as_ref()
             .contains_inference_variable_matching(|variable| {
-                matches!(variable.kind(), TyKind::Type | TyKind::Instance)
+                matches!(
+                    variable.kind(),
+                    TyKind::Type
+                        | TyKind::Instance
+                        | TyKind::EffectSignature
+                        | TyKind::EffectRow
+                )
             });
 
-        Ok((!contains_type_or_instance_inference)
+        Ok((!contains_non_lifetime_inference)
             .then_some((normalized, constraints)))
     }
 }

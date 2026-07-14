@@ -493,3 +493,27 @@ async fn reduce_instance_associated_does_not_recurse_into_inner_instance() {
 
     assert_eq!(outer.reduce(&engine,).await, None);
 }
+
+// input: {} and {X: bool | {}}
+// premise: effect-row constructors have no reduction rule
+// output: None and None
+#[tokio::test]
+async fn effect_row_constructors_are_irreducible() {
+    let engine = create_test_engine().await;
+    let empty = Type2::new_effect_row_empty(&engine);
+    let extended = Type2::new_effect_row_extend(
+        engine.intern_unsized("X".to_owned()),
+        Type2::new_primitive(Primitive::Bool, &engine),
+        empty.clone(),
+        &engine,
+    );
+    let Type2::Application(empty_application) = empty.as_ref() else {
+        panic!("expected effect-row application");
+    };
+    let Type2::Application(extended_application) = extended.as_ref() else {
+        panic!("expected effect-row application");
+    };
+
+    assert_eq!(empty_application.reduce(&engine).await, None);
+    assert_eq!(extended_application.reduce(&engine).await, None);
+}

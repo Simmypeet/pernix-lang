@@ -90,7 +90,10 @@ impl Solver<'_> {
             let parameter_id = GenericParameterID::new(symbol_id, id);
 
             match parameter.kind() {
-                TyKind::Type | TyKind::Lifetime => {}
+                TyKind::Type
+                | TyKind::Lifetime
+                | TyKind::EffectSignature
+                | TyKind::EffectRow => {}
                 TyKind::Instance => {
                     instance_parameters.push((
                         parameter_id,
@@ -203,7 +206,10 @@ fn get_required_parameters(
     generic_parameters
         .iter()
         .filter_map(|(id, parameter)| match parameter.kind() {
-            TyKind::Type | TyKind::Lifetime => {
+            TyKind::Type
+            | TyKind::Lifetime
+            | TyKind::EffectSignature
+            | TyKind::EffectRow => {
                 let parameter_id = GenericParameterID::new(symbol_id, id);
 
                 Some((

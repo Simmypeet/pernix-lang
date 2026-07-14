@@ -65,6 +65,8 @@ impl GenericParameter {
             GenericParameterKind::Lifetime => TyKind::Lifetime,
             GenericParameterKind::Type => TyKind::Type,
             GenericParameterKind::Instance(_) => TyKind::Instance,
+            GenericParameterKind::EffectSignature => TyKind::EffectSignature,
+            GenericParameterKind::EffectRow => TyKind::EffectRow,
         }
     }
 
@@ -74,7 +76,10 @@ impl GenericParameter {
     pub const fn as_trait_ref_instance(&self) -> Option<&TraitRef2> {
         match &self.kind {
             GenericParameterKind::Instance(instance) => instance.trait_ref(),
-            _ => None,
+            GenericParameterKind::Lifetime
+            | GenericParameterKind::Type
+            | GenericParameterKind::EffectSignature
+            | GenericParameterKind::EffectRow => None,
         }
     }
 }
@@ -123,6 +128,8 @@ pub enum GenericParameterKind {
     Lifetime,
     Type,
     Instance(InstanceParameterKind),
+    EffectSignature,
+    EffectRow,
 }
 
 #[derive(
@@ -184,3 +191,33 @@ impl GenericParameters2 {
 }
 
 pub type GenericParameterID = MemberID<ID<GenericParameter>>;
+
+#[cfg(test)]
+mod test {
+    use pernixc_qbice::create_minimal_engine as create_engine;
+
+    use super::*;
+
+    // input: generic parameters [EffectSignature, EffectRow]
+    // premise: {}
+    // output: kinds [EffectSignature, EffectRow]
+    #[tokio::test]
+    async fn effect_generic_parameters_retain_their_kinds() {
+        let engine = create_engine().await;
+        let parameters = GenericParameters2::from_kinds(
+            [
+                GenericParameterKind::EffectSignature,
+                GenericParameterKind::EffectRow,
+            ],
+            &engine,
+        );
+
+        assert_eq!(
+            parameters
+                .iter()
+                .map(|(_, parameter)| parameter.kind())
+                .collect::<Vec<_>>(),
+            vec![TyKind::EffectSignature, TyKind::EffectRow]
+        );
+    }
+}
