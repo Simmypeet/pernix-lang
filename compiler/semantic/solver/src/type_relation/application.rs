@@ -18,6 +18,7 @@ use crate::{
     type_relation::{RelationFlags, Step, TypeRelation},
 };
 
+mod effect_row;
 mod higher_ranked;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,7 +37,26 @@ impl Solver<'_> {
         lesser_ap: &Application,
         greater_ap: &Application,
     ) -> Result<Option<Step>, OverflowError> {
-        let flags = relation.flags();
+        let mut flags = relation.flags();
+
+        if matches!(
+            lesser_ap.constructor(),
+            Constructor::EffectRowExtend(_) | Constructor::EffectRowEmpty
+        ) && matches!(
+            greater_ap.constructor(),
+            Constructor::EffectRowExtend(_) | Constructor::EffectRowEmpty
+        ) {
+            if let Some(step) = self.handle_effect_rows(relation).await? {
+                return Ok(Some(step));
+            }
+
+            return Box::pin(self.try_reduce(
+                relation.lesser(),
+                relation.greater(),
+                flags.with_variance(Variance2::Invariant),
+            ))
+            .await;
+        }
 
         let Some(iter) = lesser_ap.destructure(greater_ap, self.engine())
         else {
@@ -49,6 +69,13 @@ impl Solver<'_> {
         };
 
         let arguments = iter.collect::<Vec<_>>();
+
+        if let Constructor::Symbolic(symbolic) = lesser_ap.constructor()
+            && self.engine().get_kind(symbolic.symbol_id()).await
+                == Kind::Effect
+        {
+            flags = flags.with_variance(Variance2::Invariant);
+        }
 
         let has_binder =
             lesser_ap.binder().is_some_and(|binder| !binder.is_empty())
@@ -294,6 +321,20 @@ impl Solver<'_> {
                 .await
             }
 
+            Kind::Effect => {
+                // TODO: Investigate whether we can safely add variance to
+                // effect signatures. For now, we treat them as invariant to
+                // avoid unsoundness.
+                Box::pin(self.handle_set_of_relations(
+                    arguments.map(|(lesser, greater)| {
+                        (lesser, greater, Variance2::Invariant)
+                    }),
+                    flags,
+                    resolve_strategy,
+                ))
+                .await
+            }
+
             Kind::Module
             | Kind::Function
             | Kind::Type
@@ -305,7 +346,6 @@ impl Solver<'_> {
             | Kind::TraitAssociatedFunction
             | Kind::TraitAssociatedConstant
             | Kind::TraitAssociatedInstance
-            | Kind::Effect
             | Kind::EffectOperation
             | Kind::Marker
             | Kind::PositiveImplementation
