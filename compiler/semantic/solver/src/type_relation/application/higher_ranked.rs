@@ -94,7 +94,7 @@ impl Solver<'_> {
 
             Variance2::Bivariant => Ok(Some((
                 Substitution::new(),
-                Vec::new(),
+                self.engine().intern_unsized([]),
                 Constraints::default(),
             ))),
         }
@@ -279,7 +279,7 @@ impl Solver<'_> {
             Variable::Generic(_) => true,
         });
 
-        Some((substitution, Vec::new(), constraints))
+        Some((substitution, self.engine().intern_unsized([]), constraints))
     }
 }
 
@@ -328,7 +328,7 @@ mod test {
             substitution,
             Substitution::singleton(external_variable, bool_type)
         );
-        assert_eq!(residual_relations, Vec::new());
+        assert!(residual_relations.is_empty());
         assert_eq!(constraints, Constraints::default());
     }
 }

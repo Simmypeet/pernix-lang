@@ -98,7 +98,7 @@ impl Solver<'_> {
 
         Ok((
             substitution,
-            residual_relations.into_iter().map(Unify::from).collect(),
+            residual_relations.iter().cloned().map(Unify::from).collect(),
             constraints,
         ))
     }

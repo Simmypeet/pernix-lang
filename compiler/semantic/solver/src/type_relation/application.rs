@@ -152,7 +152,7 @@ impl Solver<'_> {
 
                 Ok(Some((
                     Substitution::new(),
-                    Vec::new(),
+                    self.engine().intern_unsized([]),
                     Constraints::default(),
                 )))
             }
@@ -375,12 +375,12 @@ impl Solver<'_> {
             .map(|(l, r, v)| {
                 TypeRelation::new_with_flags(l, r, flags.with_variance(v))
             })
-            .collect();
+            .collect::<Vec<_>>();
 
         match resolve_strategy {
             ResolveStrategy::DeferResolution => Ok(Some((
                 Substitution::new(),
-                type_relations,
+                self.engine().intern_unsized(type_relations),
                 Constraints::default(),
             ))),
             ResolveStrategy::ResolveImmediately => {
@@ -389,7 +389,11 @@ impl Solver<'_> {
                         .await?;
 
                 if residual_type_relations.is_empty() {
-                    Ok(Some((substitution, Vec::new(), constraints)))
+                    Ok(Some((
+                        substitution,
+                        residual_type_relations,
+                        constraints,
+                    )))
                 } else {
                     Ok(None)
                 }

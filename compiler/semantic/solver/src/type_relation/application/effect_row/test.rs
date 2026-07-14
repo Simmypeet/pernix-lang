@@ -443,7 +443,7 @@ async fn rigid_inference_tail_is_not_bound_by_row_matching() {
         .unwrap();
 
     assert_eq!(substitution, Substitution::new());
-    assert_eq!(residual, vec![TypeRelation::new_with_rigidity(
+    assert_eq!(&*residual, &[TypeRelation::new_with_rigidity(
         left,
         right,
         Variance2::Invariant,
@@ -476,7 +476,7 @@ async fn opaque_tail_preserves_the_original_relation() {
         .unwrap();
 
     assert_eq!(substitution, Substitution::new());
-    assert_eq!(residual, vec![original]);
+    assert_eq!(&*residual, &[original]);
     assert_eq!(constraints, Constraints::default());
 }
 

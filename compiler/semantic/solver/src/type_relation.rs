@@ -4,7 +4,7 @@ use pernixc_type::{
     r#type::{Type2, inference::InferenceVariable},
     variance::Variance2,
 };
-use qbice::storage::intern::Interned;
+use qbice::{Identifiable, StableHash, storage::intern::Interned};
 
 use crate::{
     constraints::Constraints,
@@ -17,9 +17,11 @@ mod generalization;
 #[cfg(test)]
 mod test;
 
-pub type Step = (Substitution, Vec<TypeRelation>, Constraints);
+pub type Step = (Substitution, Interned<[TypeRelation]>, Constraints);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash,
+)]
 struct RelationFlags {
     variance: Variance2,
     lesser_rigid_inference: bool,
@@ -85,7 +87,9 @@ impl RelationFlags {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Identifiable,
+)]
 pub struct TypeRelation {
     left: Interned<Type2>,
     right: Interned<Type2>,
@@ -300,7 +304,7 @@ impl Solver<'_> {
             if relation.lesser() == relation.greater() {
                 return Ok(Some((
                     Substitution::new(),
-                    Vec::new(),
+                    self.engine().intern_unsized([]),
                     Constraints::default(),
                 )));
             }
@@ -342,7 +346,7 @@ impl Solver<'_> {
 
                 return Ok(Some((
                     Substitution::new(),
-                    Vec::new(),
+                    self.engine().intern_unsized([]),
                     constraints,
                 )));
             }
@@ -463,7 +467,7 @@ impl Solver<'_> {
 
         BindInferenceVariableRelation::Bound((
             Substitution::singleton(infer_var, binding_target),
-            Vec::new(),
+            self.engine().intern_unsized([]),
             Constraints::default(),
         ))
     }
@@ -649,7 +653,7 @@ impl Solver<'_> {
                     *relation = relation
                         .apply_or_clone(&step_substitution, self.engine());
                 }
-                type_relations.extend(new_relations);
+                type_relations.extend(new_relations.iter().cloned());
 
                 // Preserve composition order so the returned substitution
                 // represents everything learned by all successful steps.
@@ -664,7 +668,11 @@ impl Solver<'_> {
                 constraints =
                     constraints.apply_or_self(&substitution, self.engine());
 
-                return Ok((substitution, residual_relations, constraints));
+                return Ok((
+                    substitution,
+                    self.engine().intern_unsized(residual_relations),
+                    constraints,
+                ));
             }
 
             // Normalize stuck constraints once per round, not after each
@@ -691,7 +699,8 @@ impl Solver<'_> {
         Ok((
             substitution,
             residual_type_relations
-                .into_iter()
+                .iter()
+                .cloned()
                 .map(TypeRelation::into_subtype)
                 .collect(),
             constraints,

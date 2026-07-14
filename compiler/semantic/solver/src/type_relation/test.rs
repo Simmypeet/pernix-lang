@@ -186,7 +186,7 @@ async fn lesser_rigidity_does_not_block_greater_inference_variable() {
         .unwrap();
 
     assert_eq!(substitution, Substitution::singleton(variable, known));
-    assert_eq!(residual_subtypes, Vec::new());
+    assert!(residual_subtypes.is_empty());
     assert_eq!(constraints, Constraints::default());
 }
 
@@ -214,7 +214,7 @@ async fn greater_rigidity_does_not_block_lesser_inference_variable() {
         .unwrap();
 
     assert_eq!(substitution, Substitution::singleton(variable, known));
-    assert_eq!(residual_subtypes, Vec::new());
+    assert!(residual_subtypes.is_empty());
     assert_eq!(constraints, Constraints::default());
 }
 
@@ -316,7 +316,7 @@ async fn instance_associated_equality_does_not_unify_inference_arguments() {
         .unwrap();
 
     assert_eq!(substitution, Substitution::new());
-    assert_eq!(residual_subtypes, vec![TypeRelation::new(
+    assert_eq!(&*residual_subtypes, &[TypeRelation::new(
         lesser,
         greater,
         Variance2::Invariant
@@ -350,7 +350,7 @@ async fn solved_instance_associated_arguments_are_not_deferred() {
             .expect("arguments should solve immediately");
 
     assert_eq!(substitution, Substitution::new());
-    assert_eq!(residual_subtypes, Vec::new());
+    assert!(residual_subtypes.is_empty());
     assert_eq!(
         constraints,
         Constraints::lifetimes_eq(static_lifetime, erased_lifetime)
@@ -562,7 +562,7 @@ async fn higher_ranked_lifetime_arguments_can_split() {
             .unwrap();
 
     assert_eq!(substitution, Substitution::new());
-    assert_eq!(residual_subtypes, Vec::new());
+    assert!(residual_subtypes.is_empty());
     assert_eq!(constraints, Constraints::default());
 }
 
@@ -677,7 +677,7 @@ async fn mixed_ranked_and_unranked_function_pointers_destructure() {
             .await
             .unwrap();
 
-    assert_eq!(residual_subtypes, Vec::new());
+    assert!(residual_subtypes.is_empty());
 }
 
 // input: fn(&'static u32) -> () <: for<'a> fn(&'a u32) -> () @ Covariant
@@ -760,7 +760,7 @@ async fn contravariant_top_level_variance_flips_hrtb_sides() {
             .await
             .unwrap();
 
-    assert_eq!(residual_subtypes, Vec::new());
+    assert!(residual_subtypes.is_empty());
 }
 
 // input:
@@ -816,7 +816,7 @@ async fn invariant_hrtb_uses_independent_directional_runs() {
             .unwrap();
 
     assert_eq!(substitution, Substitution::new());
-    assert_eq!(residual_subtypes, Vec::new());
+    assert!(residual_subtypes.is_empty());
     assert_eq!(constraints, Constraints::default());
 }
 
@@ -903,7 +903,7 @@ async fn external_to_skolem_return_obligation_rewrites_to_static() {
             .await
             .unwrap();
 
-    assert_eq!(residual_subtypes, Vec::new());
+    assert!(residual_subtypes.is_empty());
     assert_eq!(
         constraints,
         Constraints::lifetimes_outlives(
@@ -966,6 +966,6 @@ async fn bivariant_hrtb_function_pointers_do_not_emit_work() {
             .unwrap();
 
     assert_eq!(substitution, Substitution::new());
-    assert_eq!(residual_subtypes, Vec::new());
+    assert!(residual_subtypes.is_empty());
     assert_eq!(constraints, Constraints::default());
 }

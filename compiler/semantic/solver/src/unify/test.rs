@@ -226,7 +226,7 @@ async fn solve_unifies_application_arguments_eagerly() {
         .unwrap();
 
     assert_eq!(substitution, Substitution::singleton(variable, bool_type));
-    assert_eq!(residual_type_relations, Vec::new());
+    assert!(residual_type_relations.is_empty());
     assert_eq!(constraints, Constraints::default());
 }
 
