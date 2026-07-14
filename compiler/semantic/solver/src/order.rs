@@ -15,6 +15,7 @@ use qbice::{
 use crate::{
     premise::Premise,
     solver::{OverflowError, Solver},
+    type_relation::TypeRelation,
 };
 
 /// The ordering between two trait references.
@@ -112,11 +113,16 @@ impl Solver<'_> {
                     .apply_or_clone(&subject_substitution, solver.engine())
                     .apply_or_clone(&match_substitution, solver.engine());
 
-                let Some((mut new_substitution, _)) =
-                    solver.unify(head_argument, subject_argument).await?
-                else {
+                let (mut new_substitution, residual_relations, _) = solver
+                    .resolve_type_relations(vec![TypeRelation::invariant(
+                        head_argument,
+                        subject_argument,
+                    )])
+                    .await?;
+
+                if !residual_relations.is_empty() {
                     return Ok(false);
-                };
+                }
 
                 new_substitution.compose(match_substitution, solver.engine());
                 match_substitution = new_substitution;

@@ -19,7 +19,9 @@ use qbice::{
 };
 
 use crate::{
-    constraints::Constraints, premise::Premise, solver::Solver,
+    constraints::Constraints,
+    premise::Premise,
+    solver::{OverflowError, Solver},
     type_relation::TypeRelation,
 };
 
@@ -88,6 +90,18 @@ fn row(
     })
 }
 
+async fn resolve_invariant(
+    solver: &mut Solver<'_>,
+    left: Interned<Type2>,
+    right: Interned<Type2>,
+) -> Result<Option<(Substitution, Constraints)>, OverflowError> {
+    let (substitution, residual_relations, constraints) = solver
+        .resolve_type_relations(vec![TypeRelation::invariant(left, right)])
+        .await?;
+
+    Ok(residual_relations.is_empty().then_some((substitution, constraints)))
+}
+
 async fn assert_rows_unify(
     left: Interned<Type2>,
     right: Interned<Type2>,
@@ -95,7 +109,9 @@ async fn assert_rows_unify(
 ) {
     let premise = Premise::default();
     let result =
-        Solver::new(&premise, engine).unify(left, right).await.unwrap();
+        resolve_invariant(&mut Solver::new(&premise, engine), left, right)
+            .await
+            .unwrap();
 
     assert_eq!(result, Some((Substitution::new(), Constraints::default())));
 }
@@ -107,7 +123,9 @@ async fn assert_rows_do_not_unify(
 ) {
     let premise = Premise::default();
     let result =
-        Solver::new(&premise, engine).unify(left, right).await.unwrap();
+        resolve_invariant(&mut Solver::new(&premise, engine), left, right)
+            .await
+            .unwrap();
 
     assert_eq!(result, None);
 }
@@ -231,7 +249,7 @@ async fn open_tail_absorbs_unmatched_closed_slots() {
     let expected_tail = closed_row(&[("B", int32.clone())], &engine);
     let right = closed_row(&[("B", int32), ("A", bool_type)], &engine);
 
-    let result = solver.unify(left, right).await.unwrap();
+    let result = resolve_invariant(&mut solver, left, right).await.unwrap();
 
     assert_eq!(
         result,
@@ -265,7 +283,10 @@ async fn distinct_open_tails_share_a_fresh_lowest_universe_tail() {
     let right = row(&[("B", int32.clone())], right_tail, &engine);
 
     let (substitution, constraints) =
-        solver.unify(left, right).await.unwrap().expect("rows unify");
+        resolve_invariant(&mut solver, left, right)
+            .await
+            .unwrap()
+            .expect("rows unify");
 
     assert_eq!(constraints, Constraints::default());
     let left_binding = substitution
@@ -313,7 +334,7 @@ async fn incompatible_rows_with_the_same_tail_terminate_and_fail() {
         &engine,
     );
 
-    let result = solver.unify(left, right).await.unwrap();
+    let result = resolve_invariant(&mut solver, left, right).await.unwrap();
 
     assert_eq!(result, None);
 }
@@ -335,7 +356,7 @@ async fn parameterized_nominal_effect_signatures_unify_invariantly() {
     let left = closed_row(&[("A", left_signature)], &engine);
     let right = closed_row(&[("A", right_signature)], &engine);
 
-    let result = solver.unify(left, right).await.unwrap();
+    let result = resolve_invariant(&mut solver, left, right).await.unwrap();
 
     assert_eq!(
         result,
@@ -499,7 +520,9 @@ async fn failed_row_decomposition_falls_back_to_reduction() {
     premise.insert(equality(opaque, reduced_tail, &engine));
 
     let result =
-        Solver::new(&premise, &engine).unify(left, right).await.unwrap();
+        resolve_invariant(&mut Solver::new(&premise, &engine), left, right)
+            .await
+            .unwrap();
 
     assert_eq!(result, Some((Substitution::new(), Constraints::default())));
 }

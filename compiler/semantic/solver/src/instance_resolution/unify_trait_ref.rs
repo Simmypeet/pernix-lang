@@ -3,7 +3,7 @@ use pernixc_type::{substitution::Substitution, symbol::Symbol2};
 use crate::{
     constraints::Constraints,
     solver::{OverflowError, Solver},
-    unify::Unify,
+    type_relation::TypeRelation,
 };
 
 impl Solver<'_> {
@@ -22,17 +22,19 @@ impl Solver<'_> {
             return Ok(None);
         }
 
-        let unifications = left
+        let type_relations = left
             .generic_arguments()
             .iter()
             .zip(right.generic_arguments().iter())
-            .map(|(left, right)| Unify::new(left.clone(), right.clone()))
+            .map(|(left, right)| {
+                TypeRelation::invariant(left.clone(), right.clone())
+            })
             .collect();
 
-        let (substitution, residual_unifications, constraints) =
-            self.resolve_unification_constraints(unifications).await?;
+        let (substitution, residual_relations, constraints) =
+            self.resolve_type_relations(type_relations).await?;
 
-        if residual_unifications.is_empty() {
+        if residual_relations.is_empty() {
             Ok(Some((substitution, constraints)))
         } else {
             Ok(None)
