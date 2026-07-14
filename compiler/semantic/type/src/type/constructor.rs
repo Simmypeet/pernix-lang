@@ -367,6 +367,159 @@ pub enum Constructor {
     EffectRowEmpty,
 }
 
+/// A borrowed, constructor-specific view of a type application.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ApplicationView<'a> {
+    Primitive(Primitive),
+    Lifetime(Lifetime),
+    Reference(ReferenceView<'a>),
+    Symbolic(SymbolicView<'a>),
+    Tuple(TupleView<'a>),
+    FunctionPointer(FunctionPointerView<'a>),
+    AnonymousTraitInstance(AnonymousTraitInstanceView<'a>),
+    InstanceAssociated(InstanceAssociatedView<'a>),
+    EffectRowExtend(EffectRowExtendView<'a>),
+    EffectRowEmpty,
+}
+
+/// A borrowed view of a reference application.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReferenceView<'a> {
+    reference: &'a Reference,
+    lifetime: &'a Interned<Type2>,
+    referent: &'a Interned<Type2>,
+}
+
+impl<'a> ReferenceView<'a> {
+    #[must_use]
+    pub const fn mutability(&self) -> Mutability { self.reference.mutability() }
+
+    #[must_use]
+    pub const fn lifetime(&self) -> &'a Interned<Type2> { self.lifetime }
+
+    #[must_use]
+    pub const fn referent(&self) -> &'a Interned<Type2> { self.referent }
+}
+
+/// A borrowed view of a symbolic application.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SymbolicView<'a> {
+    symbolic: &'a Symbolic,
+    generic_arguments: &'a [Interned<Type2>],
+}
+
+impl<'a> SymbolicView<'a> {
+    #[must_use]
+    pub const fn symbol_id(&self) -> GlobalSymbolID {
+        self.symbolic.symbol_id()
+    }
+
+    #[must_use]
+    pub const fn binder(&self) -> &'a Binder { self.symbolic.binder() }
+
+    #[must_use]
+    pub const fn generic_arguments(&self) -> &'a [Interned<Type2>] {
+        self.generic_arguments
+    }
+}
+
+/// A borrowed view of a tuple application.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TupleView<'a> {
+    tuple: &'a Tuple,
+    elements: &'a [Interned<Type2>],
+}
+
+impl<'a> TupleView<'a> {
+    #[must_use]
+    pub const fn elements(&self) -> &'a [Interned<Type2>] { self.elements }
+
+    #[must_use]
+    pub fn unpacked_positions(&self) -> &'a [usize] {
+        &self.tuple.unpacked_positions
+    }
+}
+
+/// A borrowed view of a function-pointer application.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FunctionPointerView<'a> {
+    function_pointer: &'a FunctionPointer,
+    parameter_types: &'a [Interned<Type2>],
+    return_type: &'a Interned<Type2>,
+}
+
+impl<'a> FunctionPointerView<'a> {
+    #[must_use]
+    pub const fn binder(&self) -> &'a Binder { &self.function_pointer.binder }
+
+    #[must_use]
+    pub const fn parameter_types(&self) -> &'a [Interned<Type2>] {
+        self.parameter_types
+    }
+
+    #[must_use]
+    pub const fn return_type(&self) -> &'a Interned<Type2> { self.return_type }
+}
+
+/// A borrowed view of an anonymous trait-instance application.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AnonymousTraitInstanceView<'a> {
+    anonymous_trait_instance: &'a AnonymousTraitInstance,
+}
+
+impl AnonymousTraitInstanceView<'_> {
+    #[must_use]
+    pub const fn trait_id(&self) -> GlobalSymbolID {
+        self.anonymous_trait_instance.trait_id()
+    }
+}
+
+/// A borrowed view of an instance-associated application.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InstanceAssociatedView<'a> {
+    instance_associated: &'a InstanceAssociated,
+    instance: &'a Interned<Type2>,
+    generic_arguments: &'a [Interned<Type2>],
+}
+
+impl<'a> InstanceAssociatedView<'a> {
+    #[must_use]
+    pub const fn trait_associated_id(&self) -> GlobalSymbolID {
+        self.instance_associated.trait_associated_id()
+    }
+
+    #[must_use]
+    pub const fn instance(&self) -> &'a Interned<Type2> { self.instance }
+
+    #[must_use]
+    pub const fn generic_arguments(&self) -> &'a [Interned<Type2>] {
+        self.generic_arguments
+    }
+}
+
+/// A borrowed view of an effect-row extension application.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EffectRowExtendView<'a> {
+    effect_row_extend: &'a EffectRowExtend,
+    effect_signature: &'a Interned<Type2>,
+    row_tail: &'a Interned<Type2>,
+}
+
+impl<'a> EffectRowExtendView<'a> {
+    #[must_use]
+    pub const fn label(&self) -> &'a Interned<str> {
+        self.effect_row_extend.label()
+    }
+
+    #[must_use]
+    pub const fn effect_signature(&self) -> &'a Interned<Type2> {
+        self.effect_signature
+    }
+
+    #[must_use]
+    pub const fn row_tail(&self) -> &'a Interned<Type2> { self.row_tail }
+}
+
 #[derive(
     Debug,
     Clone,
@@ -396,6 +549,116 @@ impl Application {
     #[must_use]
     pub const fn arguments(&self) -> &Interned<[Interned<Type2>]> {
         &self.arguments
+    }
+
+    /// Returns a constructor-specific borrowed view of this application.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the application's arguments do not satisfy the layout
+    /// required by its constructor.
+    #[must_use]
+    pub fn view(&self) -> ApplicationView<'_> {
+        match &self.constructor {
+            Constructor::Primitive(primitive) => {
+                assert!(
+                    self.arguments.is_empty(),
+                    "primitive applications require no arguments"
+                );
+                ApplicationView::Primitive(*primitive)
+            }
+            Constructor::Lifetime(lifetime) => {
+                assert!(
+                    self.arguments.is_empty(),
+                    "lifetime applications require no arguments"
+                );
+                ApplicationView::Lifetime(*lifetime)
+            }
+            Constructor::Reference(reference) => {
+                let [lifetime, referent] = &self.arguments[..] else {
+                    panic!(
+                        "reference applications require exactly two arguments"
+                    )
+                };
+
+                ApplicationView::Reference(ReferenceView {
+                    reference,
+                    lifetime,
+                    referent,
+                })
+            }
+            Constructor::Symbolic(symbolic) => {
+                ApplicationView::Symbolic(SymbolicView {
+                    symbolic,
+                    generic_arguments: &self.arguments,
+                })
+            }
+            Constructor::Tuple(tuple) => ApplicationView::Tuple(TupleView {
+                tuple,
+                elements: &self.arguments,
+            }),
+            Constructor::FunctionPointer(function_pointer) => {
+                let Some((return_type, parameter_types)) =
+                    self.arguments.split_last()
+                else {
+                    panic!(
+                        "function-pointer applications require a return type"
+                    )
+                };
+
+                ApplicationView::FunctionPointer(FunctionPointerView {
+                    function_pointer,
+                    parameter_types,
+                    return_type,
+                })
+            }
+            Constructor::AnonymousTraitInstance(anonymous_trait_instance) => {
+                assert!(
+                    self.arguments.is_empty(),
+                    "anonymous trait-instance applications require no \
+                     arguments"
+                );
+                ApplicationView::AnonymousTraitInstance(
+                    AnonymousTraitInstanceView { anonymous_trait_instance },
+                )
+            }
+            Constructor::InstanceAssociated(instance_associated) => {
+                let Some((instance, generic_arguments)) =
+                    self.arguments.split_first()
+                else {
+                    panic!(
+                        "instance-associated applications require an instance"
+                    )
+                };
+
+                ApplicationView::InstanceAssociated(InstanceAssociatedView {
+                    instance_associated,
+                    instance,
+                    generic_arguments,
+                })
+            }
+            Constructor::EffectRowExtend(effect_row_extend) => {
+                let [effect_signature, row_tail] = &self.arguments[..] else {
+                    panic!(
+                        "effect-row extension applications require exactly \
+                         two arguments"
+                    )
+                };
+
+                ApplicationView::EffectRowExtend(EffectRowExtendView {
+                    effect_row_extend,
+                    effect_signature,
+                    row_tail,
+                })
+            }
+            Constructor::EffectRowEmpty => {
+                assert!(
+                    self.arguments.is_empty(),
+                    "empty effect-row applications require no arguments"
+                );
+                ApplicationView::EffectRowEmpty
+            }
+        }
     }
 
     #[must_use]
@@ -492,6 +755,10 @@ mod test {
 
     const EFFECT_ID: GlobalSymbolID =
         TargetID::TEST.make_global(SymbolID::from_u128(1));
+    const TRAIT_ID: GlobalSymbolID =
+        TargetID::TEST.make_global(SymbolID::from_u128(2));
+    const ASSOCIATED_ID: GlobalSymbolID =
+        TargetID::TEST.make_global(SymbolID::from_u128(3));
 
     struct EffectKindExecutor;
 
@@ -550,9 +817,204 @@ mod test {
         assert_eq!(extended.kind(&engine).await, TyKind::EffectRow);
     }
 
+    // input: int32
+    // premise: {}
+    // output: Primitive(Int32)
+    #[tokio::test]
+    async fn primitive_application_view_exposes_primitive() {
+        let engine = create_engine().await;
+        let primitive = Type2::new_primitive(Primitive::Int32, &engine);
+        let Type2::Application(application) = primitive.as_ref() else {
+            panic!("expected primitive application");
+        };
+
+        assert_eq!(
+            application.view(),
+            ApplicationView::Primitive(Primitive::Int32)
+        );
+    }
+
+    // input: 'static
+    // premise: {}
+    // output: Lifetime(Static)
+    #[tokio::test]
+    async fn lifetime_application_view_exposes_lifetime() {
+        let engine = create_engine().await;
+        let lifetime = Type2::new_lifetime(Lifetime::Static, &engine);
+        let Type2::Application(application) = lifetime.as_ref() else {
+            panic!("expected lifetime application");
+        };
+
+        assert_eq!(
+            application.view(),
+            ApplicationView::Lifetime(Lifetime::Static)
+        );
+    }
+
+    // input: &mut 'static bool
+    // premise: {}
+    // output: Mutable, 'static, bool
+    #[tokio::test]
+    async fn reference_application_view_exposes_semantic_arguments() {
+        let engine = create_engine().await;
+        let lifetime = Type2::new_lifetime(Lifetime::Static, &engine);
+        let referent = Type2::new_primitive(Primitive::Bool, &engine);
+        let reference = Type2::new_reference(
+            lifetime.clone(),
+            referent.clone(),
+            Mutability::Mutable,
+            &engine,
+        );
+        let Type2::Application(application) = reference.as_ref() else {
+            panic!("expected reference application");
+        };
+        let ApplicationView::Reference(reference) = application.view() else {
+            panic!("expected reference view");
+        };
+
+        assert_eq!(reference.mutability(), Mutability::Mutable);
+        assert_eq!(reference.lifetime(), &lifetime);
+        assert_eq!(reference.referent(), &referent);
+    }
+
+    // input: for<'a> Effect[bool, int32]
+    // premise: Effect binds one lifetime
+    // output: Effect, binder ['a], [bool, int32]
+    #[tokio::test]
+    async fn symbolic_application_view_exposes_metadata_and_arguments() {
+        let engine = create_engine().await;
+        let binder = Binder::new(engine.intern_unsized(vec![TyKind::Lifetime]));
+        let arguments = [
+            Type2::new_primitive(Primitive::Bool, &engine),
+            Type2::new_primitive(Primitive::Int32, &engine),
+        ];
+        let symbolic = Type2::new_symbolic_with_binder(
+            EFFECT_ID,
+            binder.clone(),
+            arguments.clone(),
+            &engine,
+        );
+        let Type2::Application(application) = symbolic.as_ref() else {
+            panic!("expected symbolic application");
+        };
+        let ApplicationView::Symbolic(symbolic) = application.view() else {
+            panic!("expected symbolic view");
+        };
+
+        assert_eq!(symbolic.symbol_id(), EFFECT_ID);
+        assert_eq!(symbolic.binder(), &binder);
+        assert_eq!(symbolic.generic_arguments(), &arguments);
+    }
+
+    // input: (bool, ...int32, uint64)
+    // premise: element 1 is unpacked
+    // output: [bool, int32, uint64], [1]
+    #[tokio::test]
+    async fn tuple_application_view_exposes_elements_and_unpacking() {
+        let engine = create_engine().await;
+        let elements = [
+            Type2::new_primitive(Primitive::Bool, &engine),
+            Type2::new_primitive(Primitive::Int32, &engine),
+            Type2::new_primitive(Primitive::Uint64, &engine),
+        ];
+        let tuple =
+            Type2::new_tuple_with_unpack(elements.clone(), [1], &engine);
+        let Type2::Application(application) = tuple.as_ref() else {
+            panic!("expected tuple application");
+        };
+        let ApplicationView::Tuple(tuple) = application.view() else {
+            panic!("expected tuple view");
+        };
+
+        assert_eq!(tuple.elements(), &elements);
+        assert_eq!(tuple.unpacked_positions(), &[1]);
+    }
+
+    // input: for<'a> fn(bool, int32) -> uint64
+    // premise: the function pointer binds one lifetime
+    // output: binder ['a], parameters [bool, int32], return uint64
+    #[tokio::test]
+    async fn function_pointer_application_view_splits_parameters_and_return() {
+        let engine = create_engine().await;
+        let binder = Binder::new(engine.intern_unsized(vec![TyKind::Lifetime]));
+        let parameters = [
+            Type2::new_primitive(Primitive::Bool, &engine),
+            Type2::new_primitive(Primitive::Int32, &engine),
+        ];
+        let return_type = Type2::new_primitive(Primitive::Uint64, &engine);
+        let function_pointer = Type2::new_function_pointer_with_binder(
+            binder.clone(),
+            parameters.clone(),
+            return_type.clone(),
+            &engine,
+        );
+        let Type2::Application(application) = function_pointer.as_ref() else {
+            panic!("expected function-pointer application");
+        };
+        let ApplicationView::FunctionPointer(function_pointer) =
+            application.view()
+        else {
+            panic!("expected function-pointer view");
+        };
+
+        assert_eq!(function_pointer.binder(), &binder);
+        assert_eq!(function_pointer.parameter_types(), &parameters);
+        assert_eq!(function_pointer.return_type(), &return_type);
+    }
+
+    // input: anonymous instance of Trait
+    // premise: {}
+    // output: Trait
+    #[tokio::test]
+    async fn anonymous_trait_instance_view_exposes_trait_id() {
+        let engine = create_engine().await;
+        let instance = Type2::new_anonymous_trait_instance(TRAIT_ID, &engine);
+        let Type2::Application(application) = instance.as_ref() else {
+            panic!("expected anonymous trait-instance application");
+        };
+        let ApplicationView::AnonymousTraitInstance(instance) =
+            application.view()
+        else {
+            panic!("expected anonymous trait-instance view");
+        };
+
+        assert_eq!(instance.trait_id(), TRAIT_ID);
+    }
+
+    // input: Associated[Instance, bool, int32]
+    // premise: Instance is the receiver and the remaining types are generics
+    // output: Associated, Instance, [bool, int32]
+    #[tokio::test]
+    async fn instance_associated_view_separates_instance_and_generics() {
+        let engine = create_engine().await;
+        let instance = Type2::new_anonymous_trait_instance(TRAIT_ID, &engine);
+        let generic_arguments = [
+            Type2::new_primitive(Primitive::Bool, &engine),
+            Type2::new_primitive(Primitive::Int32, &engine),
+        ];
+        let associated = Type2::new_instance_associated(
+            ASSOCIATED_ID,
+            instance.clone(),
+            generic_arguments.clone(),
+            &engine,
+        );
+        let Type2::Application(application) = associated.as_ref() else {
+            panic!("expected instance-associated application");
+        };
+        let ApplicationView::InstanceAssociated(associated) =
+            application.view()
+        else {
+            panic!("expected instance-associated view");
+        };
+
+        assert_eq!(associated.trait_associated_id(), ASSOCIATED_ID);
+        assert_eq!(associated.instance(), &instance);
+        assert_eq!(associated.generic_arguments(), &generic_arguments);
+    }
+
     // input: {Console: Effect | tail}
     // premise: the extension constructor takes (signature, tail)
-    // output: label Console and arguments [Effect, tail]
+    // output: label Console, signature Effect, and row tail
     #[tokio::test]
     async fn effect_row_extension_retains_label_and_argument_order() {
         let engine = create_engine().await;
@@ -579,13 +1041,69 @@ mod test {
         let Type2::Application(application) = row.as_ref() else {
             panic!("expected effect-row application");
         };
-        let Constructor::EffectRowExtend(extension) = application.constructor()
+        let ApplicationView::EffectRowExtend(extension) = application.view()
         else {
             panic!("expected effect-row extension");
         };
 
         assert_eq!(extension.label(), &label);
-        assert_eq!(&**application.arguments(), &[signature, tail]);
+        assert_eq!(extension.effect_signature(), &signature);
+        assert_eq!(extension.row_tail(), &tail);
+    }
+
+    // input: {}
+    // premise: {}
+    // output: EffectRowEmpty
+    #[tokio::test]
+    async fn empty_effect_row_application_view_has_no_payload() {
+        let engine = create_engine().await;
+        let empty = Type2::new_effect_row_empty(&engine);
+        let Type2::Application(application) = empty.as_ref() else {
+            panic!("expected empty effect-row application");
+        };
+
+        assert_eq!(application.view(), ApplicationView::EffectRowEmpty);
+    }
+
+    // input: malformed reference with one argument
+    // premise: references require a lifetime and referent
+    // output: panic
+    #[tokio::test]
+    #[should_panic(
+        expected = "reference applications require exactly two arguments"
+    )]
+    async fn reference_application_view_rejects_malformed_layout() {
+        let engine = create_engine().await;
+        let application = Application::new(
+            Constructor::Reference(Reference::new(Mutability::Immutable)),
+            engine.intern_unsized(vec![Type2::new_lifetime(
+                Lifetime::Static,
+                &engine,
+            )]),
+        );
+
+        let _ = application.view();
+    }
+
+    // input: malformed effect-row extension with one argument
+    // premise: extensions require a signature and row tail
+    // output: panic
+    #[tokio::test]
+    #[should_panic(expected = "effect-row extension applications require \
+                               exactly two arguments")]
+    async fn effect_row_extension_view_rejects_malformed_layout() {
+        let engine = create_engine().await;
+        let application = Application::new(
+            Constructor::EffectRowExtend(EffectRowExtend::new(
+                engine.intern_unsized("Console".to_owned()),
+            )),
+            engine.intern_unsized(vec![Type2::new_primitive(
+                Primitive::Bool,
+                &engine,
+            )]),
+        );
+
+        let _ = application.view();
     }
 
     // input: fn(?T@U1, ?U@U2) -> bool

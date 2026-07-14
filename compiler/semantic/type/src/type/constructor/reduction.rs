@@ -2,11 +2,13 @@ use pernixc_qbice::TrackedEngine;
 use pernixc_symbol::{GlobalSymbolID, member::get_members, name::get_name};
 use qbice::storage::intern::Interned;
 
-use super::{Application, Constructor, Tuple};
+use super::{
+    Application, ApplicationView, Constructor, InstanceAssociatedView, Tuple,
+};
 use crate::{
     instance_associated::get_instance_associated_type2,
     substitution::{Substitutable, Substitution},
-    r#type::{Type2, constructor::Symbolic},
+    r#type::Type2,
 };
 
 impl Application {
@@ -15,22 +17,22 @@ impl Application {
         &self,
         engine: &TrackedEngine,
     ) -> Option<Interned<Type2>> {
-        match &self.constructor {
-            Constructor::Symbolic(_)
-            | Constructor::Primitive(_)
-            | Constructor::Lifetime(_)
-            | Constructor::AnonymousTraitInstance(_)
-            | Constructor::FunctionPointer(_)
-            | Constructor::Reference(_)
-            | Constructor::EffectRowExtend(_)
-            | Constructor::EffectRowEmpty => None,
+        match self.view() {
+            ApplicationView::Symbolic(_)
+            | ApplicationView::Primitive(_)
+            | ApplicationView::Lifetime(_)
+            | ApplicationView::AnonymousTraitInstance(_)
+            | ApplicationView::FunctionPointer(_)
+            | ApplicationView::Reference(_)
+            | ApplicationView::EffectRowExtend(_)
+            | ApplicationView::EffectRowEmpty => None,
 
-            Constructor::Tuple(tuple) => {
-                if tuple.unpacked_positions.is_empty() {
+            ApplicationView::Tuple(tuple) => {
+                if tuple.unpacked_positions().is_empty() {
                     return None;
                 }
 
-                if !tuple.unpacked_positions.iter().any(|position| {
+                if !tuple.unpacked_positions().iter().any(|position| {
                     matches!(
                         &*self.arguments[*position],
                         Type2::Application(Self {
@@ -43,22 +45,27 @@ impl Application {
                 }
 
                 Some(engine.intern(Type2::Application(
-                    self.reduce_tuple(tuple, engine),
+                    self.reduce_tuple(tuple.unpacked_positions(), engine),
                 )))
             }
 
-            Constructor::InstanceAssociated(inst_assoc) => {
-                self.reduce_instance_associated(inst_assoc, engine).await
+            ApplicationView::InstanceAssociated(instance_associated) => {
+                self.reduce_instance_associated(instance_associated, engine)
+                    .await
             }
         }
     }
 
-    fn reduce_tuple(&self, tuple: &Tuple, engine: &TrackedEngine) -> Self {
+    fn reduce_tuple(
+        &self,
+        unpacked_positions: &[usize],
+        engine: &TrackedEngine,
+    ) -> Self {
         let mut reduced_arguments = Vec::new();
         let mut reduced_unpacked_positions = Vec::new();
 
         for (idx, argument) in self.arguments.iter().enumerate() {
-            if !tuple.unpacked_positions.contains(&idx) {
+            if !unpacked_positions.contains(&idx) {
                 reduced_arguments.push(argument.clone());
                 continue;
             }
@@ -90,14 +97,14 @@ impl Application {
 
     async fn reduce_instance_associated(
         &self,
-        inst_assoc: &super::InstanceAssociated,
+        instance_associated: InstanceAssociatedView<'_>,
         engine: &TrackedEngine,
     ) -> Option<Interned<Type2>> {
-        let instance = &self.arguments[0];
-        let (symbol_id, generic_args) = instance.as_symbolic()?;
+        let (symbol_id, generic_args) =
+            instance_associated.instance().as_symbolic()?;
 
         let instance_associated_name =
-            engine.get_name(inst_assoc.trait_associated_id).await;
+            engine.get_name(instance_associated.trait_associated_id()).await;
         let instance_associated_symbol_id = symbol_id.target_id.make_global(
             engine
                 .get_members(symbol_id)
@@ -112,7 +119,7 @@ impl Application {
         substitution
             .append_generic_arguments(
                 instance_associated_symbol_id,
-                &self.arguments[1..],
+                instance_associated.generic_arguments(),
                 engine,
             )
             .await;
@@ -141,15 +148,14 @@ impl Type2 {
 
     #[must_use]
     pub fn as_symbolic(&self) -> Option<(GlobalSymbolID, &[Interned<Self>])> {
-        if let Self::Application(Application {
-            constructor: Constructor::Symbolic(Symbolic { symbolic_id, .. }),
-            arguments,
-        }) = &self
-        {
-            Some((*symbolic_id, arguments))
-        } else {
-            None
-        }
+        let Self::Application(application) = self else {
+            return None;
+        };
+        let ApplicationView::Symbolic(symbolic) = application.view() else {
+            return None;
+        };
+
+        Some((symbolic.symbol_id(), symbolic.generic_arguments()))
     }
 }
 

@@ -1,6 +1,6 @@
 use pernixc_type::{
     r#type::{
-        Type2, constructor::Constructor, inference::InferenceVariable,
+        Type2, constructor::ApplicationView, inference::InferenceVariable,
         kind::TyKind,
     },
     variance::Variance2,
@@ -237,18 +237,17 @@ impl Solver<'_> {
             let Type2::Application(application) = &*row else {
                 break;
             };
-            let Constructor::EffectRowExtend(extension) =
-                application.constructor()
+            let ApplicationView::EffectRowExtend(extension) =
+                application.view()
             else {
                 break;
             };
 
-            let [signature, tail] = &application.arguments()[..] else {
-                unreachable!("effect-row extensions always have two arguments")
-            };
-
-            slots.push((extension.label().clone(), signature.clone()));
-            row = tail.clone();
+            slots.push((
+                extension.label().clone(),
+                extension.effect_signature().clone(),
+            ));
+            row = extension.row_tail().clone();
         }
 
         EffectRow { slots, tail: row }
