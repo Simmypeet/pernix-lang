@@ -58,7 +58,7 @@ pub enum Type2 {
 impl Type2 {
     /// Interns a type constructor application with the given arguments.
     #[must_use]
-    pub fn new_application(
+    fn new_application(
         constructor: Constructor,
         arguments: impl IntoIterator<Item = Interned<Self>>,
         engine: &TrackedEngine,

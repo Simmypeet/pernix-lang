@@ -386,7 +386,7 @@ pub struct Application {
 
 impl Application {
     #[must_use]
-    pub const fn new(
+    pub(super) const fn new(
         constructor: Constructor,
         arguments: Interned<[Interned<Type2>]>,
     ) -> Self {
