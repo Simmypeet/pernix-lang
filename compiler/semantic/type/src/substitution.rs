@@ -1,4 +1,7 @@
-use pernixc_hash::FxHashMap;
+use std::hash::BuildHasherDefault;
+
+use im::HashMap;
+use pernixc_hash::FxHasher;
 use pernixc_qbice::{Interner, TrackedEngine};
 use pernixc_symbol::GlobalSymbolID;
 use qbice::{Identifiable, StableHash, storage::intern::Interned};
@@ -19,8 +22,11 @@ pub enum Variable {
     Generic(GenericParameterID),
 }
 
+type SubstitutionMap =
+    HashMap<Variable, Interned<Type2>, BuildHasherDefault<FxHasher>>;
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct Substitution(FxHashMap<Variable, Interned<Type2>>);
+pub struct Substitution(SubstitutionMap);
 
 impl Substitution {
     #[must_use]
@@ -28,7 +34,7 @@ impl Substitution {
 
     #[must_use]
     pub fn singleton(variable: InferenceVariable, ty: Interned<Type2>) -> Self {
-        let mut map = FxHashMap::default();
+        let mut map = SubstitutionMap::default();
         map.insert(Variable::Inference(variable), ty);
         Self(map)
     }
@@ -51,9 +57,7 @@ impl Substitution {
 
     /// Composes `sub2` into `self` such that `self(sub2(x)) = composedSelf(x)`.
     pub fn compose(&mut self, mut sub2: Self, interner: &impl Interner) {
-        self.0.reserve(sub2.0.len());
-
-        for ty in sub2.0.values_mut() {
+        for (_, ty) in sub2.0.iter_mut() {
             *ty = ty.apply_or_clone(self, interner);
         }
 
@@ -65,8 +69,6 @@ impl Substitution {
     }
 
     pub fn merge(&mut self, other: &Self) {
-        self.0.reserve(other.0.len());
-
         for (var, ty) in &other.0 {
             assert!(self.0.insert(*var, ty.clone()).is_none());
         }

@@ -2149,6 +2149,7 @@ version = "0.1.0-beta.2"
 dependencies = [
  "derive_more",
  "enum-as-inner",
+ "im",
  "pernixc_arena",
  "pernixc_hash",
  "pernixc_lexical",
