@@ -220,6 +220,7 @@ impl Solver<'_> {
     pub async fn fresh_generic_substitution(
         &mut self,
         symbol_id: GlobalSymbolID,
+        universe: UniverseIndex,
     ) -> Substitution {
         let generic_parameters =
             self.engine().get_generic_parameters2(symbol_id).await;
@@ -227,6 +228,7 @@ impl Solver<'_> {
         self.fresh_generic_substitution_with_parameters(
             symbol_id,
             &generic_parameters,
+            universe,
         )
     }
 
@@ -239,11 +241,15 @@ impl Solver<'_> {
         &mut self,
         symbol_id: GlobalSymbolID,
         generic_parameters: &GenericParameters2,
+        universe: UniverseIndex,
     ) -> Substitution {
         let mut substitution = Substitution::new();
 
         for (id, parameter) in generic_parameters.iter() {
-            let variable = self.fresh_inference_variable(parameter.kind());
+            let variable = self.fresh_inference_variable_in_universe(
+                parameter.kind(),
+                universe,
+            );
             substitution.insert_generic(
                 GenericParameterID::new(symbol_id, id),
                 self.intern(Type2::InferenceVariable(variable)),

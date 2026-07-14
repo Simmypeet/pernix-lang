@@ -78,6 +78,7 @@ impl Solver<'_> {
             .fresh_generic_substitution_with_parameters(
                 symbol_id,
                 &generic_parameters,
+                expected_trait_ref.max_universe(),
             );
         let required_parameters = get_required_parameters(
             symbol_id,

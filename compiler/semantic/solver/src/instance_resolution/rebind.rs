@@ -4,7 +4,6 @@ use pernixc_type::r#type::{
     Type2,
     bound::{Binder, BoundVariable},
     constructor::Constructor,
-    context::TyContext,
     kind::TyKind,
     rewrite::{RewriteContext, TypeRewriter, rewrite_type_or_clone},
     skolem::SkolemizedVariable,
@@ -15,9 +14,6 @@ use crate::{
     instance_resolution::ResolvedInstance,
     solver::{BoundInstantiation, Solver},
 };
-
-#[cfg(test)]
-mod test;
 
 struct SkolemRebinder<'a> {
     skolem_kinds: FxHashMap<SkolemizedVariable, TyKind>,
@@ -30,7 +26,6 @@ impl<'a> SkolemRebinder<'a> {
     fn new(
         instantiations: &BoundInstantiation,
         existing_bound_kinds: impl IntoIterator<Item = TyKind>,
-        solver: &Solver<'_>,
         engine: &'a TrackedEngine,
     ) -> Self {
         let skolem_kinds = instantiations
@@ -40,7 +35,7 @@ impl<'a> SkolemRebinder<'a> {
                     unreachable!("skolemization must produce only skolems")
                 };
 
-                (*skolem, solver.get_skolemized_variable_kind(skolem))
+                (*skolem, skolem.kind())
             })
             .collect();
 
@@ -97,7 +92,6 @@ impl Solver<'_> {
         let mut rebinder = SkolemRebinder::new(
             instantiations,
             symbolic.binder().kinds(),
-            self,
             self.engine(),
         );
         let arguments = application
@@ -124,3 +118,6 @@ impl Solver<'_> {
         }
     }
 }
+
+#[cfg(test)]
+mod test;

@@ -16,13 +16,13 @@ struct FreshSkolemizedVariable {
 }
 
 impl Solver<'_> {
-    /// Creates a new skolemized variable with the given kind and assigns the
-    /// current active universe to it.
-    pub const fn fresh_skolem_variable(
+    /// Creates a new skolemized variable with the given kind in the root
+    /// universe.
+    pub(crate) const fn fresh_skolem_variable(
         &mut self,
         kind: TyKind,
     ) -> SkolemizedVariable {
-        self.fresh_skolem_variable_in_universe(kind, self.current_universe())
+        self.fresh_skolem_variable_in_universe(kind, UniverseIndex::root())
     }
 
     /// Creates a new skolemized variable with the given kind and universe.
@@ -50,13 +50,13 @@ pub struct VariableInfos {
 }
 
 impl Solver<'_> {
-    /// Creates a new inference variable with the given kind and assigns the
-    /// current active universe to it.
-    pub const fn fresh_inference_variable(
+    /// Creates a new inference variable with the given kind in the root
+    /// universe.
+    pub(crate) const fn fresh_inference_variable(
         &mut self,
         kind: TyKind,
     ) -> InferenceVariable {
-        self.fresh_inference_variable_in_universe(kind, self.current_universe())
+        self.fresh_inference_variable_in_universe(kind, UniverseIndex::root())
     }
 
     /// Creates a new inference variable with the given kind and universe.

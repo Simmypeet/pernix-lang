@@ -5,7 +5,7 @@ use pernixc_type::{
     generic_parameters::GenericParameterID,
     substitution::{Substitutable, Substitution},
     symbol::{Symbol2, get_trait_ref_of_instance_symbol2},
-    r#type::Type2,
+    r#type::{Type2, universe::UniverseIndex},
 };
 use qbice::{
     Decode, Encode, Query, StableHash, executor, program::Registration,
@@ -89,48 +89,45 @@ impl Solver<'_> {
         subject: &Symbol2,
         side: InstantiationSide,
     ) -> Result<bool, OverflowError> {
-        self.new_universe(async |solver| {
-            let head_substitution = solver
-                .instantiate_trait_ref_generics(head, InstantiationMode::Infer)
-                .await;
-            let subject_substitution = solver
-                .instantiate_trait_ref_generics(subject, match side {
-                    InstantiationSide::Sided => InstantiationMode::Skolem,
-                    InstantiationSide::Both => InstantiationMode::Infer,
-                })
-                .await;
-            let mut match_substitution = Substitution::new();
+        let head_substitution = self
+            .instantiate_trait_ref_generics(head, InstantiationMode::Infer)
+            .await;
+        let subject_substitution = self
+            .instantiate_trait_ref_generics(subject, match side {
+                InstantiationSide::Sided => InstantiationMode::Skolem,
+                InstantiationSide::Both => InstantiationMode::Infer,
+            })
+            .await;
+        let mut match_substitution = Substitution::new();
 
-            for (head_argument, subject_argument) in head
-                .generic_arguments()
-                .iter()
-                .zip(subject.generic_arguments().iter())
-            {
-                let head_argument = head_argument
-                    .apply_or_clone(&head_substitution, solver.engine())
-                    .apply_or_clone(&match_substitution, solver.engine());
-                let subject_argument = subject_argument
-                    .apply_or_clone(&subject_substitution, solver.engine())
-                    .apply_or_clone(&match_substitution, solver.engine());
+        for (head_argument, subject_argument) in head
+            .generic_arguments()
+            .iter()
+            .zip(subject.generic_arguments().iter())
+        {
+            let head_argument = head_argument
+                .apply_or_clone(&head_substitution, self.engine())
+                .apply_or_clone(&match_substitution, self.engine());
+            let subject_argument = subject_argument
+                .apply_or_clone(&subject_substitution, self.engine())
+                .apply_or_clone(&match_substitution, self.engine());
 
-                let (mut new_substitution, residual_relations, _) = solver
-                    .resolve_type_relations(vec![TypeRelation::invariant(
-                        head_argument,
-                        subject_argument,
-                    )])
-                    .await?;
+            let (mut new_substitution, residual_relations, _) = self
+                .resolve_type_relations(vec![TypeRelation::invariant(
+                    head_argument,
+                    subject_argument,
+                )])
+                .await?;
 
-                if !residual_relations.is_empty() {
-                    return Ok(false);
-                }
-
-                new_substitution.compose(match_substitution, solver.engine());
-                match_substitution = new_substitution;
+            if !residual_relations.is_empty() {
+                return Ok(false);
             }
 
-            Ok(true)
-        })
-        .await
+            new_substitution.compose(match_substitution, self.engine());
+            match_substitution = new_substitution;
+        }
+
+        Ok(true)
     }
 
     async fn instantiate_trait_ref_generics(
@@ -152,11 +149,18 @@ impl Solver<'_> {
             let kind = self.kind_of(&generic_parameter_ty).await;
             let replacement = match mode {
                 InstantiationMode::Infer => {
-                    let variable = self.fresh_inference_variable(kind);
+                    let variable = self.fresh_inference_variable_in_universe(
+                        kind,
+                        UniverseIndex::root(),
+                    );
                     self.intern(Type2::InferenceVariable(variable))
                 }
                 InstantiationMode::Skolem => {
-                    let variable = self.fresh_skolem_variable(kind);
+                    let variable = self.fresh_skolem_variable_in_universe(
+                        kind,
+                        UniverseIndex::root(),
+                    );
+
                     self.intern(Type2::SkolemizedVariable(variable))
                 }
             };

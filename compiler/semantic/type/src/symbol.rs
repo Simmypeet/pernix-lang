@@ -6,7 +6,7 @@ use qbice::{
 
 use crate::{
     substitution::{Substitutable, Substitution},
-    r#type::{Type2, bound::Binder},
+    r#type::{Type2, bound::Binder, universe::UniverseIndex},
 };
 
 #[derive(
@@ -76,6 +76,15 @@ impl Symbol2 {
             .await;
 
         subst
+    }
+
+    #[must_use]
+    pub fn max_universe(&self) -> UniverseIndex {
+        self.generic_arguments
+            .iter()
+            .map(|x| x.max_universe())
+            .max()
+            .unwrap_or(UniverseIndex::root())
     }
 }
 
@@ -154,6 +163,9 @@ impl TraitRef2 {
     ) -> Substitution {
         self.symbol.create_substitution(engine).await
     }
+
+    #[must_use]
+    pub fn max_universe(&self) -> UniverseIndex { self.symbol.max_universe() }
 }
 
 impl Substitutable for TraitRef2 {

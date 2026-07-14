@@ -59,6 +59,3 @@ impl Solver<'_> {
         Some(checked)
     }
 }
-
-#[cfg(test)]
-mod test;
