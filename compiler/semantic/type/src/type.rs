@@ -87,6 +87,12 @@ impl Type2 {
         Self::new_application(Constructor::Lifetime(lifetime), [], engine)
     }
 
+    /// Interns the `'static` lifetime.
+    #[must_use]
+    pub fn new_static_lifetime(engine: &TrackedEngine) -> Interned<Self> {
+        Self::new_lifetime(Lifetime::Static, engine)
+    }
+
     /// Interns a reference type.
     #[must_use]
     pub fn new_reference(

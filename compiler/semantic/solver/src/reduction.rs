@@ -127,6 +127,22 @@ async fn recurse_from_result(
     }
 }
 
+// TODO: should we skolemize the `ty` before matching it against the equality
+// and then rebind the result. Morevoer, if we're going to skolemize, should we
+// skolemize only the current binder or all nested binders in the `ty`?
+//
+// this should enable us to rewrite something like
+//
+// higher-ranked equality;
+// `for['x, 'y] test['x, 'y] = result['y, 'x]`
+//
+// type with a higher-ranked type;
+// `for['x] test['x, 'static]`
+//
+// should be rewritten to
+// `for['x] result['static, 'x]`
+//
+// currently, the match will fail.
 async fn try_match_eq(
     ty: &Interned<Type2>,
     eq: &Equality,
@@ -159,9 +175,8 @@ async fn rewrite_from_eq(
             continue;
         };
 
-        if let Some((reduced_ty, constraints)) = solver
-            .new_universe(async |solver| try_match_eq(ty, eq, solver).await)
-            .await
+        if let Some((reduced_ty, constraints)) =
+            try_match_eq(ty, eq, solver).await
         {
             return Ok(Some((reduced_ty, constraints)));
         }

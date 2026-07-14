@@ -15,12 +15,18 @@ use crate::{
 
 mod deduce_instance_symbol;
 mod global_instance_resolution;
+mod lexical_candidates;
+mod lexical_instance_resolution;
 mod match_trait_ref;
 mod normal_form;
+mod rebind;
 mod skolemize;
 mod unify_trait_ref;
 
 pub use deduce_instance_symbol::DeducedInstanceSymbol;
+pub use lexical_candidates::{
+    LexicalInstance, LexicalInstanceCandidates, LexicalInstanceCandidatesKey,
+};
 
 /// A request to resolve an instance implementing a trait reference.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -89,8 +95,41 @@ impl Solver<'_> {
     ) -> impl Future<Output = Result<ResolveInstanceResult, OverflowError>> + Send + 'a
     {
         async move {
-            let _ = (self, request);
-            todo!("instance-resolution logic is not implemented yet")
+            let (trait_ref, skolems) =
+                self.skolemize_trait_ref(request.trait_ref());
+            let Some((trait_ref, normalization_constraints)) =
+                self.trait_ref_normal_form(trait_ref).await?
+            else {
+                return Ok(Err(ResolveError::NormalFormFailure));
+            };
+
+            let resolution =
+                match self.resolve_lexical_instance(trait_ref.clone()).await? {
+                    Err(ResolveError::NotFound) => {
+                        Box::pin(self.resolve_global_instance(trait_ref))
+                            .await?
+                    }
+                    result => result,
+                };
+            let (resolved_instance, resolution_constraints) = match resolution {
+                Ok(resolved) => resolved,
+                Err(error) => return Ok(Err(error)),
+            };
+            let constraints =
+                normalization_constraints.union_into(resolution_constraints);
+            let Some(constraints) = self.lite_leak_check(
+                constraints,
+                skolems
+                    .iter()
+                    .map(|x| x.as_skolemized_variable().copied().unwrap()),
+            ) else {
+                return Ok(Err(ResolveError::HigherRankedLeakCheckFailure));
+            };
+
+            let resolved_instance =
+                self.rebind_skolems(resolved_instance, &skolems);
+
+            Ok(Ok((resolved_instance, constraints)))
         }
     }
 }
