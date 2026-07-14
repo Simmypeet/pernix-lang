@@ -64,6 +64,7 @@ derive_more = { version = "2.0.1", features = [
     "index_mut",
 ] }
 inventory = "0.3.2"
+im = "15.1.0"
 enum-as-inner = "0.6.0"
 thiserror = "2.0.12"
 getset = "0.1.2"

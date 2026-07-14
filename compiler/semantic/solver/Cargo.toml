@@ -17,6 +17,7 @@ enum-as-inner.workspace = true
 qbice.workspace = true
 thiserror.workspace = true
 derive-new.workspace = true
+im.workspace = true
 linkme.workspace = true
 
 [dev-dependencies]
