@@ -133,9 +133,9 @@ async fn adds_a_binder_with_nested_depth_accounted_for() {
 
 // input: Symbol[] with unsatisfied for<type> skolem(0) = ^0.0
 // premise: skolem(0) is a request-bound type
-// output: Symbol[]; soft error is for<type, type> ^0.1 = ^0.0
+// output: Symbol[]; soft error is for<type, type> ^0.0 = ^0.1
 #[tokio::test]
-async fn soft_error_predicate_extends_its_existing_binder() {
+async fn soft_error_predicate_rebuilds_binder_in_appearance_order() {
     let engine = create_test_engine().await;
     let premise = Premise::default();
     let mut solver = Solver::new(&premise, &engine);
@@ -153,7 +153,7 @@ async fn soft_error_predicate_extends_its_existing_binder() {
                 Predicate2::Equality(Equality::new(
                     Binder::new(engine.intern_unsized(vec![TyKind::Type])),
                     skolem.clone(),
-                    existing_bound.clone(),
+                    existing_bound,
                 )),
                 None,
                 Arc::from([]),
@@ -178,8 +178,8 @@ async fn soft_error_predicate_extends_its_existing_binder() {
                 Binder::new(
                     engine.intern_unsized(vec![TyKind::Type, TyKind::Type])
                 ),
+                Type2::new_bound_variable(BoundVariable::new(0, 0), &engine),
                 Type2::new_bound_variable(BoundVariable::new(0, 1), &engine),
-                existing_bound,
             )),
             None,
             Arc::from([]),
@@ -190,7 +190,7 @@ async fn soft_error_predicate_extends_its_existing_binder() {
 // input: stack frames Trait[^0.0, skolem(T), skolem('a)] and
 //        Trait[skolem('a), skolem(T), ^0.1]
 // premise: each trait ref has its own pre-existing binder
-// output: each binder is extended using its own appearance-order indices
+// output: binders use local appearance order and omit unused old variables
 #[tokio::test]
 async fn resolution_frames_rebind_with_independent_index_maps() {
     let engine = create_test_engine().await;
@@ -273,16 +273,11 @@ async fn resolution_frames_rebind_with_independent_index_maps() {
                     NESTED_SYMBOL_ID,
                     trait_ref(
                         vec![
-                            bound(2, &engine),
-                            bound(3, &engine),
+                            bound(0, &engine),
                             bound(1, &engine),
+                            bound(2, &engine),
                         ],
-                        vec![
-                            TyKind::Type,
-                            TyKind::Type,
-                            TyKind::Lifetime,
-                            TyKind::Type,
-                        ],
+                        vec![TyKind::Lifetime, TyKind::Type, TyKind::Type],
                         &engine,
                     ),
                 ),

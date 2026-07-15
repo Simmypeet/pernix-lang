@@ -8,6 +8,7 @@ pub mod order;
 pub mod outlives;
 pub mod predicate;
 pub mod premise;
+pub mod rebind;
 pub mod reduction;
 pub mod solver;
 pub mod type_relation;

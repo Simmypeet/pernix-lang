@@ -11,6 +11,14 @@ use crate::r#type::{
     },
 };
 
+/// The variables introduced by a binder, indexed by their kinds.
+///
+/// Bound variables are expected to be in canonical order relative to the value
+/// enclosed by this binder. The first distinct variable encountered in a
+/// left-to-right, depth-first traversal has index `0`, and each subsequently
+/// encountered distinct variable has the next index. Repeated occurrences
+/// reuse the variable's first index, and variables that never occur in the
+/// enclosed value are omitted.
 #[derive(
     Debug,
     Clone,
@@ -28,7 +36,8 @@ pub struct Binder {
 }
 
 impl Binder {
-    /// Creates a new binder with the given bound variable kinds.
+    /// Creates a new binder with kinds listed in canonical bound-variable
+    /// index order.
     #[must_use]
     pub const fn new(bound_vars: Interned<[TyKind]>) -> Self {
         Self { bound_vars }
