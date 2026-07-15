@@ -85,12 +85,6 @@ impl Solver<'_> {
                     constraints,
                 )))
             }
-            LexicalInstance::InInstance(_) => {
-                todo!("resolving an instance from its enclosing scope")
-            }
-            LexicalInstance::FromAssociatedInstance(_) => {
-                todo!("resolving an associated lexical instance")
-            }
         }
     }
 }

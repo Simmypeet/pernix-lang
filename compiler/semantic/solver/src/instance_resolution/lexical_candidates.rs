@@ -1,11 +1,6 @@
 use linkme::distributed_slice;
 use pernixc_qbice::{Config, PERNIX_PROGRAM, TrackedEngine};
-use pernixc_symbol::{
-    GlobalSymbolID,
-    kind::{Kind, get_kind},
-    member::get_members,
-    parent::scope_walker,
-};
+use pernixc_symbol::{GlobalSymbolID, kind::get_kind, parent::scope_walker};
 use pernixc_type::{
     generic_parameters::{GenericParameterID, get_generic_parameters2},
     r#type::kind::TyKind,
@@ -30,13 +25,6 @@ use qbice::{
     Encode,
 )]
 pub enum LexicalInstance {
-    /// The query site is already inside an instance symbol.
-    InInstance(GlobalSymbolID),
-
-    /// The query site is currently in a trait or instance, making its
-    /// associated instances available.
-    FromAssociatedInstance(GlobalSymbolID),
-
     /// An instance generic parameter visible at the query site.
     FromInstanceParameter(GenericParameterID),
 }
@@ -100,10 +88,6 @@ async fn lexical_instance_candidates_executor(
         let scope_id = key.current_site.target_id.make_global(scope_id);
         let kind = engine.get_kind(scope_id).await;
 
-        if kind == Kind::Instance {
-            available_instances.push(LexicalInstance::InInstance(scope_id));
-        }
-
         if kind.has_generic_parameters() {
             let generic_parameters =
                 engine.get_generic_parameters2(scope_id).await;
@@ -115,23 +99,6 @@ async fn lexical_instance_candidates_executor(
                             GenericParameterID::new(scope_id, parameter_id),
                         ),
                     );
-                }
-            }
-        }
-
-        if matches!(kind, Kind::Trait | Kind::Instance) {
-            let members = engine.get_members(scope_id).await;
-
-            for member in
-                members.all_ids().map(|id| scope_id.target_id.make_global(id))
-            {
-                if matches!(
-                    engine.get_kind(member).await,
-                    Kind::InstanceAssociatedInstance
-                        | Kind::TraitAssociatedInstance
-                ) {
-                    available_instances
-                        .push(LexicalInstance::FromAssociatedInstance(member));
                 }
             }
         }

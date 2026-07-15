@@ -161,6 +161,22 @@ pub struct Tuple {
     operand: Interned<Type2>,
 }
 
+impl Tuple {
+    /// Creates a tuple predicate.
+    #[must_use]
+    pub const fn new(binder: Binder, operand: Interned<Type2>) -> Self {
+        Self { binder, operand }
+    }
+
+    /// Returns the variables bound over the predicate's operand.
+    #[must_use]
+    pub const fn binder(&self) -> &Binder { &self.binder }
+
+    /// Returns the type required to be a tuple.
+    #[must_use]
+    pub const fn operand(&self) -> &Interned<Type2> { &self.operand }
+}
+
 impl Substitutable for Tuple {
     fn apply(
         &self,
@@ -208,6 +224,30 @@ pub struct Marker {
     polar: MarkerPolar,
     binder: Binder,
     symbol: Symbol2,
+}
+
+impl Marker {
+    /// Creates a marker predicate.
+    #[must_use]
+    pub const fn new(
+        polar: MarkerPolar,
+        binder: Binder,
+        symbol: Symbol2,
+    ) -> Self {
+        Self { polar, binder, symbol }
+    }
+
+    /// Returns whether the marker predicate is positive or negative.
+    #[must_use]
+    pub const fn polar(&self) -> MarkerPolar { self.polar }
+
+    /// Returns the variables bound over the marker's generic arguments.
+    #[must_use]
+    pub const fn binder(&self) -> &Binder { &self.binder }
+
+    /// Returns the referenced marker and its generic arguments.
+    #[must_use]
+    pub const fn symbol(&self) -> &Symbol2 { &self.symbol }
 }
 
 impl Substitutable for Marker {
